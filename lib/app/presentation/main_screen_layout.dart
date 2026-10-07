@@ -88,7 +88,6 @@ extension _MainScreenLayout on _MainScreenState {
               child: AppFadeThroughIndexedStack.lazy(
                 key: const ValueKey<String>('main_page_stack'),
                 separateHeader: true,
-                prepareAdjacentPage: true,
                 indexListenable: _activePageIndex,
                 itemCount: destinations.length,
                 contentRevision: (showLocal, showAsmr),
@@ -235,12 +234,15 @@ extension _MainScreenLayout on _MainScreenState {
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
             transitionBuilder: (child, animation) =>
-                buildAppScaleFadeTransition(
-                  context: context,
-                  animation: animation,
-                  child: child,
-                  beginScale: 0.9,
-                ),
+                MediaQuery.disableAnimationsOf(context)
+                ? child
+                : FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale: animation.drive(Tween<double>(begin: 0.9, end: 1)),
+                      child: child,
+                    ),
+                  ),
             child: Icon(
               selected ? item.selectedIcon : item.icon,
               key: ValueKey<bool>(selected),

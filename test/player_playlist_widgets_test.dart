@@ -275,6 +275,72 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'detail pauses internal animation through entry and dismiss on $platform',
+      (tester) async {
+        final fixture = await _pumpSubtitleDetail(
+          tester: tester,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+          initialPosition: Duration.zero,
+          physicalSize: platform == TargetPlatform.windows
+              ? const Size(3840, 2400)
+              : const Size(1080, 2400),
+        );
+        final navigator = Navigator.of(
+          tester.element(find.byType(SessionDetailPage)),
+        );
+        navigator.pop();
+        await tester.pumpAndSettle();
+        final route = buildSessionDetailRoute(sessionId: fixture.session.id);
+        unawaited(navigator.push(route));
+        await tester.pump();
+        await tester.pump();
+        final content = find.byType(SessionDetailContent, skipOffstage: false);
+        expect(content, findsOneWidget);
+        expect(TickerMode.valuesOf(tester.element(content)).enabled, isFalse);
+        await tester.pump(const Duration(milliseconds: 60));
+        final firstTop = tester.getTopLeft(content).dy;
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(tester.getTopLeft(content).dy, lessThan(firstTop));
+        expect(TickerMode.valuesOf(tester.element(content)).enabled, isFalse);
+        await tester.pumpAndSettle();
+        expect(TickerMode.valuesOf(tester.element(content)).enabled, isTrue);
+
+        final drag = tester.widget<GestureDetector>(
+          find
+              .descendant(
+                of: find.byType(SessionDetailPage),
+                matching: find.byWidgetPredicate(
+                  (widget) =>
+                      widget is GestureDetector &&
+                      widget.onVerticalDragUpdate != null,
+                ),
+              )
+              .first,
+        );
+        drag.onVerticalDragStart!(DragStartDetails());
+        drag.onVerticalDragUpdate!(
+          DragUpdateDetails(
+            globalPosition: Offset.zero,
+            delta: const Offset(0, 60),
+            primaryDelta: 60,
+          ),
+        );
+        await tester.pump();
+        expect(TickerMode.valuesOf(tester.element(content)).enabled, isFalse);
+        drag.onVerticalDragCancel!();
+        await tester.pumpAndSettle();
+        expect(TickerMode.valuesOf(tester.element(content)).enabled, isTrue);
+        navigator.pop();
+        await tester.pumpAndSettle();
+        expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
   testWidgets('local work switcher waits for idle and reuses the result', (
     tester,
   ) async {
@@ -1845,7 +1911,11 @@ void main() {
           groupSubtitle: '',
           isSingle: false,
         );
-        fixture.runtimeGraph.library.addTracks([track], notify: false, persist: false);
+        fixture.runtimeGraph.library.addTracks(
+          [track],
+          notify: false,
+          persist: false,
+        );
         final session = PlaybackSession(
           id: 'session_sub_test',
           currentTrackPath: track.path,
@@ -3820,71 +3890,79 @@ void main() {
   }
 
   for (final brightness in Brightness.values) {
-    testWidgets('queue menus fit their panel in ${brightness.name} mode', (
-      tester,
-    ) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
-          ? const Size(960, 600)
-          : const Size(375, 812);
-      tester.platformDispatcher.platformBrightnessTestValue = brightness;
-      final messenger = TestDefaultBinaryMessengerBinding.instance
-          .defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(
-        notificationsChannel,
-        (_) async => <String, Object?>{'ok': true, 'value': null},
-      );
-      addTearDown(() => messenger.setMockMethodCallHandler(notificationsChannel, null));
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
-      final fixture = AppRuntimeWidgetTestFixture();
-      addTearDown(fixture.dispose);
-      final session = fixture.playback.createPlaybackQueue('Queue');
-      fixture.playbackService.syncSlice(
-        activeSessions: [session],
-        playingSessionCount: 0,
-        focusedSessionId: session.id,
-        coverGeneration: 0,
-        isInitialized: true,
-      );
-      await tester.pumpWidget(fixture.build(const PlaylistTab()));
-      await tester.pumpAndSettle();
-      unawaited(
-        showPlaybackQueueEditPanel(
-          tester.element(find.byType(PlaylistTab)),
-          session.id,
-        ),
-      );
-      await tester.pumpAndSettle();
-      final i18n = fixture.languageProvider;
-      final editRect = tester.getRect(
-        find.byKey(const ValueKey('playback_queue_edit_panel')),
-      );
-      await tester.tap(find.text(i18n.tr('edit_queue_color')));
-      await tester.pumpAndSettle();
-      final colorRect = tester.getRect(
-        find.byKey(const ValueKey('playback_queue_color_panel')),
-      );
-      expect(colorRect, editRect);
-      for (final channel in ['R', 'G', 'B']) {
-        final labelRect = tester.getRect(find.text(channel));
-        expect(colorRect.contains(labelRect.topLeft), isTrue);
-        expect(colorRect.contains(labelRect.bottomRight), isTrue);
-      }
-      final sliders = find.byType(Slider);
-      expect(sliders, findsNWidgets(3));
-      tester.widget<Slider>(sliders.first).onChanged!(160);
-      await tester.pump();
-      expect((Color(session.playbackQueue!.colorValue!).r * 255).round(), 160);
-      await tester.tap(find.text(i18n.tr('reset_to_default')));
-      await tester.pump();
-      expect(session.playbackQueue!.colorValue, isNull);
-      expect(tester.takeException(), isNull);
-    }, variant: const TargetPlatformVariant({
-      TargetPlatform.android,
-      TargetPlatform.windows,
-    }));
+    testWidgets(
+      'queue menus fit their panel in ${brightness.name} mode',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize =
+            defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(960, 600)
+            : const Size(375, 812);
+        tester.platformDispatcher.platformBrightnessTestValue = brightness;
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          notificationsChannel,
+          (_) async => <String, Object?>{'ok': true, 'value': null},
+        );
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+        );
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final session = fixture.playback.createPlaybackQueue('Queue');
+        fixture.playbackService.syncSlice(
+          activeSessions: [session],
+          playingSessionCount: 0,
+          focusedSessionId: session.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        await tester.pumpWidget(fixture.build(const PlaylistTab()));
+        await tester.pumpAndSettle();
+        unawaited(
+          showPlaybackQueueEditPanel(
+            tester.element(find.byType(PlaylistTab)),
+            session.id,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final i18n = fixture.languageProvider;
+        final editRect = tester.getRect(
+          find.byKey(const ValueKey('playback_queue_edit_panel')),
+        );
+        await tester.tap(find.text(i18n.tr('edit_queue_color')));
+        await tester.pumpAndSettle();
+        final colorRect = tester.getRect(
+          find.byKey(const ValueKey('playback_queue_color_panel')),
+        );
+        expect(colorRect, editRect);
+        for (final channel in ['R', 'G', 'B']) {
+          final labelRect = tester.getRect(find.text(channel));
+          expect(colorRect.contains(labelRect.topLeft), isTrue);
+          expect(colorRect.contains(labelRect.bottomRight), isTrue);
+        }
+        final sliders = find.byType(Slider);
+        expect(sliders, findsNWidgets(3));
+        tester.widget<Slider>(sliders.first).onChanged!(160);
+        await tester.pump();
+        expect(
+          (Color(session.playbackQueue!.colorValue!).r * 255).round(),
+          160,
+        );
+        await tester.tap(find.text(i18n.tr('reset_to_default')));
+        await tester.pump();
+        expect(session.playbackQueue!.colorValue, isNull);
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
   }
 
   testWidgets('queue cover lookup is reused across card rebuilds', (
@@ -4521,7 +4599,13 @@ void main() {
     final queueTrackCountText = languageProvider.tr('audio_count', {
       'count': queueSession.playbackQueue!.expandedTracks.length.toString(),
     });
-    expect(find.text(queueTrackCountText), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(PlaybackQueueEditPage),
+        matching: find.text(queueTrackCountText),
+      ),
+      findsNothing,
+    );
     expect(
       find.descendant(
         of: find.byType(PlaybackQueueEditPage),
@@ -4564,7 +4648,10 @@ void main() {
       ),
     );
     expect(editAudioIcon, findsOneWidget);
-    expect(tester.widget<Icon>(editAudioIcon).icon, Icons.playlist_play_rounded);
+    expect(
+      tester.widget<Icon>(editAudioIcon).icon,
+      Icons.playlist_play_rounded,
+    );
     expect(
       find.ancestor(
         of: editAudioIcon,
@@ -4583,12 +4670,14 @@ void main() {
     final removeQueueText = find.text(languageProvider.tr('remove_queue'));
     expect(removeQueueText, findsOneWidget);
     final removeQueueButton = tester.widget<TextButton>(
-      find.ancestor(
-        of: removeQueueText,
-        matching: find.byType(TextButton),
-      ).first,
+      find
+          .ancestor(of: removeQueueText, matching: find.byType(TextButton))
+          .first,
     );
-    expect(removeQueueButton.style?.shape?.resolve({}) is StadiumBorder, isTrue);
+    expect(
+      removeQueueButton.style?.shape?.resolve({}) is StadiumBorder,
+      isTrue,
+    );
     final removeQueueCenter = tester.getCenter(removeQueueText);
     final editPanelRect = tester.getRect(
       find.byKey(const ValueKey('playback_queue_edit_panel')),
@@ -4610,11 +4699,30 @@ void main() {
     expect(editAudioIconRect.top - audioTileRect.top, closeTo(10, 0.5));
     expect(removeQueueCenter.dx, greaterThan(editPanelRect.center.dx));
     final removeQueueBottomRight = tester.getBottomRight(removeQueueText);
-    expect(editPanelRect.bottom - removeQueueBottomRight.dy, greaterThanOrEqualTo(16.0));
-    expect(editPanelRect.right - removeQueueBottomRight.dx, greaterThanOrEqualTo(20.0));
+    expect(
+      editPanelRect.bottom - removeQueueBottomRight.dy,
+      greaterThanOrEqualTo(16.0),
+    );
+    expect(
+      editPanelRect.right - removeQueueBottomRight.dx,
+      greaterThanOrEqualTo(20.0),
+    );
     final editPageHeight = editPanelRect.height;
 
     await tester.tap(find.text(languageProvider.tr('edit_queue_color')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(find.text(languageProvider.tr('edit_queue_audio')), findsOneWidget);
+    final colorFade = find
+        .ancestor(
+          of: find.byKey(const ValueKey('playback_queue_color_panel')),
+          matching: find.byType(FadeTransition),
+        )
+        .first;
+    expect(
+      tester.widget<FadeTransition>(colorFade).opacity.value,
+      closeTo(0.5, 0.03),
+    );
     await tester.pumpAndSettle();
     final colorPanelFinder = find.byKey(
       const ValueKey('playback_queue_color_panel'),
@@ -4625,15 +4733,18 @@ void main() {
     expect(colorPanelRect.width, closeTo(editPanelRect.width, 0.5));
     final resetText = find.text(languageProvider.tr('reset_to_default'));
     final resetButton = tester.widget<TextButton>(
-      find.ancestor(
-        of: resetText,
-        matching: find.byType(TextButton),
-      ).first,
+      find.ancestor(of: resetText, matching: find.byType(TextButton)).first,
     );
     expect(resetButton.style?.shape?.resolve({}) is StadiumBorder, isTrue);
     final resetBottomRight = tester.getBottomRight(resetText);
-    expect(colorPanelRect.bottom - resetBottomRight.dy, greaterThanOrEqualTo(16.0));
-    expect(colorPanelRect.right - resetBottomRight.dx, greaterThanOrEqualTo(20.0));
+    expect(
+      colorPanelRect.bottom - resetBottomRight.dy,
+      greaterThanOrEqualTo(16.0),
+    );
+    expect(
+      colorPanelRect.right - resetBottomRight.dx,
+      greaterThanOrEqualTo(20.0),
+    );
     expect(find.byType(BottomSheet), findsNothing);
     expect(find.byType(Slider), findsNWidgets(3));
     final rCenterY = tester.getCenter(find.text('R')).dy;
@@ -4641,7 +4752,9 @@ void main() {
     final bCenterY = tester.getCenter(find.text('B')).dy;
     expect(gCenterY - rCenterY, closeTo(50.0, 0.5));
     expect(bCenterY - gCenterY, closeTo(50.0, 0.5));
-    final colorPanelThemeCs = Theme.of(tester.element(colorPanelFinder)).colorScheme;
+    final colorPanelThemeCs = Theme.of(
+      tester.element(colorPanelFinder),
+    ).colorScheme;
     for (final channel in ['R', 'G', 'B']) {
       final channelText = find.text(channel);
       expect(channelText, findsOneWidget);
@@ -4686,10 +4799,18 @@ void main() {
         closeTo(row1Y, 0.5),
       );
     }
-    expect(find.text(languageProvider.tr('edit_queue_audio')), findsNothing);
+    expect(find.text(languageProvider.tr('edit_queue_audio')), findsOneWidget);
+    expect(
+      find.text(languageProvider.tr('edit_queue_audio')).hitTestable(),
+      findsNothing,
+    );
     await tester.tap(find.byKey(const ValueKey('playback_queue_color_back')));
     await tester.pump();
     expect(find.text(languageProvider.tr('edit_queue_audio')), findsOneWidget);
+    expect(colorPanelFinder, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(colorPanelFinder, findsNothing);
     await tester.tap(find.text(languageProvider.tr('edit_queue_audio')));
     await tester.pumpAndSettle();
     expect(find.byType(PlaybackQueueAudioEditPage), findsOneWidget);
@@ -5565,7 +5686,10 @@ void main() {
       expect(pinCoverRectAfter.center.dx, selectionCoverRect.center.dx);
       expect(
         (coverRect.center.dy - pinCoverRectAfter.center.dy).abs(),
-        closeTo((selectionCoverRect.center.dy - coverRect.center.dy).abs(), 0.01),
+        closeTo(
+          (selectionCoverRect.center.dy - coverRect.center.dy).abs(),
+          0.01,
+        ),
       );
       expect(pinCoverRectAfter.width, selectionCoverRect.width);
       expect(pinCoverRectAfter.height, selectionCoverRect.height);
@@ -5666,112 +5790,116 @@ void main() {
     }),
   );
 
-  testWidgets(
-    'PlaylistSelectionIndicator performs 450ms fade-in and fade-out',
-    (tester) async {
-      final checkmarkFinder = find.byKey(
-        const ValueKey<String>('playlist_selection_indicator_session-fade-test'),
-      );
+  testWidgets('PlaylistSelectionIndicator performs 450ms fade-in and fade-out', (
+    tester,
+  ) async {
+    final checkmarkFinder = find.byKey(
+      const ValueKey<String>('playlist_selection_indicator_session-fade-test'),
+    );
 
-      // Initial state: not selected, indicator child is hidden
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: PlaylistSelectionIndicator(
-              sessionId: 'session-fade-test',
-              isSelected: false,
-            ),
+    // Initial state: not selected, indicator child is hidden
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: PlaylistSelectionIndicator(
+            sessionId: 'session-fade-test',
+            isSelected: false,
           ),
         ),
-      );
+      ),
+    );
 
       expect(checkmarkFinder, findsNothing);
 
-      // Transition to selected
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
+    // Transition to selected
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: PlaylistSelectionIndicator(
+            sessionId: 'session-fade-test',
+            isSelected: true,
+          ),
+        ),
+      ),
+    );
+
+    // First frame after change: AnimatedSwitcher creates the child
+    await tester.pump();
+    expect(checkmarkFinder, findsOneWidget);
+
+    final animatedSwitcherFinder = find.byType(AnimatedSwitcher);
+    final switcher = tester.widget<AnimatedSwitcher>(animatedSwitcherFinder);
+    expect(switcher.duration, const Duration(milliseconds: 450));
+    expect(switcher.reverseDuration, const Duration(milliseconds: 450));
+
+    // Mid-animation: at 225ms, opacity is partial (0 < opacity < 1)
+    await tester.pump(const Duration(milliseconds: 225));
+    final fadeTransitionFinder = find
+        .ancestor(of: checkmarkFinder, matching: find.byType(FadeTransition))
+        .first;
+    expect(fadeTransitionFinder, findsOneWidget);
+    final midOpacity = tester
+        .widget<FadeTransition>(fadeTransitionFinder)
+        .opacity
+        .value;
+    expect(midOpacity, greaterThan(0.0));
+    expect(midOpacity, lessThan(1.0));
+
+    // After remaining 225ms (450ms total), opacity reaches 1.0
+    await tester.pump(const Duration(milliseconds: 225));
+    final fullOpacity = tester
+        .widget<FadeTransition>(fadeTransitionFinder)
+        .opacity
+        .value;
+    expect(fullOpacity, closeTo(1.0, 0.001));
+
+    // Now deselect: transition to isSelected = false
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: PlaylistSelectionIndicator(
+            sessionId: 'session-fade-test',
+            isSelected: false,
+          ),
+        ),
+      ),
+    );
+
+    // Mid reverse-animation: at 225ms, checkmark is still present and fading out
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 225));
+    expect(checkmarkFinder, findsOneWidget);
+    final fadeOutOpacity = tester
+        .widget<FadeTransition>(fadeTransitionFinder)
+        .opacity
+        .value;
+    expect(fadeOutOpacity, greaterThan(0.0));
+    expect(fadeOutOpacity, lessThan(1.0));
+
+    // After remaining reverse duration (total 475ms > 450ms), checkmark finishes fading out and is removed
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(checkmarkFinder, findsNothing);
+
+    // Verify reduced motion uses Duration.zero
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(disableAnimations: true),
+          child: Scaffold(
             body: PlaylistSelectionIndicator(
               sessionId: 'session-fade-test',
               isSelected: true,
             ),
           ),
         ),
-      );
-
-      // First frame after change: AnimatedSwitcher creates the child
-      await tester.pump();
-      expect(checkmarkFinder, findsOneWidget);
-
-      final animatedSwitcherFinder = find.byType(AnimatedSwitcher);
-      final switcher = tester.widget<AnimatedSwitcher>(animatedSwitcherFinder);
-      expect(switcher.duration, const Duration(milliseconds: 450));
-      expect(switcher.reverseDuration, const Duration(milliseconds: 450));
-
-      // Mid-animation: at 225ms, opacity is partial (0 < opacity < 1)
-      await tester.pump(const Duration(milliseconds: 225));
-      final fadeTransitionFinder = find
-          .ancestor(
-            of: checkmarkFinder,
-            matching: find.byType(FadeTransition),
-          )
-          .first;
-      expect(fadeTransitionFinder, findsOneWidget);
-      final midOpacity =
-          tester.widget<FadeTransition>(fadeTransitionFinder).opacity.value;
-      expect(midOpacity, greaterThan(0.0));
-      expect(midOpacity, lessThan(1.0));
-
-      // After remaining 225ms (450ms total), opacity reaches 1.0
-      await tester.pump(const Duration(milliseconds: 225));
-      final fullOpacity =
-          tester.widget<FadeTransition>(fadeTransitionFinder).opacity.value;
-      expect(fullOpacity, closeTo(1.0, 0.001));
-
-      // Now deselect: transition to isSelected = false
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: PlaylistSelectionIndicator(
-              sessionId: 'session-fade-test',
-              isSelected: false,
-            ),
-          ),
-        ),
-      );
-
-      // Mid reverse-animation: at 225ms, checkmark is still present and fading out
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 225));
-      expect(checkmarkFinder, findsOneWidget);
-      final fadeOutOpacity =
-          tester.widget<FadeTransition>(fadeTransitionFinder).opacity.value;
-      expect(fadeOutOpacity, greaterThan(0.0));
-      expect(fadeOutOpacity, lessThan(1.0));
-
-      // After remaining reverse duration (total 475ms > 450ms), checkmark finishes fading out and is removed
-      await tester.pump(const Duration(milliseconds: 250));
-      expect(checkmarkFinder, findsNothing);
-
-      // Verify reduced motion uses Duration.zero
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: MediaQuery(
-            data: MediaQueryData(disableAnimations: true),
-            child: Scaffold(
-              body: PlaylistSelectionIndicator(
-                sessionId: 'session-fade-test',
-                isSelected: true,
-              ),
-            ),
-          ),
-        ),
-      );
-      final disabledSwitcher = tester.widget<AnimatedSwitcher>(animatedSwitcherFinder);
-      expect(disabledSwitcher.duration, Duration.zero);
-      expect(disabledSwitcher.reverseDuration, Duration.zero);
-    },
-  );
+      ),
+    );
+    final disabledSwitcher = tester.widget<AnimatedSwitcher>(
+      animatedSwitcherFinder,
+    );
+    expect(disabledSwitcher.duration, Duration.zero);
+    expect(disabledSwitcher.reverseDuration, Duration.zero);
+  });
 
   testWidgets('playlist cards show loading spinners without loading text', (
     tester,
@@ -6140,9 +6268,7 @@ void main() {
             .isLandscape,
         isFalse,
       );
-      await tester.tap(
-        find.byKey(const ValueKey('session_video_tap_target')),
-      );
+      await tester.tap(find.byKey(const ValueKey('session_video_tap_target')));
       await tester.pump();
       await tester.tap(find.byIcon(Icons.fullscreen_rounded));
       await tester.pumpAndSettle();
@@ -6478,9 +6604,7 @@ void main() {
         subtitleTrack: subtitleTrack,
         initialPosition: Duration.zero,
       );
-      final placeholderFinder = find.byKey(
-        const ValueKey('subtitle_loading'),
-      );
+      final placeholderFinder = find.byKey(const ValueKey('subtitle_loading'));
       final cover = find.byKey(
         const ValueKey('session_detail_cover_subtitle-session'),
       );
@@ -6565,12 +6689,8 @@ void main() {
         initialPosition: Duration.zero,
       );
 
-      final placeholderFinder = find.byKey(
-        const ValueKey('subtitle_loading'),
-      );
-      final emptyFinder = find.byKey(
-        const ValueKey('subtitle_empty'),
-      );
+      final placeholderFinder = find.byKey(const ValueKey('subtitle_loading'));
+      final emptyFinder = find.byKey(const ValueKey('subtitle_empty'));
 
       // Initially, subtitle is pending; placeholder must be shown, not empty text.
       await pumpUntilFound(tester, placeholderFinder);
@@ -7148,6 +7268,13 @@ void main() {
         kAppMotionFast,
       );
       expect(find.byType(TopPageHeader), findsNWidgets(2));
+      expect(
+        find.descendant(
+          of: batchHeader,
+          matching: find.byType(TweenAnimationBuilder<double>),
+        ),
+        findsNothing,
+      );
 
       await tester.pumpAndSettle();
 
@@ -7496,16 +7623,10 @@ void main() {
         0.0,
       );
       final temporaryCardWidget = tester.widget<Card>(
-        find.ancestor(
-          of: temporaryCard,
-          matching: find.byType(Card),
-        ),
+        find.ancestor(of: temporaryCard, matching: find.byType(Card)),
       );
       final savedCardWidget = tester.widget<Card>(
-        find.ancestor(
-          of: savedCard,
-          matching: find.byType(Card),
-        ),
+        find.ancestor(of: savedCard, matching: find.byType(Card)),
       );
       final theme = Theme.of(tester.element(temporaryCard));
       final isDark = theme.brightness == Brightness.dark;
@@ -7529,10 +7650,7 @@ void main() {
         ),
       );
       final savedSwipe = tester.widget<SwipeRevealCard>(
-        find.ancestor(
-          of: savedCard,
-          matching: find.byType(SwipeRevealCard),
-        ),
+        find.ancestor(of: savedCard, matching: find.byType(SwipeRevealCard)),
       );
       final expectedTemporaryCardColor = isDark
           ? theme.colorScheme.surfaceBright

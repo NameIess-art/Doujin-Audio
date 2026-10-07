@@ -88,8 +88,18 @@ extension AppDatabaseAudioDetails on AppDatabase {
     String targetPath, {
     required bool isFolder,
   }) => _runDatabaseRead((db) async {
+    final key = PathMatcher.equivalenceKey(targetPath);
+    final prefix = key.endsWith('/') ? key : '$key/';
+    // Binary prefix bounds use the index without LIKE's case folding or
+    // wildcard semantics; PathMatcher still checks directory boundaries below.
     final rows = await db.query(
       'time_segment_labels',
+      where: isFolder
+          ? 'track_match_key = ? OR (track_match_key >= ? AND track_match_key < ?)'
+          : 'track_match_key = ?',
+      whereArgs: isFolder
+          ? [key, prefix, '${prefix.substring(0, prefix.length - 1)}0']
+          : [key],
       orderBy: 'start_ms ASC, created_at_ms ASC',
     );
     return rows
@@ -158,7 +168,7 @@ extension AppDatabaseAudioDetails on AppDatabase {
           continue;
         }
         await transaction.insert('time_segment_labels', {
-          ...label.toRow(),
+          ..._timeSegmentLabelRow(label),
           'id': id,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
@@ -183,7 +193,7 @@ extension AppDatabaseAudioDetails on AppDatabase {
       (db) => db
           .insert(
             'time_segment_labels',
-            label.toRow(),
+            _timeSegmentLabelRow(label),
             conflictAlgorithm: ConflictAlgorithm.replace,
           )
           .then((_) {}),
@@ -206,7 +216,10 @@ extension AppDatabaseAudioDetails on AppDatabase {
     await _runDatabaseWrite((db) async {
       await db.update(
         'time_segment_labels',
-        {'track_key': newTrackKey},
+        {
+          'track_key': newTrackKey,
+          'track_match_key': PathMatcher.equivalenceKey(newTrackKey),
+        },
         where: 'track_key = ?',
         whereArgs: [oldTrackKey],
       );
@@ -232,7 +245,10 @@ extension AppDatabaseAudioDetails on AppDatabase {
         if (nextTrackKey == trackKey) continue;
         batch.update(
           'time_segment_labels',
-          {'track_key': nextTrackKey},
+          {
+            'track_key': nextTrackKey,
+            'track_match_key': PathMatcher.equivalenceKey(nextTrackKey),
+          },
           where: 'id = ?',
           whereArgs: [id],
         );
@@ -241,6 +257,11 @@ extension AppDatabaseAudioDetails on AppDatabase {
     });
   }
 }
+
+Map<String, Object?> _timeSegmentLabelRow(TimeSegmentLabelRecord label) => {
+  ...label.toRow(),
+  'track_match_key': PathMatcher.equivalenceKey(label.trackKey),
+};
 
 Future<List<AudioDetailRecord>> _loadAudioDetailRecords(
   DatabaseExecutor db,

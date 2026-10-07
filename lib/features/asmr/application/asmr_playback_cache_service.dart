@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -29,6 +30,8 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
   final Duration downloadIdleTimeout;
   final Map<String, Future<String?>> _inFlight = <String, Future<String?>>{};
   final Set<HttpClient> _activeClients = <HttpClient>{};
+  final Queue<Completer<bool>> _waitingTransfers = Queue<Completer<bool>>();
+  int _activeTransfers = 0;
   bool _disposed = false;
 
   @override
@@ -41,6 +44,7 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
 
     try {
       final root = await _cacheRoot();
+      if (_disposed) return null;
       final target = File(path.join(root.path, _fileNameFor(source, track)));
       final existing = _inFlight[target.path];
       if (existing != null) return existing;
@@ -144,11 +148,14 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
   }
 
   Future<void> _download(String source, File target) async {
-    final client = _httpClientFactory();
-    _activeClients.add(client);
+    if (!await _acquireTransfer()) return;
+    HttpClient? client;
     HttpClientRequest? request;
     IOSink? sink;
     try {
+      if (_disposed) return;
+      client = _httpClientFactory();
+      _activeClients.add(client);
       try {
         client.connectionTimeout = requestTimeout;
       } catch (_) {
@@ -163,18 +170,43 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
         );
       }
       sink = target.openWrite();
-      await for (final chunk in response.timeout(downloadIdleTimeout)) {
-        if (_disposed) throw StateError('ASMR playback cache was disposed.');
-        sink.add(chunk);
-      }
+      await sink.addStream(
+        response.timeout(downloadIdleTimeout).map((chunk) {
+          if (_disposed) throw StateError('ASMR playback cache was disposed.');
+          return chunk;
+        }),
+      );
       await sink.flush();
     } catch (error) {
       request?.abort(error);
       rethrow;
     } finally {
-      await sink?.close();
-      client.close(force: true);
-      _activeClients.remove(client);
+      try {
+        await sink?.close();
+      } finally {
+        client?.close(force: true);
+        _activeClients.remove(client);
+        _releaseTransfer();
+      }
+    }
+  }
+
+  Future<bool> _acquireTransfer() {
+    if (_disposed) return Future<bool>.value(false);
+    if (_activeTransfers < 2) {
+      _activeTransfers++;
+      return Future<bool>.value(true);
+    }
+    final waiting = Completer<bool>();
+    _waitingTransfers.addLast(waiting);
+    return waiting.future;
+  }
+
+  void _releaseTransfer() {
+    if (_waitingTransfers.isNotEmpty && !_disposed) {
+      _waitingTransfers.removeFirst().complete(true);
+    } else {
+      _activeTransfers--;
     }
   }
 
@@ -182,6 +214,9 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    while (_waitingTransfers.isNotEmpty) {
+      _waitingTransfers.removeFirst().complete(false);
+    }
     for (final client in _activeClients.toList(growable: false)) {
       client.close(force: true);
     }

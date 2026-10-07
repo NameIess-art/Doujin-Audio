@@ -758,6 +758,7 @@ const Map<String, String> appLanguageJa = {
   'subtitles': '字幕',
   'import_subtitle': '字幕をインポート',
   'subtitle_script_generate': '台本から字幕を生成',
+  'subtitle_script_selection_title': '台本選択',
   'subtitle_script_hint': 'TXT または MD の台本を選び、音声に時間を合わせます',
   'subtitle_script_existing_title': 'この音声には字幕があります',
   'subtitle_script_existing_hint': '続行すると新しい字幕を作成し、完了後に切り替えます。元の字幕ファイルは保持されます。',

@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 // ignore: implementation_imports
 import 'package:file_picker/src/platform/file_picker_platform_interface.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -951,11 +952,13 @@ void main() {
           const folder = '/library/work';
           const audioPath = '/library/work/audio.mp3';
           const scriptPath = '/library/work/script.md';
+          final longScriptName =
+              '${List.filled(6, '長い台本ファイル名_完整显示_test_').join()}notes.txt';
           final texts = _WorkTexts([
-            const WorkTextFile(
-              name: 'notes.txt',
-              relativePath: 'notes.txt',
-              path: '/library/work/notes.txt',
+            WorkTextFile(
+              name: longScriptName,
+              relativePath: longScriptName,
+              path: '/library/work/$longScriptName',
             ),
             const WorkTextFile(
               name: 'script.md',
@@ -1008,7 +1011,7 @@ void main() {
           await tester.pumpAndSettle();
           final sheet = find.byType(BottomSheet);
           final originalRect = tester.getRect(sheet);
-          final header = find.byKey(const ValueKey('subtitle_menu_header'));
+          final header = find.byKey(const ValueKey('subtitle_script_header'));
           final originalHeaderStyle = tester
               .widget<Text>(find.text(language.tr('subtitles')))
               .style;
@@ -1016,6 +1019,19 @@ void main() {
           Future<void> openScriptSelection() async {
             await tester.ensureVisible(scriptTile);
             await tester.tap(scriptTile);
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 150));
+            final selectionFade = find
+                .ancestor(
+                  of: find.byKey(const ValueKey('subtitle_script_selection')),
+                  matching: find.byType(FadeTransition),
+                )
+                .first;
+            expect(
+              tester.widget<FadeTransition>(selectionFade).opacity.value,
+              closeTo(0.5, 0.03),
+            );
+            expect(tester.getRect(sheet), originalRect);
             await tester.pumpAndSettle();
           }
 
@@ -1028,14 +1044,18 @@ void main() {
           expect(find.byType(SimpleDialog), findsNothing);
           expect(tester.getRect(sheet), originalRect);
           expect(
-            find.text(language.tr('subtitle_script_generate')),
+            find.text('台本选择'),
             findsOneWidget,
           );
-          expect(find.text(language.tr('subtitle_script_hint')), findsNothing);
+          expect(find.text(language.tr('subtitle_script_hint')), findsOneWidget);
+          expect(
+            find.text(language.tr('subtitle_script_hint')).hitTestable(),
+            findsNothing,
+          );
           expect(
             tester
                 .widget<Text>(
-                  find.text(language.tr('subtitle_script_generate')),
+                  find.text('台本选择'),
                 )
                 .style,
             originalHeaderStyle,
@@ -1049,8 +1069,41 @@ void main() {
             tester.getCenter(back).dy,
             closeTo(tester.getCenter(header).dy, 0.01),
           );
-          expect(find.text('notes.txt'), findsOneWidget);
+          final longTitle = find.text(longScriptName);
+          expect(longTitle, findsOneWidget);
           expect(find.text('subfolder/script.md'), findsOneWidget);
+          final longRow = find.ancestor(
+            of: longTitle,
+            matching: find.byType(ListTile),
+          );
+          final shortRow = find.ancestor(
+            of: find.text('subfolder/script.md'),
+            matching: find.byType(ListTile),
+          );
+          final longIcon = find.descendant(
+            of: longRow,
+            matching: find.byIcon(Icons.text_snippet_rounded),
+          );
+          expect(
+            tester.renderObject<RenderParagraph>(longTitle).didExceedMaxLines,
+            isFalse,
+          );
+          expect(
+            tester.getSize(longRow).height,
+            greaterThan(tester.getSize(shortRow).height),
+          );
+          expect(
+            tester.getRect(longTitle).bottom,
+            lessThanOrEqualTo(tester.getRect(longRow).bottom),
+          );
+          expect(
+            tester.getTopLeft(longIcon).dy,
+            closeTo(tester.getTopLeft(longTitle).dy, 0.01),
+          );
+          expect(
+            tester.getCenter(longIcon).dx,
+            lessThan(tester.getTopLeft(longTitle).dx),
+          );
           expect(
             find.descendant(of: selection, matching: find.byType(Scrollbar)),
             findsNothing,
@@ -1073,6 +1126,10 @@ void main() {
             expect(tester.getRect(sheet), originalRect);
           }
           await tester.tap(back);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(selection, findsOneWidget);
+          expect(tester.getRect(sheet), originalRect);
           await tester.pumpAndSettle();
           expect(selection, findsNothing);
           expect(find.text(language.tr('subtitles')), findsOneWidget);

@@ -220,67 +220,52 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
       titleWidget: const SizedBox.shrink(),
       leading: HeaderActionPill(
         children: [
-          AppHeaderActionTransition(
-            child: IconButton(
-              key: ValueKey<String>('${keyPrefix}_batch_add_button'),
-              onPressed: onAddToPlaylist,
-              icon: const Icon(Icons.playlist_add_rounded),
-              tooltip: i18n.tr('batch_add_to_playlist'),
-              iconSize: 20,
-              padding: EdgeInsets.zero,
-              constraints: HeaderActionPill.buttonConstraints,
-            ),
+          IconButton(
+            key: ValueKey<String>('${keyPrefix}_batch_add_button'),
+            onPressed: onAddToPlaylist,
+            icon: const Icon(Icons.playlist_add_rounded),
+            tooltip: i18n.tr('batch_add_to_playlist'),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: HeaderActionPill.buttonConstraints,
           ),
-          AppHeaderActionTransition(
-            delayIndex: 1,
-            child: IconButton(
-              key: ValueKey<String>(
-                '${keyPrefix}_batch_metadata_action_button',
-              ),
-              onPressed: onCompleteMetadata,
-              icon: const Icon(Icons.library_add_check_rounded),
-              tooltip: i18n.tr('batch_metadata'),
-              iconSize: 20,
-              padding: EdgeInsets.zero,
-              constraints: HeaderActionPill.buttonConstraints,
-            ),
+          IconButton(
+            key: ValueKey<String>('${keyPrefix}_batch_metadata_action_button'),
+            onPressed: onCompleteMetadata,
+            icon: const Icon(Icons.library_add_check_rounded),
+            tooltip: i18n.tr('batch_metadata'),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: HeaderActionPill.buttonConstraints,
           ),
-          AppHeaderActionTransition(
-            delayIndex: 2,
-            child: IconButton(
-              key: ValueKey<String>('${keyPrefix}_batch_pin_button'),
-              onPressed: onTogglePin,
-              icon: isPinned
-                  ? const PushPinOffIcon()
-                  : const Icon(Icons.push_pin_rounded),
-              tooltip: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
-              iconSize: 20,
-              padding: EdgeInsets.zero,
-              constraints: HeaderActionPill.buttonConstraints,
-            ),
+          IconButton(
+            key: ValueKey<String>('${keyPrefix}_batch_pin_button'),
+            onPressed: onTogglePin,
+            icon: isPinned
+                ? const PushPinOffIcon()
+                : const Icon(Icons.push_pin_rounded),
+            tooltip: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: HeaderActionPill.buttonConstraints,
           ),
-          AppHeaderActionTransition(
-            delayIndex: 3,
-            child: IconButton(
-              key: ValueKey<String>('${keyPrefix}_batch_remove_button'),
-              onPressed: onRemove,
-              icon: const Icon(Icons.delete_outline_rounded),
-              tooltip: i18n.tr('remove'),
-              iconSize: 20,
-              padding: EdgeInsets.zero,
-              constraints: HeaderActionPill.buttonConstraints,
-            ),
+          IconButton(
+            key: ValueKey<String>('${keyPrefix}_batch_remove_button'),
+            onPressed: onRemove,
+            icon: const Icon(Icons.delete_outline_rounded),
+            tooltip: i18n.tr('remove'),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: HeaderActionPill.buttonConstraints,
           ),
         ],
       ),
-      trailing: AppHeaderLeadingTransition(
-        child: HeaderFloatingButton(
-          child: IconButton(
-            key: ValueKey<String>('${keyPrefix}_exit_selection_button'),
-            onPressed: onExit,
-            icon: const Icon(Icons.close_rounded),
-            tooltip: i18n.tr('cancel'),
-          ),
+      trailing: HeaderFloatingButton(
+        child: IconButton(
+          key: ValueKey<String>('${keyPrefix}_exit_selection_button'),
+          onPressed: onExit,
+          icon: const Icon(Icons.close_rounded),
+          tooltip: i18n.tr('cancel'),
         ),
       ),
     ).withAppHeaderTransition();

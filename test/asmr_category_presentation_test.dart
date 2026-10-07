@@ -100,7 +100,7 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'ASMR adjacent preparation does not activate data on $platform',
+      'ASMR loads on demand after its entrance on $platform',
       (tester) async {
         final controller = _PresentationController(createTestAsmrServices())
           ..cacheValid = false;
@@ -114,7 +114,6 @@ void main() {
           fixture.build(
             AppFadeThroughIndexedStack.lazy(
               indexListenable: activeTab,
-              prepareAdjacentPage: true,
               separateHeader: true,
               itemCount: 2,
               onTransitionCompleted: completed.add,
@@ -134,12 +133,7 @@ void main() {
         expect(find.byType(AsmrTab, skipOffstage: false), findsNothing);
         await tester.pump(interaction.idleDelay);
         await tester.pumpAndSettle();
-        final hidden = find.byKey(
-          const ValueKey('prepared_asmr'),
-          skipOffstage: false,
-        );
-        expect(hidden, findsOneWidget);
-        expect(TickerMode.valuesOf(tester.element(hidden)).enabled, isFalse);
+        expect(find.byType(AsmrTab, skipOffstage: false), findsNothing);
         expect(find.text('Local page'), findsOneWidget);
         expect(activeTab.value, 0);
         expect(completed, isEmpty);
@@ -147,17 +141,20 @@ void main() {
         expect(controller.categoryLoads, 0);
         expect(controller.accountRestores, 0);
 
-        // In-memory projection reads do not count as catalog/account requests.
-        final hiddenProjectionReads = controller.categoryReads;
-        expect(hiddenProjectionReads, lessThanOrEqualTo(1));
         controller.publish('Activated work');
         await tester.pumpAndSettle();
-        expect(controller.categoryReads, hiddenProjectionReads);
+        expect(controller.categoryReads, 0);
         expect(controller.initializations, 0);
         expect(controller.categoryLoads, 0);
         expect(controller.accountRestores, 0);
 
         activeTab.value = 1;
+        await tester.pump();
+        expect(find.byType(AsmrTab), findsOneWidget);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(controller.initializations, 0);
+        expect(controller.categoryLoads, 0);
+        expect(controller.accountRestores, 0);
         await tester.pumpAndSettle();
         await tester.pump(interaction.idleDelay);
         await tester.pumpAndSettle();
@@ -166,7 +163,7 @@ void main() {
         expect(controller.initializations, 1);
         expect(controller.categoryLoads, 1);
         expect(controller.accountRestores, 1);
-        expect(controller.categoryReads, greaterThan(hiddenProjectionReads));
+        expect(controller.categoryReads, greaterThan(0));
         expect(find.text('Activated work'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());

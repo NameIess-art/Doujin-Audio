@@ -106,6 +106,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           libraryFacade: ref.read(libraryFacadeProvider),
           snapshotRevision: listState.structureRevision,
         );
+        _ensureSortingSnapshot(ref.read(libraryFacadeProvider));
       }
       _ensureStartupRefreshStarted();
       if (_startupRefreshWaiting &&
@@ -113,6 +114,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         _scheduleStartupRefreshAfter(const Duration(milliseconds: 500));
       }
     } else {
+      _cancelSortingSnapshotPreparation();
       _startupRefreshIdleTimer?.cancel();
       _startupRefreshIdleTimer = null;
     }
@@ -129,6 +131,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey();
   int? _cardSnapshotRequestRevision;
+  (int, int)? _sortingSnapshotRequest;
+  String get _sortingSnapshotCommitKey =>
+      'library_sorting_snapshot_${identityHashCode(this)}';
 
   @override
   int get tabIndex => widget.tabIndex;
@@ -537,8 +542,76 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     });
   }
 
+  void _ensureSortingSnapshot(LibraryFacade library) {
+    final settings = ref.read(settingsStateProvider).value;
+    final criterion =
+        settings?.librarySortCriterion ?? LibrarySortCriterion.name;
+    final needsDetails =
+        criterion == LibrarySortCriterion.voiceActor ||
+        criterion == LibrarySortCriterion.releaseDate ||
+        (criterion == LibrarySortCriterion.name &&
+            (settings?.workNameDisplay ?? WorkNameDisplay.workTitle) ==
+                WorkNameDisplay.workTitle &&
+            library.libraryCards.any(
+              (node) => node is FolderNode && node.isModuleNode,
+            ));
+    if (!needsDetails) {
+      _cancelSortingSnapshotPreparation();
+      return;
+    }
+    final revision = (
+      library.structureRevision,
+      library.detailCacheService.revision,
+    );
+    final cached = library.categorySnapshot;
+    if ((cached?.structureRevision, cached?.detailRevision) == revision ||
+        _sortingSnapshotRequest == revision) {
+      return;
+    }
+    _sortingSnapshotRequest = revision;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _sortingSnapshotCommitKey,
+      priority: 30,
+      commit: () {
+        if (!mounted || !_isActive || _sortingSnapshotRequest != revision) {
+          if (_sortingSnapshotRequest == revision) {
+            _sortingSnapshotRequest = null;
+          }
+          return;
+        }
+        // Batch title reads after navigation; the existing library stream
+        // coalesces the completed snapshot if another transition has started.
+        unawaited(
+          library
+              .audioLibraryCategorySnapshot()
+              .then<void>(
+                (_) {},
+                onError: (Object error, StackTrace stackTrace) {
+                  AppLogService.error(
+                    'library_sorting_snapshot_failed',
+                    error: error,
+                    stackTrace: stackTrace,
+                  );
+                },
+              )
+              .whenComplete(() {
+                if (_sortingSnapshotRequest == revision) {
+                  _sortingSnapshotRequest = null;
+                }
+              }),
+        );
+      },
+    );
+  }
+
+  void _cancelSortingSnapshotPreparation() {
+    UiInteractionCoordinator.instance.cancelCommit(_sortingSnapshotCommitKey);
+    _sortingSnapshotRequest = null;
+  }
+
   @override
   void deactivate() {
+    _cancelSortingSnapshotPreparation();
     // Sibling disposal can release an interaction before this tab is unmounted.
     UiInteractionCoordinator.instance.removeListener(
       _handleStartupRefreshInteractionChanged,
@@ -561,6 +634,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   @override
   void dispose() {
+    _cancelSortingSnapshotPreparation();
     widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
     widget.activeSectionListenable?.removeListener(_handleActiveTabChanged);
     UiInteractionCoordinator.instance.removeListener(
@@ -632,6 +706,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         libraryFacade: libraryFacade,
         snapshotRevision: listStateStructureRevision,
       );
+      _ensureSortingSnapshot(libraryFacade);
+    } else {
+      _cancelSortingSnapshotPreparation();
     }
     final tree = ref.watch(librarySortedTreeUiProvider);
     final selectedSelections = _isSelectionMode

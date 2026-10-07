@@ -4,140 +4,210 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../application/asmr_download_selection.dart';
 import '../../../app/theme/app_design_tokens.dart';
-import '../../../core/widgets/app_transitions.dart';
 
 import 'asmr_download_format.dart';
 
-class AsmrDownloadNodeTile extends ConsumerStatefulWidget {
+class AsmrDownloadSelectionList extends StatefulWidget {
+  const AsmrDownloadSelectionList({
+    super.key,
+    required this.selection,
+    required this.onSelectionChanged,
+    this.padding = EdgeInsets.zero,
+  });
+
+  final AsmrDownloadSelectionModel selection;
+  final VoidCallback onSelectionChanged;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  State<AsmrDownloadSelectionList> createState() =>
+      _AsmrDownloadSelectionListState();
+}
+
+class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList> {
+  final Set<String> _expandedPaths = <String>{};
+  List<({AsmrDownloadSelectionNode node, int depth})> _rows = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _resetExpansion();
+  }
+
+  @override
+  void didUpdateWidget(covariant AsmrDownloadSelectionList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.selection, widget.selection)) _resetExpansion();
+  }
+
+  void _resetExpansion() {
+    _expandedPaths
+      ..clear()
+      ..addAll(
+        widget.selection.rootNodes.map((node) => node.track.relativePath),
+      );
+    _projectRows();
+  }
+
+  void _projectRows() {
+    final rows = <({AsmrDownloadSelectionNode node, int depth})>[];
+    void visit(AsmrDownloadSelectionNode node, int depth) {
+      rows.add((node: node, depth: depth));
+      if (_expandedPaths.contains(node.track.relativePath)) {
+        for (final child in node.children) {
+          visit(child, depth + 1);
+        }
+      }
+    }
+
+    for (final root in widget.selection.rootNodes) {
+      visit(root, 0);
+    }
+    _rows = rows;
+  }
+
+  void _toggleExpansion(String path) {
+    setState(() {
+      if (!_expandedPaths.remove(path)) _expandedPaths.add(path);
+      _projectRows();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => ListView.builder(
+    padding: widget.padding,
+    itemCount: _rows.length,
+    itemBuilder: (context, index) {
+      final row = _rows[index];
+      final path = row.node.track.relativePath;
+      return AsmrDownloadNodeTile(
+        key: ValueKey<String>('asmr_download_node_$path'),
+        node: row.node,
+        depth: row.depth,
+        selection: widget.selection,
+        expanded: _expandedPaths.contains(path),
+        onToggleExpansion: () => _toggleExpansion(path),
+        onSelectionChanged: widget.onSelectionChanged,
+      );
+    },
+  );
+}
+
+class AsmrDownloadNodeTile extends ConsumerWidget {
   const AsmrDownloadNodeTile({
     super.key,
     required this.node,
     required this.depth,
     required this.selection,
+    required this.expanded,
+    required this.onToggleExpansion,
     required this.onSelectionChanged,
   });
 
   final AsmrDownloadSelectionNode node;
   final int depth;
   final AsmrDownloadSelectionModel selection;
+  final bool expanded;
+  final VoidCallback onToggleExpansion;
   final VoidCallback onSelectionChanged;
 
-  @override
-  ConsumerState<AsmrDownloadNodeTile> createState() =>
-      AsmrDownloadNodeTileState();
-}
-
-class AsmrDownloadNodeTileState extends ConsumerState<AsmrDownloadNodeTile> {
   static const double _indentWidth = 14;
   static const double _folderRowHeight = 44;
   static const double _fileRowHeight = 46;
 
-  late bool _expanded;
-
-  @override
-  void initState() {
-    super.initState();
-    _expanded = widget.depth == 0;
-  }
-
   void _toggleSelection(bool? next) {
-    widget.selection.togglePath(widget.node.track.relativePath, next);
-    widget.onSelectionChanged();
+    selection.togglePath(node.track.relativePath, next);
+    onSelectionChanged();
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
     final folderRadius = BorderRadius.circular(tokens.radiusSmall);
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final value = widget.selection.stateForPath(widget.node.track.relativePath);
-    final indent = _indentWidth * widget.depth;
+    final value = selection.stateForPath(node.track.relativePath);
+    final indent = _indentWidth * depth;
 
-    if (widget.node.track.isFolder) {
-      final hasChildren = widget.node.children.isNotEmpty;
-      return Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          expansionAnimationStyle: appExpansionAnimationStyle(context),
-          initiallyExpanded: _expanded,
-          minTileHeight: _folderRowHeight,
-          shape: RoundedRectangleBorder(borderRadius: folderRadius),
-          collapsedShape: RoundedRectangleBorder(borderRadius: folderRadius),
-          tilePadding: EdgeInsetsDirectional.only(start: indent, end: 2),
-          childrenPadding: EdgeInsets.zero,
-          onExpansionChanged: (expanded) {
-            setState(() {
-              _expanded = expanded;
-            });
-          },
-          title: Row(
-            children: [
-              _CompactNodeCheckbox(value: value, onChanged: _toggleSelection),
-              const SizedBox(width: 4),
-              Icon(
-                _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
-                size: 20,
-                color: asmrBlue.withValues(alpha: 0.8),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  widget.node.track.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    height: 1.06,
-                    color: cs.onSurface.withValues(alpha: 0.9),
+    if (node.track.isFolder) {
+      final hasChildren = node.children.isNotEmpty;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            expanded: expanded,
+            child: InkWell(
+              onTap: onToggleExpansion,
+              borderRadius: folderRadius,
+              child: SizedBox(
+                height: _folderRowHeight,
+                child: Padding(
+                  padding: EdgeInsetsDirectional.only(start: indent, end: 2),
+                  child: Row(
+                    children: [
+                      _CompactNodeCheckbox(
+                        value: value,
+                        onChanged: _toggleSelection,
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        expanded
+                            ? Icons.folder_open_rounded
+                            : Icons.folder_rounded,
+                        size: 20,
+                        color: asmrBlue.withValues(alpha: 0.8),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          node.track.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                                height: 1.06,
+                                color: cs.onSurface.withValues(alpha: 0.9),
+                              ),
+                        ),
+                      ),
+                      if (hasChildren)
+                        AnimatedRotation(
+                          turns: expanded ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
+                          child: Icon(
+                            Icons.expand_more_rounded,
+                            color: cs.onSurfaceVariant,
+                            size: 20,
+                          ),
+                        )
+                      else
+                        const SizedBox(width: 20),
+                    ],
                   ),
                 ),
               ),
-            ],
+            ),
           ),
-          trailing: hasChildren
-              ? AnimatedRotation(
-                  turns: _expanded ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  child: Icon(
-                    Icons.expand_more_rounded,
-                    color: cs.onSurfaceVariant,
-                    size: 20,
-                  ),
-                )
-              : const SizedBox(width: 20),
-          children: hasChildren && _expanded
-              ? [
-                  for (final child in widget.node.children)
-                    AsmrDownloadNodeTile(
-                      node: child,
-                      depth: widget.depth + 1,
-                      selection: widget.selection,
-                      onSelectionChanged: widget.onSelectionChanged,
-                    ),
-                ]
-              : hasChildren
-              ? const <Widget>[]
-              : [
-                  Padding(
-                    padding: EdgeInsetsDirectional.only(
-                      start: indent + _indentWidth + 40,
-                      end: 8,
-                      bottom: 4,
-                    ),
-                    child: Text(
-                      i18n.tr('asmr_download_empty_folder'),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ],
-        ),
+          if (!hasChildren && expanded)
+            Padding(
+              padding: EdgeInsetsDirectional.only(
+                start: indent + _indentWidth + 40,
+                end: 8,
+                bottom: 4,
+              ),
+              child: Text(
+                i18n.tr('asmr_download_empty_folder'),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ),
+        ],
       );
     }
 
@@ -153,7 +223,7 @@ class AsmrDownloadNodeTileState extends ConsumerState<AsmrDownloadNodeTile> {
               _CompactNodeCheckbox(value: value, onChanged: _toggleSelection),
               const SizedBox(width: 4),
               Icon(
-                asmrDownloadFileIcon(widget.node.track),
+                asmrDownloadFileIcon(node.track),
                 size: 18,
                 color: cs.onSurfaceVariant.withValues(alpha: 0.7),
               ),
@@ -164,7 +234,7 @@ class AsmrDownloadNodeTileState extends ConsumerState<AsmrDownloadNodeTile> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.node.track.title,
+                      node.track.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -177,7 +247,7 @@ class AsmrDownloadNodeTileState extends ConsumerState<AsmrDownloadNodeTile> {
               ),
               const SizedBox(width: 6),
               Text(
-                formatAsmrDownloadSize(widget.node.track.size),
+                formatAsmrDownloadSize(node.track.size),
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: cs.onSurfaceVariant,
                   fontWeight: FontWeight.w700,

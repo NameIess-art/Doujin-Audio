@@ -162,17 +162,23 @@ class _WindowsPlaybackSession {
               ), () => [])
               .add(i);
         }
-        final desired = <int?>[
-          for (var i = 0; i < items.length; i++)
-            if (i == index)
-              this.index
-            else if (available[(_queueKey(items[i]), items[i]['uri'])]
-                    ?.isNotEmpty ==
-                true)
-              available[(_queueKey(items[i]), items[i]['uri'])]!.removeAt(0)
-            else
-              null,
-        ];
+        final cursors = <(String, Object?), int>{};
+        final desired = <int?>[];
+        for (var i = 0; i < items.length; i++) {
+          if (i == index) {
+            desired.add(this.index);
+            continue;
+          }
+          final key = (_queueKey(items[i]), items[i]['uri']);
+          final tokens = available[key];
+          final cursor = cursors[key] ?? 0;
+          if (tokens != null && cursor < tokens.length) {
+            desired.add(tokens[cursor]);
+            cursors[key] = cursor + 1;
+          } else {
+            desired.add(null);
+          }
+        }
         final retained = desired.whereType<int>().toSet();
         for (var i = order.length - 1; i >= 0; i--) {
           if (!retained.contains(order[i])) {
@@ -185,7 +191,13 @@ class _WindowsPlaybackSession {
         var newToken = -1;
         for (var i = 0; i < desired.length; i++) {
           final token = desired[i];
-          var from = token == null ? -1 : order.indexOf(token);
+          // Unchanged prefixes are common when appending or trimming a queue.
+          // Searching them from the start makes those edits quadratic.
+          var from = token == null
+              ? -1
+              : i < order.length && order[i] == token
+              ? i
+              : order.indexOf(token);
           if (from < 0) {
             await player.add(Media(items[i]['uri'] as String));
             if (!isCurrent()) return;

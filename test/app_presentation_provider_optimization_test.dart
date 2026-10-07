@@ -4,7 +4,9 @@ import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,17 +18,36 @@ import 'support/test_persistence_repository.dart';
 class _WorkDetailRepository extends TestPersistenceRepository {
   final ready = Completer<void>();
   final details = <String, AudioDetail>{};
+  int singleReads = 0;
+  int batchReads = 0;
 
   @override
   Future<AudioDetail?> load(AudioDetailTarget target) async {
+    singleReads++;
     await ready.future;
     return details[PathMatcher.normalize(target.targetPath)]?.copyWith(
       target: target,
     );
   }
+
+  @override
+  Future<List<AudioDetail>> loadMany(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    batchReads++;
+    await ready.future;
+    return [
+      for (final target in targets)
+        if (details[PathMatcher.normalize(target.targetPath)]
+            case final detail?)
+          detail.copyWith(target: target),
+    ];
+  }
 }
 
 void main() {
+  setUp(UiInteractionCoordinator.instance.resetForTest);
+  tearDown(UiInteractionCoordinator.instance.resetForTest);
   testWidgets('global subtitles switch by target state and ignore parameters', (
     tester,
   ) async {
@@ -190,6 +211,9 @@ void main() {
     'library name sort reacts to loaded titles and display settings',
     (tester) async {
       final repository = _WorkDetailRepository();
+      addTearDown(() {
+        if (!repository.ready.isCompleted) repository.ready.complete();
+      });
       final fixture = AppRuntimeWidgetTestFixture(
         providedPersistenceRepository: repository,
       );
@@ -218,11 +242,13 @@ void main() {
       await tester.runAsync(fixture.library.ensureCardSnapshot);
 
       List<LibraryNode>? sorted;
+      var builds = 0;
       await tester.pumpWidget(
         fixture.build(
           Consumer(
             builder: (context, ref, child) {
               sorted = ref.watch(librarySortedTreeUiProvider);
+              builds++;
               return const SizedBox.shrink();
             },
           ),
@@ -230,10 +256,26 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
+      expect(repository.singleReads, 0);
+      expect(repository.batchReads, 0);
 
+      final navigation = Object();
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.beginNavigation(navigation);
+      final beforeBatch = sorted;
+      final buildsBeforeBatch = builds;
+      final snapshot = fixture.library.audioLibraryCategorySnapshot();
       repository.ready.complete();
+      await tester.runAsync(() => snapshot);
+      await tester.pump();
+      expect(identical(sorted, beforeBatch), isTrue);
+      expect(builds, buildsBeforeBatch);
+      interaction.endNavigation(navigation);
+      await tester.pump(const Duration(milliseconds: 161));
       await tester.pumpAndSettle();
       expect(sorted!.map((node) => node.name), ['RJ200', 'RJ100']);
+      expect(builds, buildsBeforeBatch + 1);
+      expect(repository.batchReads, 1);
 
       fixture.settingsRepository
         ..workNameDisplay = WorkNameDisplay.folderName
@@ -265,7 +307,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(sorted!.map((node) => node.name), ['RJ200', 'RJ100']);
 
-      // Card providers still hold loaded titles after the detail cache is evicted.
+      // The shared category snapshot retains titles after detail cache eviction.
       fixture.library.detailCacheService.clear();
       fixture.settingsRepository
         ..librarySortAscending = false
@@ -274,6 +316,88 @@ void main() {
       expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
     },
   );
+
+  for (final disposeWhileHidden in [false, true]) {
+    testWidgets(
+      'library batches sorting details after idle and cancels '
+      '${disposeWhileHidden ? 'disposed' : 'hidden'} preparation',
+      (tester) async {
+        final repository = _WorkDetailRepository()..ready.complete();
+        final fixture = AppRuntimeWidgetTestFixture(
+          providedPersistenceRepository: repository,
+        );
+        final active = ValueNotifier<int>(0);
+        addTearDown(fixture.dispose);
+        addTearDown(active.dispose);
+        fixture.settingsRepository.syncSlice(isInitialized: true);
+        for (var index = 0; index < 24; index++) {
+          final folder = 'RJ${100 + index}';
+          final root = '/music/$folder';
+          repository.details[PathMatcher.normalize(root)] = AudioDetail.empty(
+            AudioDetailTarget.libraryRootFolder(root),
+          ).copyWith(workTitle: folder);
+          fixture.library.addWatchedFolder(root, notify: false);
+          fixture.library.addTracks(
+            [
+              testMusicTrack(
+                name: 'Track',
+                path: '$root/track.mp3',
+                groupKey: root,
+                groupTitle: folder,
+              ),
+            ],
+            notify: false,
+            persist: false,
+          );
+        }
+        fixture.libraryService.syncSlice(
+          isInitialized: true,
+          detailRevision: 0,
+        );
+        await tester.runAsync(fixture.library.ensureCardSnapshot);
+        final interaction = UiInteractionCoordinator.instance;
+        final navigation = Object();
+        interaction.beginNavigation(navigation);
+        await tester.pumpWidget(
+          fixture.build(
+            ValueListenableBuilder<int>(
+              valueListenable: active,
+              child: LibraryTab(tabIndex: 0, activeTabIndexListenable: active),
+              builder: (context, index, child) => Offstage(
+                offstage: index != 0,
+                child: TickerMode(enabled: index == 0, child: child!),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(repository.batchReads, 0);
+        active.value = 1;
+        await tester.pump();
+        if (disposeWhileHidden) {
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+        interaction.endNavigation(navigation);
+        await tester.pump(const Duration(milliseconds: 161));
+        await tester.pump();
+        expect(repository.batchReads, 0);
+        if (!disposeWhileHidden) {
+          active.value = 0;
+          await tester.pump();
+          await tester.pumpAndSettle();
+          expect(repository.batchReads, 1);
+          await tester.pump();
+          expect(repository.batchReads, 1);
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   testWidgets('playlist detail revision affects only detail-based sorting', (
     tester,

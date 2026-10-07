@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 class _StateProbe extends StatefulWidget {
@@ -34,6 +36,36 @@ class _BuildCountingContent extends AppPageContentTransition {
   }
 }
 
+class _TickingPage extends StatefulWidget {
+  const _TickingPage({super.key, required this.onTick, required this.child});
+
+  final VoidCallback onTick;
+  final Widget child;
+
+  @override
+  State<_TickingPage> createState() => _TickingPageState();
+}
+
+class _TickingPageState extends State<_TickingPage>
+    with SingleTickerProviderStateMixin {
+  late final Ticker _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = createTicker((_) => widget.onTick())..start();
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 class _DetailPaintProbe extends SingleChildRenderObjectWidget {
   const _DetailPaintProbe({required this.onPaint, required super.child});
 
@@ -56,9 +88,246 @@ class _DetailPaintRenderBox extends RenderProxyBox {
   }
 }
 
+class _ListenerCountingController extends AnimationController {
+  _ListenerCountingController({required super.vsync})
+    : super(duration: kAppMotionSlow);
+
+  final Set<AnimationStatusListener> statusListeners = {};
+
+  @override
+  void addStatusListener(AnimationStatusListener listener) {
+    statusListeners.add(listener);
+    super.addStatusListener(listener);
+  }
+
+  @override
+  void removeStatusListener(AnimationStatusListener listener) {
+    statusListeners.remove(listener);
+    super.removeStatusListener(listener);
+  }
+}
+
 void main() {
+  testWidgets('secondary menu fades over a persistent primary in 300 ms', (
+    tester,
+  ) async {
+    var selected = false;
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return AppMenuContentTransition(
+              primary: const _StateProbe(label: 'Menu'),
+              secondary: selected
+                  ? TextButton(onPressed: () {}, child: const Text('Detail'))
+                  : null,
+            );
+          },
+        ),
+      ),
+    );
+    final primaryState = tester.state(find.byType(_StateProbe));
+    double secondaryOpacity() => tester
+        .widget<FadeTransition>(
+          find
+              .ancestor(
+                of: find.text('Detail'),
+                matching: find.byType(FadeTransition),
+              )
+              .first,
+        )
+        .opacity
+        .value;
+
+    for (final next in [true, false]) {
+      update(() => selected = next);
+      await tester.pump();
+      expect(secondaryOpacity(), next ? 0 : 1);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(secondaryOpacity(), closeTo(0.5, 0.03));
+      expect(tester.state(find.byType(_StateProbe)), same(primaryState));
+      final menuFade = find.descendant(
+        of: find.byType(AppMenuContentTransition),
+        matching: find.byType(FadeTransition),
+      );
+      expect(menuFade, findsOneWidget);
+      expect(
+        find.descendant(of: menuFade, matching: find.text('Menu')),
+        findsNothing,
+      );
+      expect(find.text('Menu').hitTestable(), findsNothing);
+      await tester.pump(const Duration(milliseconds: 149));
+      expect(find.text('Detail'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(secondaryOpacity(), next ? 1 : 0);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(tester.state(find.byType(_StateProbe)), same(primaryState));
+      expect(find.text('Detail'), next ? findsOneWidget : findsNothing);
+      expect(
+        find.text('Menu').hitTestable(),
+        next ? findsNothing : findsOneWidget,
+      );
+    }
+
+    update(() => selected = true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 75));
+    final beforeReverse = secondaryOpacity();
+    update(() => selected = false);
+    await tester.pump();
+    expect(secondaryOpacity(), beforeReverse);
+    await tester.pumpAndSettle();
+    expect(find.text('Detail'), findsNothing);
+    expect(tester.state(find.byType(_StateProbe)), same(primaryState));
+  });
+
+  testWidgets('menu content switches immediately with reduced motion', (
+    tester,
+  ) async {
+    var selected = false;
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              update = setState;
+              return AppMenuContentTransition(
+                primary: const _StateProbe(label: 'Menu'),
+                secondary: selected ? const Text('Detail') : null,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    final primaryState = tester.state(find.byType(_StateProbe));
+    for (final next in [true, false]) {
+      update(() => selected = next);
+      await tester.pump();
+      expect(find.text('Menu'), findsOneWidget);
+      expect(tester.state(find.byType(_StateProbe)), same(primaryState));
+      expect(find.text('Detail'), next ? findsOneWidget : findsNothing);
+      if (next) {
+        final fade = find.descendant(
+          of: find.byType(AppMenuContentTransition),
+          matching: find.byType(FadeTransition),
+        );
+        expect(tester.widget<FadeTransition>(fade).opacity.value, 1);
+      }
+    }
+  });
+
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  for (final scale in [false, true]) {
+    testWidgets('fade owns and releases curve listeners (scale: $scale)', (
+      tester,
+    ) async {
+      final first = _ListenerCountingController(vsync: tester);
+      final second = _ListenerCountingController(vsync: tester);
+      addTearDown(first.dispose);
+      addTearDown(second.dispose);
+      const child = _StateProbe(label: 'curve-child');
+
+      Future<void> rebuild(
+        Animation<double> animation, {
+        Curve curve = Curves.easeOutCubic,
+        Curve reverseCurve = Curves.easeInCubic,
+        bool reduced = false,
+        double beginScale = 0.94,
+      }) => tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: MediaQuery(
+            data: MediaQueryData(disableAnimations: reduced),
+            child: Builder(
+              builder: (context) => scale
+                  ? buildAppScaleFadeTransition(
+                      context: context,
+                      animation: animation,
+                      curve: curve,
+                      reverseCurve: reverseCurve,
+                      beginScale: beginScale,
+                      child: child,
+                    )
+                  : buildAppFadeTransition(
+                      context: context,
+                      animation: animation,
+                      curve: curve,
+                      reverseCurve: reverseCurve,
+                      child: child,
+                    ),
+            ),
+          ),
+        ),
+      );
+
+      await rebuild(first);
+      final state = tester.state(find.byType(_StateProbe));
+      expect(first.statusListeners, hasLength(1));
+      final opacity = tester
+          .widget<FadeTransition>(find.byType(FadeTransition))
+          .opacity;
+      for (var i = 0; i < 100; i++) {
+        await rebuild(first);
+      }
+      expect(first.statusListeners, hasLength(1));
+      expect(
+        tester.widget<FadeTransition>(find.byType(FadeTransition)).opacity,
+        same(opacity),
+      );
+      expect(tester.state(find.byType(_StateProbe)), same(state));
+
+      unawaited(first.forward());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      final beforeReverse = opacity.value;
+      unawaited(first.reverse());
+      expect(opacity.value, beforeReverse);
+      await rebuild(first, curve: Curves.linear);
+      expect(first.statusListeners, hasLength(1));
+      first.stop();
+
+      await rebuild(second, beginScale: 0.8);
+      expect(first.statusListeners, isEmpty);
+      expect(second.statusListeners, hasLength(1));
+      expect(tester.state(find.byType(_StateProbe)), same(state));
+      second.value = 0.5;
+      if (scale) {
+        expect(
+          tester
+              .widget<ScaleTransition>(find.byType(ScaleTransition))
+              .scale
+              .value,
+          closeTo(0.8 + 0.2 * Curves.easeOutCubic.transform(0.5), 0.0001),
+        );
+      }
+
+      await rebuild(second, curve: Curves.linear, reverseCurve: Curves.linear);
+      expect(second.statusListeners, isEmpty);
+      expect(
+        tester
+            .widget<FadeTransition>(find.byType(FadeTransition))
+            .opacity
+            .value,
+        0.5,
+      );
+      await rebuild(second);
+      expect(second.statusListeners, hasLength(1));
+      await rebuild(second, reduced: true);
+      expect(second.statusListeners, isEmpty);
+      expect(find.byType(FadeTransition), findsNothing);
+      await rebuild(second);
+      expect(second.statusListeners, hasLength(1));
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(second.statusListeners, isEmpty);
+    });
+  }
 
   testWidgets('route preparation preserves the full visible animation', (
     tester,
@@ -386,6 +655,113 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final separateHeader in [false, true]) {
+      testWidgets(
+        'tab slide freezes internal tickers ($platform, header: $separateHeader)',
+        (tester) async {
+          final index = ValueNotifier<int>(0);
+          addTearDown(index.dispose);
+          final ticks = [0, 0];
+          final completed = <int>[];
+          await tester.pumpWidget(
+            MaterialApp(
+              home: AppFadeThroughIndexedStack.lazy(
+                indexListenable: index,
+                itemCount: 2,
+                duration: kAppMotionSlow,
+                separateHeader: separateHeader,
+                onTransitionCompleted: completed.add,
+                itemBuilder: (_, page) => _TickingPage(
+                  onTick: () => ticks[page]++,
+                  child: AppPageContentTransition(
+                    child: Text('ticker-page-$page'),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 30));
+          expect(ticks[0], greaterThan(0));
+          index.value = 1;
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 30));
+          final frozenTicks = List<int>.of(ticks);
+          final initialPosition = _translationFor(tester, 'ticker-page-1');
+          await tester.pump(const Duration(milliseconds: 80));
+          expect(ticks, frozenTicks);
+          expect(
+            _translationFor(tester, 'ticker-page-1').dx,
+            lessThan(initialPosition.dx),
+          );
+          await tester.pump(const Duration(milliseconds: 80));
+          expect(ticks, frozenTicks);
+          await tester.pump(kAppMotionSlow);
+          expect(completed, [1]);
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(ticks[0], frozenTicks[0]);
+          expect(ticks[1], greaterThan(frozenTicks[1]));
+          expect(
+            TickerMode.valuesOf(
+              tester.element(find.text('ticker-page-1')),
+            ).enabled,
+            isTrue,
+          );
+          await tester.pumpWidget(const SizedBox());
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
+    testWidgets(
+      'ordinary route records its body once while moving on $platform',
+      (tester) async {
+        final navigatorKey = GlobalKey<NavigatorState>();
+        var builds = 0;
+        var paints = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(
+              pageTransitionsTheme: const PageTransitionsTheme(
+                builders: {
+                  TargetPlatform.android: AppPageTransitionsBuilder(),
+                  TargetPlatform.windows: AppPageTransitionsBuilder(),
+                },
+              ),
+            ),
+            navigatorKey: navigatorKey,
+            home: const SizedBox(),
+          ),
+        );
+        final route = MaterialPageRoute<void>(
+          builder: (_) => _BuildCountingContent(
+            onBuild: () => builds++,
+            child: _DetailPaintProbe(
+              onPaint: () => paints++,
+              child: const ColoredBox(color: Colors.blue),
+            ),
+          ),
+        );
+        unawaited(navigatorKey.currentState!.push(route));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 30));
+        final recordedBuilds = builds;
+        final recordedPaints = paints;
+        for (var frame = 0; frame < 5; frame++) {
+          await tester.pump(const Duration(milliseconds: 30));
+        }
+        expect(builds, recordedBuilds);
+        expect(paints, recordedPaints);
+        await tester.pumpAndSettle();
+        navigatorKey.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
   testWidgets('preparing pages follow newest choice and release on dispose', (
     tester,
   ) async {
@@ -504,6 +880,77 @@ void main() {
       ],
     ),
   );
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final workDetail in [false, true]) {
+      testWidgets(
+        'route cache resizes during its slide ($platform, detail: $workDetail)',
+        (tester) async {
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = const Size(800, 600);
+          addTearDown(() {
+            tester.view.resetDevicePixelRatio();
+            tester.view.resetPhysicalSize();
+          });
+          final navigatorKey = GlobalKey<NavigatorState>();
+          final pageKey = GlobalKey<_TickingPageState>();
+          await tester.pumpWidget(
+            MaterialApp(
+              navigatorKey: navigatorKey,
+              theme: ThemeData(
+                pageTransitionsTheme: const PageTransitionsTheme(
+                  builders: {
+                    TargetPlatform.android: AppPageTransitionsBuilder(),
+                    TargetPlatform.windows: AppPageTransitionsBuilder(),
+                  },
+                ),
+              ),
+              home: const SizedBox(),
+            ),
+          );
+          final page = _TickingPage(
+            key: pageKey,
+            onTick: () {},
+            child: regions('resizing-detail'),
+          );
+          final navigator = navigatorKey.currentState!;
+          final route = workDetail
+              ? buildAppPageRoute<void>(
+                  context: navigator.context,
+                  workDetailTransition: true,
+                  child: page,
+                )
+              : MaterialPageRoute<void>(builder: (_) => page);
+          unawaited(navigator.push(route));
+          await tester.pump();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 75));
+          final pageState = pageKey.currentState;
+          final body = find.byKey(const ValueKey('resizing-detail-body'));
+          final header = find.byKey(const ValueKey('resizing-detail-header'));
+          final oldProgress = tester.getRect(body).left / 800;
+          expect(oldProgress, greaterThan(0));
+          tester.view.physicalSize = const Size(1000, 700);
+          await tester.pump();
+          expect(pageKey.currentState, same(pageState));
+          expect(tester.getRect(body).width, 1000);
+          expect(tester.getRect(body).left / 1000, closeTo(oldProgress, 0.001));
+          expect(tester.getRect(header).left, closeTo(450, 0.001));
+          await tester.pump(const Duration(milliseconds: 30));
+          expect(tester.getRect(body).left / 1000, lessThan(oldProgress));
+          await tester.pump(kAppMotionSlow);
+          await tester.pump();
+          expect(tester.getRect(body).left, 0);
+          expect(pageKey.currentState, same(pageState));
+          navigator.pop();
+          await tester.pumpAndSettle();
+          expect(pageKey.currentState, isNull);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+  }
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
@@ -1046,6 +1493,97 @@ void main() {
     expect(incoming, findsNothing);
     expect(headerOpacity(outgoing), 1);
   });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final appBar in [false, true]) {
+      testWidgets(
+        'whole page header crossfades on $platform (appBar: $appBar)',
+        (tester) async {
+          final index = ValueNotifier(0);
+          addTearDown(index.dispose);
+          Widget page(String name) {
+            final title = Text(name, key: ValueKey('$name-title'));
+            final leading = IconButton(
+              key: ValueKey('$name-leading'),
+              onPressed: () {},
+              icon: const Icon(Icons.arrow_back),
+            );
+            final action = IconButton(
+              key: ValueKey('$name-action'),
+              onPressed: () {},
+              icon: const Icon(Icons.more_horiz),
+            );
+            return Scaffold(
+              appBar: appBar
+                  ? AppPageAppBar(
+                      title: title,
+                      leading: leading,
+                      actions: [action],
+                    )
+                  : null,
+              body: appBar
+                  ? const SizedBox.expand()
+                  : TopPageHeader(
+                      titleWidget: title,
+                      leading: leading,
+                      trailing: action,
+                    ),
+            );
+          }
+
+          FadeTransition fade(String name, String part) =>
+              tester.widget<FadeTransition>(
+                find
+                    .ancestor(
+                      of: find.byKey(ValueKey('$name-$part')),
+                      matching: find.byType(FadeTransition),
+                    )
+                    .first,
+              );
+
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: ThemeData(platform: platform),
+              home: AppFadeThroughIndexedStack(
+                indexListenable: index,
+                separateHeader: true,
+                children: [page('first'), page('second')],
+              ),
+            ),
+          );
+          index.value = 1;
+          await tester.pump();
+          await tester.pump();
+          final headerRect = tester.getRect(
+            find.byKey(const ValueKey('second-title')),
+          );
+          await tester.pump(const Duration(milliseconds: 70));
+          final incoming = fade('second', 'title');
+          final outgoing = fade('first', 'title');
+          expect(incoming.opacity.value, inExclusiveRange(0, 1));
+          expect(
+            outgoing.opacity.value,
+            closeTo(1 - incoming.opacity.value, 0.001),
+          );
+          for (final part in ['leading', 'action']) {
+            expect(fade('second', part), same(incoming));
+            expect(fade('first', part), same(outgoing));
+          }
+          expect(
+            tester.getRect(find.byKey(const ValueKey('second-title'))),
+            headerRect,
+          );
+          await tester.pumpAndSettle();
+          expect(
+            tester.getRect(find.byKey(const ValueKey('second-title'))),
+            headerRect,
+          );
+          expect(fade('second', 'title').opacity.value, 1);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   testWidgets('tab headers stay fixed while content slides independently', (
     tester,
@@ -1735,29 +2273,26 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'idle prepares one neighbour without activating it on $platform',
+      'idle and resume do not build unvisited pages on $platform',
       (tester) async {
         final index = ValueNotifier<int>(0);
         addTearDown(index.dispose);
-        final coordinator = UiInteractionCoordinator.instance;
         final builds = [0, 0, 0];
         final layouts = [0, 0, 0];
-        final completed = <int>[];
         await tester.pumpWidget(
           MaterialApp(
             home: AppFadeThroughIndexedStack.lazy(
               indexListenable: index,
-              prepareAdjacentPage: true,
               itemCount: 3,
-              onTransitionCompleted: completed.add,
+              duration: kAppMotionSlow,
               itemBuilder: (_, page) {
                 builds[page]++;
                 return LayoutBuilder(
-                  builder: (context, constraints) {
+                  builder: (_, constraints) {
                     layouts[page]++;
                     return _StateProbe(
                       key: ValueKey(page),
-                      label: 'idle-$page',
+                      label: 'on-demand-$page',
                     );
                   },
                 );
@@ -1765,160 +2300,32 @@ void main() {
             ),
           ),
         );
-        expect(builds, [1, 0, 0]);
-        await tester.pump(coordinator.idleDelay);
-        await tester.pump();
-        expect(builds, [1, 1, 0]);
-        expect(layouts[1], 1);
-        expect(index.value, 0);
-        expect(completed, isEmpty);
-        expect(find.text('idle-1'), findsNothing);
-        final hidden = find.text('idle-1', skipOffstage: false);
-        final retained = tester.state(
-          find.byKey(const ValueKey(1), skipOffstage: false),
+        final retained = tester.state(find.byKey(const ValueKey(0)));
+        await tester.pump(const Duration(minutes: 30));
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        await tester.pump(const Duration(minutes: 30));
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
         );
-        expect(TickerMode.valuesOf(tester.element(hidden)).enabled, isFalse);
-        expect(tester.renderObject<RenderBox>(hidden).hasSize, isTrue);
-        await tester.pump(const Duration(seconds: 1));
-        expect(builds, [1, 1, 0]);
-        expect(layouts[1], 1);
+        expect(builds, [1, 0, 0]);
+        expect(layouts, [1, 0, 0]);
 
+        // Navigate before the first resumed frame, without idle preloading.
         index.value = 1;
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 16));
-        expect(_translationFor(tester, 'idle-1').dx, lessThan(1));
         expect(builds, [1, 1, 0]);
-        expect(tester.state(find.byKey(const ValueKey(1))), same(retained));
+        expect(layouts, [1, 1, 0]);
         await tester.pumpAndSettle();
-        expect(completed, [1]);
-        // Disposing the stack also cancels the next neighbour's pending timer.
+        index.value = 0;
+        await tester.pumpAndSettle();
+        expect(builds, [1, 1, 0]);
+        expect(tester.state(find.byKey(const ValueKey(0))), same(retained));
         await tester.pumpWidget(const SizedBox.shrink());
-        await tester.pump(const Duration(seconds: 1));
-        expect(builds[2], 0);
         expect(tester.takeException(), isNull);
       },
       variant: TargetPlatformVariant({platform}),
     );
   }
-
-  testWidgets('idle preparation waits for interaction and lifecycle resume', (
-    tester,
-  ) async {
-    final index = ValueNotifier<int>(0);
-    addTearDown(index.dispose);
-    final coordinator = UiInteractionCoordinator.instance;
-    final source = Object();
-    final builds = [0, 0];
-    coordinator.beginInteraction(source);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: AppFadeThroughIndexedStack.lazy(
-          indexListenable: index,
-          prepareAdjacentPage: true,
-          itemCount: 2,
-          itemBuilder: (_, page) {
-            builds[page]++;
-            return Text('lifecycle-$page');
-          },
-        ),
-      ),
-    );
-    await tester.pump(const Duration(seconds: 1));
-    expect(builds, [1, 0]);
-    coordinator.cancelInteraction(source);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    await tester.pump(const Duration(seconds: 1));
-    expect(builds, [1, 0]);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pump(coordinator.idleDelay);
-    await tester.pump();
-    expect(builds, [1, 1]);
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
-  });
-
-  testWidgets('queued idle layout is cancelled before backgrounding', (
-    tester,
-  ) async {
-    final index = ValueNotifier<int>(0);
-    addTearDown(index.dispose);
-    final layouts = [0, 0];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: AppFadeThroughIndexedStack.lazy(
-          indexListenable: index,
-          prepareAdjacentPage: true,
-          itemCount: 2,
-          itemBuilder: (_, page) => LayoutBuilder(
-            builder: (_, constraints) {
-              layouts[page]++;
-              return Text('queued-$page');
-            },
-          ),
-        ),
-      ),
-    );
-    Timer(UiInteractionCoordinator.instance.idleDelay, () {
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    });
-    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-    await tester.pump();
-    expect(layouts, [1, 0]);
-    await tester.pumpWidget(const SizedBox.shrink());
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pump();
-  });
-
-  testWidgets('cancelled idle layout cannot mark an old size as prepared', (
-    tester,
-  ) async {
-    final index = ValueNotifier<int>(0);
-    final width = ValueNotifier<double>(300);
-    addTearDown(index.dispose);
-    addTearDown(width.dispose);
-    final sizes = [0.0, 0.0];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Center(
-          child: ValueListenableBuilder<double>(
-            valueListenable: width,
-            builder: (_, extent, _) => SizedBox(
-              width: extent,
-              height: 300,
-              child: AppFadeThroughIndexedStack.lazy(
-                indexListenable: index,
-                prepareAdjacentPage: true,
-                itemCount: 2,
-                itemBuilder: (_, page) => LayoutBuilder(
-                  builder: (_, constraints) {
-                    sizes[page] = constraints.maxWidth;
-                    return Text('cancelled-size-$page');
-                  },
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-    await tester.pump();
-    expect(sizes, [300, 300]);
-    width.value = 400;
-    await tester.pump();
-    expect(sizes, [400, 300]);
-    Timer(UiInteractionCoordinator.instance.idleDelay, () {
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    });
-    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-    expect(sizes, [400, 300]);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-    await tester.pump();
-    expect(sizes, [400, 400]);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
   testWidgets('zero duration does not prepare or flash neighbouring content', (
     tester,
   ) async {
@@ -1929,7 +2336,6 @@ void main() {
       MaterialApp(
         home: AppFadeThroughIndexedStack.lazy(
           indexListenable: index,
-          prepareAdjacentPage: true,
           duration: Duration.zero,
           itemCount: 2,
           itemBuilder: (_, page) {
@@ -2381,6 +2787,8 @@ void main() {
 
     index.value = 0;
     await tester.pump();
+    expect(TickerMode.valuesOf(tester.element(hidden)).enabled, isFalse);
+    await tester.pumpAndSettle();
     expect(TickerMode.valuesOf(tester.element(hidden)).enabled, isTrue);
   });
 

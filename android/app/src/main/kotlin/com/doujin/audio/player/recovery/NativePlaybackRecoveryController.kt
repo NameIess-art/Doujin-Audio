@@ -32,6 +32,12 @@ internal interface NativePlaybackRecoveryHost {
     fun establishForegroundPlayback(sessionId: String): Boolean
     fun focusSession(sessionId: String)
     fun ensurePlayer(session: NativePlaybackSession): ExoPlayer
+    fun prepareRecoveryQueue(
+        sessionId: String,
+        queue: List<NativeMediaItemDescriptor>,
+        isCurrent: () -> Boolean,
+        complete: (Result<NativePlaybackQueue>) -> Unit
+    )
     fun onRecoveryTimedOut(sessionId: String)
     fun publishSession(sessionId: String)
     fun publishAllSessions()
@@ -297,7 +303,7 @@ internal class NativePlaybackRecoveryController(
     private val retryTasks = mutableMapOf<String, Runnable>()
     private val healthStates = mutableMapOf<String, NativePlaybackHealthState>()
     private val recoveryBaselines = mutableMapOf<String, NativePlaybackHealthSample>()
-    private val recovering = linkedSetOf<String>()
+    private val recovering = mutableMapOf<String, Any>()
     private val candidateFallbackPending = linkedSetOf<String>()
     private var triggerInProgress = false
     private val startedAt = mutableMapOf<String, Long>()
@@ -316,6 +322,8 @@ internal class NativePlaybackRecoveryController(
     fun isIntended(sessionId: String): Boolean = sessionId in intended
 
     fun isPending(sessionId: String): Boolean = sessionId in pending
+
+    fun isRecovering(sessionId: String): Boolean = sessionId in recovering
 
     fun markIntended(sessionId: String) {
         intended += sessionId
@@ -554,35 +562,74 @@ internal class NativePlaybackRecoveryController(
             host.syncForeground()
             return
         }
-        recovering += sessionId
-        try {
-            host.focusSession(sessionId)
-            session.applyFadeMultiplier(1f)
-            if (candidateFallbackPending.remove(sessionId) && session.advanceToNextPlaybackUri()) {
-                host.logInfo(
-                    "playback_candidate_advanced sessionId=$sessionId uri=${session.uri}",
-                    session
+        val recovery = Any()
+        recovering[sessionId] = recovery
+        val queueRevision = session.queueRevision
+        val definitionRevision = session.definitionRevision
+        val transportCommandId = session.transportCommandId
+        val queueIndex = session.queueIndex
+        val path = session.path
+        val uri = session.uri
+        fun isCurrent() = recovering[sessionId] === recovery &&
+            host.session(sessionId) === session && sessionId in intended &&
+            session.queueRevision == queueRevision &&
+            session.definitionRevision == definitionRevision &&
+            session.transportCommandId == transportCommandId &&
+            session.path == path && session.uri == uri && session.queueIndex == queueIndex
+
+        fun completeRecovery(prepared: Result<NativePlaybackQueue>?) {
+            if (!isCurrent()) {
+                if (recovering[sessionId] === recovery) recovering.remove(sessionId)
+                return
+            }
+            if (recoveryDurationExceeded(sessionId)) {
+                timeOutRecovery(sessionId)
+                return
+            }
+            if (host.interruptionActive) {
+                recovering.remove(sessionId)
+                scheduleRetry(sessionId, attempts.getOrDefault(sessionId, 0))
+                return
+            }
+            try {
+                val preparedQueue = prepared?.getOrThrow()
+                host.focusSession(sessionId)
+                session.applyFadeMultiplier(1f)
+                session.reprepareCurrentMediaItem(preparedQueue)
+                if (preparedQueue != null) {
+                    candidateFallbackPending.remove(sessionId)
+                    host.logInfo(
+                        "playback_candidate_advanced sessionId=$sessionId uri=${session.uri}",
+                        session
+                    )
+                }
+                host.ensurePlayer(session).play()
+                (captureHealth(sessionId) ?: currentHealth)?.let {
+                    recoveryBaselines[sessionId] = it
+                }
+                host.publishSession(sessionId)
+                host.schedulePersist()
+                host.syncForeground()
+                scheduleRetry(sessionId, attempts.getOrDefault(sessionId, 0))
+            } catch (error: Exception) {
+                host.logWarn(
+                    "playback_recovery_failed sessionId=$sessionId trigger=$reason",
+                    session,
+                    error as? PlaybackException
                 )
+                scheduleRetry(sessionId, attempts.getOrDefault(sessionId, 0))
+                host.syncForeground()
+            } finally {
+                if (recovering[sessionId] === recovery) recovering.remove(sessionId)
             }
-            session.reprepareCurrentMediaItem()
-            host.ensurePlayer(session).play()
-            (captureHealth(sessionId) ?: currentHealth)?.let {
-                recoveryBaselines[sessionId] = it
-            }
-            host.publishSession(sessionId)
-            host.schedulePersist()
-            host.syncForeground()
-            scheduleRetry(sessionId, attempts.getOrDefault(sessionId, 0))
-        } catch (error: Exception) {
-            host.logWarn(
-                "playback_recovery_failed sessionId=$sessionId trigger=$reason",
-                session,
-                error as? PlaybackException
-            )
-            scheduleRetry(sessionId, attempts.getOrDefault(sessionId, 0))
-            host.syncForeground()
-        } finally {
-            recovering -= sessionId
+        }
+        val candidateQueue = if (sessionId in candidateFallbackPending) {
+            session.nextPlaybackCandidateQueue()
+        } else null
+        if (candidateQueue == null) {
+            completeRecovery(null)
+        } else {
+            host.prepareRecoveryQueue(sessionId, candidateQueue, ::isCurrent, ::completeRecovery)
         }
     }
 
@@ -629,6 +676,7 @@ internal class NativePlaybackRecoveryController(
                 clear(sessionId)
                 return@forEach
             }
+            if (sessionId in recovering) return@forEach
             val player = session.playerOrNull()
             if (player == null) {
                 if (session.uri == null) {

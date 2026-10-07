@@ -146,89 +146,179 @@ class AppPageHeaderTransition extends StatelessWidget {
   }
 }
 
-Widget _buildCoveringPageTransition({
-  required BuildContext context,
-  required GlobalKey contentKey,
-  required Animation<double> animation,
-  required Animation<double> secondaryAnimation,
-  required Widget child,
-  bool workDetailTransition = false,
-}) {
-  if (MediaQuery.disableAnimationsOf(context)) return child;
-  final position = animation.drive(
-    Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).chain(
-      CurveTween(
-        curve: workDetailTransition
-            ? const Cubic(0.215, 0.61, 0.355, 1)
-            : Curves.easeOutCubic,
+class _CoveringPageTransition extends StatefulWidget {
+  const _CoveringPageTransition({
+    required this.contentKey,
+    required this.animation,
+    required this.secondaryAnimation,
+    this.workDetailTransition = false,
+    required this.child,
+  });
+
+  final GlobalKey contentKey;
+  final Animation<double> animation;
+  final Animation<double> secondaryAnimation;
+  final bool workDetailTransition;
+  final Widget child;
+
+  @override
+  State<_CoveringPageTransition> createState() =>
+      _CoveringPageTransitionState();
+}
+
+class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
+  late Animation<Offset> _position;
+  late Listenable _headerAnimation;
+  late bool _interactive;
+  Widget? _transition;
+
+  bool get _isInteractive =>
+      widget.animation.status == AnimationStatus.completed &&
+      widget.secondaryAnimation.status == AnimationStatus.dismissed;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateAnimations();
+    _interactive = _isInteractive;
+    _listenToStatus(widget);
+  }
+
+  void _listenToStatus(_CoveringPageTransition transition) {
+    transition.animation.addStatusListener(_handleStatusChanged);
+    transition.secondaryAnimation.addStatusListener(_handleStatusChanged);
+  }
+
+  void _stopListeningToStatus(_CoveringPageTransition transition) {
+    transition.animation.removeStatusListener(_handleStatusChanged);
+    transition.secondaryAnimation.removeStatusListener(_handleStatusChanged);
+  }
+
+  void _updateAnimations() {
+    _position = widget.animation.drive(
+      Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).chain(
+        CurveTween(
+          curve: widget.workDetailTransition
+              ? const Cubic(0.215, 0.61, 0.355, 1)
+              : Curves.easeOutCubic,
+        ),
       ),
-    ),
-  );
-  final transition = ClipRect(
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final page = _AppPageMotionScope(
-          key: contentKey,
-          configuration: (
-            animation,
-            secondaryAnimation,
-            constraints.maxWidth,
-            workDetailTransition,
-          ),
-          contentBuilder: (context, content) => workDetailTransition
-              ? AnimatedBuilder(
-                  animation: position,
-                  child: RepaintBoundary(child: content),
-                  builder: (context, content) => Transform.translate(
-                    offset: Offset(constraints.maxWidth * position.value.dx, 0),
-                    child: content,
-                  ),
-                )
-              : RepaintBoundary(child: content),
-          headerBuilder: (context, header) => AnimatedBuilder(
-            animation: Listenable.merge([animation, secondaryAnimation]),
-            child: workDetailTransition
-                ? RepaintBoundary(child: header)
-                : header,
-            builder: (context, header) {
-              final incoming = Curves.easeOutCubic.transform(
-                (animation.value / 0.6).clamp(0.0, 1.0),
-              );
-              final outgoing = Curves.easeOutCubic.transform(
-                (secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
-              );
-              final fadedHeader = Opacity(
-                opacity: incoming * (1 - outgoing),
-                child: header,
-              );
-              if (workDetailTransition) return fadedHeader;
-              // Generic routes translate the whole page; cancel that motion
-              // for headers narrower than the page so menus change in place.
-              return Transform.translate(
-                offset: Offset(-constraints.maxWidth * position.value.dx, 0),
-                child: fadedHeader,
-              );
-            },
-          ),
-          child: child,
-        );
-        // Keep header fades out of the moving content's recording/cache layer.
-        // Every detail region moves in route coordinates, including overlays.
-        return workDetailTransition
-            ? page
-            : SlideTransition(
-                position: position,
-                child: RepaintBoundary(child: page),
-              );
-      },
-    ),
-  );
-  final interactive =
-      animation.status == AnimationStatus.completed &&
-      secondaryAnimation.status == AnimationStatus.dismissed;
-  // Record a quiet page layer while sliding; skeletons and child animations
-  // resume with input and semantics only after both route motions finish.
-  return _buildPageActivity(transition, interactive: interactive);
+    );
+    _headerAnimation = Listenable.merge([
+      widget.animation,
+      widget.secondaryAnimation,
+    ]);
+  }
+
+  @override
+  void didUpdateWidget(_CoveringPageTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final animationsChanged =
+        oldWidget.animation != widget.animation ||
+        oldWidget.secondaryAnimation != widget.secondaryAnimation;
+    if (animationsChanged) {
+      _stopListeningToStatus(oldWidget);
+      _listenToStatus(widget);
+      _interactive = _isInteractive;
+    }
+    if (animationsChanged ||
+        oldWidget.workDetailTransition != widget.workDetailTransition) {
+      _updateAnimations();
+      _transition = null;
+    }
+    if (oldWidget.contentKey != widget.contentKey ||
+        oldWidget.child != widget.child) {
+      _transition = null;
+    }
+  }
+
+  void _handleStatusChanged(AnimationStatus _) {
+    final interactive = _isInteractive;
+    if (_interactive == interactive) return;
+    setState(() => _interactive = interactive);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _transition = null;
+  }
+
+  @override
+  void dispose() {
+    _stopListeningToStatus(widget);
+    super.dispose();
+  }
+
+  Widget _buildTransition() =>
+      ClipRect(child: LayoutBuilder(builder: _buildPage));
+
+  Widget _buildPage(BuildContext context, BoxConstraints constraints) {
+    final page = _AppPageMotionScope(
+      key: widget.contentKey,
+      configuration: (
+        widget.animation,
+        widget.secondaryAnimation,
+        constraints.maxWidth,
+        widget.workDetailTransition,
+      ),
+      contentBuilder: (context, content) => widget.workDetailTransition
+          ? AnimatedBuilder(
+              animation: _position,
+              child: RepaintBoundary(child: content),
+              builder: (context, content) => Transform.translate(
+                offset: Offset(constraints.maxWidth * _position.value.dx, 0),
+                child: content,
+              ),
+            )
+          : RepaintBoundary(child: content),
+      headerBuilder: (context, header) => AnimatedBuilder(
+        animation: _headerAnimation,
+        child: widget.workDetailTransition
+            ? RepaintBoundary(child: header)
+            : header,
+        builder: (context, header) {
+          final incoming = Curves.easeOutCubic.transform(
+            (widget.animation.value / 0.6).clamp(0.0, 1.0),
+          );
+          final outgoing = Curves.easeOutCubic.transform(
+            (widget.secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
+          );
+          final fadedHeader = Opacity(
+            opacity: incoming * (1 - outgoing),
+            child: header,
+          );
+          if (widget.workDetailTransition) return fadedHeader;
+          // Generic routes translate the whole page; cancel that motion
+          // for headers narrower than the page so menus change in place.
+          return Transform.translate(
+            offset: Offset(-constraints.maxWidth * _position.value.dx, 0),
+            child: fadedHeader,
+          );
+        },
+      ),
+      child: widget.child,
+    );
+    // Keep header fades out of the moving content's recording/cache layer.
+    // Every detail region moves in route coordinates, including overlays.
+    return widget.workDetailTransition
+        ? page
+        : SlideTransition(
+            position: _position,
+            child: RepaintBoundary(child: page),
+          );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return widget.child;
+    // Route builders run on every tick. Reuse the region tree and animations;
+    // only its transform/fade render objects need to observe animation values.
+    return _buildPageActivity(
+      _transition ??= _buildTransition(),
+      interactive: _interactive,
+    );
+  }
 }
 
 Widget _buildPageActivity(Widget child, {required bool interactive}) {
@@ -242,6 +332,94 @@ Widget _buildPageActivity(Widget child, {required bool interactive}) {
       ),
     ),
   );
+}
+
+class AppMenuContentTransition extends StatefulWidget {
+  const AppMenuContentTransition({
+    super.key,
+    required this.primary,
+    this.secondary,
+  });
+
+  final Widget primary;
+  final Widget? secondary;
+
+  @override
+  State<AppMenuContentTransition> createState() =>
+      _AppMenuContentTransitionState();
+}
+
+class _AppMenuContentTransitionState extends State<AppMenuContentTransition>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  Widget? _secondary;
+
+  @override
+  void initState() {
+    super.initState();
+    _secondary = widget.secondary;
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: _secondary == null ? 0 : 1,
+    )..addStatusListener(_handleStatus);
+    _opacity = _controller.drive(CurveTween(curve: Curves.easeInOutCubic));
+  }
+
+  void _handleStatus(AnimationStatus status) {
+    if (status == AnimationStatus.dismissed && _secondary != null) {
+      setState(() => _secondary = null);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.value = widget.secondary == null ? 0 : 1;
+    }
+  }
+
+  @override
+  void didUpdateWidget(AppMenuContentTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.secondary != null) _secondary = widget.secondary;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _secondary = widget.secondary;
+      _controller.value = _secondary == null ? 0 : 1;
+    } else if (oldWidget.secondary == null && widget.secondary != null) {
+      unawaited(_controller.forward());
+    } else if (oldWidget.secondary != null && widget.secondary == null) {
+      unawaited(_controller.reverse());
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.topLeft,
+      children: [
+        _buildPageActivity(widget.primary, interactive: _secondary == null),
+        if (_secondary != null)
+          Positioned.fill(
+            child: FadeTransition(
+              opacity: _opacity,
+              child: _buildPageActivity(
+                _secondary!,
+                interactive: widget.secondary != null,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 class AppHeaderTransition extends StatelessWidget {
@@ -262,70 +440,7 @@ class AppHeaderTransition extends StatelessWidget {
         alignment: Alignment.topLeft,
         children: [...previousChildren, ?currentChild],
       ),
-      transitionBuilder: (child, animation) => buildAppFadeTransition(
-        context: context,
-        animation: animation,
-        child: child,
-      ),
       child: child,
-    );
-  }
-}
-
-class AppHeaderLeadingTransition extends StatelessWidget {
-  const AppHeaderLeadingTransition({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) return child;
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 360),
-      curve: Curves.easeOutBack,
-      builder: (context, value, _) {
-        final scale = 0.4 + (0.6 * value);
-        final turns = (1.0 - value) * -0.25;
-        return Opacity(
-          opacity: value.clamp(0.0, 1.0),
-          child: Transform.scale(
-            scale: scale,
-            child: Transform.rotate(
-              angle: turns * 2 * 3.141592653589793,
-              child: child,
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class AppHeaderActionTransition extends StatelessWidget {
-  const AppHeaderActionTransition({
-    super.key,
-    required this.child,
-    this.delayIndex = 0,
-  });
-
-  final Widget child;
-  final int delayIndex;
-
-  @override
-  Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) return child;
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0.0, end: 1.0),
-      duration: Duration(milliseconds: 320 + delayIndex * 45),
-      curve: Curves.easeOutCubic,
-      builder: (context, value, _) {
-        final scale = 0.5 + (0.5 * value);
-        return Opacity(
-          opacity: value.clamp(0.0, 1.0),
-          child: Transform.scale(scale: scale, child: child),
-        );
-      },
     );
   }
 }
@@ -377,9 +492,8 @@ class _PlaceholderContentTransitionState
     super.initState();
     _controller = AnimationController(vsync: this, duration: widget.duration)
       ..addStatusListener(_handleAnimationStatus);
-    final crossFade = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOutCubic,
+    final crossFade = _controller.drive(
+      CurveTween(curve: Curves.easeInOutCubic),
     );
     _contentOpacity = crossFade;
     _placeholderOpacity = ReverseAnimation(crossFade);
@@ -565,7 +679,7 @@ class UndoableRemovalTransition extends StatefulWidget {
 class _UndoableRemovalTransitionState extends State<UndoableRemovalTransition>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late Animation<double> _animation;
+  late final CurvedAnimation _animation;
 
   @override
   void initState() {
@@ -575,10 +689,6 @@ class _UndoableRemovalTransitionState extends State<UndoableRemovalTransition>
       duration: widget.duration,
       value: widget.hidden ? 0.0 : 1.0,
     );
-    _updateAnimation();
-  }
-
-  void _updateAnimation() {
     _animation = CurvedAnimation(
       parent: _controller,
       curve: widget.reverseCurve,
@@ -594,7 +704,8 @@ class _UndoableRemovalTransitionState extends State<UndoableRemovalTransition>
     }
     if (widget.curve != oldWidget.curve ||
         widget.reverseCurve != oldWidget.reverseCurve) {
-      _updateAnimation();
+      _animation.curve = widget.reverseCurve;
+      _animation.reverseCurve = widget.curve;
     }
     if (widget.hidden != oldWidget.hidden) {
       if (MediaQuery.disableAnimationsOf(context) ||
@@ -610,6 +721,7 @@ class _UndoableRemovalTransitionState extends State<UndoableRemovalTransition>
 
   @override
   void dispose() {
+    _animation.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -651,17 +763,12 @@ Widget buildAppScaleFadeTransition({
   Curve reverseCurve = Curves.easeInCubic,
 }) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
-  final curved = CurvedAnimation(
-    parent: animation,
+  return _AppFadeTransition(
+    animation: animation,
     curve: curve,
     reverseCurve: reverseCurve,
-  );
-  return FadeTransition(
-    opacity: curved,
-    child: ScaleTransition(
-      scale: Tween<double>(begin: beginScale, end: 1).animate(curved),
-      child: child,
-    ),
+    beginScale: beginScale,
+    child: child,
   );
 }
 
@@ -673,12 +780,99 @@ Widget buildAppFadeTransition({
   Curve reverseCurve = Curves.easeInCubic,
 }) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
-  final curved = CurvedAnimation(
-    parent: animation,
+  return _AppFadeTransition(
+    animation: animation,
     curve: curve,
     reverseCurve: reverseCurve,
+    child: child,
   );
-  return FadeTransition(opacity: curved, child: child);
+}
+
+// The route can outlive many parent rebuilds. Own its curve listener here,
+// rather than adding another listener each time a transition is built.
+class _AppFadeTransition extends StatefulWidget {
+  const _AppFadeTransition({
+    required this.animation,
+    required this.curve,
+    required this.reverseCurve,
+    required this.child,
+    this.beginScale,
+  });
+
+  final Animation<double> animation;
+  final Curve curve;
+  final Curve reverseCurve;
+  final double? beginScale;
+  final Widget child;
+
+  @override
+  State<_AppFadeTransition> createState() => _AppFadeTransitionState();
+}
+
+class _AppFadeTransitionState extends State<_AppFadeTransition> {
+  CurvedAnimation? _curved;
+  late Animation<double> _opacity;
+  Animation<double>? _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateAnimations();
+  }
+
+  void _updateAnimations() {
+    _curved?.dispose();
+    _curved = widget.curve == widget.reverseCurve
+        ? null
+        : CurvedAnimation(
+            parent: widget.animation,
+            curve: widget.curve,
+            reverseCurve: widget.reverseCurve,
+          );
+    _opacity =
+        _curved ?? widget.animation.drive(CurveTween(curve: widget.curve));
+    _updateScale();
+  }
+
+  void _updateScale() {
+    _scale = widget.beginScale == null
+        ? null
+        : _opacity.drive(Tween<double>(begin: widget.beginScale!, end: 1));
+  }
+
+  @override
+  void didUpdateWidget(_AppFadeTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation) {
+      _updateAnimations();
+    } else if (oldWidget.curve != widget.curve ||
+        oldWidget.reverseCurve != widget.reverseCurve) {
+      if (_curved != null && widget.curve != widget.reverseCurve) {
+        // Retain CurvedAnimation's direction while an early dismissal reverses.
+        _curved!.curve = widget.curve;
+        _curved!.reverseCurve = widget.reverseCurve;
+        _updateScale();
+      } else {
+        _updateAnimations();
+      }
+    } else if (oldWidget.beginScale != widget.beginScale) {
+      _updateScale();
+    }
+  }
+
+  @override
+  void dispose() {
+    _curved?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+    opacity: _opacity,
+    child: _scale == null
+        ? widget.child
+        : ScaleTransition(scale: _scale!, child: widget.child),
+  );
 }
 
 class AppFadeThroughIndexedStack extends StatefulWidget {
@@ -687,7 +881,6 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     required this.indexListenable,
     required this.children,
     this.separateHeader = false,
-    this.prepareAdjacentPage = false,
     this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
   }) : itemCount = children.length,
@@ -701,7 +894,6 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     required IndexedWidgetBuilder this.itemBuilder,
     this.contentRevision,
     this.separateHeader = false,
-    this.prepareAdjacentPage = false,
     this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
   }) : children = List<Widget>.filled(itemCount, const SizedBox.shrink());
@@ -717,8 +909,6 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
   final Object? contentRevision;
   final bool separateHeader;
 
-  /// Prepare one neighbouring page after idle without selecting it.
-  final bool prepareAdjacentPage;
   final Duration duration;
   final ValueChanged<int>? onTransitionCompleted;
 
@@ -728,8 +918,12 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
 }
 
 class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  late final Animation<double> _progress;
+  late final Animation<double> _reverseProgress;
+  late final List<Animation<Offset>> _incomingPositions;
+  late final List<Animation<Offset>> _outgoingPositions;
   late int _currentIndex;
   late int _targetIndex;
   int _transitionDirection = 1;
@@ -741,10 +935,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   final Set<int> _preparedPages = {};
   BoxConstraints? _preparedConstraints;
   int? _pendingIndex;
-  int? _idlePreparationIndex;
-  Timer? _adjacentPreparationTimer;
-  bool _tickerEnabled = false;
-  bool _animationsDisabled = false;
 
   bool get _isLazy => widget.itemBuilder != null;
   int get _itemCount => widget.itemCount;
@@ -762,64 +952,17 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       reverseDuration: widget.duration,
     )..addStatusListener(_handleStatusChanged);
     _controller.value = 1;
+    _progress = _controller.drive(CurveTween(curve: Curves.decelerate));
+    _reverseProgress = ReverseAnimation(_progress);
+    _incomingPositions = [
+      for (final direction in [-1.0, 1.0])
+        _progress.drive(Tween(begin: Offset(direction, 0), end: Offset.zero)),
+    ];
+    _outgoingPositions = [
+      for (final direction in [-1.0, 1.0])
+        _progress.drive(Tween(begin: Offset.zero, end: Offset(-direction, 0))),
+    ];
     widget.indexListenable.addListener(_handleIndexChanged);
-    WidgetsBinding.instance.addObserver(this);
-    UiInteractionCoordinator.instance.addListener(_scheduleAdjacentPreparation);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _tickerEnabled = TickerMode.valuesOf(context).enabled;
-    _animationsDisabled = MediaQuery.disableAnimationsOf(context);
-    _scheduleAdjacentPreparation();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    _scheduleAdjacentPreparation();
-  }
-
-  int? get _adjacentIndex {
-    if (_itemCount < 2) return null;
-    return _currentIndex + 1 < _itemCount
-        ? _currentIndex + 1
-        : _currentIndex - 1;
-  }
-
-  void _scheduleAdjacentPreparation() {
-    final coordinator = UiInteractionCoordinator.instance;
-    _adjacentPreparationTimer?.cancel();
-    _adjacentPreparationTimer = null;
-    if (!_canPrepareAdjacentPage) {
-      if (_idlePreparationIndex != null) {
-        setState(() => _idlePreparationIndex = null);
-      }
-      return;
-    }
-    if (_idlePreparationIndex != null) return;
-    final adjacent = _adjacentIndex;
-    if (adjacent == null || _preparedPages.contains(adjacent)) return;
-    // Keep startup and the navigation quiet tail free of speculative layout.
-    // Only one neighbour is built; no index changes or feature activation occur.
-    _adjacentPreparationTimer = Timer(coordinator.idleDelay, () {
-      _adjacentPreparationTimer = null;
-      if (!_canPrepareAdjacentPage || adjacent != _adjacentIndex) return;
-      setState(() => _idlePreparationIndex = adjacent);
-    });
-  }
-
-  bool get _canPrepareAdjacentPage {
-    final lifecycle = WidgetsBinding.instance.lifecycleState;
-    return mounted &&
-        widget.prepareAdjacentPage &&
-        widget.duration > Duration.zero &&
-        !_isAnimating &&
-        _pendingIndex == null &&
-        !UiInteractionCoordinator.instance.isInteracting &&
-        _tickerEnabled &&
-        !_animationsDisabled &&
-        (lifecycle == null || lifecycle == AppLifecycleState.resumed);
   }
 
   @override
@@ -863,7 +1006,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         }
       }
     }
-    _scheduleAdjacentPreparation();
   }
 
   void _resetLazyChildren() {
@@ -886,7 +1028,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _controller.stop();
     _dirtyChildren.clear();
     _pendingIndex = null;
-    _idlePreparationIndex = null;
     _preparedPages.removeWhere((index) => index >= _itemCount);
     _isAnimating = false;
     _currentIndex = _safeIndex(widget.indexListenable.value);
@@ -904,11 +1045,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   void _handleIndexChanged() {
     if (!mounted || _itemCount == 0) return;
     final nextIndex = _safeIndex(widget.indexListenable.value);
-    _adjacentPreparationTimer?.cancel();
-    _adjacentPreparationTimer = null;
-    if (_idlePreparationIndex != null) {
-      setState(() => _idlePreparationIndex = null);
-    }
     if (_pendingIndex != null) setState(() => _pendingIndex = null);
     if (nextIndex == _targetIndex) {
       if (_isAnimating && _preparedPages.contains(nextIndex)) {
@@ -1017,8 +1153,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     final visible =
         index == _currentIndex ||
         index == _targetIndex ||
-        index == _pendingIndex ||
-        index == _idlePreparationIndex;
+        index == _pendingIndex;
     if (!visible) {
       return _lazyChildren[index] ?? const SizedBox.shrink();
     }
@@ -1033,11 +1168,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   @override
   void dispose() {
     widget.indexListenable.removeListener(_handleIndexChanged);
-    WidgetsBinding.instance.removeObserver(this);
-    UiInteractionCoordinator.instance.removeListener(
-      _scheduleAdjacentPreparation,
-    );
-    _adjacentPreparationTimer?.cancel();
     UiInteractionCoordinator.instance.cancelNavigation(_transitionInteraction);
     _controller.dispose();
     super.dispose();
@@ -1047,16 +1177,14 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     required Widget child,
     required bool visible,
     required bool preparing,
-    required bool idlePreparing,
   }) {
-    final ticking = visible && !preparing;
-    final interactive = ticking && !_isAnimating && _pendingIndex == null;
+    final interactive =
+        visible && !preparing && !_isAnimating && _pendingIndex == null;
     return _AppPageOffstage(
-      offstage: !visible || idlePreparing,
-      prepareLayout: idlePreparing,
+      offstage: !visible,
       onVisibleLayout: _handleVisiblePageLayout,
       child: TickerMode(
-        enabled: ticking,
+        enabled: interactive,
         child: ExcludeFocus(
           excluding: !interactive,
           child: ExcludeSemantics(
@@ -1073,7 +1201,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     required bool outgoing,
     required bool incoming,
   }) {
-    final preparing = index == _pendingIndex || index == _idlePreparationIndex;
+    final preparing = index == _pendingIndex;
     final visible =
         preparing ||
         outgoing ||
@@ -1088,9 +1216,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         final boundary = pageKey.currentContext?.findRenderObject();
         if (boundary is! RenderBox || !boundary.hasSize) return;
         _preparedPages.add(index);
-        if (_idlePreparationIndex == index) {
-          setState(() => _idlePreparationIndex = null);
-        }
         if (_pendingIndex == index) {
           _handleIndexChanged();
         }
@@ -1100,7 +1225,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       child: _childAt(index),
       visible: visible,
       preparing: preparing,
-      idlePreparing: index == _idlePreparationIndex,
     );
     if (widget.duration == Duration.zero) {
       return KeyedSubtree(
@@ -1113,14 +1237,19 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         : outgoing || incoming
         ? _controller
         : const AlwaysStoppedAnimation<double>(1);
-    final progress = animation.drive(CurveTween(curve: Curves.decelerate));
-    final direction = _transitionDirection.toDouble();
-    final position = progress.drive(
-      Tween<Offset>(
-        begin: incoming || preparing ? Offset(direction, 0) : Offset.zero,
-        end: outgoing ? Offset(-direction, 0) : Offset.zero,
-      ),
-    );
+    final directionIndex = _transitionDirection < 0 ? 0 : 1;
+    final Animation<Offset> position;
+    if (preparing) {
+      position = _transitionDirection < 0
+          ? const AlwaysStoppedAnimation<Offset>(Offset(-1, 0))
+          : const AlwaysStoppedAnimation<Offset>(Offset(1, 0));
+    } else if (incoming) {
+      position = _incomingPositions[directionIndex];
+    } else if (outgoing) {
+      position = _outgoingPositions[directionIndex];
+    } else {
+      position = const AlwaysStoppedAnimation<Offset>(Offset.zero);
+    }
     if (!widget.separateHeader) {
       return KeyedSubtree(
         key: ValueKey<String>('app_indexed_page_$index'),
@@ -1151,9 +1280,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           opacity: preparing
               ? const AlwaysStoppedAnimation<double>(0)
               : outgoing
-              ? ReverseAnimation(progress)
+              ? _reverseProgress
               : incoming
-              ? progress
+              ? _progress
               : const AlwaysStoppedAnimation<double>(1),
           child: header,
         ),
@@ -1170,7 +1299,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         if (index != _currentIndex &&
             index != _targetIndex &&
             index != _pendingIndex &&
-            index != _idlePreparationIndex &&
             (!_isLazy || _lazyChildren[index] != null))
           index,
       _currentIndex,
@@ -1179,11 +1307,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           _pendingIndex != _targetIndex &&
           _pendingIndex != _currentIndex)
         _pendingIndex!,
-      if (_idlePreparationIndex != null &&
-          _idlePreparationIndex != _currentIndex &&
-          _idlePreparationIndex != _targetIndex &&
-          _idlePreparationIndex != _pendingIndex)
-        _idlePreparationIndex!,
     ];
     return IgnorePointer(
       ignoring: _isAnimating || _pendingIndex != null,
@@ -1213,10 +1336,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         (index) =>
             index != _currentIndex &&
             index != _targetIndex &&
-            index != _pendingIndex &&
-            index != _idlePreparationIndex,
+            index != _pendingIndex,
       );
-      _scheduleAdjacentPreparation();
     }
   }
 }
@@ -1224,19 +1345,16 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
 class _AppPageOffstage extends Offstage {
   const _AppPageOffstage({
     required super.offstage,
-    required this.prepareLayout,
     required this.onVisibleLayout,
     required super.child,
   });
 
   final ValueChanged<BoxConstraints> onVisibleLayout;
-  final bool prepareLayout;
 
   @override
   RenderOffstage createRenderObject(BuildContext context) =>
       _RenderAppPageOffstage(
         offstage: offstage,
-        prepareLayout: prepareLayout,
         onVisibleLayout: onVisibleLayout,
       );
 
@@ -1247,23 +1365,14 @@ class _AppPageOffstage extends Offstage {
   ) {
     super.updateRenderObject(context, renderObject);
     renderObject.onVisibleLayout = onVisibleLayout;
-    renderObject.prepareLayout = prepareLayout;
   }
 }
 
 class _RenderAppPageOffstage extends RenderOffstage {
   _RenderAppPageOffstage({
     required super.offstage,
-    required bool prepareLayout,
     required this.onVisibleLayout,
-  }) : _prepareLayout = prepareLayout;
-
-  bool _prepareLayout;
-  set prepareLayout(bool value) {
-    if (_prepareLayout == value) return;
-    _prepareLayout = value;
-    markNeedsLayout();
-  }
+  });
 
   ValueChanged<BoxConstraints> onVisibleLayout;
 
@@ -1273,7 +1382,7 @@ class _RenderAppPageOffstage extends RenderOffstage {
     // element tree (scroll, expansion and provider state) without traversing a
     // cached list on each frame or window resize. Activation lays it out using
     // the latest constraints before painting or accepting input.
-    if (!offstage || _prepareLayout) {
+    if (!offstage) {
       onVisibleLayout(constraints);
       super.performLayout();
     }
@@ -1297,8 +1406,7 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return _buildCoveringPageTransition(
-      context: context,
+    return _CoveringPageTransition(
       contentKey: GlobalObjectKey(route),
       animation: animation,
       secondaryAnimation: secondaryAnimation,
@@ -1332,13 +1440,12 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
       if (duration == Duration.zero) return routedChild;
       if (MediaQuery.disableAnimationsOf(context)) return routedChild;
-      return _buildCoveringPageTransition(
-        context: context,
+      return _CoveringPageTransition(
         contentKey: contentKey,
         animation: animation,
         secondaryAnimation: secondaryAnimation,
-        child: routedChild,
         workDetailTransition: workDetailTransition,
+        child: routedChild,
       );
     },
   );

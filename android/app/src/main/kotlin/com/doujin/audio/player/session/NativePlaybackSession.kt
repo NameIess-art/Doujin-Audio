@@ -224,6 +224,9 @@ internal class NativePlaybackSession(
 
     fun playerOrNull(): ExoPlayer? = _player
 
+    val queueIndex: Int
+        get() = (_player?.currentMediaItemIndex ?: currentQueueIndexFor(queue)).coerceAtLeast(0)
+
     fun ensurePlayer(): ExoPlayer {
         _player?.let { return it }
         val p = createPlayer(
@@ -547,13 +550,13 @@ internal class NativePlaybackSession(
         return true
     }
 
-    fun reprepareCurrentMediaItem() {
+    fun reprepareCurrentMediaItem(preparedQueue: NativePlaybackQueue? = null) {
         val currentUri = uri ?: return
         val p = _player
         val currentPositionMs = p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
         val shouldResume = p?.let { it.playWhenReady || it.isPlaying } ?: lastPlayWhenReady
         val isRepeatOne = (p?.repeatMode == Player.REPEAT_MODE_ONE) || (p == null && repeatOne)
-        val descriptors = queue.takeIf { it.isNotEmpty() } ?: listOf(
+        val descriptors = preparedQueue?.descriptors ?: queue.takeIf { it.isNotEmpty() } ?: listOf(
             NativeMediaItemDescriptor(
                 path = path ?: currentUri,
                 uri = currentUri,
@@ -575,6 +578,7 @@ internal class NativePlaybackSession(
             repeatAll = repeatAll,
             shuffleModeEnabled = shuffleModeEnabled,
             autoPlay = shouldResume,
+            preparedQueue = preparedQueue,
         )
     }
 
@@ -583,27 +587,20 @@ internal class NativePlaybackSession(
         return descriptor.candidateUris.distinct().size > 1
     }
 
-    fun advanceToNextPlaybackUri(): Boolean {
-        val descriptors = queue.takeIf { it.isNotEmpty() } ?: return false
+    fun nextPlaybackCandidateQueue(): List<NativeMediaItemDescriptor>? {
+        val descriptors = queue.takeIf { it.isNotEmpty() } ?: return null
         val currentIndex = (playerOrNull()?.currentMediaItemIndex
             ?: currentQueueIndexFor(descriptors)).coerceIn(0, descriptors.lastIndex)
         val descriptor = descriptors[currentIndex]
         val ordered = descriptor.candidateUris.distinct()
-        if (ordered.size < 2) return false
+        if (ordered.size < 2) return null
         val currentUri = uri ?: descriptor.uri
         val candidateIndex = ordered.indexOf(currentUri).takeIf { it >= 0 } ?: 0
         val nextUri = ordered[(candidateIndex + 1) % ordered.size]
-        if (nextUri == currentUri) return false
+        if (nextUri == currentUri) return null
 
         val updated = descriptor.copy(uri = nextUri)
-        queue = descriptors.toMutableList().also { it[currentIndex] = updated }
-        queueStructure = NativePlaybackQueue(queue)
-        uri = nextUri
-        path = descriptor.path
-        title = descriptor.title
-        subtitle = descriptor.subtitle
-        artUri = descriptor.artUri
-        return true
+        return descriptors.toMutableList().also { it[currentIndex] = updated }
     }
 
     private fun currentQueueDescriptor(): NativeMediaItemDescriptor? {
@@ -656,7 +653,7 @@ internal class NativePlaybackSession(
             "channelSwap" to channelSwapEnabled,
             "audioEffects" to audioEffectsSnapshot(),
             "eqCapabilities" to eqCapabilitiesSnapshot(),
-            "queueIndex" to (p?.currentMediaItemIndex ?: currentQueueIndexFor(queue)).coerceAtLeast(0),
+            "queueIndex" to queueIndex,
             "transportCommandId" to transportCommandId,
             "queueRevision" to queueRevision,
             "error" to p?.playerError?.message

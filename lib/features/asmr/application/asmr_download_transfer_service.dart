@@ -567,26 +567,27 @@ class AsmrDownloadTransferService {
         mode: responseStart > 0 ? FileMode.append : FileMode.write,
       );
       try {
-        await for (final chunk in response.timeout(downloadIdleTimeout)) {
-          throwIfCancelled(workId);
-          received += chunk.length;
-          if (maxBytes != null && received > maxBytes) {
-            throw FileSystemException(
-              'Download exceeds the maximum allowed size.',
-              item.relativePath,
-            );
-          }
-          sink.add(chunk);
-
-          if (item.countsTowardByteProgress) {
-            _store.recordDownloadChunk(
-              workId,
-              item.relativePath,
-              chunk.length,
-              received,
-            );
-          }
-        }
+        await sink.addStream(
+          response.timeout(downloadIdleTimeout).map((chunk) {
+            throwIfCancelled(workId);
+            received += chunk.length;
+            if (maxBytes != null && received > maxBytes) {
+              throw FileSystemException(
+                'Download exceeds the maximum allowed size.',
+                item.relativePath,
+              );
+            }
+            if (item.countsTowardByteProgress) {
+              _store.recordDownloadChunk(
+                workId,
+                item.relativePath,
+                chunk.length,
+                received,
+              );
+            }
+            return chunk;
+          }),
+        );
         await sink.flush();
       } finally {
         await sink.close();

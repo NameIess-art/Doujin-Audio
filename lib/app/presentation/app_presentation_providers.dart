@@ -193,8 +193,19 @@ final librarySortedTreeUiProvider = Provider<List<LibraryNode>>((ref) {
       )
       .toSet();
   if (criterion == LibrarySortCriterion.voiceActor ||
-      criterion == LibrarySortCriterion.releaseDate) {
-    ref.watch(libraryDetailRevisionProvider);
+      criterion == LibrarySortCriterion.releaseDate ||
+      (workNameDisplay == WorkNameDisplay.workTitle &&
+          sortedInput.nodes.any(
+            (node) => node is FolderNode && node.isModuleNode,
+          ))) {
+    ref.watch(
+      libraryStateProvider.select(
+        (state) => (
+          state.value?.detailRevision,
+          state.value?.categorySnapshotRevision,
+        ),
+      ),
+    );
   }
   if (criterion != LibrarySortCriterion.name) {
     ref.watch(
@@ -210,10 +221,6 @@ final librarySortedTreeUiProvider = Provider<List<LibraryNode>>((ref) {
     groupByLibrary: groupByLibrary,
     library: libraryFacade,
     workNameDisplay: workNameDisplay,
-    // Read each card's detail provider, including works outside the viewport.
-    detailForTarget: workNameDisplay == WorkNameDisplay.workTitle
-        ? (target) => ref.watch(libraryDetailForTargetProvider(target)).value
-        : null,
     pinnedPaths: pinnedPaths,
   );
 });

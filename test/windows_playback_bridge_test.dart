@@ -876,6 +876,97 @@ void main() {
   );
 
   test(
+    'long queue tail edits retain the decoder and untouched prefix',
+    () async {
+      final original = [
+        for (var i = 0; i < 10000; i++)
+          {'uri': 'https://example.com/$i.wav', 'path': '/$i', 'title': '$i'},
+      ];
+      await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse(original[5000]['uri']!),
+        path: original[5000]['path'],
+        title: '5000',
+        queue: original,
+        queueStartIndex: 5000,
+        autoPlay: true,
+      );
+      final player = players.single;
+      player.loaded();
+      await bridge.seek('one', const Duration(seconds: 17));
+      final added = {'uri': 'https://example.com/last.wav', 'path': '/last'};
+      expect(
+        (await bridge.updateQueue(
+          'one',
+          queue: [...original, added],
+          queueRevision: 1,
+        )).isOk,
+        true,
+      );
+      expect(player.adds, 1);
+      expect(player.moves, 0);
+      expect(player.removes, 0);
+      expect(
+        (await bridge.updateQueue(
+          'one',
+          queue: original,
+          queueRevision: 2,
+        )).isOk,
+        true,
+      );
+      expect(player.opens, 1);
+      expect(player.removes, 1);
+      expect(player.moves, 0);
+      expect(
+        player.state.playlist.medias.map((item) => item.uri),
+        original.map((item) => item['uri']),
+      );
+      final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(snapshot.queueIndex, 5000);
+      expect(snapshot.position, const Duration(seconds: 17));
+      expect(snapshot.path, '/5000');
+    },
+  );
+
+  test(
+    'many repeated queue entries preserve the selected occurrence',
+    () async {
+      final original = [
+        for (var i = 0; i < 3000; i++)
+          {
+            'uri': 'https://example.com/repeated.wav',
+            'path': '/same',
+            'title': '$i',
+          },
+      ];
+      await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse(original.first['uri']!),
+        path: '/same',
+        title: '1500',
+        queue: original,
+        queueStartIndex: 1500,
+        autoPlay: true,
+      );
+      final result = await bridge.updateQueue(
+        'one',
+        queue: [...original, original.first],
+        queueRevision: 1,
+      );
+      expect(result.isOk, true, reason: result.errorOrNull);
+      final player = players.single;
+      expect(player.opens, 1);
+      expect(player.adds, 1);
+      expect(player.moves, 0);
+      expect(player.removes, 0);
+      final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(snapshot.queueIndex, 1500);
+      expect(snapshot.title, '1500');
+      expect(snapshot.retainedUris, hasLength(3001));
+    },
+  );
+
+  test(
     'retained current media is removed after advancing to an equal URI',
     () async {
       await bridge.prepareSession(

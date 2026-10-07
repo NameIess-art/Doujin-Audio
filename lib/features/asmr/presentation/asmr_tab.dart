@@ -234,57 +234,47 @@ class _AsmrBatchSelectionHeader extends StatelessWidget {
       titleWidget: const SizedBox.shrink(),
       leading: HeaderActionPill(
         children: [
-          AppHeaderActionTransition(
-            child: IconButton(
-              key: ValueKey<String>('${keyPrefix}_batch_add_button'),
-              onPressed: onAddToPlaylist,
-              icon: const Icon(Icons.playlist_add_rounded),
-              tooltip: i18n.tr('batch_add_to_playlist'),
-              iconSize: 20,
-              padding: EdgeInsets.zero,
-              constraints: HeaderActionPill.buttonConstraints,
-            ),
+          IconButton(
+            key: ValueKey<String>('${keyPrefix}_batch_add_button'),
+            onPressed: onAddToPlaylist,
+            icon: const Icon(Icons.playlist_add_rounded),
+            tooltip: i18n.tr('batch_add_to_playlist'),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: HeaderActionPill.buttonConstraints,
           ),
-          AppHeaderActionTransition(
-            delayIndex: 1,
-            child: IconButton(
-              key: ValueKey<String>('${keyPrefix}_batch_download_button'),
-              onPressed: onDownload,
-              icon: const Icon(Icons.download_rounded),
-              tooltip: i18n.tr('batch_download'),
-              iconSize: 20,
-              padding: EdgeInsets.zero,
-              constraints: HeaderActionPill.buttonConstraints,
-            ),
+          IconButton(
+            key: ValueKey<String>('${keyPrefix}_batch_download_button'),
+            onPressed: onDownload,
+            icon: const Icon(Icons.download_rounded),
+            tooltip: i18n.tr('batch_download'),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: HeaderActionPill.buttonConstraints,
           ),
-          AppHeaderActionTransition(
-            delayIndex: 2,
-            child: IconButton(
-              key: ValueKey<String>('${keyPrefix}_batch_favorite_button'),
-              onPressed: onToggleFavorite,
-              icon: Icon(
-                hasUnfavoritedSelection
-                    ? Icons.favorite_border_rounded
-                    : Icons.favorite_rounded,
-              ),
-              tooltip: i18n.tr(
-                hasUnfavoritedSelection ? 'batch_favorite' : 'batch_unfavorite',
-              ),
-              iconSize: 20,
-              padding: EdgeInsets.zero,
-              constraints: HeaderActionPill.buttonConstraints,
+          IconButton(
+            key: ValueKey<String>('${keyPrefix}_batch_favorite_button'),
+            onPressed: onToggleFavorite,
+            icon: Icon(
+              hasUnfavoritedSelection
+                  ? Icons.favorite_border_rounded
+                  : Icons.favorite_rounded,
             ),
+            tooltip: i18n.tr(
+              hasUnfavoritedSelection ? 'batch_favorite' : 'batch_unfavorite',
+            ),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: HeaderActionPill.buttonConstraints,
           ),
         ],
       ),
-      trailing: AppHeaderLeadingTransition(
-        child: HeaderFloatingButton(
-          child: IconButton(
-            key: ValueKey<String>('${keyPrefix}_exit_selection_button'),
-            onPressed: onExit,
-            icon: const Icon(Icons.close_rounded),
-            tooltip: i18n.tr('cancel'),
-          ),
+      trailing: HeaderFloatingButton(
+        child: IconButton(
+          key: ValueKey<String>('${keyPrefix}_exit_selection_button'),
+          onPressed: onExit,
+          icon: const Icon(Icons.close_rounded),
+          tooltip: i18n.tr('cancel'),
         ),
       ),
     ).withAppHeaderTransition();
@@ -865,7 +855,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                 ),
                 content: AppFadeThroughIndexedStack.lazy(
                   key: const ValueKey<String>('asmr_category_stack'),
-                  prepareAdjacentPage: true,
                   indexListenable: _activeCategoryIndex,
                   duration: kAppMotionSlow,
                   itemCount: _headerCategories.length,

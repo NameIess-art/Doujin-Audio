@@ -197,56 +197,83 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('compact timer panels share a centered full-height layout', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(400, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
+  testWidgets(
+    'compact timer panels share a centered full-height layout',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
 
-    await tester.pumpWidget(
-      fixture.build(
-        const TimerTab(
-          showHeader: false,
-          useSafeArea: false,
-          compactOnly: true,
+      await tester.pumpWidget(
+        fixture.build(
+          const TimerTab(
+            showHeader: false,
+            useSafeArea: false,
+            compactOnly: true,
+          ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    final panel = find.byKey(const ValueKey('timer_compact_panel'));
-    final title = find.byKey(const ValueKey('timer_compact_title'));
-    final setupPanelRect = tester.getRect(panel);
-    final setupTitleRect = tester.getRect(title);
-    expect(setupPanelRect.height, kTimerCompactPanelHeight);
-    expect(
-      tester.getRect(find.text('确认并立即开始')).bottom,
-      lessThanOrEqualTo(setupPanelRect.bottom),
-    );
-    expect(
-      find.text(fixture.languageProvider.tr('stop_after_current_track')),
-      findsNothing,
-    );
+      final panel = find.byKey(const ValueKey('timer_compact_panel')).last;
+      final title = find.byKey(const ValueKey('timer_compact_title')).last;
+      final setupPanelRect = tester.getRect(panel);
+      final setupTitleRect = tester.getRect(title);
+      expect(setupPanelRect.height, kTimerCompactPanelHeight);
+      expect(
+        tester.getRect(find.text('确认并立即开始')).bottom,
+        lessThanOrEqualTo(setupPanelRect.bottom),
+      );
+      expect(
+        find.text(fixture.languageProvider.tr('stop_after_current_track')),
+        findsNothing,
+      );
 
-    await tester.tap(find.text('确认并立即开始'));
-    await tester.pump();
-    await tester.pump();
+      await tester.tap(find.text('确认并立即开始'));
+      await tester.pump();
+      await tester.pump();
 
-    expect(find.text('倒计时进行中'), findsOneWidget);
-    expect(
-      find.text(fixture.languageProvider.tr('stop_after_current_track')),
-      findsOneWidget,
-    );
-    final detailPanelRect = tester.getRect(panel);
-    final detailTitleRect = tester.getRect(title);
-    expect(detailPanelRect.size, setupPanelRect.size);
-    expect(detailTitleRect.left, setupTitleRect.left);
+      expect(find.text('倒计时进行中'), findsOneWidget);
+      expect(find.text('确认并立即开始'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 150));
+      final detailFade = find
+          .ancestor(
+            of: find.text('倒计时进行中'),
+            matching: find.byType(FadeTransition),
+          )
+          .first;
+      expect(
+        tester.widget<FadeTransition>(detailFade).opacity.value,
+        closeTo(0.5, 0.03),
+      );
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(find.text('确认并立即开始'), findsOneWidget);
+      expect(find.text('确认并立即开始').hitTestable(), findsNothing);
+      expect(
+        find.text(fixture.languageProvider.tr('stop_after_current_track')),
+        findsOneWidget,
+      );
+      final detailPanelRect = tester.getRect(panel);
+      final detailTitleRect = tester.getRect(title);
+      expect(detailPanelRect.size, setupPanelRect.size);
+      expect(detailTitleRect.left, setupTitleRect.left);
 
-    fixture.timer.cancelTimer();
-    await tester.pump();
-  });
+      fixture.timer.cancelTimer();
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('倒计时进行中'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(find.text('倒计时进行中'), findsNothing);
+      expect(tester.getRect(panel).size, setupPanelRect.size);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 }
 
 class _CountingPermissionStatusService extends PermissionStatusService {

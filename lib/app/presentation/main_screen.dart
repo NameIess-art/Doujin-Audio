@@ -119,6 +119,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   late final ValueNotifier<int> _activePageIndex;
   final Object _pageSwitchInteraction = Object();
   final Object _foregroundInteraction = Object();
+  int _foregroundInteractionGeneration = 0;
   final GlobalKey _dockContentKey = GlobalKey();
   final GlobalKey _mobilePlaybackGeometryKey = GlobalKey();
   final GlobalKey _desktopPlaybackGeometryKey = GlobalKey();
@@ -203,6 +204,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void initState() {
     super.initState();
+    _protectForegroundFrame();
     _subtitleOverlay = ref.read(subtitleOverlayControllerProvider);
     _subtitleOverlay.attachRuntime(
       enabled: () =>
@@ -486,7 +488,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void dispose() {
     _pageSwitchCoordinatorGeneration++;
     UiInteractionCoordinator.instance.cancelNavigation(_pageSwitchInteraction);
-    UiInteractionCoordinator.instance.cancelInteraction(_foregroundInteraction);
+    _cancelForegroundProtection();
     _sleepModeAutoEntryTimer?.cancel();
     _sleepModeAutoEntryTimer = null;
     _metricsRecoveryTimer?.cancel();
@@ -609,18 +611,14 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
       _appInForeground = false;
-      UiInteractionCoordinator.instance.cancelInteraction(
-        _foregroundInteraction,
-      );
+      _cancelForegroundProtection();
       unawaited(ref.read(audioRuntimeCoordinatorProvider).dispose());
       return;
     }
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       _appInForeground = false;
-      UiInteractionCoordinator.instance.cancelInteraction(
-        _foregroundInteraction,
-      );
+      _cancelForegroundProtection();
       unawaited(ref.read(audioRuntimeCoordinatorProvider).enterBackground());
       _subtitleOverlay.requestRuntimeSync();
       return;
@@ -631,14 +629,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _appInForeground = true;
     // Keep cached content available for the first restored frame. Coalesced
     // presentation updates and warmup resume after that frame's idle period.
-    final interaction = UiInteractionCoordinator.instance;
-    interaction.beginInteraction(_foregroundInteraction);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _appInForeground) {
-        interaction.endInteraction(_foregroundInteraction);
-      }
-    });
-    WidgetsBinding.instance.scheduleFrame();
+    _protectForegroundFrame();
     if (shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
       _subtitleOverlay.requestRuntimeSync();
     } else {
@@ -652,6 +643,28 @@ class _MainScreenState extends ConsumerState<MainScreen>
         warmup.schedule(isPlaybackPage: _isPlaybackPage, immediate: true);
       }),
     );
+  }
+
+  void _protectForegroundFrame() {
+    final generation = ++_foregroundInteractionGeneration;
+    final interaction = UiInteractionCoordinator.instance;
+    interaction.beginInteraction(
+      _foregroundInteraction,
+      deferVisualUpdates: true,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted &&
+          _appInForeground &&
+          generation == _foregroundInteractionGeneration) {
+        interaction.endInteraction(_foregroundInteraction);
+      }
+    });
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
+  void _cancelForegroundProtection() {
+    _foregroundInteractionGeneration++;
+    UiInteractionCoordinator.instance.cancelInteraction(_foregroundInteraction);
   }
 
   void _switchPage(int index) {

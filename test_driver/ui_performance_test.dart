@@ -2,10 +2,17 @@
 // ignore_for_file: avoid_print
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:integration_test/integration_test_driver.dart';
 
 Future<void> main() => integrationDriver(
+  // A real 30-minute idle interval exceeds integrationDriver's 20-minute default.
+  timeout: Duration(
+    seconds: int.parse(
+      Platform.environment['PERF_DRIVER_TIMEOUT_SECONDS'] ?? '7200',
+    ),
+  ),
   writeResponseOnFailure: true,
   responseDataCallback: (data) async {
     final report = data?['uiPerformance'];
@@ -15,7 +22,11 @@ Future<void> main() => integrationDriver(
           ? 'playback_profile_${report['runtime'] == 'Media3' ? 'android' : 'windows'}'
           : report is Map &&
                 '${report['scenario']}'.startsWith('page-transitions')
-          ? 'page_transitions_${report['platform']}_${report['playing'] == true ? 'playing' : 'idle'}'
+          ? 'page_transitions_${report['platform']}_${report['scenario'] == 'page-transitions-startup'
+                ? 'startup'
+                : report['playing'] == true
+                ? 'playing'
+                : 'idle'}'
           : 'integration_response_data',
     );
     if (report is! Map || report['scenario'] != 'playback') return;

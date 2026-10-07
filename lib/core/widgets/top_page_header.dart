@@ -63,7 +63,9 @@ class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
       shadowColor: Colors.transparent,
       forceMaterialTransparency: true,
     );
-    return _AppHeaderSurface(floating: false, child: appBar);
+    return AppPageHeaderTransition(
+      child: _AppHeaderSurface(floating: false, child: appBar),
+    );
   }
 }
 

@@ -241,6 +241,68 @@ void main() {
 
   for (final cancelled in [false, true]) {
     testWidgets(
+      'first-frame protection ${cancelled ? 'cancels' : 'ends'} while a scroll remains active',
+      (tester) async {
+        final coordinator = UiInteractionCoordinator();
+        addTearDown(coordinator.dispose);
+        final source = Object();
+        final scroll = Object();
+        var notifications = 0;
+        var committed = false;
+        coordinator.addListener(() => notifications++);
+        coordinator.beginInteraction(source);
+        coordinator.beginInteraction(scroll);
+        // A source already registered by ordinary work can upgrade its guard.
+        coordinator.beginInteraction(source, deferVisualUpdates: true);
+        expect(notifications, 3);
+        expect(coordinator.navigationAllowed.value, isTrue);
+        coordinator.scheduleCommit(
+          key: 'visible-cover',
+          allowDuringScroll: true,
+          commit: () => committed = true,
+        );
+        await tester.pump();
+        expect(committed, isFalse);
+        if (cancelled) {
+          coordinator.cancelInteraction(source);
+        } else {
+          coordinator.endInteraction(source);
+          await tester.pump(
+            coordinator.idleDelay - const Duration(milliseconds: 1),
+          );
+          expect(coordinator.isVisualUpdateDeferred, isTrue);
+          expect(committed, isFalse);
+          await tester.pump(const Duration(milliseconds: 1));
+        }
+        expect(coordinator.isVisualUpdateDeferred, isFalse);
+        expect(coordinator.isInteracting, isTrue);
+        expect(notifications, 4);
+        await tester.pump();
+        expect(committed, isTrue);
+        coordinator.cancelInteraction(scroll);
+      },
+    );
+  }
+
+  testWidgets('restarting first-frame protection cancels its old idle tail', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator();
+    addTearDown(coordinator.dispose);
+    final source = Object();
+    coordinator.beginInteraction(source, deferVisualUpdates: true);
+    coordinator.endInteraction(source);
+    await tester.pump(const Duration(milliseconds: 80));
+    coordinator.beginInteraction(source);
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(coordinator.isVisualUpdateDeferred, isTrue);
+    coordinator.endInteraction(source);
+    await tester.pump(coordinator.idleDelay);
+    expect(coordinator.isVisualUpdateDeferred, isFalse);
+  });
+
+  for (final cancelled in [false, true]) {
+    testWidgets(
       'scroll commits resume after navigation ${cancelled ? 'is cancelled' : 'ends'} while scrolling continues',
       (tester) async {
         final coordinator = UiInteractionCoordinator();

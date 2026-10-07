@@ -33,8 +33,9 @@ final class AppInteractionEffectsController {
     if (_disposed) return;
     final paused = _interaction.isInteracting;
     _library.setInteractionPaused(paused);
-    // Visible artwork can load during scrolling; only transitions defer it.
-    _libraryCovers.setInteractionPaused(!_interaction.navigationAllowed.value);
+    // Visible artwork can load during scrolling after the first restored frame
+    // and any navigation transition have finished.
+    _libraryCovers.setInteractionPaused(_interaction.isVisualUpdateDeferred);
     _notifications.setSynchronizationPaused(paused);
     _warmup.setInteractionPaused(paused);
   }

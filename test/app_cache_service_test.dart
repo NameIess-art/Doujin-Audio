@@ -77,6 +77,47 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(calls, <String>[FileCacheMethod.enforceApplicationCacheLimit]);
     });
+
+    test('short leases retain scheduled enforcement debounce', () async {
+      for (var index = 0; index < 3; index++) {
+        final lease = AppCacheService.protectPaths(['/active/$index']);
+        AppCacheService.scheduleEnforce(
+          idleDelay: const Duration(milliseconds: 100),
+          maxDelay: const Duration(seconds: 1),
+        );
+        lease.release();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(calls, isEmpty);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 130));
+      expect(calls, [FileCacheMethod.enforceApplicationCacheLimit]);
+    });
+
+    test('a new lease preserves the scheduled maximum delay', () async {
+      AppCacheService.scheduleEnforce(
+        idleDelay: const Duration(seconds: 1),
+        maxDelay: const Duration(milliseconds: 40),
+      );
+      final lease = AppCacheService.protectPaths(['/active/cache']);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(calls, isEmpty);
+      lease.release();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(calls, [FileCacheMethod.enforceApplicationCacheLimit]);
+    });
+
+    test(
+      'explicit enforcement supersedes a deferred scheduled request',
+      () async {
+        final lease = AppCacheService.protectPaths(['/active/cache']);
+        AppCacheService.scheduleEnforce();
+        await AppCacheService.enforceLimit();
+        expect(calls, isEmpty);
+        lease.release();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(calls, [FileCacheMethod.enforceApplicationCacheLimit]);
+      },
+    );
   });
 
   test(

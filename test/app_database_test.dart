@@ -33,8 +33,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 11', () {
-    expect(AppDatabase.schemaVersion, 11);
+  test('schema starts from version 12', () {
+    expect(AppDatabase.schemaVersion, 12);
   });
 
   test(

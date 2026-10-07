@@ -251,7 +251,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
   }
 }
 
-class _UnifiedPopupOverlay<T> extends StatelessWidget {
+class _UnifiedPopupOverlay<T> extends StatefulWidget {
   const _UnifiedPopupOverlay({
     required this.animation,
     required this.rect,
@@ -269,15 +269,50 @@ class _UnifiedPopupOverlay<T> extends StatelessWidget {
   final ValueChanged<T>? onTrailingSelected;
 
   @override
-  Widget build(BuildContext context) {
-    final curved = CurvedAnimation(
-      parent: animation,
+  State<_UnifiedPopupOverlay<T>> createState() =>
+      _UnifiedPopupOverlayState<T>();
+}
+
+class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
+  late CurvedAnimation _curved;
+  late Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _bindAnimation();
+  }
+
+  void _bindAnimation() {
+    _curved = CurvedAnimation(
+      parent: widget.animation,
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
     );
+    _scale = Tween<double>(begin: 0.96, end: 1).animate(_curved);
+  }
 
+  @override
+  void didUpdateWidget(covariant _UnifiedPopupOverlay<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation) {
+      _curved.dispose();
+      _bindAnimation();
+    }
+  }
+
+  @override
+  void dispose() {
+    _curved.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return CallbackShortcuts(
-      bindings: {const SingleActivator(LogicalKeyboardKey.escape): onDismiss},
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): widget.onDismiss,
+      },
       child: Shortcuts(
         shortcuts: const {
           SingleActivator(LogicalKeyboardKey.arrowDown): NextFocusIntent(),
@@ -293,23 +328,23 @@ class _UnifiedPopupOverlay<T> extends StatelessWidget {
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: onDismiss,
+                    onTap: widget.onDismiss,
                     child: const SizedBox.expand(),
                   ),
                 ),
                 Positioned(
-                  left: rect.left,
-                  top: rect.top,
-                  width: rect.width,
+                  left: widget.rect.left,
+                  top: widget.rect.top,
+                  width: widget.rect.width,
                   child: FadeTransition(
-                    opacity: curved,
+                    opacity: _curved,
                     child: ScaleTransition(
                       alignment: Alignment.topRight,
-                      scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
+                      scale: _scale,
                       child: _UnifiedPopupMenuCard<T>(
-                        entries: entries,
-                        onSelected: onSelected,
-                        onTrailingSelected: onTrailingSelected,
+                        entries: widget.entries,
+                        onSelected: widget.onSelected,
+                        onTrailingSelected: widget.onTrailingSelected,
                       ),
                     ),
                   ),

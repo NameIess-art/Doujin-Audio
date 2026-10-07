@@ -8,7 +8,6 @@ import '../../../../core/media/path_display.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
-import '../../../../core/widgets/app_transitions.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/playback_queue.dart';
 import 'playlist_shared_helpers.dart';
@@ -19,7 +18,7 @@ class SessionTrackSelection {
   final int queueIndex;
 }
 
-class SessionTrackSwitcherSheet extends StatelessWidget {
+class SessionTrackSwitcherSheet extends StatefulWidget {
   const SessionTrackSwitcherSheet({
     super.key,
     required this.session,
@@ -37,35 +36,119 @@ class SessionTrackSwitcherSheet extends StatelessWidget {
   final ValueChanged<SessionTrackSelection> onSelected;
 
   @override
-  Widget build(BuildContext context) {
-    final tree = _buildQueueTree(
-      tracks,
-      session: session,
-      workRoot: workRoot,
-      currentPath: session.currentTrackPath,
+  State<SessionTrackSwitcherSheet> createState() =>
+      _SessionTrackSwitcherSheetState();
+}
+
+class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet> {
+  final Set<String> _expandedFolders = <String>{};
+  List<_QueueTreeNode> _tree = const [];
+  List<({_QueueTreeNode node, int depth, String key})> _rows = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _rebuildTree(expandSelected: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant SessionTrackSwitcherSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != widget.session ||
+        !identical(oldWidget.tracks, widget.tracks) ||
+        oldWidget.workRoot != widget.workRoot ||
+        oldWidget.resolveTrack != widget.resolveTrack ||
+        oldWidget.workRootForTrack != widget.workRootForTrack) {
+      _rebuildTree(
+        expandSelected:
+            oldWidget.session.currentTrackPath !=
+                widget.session.currentTrackPath ||
+            oldWidget.session.currentQueueIndex !=
+                widget.session.currentQueueIndex,
+      );
+    }
+  }
+
+  void _rebuildTree({required bool expandSelected}) {
+    _tree = _buildQueueTree(
+      widget.tracks,
+      session: widget.session,
+      workRoot: widget.workRoot,
+      currentPath: widget.session.currentTrackPath,
     );
+    final folderKeys = <String>{};
+    bool visit(_QueueTreeNode node) {
+      var selected = node.selected;
+      for (final child in node.children) {
+        if (visit(child)) selected = true;
+      }
+      if (node.isFolder) {
+        folderKeys.add(node.key);
+        if (expandSelected && selected) _expandedFolders.add(node.key);
+      }
+      return selected;
+    }
+
+    for (final node in _tree) {
+      visit(node);
+    }
+    _expandedFolders.retainAll(folderKeys);
+    _projectRows();
+  }
+
+  void _projectRows() {
+    final rows = <({_QueueTreeNode node, int depth, String key})>[];
+    void visit(_QueueTreeNode node, int depth) {
+      rows.add((node: node, depth: depth, key: node.key));
+      if (_expandedFolders.contains(node.key)) {
+        for (final child in node.children) {
+          visit(child, depth + 1);
+        }
+      }
+    }
+
+    for (final node in _tree) {
+      visit(node, 0);
+    }
+    _rows = rows;
+  }
+
+  void _toggleFolder(String key) {
+    setState(() {
+      if (!_expandedFolders.remove(key)) _expandedFolders.add(key);
+      _projectRows();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
       child: ListView.builder(
-        shrinkWrap: tree.length <= 8,
+        shrinkWrap: _rows.length <= 8,
         padding: AppBottomSheet.contentPadding,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        itemCount: tree.length + 1,
+        itemCount: _rows.length + 1,
         itemBuilder: (context, index) {
           if (index == 0) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: _QueueSheetHeader(count: tracks.length),
+              child: _QueueSheetHeader(count: widget.tracks.length),
             );
           }
-          final node = tree[index - 1];
-          return _QueueTreeNodeTile(
-            key: ValueKey<String>(node.stableKey),
-            node: node,
-            onTrackTap: (selected) => onSelected(
-              SessionTrackSelection(
-                track: selected.track!,
-                queueIndex: selected.queueIndex,
+          final row = _rows[index - 1];
+          return Padding(
+            key: ValueKey<String>('queue_switcher_row_${row.key}'),
+            padding: EdgeInsetsDirectional.only(start: row.depth * 16),
+            child: _QueueTreeNodeTile(
+              node: row.node,
+              expanded: _expandedFolders.contains(row.key),
+              onToggleExpansion: () => _toggleFolder(row.key),
+              onTrackTap: (selected) => widget.onSelected(
+                SessionTrackSelection(
+                  track: selected.track!,
+                  queueIndex: selected.queueIndex,
+                ),
               ),
             ),
           );
@@ -91,6 +174,20 @@ class SessionTrackSwitcherSheet extends StatelessWidget {
       currentQueueIndex: session.currentQueueIndex,
     );
     if (session.isPlaybackQueue) {
+      final playbackTracks = session.playbackQueue!.expandedTracks;
+      final preferredIndex = session.currentQueueIndex;
+      final selectedQueueIndex =
+          preferredIndex >= 0 &&
+              preferredIndex < playbackTracks.length &&
+              selectedTrack != null &&
+              sameSessionSwitcherTrack(
+                playbackTracks[preferredIndex],
+                selectedTrack,
+              )
+          ? preferredIndex
+          : playbackTracks.indexWhere(
+              (track) => identical(track, selectedTrack),
+            );
       var queueIndex = 0;
       final resolvedTracks = <String, MusicTrack?>{};
       for (final entry in session.playbackQueue!.entries) {
@@ -98,7 +195,7 @@ class SessionTrackSwitcherSheet extends StatelessWidget {
         final isAsmrEntry = firstTrack?.isRemoteAsmr ?? false;
         final fallbackRoot = entry.workRootPath != null || firstTrack == null
             ? null
-            : workRootForTrack(firstTrack.path);
+            : widget.workRootForTrack(firstTrack.path);
         final groupRoot = firstTrack?.groupKey.trim();
         final entryWorkRoot =
             entry.workRootPath ??
@@ -120,6 +217,7 @@ class SessionTrackSwitcherSheet extends StatelessWidget {
                     : entryWorkRoot == null
                     ? entry.title
                     : PathDisplay.folderName(entryWorkRoot),
+                key: 'queue:${entry.id}',
               )
             : root;
         if (!identical(parent, root)) {
@@ -128,7 +226,7 @@ class SessionTrackSwitcherSheet extends StatelessWidget {
         for (final track in entry.tracks) {
           final latestTrack = resolvedTracks.putIfAbsent(
             track.path,
-            () => resolveTrack(track.path),
+            () => widget.resolveTrack(track.path),
           );
           final displayTrack =
               latestTrack != null && latestTrack.duration > Duration.zero
@@ -146,7 +244,7 @@ class SessionTrackSwitcherSheet extends StatelessWidget {
           trackParent.children.add(
             _QueueTreeNode.track(
               displayTrack,
-              selected: identical(track, selectedTrack),
+              selected: queueIndex == selectedQueueIndex,
               queueIndex: queueIndex,
             ),
           );
@@ -234,7 +332,7 @@ class _QueueSheetHeader extends StatelessWidget {
 }
 
 class _QueueTreeNode {
-  _QueueTreeNode.folder(this.title)
+  _QueueTreeNode.folder(this.title, {this.key = ''})
     : track = null,
       selected = false,
       queueIndex = -1;
@@ -243,26 +341,31 @@ class _QueueTreeNode {
     this.track, {
     required this.selected,
     required this.queueIndex,
-  }) : title = track!.displayName;
+  }) : title = track!.displayName,
+       key = 'track:$queueIndex:${track.path}';
 
   final String title;
+  final String key;
   final MusicTrack? track;
   final bool selected;
   final int queueIndex;
   final List<_QueueTreeNode> children = <_QueueTreeNode>[];
 
   bool get isFolder => track == null;
-  String get stableKey => isFolder ? 'folder:$title' : 'track:${track!.path}';
-  bool get containsSelected =>
-      selected || children.any((child) => child.containsSelected);
+  Map<String, _QueueTreeNode>? _foldersByName;
 
   _QueueTreeNode folderChild(String name) {
-    for (final child in children) {
-      if (child.isFolder && child.title == name) return child;
-    }
-    final folder = _QueueTreeNode.folder(name);
-    children.add(folder);
-    return folder;
+    return (_foldersByName ??= <String, _QueueTreeNode>{}).putIfAbsent(
+      name,
+      () {
+        final folder = _QueueTreeNode.folder(
+          name,
+          key: '$key/${Uri.encodeComponent(name)}',
+        );
+        children.add(folder);
+        return folder;
+      },
+    );
   }
 
   void sortChildrenNaturally() {
@@ -282,111 +385,71 @@ class _QueueTreeNode {
   }
 }
 
-class _QueueTreeNodeTile extends StatefulWidget {
+class _QueueTreeNodeTile extends StatelessWidget {
   const _QueueTreeNodeTile({
-    super.key,
     required this.node,
+    required this.expanded,
+    required this.onToggleExpansion,
     required this.onTrackTap,
   });
 
   final _QueueTreeNode node;
+  final bool expanded;
+  final VoidCallback onToggleExpansion;
   final ValueChanged<_QueueTreeNode> onTrackTap;
 
   @override
-  State<_QueueTreeNodeTile> createState() => _QueueTreeNodeTileState();
-}
-
-class _QueueTreeNodeTileState extends State<_QueueTreeNodeTile> {
-  final _controller = ExpansibleController();
-  late bool _expanded = widget.node.containsSelected;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  void didUpdateWidget(covariant _QueueTreeNodeTile oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.node.stableKey != widget.node.stableKey ||
-        widget.node.containsSelected) {
-      _expanded = widget.node.containsSelected;
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final node = widget.node;
     if (!node.isFolder) {
       return _QueueTrackLeaf(
         track: node.track!,
         selected: node.selected,
-        onTap: node.selected ? null : () => widget.onTrackTap(node),
+        onTap: node.selected ? null : () => onTrackTap(node),
       );
     }
 
     final cs = Theme.of(context).colorScheme;
-    return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        controller: _controller,
-        expansionAnimationStyle: appExpansionAnimationStyle(context),
-        initiallyExpanded: _expanded,
-        minTileHeight: 52,
-        onExpansionChanged: (expanded) => setState(() => _expanded = expanded),
-        shape: const RoundedRectangleBorder(),
-        collapsedShape: const RoundedRectangleBorder(),
-        showTrailingIcon: false,
-        tilePadding: const EdgeInsets.fromLTRB(6, 0, 6, 0),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 0, 0),
-        title: Row(
-          children: [
-            Icon(
-              _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
-              size: 19,
-              color: cs.primary.withValues(alpha: 0.78),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                node.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: cs.onSurface.withValues(alpha: 0.9),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-        trailing: AnimatedRotation(
-          turns: _expanded ? 0.5 : 0,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          child: Icon(
-            Icons.expand_more_rounded,
-            size: 20,
-            color: cs.onSurfaceVariant,
-          ),
-        ),
-        children: [
-          // ExpansionTile mounts this builder only while its body is visible,
-          // including the reverse animation when collapsing.
-          Builder(
-            builder: (_) => Column(
+    return Semantics(
+      expanded: expanded,
+      child: InkWell(
+        onTap: onToggleExpansion,
+        child: SizedBox(
+          height: 52,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 0, 6, 0),
+            child: Row(
               children: [
-                for (final child in node.children)
-                  _QueueTreeNodeTile(
-                    key: ValueKey<String>(child.stableKey),
-                    node: child,
-                    onTrackTap: widget.onTrackTap,
+                Icon(
+                  expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
+                  size: 19,
+                  color: cs.primary.withValues(alpha: 0.78),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    node.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: cs.onSurface.withValues(alpha: 0.9),
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
+                ),
+                AnimatedRotation(
+                  turns: expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: Icon(
+                    Icons.expand_more_rounded,
+                    size: 20,
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

@@ -14,6 +14,44 @@ void main() {
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
 
+  testWidgets('popup releases curve listeners after each dismissal', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UnifiedPopupMenuButton<int>(
+            icon: Icons.more_vert,
+            tooltip: 'Menu',
+            entries: const [UnifiedMenuEntry.action(value: 1, label: 'Action')],
+            onSelected: (_) {},
+          ),
+        ),
+      ),
+    );
+    for (var opening = 0; opening < 3; opening++) {
+      await tester.tap(find.byTooltip('Menu'));
+      await tester.pumpAndSettle();
+      final fade = tester.widget<FadeTransition>(
+        find
+            .ancestor(
+              of: find.text('Action'),
+              matching: find.byType(FadeTransition),
+            )
+            .first,
+      );
+      final curve = fade.opacity as CurvedAnimation;
+      expect(curve.isDisposed, isFalse);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.text('Action'), findsNothing);
+      expect(curve.isDisposed, isTrue);
+    }
+    await tester.pump(coordinator.idleDelay);
+    expect(coordinator.isInteracting, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final stage in ['enter', 'open', 'exit']) {
     testWidgets('removing work entry during menu $stage clears root overlay', (
       tester,

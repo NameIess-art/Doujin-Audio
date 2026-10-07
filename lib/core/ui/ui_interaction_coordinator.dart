@@ -21,6 +21,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
   final WarmupScheduler _backgroundScheduler;
   final Set<Object> _activeSources = <Object>{};
   final Set<Object> _navigationSources = <Object>{};
+  final Set<Object> _visualUpdateSources = <Object>{};
   final ValueNotifier<bool> _navigationAllowed = ValueNotifier(true);
   final Map<Object, Timer> _idleTimers = <Object, Timer>{};
   final Map<String, _PendingCommit> _pendingCommits =
@@ -31,6 +32,8 @@ class UiInteractionCoordinator extends ChangeNotifier {
   int _generation = 0;
 
   bool get isInteracting => _activeSources.isNotEmpty;
+  bool get isVisualUpdateDeferred =>
+      _navigationSources.isNotEmpty || _visualUpdateSources.isNotEmpty;
   ValueListenable<bool> get navigationAllowed => _navigationAllowed;
   int get generation => _generation;
   int get pendingCommitCount => _pendingCommits.length;
@@ -62,9 +65,12 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _scheduleCommitFrame();
   }
 
-  void beginInteraction(Object source) {
+  void beginInteraction(Object source, {bool deferVisualUpdates = false}) {
     _idleTimers.remove(source)?.cancel();
-    if (!_activeSources.add(source)) return;
+    final added = _activeSources.add(source);
+    final visualProtectionAdded =
+        deferVisualUpdates && _visualUpdateSources.add(source);
+    if (!added && !visualProtectionAdded) return;
     _backgroundScheduler.setPaused(true);
     notifyListeners();
   }
@@ -73,18 +79,18 @@ class UiInteractionCoordinator extends ChangeNotifier {
     if (!_activeSources.contains(source)) return;
     _idleTimers.remove(source)?.cancel();
     if (idleDelay <= Duration.zero) {
-      if (_activeSources.remove(source)) _resumeIfIdle();
+      _releaseInteraction(source);
       return;
     }
     _idleTimers[source] = Timer(idleDelay, () {
       _idleTimers.remove(source);
-      if (_activeSources.remove(source)) _resumeIfIdle();
+      _releaseInteraction(source);
     });
   }
 
   void cancelInteraction(Object source) {
     _idleTimers.remove(source)?.cancel();
-    if (_activeSources.remove(source)) _resumeIfIdle();
+    _releaseInteraction(source);
   }
 
   bool scheduleAfterIdle({
@@ -163,9 +169,12 @@ class UiInteractionCoordinator extends ChangeNotifier {
     );
   }
 
-  void _resumeIfIdle() {
-    if (isInteracting) return;
-    _backgroundScheduler.setPaused(false);
+  void _releaseInteraction(Object source) {
+    if (!_activeSources.remove(source)) return;
+    _visualUpdateSources.remove(source);
+    _backgroundScheduler.setPaused(isInteracting);
+    // Cover queries and scroll commits must resume when first-frame protection
+    // ends, even if a separate scroll interaction remains active.
     notifyListeners();
     _scheduleCommitFrame();
   }
@@ -201,7 +210,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
   bool _canRunCommit(_PendingCommit commit) =>
       !isInteracting ||
       commit.allowDuringInteraction ||
-      (commit.allowDuringScroll && _navigationAllowed.value);
+      (commit.allowDuringScroll && !isVisualUpdateDeferred);
 
   bool get _hasRunnableCommits => _pendingCommits.values.any(_canRunCommit);
 
@@ -219,8 +228,10 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _idleTimers.clear();
     _activeSources.clear();
     _navigationSources.clear();
+    _visualUpdateSources.clear();
     _navigationAllowed.value = true;
     _backgroundScheduler.setPaused(false);
+    notifyListeners();
     flushPendingCommitsForTest();
   }
 
@@ -232,6 +243,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _idleTimers.clear();
     _activeSources.clear();
     _navigationSources.clear();
+    _visualUpdateSources.clear();
     _navigationAllowed.value = true;
     _backgroundScheduler.setPaused(false);
     _backgroundScheduler.clear();
@@ -242,6 +254,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _throttleTimers.clear();
     _throttledCommits.clear();
     _frameScheduled = false;
+    notifyListeners();
   }
 
   @override
@@ -250,6 +263,9 @@ class UiInteractionCoordinator extends ChangeNotifier {
       timer.cancel();
     }
     _idleTimers.clear();
+    _activeSources.clear();
+    _navigationSources.clear();
+    _visualUpdateSources.clear();
     _backgroundScheduler.clear();
     _pendingCommits.clear();
     for (final timer in _throttleTimers.values) {

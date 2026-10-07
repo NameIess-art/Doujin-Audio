@@ -1,5 +1,6 @@
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
@@ -12,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/app_runtime_test_fixture.dart';
+import 'support/runtime_test_models.dart';
 
 Widget _page(
   String name,
@@ -68,6 +70,100 @@ void main() {
     });
   });
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  testWidgets(
+    'on-demand playlist lays out its ready list before the first moving frame',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final active = ValueNotifier<int>(0);
+      addTearDown(fixture.dispose);
+      addTearDown(active.dispose);
+      final track = MusicTrack(
+        path: '/prepared-session.mp3',
+        displayName: 'Prepared session',
+        groupKey: 'prepared',
+        groupTitle: 'Prepared session',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+      fixture.library.addTracks([track], notify: false, persist: false);
+      final session = PlaybackSession(
+        id: 'prepared-session',
+        currentTrackPath: track.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      );
+      addTearDown(session.shutdown);
+      fixture.playbackService.registerSession(session);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: null,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          AppFadeThroughIndexedStack.lazy(
+            indexListenable: active,
+            itemCount: 2,
+            duration: kAppMotionSlow,
+            itemBuilder: (_, index) => index == 0
+                ? const SizedBox()
+                : PlaylistTab(tabIndex: 1, activeTabIndexListenable: active),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 161));
+      await tester.pump();
+      final content = find.byKey(
+        const ValueKey('playlist_loaded_content'),
+        skipOffstage: false,
+      );
+      expect(content, findsNothing);
+      expect(
+        find.byKey(
+          const ValueKey('playlist_initial_placeholder'),
+          skipOffstage: false,
+        ),
+        findsNothing,
+      );
+      active.value = 1;
+      await tester.pump();
+      final slide = find
+          .ancestor(
+            of: find.byType(PlaylistTab),
+            matching: find.byType(SlideTransition),
+          )
+          .first;
+      expect(tester.widget<SlideTransition>(slide).position.value.dx, 1);
+      expect(content, findsOneWidget);
+      expect(tester.renderObject<RenderBox>(content).hasSize, isTrue);
+      final card = find.byType(SessionListCard);
+      expect(card, findsOneWidget);
+      expect(tester.renderObject<RenderBox>(card).hasSize, isTrue);
+      final preparedContent = tester.element(content);
+      final preparedCard = tester.element(card);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        tester.widget<SlideTransition>(slide).position.value.dx,
+        lessThan(1),
+      );
+      expect(tester.element(content), same(preparedContent));
+      expect(tester.element(card), same(preparedCard));
+      await tester.pump(kAppMotionSlow);
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'LibraryTab refreshes a stale card snapshot on its first activation',

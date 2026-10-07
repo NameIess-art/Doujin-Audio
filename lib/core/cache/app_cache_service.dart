@@ -22,6 +22,9 @@ class AppCacheService {
   static bool _enforceRequested = false;
   static Timer? _scheduledEnforceTimer;
   static DateTime? _scheduledEnforceStartedAt;
+  static bool _scheduledEnforceDeferred = false;
+  static Duration _scheduledIdleDelay = const Duration(seconds: 2);
+  static Duration _scheduledMaxDelay = const Duration(seconds: 30);
   static final Map<String, int> _protectedPaths = <String, int>{};
   static bool _enforceAfterLeaseRelease = false;
 
@@ -33,8 +36,9 @@ class AppCacheService {
         .map((value) => path.normalize(value))
         .toSet();
     if (normalized.isNotEmpty && _scheduledEnforceTimer != null) {
-      _cancelScheduledEnforce();
-      _enforceAfterLeaseRelease = true;
+      _scheduledEnforceTimer?.cancel();
+      _scheduledEnforceTimer = null;
+      _scheduledEnforceDeferred = true;
     }
     for (final protectedPath in normalized) {
       _protectedPaths.update(
@@ -170,12 +174,15 @@ class AppCacheService {
     Duration maxDelay = const Duration(seconds: 30),
   }) {
     if (!scheduledEnforceEnabled) return;
-    if (_protectedPaths.isNotEmpty) {
-      _enforceAfterLeaseRelease = true;
-      return;
-    }
     final now = DateTime.now();
     final startedAt = _scheduledEnforceStartedAt ??= now;
+    _scheduledIdleDelay = idleDelay;
+    _scheduledMaxDelay = maxDelay;
+    if (_protectedPaths.isNotEmpty) {
+      _scheduledEnforceDeferred = true;
+      return;
+    }
+    _scheduledEnforceDeferred = false;
     final remaining = maxDelay - now.difference(startedAt);
     if (remaining <= Duration.zero) {
       _cancelScheduledEnforce();
@@ -195,6 +202,7 @@ class AppCacheService {
     _scheduledEnforceTimer?.cancel();
     _scheduledEnforceTimer = null;
     _scheduledEnforceStartedAt = null;
+    _scheduledEnforceDeferred = false;
   }
 
   @visibleForTesting
@@ -403,6 +411,11 @@ class AppCacheService {
     if (_protectedPaths.isEmpty && _enforceAfterLeaseRelease) {
       _enforceAfterLeaseRelease = false;
       enforceLimit();
+    } else if (_protectedPaths.isEmpty && _scheduledEnforceDeferred) {
+      scheduleEnforce(
+        idleDelay: _scheduledIdleDelay,
+        maxDelay: _scheduledMaxDelay,
+      );
     }
   }
 }

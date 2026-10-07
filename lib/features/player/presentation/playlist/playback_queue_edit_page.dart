@@ -65,22 +65,13 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     if (queue == null) return const SizedBox.shrink();
-    if (_editingColor) {
-      return PlaybackQueueColorPanel(
-        colorValue: queue.colorValue,
-        height: _playbackQueueEditPanelHeight,
-        onColorChanged: (value) =>
-            playback.setPlaybackQueueColorValue(sessionId, value),
-        onBack: () => setState(() => _editingColor = false),
-      );
-    }
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final queueColor = queue.colorValue != null
         ? Color(queue.colorValue!)
         : cs.primary;
 
-    return SizedBox(
+    final editPanel = SizedBox(
       width: double.infinity,
       height: _playbackQueueEditPanelHeight,
       child: DecoratedBox(
@@ -123,32 +114,13 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            queue.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            i18n.tr('audio_count', {
-                              'count': queue.expandedTracks.length.toString(),
-                            }),
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 12,
-                                ),
-                          ),
-                        ],
+                      child: Text(
+                        queue.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ],
@@ -236,6 +208,18 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
           ),
         ),
       ),
+    );
+    return AppMenuContentTransition(
+      primary: editPanel,
+      secondary: _editingColor
+          ? PlaybackQueueColorPanel(
+              colorValue: queue.colorValue,
+              height: _playbackQueueEditPanelHeight,
+              onColorChanged: (value) =>
+                  playback.setPlaybackQueueColorValue(sessionId, value),
+              onBack: () => setState(() => _editingColor = false),
+            )
+          : null,
     );
   }
 

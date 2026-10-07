@@ -15,6 +15,7 @@ import '../../../app/presentation/main_tab_state_mixin.dart';
 import '../../../app/presentation/screen_view_models.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -267,6 +268,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   void initState() {
     super.initState();
+    // A navigation target must lay out ready content in its preparation frame,
+    // rather than replacing a skeleton after the visible slide has started.
+    _initialPlaceholderDismissed =
+        _isSelected &&
+        !UiInteractionCoordinator.instance.navigationAllowed.value &&
+        ref.read(playlistStructureUiProvider).isInitialized;
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     final controller = ref.read(mainScreenControllerProvider);
     initTabState(controller.scrollToTopTab, controller.stopScrollTab);
@@ -286,10 +293,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   void _handleActiveTabChanged() {
     if (!mounted || !_isSelected || _initialPlaceholderDismissed) return;
-    // Hidden preparation may be followed by activation with unchanged data.
-    _scheduleInitialPlaceholderDismissal(
-      isInitialized: ref.read(playlistStructureUiProvider).isInitialized,
-    );
+    if (ref.read(playlistStructureUiProvider).isInitialized) {
+      // Apply ready data before a retained page's next preparation layout.
+      setState(() => _initialPlaceholderDismissed = true);
+    }
   }
 
   Future<void> _clearAllWithUndo(
@@ -564,34 +571,33 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             child: Consumer(
               builder: (context, ref, child) {
                 final headerState = ref.watch(playlistHeaderUiProvider);
-                if (_isSelectionMode) {
-                  final count = _selectedSessionIds.length;
-                  final isPlayEnabled = count > 0;
-                  final isPauseEnabled = count > 0;
-                  final isPinEnabled = count > 0;
-                  final isAllPinned =
-                      count > 0 &&
-                      _selectedSessionIds.every(
-                        pinnedPlaylistSessionIds.contains,
-                      );
-                  final isRemoveEnabled = count > 0;
-                  final canCreateQueue = _hasSelectedPlaybackQueueSource(
-                    visibleEntries,
-                    paths,
-                  );
+                  if (_isSelectionMode) {
+                    final count = _selectedSessionIds.length;
+                    final isPlayEnabled = count > 0;
+                    final isPauseEnabled = count > 0;
+                    final isPinEnabled = count > 0;
+                    final isAllPinned =
+                        count > 0 &&
+                        _selectedSessionIds.every(
+                          pinnedPlaylistSessionIds.contains,
+                        );
+                    final isRemoveEnabled = count > 0;
+                    final canCreateQueue = _hasSelectedPlaybackQueueSource(
+                      visibleEntries,
+                      paths,
+                    );
 
-                  return TopPageHeader(
-                    key: const ValueKey('playlist_batch_selection_header'),
-                    icon: Icons.featured_play_list_rounded,
-                    topCapsuleTitle: i18n.tr('multi_select'),
-                    topCapsuleData: i18n.tr('selected_count', {
-                      'count': count.toString(),
-                    }),
-                    titleWidget: const SizedBox.shrink(),
-                    leading: HeaderActionPill(
-                      children: [
-                        AppHeaderActionTransition(
-                          child: IconButton(
+                    return TopPageHeader(
+                      key: const ValueKey('playlist_batch_selection_header'),
+                      icon: Icons.featured_play_list_rounded,
+                      topCapsuleTitle: i18n.tr('multi_select'),
+                      topCapsuleData: i18n.tr('selected_count', {
+                        'count': count.toString(),
+                      }),
+                      titleWidget: const SizedBox.shrink(),
+                      leading: HeaderActionPill(
+                        children: [
+                          IconButton(
                             key: const ValueKey('batch_play_button'),
                             onPressed: isPlayEnabled ? _handleBatchPlay : null,
                             icon: const Icon(Icons.play_arrow_rounded),
@@ -600,10 +606,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             padding: EdgeInsets.zero,
                             constraints: HeaderActionPill.buttonConstraints,
                           ),
-                        ),
-                        AppHeaderActionTransition(
-                          delayIndex: 1,
-                          child: IconButton(
+                          IconButton(
                             key: const ValueKey('batch_pause_button'),
                             onPressed: isPauseEnabled
                                 ? _handleBatchPause
@@ -614,10 +617,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             padding: EdgeInsets.zero,
                             constraints: HeaderActionPill.buttonConstraints,
                           ),
-                        ),
-                        AppHeaderActionTransition(
-                          delayIndex: 2,
-                          child: IconButton(
+                          IconButton(
                             key: const ValueKey('batch_create_queue_button'),
                             onPressed: canCreateQueue
                                 ? () => _handleCreatePlaybackQueue(
@@ -632,10 +632,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             padding: EdgeInsets.zero,
                             constraints: HeaderActionPill.buttonConstraints,
                           ),
-                        ),
-                        AppHeaderActionTransition(
-                          delayIndex: 3,
-                          child: IconButton(
+                          IconButton(
                             key: const ValueKey('batch_pin_button'),
                             onPressed: isPinEnabled ? _handleBatchPin : null,
                             icon: isAllPinned
@@ -648,10 +645,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             padding: EdgeInsets.zero,
                             constraints: HeaderActionPill.buttonConstraints,
                           ),
-                        ),
-                        AppHeaderActionTransition(
-                          delayIndex: 4,
-                          child: IconButton(
+                          IconButton(
                             key: const ValueKey('batch_remove_button'),
                             onPressed: isRemoveEnabled
                                 ? _handleBatchRemove
@@ -662,11 +656,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             padding: EdgeInsets.zero,
                             constraints: HeaderActionPill.buttonConstraints,
                           ),
-                        ),
-                      ],
-                    ),
-                    trailing: AppHeaderLeadingTransition(
-                      child: HeaderFloatingButton(
+                        ],
+                      ),
+                      trailing: HeaderFloatingButton(
                         child: IconButton(
                           key: const ValueKey('exit_selection_button'),
                           onPressed: _exitSelectionMode,
@@ -674,33 +666,31 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           tooltip: i18n.tr('cancel'),
                         ),
                       ),
-                    ),
-                  ).withAppHeaderTransition();
-                }
+                    ).withAppHeaderTransition();
+                  }
 
-                return TopPageHeader(
-                  key: headerKey,
-                  icon: Icons.featured_play_list_rounded,
-                  collapseController: _scrollController,
-                  topCapsuleTitle: i18n.tr('playback_sessions'),
-                  topCapsuleData: i18n.tr('playlist_header_stats', {
-                    'sessions': headerState.sessionCount.toString(),
-                    'playing': headerState.playingCount.toString(),
-                  }),
-                  title: i18n.tr('playback_sessions'),
-                  titleWidget: _buildHeaderLeftActions(
-                    context,
-                    i18n,
-                    structureState,
-                  ),
-                  trailing: SizedBox(
-                    height: 38,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        AppHeaderActionTransition(
-                          child: headerState.hasTimer
+                  return TopPageHeader(
+                    key: headerKey,
+                    icon: Icons.featured_play_list_rounded,
+                    collapseController: _scrollController,
+                    topCapsuleTitle: i18n.tr('playback_sessions'),
+                    topCapsuleData: i18n.tr('playlist_header_stats', {
+                      'sessions': headerState.sessionCount.toString(),
+                      'playing': headerState.playingCount.toString(),
+                    }),
+                    title: i18n.tr('playback_sessions'),
+                    titleWidget: _buildHeaderLeftActions(
+                      context,
+                      i18n,
+                      structureState,
+                    ),
+                    trailing: SizedBox(
+                      height: 38,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          headerState.hasTimer
                               ? TimerCountdownCapsule(
                                   remaining:
                                       headerState.timerRemaining ??
@@ -734,12 +724,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                     ),
                                   ),
                                 ),
-                        ),
-                        if (defaultTargetPlatform != TargetPlatform.windows) ...[
-                          const SizedBox(width: 8),
-                          AppHeaderActionTransition(
-                            delayIndex: 1,
-                            child: HeaderFloatingButton(
+                          if (defaultTargetPlatform !=
+                              TargetPlatform.windows) ...[
+                            const SizedBox(width: 8),
+                            HeaderFloatingButton(
                               child: IconButton(
                                 key: const ValueKey<String>(
                                   'playlist_sleep_canvas_button',
@@ -766,13 +754,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 ),
                               ),
                             ),
-                          ),
-                        ],
-                        const SizedBox(width: 8),
-                        AppHeaderActionTransition(
-                          delayIndex:
-                              defaultTargetPlatform != TargetPlatform.windows ? 2 : 1,
-                          child: HeaderFloatingButton(
+                          ],
+                          const SizedBox(width: 8),
+                          HeaderFloatingButton(
                             child: IconButton(
                               key: const ValueKey<String>(
                                 'playlist_sort_button',
@@ -788,18 +772,17 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ).withAppHeaderTransition();
-              },
+                  ).withAppHeaderTransition();
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
     return BrowsePageScroll(
       pageKey: 'playlist',
       controller: _scrollController,

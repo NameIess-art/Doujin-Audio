@@ -76,12 +76,12 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _dismissController;
   Animation<double>? _routeAnimation;
+  late Listenable _motion;
   final ValueNotifier<bool> _transitionActive = ValueNotifier(true);
   int _dismissOperation = 0;
   bool _closing = false;
   final Object _dismissInteractionSource = Object();
   bool _dismissInteractionActive = false;
-  final ValueNotifier<bool> _dismissInteractionNotifier = ValueNotifier(false);
   final ValueNotifier<bool> _segmentPanelExpandedNotifier = ValueNotifier(
     false,
   );
@@ -102,6 +102,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       duration: const Duration(milliseconds: 180),
       value: 0,
     );
+    _motion = _dismissController;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _activeSessionDetailIdsNotifier.push(widget.sessionId);
@@ -122,6 +123,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       _routeAnimation?.removeStatusListener(_handleEnterStatus);
       _routeAnimation = animation;
       animation?.addStatusListener(_handleEnterStatus);
+      _motion = Listenable.merge([?animation, _dismissController]);
     }
     _handleEnterStatus(animation?.status ?? AnimationStatus.completed);
   }
@@ -141,7 +143,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       _dismissInteractionSource,
     );
     widget.revealBehindNotifier.value = false;
-    _dismissInteractionNotifier.dispose();
     _segmentPanelExpandedNotifier.dispose();
     _transitionActive.dispose();
     _dismissController.dispose();
@@ -164,7 +165,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     UiInteractionCoordinator.instance.beginInteraction(
       _dismissInteractionSource,
     );
-    _dismissInteractionNotifier.value = true;
     _setRevealBehind(true);
   }
 
@@ -174,7 +174,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     if (_dismissController.value <= 0.001) {
       _setRevealBehind(false);
     }
-    _dismissInteractionNotifier.value = false;
     _transitionActive.value =
         (_routeAnimation != null &&
             _routeAnimation!.status != AnimationStatus.completed) ||
@@ -321,15 +320,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     final routeAnimation = MediaQuery.disableAnimationsOf(context)
         ? null
         : _routeAnimation;
-    final animatedListenable = Listenable.merge([
-      ?routeAnimation,
-      _dismissController,
-    ]);
-
     return Material(
       color: Colors.transparent,
       child: AnimatedBuilder(
-        animation: animatedListenable,
+        animation: _motion,
         builder: (context, child) {
           final rawEnterProgress = (routeAnimation?.value ?? 1).clamp(0.0, 1.0);
           final enterProgress = Curves.easeOutCubic.transform(rawEnterProgress);
@@ -389,11 +383,14 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           );
         },
         child: ValueListenableBuilder<bool>(
-          valueListenable: _dismissInteractionNotifier,
-          builder: (context, isDismissing, child) {
+          valueListenable: _transitionActive,
+          builder: (context, isTransitioning, child) {
             return TickerMode(
-              enabled: !isDismissing,
-              child: MarqueePauseScope(isPaused: isDismissing, child: child!),
+              enabled: !isTransitioning,
+              child: MarqueePauseScope(
+                isPaused: isTransitioning,
+                child: child!,
+              ),
             );
           },
           child: RepaintBoundary(

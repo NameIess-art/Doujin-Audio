@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/ui/warmup_scheduler.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/presentation/library_card_artwork.dart';
@@ -13,6 +15,155 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  testWidgets('resetting first-frame protection resumes queued cover queries', (
+    tester,
+  ) async {
+    final interaction = UiInteractionCoordinator.instance;
+    interaction.resetForTest();
+    addTearDown(interaction.resetForTest);
+    final cache = _RecordingCovers(result: '/reset.png');
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: cache,
+    );
+    final covers = LibraryCoverUiController(library: fixture.library);
+    addTearDown(fixture.dispose);
+    addTearDown(covers.dispose);
+    interaction.beginInteraction(Object(), deferVisualUpdates: true);
+    await tester.pumpWidget(
+      fixture.build(
+        Builder(
+          builder: (context) => AsyncCoverImage(
+            future: covers.deferredRemoteCover(
+              'https://cover/reset',
+              context: context,
+            ),
+            imageBuilder: (_, path) => Text(path),
+            fallbackBuilder: (_) => const SizedBox(),
+          ),
+        ),
+        overrides: [libraryCoverUiControllerProvider.overrideWithValue(covers)],
+      ),
+    );
+    expect(cache.requests, isEmpty);
+    expect(interaction.navigationAllowed.value, isTrue);
+    interaction.resetForTest();
+    await tester.pump();
+    expect(interaction.isVisualUpdateDeferred, isFalse);
+    expect(interaction.isInteracting, isFalse);
+    expect(cache.requests, ['remote:reset']);
+    cache.release.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('/reset.png'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      '$platform first-frame and navigation protection defer actual cover queries and commits',
+      (tester) async {
+        final interaction = UiInteractionCoordinator.instance;
+        interaction.resetForTest();
+        addTearDown(interaction.resetForTest);
+        final cache = _RecordingCovers(result: '/cover.png');
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: cache,
+        );
+        final covers = LibraryCoverUiController(library: fixture.library);
+        addTearDown(fixture.dispose);
+        addTearDown(covers.dispose);
+        final foreground = Object();
+        final navigation = Object();
+        final scroll = Object();
+        interaction.beginInteraction(foreground, deferVisualUpdates: true);
+        await tester.pumpWidget(
+          fixture.build(
+            Builder(
+              builder: (context) => AsyncCoverImage(
+                future: covers.deferredRemoteCover(
+                  'https://cover/first',
+                  context: context,
+                ),
+                imageBuilder: (_, path) => Text(path),
+                fallbackBuilder: (_) => const Text('cached frame'),
+              ),
+            ),
+            overrides: [
+              libraryCoverUiControllerProvider.overrideWithValue(covers),
+            ],
+          ),
+        );
+        expect(cache.requests, isEmpty);
+        expect(interaction.navigationAllowed.value, isTrue);
+        interaction.beginInteraction(scroll);
+        interaction.beginNavigation(navigation);
+        interaction.endInteraction(foreground);
+        await tester.pump(interaction.idleDelay);
+        expect(cache.requests, isEmpty);
+        interaction.cancelNavigation(navigation);
+        await tester.pump();
+        expect(cache.requests, ['remote:first']);
+        // A query started before another restore can finish during its guard.
+        interaction.beginInteraction(foreground, deferVisualUpdates: true);
+        cache.release.complete();
+        await tester.pump();
+        expect(find.text('/cover.png'), findsNothing);
+        interaction.endInteraction(foreground);
+        await tester.pump(
+          interaction.idleDelay - const Duration(milliseconds: 1),
+        );
+        expect(find.text('/cover.png'), findsNothing);
+        await tester.pump(const Duration(milliseconds: 1));
+        await tester.pump();
+        expect(find.text('/cover.png'), findsOneWidget);
+        expect(interaction.isInteracting, isTrue);
+        interaction.cancelInteraction(scroll);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      '$platform leaving a protected cover cancels its pending display result',
+      (tester) async {
+        final interaction = UiInteractionCoordinator.instance;
+        interaction.resetForTest();
+        addTearDown(interaction.resetForTest);
+        final cache = _RecordingCovers(result: '/stale.png');
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: cache,
+        );
+        final covers = LibraryCoverUiController(library: fixture.library);
+        addTearDown(fixture.dispose);
+        addTearDown(covers.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            AsyncCoverImage(
+              future: covers.deferredRemoteCover('https://cover/removed'),
+              imageBuilder: (_, path) => Text(path),
+              fallbackBuilder: (_) => const SizedBox(),
+            ),
+            overrides: [
+              libraryCoverUiControllerProvider.overrideWithValue(covers),
+            ],
+          ),
+        );
+        final foreground = Object();
+        interaction.beginInteraction(foreground, deferVisualUpdates: true);
+        cache.release.complete();
+        await tester.pump();
+        expect(interaction.pendingCommitCount, 1);
+        await tester.pumpWidget(const SizedBox.shrink());
+        interaction.cancelInteraction(foreground);
+        await tester.pump();
+        expect(interaction.pendingCommitCount, 0);
+        expect(find.text('/stale.png'), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
       '$platform loads the viewport center before cached rows',
@@ -294,7 +445,9 @@ MusicTrack _track(int index) => MusicTrack(
 );
 
 class _RecordingCovers extends CoverArtworkCacheService {
-  _RecordingCovers() : super(libraryService: LibraryService());
+  _RecordingCovers({this.result}) : super(libraryService: LibraryService());
+
+  final String? result;
 
   final requests = <String>[];
   final release = Completer<void>();
@@ -302,7 +455,7 @@ class _RecordingCovers extends CoverArtworkCacheService {
   Future<String?> _record(String key) async {
     requests.add(key);
     if (requests.length == 1) await release.future;
-    return null;
+    return result;
   }
 
   @override

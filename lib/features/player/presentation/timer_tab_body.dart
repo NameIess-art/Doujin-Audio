@@ -310,9 +310,9 @@ extension _TimerTabBody on _TimerTabState {
 
         return SizedBox(
           height: compactHeight,
-          child: KeyedSubtree(
-            key: ValueKey<bool>(showCompactDetail),
-            child: showCompactDetail
+          child: AppMenuContentTransition(
+            primary: buildConfiguratorSection(compactMode: true),
+            secondary: showCompactDetail
                 ? _buildCompactDetailPage(
                     context: context,
                     i18n: i18n,
@@ -325,7 +325,7 @@ extension _TimerTabBody on _TimerTabState {
                     pickAutoResumeTime: pickAutoResumeTime,
                     autoResumeAt: autoResumeCountdownTarget,
                   )
-                : buildConfiguratorSection(compactMode: true),
+                : null,
           ),
         );
       },

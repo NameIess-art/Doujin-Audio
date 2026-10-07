@@ -141,13 +141,14 @@ class _PlaybackControlPanel extends StatelessWidget {
         ),
         if (isLandscape || !segmentPanelExpanded)
           AnimatedSwitcher(
-            duration: kAppMotionSlow,
-            reverseDuration: kAppMotionStandard,
-            transitionBuilder: (child, animation) => buildAppFadeTransition(
-              context: context,
-              animation: animation,
-              child: child,
-            ),
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : kAppMotionSlow,
+            reverseDuration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : kAppMotionStandard,
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
             child: KeyedSubtree(
               key: ValueKey('secondary_${session.id}'),
               child: _PlaybackSecondaryControls(

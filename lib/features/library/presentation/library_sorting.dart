@@ -14,7 +14,6 @@ List<LibraryNode> sortLibraryNodes({
   required bool groupByLibrary,
   required LibraryFacade library,
   WorkNameDisplay workNameDisplay = WorkNameDisplay.workTitle,
-  AudioDetail? Function(AudioDetailTarget target)? detailForTarget,
   Set<String> pinnedPaths = const <String>{},
 }) {
   if (nodes.length < 2) return nodes;
@@ -31,7 +30,6 @@ List<LibraryNode> sortLibraryNodes({
           groupByLibrary,
           library,
           workNameDisplay,
-          detailForTarget,
         ),
         pinned: normalizedPinned.contains(PathMatcher.normalize(node.path)),
       ),
@@ -90,7 +88,6 @@ LibrarySortValue _librarySortValue(
   bool groupByLibrary,
   LibraryFacade library,
   WorkNameDisplay workNameDisplay,
-  AudioDetail? Function(AudioDetailTarget target)? detailForTarget,
 ) {
   final needsDetail = criterion == LibrarySortCriterion.voiceActor ||
       criterion == LibrarySortCriterion.releaseDate;
@@ -116,9 +113,7 @@ LibrarySortValue _librarySortValue(
   AudioDetail? detail;
   if ((needsDetail || needsWorkTitle) && node is FolderNode) {
     final target = AudioDetailTarget.libraryRootFolder(node.path);
-    detail = detailForTarget == null
-        ? _detailForTarget(target, library)
-        : detailForTarget(target);
+    detail = _detailForTarget(target, library);
   } else if (needsDetail && firstTrack != null) {
     detail = _detailForTrack(firstTrack, library);
   }

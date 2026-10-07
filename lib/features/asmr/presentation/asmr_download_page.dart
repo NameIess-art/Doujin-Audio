@@ -401,7 +401,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                                 },
                               ),
                             )
-                          : ListView.builder(
+                          : AsmrDownloadSelectionList(
                               key: const ValueKey<String>(
                                 'asmr_download_file_list',
                               ),
@@ -411,19 +411,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                                 16,
                                 listBottomPadding,
                               ),
-                              itemCount: selection.rootNodes.length,
-                              itemBuilder: (context, index) {
-                                final node = selection.rootNodes[index];
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 2),
-                                  child: AsmrDownloadNodeTile(
-                                    node: node,
-                                    depth: 0,
-                                    selection: selection,
-                                    onSelectionChanged: _refreshSelection,
-                                  ),
-                                );
-                              },
+                              selection: selection,
+                              onSelectionChanged: _refreshSelection,
                             ),
                     ),
                   ),
@@ -566,12 +555,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                       duration: MediaQuery.disableAnimationsOf(context)
                           ? Duration.zero
                           : kPlaceholderContentTransitionDuration,
-                      transitionBuilder: (child, animation) =>
-                          buildAppFadeTransition(
-                            context: context,
-                            animation: animation,
-                            child: child,
-                          ),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
                       child: AsmrDownloadSummaryCard(
                         key: ValueKey(_work == null),
                         work: _work,

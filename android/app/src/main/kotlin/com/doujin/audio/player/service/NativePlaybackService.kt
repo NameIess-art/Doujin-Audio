@@ -399,6 +399,14 @@ class NativePlaybackService : MediaSessionService() {
                     foregroundCoordinator.startOrUpdate().playbackAllowed
                 override fun focusSession(sessionId: String) = this@NativePlaybackService.focusSession(sessionId)
                 override fun ensurePlayer(session: NativePlaybackSession) = ensureFocusedPlayer(session)
+                override fun prepareRecoveryQueue(
+                    sessionId: String,
+                    queue: List<NativeMediaItemDescriptor>,
+                    isCurrent: () -> Boolean,
+                    complete: (Result<NativePlaybackQueue>) -> Unit
+                ) = queuePreparation.prepare(sessionId, queue, {
+                    controller() === this@NativePlaybackService && isCurrent()
+                }, complete)
                 override fun onRecoveryTimedOut(sessionId: String) {
                     val session = sessionManager.get(sessionId) ?: return
                     session.playerOrNull()?.pause()
@@ -754,6 +762,7 @@ class NativePlaybackService : MediaSessionService() {
         args: NativePrepareSessionArguments,
         complete: (Map<String, Any?>) -> Unit
     ) {
+        playbackRecovery.resetHealth(args.sessionId, "prepare_session", cancelRecovery = true)
         queuePreparation.prepareSession(args, sessionManager, {
             controller() === this && NativePlaybackStateStore.sessionRevision(args.sessionId) == args.definitionRevision
         }) { prepared ->
@@ -776,6 +785,9 @@ class NativePlaybackService : MediaSessionService() {
         args: NativeRepeatOneArguments,
         complete: (Map<String, Any?>) -> Unit
     ) {
+        if (args.queue.isNotEmpty()) {
+            playbackRecovery.resetHealth(args.sessionId, "replace_queue", cancelRecovery = true)
+        }
         queuePreparation.prepareRepeatOne(args, sessionManager, { controller() === this }) { prepared ->
             complete(prepared.fold(::setRepeatOne,
                 { errorResult(it.message ?: "Playback queue preparation failed.") }))
@@ -786,6 +798,11 @@ class NativePlaybackService : MediaSessionService() {
         args: NativeUpdateQueueArguments,
         complete: (Map<String, Any?>) -> Unit
     ) {
+        sessionManager.get(args.sessionId)?.let { session ->
+            if (args.queueRevision >= session.queueRevision) {
+                playbackRecovery.resetHealth(args.sessionId, "update_queue", cancelRecovery = true)
+            }
+        }
         queuePreparation.prepareUpdate(args, sessionManager, { controller() === this }) { prepared ->
             complete(prepared.fold({ updateQueue(args, it) },
                 { errorResult(it.message ?: "Playback queue preparation failed.") }))
@@ -870,7 +887,7 @@ class NativePlaybackService : MediaSessionService() {
         if (needsImmediateRecovery) {
             playbackRecovery.retryNow(sessionId, "user_retry")
         }
-        ensureFocusedPlayer(session).play()
+        if (!playbackRecovery.isRecovering(sessionId)) ensureFocusedPlayer(session).play()
         evictPlayersIfNeeded()
         pausedSessionIds.forEach(::publishSessionState)
         val snapshot = publishSessionState(sessionId)

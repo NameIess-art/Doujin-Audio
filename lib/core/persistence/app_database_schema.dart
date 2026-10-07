@@ -82,6 +82,9 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
   await _createAudioDetailsTable(db);
   await _createLibraryEntriesTable(db);
   await _createTimeSegmentLabelsTable(db);
+  if (oldVersion < 12 && newVersion >= 12) {
+    await _backfillTimeSegmentMatchKeys(db);
+  }
   if (oldVersion < 9 && newVersion >= 9) {
     await db.execute('DROP INDEX IF EXISTS idx_track_scan_generation');
     await db.execute('DROP INDEX IF EXISTS idx_track_playback_last_played');
@@ -558,6 +561,7 @@ Future<void> _createTimeSegmentLabelsTable(Database db) async {
       CREATE TABLE IF NOT EXISTS time_segment_labels (
         id TEXT PRIMARY KEY,
         track_key TEXT NOT NULL,
+        track_match_key TEXT NOT NULL,
         name TEXT NOT NULL,
         start_ms INTEGER NOT NULL,
         end_ms INTEGER NOT NULL,
@@ -566,8 +570,44 @@ Future<void> _createTimeSegmentLabelsTable(Database db) async {
         updated_at_ms INTEGER NOT NULL
       )
     ''');
+  await _addColumnIfMissing(
+    db,
+    'time_segment_labels',
+    'track_match_key',
+    "TEXT NOT NULL DEFAULT ''",
+  );
   await db.execute(
     'CREATE INDEX IF NOT EXISTS idx_time_segment_labels_track '
     'ON time_segment_labels(track_key, start_ms, created_at_ms)',
   );
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_time_segment_labels_match '
+    'ON time_segment_labels(track_match_key, start_ms, created_at_ms)',
+  );
+}
+
+Future<void> _backfillTimeSegmentMatchKeys(Database db) async {
+  while (true) {
+    final rows = await db.query(
+      'time_segment_labels',
+      columns: ['id', 'track_key'],
+      where: "track_match_key = ''",
+      limit: 500,
+    );
+    if (rows.isEmpty) return;
+    final batch = db.batch();
+    for (final row in rows) {
+      batch.update(
+        'time_segment_labels',
+        {
+          'track_match_key': PathMatcher.equivalenceKey(
+            row['track_key'] as String,
+          ),
+        },
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
 }

@@ -744,6 +744,7 @@ const Map<String, String> appLanguageZh = {
   'subtitles': '字幕',
   'import_subtitle': '导入字幕',
   'subtitle_script_generate': '台本识别字幕',
+  'subtitle_script_selection_title': '台本选择',
   'subtitle_script_hint': '选择 TXT 或 MD 台本，为当前音频匹配时间轴',
   'subtitle_script_existing_title': '当前音频已有字幕',
   'subtitle_script_existing_hint': '继续识别会生成新的字幕，并在完成后切换为当前字幕。原字幕文件会保留。',

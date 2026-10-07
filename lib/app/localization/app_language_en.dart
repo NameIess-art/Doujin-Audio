@@ -825,6 +825,7 @@ const Map<String, String> appLanguageEn = {
   'subtitles': 'Subtitles',
   'import_subtitle': 'Import subtitle',
   'subtitle_script_generate': 'Match script to audio',
+  'subtitle_script_selection_title': 'Script selection',
   'subtitle_script_hint': 'Choose a TXT or MD script to create timed subtitles',
   'subtitle_script_existing_title': 'This audio already has subtitles',
   'subtitle_script_existing_hint':

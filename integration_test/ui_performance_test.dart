@@ -9,9 +9,11 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
+import 'package:doujin_audio/app/presentation/main_destination.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -43,9 +45,16 @@ import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart'
     show databaseFactoryFfi, sqfliteFfiInit;
 import 'package:media_kit/media_kit.dart' show MediaKit;
+import 'package:doujin_audio/main.dart' as app;
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart';
+import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
+import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
+import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
 
 import '../test/support/app_runtime_test_fixture.dart';
 import '../test/support/test_persistence_repository.dart';
+import 'support/app_startup_test_helper.dart';
 
 double get _displayRefreshRate =>
     WidgetsBinding.instance.platformDispatcher.views.first.display.refreshRate;
@@ -61,6 +70,7 @@ const _transitionCondition = String.fromEnvironment(
   defaultValue: 'baseline',
 );
 const _idleSeconds = int.fromEnvironment('PERF_IDLE_SECONDS', defaultValue: 60);
+const _openings = int.fromEnvironment('PERF_OPENINGS', defaultValue: 3);
 const _libraryItemOverride = int.fromEnvironment('PERF_LIBRARY_ITEMS');
 const _asmrItemOverride = int.fromEnvironment('PERF_ASMR_ITEMS');
 const _asmrTrackOverride = int.fromEnvironment('PERF_ASMR_TRACKS');
@@ -70,6 +80,7 @@ const _semanticsEnabled = bool.fromEnvironment(
   defaultValue: _scenario != 'playback',
 );
 const _coverManifest = String.fromEnvironment('PERF_COVER_MANIFEST');
+const _traceReadyFile = String.fromEnvironment('PERF_TRACE_READY_FILE');
 List<({String url, String path})> _profileCovers = const [];
 
 int get _libraryItemCount => _libraryItemOverride > 0
@@ -114,6 +125,7 @@ void main() {
         'playback',
         'page-transitions',
         'page-transitions-playing',
+        'page-transitions-startup',
       },
       contains(_scenario),
       reason: 'Unsupported PERF_SCENARIO=$_scenario',
@@ -124,6 +136,18 @@ void main() {
       reason: 'Unsupported PERF_TRANSITION_CONDITION=$_transitionCondition',
     );
     expect(_idleSeconds, greaterThanOrEqualTo(0));
+    expect(_openings, greaterThan(0));
+    if (_scenario == 'page-transitions-startup') {
+      expect(_transitionCondition, 'baseline');
+      expect(
+        _openings,
+        1,
+        reason: 'Each startup sample needs a fresh process.',
+      );
+      await _waitForHostTimeline(tester);
+      await _measureProductionStartup(tester, binding);
+      return;
+    }
     SharedPreferences.setMockInitialValues(const <String, Object>{
       AppPreferences.onboardingCompletedKey: true,
     });
@@ -278,6 +302,192 @@ void main() {
   }, semanticsEnabled: _semanticsEnabled);
 }
 
+Future<void> _measureProductionStartup(
+  WidgetTester tester,
+  IntegrationTestWidgetsFlutterBinding binding,
+) async {
+  expect(
+    Platform.isAndroid,
+    true,
+    reason: 'This run uses the independent Android Profile package.',
+  );
+  final preparation = Stopwatch()..start();
+  await startAppForTest(tester, app.main);
+  await enterMainScreen(tester);
+  final stackFinder = find.byKey(const ValueKey<String>('main_page_stack'));
+  // enterMainScreen observes the actual production runtime gate. Do not settle
+  // the page or browse any target before sampling its first navigation.
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while ((stackFinder.evaluate().isEmpty ||
+          !UiInteractionCoordinator.instance.navigationAllowed.value) &&
+      DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  expect(stackFinder, findsOneWidget);
+  expect(UiInteractionCoordinator.instance.navigationAllowed.value, true);
+  preparation.stop();
+
+  final container = ProviderScope.containerOf(
+    tester.element(find.byType(MainScreen)),
+    listen: false,
+  );
+  final runtime = container.read(audioRuntimeCoordinatorProvider);
+  addTearDown(() async {
+    // Normal production shutdown; never clear sessions, DB, preferences or
+    // cover caches. Call before removing the production ProviderScope.
+    await runtime.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+  final library = container.read(libraryFacadeProvider);
+  final playback = container.read(playbackFacadeProvider);
+  final settings = container.read(settingsRepositoryProvider);
+  final destinations = resolveMainDestinations(
+    showLocalLibrary: settings.showLocalLibrary,
+    showAsmrOne: settings.showAsmrOne,
+  );
+  final stack = tester.widget<AppFadeThroughIndexedStack>(stackFinder);
+  final initialDestination = destinations[stack.index].type;
+  // A previous test may have persisted Settings as the last browse page.
+  // Honor that real state; never reset it just to match synthetic fixtures.
+  final firstDestination = initialDestination == MainDestinationType.settings
+      ? MainDestinationType.playlist
+      : MainDestinationType.settings;
+  VoidCallback selectDestination(MainDestinationType destination) {
+    final index = destinations.indexWhere((item) => item.type == destination);
+    expect(index, greaterThanOrEqualTo(0));
+    final rail = find.byType(NavigationRail);
+    if (rail.evaluate().isNotEmpty) {
+      final onSelected = tester
+          .widget<NavigationRail>(rail)
+          .onDestinationSelected!;
+      return () => onSelected(index);
+    }
+    final key = destinations[index].labelKey;
+    return tester
+        .widget<InkResponse>(
+          find.byKey(ValueKey<String>('main_destination_ink_$key')),
+        )
+        .onTap!;
+  }
+
+  final preparationUs = preparation.elapsedMicroseconds;
+  final firstAction = selectDestination(firstDestination);
+  final slideVisible = _observeTransitionSlide(tester, 'main_page_stack');
+  final rounds = <Map<String, Object>>[];
+  rounds.add(
+    await _measureTransitionAction(
+      tester,
+      'startup-main-${firstDestination.name}',
+      1,
+      firstAction,
+      slideVisible,
+    ),
+  );
+  if (firstDestination != MainDestinationType.settings) {
+    selectDestination(MainDestinationType.settings)();
+    for (var frame = 0; frame < 40; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+  }
+
+  final i18n = container.read(appLanguageProviderInstanceProvider);
+  final aboutTitle = find.descendant(
+    of: find.byType(SettingsTab),
+    matching: find.text(i18n.tr('about')),
+  );
+  expect(aboutTitle, findsOneWidget);
+  final aboutTile = find.ancestor(
+    of: aboutTitle,
+    matching: find.byType(ListTile),
+  );
+  final openAbout = tester.widget<ListTile>(aboutTile).onTap;
+  expect(openAbout, isNotNull);
+  TransitionRoute<dynamic>? aboutRoute;
+  rounds.add(
+    await _measureTransitionAction(
+      tester,
+      'startup-ordinary-about',
+      1,
+      openAbout!,
+      () => _routeTransitionVisible(aboutRoute),
+      afterFirstPump: () {
+        final about = find.byType(AboutPage, skipOffstage: false);
+        expect(about, findsOneWidget);
+        aboutRoute =
+            ModalRoute.of(tester.element(about)) as TransitionRoute<dynamic>;
+        // AppPreparedPageRoute records its first full page with progress 0.
+        // Capture that route exactly once before the first visible frame.
+        expect(
+          aboutRoute!.animation!.value,
+          0,
+          reason:
+              'The visibility probe must not omit the first animation frame.',
+        );
+      },
+    ),
+  );
+  final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
+  navigator.pop();
+  for (var frame = 0; frame < 40; frame++) {
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  // Preserve the production package's saved browse destination for the paired run.
+  selectDestination(initialDestination)();
+  for (var frame = 0; frame < 40; frame++) {
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  final report = <String, Object>{
+    'scenario': _scenario,
+    'platform': 'android',
+    'runtime': 'production bootstrap + persisted SQLite + Media3',
+    'mode': kProfileMode ? 'profile' : (kReleaseMode ? 'release' : 'debug'),
+    'playing': playback.hasPlayingSession,
+    'framePolicy': binding.framePolicy.name,
+    'transitionCondition': 'baseline',
+    'openings': 1,
+    'idleSeconds': _idleSeconds,
+    'refreshRateHz': _refreshRate,
+    'conditions': <Map<String, Object>>[
+      {'opening': 1, 'condition': 'baseline', 'conditionElapsedMs': 0},
+    ],
+    'startupPreparationUs': preparationUs,
+    'initialDestination': initialDestination.name,
+    'firstDestination': firstDestination.name,
+    'libraryItems': library.library.length,
+    'watchedFolders': library.watchedFolders.length,
+    'watchedLibraries': library.watchedLibraries.length,
+    'playbackSessions': playback.activeSessions.length,
+    'playingSessions': playback.activeSessions
+        .where((s) => s.state.playing)
+        .length,
+    'dataset':
+        'Independent .perf package existing persisted data; no fixture seeding',
+    'onboarding':
+        'Existing startup helper accepts onboarding if shown; elapsed preparation includes it',
+    'frameBudgetUs': _frameBudget.inMicroseconds,
+    'frameTimingDeliveryWaitMs': 2000,
+    'firstVisibleFrameMeasurement':
+        'Existing frameNumber-matched UI commit probe; not display presentation',
+    'input':
+        'Production NavigationRail/InkResponse/ListTile callback; no injected route or fake version',
+    'timelineTracing': const String.fromEnvironment(
+      'PERF_TRACE_READY_FILE',
+    ).isNotEmpty,
+    'samplingLimits':
+        'Starts before app.main but after integration harness initialization. '
+        'Preparation includes production bootstrap, helper polling (up to 100 ms), '
+        'and possible onboarding. It is not OS process-to-first-display latency. '
+        'Host trace handshake occurs before app.main; enabled tracing adds profiling overhead. '
+        'Immediate first navigation does not prove overlap with delayed startup maintenance. '
+        'Empty persisted data is an empty-data startup sample, not the synthetic 100-item workload.',
+    'rounds': rounds,
+  };
+  binding.reportData = {'uiPerformance': report};
+  debugPrint('UI_PERFORMANCE ${jsonEncode(report)}');
+  _expectFrameBudgets(rounds);
+}
+
 Future<void> _measureRealPlayback(
   WidgetTester tester,
   IntegrationTestWidgetsFlutterBinding binding,
@@ -379,12 +589,45 @@ Future<void> _measureRealPlayback(
     );
     final id = fixture.playback.sessions.keys.single;
     await _toggleRuntimeSession(tester, fixture, id, playing: true);
+    var backgroundPermissionPromptDismissed = false;
+    if (Platform.isAndroid) {
+      final mainContext = tester.element(find.byType(MainScreen));
+      final i18n = ProviderScope.containerOf(
+        mainContext,
+        listen: false,
+      ).read(appLanguageProviderInstanceProvider);
+      final deadline = DateTime.now().add(const Duration(seconds: 5));
+      // The real overlay asks about battery exemption after playback starts.
+      // Close its production "later" action before measuring unobscured pages.
+      while (DateTime.now().isBefore(deadline)) {
+        await tester.pump(const Duration(milliseconds: 16));
+        if (find
+            .text(i18n.tr('background_play_permission_title'))
+            .hitTestable()
+            .evaluate()
+            .isNotEmpty) {
+          await tester.tap(find.text(i18n.tr('later')).hitTestable());
+          backgroundPermissionPromptDismissed = true;
+          for (var frame = 0; frame < 40; frame++) {
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          break;
+        }
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 100)),
+        );
+      }
+      expect(ModalRoute.of(mainContext)!.isCurrent, true);
+    }
     final samples = await _measurePageTransitions(
       tester,
       localPath: tracks.first.path,
+      sessionId: id,
     );
     expect(fixture.playback.sessionById(id)!.state.playing, true);
     final report = _pageTransitionReport(samples, playing: true);
+    report['backgroundPermissionPromptDismissed'] =
+        backgroundPermissionPromptDismissed;
     binding.reportData = {'uiPerformance': report};
     debugPrint('UI_PERFORMANCE ${jsonEncode(report)}');
     _expectFrameBudgets(samples.rounds);
@@ -983,13 +1226,54 @@ Future<Map<String, Object>> _prepareTransitionCondition(
     await tester.pump();
     return const {};
   }
+  if (_transitionCondition == 'idle') {
+    return (await tester.runAsync(() async {
+      expect(binding.lifecycleState, AppLifecycleState.resumed);
+      final interrupted = Completer<AppLifecycleState>();
+      final watch = Stopwatch()..start();
+      final listener = AppLifecycleListener(
+        onStateChange: (state) {
+          if (state != AppLifecycleState.resumed && !interrupted.isCompleted) {
+            debugPrint('PAGE_TRANSITION_IDLE_INTERRUPTED ${state.name}');
+            interrupted.complete(state);
+          }
+        },
+      );
+      try {
+        debugPrint('PAGE_TRANSITION_IDLE_READY pid=$pid seconds=$_idleSeconds');
+        final state = await Future.any<AppLifecycleState?>([
+          Future<void>.delayed(
+            const Duration(seconds: _idleSeconds),
+          ).then((_) => null),
+          interrupted.future,
+        ]);
+        watch.stop();
+        expect(
+          state,
+          isNull,
+          reason:
+              'Foreground idle was interrupted after '
+              '${watch.elapsedMilliseconds} ms by ${state?.name}',
+        );
+        expect(binding.lifecycleState, AppLifecycleState.resumed);
+        debugPrint('PAGE_TRANSITION_IDLE_COMPLETE');
+        return <String, Object>{
+          'foregroundIdleMs': watch.elapsedMilliseconds,
+          'foregroundIdlePid': pid,
+          'foregroundIdleContinuous': true,
+        };
+      } finally {
+        listener.dispose();
+      }
+    }))!;
+  }
   if (_transitionCondition == 'resume') {
     binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
     binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
   }
   try {
-    if (_transitionCondition == 'idle' || _transitionCondition == 'resume') {
+    if (_transitionCondition == 'resume') {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(seconds: _idleSeconds)),
       );
@@ -1033,11 +1317,13 @@ Map<String, Object> _pageTransitionReport(
   'semanticsEnabled': _semanticsEnabled,
   'platformSemanticsEnabled': WidgetsBinding.instance.semanticsEnabled,
   'coverFixtureCount': _profileCovers.length,
+  'hostTimelineCapture': _traceReadyFile.isNotEmpty,
   'decodedImageCacheCount': PaintingBinding.instance.imageCache.currentSize,
   'libraryItems': playing ? 100 : _libraryItemCount,
   'asmrItems': playing ? 100 : _asmrItemCount,
   'transitionCondition': _transitionCondition,
   'idleSeconds': _idleSeconds,
+  'openings': _openings,
   'refreshRateHz': _refreshRate,
   'frameBudgetSource': _displayRefreshRate.isFinite && _displayRefreshRate > 0
       ? 'FlutterView.display.refreshRate'
@@ -1049,7 +1335,7 @@ Map<String, Object> _pageTransitionReport(
   'firstVisibleFrameMeasurement':
       'UI frame commit with 0 < route progress < 1 or incoming slide within viewport; not display presentation time',
   'firstVisibleFrameSampleWindow':
-      'First 10 action frames whose UI build finish is at or after the first visible UI commit',
+      'First 10 visible animation frames, matched by engine frame number; includes the first visible frame',
   'firstVisibleProbe':
       'Retained slide elements resolved before timing; no widget-tree search in frame callbacks',
   'asmrDetailEntry': 'Real ASMR card onTap -> showAsmrWorkDetailSheet',
@@ -1066,17 +1352,181 @@ Map<String, Object> _pageTransitionReport(
       ? 'Test binding handleMemoryPressure; not measured OS memory pressure'
       : 'No simulated memory pressure',
   'samplingLimits':
-      'Synthetic library/ASMR metadata and optional cover files; no cold-process restart, '
-      'OS task snapshot or renderer surface-loss trace. ImageCache counters '
+      'Synthetic library/ASMR metadata and optional cover files; baseline is a fresh '
+      'test process but starts after fixture setup, not production cold-start latency. '
+      'No display presentation or renderer surface-loss trace. ImageCache counters '
       'exclude GPU textures, Dart heap and native player memory.',
   'conditions': samples.conditions,
   'rounds': samples.rounds,
 };
 
+bool Function() _observeTransitionSlide(WidgetTester tester, String stackKey) {
+  // Finder traversal inside POST_FRAME was itself producing 20 ms frames.
+  // Existing page elements survive the slide; only inspect their positions.
+  final slides = find
+      .descendant(
+        of: find.byKey(ValueKey<String>(stackKey)),
+        matching: find.byType(SlideTransition),
+      )
+      .evaluate()
+      .toList(growable: false);
+  expect(slides, isNotEmpty);
+  return () => slides.any((element) {
+    if (!element.mounted) return false;
+    final dx = (element.widget as SlideTransition).position.value.dx;
+    return dx.abs() > 0.001 && dx.abs() < 0.999;
+  });
+}
+
+Future<void> _waitForHostTimeline(WidgetTester tester) async {
+  if (_traceReadyFile.isNotEmpty) {
+    await tester.runAsync(() async {
+      final deadline = DateTime.now().add(const Duration(seconds: 60));
+      while (!await File(_traceReadyFile).exists()) {
+        if (DateTime.now().isAfter(deadline)) {
+          throw TimeoutException(
+            'Host did not enable navigation timeline tracing',
+          );
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    });
+  }
+}
+
+Future<Map<String, Object>> _measureTransitionAction(
+  WidgetTester tester,
+  String name,
+  int opening,
+  VoidCallback action,
+  bool Function() visible, {
+  VoidCallback? afterFirstPump,
+}) async {
+  final cacheBefore = _imageCacheSample();
+  final timings = <FrameTiming>[];
+  void collect(List<FrameTiming> values) => timings.addAll(values);
+  WidgetsBinding.instance.addTimingsCallback(collect);
+  final started = DateTime.now().microsecondsSinceEpoch;
+  final timelineStarted = Timeline.now;
+  int? firstVisible;
+  int? firstVisibleFrameNumber;
+  final visibleFrameNumbers = <int>{};
+  var sampling = true;
+  void observeVisibleFrame(Duration _) {
+    if (!sampling) return;
+    if (visible()) {
+      firstVisible ??= DateTime.now().microsecondsSinceEpoch;
+      final frameNumber =
+          WidgetsBinding.instance.platformDispatcher.frameData.frameNumber;
+      firstVisibleFrameNumber ??= frameNumber;
+      visibleFrameNumbers.add(frameNumber);
+    }
+    WidgetsBinding.instance.addPostFrameCallback(observeVisibleFrame);
+  }
+
+  late int finished;
+  late int timelineFinished;
+  try {
+    action();
+    WidgetsBinding.instance.addPostFrameCallback(observeVisibleFrame);
+    // Observe every frame rather than jumping over the preparation interval.
+    for (var frame = 0; frame < 36; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      if (frame == 0) afterFirstPump?.call();
+    }
+    finished = DateTime.now().microsecondsSinceEpoch;
+    timelineFinished = Timeline.now;
+    sampling = false;
+    if (_traceReadyFile.isNotEmpty) {
+      debugPrint(
+        'PAGE_TRANSITION_TIMELINE_READY ${jsonEncode({'transition': name, 'opening': opening, 'startUs': timelineStarted, 'endUs': timelineFinished})}',
+      );
+    }
+    await Future<void>.delayed(const Duration(seconds: 2));
+  } finally {
+    sampling = false;
+    WidgetsBinding.instance.removeTimingsCallback(collect);
+  }
+  timings.retainWhere(
+    (timing) => _frameStartedWithin(timing, started, finished),
+  );
+  // A frame's buildFinish precedes its post-frame callback. Comparing it with
+  // callback wall time would drop the first visible frame and hide its cost.
+  final visibleTimings = firstVisibleFrameNumber == null
+      ? <FrameTiming>[]
+      : timings
+            .where((timing) => visibleFrameNumbers.contains(timing.frameNumber))
+            .toList(growable: false);
+  final preparationTimings = firstVisibleFrameNumber == null
+      ? timings
+      : timings
+            .where((timing) => timing.frameNumber < firstVisibleFrameNumber!)
+            .toList(growable: false);
+  final result = <String, Object>{
+    ..._summarizeRound(opening, timings),
+    'transition': name,
+    'opening': opening,
+    'pass': opening == 1 ? 'initial' : 'repeat',
+    'condition': _transitionCondition,
+    'imageCacheBefore': cacheBefore,
+    'imageCacheAfter': _imageCacheSample(),
+    'preparationFrames': _summarizeRound(opening, preparationTimings),
+    'visibleAnimationFrames': _summarizeRound(opening, visibleTimings),
+    'firstTenVisibleFrames': _summarizeRound(
+      opening,
+      visibleTimings.take(10).toList(growable: false),
+    ),
+    'firstVisibleUiFrameLatencyUs': firstVisible == null
+        ? -1
+        : firstVisible! - started,
+    'firstVisibleFrameNumber': firstVisibleFrameNumber ?? -1,
+    'firstSampledVisibleFrameNumber': visibleTimings.isEmpty
+        ? -1
+        : visibleTimings.first.frameNumber,
+    'visibleFrameNumbers': visibleFrameNumbers.toList(growable: false),
+    'overBudgetFrameTimings': [
+      for (final timing in timings)
+        if (timing.buildDuration > _frameBudget ||
+            timing.rasterDuration > _frameBudget)
+          {
+            'frameNumber': timing.frameNumber,
+            'visible': visibleFrameNumbers.contains(timing.frameNumber),
+            'uiUs': timing.buildDuration.inMicroseconds,
+            'rasterUs': timing.rasterDuration.inMicroseconds,
+            'buildStartTimelineUs': timing.timestampInMicroseconds(
+              FramePhase.buildStart,
+            ),
+            'rasterStartTimelineUs': timing.timestampInMicroseconds(
+              FramePhase.rasterStart,
+            ),
+          },
+    ],
+    'actionWindowUs': finished - started,
+    'actionStartedUs': started,
+    'actionFinishedUs': finished,
+    'actionStartedTimelineUs': timelineStarted,
+    'actionFinishedTimelineUs': timelineFinished,
+  };
+  debugPrint('PAGE_TRANSITION_PERFORMANCE ${jsonEncode(result)}');
+  expect(
+    firstVisible,
+    isNotNull,
+    reason: '$name must produce a visible animation frame',
+  );
+  expect(
+    result['firstSampledVisibleFrameNumber'],
+    firstVisibleFrameNumber,
+    reason: '$name must include the first visible probe frame in timings',
+  );
+  return result;
+}
+
 Future<_TransitionSamples> _measurePageTransitions(
   WidgetTester tester, {
   String localPath = '/profile/audio_1.mp3',
+  String sessionId = 'profile_session_11',
 }) async {
+  await _waitForHostTimeline(tester);
   final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
   final routeObserver = navigator.widget.observers
       .whereType<_PerformanceRouteObserver>()
@@ -1107,95 +1557,9 @@ Future<_TransitionSamples> _measurePageTransitions(
     VoidCallback action,
     bool Function() visible,
   ) async {
-    final cacheBefore = _imageCacheSample();
-    final timings = <FrameTiming>[];
-    void collect(List<FrameTiming> values) => timings.addAll(values);
-    WidgetsBinding.instance.addTimingsCallback(collect);
-    final started = DateTime.now().microsecondsSinceEpoch;
-    final timelineStarted = Timeline.now;
-    int? firstVisible;
-    var sampling = true;
-    void observeVisibleFrame(Duration _) {
-      if (!sampling) return;
-      if (visible()) {
-        firstVisible = DateTime.now().microsecondsSinceEpoch;
-      } else {
-        WidgetsBinding.instance.addPostFrameCallback(observeVisibleFrame);
-      }
-    }
-
-    late int finished;
-    late int timelineFinished;
-    try {
-      action();
-      WidgetsBinding.instance.addPostFrameCallback(observeVisibleFrame);
-      // Observe every frame rather than jumping over the preparation interval.
-      for (var frame = 0; frame < 36; frame++) {
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      finished = DateTime.now().microsecondsSinceEpoch;
-      timelineFinished = Timeline.now;
-      await Future<void>.delayed(const Duration(seconds: 2));
-    } finally {
-      sampling = false;
-      WidgetsBinding.instance.removeTimingsCallback(collect);
-    }
-    timings.retainWhere(
-      (timing) => _frameStartedWithin(timing, started, finished),
+    rounds.add(
+      await _measureTransitionAction(tester, name, opening, action, visible),
     );
-    final firstVisibleTimings = firstVisible == null
-        ? <FrameTiming>[]
-        : timings
-              .where(
-                (timing) =>
-                    _frameTimestampWallUs(timing, FramePhase.buildFinish) >=
-                    firstVisible!,
-              )
-              .take(10)
-              .toList(growable: false);
-    final result = <String, Object>{
-      ..._summarizeRound(opening, timings),
-      'transition': name,
-      'opening': opening,
-      'pass': opening == 1 ? 'initial' : 'repeat',
-      'condition': _transitionCondition,
-      'imageCacheBefore': cacheBefore,
-      'imageCacheAfter': _imageCacheSample(),
-      'firstTenVisibleFrames': _summarizeRound(opening, firstVisibleTimings),
-      'firstVisibleUiFrameLatencyUs': firstVisible == null
-          ? -1
-          : firstVisible! - started,
-      'actionWindowUs': finished - started,
-      'actionStartedUs': started,
-      'actionFinishedUs': finished,
-      'actionStartedTimelineUs': timelineStarted,
-      'actionFinishedTimelineUs': timelineFinished,
-    };
-    rounds.add(result);
-    debugPrint('PAGE_TRANSITION_PERFORMANCE ${jsonEncode(result)}');
-    expect(
-      firstVisible,
-      isNotNull,
-      reason: '$name must produce a visible animation frame',
-    );
-  }
-
-  bool Function() observeSlide(String stackKey) {
-    // Finder traversal inside POST_FRAME was itself producing 20 ms frames.
-    // Existing page elements survive the slide; only inspect their positions.
-    final slides = find
-        .descendant(
-          of: find.byKey(ValueKey<String>(stackKey)),
-          matching: find.byType(SlideTransition),
-        )
-        .evaluate()
-        .toList(growable: false);
-    expect(slides, isNotEmpty);
-    return () => slides.any((element) {
-      if (!element.mounted) return false;
-      final dx = (element.widget as SlideTransition).position.value.dx;
-      return dx.abs() > 0.001 && dx.abs() < 0.999;
-    });
   }
 
   void selectDestination(MainDestinationType destination) {
@@ -1220,7 +1584,7 @@ Future<_TransitionSamples> _measurePageTransitions(
     }
   }
 
-  for (var opening = 1; opening <= 3; opening++) {
+  for (var opening = 1; opening <= _openings; opening++) {
     // Start each pass from Library, so first visits to the other tabs are measured.
     await _switchMainPage(tester, MainDestinationType.library);
     final conditionSample = <String, Object>{
@@ -1245,22 +1609,32 @@ Future<_TransitionSamples> _measurePageTransitions(
       MainDestinationType.settings,
       MainDestinationType.asmrOne,
     ]) {
-      await measure('main-${destination.name}', opening, () {
-        selectDestination(destination);
-      }, observeSlide('main_page_stack'));
+      await measure(
+        'main-${destination.name}',
+        opening,
+        () {
+          selectDestination(destination);
+        },
+        _observeTransitionSlide(tester, 'main_page_stack'),
+      );
       await settleTransition();
     }
     for (final category in [
       AsmrCategoryType.recommendation,
       AsmrCategoryType.collected,
     ]) {
-      await measure('asmr-${category.name}', opening, () {
-        tester
-            .widget<HeaderSegmentedCategoryBar<AsmrCategoryType>>(
-              find.byType(HeaderSegmentedCategoryBar<AsmrCategoryType>),
-            )
-            .onSelected(category);
-      }, observeSlide('asmr_category_stack'));
+      await measure(
+        'asmr-${category.name}',
+        opening,
+        () {
+          tester
+              .widget<HeaderSegmentedCategoryBar<AsmrCategoryType>>(
+                find.byType(HeaderSegmentedCategoryBar<AsmrCategoryType>),
+              )
+              .onSelected(category);
+        },
+        _observeTransitionSlide(tester, 'asmr_category_stack'),
+      );
       await settleTransition();
     }
     for (final (name, destination) in [
@@ -1273,7 +1647,7 @@ Future<_TransitionSamples> _measurePageTransitions(
     ]) {
       await measure('main-$name', opening, () {
         selectDestination(destination);
-      }, observeSlide('main_page_stack'));
+      }, _observeTransitionSlide(tester, 'main_page_stack'));
       await settleTransition();
     }
     final workTitle = find.text('Performance ASMR 1').hitTestable();
@@ -1289,6 +1663,19 @@ Future<_TransitionSamples> _measurePageTransitions(
       return route?.settings.name == workDetailRouteName &&
           _routeTransitionVisible(route);
     });
+    navigator.pop();
+    await settleTransition();
+    routeObserver.lastPushed = null;
+    await measure(
+      'session-detail',
+      opening,
+      () {
+        unawaited(
+          navigator.push(buildSessionDetailRoute(sessionId: sessionId)),
+        );
+      },
+      () => _routeTransitionVisible(routeObserver.lastPushed),
+    );
     navigator.pop();
     await settleTransition();
     await _switchMainPage(tester, MainDestinationType.library);
@@ -1830,21 +2217,33 @@ Map<String, Object> _assessPlaybackPerformance(
 
 void _expectFrameBudgets(List<Map<String, Object>> rounds) {
   if (!kProfileMode) return;
+  final failures = <Map<String, Object>>[];
   for (final round in rounds) {
-    final reason = 'PERF_SCENARIO=$_scenario sample=${jsonEncode(round)}';
-    expect(round['frameCount'], greaterThan(0), reason: reason);
-    expect(
-      round['uiP95Us'],
-      lessThanOrEqualTo(_frameBudget.inMicroseconds),
-      reason: reason,
-    );
-    expect(
-      round['rasterP95Us'],
-      lessThanOrEqualTo(_frameBudget.inMicroseconds),
-      reason: reason,
-    );
-    expect(round['overBudgetPercent'], lessThanOrEqualTo(1), reason: reason);
+    for (final (window, sample) in <(String, Map<String, Object>)>[
+      ('whole-action', round),
+      if (round['visibleAnimationFrames']
+          case final Map<String, Object> visible)
+        ('visible-animation', visible),
+    ]) {
+      if ((sample['frameCount'] as int) <= 0 ||
+          (sample['uiP95Us'] as int) > _frameBudget.inMicroseconds ||
+          (sample['rasterP95Us'] as int) > _frameBudget.inMicroseconds ||
+          (sample['overBudgetPercent'] as num) > 1) {
+        failures.add({
+          'transition': round['transition'] ?? _scenario,
+          'round': round['round']!,
+          'window': window,
+          'metrics': sample,
+        });
+      }
+    }
   }
+  expect(
+    failures,
+    isEmpty,
+    reason:
+        'PERF_SCENARIO=$_scenario budgetUs=${_frameBudget.inMicroseconds}; ${jsonEncode(failures)}',
+  );
 }
 
 Map<String, Object> _summarizeRound(int round, List<FrameTiming> timings) {

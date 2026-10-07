@@ -105,7 +105,7 @@ void main() {
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   testWidgets(
-    'main pages prepare one neighbour without activating paused playback sessions',
+    'main pages load on demand and retain state without activating paused playback sessions',
     (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       _setLogicalTestViewSize(tester, const Size(390, 820));
@@ -152,9 +152,8 @@ void main() {
       expect(harness.playback.sessions.length, 12);
       expect(libraryFinder, findsOneWidget);
       expect(asmrFinder, findsNothing);
-      expect(playlistFinder, findsOneWidget);
+      expect(playlistFinder, findsNothing);
       expect(find.byType(PlaylistTab), findsNothing);
-      final preparedPlaylistState = tester.state(playlistFinder);
       final libraryState = tester.state(libraryFinder);
 
       Future<void> selectPage(String destination) async {
@@ -168,13 +167,12 @@ void main() {
       await selectPage('show_asmr_one');
       expect(asmrFinder, findsOneWidget);
       final asmrState = tester.state(asmrFinder);
-      expect(tester.state(playlistFinder), same(preparedPlaylistState));
+      expect(playlistFinder, findsNothing);
       expect(find.byType(PlaylistTab), findsNothing);
 
       await selectPage('nav_sessions');
       expect(playlistFinder, findsOneWidget);
       final playlistState = tester.state(playlistFinder);
-      expect(playlistState, same(preparedPlaylistState));
       await tester.pump(const Duration(milliseconds: 900));
       await tester.pump();
       final scrollable = find
@@ -516,8 +514,11 @@ void main() {
       var commits = 0;
       coordinator.scheduleCommit(
         key: 'resume-cache-test',
+        allowDuringScroll: true,
         commit: () => commits++,
       );
+      expect(coordinator.isVisualUpdateDeferred, isTrue);
+      expect(coordinator.navigationAllowed.value, isTrue);
       await tester.pump();
       expect(tester.element(stack), same(cachedElement));
       expect(commits, 0);
@@ -526,6 +527,102 @@ void main() {
       expect(commits, 1);
       await tester.pumpWidget(const SizedBox.shrink());
       expect(coordinator.isInteracting, isFalse);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'startup protects cover commits without blocking navigation',
+    (tester) async {
+      await _pumpAppShell(tester, waitForStartup: false);
+      await tester.pump();
+      expect(find.byType(MainScreen), findsOneWidget);
+      final coordinator = UiInteractionCoordinator.instance;
+      expect(coordinator.isVisualUpdateDeferred, isTrue);
+      expect(coordinator.navigationAllowed.value, isTrue);
+      var commits = 0;
+      coordinator.scheduleCommit(
+        key: 'startup-cover',
+        allowDuringScroll: true,
+        commit: () => commits++,
+      );
+      await tester.pump(const Duration(milliseconds: 159));
+      expect(commits, 0);
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump();
+      expect(commits, 1);
+      await _pumpMainScreenAnimations(tester, startup: true);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'a stale restored-frame callback cannot release a newer restore guard',
+    (tester) async {
+      await _pumpAppShell(tester);
+      final binding = WidgetsBinding.instance;
+      final coordinator = UiInteractionCoordinator.instance;
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      // This callback precedes the first restore callback but starts a new
+      // restoration whose first frame will be drawn in the following pump.
+      binding.addPostFrameCallback((_) {
+        binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+        expect(coordinator.isVisualUpdateDeferred, isFalse);
+        binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      });
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 161));
+      expect(coordinator.isVisualUpdateDeferred, isTrue);
+      expect(coordinator.navigationAllowed.value, isTrue);
+      await tester.pump(const Duration(milliseconds: 161));
+      expect(coordinator.isVisualUpdateDeferred, isFalse);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      expect(coordinator.isVisualUpdateDeferred, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(coordinator.isVisualUpdateDeferred, isFalse);
+      expect(coordinator.isInteracting, isFalse);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'navigation immediately after restore keeps cover commits deferred',
+    (tester) async {
+      await _pumpAppShell(tester);
+      final binding = WidgetsBinding.instance;
+      final coordinator = UiInteractionCoordinator.instance;
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      final settingsIcon = find.byKey(
+        const ValueKey('main_destination_nav_settings'),
+      );
+      await tester.tapAt(tester.getCenter(settingsIcon));
+      expect(coordinator.navigationAllowed.value, isFalse);
+      var commits = 0;
+      coordinator.scheduleCommit(
+        key: 'restore-navigation-cover',
+        allowDuringScroll: true,
+        commit: () => commits++,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 161));
+      expect(commits, 0);
+      await _pumpMainScreenAnimations(tester);
+      expect(commits, 1);
+      expect(coordinator.navigationAllowed.value, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,

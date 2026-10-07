@@ -709,25 +709,27 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         final isOffsetZero = activeOffset == Duration.zero;
         final scriptFiles = _scriptFiles;
         const menuPadding = AppBottomSheet.contentPadding;
-        final header = ConstrainedBox(
-          key: const ValueKey('subtitle_menu_header'),
+        Widget buildHeader({required bool selectingScript}) => ConstrainedBox(
+          key: ValueKey(
+            selectingScript ? 'subtitle_script_header' : 'subtitle_menu_header',
+          ),
           constraints: const BoxConstraints(minHeight: 48),
           child: AppBottomSheetHeader(
-            icon: scriptFiles == null
-                ? Icons.subtitles_rounded
-                : Icons.text_snippet_rounded,
+            icon: selectingScript
+                ? Icons.text_snippet_rounded
+                : Icons.subtitles_rounded,
             title: i18n.tr(
-              scriptFiles == null ? 'subtitles' : 'subtitle_script_generate',
+              selectingScript ? 'subtitle_script_selection_title' : 'subtitles',
             ),
-            trailing: scriptFiles == null
-                ? null
-                : IconButton(
+            trailing: selectingScript
+                ? IconButton(
                     key: const ValueKey('subtitle_script_back'),
                     icon: const Icon(Icons.arrow_back_rounded),
                     tooltip: i18n.tr('back'),
                     color: cs.primary,
                     onPressed: () => setState(() => _scriptFiles = null),
-                  ),
+                  )
+                : null,
           ),
         );
         final cardDecoration = BoxDecoration(
@@ -740,71 +742,77 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         );
         final scriptContent = scriptFiles == null
             ? null
-            : SafeArea(
-                child: Padding(
-                  padding: menuPadding,
-                  child: Column(
-                    key: const ValueKey('subtitle_script_selection'),
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      header,
-                      const SizedBox(height: 16),
-                      Expanded(
-                        child: ScrollConfiguration(
-                          behavior: ScrollConfiguration.of(
-                            context,
-                          ).copyWith(scrollbars: false),
-                          child: SingleChildScrollView(
-                            key: const ValueKey('subtitle_script_files'),
-                            child: Container(
-                              decoration: cardDecoration,
-                              clipBehavior: Clip.antiAlias,
-                              child: Column(
-                                children: [
-                                  for (
-                                    var index = 0;
-                                    index < scriptFiles.length;
-                                    index++
-                                  ) ...[
-                                    if (index > 0)
-                                      Divider(
-                                        height: 1,
-                                        thickness: 0.5,
-                                        indent: 16,
-                                        endIndent: 16,
-                                        color: cs.outlineVariant.withValues(
-                                          alpha: 0.35,
+            : ColoredBox(
+                color:
+                    theme.bottomSheetTheme.modalBackgroundColor ??
+                    theme.bottomSheetTheme.backgroundColor ??
+                    cs.surfaceContainerLow,
+                child: SafeArea(
+                  child: Padding(
+                    padding: menuPadding,
+                    child: Column(
+                      key: const ValueKey('subtitle_script_selection'),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        buildHeader(selectingScript: true),
+                        const SizedBox(height: 16),
+                        Expanded(
+                          child: ScrollConfiguration(
+                            behavior: ScrollConfiguration.of(
+                              context,
+                            ).copyWith(scrollbars: false),
+                            child: SingleChildScrollView(
+                              key: const ValueKey('subtitle_script_files'),
+                              child: Container(
+                                decoration: cardDecoration,
+                                clipBehavior: Clip.antiAlias,
+                                child: Column(
+                                  children: [
+                                    for (
+                                      var index = 0;
+                                      index < scriptFiles.length;
+                                      index++
+                                    ) ...[
+                                      if (index > 0)
+                                        Divider(
+                                          height: 1,
+                                          thickness: 0.5,
+                                          indent: 16,
+                                          endIndent: 16,
+                                          color: cs.outlineVariant.withValues(
+                                            alpha: 0.35,
+                                          ),
+                                        ),
+                                      ListTile(
+                                        titleAlignment:
+                                            ListTileTitleAlignment.top,
+                                        leading: Icon(
+                                          Icons.text_snippet_rounded,
+                                          color: cs.primary,
+                                        ),
+                                        title: Text(
+                                          scriptFiles[index].relativePath.isEmpty
+                                              ? scriptFiles[index].name
+                                              : scriptFiles[index].relativePath,
+                                          style: theme.textTheme.bodyLarge
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                        onTap: () => _selectScriptFile(
+                                          subtitles,
+                                          scriptFiles[index],
                                         ),
                                       ),
-                                    ListTile(
-                                      leading: Icon(
-                                        Icons.text_snippet_rounded,
-                                        color: cs.primary,
-                                      ),
-                                      title: Text(
-                                        scriptFiles[index].relativePath.isEmpty
-                                            ? scriptFiles[index].name
-                                            : scriptFiles[index].relativePath,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.bodyLarge
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                                      onTap: () => _selectScriptFile(
-                                        subtitles,
-                                        scriptFiles[index],
-                                      ),
-                                    ),
+                                    ],
                                   ],
-                                ],
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -817,7 +825,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  header,
+                  buildHeader(selectingScript: false),
                   const SizedBox(height: 16),
 
                   // Switches Card
@@ -1282,7 +1290,10 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
           child: SizedBox(
             key: _menuKey,
             height: scriptFiles == null ? null : _scriptMenuHeight,
-            child: scriptContent ?? menu,
+            child: AppMenuContentTransition(
+              primary: menu,
+              secondary: scriptContent,
+            ),
           ),
         );
       },

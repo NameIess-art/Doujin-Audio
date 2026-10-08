@@ -278,10 +278,9 @@ class _TopPageHeaderState extends State<TopPageHeader> {
     if (!isLandscape && rawTop > _stableTopPadding) {
       _stableTopPadding = rawTop;
     }
-    final resolvedTop =
-        !isLandscape && _stableTopPadding > 0
-            ? math.max(rawTop, _stableTopPadding)
-            : rawTop;
+    final resolvedTop = !isLandscape && _stableTopPadding > 0
+        ? math.max(rawTop, _stableTopPadding)
+        : rawTop;
     final topPadding = widget.useSafeAreaTop ? resolvedTop : 0.0;
     final resolvedTitle = widget.title;
 
@@ -320,75 +319,81 @@ class _TopPageHeaderState extends State<TopPageHeader> {
         }
 
         final surface = HeaderFloatingSurface(
+          height: null,
           padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Row(
-            children: [
-              if (widget.icon != null) ...[
-                Icon(
-                  widget.icon,
-                  size: 18,
-                  color: widget.iconColor ?? cs.primary,
-                ),
-                const SizedBox(width: 8),
-              ],
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      widget.marqueeTitle
-                          ? MarqueeText(
-                              text: resolvedTitle,
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: cs.onSurface,
-                                    fontSize: 13.5,
-                                    letterSpacing: 0.1,
-                                  ),
-                              scrollSpeed: 24,
-                              edgePadding: 2,
-                              forceMarquee: widget.forceMarqueeTitle,
-                            )
-                          : Text(
-                              resolvedTitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: cs.onSurface,
-                                    fontSize: 13.5,
-                                    letterSpacing: 0.1,
-                                  ),
-                            ),
-                      if (widget.subtitle != null &&
-                          widget.subtitle!.isNotEmpty)
-                        Text(
-                          widget.subtitle!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: cs.onSurfaceVariant.withValues(
-                                  alpha: 0.85,
-                                ),
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 38),
+            child: Row(
+              children: [
+                if (widget.icon != null) ...[
+                  Icon(
+                    widget.icon,
+                    size: AppDesignTokens.fileTypeIcons.contains(widget.icon)
+                        ? AppDesignTokens.fileEntryIconSize
+                        : 18,
+                    color: widget.iconColor ?? cs.primary,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        widget.marqueeTitle
+                            ? MarqueeText(
+                                text: resolvedTitle,
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: cs.onSurface,
+                                      fontSize: 13.5,
+                                      letterSpacing: 0.1,
+                                    ),
+                                scrollSpeed: 24,
+                                edgePadding: 2,
+                                forceMarquee: widget.forceMarqueeTitle,
+                              )
+                            : Text(
+                                resolvedTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: cs.onSurface,
+                                      fontSize: 13.5,
+                                      letterSpacing: 0.1,
+                                    ),
                               ),
-                        ),
-                    ],
+                        if (widget.subtitle != null &&
+                            widget.subtitle!.isNotEmpty)
+                          Text(
+                            widget.subtitle!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: cs.onSurfaceVariant.withValues(
+                                    alpha: 0.85,
+                                  ),
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              if (widget.titleSuffix != null) ...[
-                const SizedBox(width: 6),
-                widget.titleSuffix!,
+                if (widget.titleSuffix != null) ...[
+                  const SizedBox(width: 6),
+                  widget.titleSuffix!,
+                ],
               ],
-            ],
+            ),
           ),
         );
 
@@ -432,7 +437,12 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                       (widget.icon != null
                           ? Icon(
                               widget.icon,
-                              size: 16,
+                              size:
+                                  AppDesignTokens.fileTypeIcons.contains(
+                                    widget.icon,
+                                  )
+                                  ? AppDesignTokens.fileEntryIconSize
+                                  : 16,
                               color: widget.iconColor ?? cs.primary,
                             )
                           : null),

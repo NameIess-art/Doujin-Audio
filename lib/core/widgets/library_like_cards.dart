@@ -1,16 +1,17 @@
-import 'dart:async';
+import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_styles.dart';
 import '../media/time_text_formatters.dart';
 import 'async_cover_image.dart';
-import 'app_feedback.dart';
 import 'marquee_text.dart';
 import 'search_highlight.dart';
 import 'shimmer_loading.dart';
+import 'horizontal_edge_fade_scroll.dart';
 
-const _libraryLikeInfoLineHeight = 18.0;
+const _libraryLikeInfoLineHeight = LibraryLikeCardMetrics.contentHeight / 5;
 
 const double kResponsiveLibraryCardMinWidth = 420;
 const double kResponsiveLibraryCardSpacing = 8;
@@ -27,19 +28,13 @@ int responsiveLibraryCardColumnCount(double availableWidth) {
 class LibraryLikeCardMetrics {
   const LibraryLikeCardMetrics._();
 
-  static const double rootTileHeight = 150;
-  static const double contentHeight = 134;
-  static const double compactRootTileHeight = 112;
-  static const double compactContentHeight = 96;
-  static const double infoBlockHeight = 90;
-  static const double infoVerticalOffset = -4;
-  static const double titleBlockHeight = 38;
+  static const double coverHeight = 90;
+  static const double contentHeight = coverHeight;
+  static const double rootTileHeight = contentHeight + coverDistance * 2;
   static const double coverAspectRatio = kStandardCoverAspectRatio;
   static const double coverRadius = 8;
   static const double coverDistance = AppSpacing.xs;
   static const double cardRadius = coverRadius + coverDistance;
-  static const double actionButtonSize = 40;
-  static const double compactActionButtonLayoutSize = 32;
   static const double listHorizontalPadding = AppSpacing.xs;
   static const EdgeInsets rootTilePadding = EdgeInsets.symmetric(
     horizontal: AppSpacing.xs,
@@ -51,139 +46,13 @@ class LibraryLikeCardMetrics {
 }
 
 class LibraryLikeSkeletonCard extends StatelessWidget {
-  const LibraryLikeSkeletonCard({super.key, this.compactCoverLayout = false});
-
-  final bool compactCoverLayout;
+  const LibraryLikeSkeletonCard({super.key});
 
   @override
   Widget build(BuildContext context) {
-    if (compactCoverLayout) {
-      return const _CompactLibraryLikeSkeletonCard();
-    }
-    const infoBlockHeight = LibraryLikeCardMetrics.infoBlockHeight;
-    const titleBlockHeight = LibraryLikeCardMetrics.titleBlockHeight;
     const coverWidth =
-        infoBlockHeight * LibraryLikeCardMetrics.coverAspectRatio;
-
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: LibraryLikeCardMetrics.cardShape,
-      color: Colors.transparent,
-      elevation: 0,
-      shadowColor: Colors.transparent,
-      surfaceTintColor: Colors.transparent,
-      child: SizedBox(
-        height: LibraryLikeCardMetrics.rootTileHeight,
-        width: double.infinity,
-        child: ShimmerLoader(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const ShimmerContainer(
-                      width: coverWidth,
-                      height: infoBlockHeight,
-                      borderRadius: LibraryLikeCardMetrics.coverRadius,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Transform.translate(
-                        offset: const Offset(
-                          0,
-                          LibraryLikeCardMetrics.infoVerticalOffset,
-                        ),
-                        child: SizedBox(
-                          height: infoBlockHeight,
-                          child: LayoutBuilder(
-                            builder: (context, infoConstraints) => FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.topLeft,
-                              child: SizedBox(
-                                width: infoConstraints.maxWidth,
-                                child: const Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _SkeletonInfoLine(
-                                      labelWidth: 28,
-                                      textWidth: 110,
-                                    ),
-                                    _SkeletonInfoLine(
-                                      labelWidth: 28,
-                                      textWidth: 140,
-                                    ),
-                                    _SkeletonInfoLine(
-                                      labelWidth: 28,
-                                      textWidth: 68,
-                                      secondaryLabelWidth: 28,
-                                      secondaryTextWidth: 32,
-                                    ),
-                                    _SkeletonInfoLine(
-                                      labelWidth: 28,
-                                      textWidth: 160,
-                                      lines: 2,
-                                      multiLineTextWidths: <double>[
-                                        160,
-                                        130,
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                const SizedBox(
-                  height: titleBlockHeight,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ShimmerContainer(height: 12, borderRadius: 4),
-                            SizedBox(height: 4),
-                            ShimmerContainer(
-                              width: 140,
-                              height: 12,
-                              borderRadius: 4,
-                            ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(width: 8),
-                      _LibraryLikeSkeletonActions(
-                        actionHeight: titleBlockHeight,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CompactLibraryLikeSkeletonCard extends StatelessWidget {
-  const _CompactLibraryLikeSkeletonCard();
-
-  @override
-  Widget build(BuildContext context) {
-    const coverHeight = LibraryLikeCardMetrics.compactContentHeight;
-    const coverWidth = coverHeight * LibraryLikeCardMetrics.coverAspectRatio;
-
+        LibraryLikeCardMetrics.coverHeight *
+        LibraryLikeCardMetrics.coverAspectRatio;
     return const Card(
       margin: EdgeInsets.zero,
       shape: LibraryLikeCardMetrics.cardShape,
@@ -191,80 +60,38 @@ class _CompactLibraryLikeSkeletonCard extends StatelessWidget {
       elevation: 0,
       shadowColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
-      child: SizedBox(
-        height: LibraryLikeCardMetrics.compactRootTileHeight,
-        width: double.infinity,
-        child: ShimmerLoader(
-          child: Padding(
-            padding: EdgeInsets.all(8),
+      child: ShimmerLoader(
+        child: Padding(
+          padding: EdgeInsets.all(8),
+          child: SizedBox(
+            height: LibraryLikeCardMetrics.contentHeight,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ShimmerContainer(
                   width: coverWidth,
-                  height: coverHeight,
+                  height: LibraryLikeCardMetrics.coverHeight,
                   borderRadius: LibraryLikeCardMetrics.coverRadius,
                 ),
                 SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Padding(
-                        padding: EdgeInsets.only(top: 2),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ShimmerContainer(height: 12, borderRadius: 4),
-                            SizedBox(height: 4),
-                            ShimmerContainer(height: 12, borderRadius: 4),
-                            SizedBox(height: 4),
-                            ShimmerContainer(
-                              width: 140,
-                              height: 12,
-                              borderRadius: 4,
-                            ),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Align(
-                                alignment: Alignment.topLeft,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    SizedBox(height: 4),
-                                    ShimmerContainer(
-                                      height: 12,
-                                      borderRadius: 4,
-                                    ),
-                                    SizedBox(height: 4),
-                                    ShimmerContainer(
-                                      height: 12,
-                                      borderRadius: 4,
-                                    ),
-                                    SizedBox(height: 4),
-                                    ShimmerContainer(
-                                      width: 100,
-                                      height: 12,
-                                      borderRadius: 4,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            Align(
-                              alignment: Alignment.bottomRight,
-                              child: _LibraryLikeSkeletonActions(
-                                actionHeight: LibraryLikeCardMetrics
-                                    .compactActionButtonLayoutSize,
-                              ),
-                            ),
-                          ],
+                      _SkeletonInfoLine(textWidth: double.infinity),
+                      _SkeletonInfoLine(icon: true, textWidth: 110),
+                      _SkeletonInfoLine(icon: true, textWidth: 140),
+                      _SkeletonInfoLine(icon: true, textWidth: 160),
+                      SizedBox(
+                        height: _libraryLikeInfoLineHeight,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: ShimmerContainer(
+                            width: 140,
+                            height: 9,
+                            borderRadius: 4,
+                          ),
                         ),
                       ),
                     ],
@@ -272,30 +99,6 @@ class _CompactLibraryLikeSkeletonCard extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LibraryLikeSkeletonActions extends StatelessWidget {
-  const _LibraryLikeSkeletonActions({
-    this.actionHeight = LibraryLikeCardMetrics.actionButtonSize,
-  });
-
-  final double actionHeight;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: LibraryLikeCardMetrics.actionButtonSize,
-      height: actionHeight,
-      child: const Center(
-        child: Padding(
-          padding: EdgeInsets.only(left: 8),
-          child: Center(
-            child: ShimmerContainer(width: 25, height: 25, borderRadius: 12.5),
           ),
         ),
       ),
@@ -304,88 +107,31 @@ class _LibraryLikeSkeletonActions extends StatelessWidget {
 }
 
 class _SkeletonInfoLine extends StatelessWidget {
-  const _SkeletonInfoLine({
-    required this.labelWidth,
-    required this.textWidth,
-    this.lines = 1,
-    this.multiLineTextWidths,
-    this.secondaryLabelWidth,
-    this.secondaryTextWidth,
-  });
+  const _SkeletonInfoLine({required this.textWidth, this.icon = false});
 
-  final double labelWidth;
   final double textWidth;
-  final int lines;
-  final List<double>? multiLineTextWidths;
-  final double? secondaryLabelWidth;
-  final double? secondaryTextWidth;
+  final bool icon;
 
   @override
   Widget build(BuildContext context) {
-    if (lines > 1) {
-      final widths = multiLineTextWidths ?? <double>[textWidth];
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return SizedBox(
+      height: _libraryLikeInfoLineHeight,
+      child: Row(
         children: [
-          SizedBox(
-            width: labelWidth,
-            height: _libraryLikeInfoLineHeight,
+          if (icon) ...[
+            const ShimmerContainer(width: 11, height: 11, borderRadius: 4),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
             child: Align(
               alignment: Alignment.centerLeft,
               child: ShimmerContainer(
-                width: labelWidth,
+                width: textWidth,
                 height: 11,
                 borderRadius: 4,
               ),
             ),
           ),
-          const SizedBox(width: 5),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var i = 0; i < lines; i++)
-                  SizedBox(
-                    height: _libraryLikeInfoLineHeight,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: ShimmerContainer(
-                        width: i < widths.length ? widths[i] : widths.last,
-                        height: 11,
-                        borderRadius: 4,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
-
-    final secondaryLabelWidth = this.secondaryLabelWidth;
-    final secondaryTextWidth = this.secondaryTextWidth;
-    return SizedBox(
-      height: _libraryLikeInfoLineHeight,
-      child: Row(
-        children: [
-          ShimmerContainer(width: labelWidth, height: 11, borderRadius: 4),
-          const SizedBox(width: 5),
-          ShimmerContainer(width: textWidth, height: 11, borderRadius: 4),
-          if (secondaryLabelWidth != null && secondaryTextWidth != null) ...[
-            const SizedBox(width: 8),
-            ShimmerContainer(
-              width: secondaryLabelWidth,
-              height: 11,
-              borderRadius: 4,
-            ),
-            const SizedBox(width: 5),
-            ShimmerContainer(
-              width: secondaryTextWidth,
-              height: 11,
-              borderRadius: 4,
-            ),
-          ],
         ],
       ),
     );
@@ -398,13 +144,11 @@ class LibrarySkeletonListView extends StatelessWidget {
     required this.topInset,
     required this.bottomInset,
     this.itemCount = 5,
-    this.compactCoverLayout = false,
   });
 
   final double topInset;
   final double bottomInset;
   final int itemCount;
-  final bool compactCoverLayout;
 
   @override
   Widget build(BuildContext context) {
@@ -413,7 +157,15 @@ class LibrarySkeletonListView extends StatelessWidget {
         final columnCount = responsiveLibraryCardColumnCount(
           constraints.maxWidth,
         );
-        return ListView(
+        final contentHeight = math.max(
+          0.0,
+          constraints.maxHeight - topInset - bottomInset,
+        );
+        final rowCount = math.max(
+          itemCount,
+          (contentHeight / LibraryLikeCardMetrics.rootTileHeight).ceil(),
+        );
+        return ListView.builder(
           primary: false,
           physics: const NeverScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(
@@ -422,26 +174,19 @@ class LibrarySkeletonListView extends StatelessWidget {
             LibraryLikeCardMetrics.listHorizontalPadding,
             bottomInset,
           ),
-          children: [
-            for (var rowIndex = 0; rowIndex < itemCount; rowIndex++)
-              if (columnCount <= 1)
-                LibraryLikeSkeletonCard(compactCoverLayout: compactCoverLayout)
-              else
-                Row(
+          itemCount: rowCount,
+          itemBuilder: (context, rowIndex) => columnCount <= 1
+              ? const LibraryLikeSkeletonCard()
+              : Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     for (var column = 0; column < columnCount; column++) ...[
                       if (column > 0)
                         const SizedBox(width: kResponsiveLibraryCardSpacing),
-                      Expanded(
-                        child: LibraryLikeSkeletonCard(
-                          compactCoverLayout: compactCoverLayout,
-                        ),
-                      ),
+                      const Expanded(child: LibraryLikeSkeletonCard()),
                     ],
                   ],
                 ),
-          ],
         );
       },
     );
@@ -452,21 +197,18 @@ class LibraryLikeInfoLineData {
   const LibraryLikeInfoLineData(
     this.label,
     this.text, {
+    required this.icon,
     this.lines = 1,
-    this.secondaryLabel,
-    this.secondaryText,
-  }) : assert(
-         (secondaryLabel == null) == (secondaryText == null),
-         'Secondary label and text must be provided together.',
-       );
+    this.isSecondary = false,
+  });
 
   static const int maxLines = 5;
 
   final String label;
   final String text;
+  final IconData icon;
   final int lines;
-  final String? secondaryLabel;
-  final String? secondaryText;
+  final bool isSecondary;
 }
 
 class LibraryLikeInfoMetadata {
@@ -500,37 +242,50 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
       LibraryLikeInfoLineData(
         voiceActorLabel,
         _normalizeLibraryLikeList(metadata.voiceActors).join(listSeparator),
+        icon: Icons.record_voice_over_rounded,
       ),
     );
   }
   final circle = metadata.circleName.trim();
   if (circle.isNotEmpty) {
-    result.add(LibraryLikeInfoLineData(circleLabel, circle));
+    result.add(
+      LibraryLikeInfoLineData(
+        circleLabel,
+        circle,
+        icon: Icons.storefront_outlined,
+      ),
+    );
+  }
+  if (metadata.tags.isNotEmpty) {
+    result.add(
+      LibraryLikeInfoLineData(
+        tagsLabel,
+        _normalizeLibraryLikeList(
+          metadata.tags,
+        ).map((tag) => tag.startsWith('#') ? tag : '#$tag').join(' '),
+        icon: Icons.local_offer_rounded,
+      ),
+    );
   }
   final releaseDate = formatLibraryLikeDate(metadata.releaseDate);
   final rating = formatLibraryLikeRating(metadata.rating);
-  if (releaseDate.isNotEmpty && rating.isNotEmpty) {
+  if (releaseDate.isNotEmpty) {
     result.add(
       LibraryLikeInfoLineData(
         releaseDateLabel,
         releaseDate,
-        secondaryLabel: ratingLabel,
-        secondaryText: rating,
+        icon: Icons.calendar_today_rounded,
+        isSecondary: true,
       ),
     );
-  } else if (releaseDate.isNotEmpty) {
-    result.add(LibraryLikeInfoLineData(releaseDateLabel, releaseDate));
-  } else if (rating.isNotEmpty) {
-    result.add(LibraryLikeInfoLineData(ratingLabel, rating));
   }
-  if (metadata.tags.isNotEmpty) {
-    final remainingLines =
-        (LibraryLikeInfoLineData.maxLines - result.length).clamp(1, 2);
+  if (rating.isNotEmpty) {
     result.add(
       LibraryLikeInfoLineData(
-        tagsLabel,
-        _normalizeLibraryLikeList(metadata.tags).join(listSeparator),
-        lines: remainingLines,
+        ratingLabel,
+        rating,
+        icon: Icons.star_rounded,
+        isSecondary: true,
       ),
     );
   }
@@ -564,275 +319,170 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
     required this.title,
     required this.lines,
     required this.coverBuilder,
-    required this.onPlay,
-    required this.playTooltip,
-    this.expanded = false,
-    this.showExpandIndicator = false,
     this.accentColor,
-    this.enableMarquee = true,
-    this.enableTitleMarquee = true,
-    this.playLoading = false,
-    this.extraTrailing,
-    this.compactCoverLayout = false,
   });
 
   final String title;
   final List<LibraryLikeInfoLineData> lines;
   final Widget Function(double coverWidth) coverBuilder;
-  final VoidCallback onPlay;
-  final bool expanded;
-  final bool showExpandIndicator;
-  final String playTooltip;
   final Color? accentColor;
-  final bool enableMarquee;
-  final bool enableTitleMarquee;
-  final bool playLoading;
-  final Widget? extraTrailing;
-  final bool compactCoverLayout;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final titleStyle =
-        Theme.of(context).textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w800,
-          fontSize: 14,
-          height: 1.06,
-          color: cs.onSurface,
-        ) ??
-        const TextStyle();
-    final infoStyle =
-        Theme.of(context).textTheme.labelSmall?.copyWith(
-          fontWeight: FontWeight.w700,
-          fontSize: 11.5,
-          height: 1.05,
-          color: cs.onSurface.withValues(alpha: 0.82),
-        ) ??
-        TextStyle(
-          fontWeight: FontWeight.w700,
-          fontSize: 11.5,
-          height: 1.05,
-          color: cs.onSurface.withValues(alpha: 0.82),
-        );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const infoBlockHeight = LibraryLikeCardMetrics.infoBlockHeight;
-        const titleBlockHeight = LibraryLikeCardMetrics.titleBlockHeight;
-        final contentHeight = compactCoverLayout
-            ? LibraryLikeCardMetrics.compactContentHeight
-            : LibraryLikeCardMetrics.contentHeight;
-        final coverHeight = compactCoverLayout
-            ? LibraryLikeCardMetrics.compactContentHeight
-            : infoBlockHeight;
-        final coverWidth =
-            coverHeight * LibraryLikeCardMetrics.coverAspectRatio;
-        const maxInfoRows = LibraryLikeInfoLineData.maxLines;
-        final visibleLines = lines.take(maxInfoRows).toList(growable: false);
-        if (compactCoverLayout) {
-          final textDirection =
-              Directionality.maybeOf(context) ?? TextDirection.ltr;
-          final textScaler =
-              MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
-          final availableWidth = constraints.maxWidth.isFinite
-              ? constraints.maxWidth - coverWidth - 10
-              : 0.0;
-          final (topTitle, bottomTitle) = availableWidth > 0
-              ? splitCompactCardTitle(
-                  title: title,
-                  style: titleStyle,
-                  maxWidth: availableWidth,
-                  textDirection: textDirection,
-                  textScaler: textScaler,
-                )
-              : (title, '');
-          return SizedBox(
-            height: contentHeight,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                coverBuilder(coverWidth),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SearchHighlightedText(
-                        text: topTitle,
-                        style: titleStyle,
-                        maxLines: 3,
-                        softWrap: true,
-                      ),
-                      Expanded(
-                        child: Row(
-                          children: [
-                            if (bottomTitle.isNotEmpty) ...[
-                              Expanded(
-                                child: Align(
-                                  alignment: Alignment.topLeft,
-                                  child: SearchHighlightedText(
-                                    text: bottomTitle,
-                                    style: titleStyle,
-                                    maxLines: 3,
-                                    softWrap: true,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                            ] else
-                              const Spacer(),
-                            Align(
-                              alignment: Alignment.bottomRight,
-                              child: _buildActions(
-                                context,
-                                cs,
-                                actionHeight:
-                                    LibraryLikeCardMetrics.actionButtonSize,
-                              ),
+    final titleStyle = Theme.of(context).textTheme.titleMedium!.copyWith(
+      fontWeight: FontWeight.w800,
+      fontSize: 14,
+      color: cs.onSurface,
+    );
+    final infoStyle = Theme.of(context).textTheme.labelSmall!.copyWith(
+      fontWeight: FontWeight.w700,
+      fontSize: 11,
+      color: cs.onSurface.withValues(alpha: 0.82),
+    );
+    final primaryLines = lines.where((line) => !line.isSecondary);
+    final secondaryLines = lines.where((line) => line.isSecondary).toList();
+    const coverWidth =
+        LibraryLikeCardMetrics.coverHeight *
+        LibraryLikeCardMetrics.coverAspectRatio;
+    return MarqueePauseScope(
+      isPaused: false,
+      hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
+      child: SizedBox(
+        height: LibraryLikeCardMetrics.contentHeight,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            coverBuilder(coverWidth),
+            const SizedBox(width: 10),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) => FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.topLeft,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minHeight: LibraryLikeCardMetrics.contentHeight,
+                    ),
+                    child: SizedBox(
+                      width: constraints.maxWidth,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              minHeight: _libraryLikeInfoLineHeight,
                             ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-        return SizedBox(
-          height: contentHeight,
-          child: Column(
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  coverBuilder(coverWidth),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Transform.translate(
-                      offset: const Offset(
-                        0,
-                        LibraryLikeCardMetrics.infoVerticalOffset,
-                      ),
-                      child: SizedBox(
-                        height: infoBlockHeight,
-                        child: LayoutBuilder(
-                          builder: (context, infoConstraints) => FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.topLeft,
-                            child: SizedBox(
-                              width: infoConstraints.maxWidth,
-                              child: Column(
-                                children: [
-                                  for (final line in visibleLines)
-                                    LibraryLikeDetailInfoLine(
-                                      label: line.label,
-                                      text: line.text,
-                                      secondaryLabel: line.secondaryLabel,
-                                      secondaryText: line.secondaryText,
-                                      style: infoStyle,
-                                      loading: false,
-                                      lines: line.lines,
-                                      accentColor: accentColor,
-                                      enableMarquee: enableMarquee,
-                                    ),
-                                ],
-                              ),
+                            child: LibraryLikeScrollableText(
+                              text: title,
+                              style: _libraryLikeFixedLineStyle(titleStyle),
                             ),
                           ),
-                        ),
+                          for (final line in primaryLines)
+                            LibraryLikeDetailInfoLine(
+                              label: line.label,
+                              icon: line.icon,
+                              text: line.text,
+                              style: infoStyle,
+                              loading: false,
+                              accentColor: accentColor,
+                            ),
+                          _libraryLikeSecondaryInfo(context, secondaryLines),
+                        ],
                       ),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              SizedBox(
-                height: titleBlockHeight,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: LibraryLikeTwoLineMarqueeText(
-                        text: title,
-                        style: titleStyle,
-                        enableMarquee: enableTitleMarquee,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _buildActions(context, cs, actionHeight: titleBlockHeight),
-                  ],
                 ),
               ),
-            ],
-          ),
-        );
-      },
+            ),
+          ],
+        ),
+      ),
     );
   }
+}
 
-  Widget _buildActions(
-    BuildContext context,
-    ColorScheme cs, {
-    required double actionHeight,
-  }) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          onPressed: playLoading
-              ? null
-              : () {
-                  unawaited(
-                    AppInteractionFeedback.trigger(
-                      AppInteractionFeedbackType.tap,
-                    ),
-                  );
-                  onPlay();
-                },
-          visualDensity: VisualDensity.compact,
-          tooltip: playTooltip,
-          style: IconButton.styleFrom(
-            foregroundColor: accentColor ?? cs.primary,
-            minimumSize: Size(
-              LibraryLikeCardMetrics.actionButtonSize,
-              actionHeight,
-            ),
-            maximumSize: Size(
-              LibraryLikeCardMetrics.actionButtonSize,
-              actionHeight,
-            ),
-            padding: EdgeInsets.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          icon: playLoading
-              ? SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.2,
-                    color: accentColor ?? cs.primary,
-                  ),
-                )
-              : const Icon(Icons.add_circle_rounded, size: 25),
-        ),
-        if (showExpandIndicator)
-          Padding(
-            padding: const EdgeInsets.only(right: 2),
-            child: IgnorePointer(
-              child: AnimatedRotation(
-                turns: expanded ? 0.5 : 0,
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOutCubic,
-                child: Icon(
-                  Icons.expand_more_rounded,
-                  color: cs.onSurfaceVariant,
-                  size: 21,
-                ),
+Widget _libraryLikeSecondaryInfo(
+  BuildContext context,
+  List<LibraryLikeInfoLineData> lines,
+) {
+  final color = Theme.of(
+    context,
+  ).colorScheme.onSurfaceVariant.withValues(alpha: 0.6);
+  final style = TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w400,
+    color: color,
+  );
+  return SizedBox(
+    height: _libraryLikeInfoLineHeight,
+    child: Align(
+      alignment: Alignment.bottomRight,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.bottomRight,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < lines.length; i++) ...[
+              if (i > 0) const SizedBox(width: 12),
+              Tooltip(
+                message: lines[i].label,
+                child: Icon(lines[i].icon, size: 12, color: color),
               ),
-            ),
-          ),
-        ?extraTrailing,
-      ],
+              const SizedBox(width: 4),
+              SearchHighlightedText(
+                text: lines[i].text,
+                maxLines: 1,
+                style: style,
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class LibraryLikeScrollableText extends StatelessWidget {
+  const LibraryLikeScrollableText({
+    super.key,
+    required this.text,
+    required this.style,
+  });
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalizedText = text.replaceAll(RegExp(r'[\r\n]+'), ' ');
+    final child = SearchHighlightedText(
+      text: normalizedText,
+      style: style,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.visible,
+      strutStyle: _libraryLikeFixedLineStrut(style),
+    );
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return MarqueeText(
+        text: normalizedText,
+        style: style,
+        pauseDuration: const Duration(seconds: 1),
+        edgePadding: 0,
+        allowManualScroll: true,
+        child: child,
+      );
+    }
+    return HorizontalEdgeFadeScroll(
+      builder: (controller) => SingleChildScrollView(
+        controller: controller,
+        scrollDirection: Axis.horizontal,
+        child: child,
+      ),
     );
   }
 }
@@ -848,17 +498,9 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
     required this.releaseDateLabel,
     required this.ratingLabel,
     required this.coverBuilder,
-    required this.onPlay,
-    required this.playTooltip,
     this.listSeparator = '\uFF0C',
     this.loading = false,
-    this.expanded = false,
-    this.showExpandIndicator = false,
     this.accentColor,
-    this.enableMarquee = true,
-    this.enableTitleMarquee = true,
-    this.playLoading = false,
-    this.extraTrailing,
   });
 
   final String title;
@@ -871,15 +513,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   final String listSeparator;
   final bool loading;
   final Widget Function(double coverWidth) coverBuilder;
-  final VoidCallback onPlay;
-  final bool expanded;
-  final bool showExpandIndicator;
-  final String playTooltip;
   final Color? accentColor;
-  final bool enableMarquee;
-  final bool enableTitleMarquee;
-  final bool playLoading;
-  final Widget? extraTrailing;
 
   @override
   Widget build(BuildContext context) {
@@ -897,15 +531,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
               listSeparator: listSeparator,
             ),
       coverBuilder: coverBuilder,
-      onPlay: onPlay,
-      expanded: expanded,
-      showExpandIndicator: showExpandIndicator,
-      playTooltip: playTooltip,
       accentColor: accentColor,
-      enableMarquee: enableMarquee,
-      enableTitleMarquee: enableTitleMarquee,
-      playLoading: playLoading,
-      extraTrailing: extraTrailing,
     );
   }
 }
@@ -916,15 +542,11 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
     required this.title,
     required this.lines,
     this.accentColor,
-    this.enableMarquee = true,
-    this.enableTitleMarquee = true,
   });
 
   final String title;
   final List<LibraryLikeInfoLineData> lines;
   final Color? accentColor;
-  final bool enableMarquee;
-  final bool enableTitleMarquee;
 
   @override
   Widget build(BuildContext context) {
@@ -940,48 +562,49 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
     final infoStyle =
         Theme.of(context).textTheme.labelSmall?.copyWith(
           fontWeight: FontWeight.w700,
-          fontSize: 11.5,
+          fontSize: 11,
           height: 1.05,
           color: cs.onSurface.withValues(alpha: 0.82),
         ) ??
         TextStyle(
           fontWeight: FontWeight.w700,
-          fontSize: 11.5,
+          fontSize: 11,
           height: 1.05,
           color: cs.onSurface.withValues(alpha: 0.82),
         );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        LibraryLikeTwoLineMarqueeText(
-          text: title,
-          style: titleStyle,
-          enableMarquee: enableTitleMarquee,
-        ),
-        if (lines.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final line in lines)
-                LibraryLikeDetailInfoLine(
-                  label: line.label,
-                  text: line.text,
-                  secondaryLabel: line.secondaryLabel,
-                  secondaryText: line.secondaryText,
-                  style: infoStyle,
-                  loading: false,
-                  lines: line.lines,
-                  accentColor: accentColor,
-                  enableMarquee: enableMarquee,
-                ),
-            ],
-          ),
+    return MarqueePauseScope(
+      isPaused: false,
+      hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          LibraryLikeScrollableText(text: title, style: titleStyle),
+          if (lines.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final line in lines.where((line) => !line.isSecondary))
+                  LibraryLikeDetailInfoLine(
+                    label: line.label,
+                    icon: line.icon,
+                    text: line.text,
+                    style: infoStyle,
+                    loading: false,
+                    accentColor: accentColor,
+                  ),
+              ],
+            ),
+            _libraryLikeSecondaryInfo(
+              context,
+              lines.where((line) => line.isSecondary).toList(),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -990,23 +613,18 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
   const LibraryLikeDetailInfoLine({
     super.key,
     required this.label,
+    required this.icon,
     required this.text,
-    this.secondaryLabel,
-    this.secondaryText,
     required this.style,
     required this.loading,
     this.lines = 1,
     this.accentColor,
     this.enableMarquee = true,
-  }) : assert(
-         (secondaryLabel == null) == (secondaryText == null),
-         'Secondary label and text must be provided together.',
-       );
+  });
 
   final String label;
+  final IconData icon;
   final String text;
-  final String? secondaryLabel;
-  final String? secondaryText;
   final TextStyle style;
   final bool loading;
   final int lines;
@@ -1017,26 +635,14 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final lineCount = lines.clamp(1, LibraryLikeInfoLineData.maxLines);
-    final labelStyle = style.copyWith(
-      color: accentColor ?? cs.primary,
-      fontWeight: FontWeight.w800,
-    );
-    final fixedLabelStyle = _libraryLikeFixedLineStyle(labelStyle);
     final fixedStyle = _libraryLikeFixedLineStyle(style);
-    Widget buildLabel(String value) =>
-        enableMarquee && value.characters.length > 3
-        ? MarqueeText(
-            text: value,
-            style: fixedLabelStyle,
-            scrollSpeed: 18,
-            edgePadding: 2,
-          )
-        : Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.clip,
-            style: fixedLabelStyle,
-          );
+    Widget buildLabel(String label, IconData icon) => Align(
+      alignment: Alignment.centerLeft,
+      child: Tooltip(
+        message: label,
+        child: Icon(icon, size: 11, color: accentColor ?? cs.primary),
+      ),
+    );
 
     Widget buildValue(String value) => loading
         ? Align(
@@ -1054,34 +660,20 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
             lines: lineCount,
             enableMarquee: enableMarquee,
           )
-        : enableMarquee
-        ? MarqueeText(text: value, style: fixedStyle, scrollSpeed: 24)
-        : SearchHighlightedText(text: value, maxLines: 1, style: fixedStyle);
+        : LibraryLikeScrollableText(text: value, style: fixedStyle);
 
-    final secondaryLabel = this.secondaryLabel;
-    final secondaryText = this.secondaryText;
     final content = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 28,
+          width: 11,
           child: SizedBox(
             height: _libraryLikeInfoLineHeight,
-            child: buildLabel(label),
+            child: buildLabel(label, icon),
           ),
         ),
-        const SizedBox(width: 5),
+        const SizedBox(width: 8),
         Expanded(child: buildValue(text)),
-        if (secondaryLabel != null && secondaryText != null) ...[
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 28,
-            height: _libraryLikeInfoLineHeight,
-            child: buildLabel(secondaryLabel),
-          ),
-          const SizedBox(width: 5),
-          SizedBox(width: 32, child: buildValue(secondaryText)),
-        ],
       ],
     );
 
@@ -1182,51 +774,6 @@ class LibraryLikeMarqueeLine extends StatelessWidget {
   }
 }
 
-class LibraryLikeTwoLineMarqueeText extends StatelessWidget {
-  const LibraryLikeTwoLineMarqueeText({
-    super.key,
-    required this.text,
-    required this.style,
-    this.enableMarquee = true,
-  });
-
-  final String text;
-  final TextStyle style;
-  final bool enableMarquee;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!enableMarquee) {
-      return SizedBox(
-        width: double.infinity,
-        height: 34,
-        child: SearchHighlightedText(text: text, softWrap: true, style: style),
-      );
-    }
-    final lines = _splitLibraryLikeName(text);
-    return SizedBox(
-      width: double.infinity,
-      height: 34,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LibraryLikeMarqueeLine(
-            text: lines.$1,
-            style: style,
-            enableMarquee: enableMarquee,
-          ),
-          const SizedBox(height: 2),
-          LibraryLikeMarqueeLine(
-            text: lines.$2,
-            style: style,
-            enableMarquee: enableMarquee,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 (String, String) _splitLibraryLikeName(String value) {
   final text = value.trim();
   if (text.length <= 18) {
@@ -1277,43 +824,4 @@ bool _isLibraryLikeSplitChar(String char) {
     '+',
   };
   return separators.contains(char);
-}
-
-@visibleForTesting
-(String, String) splitCompactCardTitle({
-  required String title,
-  required TextStyle style,
-  required double maxWidth,
-  required TextDirection textDirection,
-  TextScaler textScaler = TextScaler.noScaling,
-  int maxTopLines = 3,
-}) {
-  final trimmed = title.trim();
-  if (trimmed.isEmpty || maxWidth <= 0) return (title, '');
-  final textPainter = TextPainter(
-    text: TextSpan(text: title, style: style),
-    textDirection: textDirection,
-    textScaler: textScaler,
-  )..layout(maxWidth: maxWidth);
-
-  final lineMetrics = textPainter.computeLineMetrics();
-  if (lineMetrics.length <= maxTopLines) {
-    return (title, '');
-  }
-
-  final lastTopLine = lineMetrics[maxTopLines - 1];
-  final pos = textPainter.getPositionForOffset(
-    Offset(maxWidth, lastTopLine.baseline),
-  );
-  final range = textPainter.getLineBoundary(pos);
-  final splitIndex = range.end;
-  if (splitIndex <= 0 || splitIndex >= title.length) {
-    return (title, '');
-  }
-  final topText = title.substring(0, splitIndex).trimRight();
-  final bottomText = title.substring(splitIndex).trimLeft();
-  if (bottomText.isEmpty) {
-    return (title, '');
-  }
-  return (topText, bottomText);
 }

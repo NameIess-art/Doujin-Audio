@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import 'work_detail_entries.dart';
@@ -78,26 +80,23 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final item = widget.item;
     final isFolder = item.type == WorkEntryType.folder;
     final icon = switch (item.type) {
-      WorkEntryType.folder => Icons.folder_rounded,
+      WorkEntryType.folder => AppDesignTokens.folderIcon,
       WorkEntryType.audio =>
         (item.track?.isVideo ?? item.asmrNode?.isVideo ?? false)
             ? Icons.videocam_outlined
-            : Icons.audiotrack_rounded,
-      WorkEntryType.text => Icons.description_outlined,
-      WorkEntryType.image => Icons.image_outlined,
+            : AppDesignTokens.audioFileIcon,
+      WorkEntryType.text => AppDesignTokens.textFileIcon,
+      WorkEntryType.image => AppDesignTokens.imageFileIcon,
     };
     final color = switch (item.type) {
-      WorkEntryType.folder => const Color(0xFFF59E0B),
+      WorkEntryType.folder => AppDesignTokens.folderIconColor,
       WorkEntryType.audio => widget.accentColor,
-      WorkEntryType.text => const Color(0xFF0EA5E9),
-      WorkEntryType.image => const Color(0xFFEC4899),
+      WorkEntryType.text => AppDesignTokens.textFileIconColor,
+      WorkEntryType.image => AppDesignTokens.imageFileIconColor,
     };
-    final badgeBg = color.withValues(alpha: isDark ? 0.15 : 0.10);
-    final badgeBorder = color.withValues(alpha: isDark ? 0.25 : 0.18);
     final isHighlighted =
         defaultTargetPlatform == TargetPlatform.windows && _isMenuOpen;
 
@@ -130,26 +129,19 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
         clipBehavior: Clip.antiAlias,
         child: ListTile(
           dense: true,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 2,
-          ),
+          minTileHeight: FileTreeRow.layoutHeight(context),
+          minVerticalPadding: 0,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           splashColor: color.withValues(alpha: 0.16),
           hoverColor: color.withValues(alpha: 0.08),
           selected: isHighlighted,
           selectedTileColor: widget.accentColor.withValues(alpha: 0.16),
           selectedColor: widget.accentColor,
-          leading: Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: badgeBg,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: badgeBorder, width: 0.8),
-            ),
-            child: Icon(icon, color: color, size: 20),
+          leading: Icon(
+            icon,
+            color: color,
+            size: AppDesignTokens.fileEntryIconSize,
           ),
           title: WorkPageTranslationText(
             item.name,

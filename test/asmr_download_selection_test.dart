@@ -115,6 +115,40 @@ void main() {
   });
 
   test(
+    'cached subtree sizes include nested files independently of selection',
+    () {
+      final model = AsmrDownloadSelectionModel([
+        folder(
+          'Root',
+          'Root',
+          children: [
+            file('Track', 'Root/Track', size: 512),
+            folder(
+              'Nested',
+              'Root/Nested',
+              children: [file('Cover', 'Root/Nested/Cover', size: 2048)],
+            ),
+            folder('Empty', 'Root/Empty'),
+          ],
+        ),
+      ]);
+      final root = model.rootNodes.single;
+      expect(root.totalSizeBytes, 2560);
+      expect(root.children[0].totalSizeBytes, 512);
+      expect(root.children[1].totalSizeBytes, 2048);
+      expect(root.children[2].totalSizeBytes, 0);
+      model.selectAll();
+      expect(model.selectedTotalSizeBytes(), 2560);
+      model.togglePath('Root/Nested/Cover', false);
+      expect(model.selectedTotalSizeBytes(), 512);
+      expect(root.totalSizeBytes, 2560);
+      model.clearAll();
+      expect(model.selectedTotalSizeBytes(), 0);
+      expect(root.totalSizeBytes, 2560);
+    },
+  );
+
+  test(
     'selecting a leaf selects its direct parent and keeps higher ancestors indeterminate',
     () {
       final tree = <AsmrTrackFile>[

@@ -7,6 +7,7 @@ import 'package:pdfx/pdfx.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/page_header_inset.dart';
@@ -297,11 +298,8 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
               right: 0,
               child: TopPageHeader(
                 key: const ValueKey<String>('work_text_header'),
-                icon: file?.isPdf == true
-                    ? Icons.picture_as_pdf_rounded
-                    : (file?.isMarkdown == true
-                          ? Icons.article_rounded
-                          : Icons.description_rounded),
+                icon: AppDesignTokens.textFileIcon,
+                iconColor: AppDesignTokens.textFileIconColor,
                 title: file?.displayName ?? i18n.tr('script_text_viewer_title'),
                 trailing: file != null && !file.isPdf
                     ? WorkPageTranslationButton(

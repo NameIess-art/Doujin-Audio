@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../media/search_query_utils.dart';
 
@@ -58,10 +59,10 @@ class SearchHighlightedText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final activeTerms = terms ?? SearchHighlightScope.termsOf(context);
-    final spans = activeTerms.isEmpty
-        ? const <TextSpan>[]
-        : _buildSpans(context, activeTerms);
-    if (spans.isEmpty) {
+    final ranges = activeTerms.isEmpty
+        ? const <(int, int)>[]
+        : _matchedRanges(text, activeTerms);
+    if (ranges.isEmpty) {
       return Text(
         text,
         style: style,
@@ -71,21 +72,23 @@ class SearchHighlightedText extends StatelessWidget {
         overflow: overflow,
       );
     }
-    return RichText(
-      text: TextSpan(style: style, children: spans),
-      maxLines: maxLines,
-      softWrap: softWrap ?? true,
-      strutStyle: strutStyle,
-      overflow: overflow,
+    return _RoundedSearchHighlights(
+      ranges: ranges,
+      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
+      child: RichText(
+        text: TextSpan(style: style, children: _buildSpans(context, ranges)),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: maxLines,
+        softWrap: softWrap ?? true,
+        strutStyle: strutStyle,
+        overflow: overflow,
+      ),
     );
   }
 
-  List<TextSpan> _buildSpans(BuildContext context, List<String> activeTerms) {
-    final ranges = _matchedRanges(text, activeTerms);
-    if (ranges.isEmpty) return const <TextSpan>[];
+  List<TextSpan> _buildSpans(BuildContext context, List<(int, int)> ranges) {
     final cs = Theme.of(context).colorScheme;
     final highlightStyle = TextStyle(
-      backgroundColor: cs.primary.withValues(alpha: 0.18),
       color: cs.primary,
       fontWeight: FontWeight.w900,
     );
@@ -107,6 +110,65 @@ class SearchHighlightedText extends StatelessWidget {
       spans.add(TextSpan(text: text.substring(cursor)));
     }
     return spans;
+  }
+}
+
+class _RoundedSearchHighlights extends SingleChildRenderObjectWidget {
+  const _RoundedSearchHighlights({
+    required this.ranges,
+    required this.color,
+    required RichText super.child,
+  });
+
+  final List<(int, int)> ranges;
+  final Color color;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderRoundedSearchHighlights(ranges, color);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderRoundedSearchHighlights renderObject,
+  ) {
+    renderObject
+      ..ranges = ranges
+      ..color = color
+      ..markNeedsPaint();
+  }
+}
+
+class _RenderRoundedSearchHighlights extends RenderProxyBox {
+  _RenderRoundedSearchHighlights(this.ranges, this.color);
+
+  List<(int, int)> ranges;
+  Color color;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final paragraph = child! as RenderParagraph;
+    final canvas = context.canvas;
+    final paint = Paint()..color = color;
+    canvas.save();
+    canvas.clipRect(offset & size);
+    // Use the laid-out glyph boxes so wrapping, ellipsis and text scaling
+    // share the exact same geometry as the foreground text.
+    for (final (start, end) in ranges) {
+      for (final box in paragraph.getBoxesForSelection(
+        TextSelection(baseOffset: start, extentOffset: end),
+      )) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            box.toRect().shift(offset),
+            const Radius.circular(4),
+          ),
+          paint,
+        );
+      }
+    }
+    canvas.restore();
+    super.paint(context, offset);
   }
 }
 

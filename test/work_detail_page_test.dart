@@ -1,5 +1,6 @@
 import 'package:doujin_audio/app/application/browse_page_state_store.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -21,6 +22,7 @@ import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
+import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
@@ -260,6 +262,8 @@ void main() {
       testWidgets(
         'cold directory preparation waits until the detail route finishes on $platform',
         (tester) async {
+          await tester.binding.setSurfaceSize(const Size(800, 1000));
+          addTearDown(() => tester.binding.setSurfaceSize(null));
           SharedPreferences.setMockInitialValues({});
           final interaction = UiInteractionCoordinator.instance;
           interaction.resetForTest();
@@ -327,7 +331,12 @@ void main() {
           final directorySkeleton = tester.widget<WorkDetailDirectorySkeleton>(
             find.byType(WorkDetailDirectorySkeleton),
           );
-          expect(directorySkeleton.itemCount, 6);
+          expect(directorySkeleton.viewportHeight, greaterThan(6 * 48));
+          final skeletonBounds = tester.getRect(
+            find.byKey(const ValueKey('work_detail_entries_skeleton')),
+          );
+          expect(skeletonBounds.bottom, greaterThanOrEqualTo(996));
+          expect(skeletonBounds.bottom, lessThan(996 + 48));
           final skeletonRows = find.descendant(
             of: find.byKey(const ValueKey('work_detail_entries_skeleton')),
             matching: find.byType(SizedBox),
@@ -358,9 +367,14 @@ void main() {
             isNull,
             reason: 'Do not prepare an empty tree before sources arrive.',
           );
+          await tester.binding.setSurfaceSize(const Size(800, 1200));
+          await tester.pump();
           final skeletonRect = tester.getRect(
             find.byKey(const ValueKey('work_detail_entries_skeleton')),
           );
+          expect(skeletonRect.height, greaterThan(skeletonBounds.height));
+          expect(skeletonRect.bottom, greaterThanOrEqualTo(1196));
+          expect(skeletonRect.bottom, lessThan(1196 + 48));
           directory.complete(
             const LibraryOrganizer().buildTree(
               tracks: fixture.library.library,
@@ -2715,6 +2729,97 @@ void main() {
         expect(menuItem, findsNothing);
       },
     );
+
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets(
+        'WorkDetailEntryTile uses bare icons and switcher row heights at $textScale scale',
+        (tester) async {
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = const Size(320, 800);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          addTearDown(tester.view.resetPhysicalSize);
+          final actions = <WorkEntryAction>[];
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: MediaQuery(
+                  data: MediaQueryData(
+                    textScaler: TextScaler.linear(textScale),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const FileTreeRow(
+                        title: 'Switcher reference',
+                        leading: Icon(Icons.audio_file_rounded, size: 16),
+                      ),
+                      for (final type in WorkEntryType.values)
+                        WorkDetailEntryTile(
+                          item: WorkEntryItem(
+                            name: '${type.name} with a very long file name',
+                            relativePath: type.name,
+                            type: type,
+                          ),
+                          accentColor: Colors.deepPurple,
+                          menuEntries: const [],
+                          moreLabel: 'More',
+                          onAction: actions.add,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+          final referenceHeight = tester
+              .getSize(find.byType(FileTreeRow))
+              .height;
+          expect(referenceHeight, textScale == 1 ? 44 : greaterThan(44));
+          final tiles = find.byType(WorkDetailEntryTile);
+          for (var index = 0; index < WorkEntryType.values.length; index++) {
+            final row = tiles.at(index);
+            expect(tester.getSize(row).height, referenceHeight);
+            final tile = find.descendant(
+              of: row,
+              matching: find.byType(ListTile),
+            );
+            expect(tester.widget<ListTile>(tile).leading, isA<Icon>());
+            final icon = tester.widget<ListTile>(tile).leading! as Icon;
+            final expectedIcon = switch (WorkEntryType.values[index]) {
+              WorkEntryType.folder => AppDesignTokens.folderIcon,
+              WorkEntryType.audio => AppDesignTokens.audioFileIcon,
+              WorkEntryType.text => AppDesignTokens.textFileIcon,
+              WorkEntryType.image => AppDesignTokens.imageFileIcon,
+            };
+            expect(icon.icon, expectedIcon);
+            expect(icon.size, AppDesignTokens.fileEntryIconSize);
+            if (index > 0) {
+              expect(
+                tester.getRect(row).top,
+                tester.getRect(tiles.at(index - 1)).bottom,
+              );
+            }
+            await tester.tap(
+              find.text(
+                '${WorkEntryType.values[index].name} with a very long file name',
+              ),
+            );
+            await tester.pump();
+            expect(
+              actions.last,
+              WorkEntryType.values[index] == WorkEntryType.audio
+                  ? WorkEntryAction.play
+                  : WorkEntryAction.open,
+            );
+          }
+          expect(tester.takeException(), isNull);
+        },
+        variant: const TargetPlatformVariant({
+          TargetPlatform.android,
+          TargetPlatform.windows,
+        }),
+      );
+    }
 
     testWidgets(
       'WorkDetailEntryTile renders transparent Material and provides feedback colors and action on tap',

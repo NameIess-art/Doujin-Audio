@@ -1,7 +1,6 @@
 import 'library_download_actions.dart';
 import 'library_providers.dart';
 import 'library_removal_feedback.dart';
-import '../../player/presentation/playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -14,7 +13,6 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/search_query_utils.dart';
-import '../../player/application/playback_facade.dart';
 import '../../../core/persistence/app_preferences.dart';
 import '../application/library_facade.dart';
 import '../domain/audio_library_category.dart';
@@ -28,7 +26,6 @@ import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../app/theme/app_styles.dart';
 
-import 'library_tab_ui_helpers.dart';
 import 'library_tab_tree_widgets.dart';
 import 'library_card_artwork.dart';
 
@@ -522,36 +519,6 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
     );
   }
 
-  Future<void> _play(BuildContext context, PlaybackFacade playback) async {
-    final track = entry.firstTrack;
-    if (track == null) return;
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    unawaited(
-      AppInteractionFeedback.trigger(
-        AppInteractionFeedbackType.tap,
-        context: context,
-      ),
-    );
-    final created = await playback.spawnSession(track, autoPlay: true);
-    if (!context.mounted) return;
-    if (created) {
-      showLibrarySessionCreatedSnack(
-        context,
-        i18n.tr('session_created', {'name': track.displayName}),
-      );
-    } else {
-      showAppSnackBar(
-        context,
-        i18n.tr('operation_failed_retry'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.error_outline_rounded,
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isHidden = ref.watch(
@@ -562,7 +529,6 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final library = ref.read(libraryFacadeProvider);
-    final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final firstTrack = entry.firstTrack;
     final isPinned = ref.watch(
@@ -653,7 +619,6 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
             child: _buildEntryContent(
               context,
               library,
-              playback,
               firstTrack,
               cardHeight,
               isPinned: isPinned,
@@ -681,7 +646,6 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
   Widget _buildEntryContent(
     BuildContext context,
     LibraryFacade library,
-    PlaybackFacade playback,
     MusicTrack? firstTrack,
     double cardHeight, {
     required bool isPinned,
@@ -696,13 +660,8 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
           folderDuration: folder?.totalDuration ?? Duration.zero,
           detail: entry.detail,
           detailLoading: false,
-          expanded: false,
-          hasChildren: false,
           isSelected: isSelected,
           isPinned: isPinned,
-          onPlay: firstTrack == null
-              ? () {}
-              : () => unawaited(_play(context, playback)),
         ),
       );
     }
@@ -719,7 +678,6 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
             detailLoading: false,
             isSelected: isSelected,
             isPinned: isPinned,
-            onPlay: () => unawaited(_play(context, playback)),
           ),
         );
       }
@@ -740,21 +698,6 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
                   title: entry.title,
                   detail: entry.detail,
                   detailLoading: false,
-                ),
-              ),
-              Center(
-                child: IconButton(
-                  onPressed: firstTrack == null
-                      ? null
-                      : () => unawaited(_play(context, playback)),
-                  style: IconButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.primary,
-                    minimumSize: const Size(40, 44),
-                    maximumSize: const Size(40, 44),
-                    padding: EdgeInsets.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  icon: const Icon(Icons.add_circle_rounded, size: 25),
                 ),
               ),
             ],

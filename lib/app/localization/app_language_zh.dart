@@ -109,6 +109,7 @@ const Map<String, String> appLanguageZh = {
   'skip': '跳过',
   'search': '搜索',
   'search_audio_placeholder': '搜索音频...',
+  'search_library_placeholder': '搜索曲库...',
   'scanning_title': '正在扫描',
   'loading_dot': '正在加载...',
   'playback_loading': '加载中',

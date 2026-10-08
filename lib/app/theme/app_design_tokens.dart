@@ -4,6 +4,24 @@ import 'package:flutter/material.dart';
 
 @immutable
 class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
+  static const folderIcon = Icons.folder_rounded;
+  static const openFolderIcon = Icons.folder_open_rounded;
+  static const audioFileIcon = Icons.audio_file_rounded;
+  static const textFileIcon = Icons.description_rounded;
+  static const imageFileIcon = Icons.image_rounded;
+  static const fileEntryIconSize = 20.0;
+  static const fileTypeIcons = [
+    folderIcon,
+    openFolderIcon,
+    audioFileIcon,
+    textFileIcon,
+    imageFileIcon,
+  ];
+
+  static const folderIconColor = Color(0xFFF59E0B);
+  static const textFileIconColor = Color(0xFF0EA5E9);
+  static const imageFileIconColor = Color(0xFFEC4899);
+
   const AppDesignTokens({
     required this.asmrAccent,
     required this.asmrContainer,

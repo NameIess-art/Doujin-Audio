@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/shimmer_loading.dart';
 import '../application/library_facade.dart';
 import 'library_providers.dart';
@@ -11,11 +13,7 @@ import 'library_providers.dart';
 import 'library_edit_tree_projection.dart';
 
 const Size _libraryEditActionMinimumSize = Size(0, 36);
-const double _libraryEditChildFolderTileHeight = 48;
-const double libraryEditRootFolderHeight = 80;
-const _libraryEditRootFolderShape = RoundedRectangleBorder(
-  borderRadius: BorderRadius.all(Radius.circular(10)),
-);
+const double _libraryEditRowMinHeight = 64;
 
 final _libraryEditTrackViewStateProvider =
     Provider.family<_LibraryEditTrackViewState, _LibraryEditTrackKey>((
@@ -121,8 +119,10 @@ class LibraryEditTreeNodeWidget extends ConsumerWidget {
     required this.node,
     required this.initiallyExpanded,
     required this.onRememberFolder,
+    this.depth = 0,
   });
 
+  final int depth;
   final String libraryPath;
   final LibraryEditTreeNode node;
   final bool initiallyExpanded;
@@ -148,6 +148,7 @@ class LibraryEditTreeNodeWidget extends ConsumerWidget {
       return _LibraryEditTrackTile(
         libraryPath: libraryPath,
         trackPath: track.trackPath,
+        depth: depth,
       );
     }
     return const SizedBox.shrink();
@@ -175,13 +176,16 @@ class _LibraryEditFolderTreeTile extends ConsumerStatefulWidget {
 class _LibraryEditFolderTreeTileState
     extends ConsumerState<_LibraryEditFolderTreeTile> {
   final ExpansibleController _expansionController = ExpansibleController();
-  late bool _expanded = widget.initiallyExpanded;
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initiallyExpanded) _expansionController.expand();
+  }
 
   @override
   void didUpdateWidget(covariant _LibraryEditFolderTreeTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.initiallyExpanded && !_expanded) {
-      _expanded = true;
+    if (widget.initiallyExpanded && !_expansionController.isExpanded) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _expansionController.expand();
       });
@@ -207,6 +211,7 @@ class _LibraryEditFolderTreeTileState
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final folderPath = widget.folder.folderPath;
+    final isRoot = widget.folder.depth == 0;
     final explicitExcluded = libraryService.isLibraryFolderExplicitlyExcluded(
       widget.libraryPath,
       folderPath,
@@ -224,149 +229,127 @@ class _LibraryEditFolderTreeTileState
       libraryService,
       widget.libraryPath,
     );
-    final isRootFolder = widget.folder.depth == 0;
-
-    final content = Theme(
-      data: theme.copyWith(
-        dividerColor: Colors.transparent,
-        listTileTheme: isRootFolder
-            ? theme.listTileTheme.copyWith(shape: _libraryEditRootFolderShape)
-            : theme.listTileTheme.copyWith(minVerticalPadding: 0),
+    return Expansible(
+      key: PageStorageKey<String>(
+        'library-edit-folder:${widget.libraryPath}:$folderPath',
       ),
-      child: ExpansionTile(
-        expansionAnimationStyle: appExpansionAnimationStyle(context),
-        key: PageStorageKey<String>(
-          'library-edit-folder:${widget.libraryPath}:$folderPath',
-        ),
-        controller: _expansionController,
-        initiallyExpanded: widget.initiallyExpanded,
-        dense: !isRootFolder,
-        visualDensity: isRootFolder ? null : const VisualDensity(vertical: -4),
-        minTileHeight: isRootFolder ? null : _libraryEditChildFolderTileHeight,
-        onExpansionChanged: (expanded) {
-          if (_expanded == expanded) return;
-          setState(() => _expanded = expanded);
-        },
-        tilePadding: EdgeInsets.fromLTRB(
-          isRootFolder ? 14 : 6,
-          isRootFolder ? 3 : 0,
-          6,
-          isRootFolder ? 3 : 0,
-        ),
-        childrenPadding: EdgeInsets.fromLTRB(isRootFolder ? 8 : 4, 0, 0, 6),
-        leading: Icon(
-          muted ? Icons.folder_off_rounded : Icons.folder_rounded,
-          size: isRootFolder ? 24 : 20,
-          color: muted ? cs.onSurfaceVariant : cs.primary,
-        ),
-        title: Text(
-          widget.folder.name,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: muted
+      controller: _expansionController,
+      animationStyle: appExpansionAnimationStyle(context),
+      maintainState: false,
+      headerBuilder: (context, animation) {
+        final expanded = _expansionController.isExpanded;
+        return Semantics(
+          expanded: expanded,
+          child: FileTreeRow(
+            title: widget.folder.name,
+            subtitle: i18n.tr('audio_count', {'count': includedCount}),
+            depth: widget.folder.depth,
+            minHeight: isRoot ? _libraryEditRowMinHeight : 48,
+            titleMaxLines: isRoot ? 2 : 1,
+            reserveSubtitleSpace: true,
+            verticalPadding: isRoot ? 4 : 2,
+            isFolder: true,
+            titleColor: muted
                 ? cs.onSurfaceVariant
-                : (_expanded ? cs.primary : cs.onSurface),
-            fontWeight: isRootFolder ? FontWeight.w800 : FontWeight.w700,
-          ),
-        ),
-        subtitle: Text(
-          i18n.tr('audio_count', {'count': includedCount}),
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: cs.onSurfaceVariant,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButtonTheme(
-              data: TextButtonThemeData(
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 4,
-                  ),
-                  minimumSize: _libraryEditActionMinimumSize,
-                  tapTargetSize: MaterialTapTargetSize.padded,
-                ),
-              ),
-              child: TextButton.icon(
-                onPressed: inheritedExcluded
-                    ? null
-                    : () {
-                        if (widget.folder.children.isNotEmpty) {
-                          widget.onRememberFolder(folderPath, widget.folder);
-                        }
-                        libraryService.setLibraryFolderExcluded(
-                          widget.libraryPath,
-                          folderPath,
-                          !explicitExcluded,
-                        );
-                      },
-                style: explicitExcluded
-                    ? null
-                    : TextButton.styleFrom(foregroundColor: cs.error),
-                icon: Icon(
-                  explicitExcluded
-                      ? Icons.restore_rounded
-                      : Icons.block_rounded,
-                  size: 16,
-                ),
-                label: Text(
-                  explicitExcluded ? i18n.tr('restore') : i18n.tr('exclude'),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+                : (expanded ? cs.primary : cs.onSurface),
+            surfaceKey: ValueKey('library-edit-folder-surface:$folderPath'),
+            onTap: expanded
+                ? _expansionController.collapse
+                : _expansionController.expand,
+            leading: Icon(
+              muted
+                  ? Icons.folder_off_rounded
+                  : (expanded
+                        ? AppDesignTokens.openFolderIcon
+                        : AppDesignTokens.folderIcon),
+              size: AppDesignTokens.fileEntryIconSize,
+              color: muted
+                  ? cs.onSurfaceVariant
+                  : AppDesignTokens.folderIconColor,
             ),
-            const SizedBox(width: 2),
-            IgnorePointer(
-              child: AnimatedRotation(
-                turns: _expanded ? 0.5 : 0,
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOutCubic,
-                child: Icon(
-                  Icons.expand_more_rounded,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: TextButtonTheme(
+                    data: TextButtonThemeData(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 4,
+                        ),
+                        minimumSize: _libraryEditActionMinimumSize,
+                        tapTargetSize: MaterialTapTargetSize.padded,
+                      ),
+                    ),
+                    child: TextButton.icon(
+                      onPressed: inheritedExcluded
+                          ? null
+                          : () {
+                              if (widget.folder.children.isNotEmpty) {
+                                widget.onRememberFolder(
+                                  folderPath,
+                                  widget.folder,
+                                );
+                              }
+                              libraryService.setLibraryFolderExcluded(
+                                widget.libraryPath,
+                                folderPath,
+                                !explicitExcluded,
+                              );
+                            },
+                      style: explicitExcluded
+                          ? null
+                          : TextButton.styleFrom(foregroundColor: cs.error),
+                      icon: Icon(
+                        explicitExcluded
+                            ? Icons.restore_rounded
+                            : Icons.block_rounded,
+                        size: 16,
+                      ),
+                      label: Text(
+                        explicitExcluded
+                            ? i18n.tr('restore')
+                            : i18n.tr('exclude'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 2),
+                FileTreeExpansionArrow(
+                  expanded: expanded,
                   color: muted
                       ? cs.onSurfaceVariant
-                      : (_expanded ? cs.primary : cs.onSurfaceVariant),
-                  size: 20,
+                      : (expanded ? cs.primary : cs.onSurfaceVariant),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
+        );
+      },
+      bodyBuilder: (context, animation) => IgnorePointer(
+        ignoring: !_expansionController.isExpanded,
+        child: FadeTransition(
+          opacity: animation,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final child in widget.folder.children)
+                LibraryEditTreeNodeWidget(
+                  key: ValueKey(child.pathValue),
+                  libraryPath: widget.libraryPath,
+                  node: child,
+                  depth: widget.folder.depth + 1,
+                  initiallyExpanded: widget.initiallyExpanded,
+                  onRememberFolder: widget.onRememberFolder,
+                ),
+            ],
+          ),
         ),
-        children: _expanded || widget.initiallyExpanded
-            ? [
-                for (final child in widget.folder.children)
-                  LibraryEditTreeNodeWidget(
-                    key: ValueKey(child.pathValue),
-                    libraryPath: widget.libraryPath,
-                    node: child,
-                    initiallyExpanded: widget.initiallyExpanded,
-                    onRememberFolder: widget.onRememberFolder,
-                  ),
-              ]
-            : const <Widget>[],
       ),
-    );
-
-    if (!isRootFolder) {
-      return Padding(
-        padding: const EdgeInsets.only(left: 8, bottom: 2),
-        child: content,
-      );
-    }
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 6),
-      clipBehavior: Clip.antiAlias,
-      elevation: 0,
-      color: muted
-          ? cs.surfaceContainerHighest.withValues(alpha: 0.46)
-          : cs.surfaceContainerHigh,
-      shape: _libraryEditRootFolderShape,
-      child: content,
     );
   }
 }
@@ -375,8 +358,10 @@ class _LibraryEditTrackTile extends ConsumerWidget {
   const _LibraryEditTrackTile({
     required this.libraryPath,
     required this.trackPath,
+    required this.depth,
   });
 
+  final int depth;
   final String libraryPath;
   final String trackPath;
 
@@ -394,82 +379,54 @@ class _LibraryEditTrackTile extends ConsumerWidget {
     final libraryFacade = ref.read(libraryFacadeProvider);
     final cs = Theme.of(context).colorScheme;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 1, 6, 1),
-      child: Material(
-        key: ValueKey('library-edit-track-surface:$trackPath'),
-        color: cs.surfaceContainerHigh.withValues(alpha: 0.4),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        clipBehavior: Clip.antiAlias,
-        child: ListTile(
-          dense: true,
-          minVerticalPadding: 2,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 2,
+    return FileTreeRow(
+      title: viewState.title,
+      depth: depth,
+      minHeight: 48,
+      titleMaxLines: 2,
+      verticalPadding: 2,
+      titleColor: viewState.muted ? cs.onSurfaceVariant : cs.onSurface,
+      surfaceKey: ValueKey('library-edit-track-surface:$trackPath'),
+      leading: Icon(
+        viewState.muted
+            ? Icons.music_off_rounded
+            : AppDesignTokens.audioFileIcon,
+        color: viewState.muted ? cs.onSurfaceVariant : cs.primary,
+        size: AppDesignTokens.fileEntryIconSize,
+      ),
+      trailing: TextButtonTheme(
+        data: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            minimumSize: _libraryEditActionMinimumSize,
+            tapTargetSize: MaterialTapTargetSize.padded,
           ),
-          leading: Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: viewState.muted
-                  ? cs.onSurfaceVariant.withValues(alpha: 0.12)
-                  : cs.primary.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Icon(
-              viewState.muted
-                  ? Icons.music_off_rounded
-                  : Icons.audio_file_rounded,
-              color: viewState.muted ? cs.onSurfaceVariant : cs.primary,
-              size: 16,
-            ),
+        ),
+        child: TextButton.icon(
+          onPressed: viewState.inheritedExcluded
+              ? null
+              : () {
+                  libraryFacade.setLibraryTrackExcluded(
+                    libraryPath,
+                    trackPath,
+                    !viewState.explicitExcluded,
+                  );
+                },
+          style: viewState.explicitExcluded
+              ? null
+              : TextButton.styleFrom(foregroundColor: cs.error),
+          icon: Icon(
+            viewState.explicitExcluded
+                ? Icons.restore_rounded
+                : Icons.block_rounded,
+            size: 16,
           ),
-          title: Text(
-            viewState.title,
-            maxLines: 2,
+          label: Text(
+            viewState.explicitExcluded
+                ? i18n.tr('restore')
+                : i18n.tr('exclude'),
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: viewState.muted ? cs.onSurfaceVariant : cs.onSurface,
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-            ),
-          ),
-          trailing: TextButtonTheme(
-            data: TextButtonThemeData(
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                minimumSize: _libraryEditActionMinimumSize,
-                tapTargetSize: MaterialTapTargetSize.padded,
-              ),
-            ),
-            child: TextButton.icon(
-              onPressed: viewState.inheritedExcluded
-                  ? null
-                  : () {
-                      libraryFacade.setLibraryTrackExcluded(
-                        libraryPath,
-                        trackPath,
-                        !viewState.explicitExcluded,
-                      );
-                    },
-              style: viewState.explicitExcluded
-                  ? null
-                  : TextButton.styleFrom(foregroundColor: cs.error),
-              icon: Icon(
-                viewState.explicitExcluded
-                    ? Icons.restore_rounded
-                    : Icons.block_rounded,
-                size: 14,
-              ),
-              label: Text(
-                viewState.explicitExcluded
-                    ? i18n.tr('restore')
-                    : i18n.tr('exclude'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
           ),
         ),
       ),
@@ -478,9 +435,9 @@ class _LibraryEditTrackTile extends ConsumerWidget {
 }
 
 class LibraryEditTreeSkeleton extends StatelessWidget {
-  const LibraryEditTreeSkeleton({super.key, this.itemCount = 6});
+  const LibraryEditTreeSkeleton({super.key, required this.viewportHeight});
 
-  final int itemCount;
+  final double viewportHeight;
 
   static const List<double> _titleFractions = [
     0.48,
@@ -493,67 +450,66 @@ class LibraryEditTreeSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final rowHeight = FileTreeRow.layoutHeight(
+      context,
+      minHeight: _libraryEditRowMinHeight,
+      titleMaxLines: 2,
+      reserveSubtitleSpace: true,
+    );
+    final itemCount = (viewportHeight / rowHeight).ceil();
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (var i = 0; i < itemCount; i++)
-          Card(
-            margin: const EdgeInsets.only(bottom: 6),
-            clipBehavior: Clip.antiAlias,
-            elevation: 0,
-            color: cs.surfaceContainerHigh,
-            shape: _libraryEditRootFolderShape,
-            child: SizedBox(
-              height: libraryEditRootFolderHeight,
-              child: ShimmerLoader(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 3, 6, 3),
-                  child: Row(
-                    children: [
-                      const ShimmerContainer(
-                        width: 24,
-                        height: 24,
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            FractionallySizedBox(
-                              widthFactor:
-                                  _titleFractions[i % _titleFractions.length],
-                              child: const ShimmerContainer(
-                                height: 14,
-                                borderRadius: 7,
-                              ),
+          SizedBox(
+            height: rowHeight,
+            child: ShimmerLoader(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Row(
+                  children: [
+                    const ShimmerContainer(
+                      width: AppDesignTokens.fileEntryIconSize,
+                      height: AppDesignTokens.fileEntryIconSize,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          FractionallySizedBox(
+                            widthFactor:
+                                _titleFractions[i % _titleFractions.length],
+                            child: const ShimmerContainer(
+                              height: 14,
+                              borderRadius: 7,
                             ),
-                            const SizedBox(height: 8),
-                            const ShimmerContainer(
-                              height: 11,
-                              width: 60,
-                              borderRadius: 5.5,
-                            ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(height: 8),
+                          const ShimmerContainer(
+                            height: 11,
+                            width: 60,
+                            borderRadius: 5.5,
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      const ShimmerContainer(
-                        width: 60,
-                        height: 32,
-                        borderRadius: 8,
-                      ),
-                      const SizedBox(width: 4),
-                      const ShimmerContainer(
-                        width: 18,
-                        height: 18,
-                        borderRadius: 9,
-                      ),
-                      const SizedBox(width: 4),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 12),
+                    const ShimmerContainer(
+                      width: 60,
+                      height: 32,
+                      borderRadius: 8,
+                    ),
+                    const SizedBox(width: 4),
+                    const ShimmerContainer(
+                      width: 18,
+                      height: 18,
+                      borderRadius: 9,
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                 ),
               ),
             ),
@@ -562,4 +518,3 @@ class LibraryEditTreeSkeleton extends StatelessWidget {
     );
   }
 }
-

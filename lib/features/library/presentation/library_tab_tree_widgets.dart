@@ -12,7 +12,6 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/search_query_utils.dart';
-import '../../player/application/playback_facade.dart';
 import '../domain/library_node.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../app/theme/app_design_tokens.dart';
@@ -26,7 +25,6 @@ import '../../../core/widgets/swipe_reveal_card.dart';
 import 'audio_detail_sheet.dart';
 import '../../../app/theme/app_styles.dart';
 
-import 'library_tab_ui_helpers.dart';
 import 'library_card_artwork.dart';
 
 const Color _librarySelectionCheckmarkColor = Color(0xFF4CAF50);
@@ -63,10 +61,7 @@ class LibrarySelectionIndicator extends StatelessWidget {
           switchInCurve: Curves.easeInOut,
           switchOutCurve: Curves.easeInOut,
           transitionBuilder: (child, animation) {
-            return FadeTransition(
-              opacity: animation,
-              child: child,
-            );
+            return FadeTransition(opacity: animation, child: child);
           },
           child: isSelected
               ? Container(
@@ -433,39 +428,6 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
     );
   }
 
-  Future<void> _playFolder(
-    BuildContext context,
-    PlaybackFacade playback,
-  ) async {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final firstTrack = widget.folder.firstTrack;
-    if (firstTrack == null) return;
-    unawaited(
-      AppInteractionFeedback.trigger(
-        AppInteractionFeedbackType.tap,
-        context: context,
-      ),
-    );
-    final created = await playback.spawnSession(firstTrack);
-    if (!context.mounted) return;
-    if (created) {
-      showLibrarySessionCreatedSnack(
-        context,
-        i18n.tr('session_created', {'name': firstTrack.displayName}),
-      );
-    } else {
-      showAppSnackBar(
-        context,
-        i18n.tr('operation_failed_retry'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.error_outline_rounded,
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final isHidden = ref.watch(
@@ -475,7 +437,6 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final folder = _loadedFolder ?? widget.folder;
     final isRootFolder = folder.depth == 0;
@@ -521,9 +482,6 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
           folderDuration: folder.totalDuration,
           detail: rootDetail,
           detailLoading: isRootDetailLoading,
-          expanded: false,
-          hasChildren: false,
-          onPlay: () => unawaited(_playFolder(context, playback)),
           index: widget.index,
           isSelected: widget.isSelected,
           isPinned: isPinned,
@@ -579,7 +537,9 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
                       children: [
                         SearchHighlightedText(
                           text: folder.name,
-                          terms: extractSearchTerms(widget.searchQuery),
+                          terms: widget.searchQuery.trim().isEmpty
+                              ? null
+                              : extractSearchTerms(widget.searchQuery),
                           style:
                               Theme.of(context).textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.w700,
@@ -597,25 +557,11 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
             ),
           ),
           trailing: SizedBox(
-            width: 62,
+            width: 30,
             height: _childFolderTileHeight,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                IconButton(
-                  onPressed: () => unawaited(_playFolder(context, playback)),
-                  visualDensity: VisualDensity.compact,
-                  tooltip: i18n.tr('add_to_playlist'),
-                  style: IconButton.styleFrom(
-                    foregroundColor: cs.primary,
-                    minimumSize: const Size(40, 40),
-                    maximumSize: const Size(40, 40),
-                    padding: EdgeInsets.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  icon: const Icon(Icons.add_circle_rounded, size: 25),
-                ),
-                const SizedBox(width: 2),
                 if (hasChildren)
                   Padding(
                     padding: const EdgeInsets.only(right: 6),
@@ -861,26 +807,16 @@ class _TrackNodeWidget extends ConsumerWidget {
     final useFeaturedSingleCard =
         track.isVideo || hasDisplayableCoverArtwork(track, resolvedCoverPath);
 
-    Future<void> playSingleTrack({bool temporary = false}) async {
+    Future<void> playSingleTrack() async {
       unawaited(
         AppInteractionFeedback.trigger(
           AppInteractionFeedbackType.tap,
           context: context,
         ),
       );
-      final succeeded = temporary
-          ? await playback.playDirect([track])
-          : await playback.spawnSession(
-              track,
-              autoPlay: track.isVideo ? true : null,
-            );
+      final succeeded = await playback.playDirect([track]);
       if (!context.mounted) return;
-      if (succeeded && !temporary) {
-        showLibrarySessionCreatedSnack(
-          context,
-          i18n.tr('session_created', {'name': track.displayName}),
-        );
-      } else if (!succeeded) {
+      if (!succeeded) {
         showAppSnackBar(
           context,
           i18n.tr('operation_failed_retry'),
@@ -946,7 +882,7 @@ class _TrackNodeWidget extends ConsumerWidget {
             onLongPress: onLongPress,
             onTap: isSelectionMode
                 ? onToggleSelect
-                : () => unawaited(playSingleTrack(temporary: true)),
+                : () => unawaited(playSingleTrack()),
             child: useFeaturedCard
                 ? ListTile(
                     contentPadding: LibraryLikeCardMetrics.rootTilePadding,
@@ -959,7 +895,6 @@ class _TrackNodeWidget extends ConsumerWidget {
                       index: index,
                       isSelected: isSelected,
                       isPinned: isPinned,
-                      onPlay: () => unawaited(playSingleTrack()),
                     ),
                   )
                 : Padding(
@@ -978,22 +913,6 @@ class _TrackNodeWidget extends ConsumerWidget {
                               title: track.displayName,
                               detail: singleDetail,
                               detailLoading: isSingleDetailLoading,
-                            ),
-                          ),
-                          Center(
-                            child: IconButton(
-                              onPressed: () => unawaited(playSingleTrack()),
-                              style: IconButton.styleFrom(
-                                foregroundColor: cs.primary,
-                                minimumSize: const Size(40, 44),
-                                maximumSize: const Size(40, 44),
-                                padding: EdgeInsets.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              icon: const Icon(
-                                Icons.add_circle_rounded,
-                                size: 25,
-                              ),
                             ),
                           ),
                         ],
@@ -1031,7 +950,9 @@ class _TrackNodeWidget extends ConsumerWidget {
                       Expanded(
                         child: SearchHighlightedText(
                           text: track.displayName,
-                          terms: extractSearchTerms(searchQuery),
+                          terms: searchQuery.trim().isEmpty
+                              ? null
+                              : extractSearchTerms(searchQuery),
                           maxLines: 1,
                           style:
                               Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -1043,41 +964,6 @@ class _TrackNodeWidget extends ConsumerWidget {
                               ) ??
                               const TextStyle(),
                         ),
-                      ),
-                      IconButton(
-                        onPressed: () async {
-                          unawaited(
-                            AppInteractionFeedback.trigger(
-                              AppInteractionFeedbackType.tap,
-                              context: context,
-                            ),
-                          );
-                          final created = await playback.spawnSession(track);
-                          if (!context.mounted) return;
-                          if (created) {
-                            showLibrarySessionCreatedSnack(
-                              context,
-                              i18n.tr('session_created', {
-                                'name': track.displayName,
-                              }),
-                            );
-                          } else {
-                            showAppSnackBar(
-                              context,
-                              i18n.tr('operation_failed_retry'),
-                              tone: AppFeedbackTone.destructive,
-                              icon: Icons.error_outline_rounded,
-                            );
-                          }
-                        },
-                        style: IconButton.styleFrom(
-                          foregroundColor: cs.primary,
-                          minimumSize: const Size(36, 36),
-                          maximumSize: const Size(36, 36),
-                          padding: EdgeInsets.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        icon: const Icon(Icons.add_circle_rounded, size: 22),
                       ),
                     ],
                   ),

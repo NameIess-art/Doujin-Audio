@@ -454,9 +454,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     _directoryWasLoading = isLoading;
   }
 
-  Widget _directorySkeleton() => const RepaintBoundary(
-    key: ValueKey('work_detail_entries_skeleton'),
-    child: WorkDetailDirectorySkeleton(),
+  Widget _directorySkeleton(double viewportHeight) => RepaintBoundary(
+    key: const ValueKey('work_detail_entries_skeleton'),
+    child: WorkDetailDirectorySkeleton(viewportHeight: viewportHeight),
   );
 
   Animation<double> _entryLoadOpacity(String id) {
@@ -1327,10 +1327,15 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                         horizontal: 8,
                         vertical: 4,
                       ),
-                      sliver: SliverToBoxAdapter(
-                        child: SizedBox(
-                          key: _loadingSkeletonKey,
-                          child: _directorySkeleton(),
+                      sliver: SliverLayoutBuilder(
+                        builder: (context, constraints) => SliverToBoxAdapter(
+                          child: SizedBox(
+                            key: _loadingSkeletonKey,
+                            child: _directorySkeleton(
+                              constraints.remainingPaintExtent -
+                                  bottomOverlayInset,
+                            ),
+                          ),
                         ),
                       ),
                     )
@@ -1428,7 +1433,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                           child: ExcludeSemantics(
                             child: FadeTransition(
                               opacity: ReverseAnimation(_directoryOpacity),
-                              child: _directorySkeleton(),
+                              child: _directorySkeleton(
+                                _departingSkeletonRect!.height,
+                              ),
                             ),
                           ),
                         ),
@@ -1537,9 +1544,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 }
 
 class WorkDetailDirectorySkeleton extends StatelessWidget {
-  const WorkDetailDirectorySkeleton({super.key, this.itemCount = 6});
+  const WorkDetailDirectorySkeleton({
+    super.key,
+    required this.viewportHeight,
+  });
 
-  final int itemCount;
+  final double viewportHeight;
 
   static const List<double> _titleFractions = [
     0.52,
@@ -1552,6 +1562,7 @@ class WorkDetailDirectorySkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final itemCount = viewportHeight <= 0 ? 1 : (viewportHeight / 48).ceil();
     return ShimmerLoader(
       child: Column(
         mainAxisSize: MainAxisSize.min,

@@ -7,6 +7,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../../core/widgets/file_tree_row.dart';
 import '../application/dlsite_metadata_batch_session.dart';
 import '../domain/audio_library_category.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -215,39 +216,20 @@ class _DlsiteMetadataBatchResultsPageState
                                   ),
                             child: Opacity(
                               opacity: isExcluded ? 0.38 : 1.0,
-                              child: ListTile(
+                              child: FileTreeRow(
                                 key: ValueKey<String>(
                                   'batch_metadata_result_$index',
                                 ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                title: Text(
-                                  title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: isExcluded
-                                      ? TextStyle(
-                                          color: cs.onSurface.withValues(
-                                            alpha: 0.38,
-                                          ),
-                                        )
-                                      : null,
-                                ),
+                                minHeight: 48,
+                                verticalPadding: 2,
+                                reserveSubtitleSpace: true,
+                                title: title,
+                                titleColor: isExcluded
+                                    ? cs.onSurface.withValues(alpha: 0.38)
+                                    : null,
                                 subtitle: entry.detail.rjCode.isEmpty
                                     ? null
-                                    : Text(
-                                        entry.detail.rjCode,
-                                        style: isExcluded
-                                            ? TextStyle(
-                                                color: cs.onSurfaceVariant
-                                                    .withValues(alpha: 0.38),
-                                              )
-                                            : null,
-                                      ),
+                                    : entry.detail.rjCode,
                                 trailing: _BatchMetadataStatusIcon(
                                   key: ValueKey<String>(
                                     'batch_metadata_status_$index',
@@ -440,7 +422,7 @@ class _BatchMetadataStatusIcon extends StatelessWidget {
     }
     final (IconData icon, Color color, String label) = switch (status) {
       DlsiteMetadataBatchLookupStatus.found => (
-        Icons.pending_actions_rounded,
+        Icons.check_circle_rounded,
         Colors.orange,
         i18n.tr('batch_metadata_status_found'),
       ),

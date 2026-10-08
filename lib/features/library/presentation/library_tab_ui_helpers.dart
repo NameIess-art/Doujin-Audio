@@ -271,12 +271,3 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
     ).withAppHeaderTransition();
   }
 }
-
-void showLibrarySessionCreatedSnack(BuildContext context, String message) {
-  showAppSnackBar(
-    context,
-    message,
-    tone: AppFeedbackTone.success,
-    icon: Icons.queue_music_rounded,
-  );
-}

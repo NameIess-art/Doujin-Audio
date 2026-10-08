@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -339,7 +340,8 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
             right: 0,
             child: TopPageHeader(
               key: const ValueKey<String>('work_image_header'),
-              icon: Icons.image_outlined,
+              icon: AppDesignTokens.imageFileIcon,
+              iconColor: AppDesignTokens.imageFileIconColor,
               title: currentImage.name,
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back_rounded),

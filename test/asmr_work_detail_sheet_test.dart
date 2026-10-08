@@ -985,7 +985,9 @@ void main() {
     ]) {
       final fade = find.byKey(ValueKey<String>(key));
       expect(fade, findsOneWidget);
-      final mask = tester.widget<ShaderMask>(fade);
+      final mask = tester.widget<ShaderMask>(
+        find.descendant(of: fade, matching: find.byType(ShaderMask)),
+      );
       expect(mask.blendMode, BlendMode.dstIn);
       final shader = mask.shaderCallback(const Rect.fromLTWH(0, 0, 320, 28));
       expect(shader, isA<Shader>());

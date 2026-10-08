@@ -118,6 +118,7 @@ const Map<String, String> appLanguageEn = {
   'skip': 'Skip',
   'search': 'Search',
   'search_audio_placeholder': 'Search audio...',
+  'search_library_placeholder': 'Search libraries...',
   'scanning_title': 'Scanning',
   'loading_dot': 'Loading...',
   'playback_loading': 'Loading',

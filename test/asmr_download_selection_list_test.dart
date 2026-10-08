@@ -1,5 +1,7 @@
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_selection.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_selection_tree.dart';
@@ -27,8 +29,10 @@ AsmrTrackFile _node(String path, {List<AsmrTrackFile>? children}) =>
 
 Future<void> _pumpList(
   WidgetTester tester,
-  AsmrDownloadSelectionModel selection,
-) async {
+  AsmrDownloadSelectionModel selection, {
+  bool reduceMotion = false,
+  double textScale = 1,
+}) async {
   SharedPreferences.setMockInitialValues({});
   final language = AppLanguageProvider();
   await language.initialized;
@@ -39,6 +43,13 @@ Future<void> _pumpList(
         appLanguageProviderInstanceProvider.overrideWithValue(language),
       ],
       child: MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            disableAnimations: reduceMotion,
+            textScaler: TextScaler.linear(textScale),
+          ),
+          child: child!,
+        ),
         home: Scaffold(
           body: StatefulBuilder(
             builder: (_, setState) => AsmrDownloadSelectionList(
@@ -61,6 +72,245 @@ Future<void> _jumpToEnd(WidgetTester tester, ScrollPosition position) async {
 }
 
 void main() {
+  testWidgets('download file type icons use work detail colors', (
+    tester,
+  ) async {
+    final model = AsmrDownloadSelectionModel([
+      _node(
+        'folder',
+        children: [
+          _node('audio.mp3'),
+          _node('notes.txt'),
+          _node('cover.jpg'),
+          _node('subtitle.srt'),
+          _node('metadata.json'),
+          _node('audio.cue'),
+          _node('booklet.pdf'),
+          _node('cover.bmp'),
+        ],
+      ),
+    ]);
+    await _pumpList(tester, model);
+    final expected = {
+      'folder': AppDesignTokens.folderIconColor,
+      'audio.mp3': AppDesignTokens.light.asmrAccent,
+      'notes.txt': AppDesignTokens.textFileIconColor,
+      'cover.jpg': AppDesignTokens.imageFileIconColor,
+      'subtitle.srt': AppDesignTokens.textFileIconColor,
+      'metadata.json': AppDesignTokens.textFileIconColor,
+      'audio.cue': AppDesignTokens.textFileIconColor,
+      'booklet.pdf': AppDesignTokens.textFileIconColor,
+      'cover.bmp': AppDesignTokens.imageFileIconColor,
+    };
+    for (final entry in expected.entries) {
+      final row = find.ancestor(
+        of: find.text(entry.key),
+        matching: find.byType(FileTreeRow),
+      );
+      final icon = find.descendant(of: row, matching: find.byType(Icon)).first;
+      expect(tester.widget<Icon>(icon).color, entry.value);
+      expect(tester.widget<Icon>(icon).size, AppDesignTokens.fileEntryIconSize);
+    }
+    expect(find.byIcon(AppDesignTokens.audioFileIcon), findsOneWidget);
+    expect(find.byIcon(AppDesignTokens.textFileIcon), findsNWidgets(5));
+    expect(find.byIcon(AppDesignTokens.imageFileIcon), findsNWidgets(2));
+  });
+
+  testWidgets('download rows show invariant subtree sizes and shared shape', (
+    tester,
+  ) async {
+    final model = AsmrDownloadSelectionModel([
+      _node('root', children: [_node('one'), _node('two')]),
+    ]);
+    await _pumpList(tester, model);
+    expect(find.text('2.0 KB'), findsOneWidget);
+    expect(find.text('1.0 KB'), findsNWidgets(2));
+    expect(find.byIcon(Icons.chevron_right_rounded), findsNothing);
+    expect(find.byType(Checkbox), findsNWidgets(3));
+    expect(tester.getSize(find.byType(FileTreeRow).first).height, 44);
+    final rows = find.byType(FileTreeRow);
+    for (var index = 0; index < 3; index++) {
+      expect(tester.getSize(rows.at(index)).height, 44);
+      if (index > 0) {
+        expect(
+          tester.getRect(rows.at(index)).top,
+          tester.getRect(rows.at(index - 1)).bottom,
+        );
+      }
+    }
+    final ink = tester.widget<InkWell>(
+      find
+          .descendant(
+            of: find.byType(FileTreeRow).first,
+            matching: find.byType(InkWell),
+          )
+          .first,
+    );
+    expect(ink.borderRadius, FileTreeRow.borderRadius);
+    await tester.tap(find.text('one'));
+    await tester.pumpAndSettle();
+    expect(model.stateForPath('root'), isNull);
+    expect(find.text('2.0 KB'), findsOneWidget);
+    expect(model.selectedTotalSizeBytes(), 1024);
+  });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'download rows fit deep folders with large text on $platform',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(320, 600);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        var roots = [_node('long audio file name.mp3')];
+        for (var depth = 8; depth >= 0; depth--) {
+          roots = [_node('folder$depth', children: roots)];
+        }
+        final model = AsmrDownloadSelectionModel(roots);
+        await _pumpList(tester, model, textScale: 2);
+        for (var depth = 1; depth <= 8; depth++) {
+          await tester.scrollUntilVisible(find.text('folder$depth'), 100);
+          await tester.ensureVisible(find.text('folder$depth'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('folder$depth'));
+          await tester.pumpAndSettle();
+        }
+        await tester.scrollUntilVisible(
+          find.text('long audio file name.mp3'),
+          100,
+        );
+        await tester.ensureVisible(find.text('long audio file name.mp3'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getSize(find.text('long audio file name.mp3')).width,
+          greaterThan(40),
+        );
+        await tester.tap(find.text('long audio file name.mp3'));
+        await tester.pumpAndSettle();
+        expect(model.selectedLeafCount(), 1);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'download folders animate and safely reverse on $platform',
+      (tester) async {
+        final model = AsmrDownloadSelectionModel([
+          _node(
+            'root',
+            children: [
+              _node('disc', children: [_node('one')]),
+            ],
+          ),
+        ]);
+        await _pumpList(tester, model);
+        await tester.tap(find.text('disc'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        final opacity = tester
+            .widget<FadeTransition>(
+              find
+                  .ancestor(
+                    of: find.text('one'),
+                    matching: find.byType(FadeTransition),
+                  )
+                  .first,
+            )
+            .opacity
+            .value;
+        expect(opacity, greaterThan(0));
+        expect(opacity, lessThan(1));
+        await tester.tap(find.text('disc'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 60));
+        await tester.tap(find.text('one'), warnIfMissed: false);
+        await tester.pump();
+        expect(model.stateForPath('one'), isFalse);
+        await tester.tap(find.text('disc'));
+        await tester.pump(const Duration(milliseconds: 30));
+        await tester.tap(find.text('disc'));
+        await tester.pumpAndSettle();
+        expect(find.text('one'), findsNothing);
+        await tester.tap(find.text('disc'));
+        await tester.pumpAndSettle();
+        expect(find.text('one'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
+  testWidgets('reduced motion completes folder changes immediately', (
+    tester,
+  ) async {
+    final model = AsmrDownloadSelectionModel([
+      _node(
+        'root',
+        children: [
+          _node('disc', children: [_node('one')]),
+        ],
+      ),
+    ]);
+    await _pumpList(tester, model, reduceMotion: true);
+    await tester.tap(find.text('disc'));
+    await tester.pump();
+    expect(find.text('one'), findsOneWidget);
+    expect(
+      tester
+          .widget<FadeTransition>(
+            find
+                .ancestor(
+                  of: find.text('one'),
+                  matching: find.byType(FadeTransition),
+                )
+                .first,
+          )
+          .opacity
+          .value,
+      1,
+    );
+    expect(
+      tester
+          .widget<AnimatedRotation>(find.byType(AnimatedRotation).last)
+          .duration,
+      Duration.zero,
+    );
+    await tester.tap(find.text('disc'));
+    await tester.pump();
+    expect(find.text('one'), findsNothing);
+  });
+
+  testWidgets('large download expansion stays lazy throughout animation', (
+    tester,
+  ) async {
+    final model = AsmrDownloadSelectionModel([
+      _node(
+        'root',
+        children: [
+          _node(
+            'disc',
+            children: [for (var i = 0; i < 2000; i++) _node('track$i')],
+          ),
+        ],
+      ),
+    ]);
+    await _pumpList(tester, model);
+    await tester.tap(find.text('disc'));
+    await tester.pump();
+    expect(find.byType(AsmrDownloadNodeTile).evaluate().length, lessThan(110));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(AsmrDownloadNodeTile).evaluate().length, lessThan(110));
+    await tester.pumpAndSettle();
+    expect(find.byType(AsmrDownloadNodeTile).evaluate().length, lessThan(30));
+    await tester.tap(find.text('disc'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(AsmrDownloadNodeTile).evaluate().length, lessThan(110));
+    await tester.pumpAndSettle();
+    expect(find.text('track0'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('deep download folders remain selectable in a narrow pane', (
     tester,
   ) async {
@@ -77,8 +327,10 @@ void main() {
     for (var depth = 1; depth <= 20; depth++) {
       final folder = find.byKey(ValueKey('asmr_download_node_folder$depth'));
       await tester.scrollUntilVisible(folder, 100);
+      await tester.ensureVisible(find.text('folder$depth'));
+      await tester.pumpAndSettle();
       await tester.tap(
-        find.descendant(of: folder, matching: find.byType(Text)),
+        find.descendant(of: folder, matching: find.text('folder$depth')),
       );
       await tester.pumpAndSettle();
     }

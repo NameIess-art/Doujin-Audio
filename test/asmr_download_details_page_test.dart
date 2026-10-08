@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
@@ -86,6 +87,64 @@ void main() {
     await tester.pumpAndSettle();
     expect(emptyFolder, findsOneWidget);
   });
+
+  testWidgets(
+    'download details keeps shared file icons and colors while folders toggle',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final languageProvider = AppLanguageProvider();
+      addTearDown(languageProvider.dispose);
+      final task = _downloadTask().copyWith(
+        selectedRoots: [
+          _downloadNode(
+            'Folder',
+            children: [
+              _downloadNode('Folder/Track.mp3'),
+              _downloadNode('Folder/Notes.txt'),
+              _downloadNode('Folder/Cover.jpg'),
+            ],
+          ),
+        ],
+      );
+      await tester.pumpWidget(_downloadDetailsApp(languageProvider, task));
+      await tester.pumpAndSettle();
+
+      void expectEntryIcon(IconData data, Color color) {
+        final icon = tester.widget<Icon>(find.byIcon(data));
+        expect(icon.size, AppDesignTokens.fileEntryIconSize);
+        expect(icon.color, color);
+      }
+
+      expectEntryIcon(
+        AppDesignTokens.openFolderIcon,
+        AppDesignTokens.folderIconColor,
+      );
+      expectEntryIcon(
+        AppDesignTokens.audioFileIcon,
+        AppDesignTokens.light.asmrAccent,
+      );
+      expectEntryIcon(
+        AppDesignTokens.textFileIcon,
+        AppDesignTokens.textFileIconColor,
+      );
+      expectEntryIcon(
+        AppDesignTokens.imageFileIcon,
+        AppDesignTokens.imageFileIconColor,
+      );
+      await tester.tap(find.text('Folder'));
+      await tester.pumpAndSettle();
+      expectEntryIcon(
+        AppDesignTokens.folderIcon,
+        AppDesignTokens.folderIconColor,
+      );
+      expect(find.text('Track.mp3'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('completed file restores its size after a retry', (tester) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});

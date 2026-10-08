@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_design_tokens.dart';
@@ -149,55 +151,75 @@ class OperationSkeletonList extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
-    return ShimmerLoader(
-      child: Padding(
-        padding: padding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (showHeader) ...[
-              const ShimmerContainer(width: 160, height: 20),
-              const SizedBox(height: 12),
-              const ShimmerContainer(height: 14, borderRadius: 7),
-              const SizedBox(height: 20),
-            ],
-            for (var index = 0; index < itemCount; index++) ...[
-              Container(
-                height: 58,
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(tokens.radiusControl),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableHeight = constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : MediaQuery.sizeOf(context).height;
+        final contentHeight = math.max(
+          0.0,
+          availableHeight -
+              padding.resolve(Directionality.of(context)).vertical -
+              (showHeader ? 66 : 0),
+        );
+        final rowCount = math.max(
+          itemCount,
+          ((contentHeight + 10) / 68).ceil(),
+        );
+        return ShimmerLoader(
+          child: ListView(
+            primary: false,
+            shrinkWrap: !constraints.hasBoundedHeight,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: padding,
+            children: [
+              if (showHeader) ...[
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: ShimmerContainer(width: 160, height: 20),
                 ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                child: const Row(
-                  children: [
-                    ShimmerContainer(width: 34, height: 34, borderRadius: 10),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ShimmerContainer(height: 14, borderRadius: 7),
-                          SizedBox(height: 8),
-                          ShimmerContainer(
-                            width: 140,
-                            height: 10,
-                            borderRadius: 5,
-                          ),
-                        ],
+                const SizedBox(height: 12),
+                const ShimmerContainer(height: 14, borderRadius: 7),
+                const SizedBox(height: 20),
+              ],
+              for (var index = 0; index < rowCount; index++) ...[
+                Container(
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(tokens.radiusControl),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  child: const Row(
+                    children: [
+                      ShimmerContainer(width: 34, height: 34, borderRadius: 10),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ShimmerContainer(height: 14, borderRadius: 7),
+                            SizedBox(height: 8),
+                            ShimmerContainer(
+                              width: 140,
+                              height: 10,
+                              borderRadius: 5,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              if (index != itemCount - 1) const SizedBox(height: 10),
+                if (index != rowCount - 1) const SizedBox(height: 10),
+              ],
             ],
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

@@ -1,6 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:doujin_audio/features/library/domain/library_node.dart';
+import 'package:doujin_audio/core/widgets/search_highlight.dart';
+import 'package:doujin_audio/core/widgets/rj_code_overlay.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_en.dart';
@@ -14,6 +18,7 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/marquee_text.dart';
+import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
@@ -71,18 +76,10 @@ LibraryLikeWorkCardContent _buildFeaturedCard({
   required String title,
   required List<LibraryLikeInfoLineData> lines,
   required Key coverKey,
-  bool showExpandIndicator = true,
-  bool compactCoverLayout = false,
 }) {
   return LibraryLikeWorkCardContent(
     title: title,
     lines: lines,
-    playTooltip: 'add',
-    onPlay: () {},
-    showExpandIndicator: showExpandIndicator,
-    compactCoverLayout: compactCoverLayout,
-    enableMarquee: false,
-    enableTitleMarquee: false,
     coverBuilder: (coverWidth) => Container(
       key: coverKey,
       width: coverWidth,
@@ -96,6 +93,88 @@ LibraryLikeWorkCardContent _buildFeaturedCard({
 }
 
 void main() {
+  testWidgets('RJ search highlights inherit and clear with the query', (
+    tester,
+  ) async {
+    Future<void> pumpCode(String query) => tester.pumpWidget(
+      _buildSurface(
+        SearchHighlightScope(
+          query: query,
+          child: const RjCodeOverlay(rjCode: 'RJ123456', maxWidth: 90),
+        ),
+      ),
+    );
+
+    await pumpCode('rj123');
+    final richText = tester.widget<RichText>(
+      find.descendant(
+        of: find.byType(RjCodeOverlay),
+        matching: find.byType(RichText),
+      ),
+    );
+    final spans = (richText.text as TextSpan).children!.cast<TextSpan>();
+    expect(
+      spans
+          .where((span) => span.style?.fontWeight == FontWeight.w900)
+          .single
+          .text,
+      'RJ123',
+    );
+    expect(richText.text.toPlainText(), 'RJ123456');
+    await pumpCode('');
+    expect(find.text('RJ123456'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets('nested search rows inherit category terms on $platform', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'Rain audio',
+        path: '/library/Rain folder/audio.mp3',
+        groupKey: '/library',
+        groupTitle: 'Library',
+      );
+      final folder = FolderNode('Rain folder', '/library/Rain folder', depth: 1)
+        ..addChildren([TrackNode(track)]);
+      await tester.pumpWidget(
+        fixture.build(
+          SearchHighlightScope(
+            query: 'rain',
+            child: LibraryTreeItem(node: folder),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      bool hasHighlightedRain(String text) {
+        final richText = tester.widget<RichText>(
+          find.text(text, findRichText: true),
+        );
+        final spans = (richText.text as TextSpan).children!.cast<TextSpan>();
+        return spans.any(
+          (span) =>
+              span.text == 'Rain' && span.style?.fontWeight == FontWeight.w900,
+        );
+      }
+
+      expect(hasHighlightedRain('Rain folder'), isTrue);
+      await tester.tap(find.text('Rain folder', findRichText: true));
+      await tester.pumpAndSettle();
+      expect(hasHighlightedRain('Rain audio'), isTrue);
+      await tester.tap(find.text('Rain folder', findRichText: true));
+      await tester.pumpAndSettle();
+      expect(find.text('Rain audio', findRichText: true), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      debugDefaultTargetPlatformOverride = null;
+    });
+  }
+
   testWidgets('top header stays opaque while scrolling', (tester) async {
     await tester.pumpWidget(_buildScrollableHeader());
     await tester.pump();
@@ -360,13 +439,14 @@ void main() {
     expect(
       lines.map(
         (line) =>
-            '${line.label}:${line.text}:${line.secondaryLabel}:${line.secondaryText}:${line.lines}',
+            '${line.label}:${line.text}:${line.lines}:${line.isSecondary}',
       ),
       <String>[
-        '声优:Alice，Bob:null:null:1',
-        'Circle:Circle:null:null:1',
-        'Release:2026-07-02:Rating:4:1',
-        'Tags:sleep，voice:null:null:2',
+        '声优:Alice，Bob:1:false',
+        'Circle:Circle:1:false',
+        'Tags:#sleep #voice:1:false',
+        'Release:2026-07-02:1:true',
+        'Rating:4:1:true',
       ],
     );
   });
@@ -411,13 +491,14 @@ void main() {
     expect(
       lines.map(
         (line) =>
-            '${line.label}:${line.text}:${line.secondaryLabel}:${line.secondaryText}:${line.lines}',
+            '${line.label}:${line.text}:${line.lines}:${line.isSecondary}',
       ),
       <String>[
-        '声優:Voice A、Voice B:null:null:1',
-        'Circle:Circle:null:null:1',
-        'Release:2026-06-09:Rating:4.5:1',
-        'Tags:ASMR、Sleep:null:null:2',
+        '声優:Voice A、Voice B:1:false',
+        'Circle:Circle:1:false',
+        'Tags:#ASMR #Sleep:1:false',
+        'Release:2026-06-09:1:true',
+        'Rating:4.5:1:true',
       ],
     );
   });
@@ -452,52 +533,103 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('release date and rating share one row below circle', (
-    tester,
-  ) async {
-    final lines = buildLibraryLikeInfoLines(
-      metadata: LibraryLikeInfoMetadata(
-        voiceActors: const <String>['Voice'],
-        circleName: 'Circle',
-        tags: const <String>['ASMR', 'Sleep'],
-        releaseDate: DateTime(2026, 6, 9),
-        rating: 4.5,
-      ),
-      voiceActorLabel: appLanguageEn['card_info_voice_actors']!,
-      circleLabel: 'Circle label',
-      tagsLabel: 'Tags',
-      releaseDateLabel: 'Release',
-      ratingLabel: 'Rating',
-    );
-
-    await tester.pumpWidget(
-      _buildSurface(
-        _buildFeaturedCard(
-          title: 'Work',
-          coverKey: const ValueKey('footer-info-cover'),
-          lines: lines,
+  testWidgets(
+    'card title and metadata stay on the right with muted footer',
+    (tester) async {
+      final lines = buildLibraryLikeInfoLines(
+        metadata: LibraryLikeInfoMetadata(
+          voiceActors: const ['Voice'],
+          circleName: 'Circle',
+          tags: const ['ASMR', 'Sleep'],
+          releaseDate: DateTime(2026, 6, 9),
+          rating: 4.5,
         ),
-      ),
-    );
+        voiceActorLabel: 'Voice label',
+        circleLabel: 'Circle label',
+        tagsLabel: 'Tags',
+        releaseDateLabel: 'Release',
+        ratingLabel: 'Rating',
+      );
+      await tester.pumpWidget(
+        _buildSurface(
+          _buildFeaturedCard(
+            title: 'Work',
+            coverKey: const ValueKey('footer-info-cover'),
+            lines: lines,
+          ),
+        ),
+      );
+      expect(
+        lines.where((line) => line.isSecondary).map((line) => line.label),
+        ['Release', 'Rating'],
+      );
+      for (final icon in [
+        Icons.record_voice_over_rounded,
+        Icons.storefront_outlined,
+        Icons.local_offer_rounded,
+        Icons.calendar_today_rounded,
+        Icons.star_rounded,
+      ]) {
+        expect(find.byIcon(icon), findsOneWidget);
+      }
+      for (final label in [
+        'Voice label',
+        'Circle label',
+        'Tags',
+        'Release',
+        'Rating',
+      ]) {
+        expect(find.text(label), findsNothing);
+        expect(find.byTooltip(label), findsOneWidget);
+      }
+      final cover = tester.getRect(
+        find.byKey(const ValueKey('footer-info-cover')),
+      );
+      final title = tester.getRect(find.text('Work'));
+      final date = tester.getRect(find.text('2026-06-09'));
+      final rating = tester.getRect(find.text('4.5'));
+      expect(title.top, cover.top);
+      expect(title.left, cover.right + 10);
+      expect(date.left, greaterThan(cover.right));
+      expect(date.bottom, closeTo(cover.bottom, 0.001));
+      for (final value in [
+        'Work',
+        'Voice',
+        'Circle',
+        '#ASMR #Sleep',
+        '2026-06-09',
+        '4.5',
+      ]) {
+        final rect = tester.getRect(find.text(value));
+        expect(rect.left, greaterThan(cover.right));
+        expect(rect.top, greaterThanOrEqualTo(cover.top));
+        expect(rect.bottom, lessThanOrEqualTo(cover.bottom + 0.001));
+      }
+      expect(
+        date.top,
+        greaterThan(tester.getRect(find.text('#ASMR #Sleep')).top),
+      );
+      expect(rating.center.dy, closeTo(date.center.dy, 0.001));
+      expect(rating.left, greaterThan(date.right));
+      final titleText = tester.widget<Text>(find.text('Work'));
+      expect(titleText.maxLines, 1);
+      final dateStyle = tester.widget<Text>(find.text('2026-06-09')).style!;
+      final ratingStyle = tester.widget<Text>(find.text('4.5')).style!;
+      final voiceStyle = tester.widget<Text>(find.text('Voice')).style!;
+      expect(dateStyle.fontSize, 11);
+      expect(ratingStyle.fontSize, 11);
+      expect(dateStyle.color, ratingStyle.color);
+      expect(dateStyle.color, isNot(voiceStyle.color));
+      expect(find.byType(IconButton), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
-    expect(lines[2].secondaryLabel, 'Rating');
-    expect(
-      tester.getTopLeft(find.text('Release')).dy,
-      tester.getTopLeft(find.text('Rating')).dy,
-    );
-    expect(
-      tester.getTopLeft(find.text('Release')).dy,
-      lessThan(tester.getTopLeft(find.text('Tags')).dy),
-    );
-    expect(
-      tester.getTopLeft(find.text('Release')).dy,
-      greaterThan(tester.getTopLeft(find.text('Circle label')).dy),
-    );
-    expect(find.text('2026-06-09'), findsOneWidget);
-    expect(find.text('4.5'), findsOneWidget);
-  });
-
-  testWidgets('library card metrics keep the compact P2 baseline', (
+  testWidgets('library card retains cover dimensions without action buttons', (
     tester,
   ) async {
     const coverKey = ValueKey('local-cover');
@@ -509,25 +641,43 @@ void main() {
           title: title,
           coverKey: coverKey,
           lines: const [
-            LibraryLikeInfoLineData('CV', '聖純シオ'),
-            LibraryLikeInfoLineData('社团', 'えたーなるわーくす'),
-            LibraryLikeInfoLineData('销量', '2070'),
+            LibraryLikeInfoLineData(
+              'CV',
+              '聖純シオ',
+              icon: Icons.record_voice_over_rounded,
+            ),
+            LibraryLikeInfoLineData(
+              '社团',
+              'えたーなるわーくす',
+              icon: Icons.storefront_outlined,
+            ),
             LibraryLikeInfoLineData(
               '标签',
               '搾乳，産卵，百合，触手，双子，丸呑み，バイノーラル',
-              lines: 3,
+              icon: Icons.local_offer_rounded,
+            ),
+            LibraryLikeInfoLineData(
+              '发售',
+              '2026-10-09',
+              icon: Icons.calendar_today_rounded,
+              isSecondary: true,
+            ),
+            LibraryLikeInfoLineData(
+              '评分',
+              '4.5',
+              icon: Icons.star_rounded,
+              isSecondary: true,
             ),
           ],
         ),
       ),
     );
 
-    expect(LibraryLikeCardMetrics.rootTileHeight, 150);
-    expect(LibraryLikeCardMetrics.contentHeight, 134);
-    expect(LibraryLikeCardMetrics.infoBlockHeight, 90);
-    expect(LibraryLikeCardMetrics.infoVerticalOffset, -4);
-    expect(LibraryLikeCardMetrics.titleBlockHeight, 38);
-    expect(LibraryLikeCardMetrics.actionButtonSize, 40);
+    expect(LibraryLikeCardMetrics.rootTileHeight, 106);
+    expect(
+      LibraryLikeCardMetrics.contentHeight,
+      LibraryLikeCardMetrics.coverHeight,
+    );
     expect(LibraryLikeCardMetrics.coverRadius, 8);
     expect(LibraryLikeCardMetrics.coverDistance, 8);
     expect(
@@ -543,205 +693,22 @@ void main() {
     expect(
       tester.getSize(find.byKey(coverKey)),
       const Size(
-        LibraryLikeCardMetrics.infoBlockHeight *
+        LibraryLikeCardMetrics.coverHeight *
             LibraryLikeCardMetrics.coverAspectRatio,
-        LibraryLikeCardMetrics.infoBlockHeight,
+        LibraryLikeCardMetrics.coverHeight,
       ),
     );
     expect(
-      tester.getTopLeft(find.text('CV')).dy,
-      tester.getTopLeft(find.byKey(coverKey)).dy +
-          LibraryLikeCardMetrics.infoVerticalOffset,
+      tester.getTopLeft(find.text('聖純シオ')).dy,
+      greaterThan(tester.getTopLeft(find.byKey(coverKey)).dy),
     );
     expect(find.byType(MarqueeText), findsNothing);
-    expect(find.byIcon(Icons.add_circle_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.expand_more_rounded), findsOneWidget);
-
+    expect(find.byType(IconButton), findsNothing);
     final titleText = tester.widget<Text>(find.text(title));
-    expect(titleText.maxLines, 2);
-    expect(titleText.overflow, TextOverflow.ellipsis);
-    expect(titleText.softWrap, isTrue);
+    expect(titleText.maxLines, 1);
+    expect(titleText.overflow, TextOverflow.visible);
+    expect(titleText.softWrap, isFalse);
   });
-
-  testWidgets('empty card info uses the compact resolved-cover layout', (
-    tester,
-  ) async {
-    const coverKey = ValueKey('compact-cover');
-    const title = 'A long work title that remains on the right of its cover';
-
-    await tester.pumpWidget(
-      _buildSurface(
-        ListTile(
-          minTileHeight: LibraryLikeCardMetrics.compactRootTileHeight,
-          contentPadding: LibraryLikeCardMetrics.rootTilePadding,
-          title: _buildFeaturedCard(
-            title: title,
-            coverKey: coverKey,
-            lines: const <LibraryLikeInfoLineData>[],
-            compactCoverLayout: true,
-          ),
-        ),
-      ),
-    );
-
-    final content = find.byType(LibraryLikeWorkCardContent);
-    final contentRect = tester.getRect(content);
-    final coverRect = tester.getRect(find.byKey(coverKey));
-    final addRect = tester.getRect(find.byIcon(Icons.add_circle_rounded));
-    final expandRect = tester.getRect(find.byIcon(Icons.expand_more_rounded));
-
-    expect(
-      tester.getSize(content),
-      const Size(344, LibraryLikeCardMetrics.compactContentHeight),
-    );
-    expect(
-      tester.getSize(find.byKey(coverKey)),
-      const Size(
-        LibraryLikeCardMetrics.compactContentHeight *
-            LibraryLikeCardMetrics.coverAspectRatio,
-        LibraryLikeCardMetrics.compactContentHeight,
-      ),
-    );
-    expect(
-      tester.getSize(find.byType(ListTile)).height,
-      LibraryLikeCardMetrics.compactRootTileHeight,
-    );
-
-    final topFinder = find.text('A long work title that remains on the');
-    final bottomFinder = find.text('right of its cover');
-    expect(topFinder, findsOneWidget);
-    expect(bottomFinder, findsOneWidget);
-
-    final topRect = tester.getRect(topFinder);
-    final bottomRect = tester.getRect(bottomFinder);
-    final topText = tester.widget<Text>(topFinder);
-    final bottomText = tester.widget<Text>(bottomFinder);
-
-    expect(topRect.left, greaterThan(coverRect.right));
-    expect(topRect.top, contentRect.top);
-    expect(bottomRect.left, greaterThan(coverRect.right));
-    expect(bottomRect.right, lessThanOrEqualTo(addRect.left));
-    expect(addRect.center.dy, greaterThan(contentRect.center.dy));
-    expect(expandRect.center.dy, greaterThan(contentRect.center.dy));
-    expect(addRect.left, greaterThan(coverRect.right));
-    expect(expandRect.left, greaterThan(addRect.left));
-    expect(topText.maxLines, 3);
-    expect(bottomText.maxLines, 3);
-    expect(bottomText.overflow, TextOverflow.ellipsis);
-    expect(bottomRect.top, equals(topRect.bottom));
-  });
-
-  test(
-    'splitCompactCardTitle preserves short titles and splits long titles',
-    () {
-      const style = TextStyle(
-        fontSize: 14,
-        height: 1.06,
-        fontWeight: FontWeight.w800,
-      );
-
-      final (shortTop, shortBot) = splitCompactCardTitle(
-        title: 'Short',
-        style: style,
-        maxWidth: 206,
-        textDirection: TextDirection.ltr,
-      );
-      expect(shortTop, 'Short');
-      expect(shortBot, isEmpty);
-
-      final (longTop, longBot) = splitCompactCardTitle(
-        title: 'A long work title that remains on the right of its cover',
-        style: style,
-        maxWidth: 206,
-        textDirection: TextDirection.ltr,
-      );
-      expect(longTop, 'A long work title that remains on the');
-      expect(longBot, 'right of its cover');
-    },
-  );
-
-  testWidgets('compact card with short title keeps title in top block', (
-    tester,
-  ) async {
-    const coverKey = ValueKey('compact-short-cover');
-    const title = 'Short';
-
-    await tester.pumpWidget(
-      _buildSurface(
-        ListTile(
-          minTileHeight: LibraryLikeCardMetrics.compactRootTileHeight,
-          contentPadding: LibraryLikeCardMetrics.rootTilePadding,
-          title: _buildFeaturedCard(
-            title: title,
-            coverKey: coverKey,
-            lines: const <LibraryLikeInfoLineData>[],
-            compactCoverLayout: true,
-          ),
-        ),
-      ),
-    );
-
-    final addRect = tester.getRect(find.byIcon(Icons.add_circle_rounded));
-    final titleFinder = find.text(title);
-    expect(titleFinder, findsOneWidget);
-    expect(tester.getTopLeft(titleFinder).dy, lessThan(addRect.top));
-  });
-
-  testWidgets(
-    'compact card actions keep fixed position regardless of title length',
-    (tester) async {
-      const coverKey1 = ValueKey('cover-short');
-      const coverKey2 = ValueKey('cover-long');
-      const shortTitle = 'Short';
-      const longTitle =
-          'A long work title that remains on the right of its cover';
-
-      await tester.pumpWidget(
-        _buildSurface(
-          ListTile(
-            minTileHeight: LibraryLikeCardMetrics.compactRootTileHeight,
-            contentPadding: LibraryLikeCardMetrics.rootTilePadding,
-            title: _buildFeaturedCard(
-              title: shortTitle,
-              coverKey: coverKey1,
-              lines: const <LibraryLikeInfoLineData>[],
-              compactCoverLayout: true,
-            ),
-          ),
-        ),
-      );
-
-      final shortAddRect = tester.getRect(
-        find.byIcon(Icons.add_circle_rounded),
-      );
-      final shortExpandRect = tester.getRect(
-        find.byIcon(Icons.expand_more_rounded),
-      );
-
-      await tester.pumpWidget(
-        _buildSurface(
-          ListTile(
-            minTileHeight: LibraryLikeCardMetrics.compactRootTileHeight,
-            contentPadding: LibraryLikeCardMetrics.rootTilePadding,
-            title: _buildFeaturedCard(
-              title: longTitle,
-              coverKey: coverKey2,
-              lines: const <LibraryLikeInfoLineData>[],
-              compactCoverLayout: true,
-            ),
-          ),
-        ),
-      );
-
-      final longAddRect = tester.getRect(find.byIcon(Icons.add_circle_rounded));
-      final longExpandRect = tester.getRect(
-        find.byIcon(Icons.expand_more_rounded),
-      );
-
-      expect(longAddRect, equals(shortAddRect));
-      expect(longExpandRect, equals(shortExpandRect));
-    },
-  );
 
   testWidgets('metadata card keeps the full layout while the cover loads', (
     tester,
@@ -758,8 +725,6 @@ void main() {
           tagsLabel: 'Tags',
           releaseDateLabel: 'Release',
           ratingLabel: 'Rating',
-          onPlay: () {},
-          playTooltip: 'add',
           loading: loading,
           coverBuilder: (coverWidth) => SizedBox(
             key: coverKey,
@@ -796,267 +761,234 @@ void main() {
     expect((card.shape as RoundedRectangleBorder).side, BorderSide.none);
   });
 
-  testWidgets(
-    'library-like skeleton card renders 6 rows of text with 4 title rows, 2 titles on row 3, and 3 rows on row 4 element',
-    (tester) async {
-      await tester.pumpWidget(_buildSurface(const LibraryLikeSkeletonCard()));
-      expect(tester.takeException(), isNull);
+  testWidgets('library-like skeleton keeps all text beside the cover', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_buildSurface(const LibraryLikeSkeletonCard()));
+    final cover = tester.getRect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is ShimmerContainer &&
+            widget.height == LibraryLikeCardMetrics.coverHeight,
+      ),
+    );
+    final smallShimmers = find.byWidgetPredicate(
+      (widget) =>
+          widget is ShimmerContainer &&
+          (widget.height == 11 || widget.height == 9),
+    );
+    expect(smallShimmers, findsWidgets);
+    for (var index = 0; index < smallShimmers.evaluate().length; index++) {
+      final rect = tester.getRect(smallShimmers.at(index));
+      expect(rect.left, greaterThan(cover.right));
+      expect(rect.bottom, lessThanOrEqualTo(cover.bottom + 0.001));
+    }
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is ShimmerContainer &&
+            widget.width == 25 &&
+            widget.height == 25,
+      ),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
-      final titleShimmers = find.byWidgetPredicate(
-        (w) => w is ShimmerContainer && w.width == 28 && w.height == 11,
-      );
-      // Row 1 (1 title) + Row 2 (1 title) + Row 3 (2 titles) + Row 4 (1 title) = 5 title shimmers total
-      expect(titleShimmers, findsNWidgets(5));
-
-      final titlePositions = <double>{};
-      for (final element in tester.elementList(titleShimmers)) {
-        final box = element.renderObject! as RenderBox;
-        titlePositions.add(box.localToGlobal(Offset.zero).dy);
-      }
-      // There are exactly 4 distinct vertical rows with titles (rows 1, 2, 3, 4)
-      expect(titlePositions.length, 4);
-
-      // Verify row 3 has two titles sharing the exact same vertical position
-      final sortedY = titlePositions.toList()..sort();
-      final row3Y = sortedY[2];
-      final row3Titles = <Element>[];
-      for (final element in tester.elementList(titleShimmers)) {
-        final box = element.renderObject! as RenderBox;
-        if ((box.localToGlobal(Offset.zero).dy - row3Y).abs() < 0.5) {
-          row3Titles.add(element);
+  for (final count in [1, 5]) {
+    testWidgets(
+      'library skeleton fills and resizes viewport with itemCount $count',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(390, 1200);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: LibrarySkeletonListView(
+                topInset: 64,
+                bottomInset: 24,
+                itemCount: count,
+              ),
+            ),
+          ),
+        );
+        for (final size in [const Size(390, 1200), const Size(1280, 1000)]) {
+          tester.view.physicalSize = size;
+          await tester.pump();
+          final cards = find.byType(LibraryLikeSkeletonCard);
+          final first = tester.getRect(cards.first);
+          final last = tester.getRect(cards.last);
+          expect(first.top, 64);
+          expect(last.bottom, greaterThanOrEqualTo(size.height - 24));
+          expect(cards.evaluate().length, greaterThan(count));
+          final second = tester.getRect(cards.at(1));
+          if (size.width == 390) {
+            expect(second.left, first.left);
+            expect(second.top, first.bottom);
+          } else {
+            expect(second.top, first.top);
+            expect(second.left, greaterThan(first.right));
+          }
+          final list = find.descendant(
+            of: find.byType(LibrarySkeletonListView),
+            matching: find.byType(ListView),
+          );
+          expect(
+            tester.widget<ListView>(list).physics,
+            isA<NeverScrollableScrollPhysics>(),
+          );
+          final position = tester
+              .state<ScrollableState>(
+                find.descendant(of: list, matching: find.byType(Scrollable)),
+              )
+              .position;
+          await tester.drag(list, const Offset(0, -250));
+          await tester.pump(const Duration(milliseconds: 200));
+          expect(position.pixels, 0);
+          expect(tester.takeException(), isNull);
         }
-      }
-      expect(row3Titles.length, 2);
+      },
+    );
+  }
 
-      // Verify the 4th title element has 2 rows of text shimmers (160, 130)
-      expect(
-        find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 160),
-        findsOneWidget,
-      );
-      expect(
-        find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 130),
-        findsOneWidget,
-      );
-      expect(
-        find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 85),
-        findsNothing,
-      );
-
-      final row4Text = tester.getTopLeft(
-        find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 160),
-      );
-      final row5Text = tester.getTopLeft(
-        find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 130),
-      );
-
-      // Row 4 and 5 are vertically stacked and aligned horizontally
-      expect(row4Text.dx, row5Text.dx);
-      expect(row4Text.dy, lessThan(row5Text.dy));
-
-      // Confirm there are no titles at row 5 vertical level
-      expect(
-        titlePositions.any((titleY) => (titleY - row5Text.dy).abs() < 2),
-        isFalse,
-      );
-    },
-  );
-
-  testWidgets(
-    'compact library-like skeleton matches the compact cover card layout',
-    (tester) async {
-      const coverKey = ValueKey('compact-skeleton-cover');
-
-      await tester.pumpWidget(
-        _buildSurface(
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const LibraryLikeSkeletonCard(compactCoverLayout: true),
-              ListTile(
-                minTileHeight: LibraryLikeCardMetrics.compactRootTileHeight,
-                contentPadding: LibraryLikeCardMetrics.rootTilePadding,
-                title: _buildFeaturedCard(
-                  title: 'Work',
-                  coverKey: coverKey,
-                  lines: const <LibraryLikeInfoLineData>[],
-                  showExpandIndicator: false,
-                  compactCoverLayout: true,
-                ),
+  for (final showHeader in [false, true]) {
+    testWidgets(
+      'operation skeleton fills bounded viewport with header $showHeader',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(390, 1200);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: OperationSkeletonList(
+                itemCount: 1,
+                showHeader: showHeader,
+                padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
               ),
-            ],
+            ),
+          ),
+        );
+        final rows = find.byWidgetPredicate(
+          (widget) =>
+              widget is Container &&
+              widget.constraints?.minHeight == 58 &&
+              widget.constraints?.maxHeight == 58,
+        );
+        for (final size in [const Size(390, 1200), const Size(1280, 1000)]) {
+          tester.view.physicalSize = size;
+          await tester.pump();
+          final first = tester.getRect(rows.first);
+          final last = tester.getRect(rows.last);
+          expect(first.top, 16 + (showHeader ? 66 : 0));
+          expect(first.left, 12);
+          expect(first.width, size.width - 24);
+          expect(last.bottom, greaterThanOrEqualTo(size.height - 24 - 10));
+          expect(rows.evaluate().length, greaterThan(1));
+          expect(tester.getRect(rows.at(1)).top - first.top, 68);
+          final list = find.descendant(
+            of: find.byType(OperationSkeletonList),
+            matching: find.byType(ListView),
+          );
+          expect(
+            tester.widget<ListView>(list).physics,
+            isA<NeverScrollableScrollPhysics>(),
+          );
+          final position = tester
+              .state<ScrollableState>(
+                find.descendant(of: list, matching: find.byType(Scrollable)),
+              )
+              .position;
+          await tester.drag(list, const Offset(0, -250));
+          await tester.pump(const Duration(milliseconds: 200));
+          expect(position.pixels, 0);
+          expect(tester.takeException(), isNull);
+        }
+      },
+    );
+  }
+
+  testWidgets('operation skeleton fills the screen when height is unbounded', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: OperationSkeletonList(itemCount: 2, showHeader: false),
           ),
         ),
-      );
-
-      final skeletonCover = find.byWidgetPredicate(
-        (widget) =>
-            widget is ShimmerContainer &&
-            widget.width ==
-                LibraryLikeCardMetrics.compactContentHeight *
-                    LibraryLikeCardMetrics.coverAspectRatio &&
-            widget.height == LibraryLikeCardMetrics.compactContentHeight,
-      );
-      final skeletonAdd = find.byWidgetPredicate(
-        (widget) =>
-            widget is ShimmerContainer &&
-            widget.width == 25 &&
-            widget.height == 25,
-      );
-      final skeletonExpand = find.byWidgetPredicate(
-        (widget) =>
-            widget is ShimmerContainer &&
-            widget.width == 16 &&
-            widget.height == 16,
-      );
-
-      expect(
-        tester.getSize(find.byType(Card)),
-        const Size(360, LibraryLikeCardMetrics.compactRootTileHeight),
-      );
-      expect(skeletonCover, findsOneWidget);
-      expect(
-        tester.getSize(skeletonCover),
-        const Size(
-          LibraryLikeCardMetrics.compactContentHeight *
-              LibraryLikeCardMetrics.coverAspectRatio,
-          LibraryLikeCardMetrics.compactContentHeight,
-        ),
-      );
-      final cardRect = tester.getRect(find.byType(Card));
-      final tileRect = tester.getRect(find.byType(ListTile));
-      final actualAdd = find.byIcon(Icons.add_circle_rounded);
-
-      expect(
-        tester.getCenter(skeletonAdd).dx - tester.getCenter(actualAdd).dx,
-        closeTo(0, 0.1),
-      );
-      expect(skeletonExpand, findsNothing);
-
-      final skeletonAddRelativeY =
-          tester.getCenter(skeletonAdd).dy - cardRect.top;
-      final actualAddRelativeY = tester.getCenter(actualAdd).dy - tileRect.top;
-
-      expect(skeletonAddRelativeY, closeTo(actualAddRelativeY, 0.1));
-    },
-  );
+      ),
+    );
+    final rows = find.byWidgetPredicate(
+      (widget) =>
+          widget is Container &&
+          widget.constraints?.minHeight == 58 &&
+          widget.constraints?.maxHeight == 58,
+    );
+    expect(rows, findsAtLeastNWidgets(9));
+    final list = tester.widget<ListView>(find.byType(ListView));
+    expect(list.shrinkWrap, isTrue);
+    expect(list.physics, isA<NeverScrollableScrollPhysics>());
+    expect(
+      tester.getSize(find.byType(OperationSkeletonList)).height,
+      greaterThanOrEqualTo(600),
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
-    'library-like skeleton actions align with rendered card actions',
+    'playlist skeleton fills visible area and resizes without scrolling',
     (tester) async {
-      const coverKey = ValueKey('alignment-cover');
-
-      await tester.pumpWidget(
-        _buildSurface(
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const LibraryLikeSkeletonCard(),
-              ExpansionTile(
-                minTileHeight: LibraryLikeCardMetrics.rootTileHeight,
-                showTrailingIcon: false,
-                tilePadding: LibraryLikeCardMetrics.rootTilePadding,
-                title: _buildFeaturedCard(
-                  title: 'Work',
-                  coverKey: coverKey,
-                  lines: const <LibraryLikeInfoLineData>[],
-                  showExpandIndicator: false,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-
-      final skeletonAdd = find.byWidgetPredicate(
-        (widget) =>
-            widget is ShimmerContainer &&
-            widget.width == 25 &&
-            widget.height == 25,
-      );
-      final skeletonExpand = find.byWidgetPredicate(
-        (widget) =>
-            widget is ShimmerContainer &&
-            widget.width == 16 &&
-            widget.height == 16,
-      );
-
-      expect(skeletonAdd, findsOneWidget);
-      expect(skeletonExpand, findsNothing);
-      final addDelta =
-          tester.getCenter(skeletonAdd).dx -
-          tester.getCenter(find.byIcon(Icons.add_circle_rounded)).dx;
-      expect(addDelta, closeTo(0, 0.1));
-    },
-  );
-
-  testWidgets(
-    'LibrarySkeletonListView displays skeleton cards in multiple columns when wide',
-    (tester) async {
-      tester.view.physicalSize = const Size(1200, 1000);
       tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 1200);
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-
       await tester.pumpWidget(
         const MaterialApp(
-          home: Center(
-            child: SizedBox(
-              width: 500,
-              height: 1000,
-              child: LibrarySkeletonListView(
-                topInset: 0,
-                bottomInset: 0,
-              ),
-            ),
+          home: Scaffold(
+            body: PlaylistLoadingSkeleton(topPadding: 64, bottomPadding: 24),
           ),
         ),
       );
-      await tester.pump();
-      final singleCards = find.byType(LibraryLikeSkeletonCard);
-      expect(singleCards, findsNWidgets(5));
-      expect(
-        tester.getTopLeft(singleCards.at(0)).dx,
-        tester.getTopLeft(singleCards.at(1)).dx,
-      );
-      expect(
-        tester.getTopLeft(singleCards.at(0)).dy,
-        lessThan(tester.getTopLeft(singleCards.at(1)).dy),
-      );
-
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Center(
-            child: SizedBox(
-              width: 1000,
-              height: 1000,
-              child: LibrarySkeletonListView(
-                topInset: 0,
-                bottomInset: 0,
-              ),
+      final rows = find.byWidgetPredicate(
+        (widget) =>
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'playlist_skeleton_card_',
             ),
-          ),
-        ),
       );
-      await tester.pump();
-      final multiCards = find.byType(LibraryLikeSkeletonCard);
-      expect(multiCards, findsNWidgets(10));
-      expect(
-        tester.getTopLeft(multiCards.at(0)).dy,
-        tester.getTopLeft(multiCards.at(1)).dy,
-      );
-      expect(
-        tester.getTopLeft(multiCards.at(0)).dx,
-        lessThan(tester.getTopLeft(multiCards.at(1)).dx),
-      );
+      for (final size in [const Size(390, 1200), const Size(1280, 1000)]) {
+        tester.view.physicalSize = size;
+        await tester.pump();
+        expect(tester.getRect(rows.first).top, 64);
+        expect(
+          tester.getRect(rows.last).bottom,
+          greaterThanOrEqualTo(size.height - 24),
+        );
+        final list = find.byType(ListView);
+        expect(
+          tester.widget<ListView>(list).physics,
+          isA<NeverScrollableScrollPhysics>(),
+        );
+        final position = tester
+            .state<ScrollableState>(find.byType(Scrollable))
+            .position;
+        await tester.drag(list, const Offset(0, -250));
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(position.pixels, 0);
+        expect(tester.takeException(), isNull);
+      }
     },
   );
 
-  testWidgets('library-like card content keeps compact equal edge insets', (
+  testWidgets('card keeps symmetric edge insets and a single title row', (
     tester,
   ) async {
     const tileKey = ValueKey('library-like-tile');
-    const coverKey = ValueKey('library-like-cover');
-
     await tester.pumpWidget(
       _buildSurface(
         ListTile(
@@ -1065,27 +997,114 @@ void main() {
           minTileHeight: LibraryLikeCardMetrics.rootTileHeight,
           title: _buildFeaturedCard(
             title: 'Work',
-            coverKey: coverKey,
-            lines: const <LibraryLikeInfoLineData>[],
+            coverKey: const ValueKey('library-like-cover'),
+            lines: const [
+              LibraryLikeInfoLineData(
+                'CV',
+                'Actor',
+                icon: Icons.record_voice_over_rounded,
+              ),
+              LibraryLikeInfoLineData(
+                'Circle label',
+                'Circle',
+                icon: Icons.storefront_outlined,
+              ),
+              LibraryLikeInfoLineData(
+                'Tags',
+                '#ASMR #Sleep',
+                icon: Icons.local_offer_rounded,
+              ),
+              LibraryLikeInfoLineData(
+                'Release',
+                '2026-10-09',
+                icon: Icons.calendar_today_rounded,
+                isSecondary: true,
+              ),
+              LibraryLikeInfoLineData(
+                'Rating',
+                '4.5',
+                icon: Icons.star_rounded,
+                isSecondary: true,
+              ),
+            ],
           ),
         ),
       ),
     );
-
-    final tileRect = tester.getRect(find.byKey(tileKey));
-    final contentRect = tester.getRect(find.byType(LibraryLikeWorkCardContent));
-    final topInset = contentRect.top - tileRect.top;
-    final bottomInset = tileRect.bottom - contentRect.bottom;
-    final leftInset = contentRect.left - tileRect.left;
-    final rightInset = tileRect.right - contentRect.right;
-
-    expect(topInset, AppSpacing.xs);
-    expect(bottomInset, AppSpacing.xs);
-    expect(leftInset, AppSpacing.xs);
-    expect(rightInset, AppSpacing.xs);
+    final tile = tester.getRect(find.byKey(tileKey));
+    final content = tester.getRect(find.byType(LibraryLikeWorkCardContent));
+    expect(content.top - tile.top, AppSpacing.xs);
+    expect(tile.bottom - content.bottom, AppSpacing.xs);
+    expect(content.left - tile.left, AppSpacing.xs);
+    expect(tile.right - content.right, AppSpacing.xs);
+    final title = tester.getRect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is LibraryLikeScrollableText && widget.text == 'Work',
+      ),
+    );
+    expect(title.top, content.top);
+    expect(
+      title.height,
+      lessThanOrEqualTo(LibraryLikeCardMetrics.contentHeight / 5),
+    );
+    expect(tester.widget<Text>(find.text('Work')).maxLines, 1);
+    final date = tester.getRect(find.text('2026-10-09'));
+    final rating = tester.getRect(find.text('4.5'));
+    expect(date.center.dy, closeTo(rating.center.dy, 0.001));
+    expect(date.bottom, closeTo(content.bottom, 0.001));
+    expect(
+      date.bottom,
+      greaterThan(content.bottom - LibraryLikeCardMetrics.contentHeight / 5),
+    );
   });
 
-  testWidgets('ASMR-style cards reuse static Android list rhythm', (
+  testWidgets(
+    'card scales long metadata within its bounds at double text size',
+    (tester) async {
+      final lines = buildLibraryLikeInfoLines(
+        metadata: LibraryLikeInfoMetadata(
+          voiceActors: const ['A voice actor with a long name'],
+          circleName: 'A circle with a long name',
+          tags: const ['ASMR', 'Sleep', 'A long tag'],
+          releaseDate: DateTime(2026, 10, 9),
+          rating: 4.5,
+        ),
+        voiceActorLabel: 'Voice',
+        circleLabel: 'Circle',
+        tagsLabel: 'Tags',
+        releaseDateLabel: 'Release',
+        ratingLabel: 'Rating',
+      );
+      await tester.pumpWidget(
+        _buildSurface(
+          MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: _buildFeaturedCard(
+              title: 'A long work name that must remain on a single row',
+              lines: lines,
+              coverKey: const ValueKey('large-text-cover'),
+            ),
+          ),
+        ),
+      );
+      final content = tester.getRect(find.byType(LibraryLikeWorkCardContent));
+      final footer = tester.getRect(find.text('2026-10-09'));
+      final cover = tester.getRect(
+        find.byKey(const ValueKey('large-text-cover')),
+      );
+      expect(content.height, cover.height);
+      expect(footer.bottom, lessThanOrEqualTo(cover.bottom + 0.001));
+      expect(footer.left, greaterThan(content.left + 120));
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets('ASMR-style cards show a single scrollable title', (
     tester,
   ) async {
     const coverKey = ValueKey('asmr-cover');
@@ -1097,10 +1116,21 @@ void main() {
           title: title,
           coverKey: coverKey,
           lines: const [
-            LibraryLikeInfoLineData('RJ', 'RJ01577349'),
-            LibraryLikeInfoLineData('CV', '未想可みいろ'),
-            LibraryLikeInfoLineData('社团', 'あまとうむし'),
-            LibraryLikeInfoLineData('标签', '耳舐め，ASMR', lines: 2),
+            LibraryLikeInfoLineData(
+              'CV',
+              '未想可みいろ',
+              icon: Icons.record_voice_over_rounded,
+            ),
+            LibraryLikeInfoLineData(
+              '社团',
+              'あまとうむし',
+              icon: Icons.storefront_outlined,
+            ),
+            LibraryLikeInfoLineData(
+              '标签',
+              '#耳舐め #ASMR',
+              icon: Icons.local_offer_rounded,
+            ),
           ],
         ),
       ),
@@ -1114,8 +1144,8 @@ void main() {
     expect(find.byType(MarqueeText), findsNothing);
 
     final titleText = tester.widget<Text>(find.text(title));
-    expect(titleText.maxLines, 2);
-    expect(titleText.overflow, TextOverflow.ellipsis);
+    expect(titleText.maxLines, 1);
+    expect(titleText.overflow, TextOverflow.visible);
   });
 
   testWidgets('short tag values do not reserve empty configured rows', (
@@ -1127,6 +1157,7 @@ void main() {
       _buildSurface(
         const LibraryLikeDetailInfoLine(
           label: '标签',
+          icon: Icons.local_offer_rounded,
           text: '耳舐め，ASMR',
           style: style,
           loading: false,
@@ -1137,7 +1168,10 @@ void main() {
     );
 
     expect(find.byType(MarqueeText), findsNothing);
-    expect(tester.getSize(find.byType(LibraryLikeDetailInfoLine)).height, 18);
+    expect(
+      tester.getSize(find.byType(LibraryLikeDetailInfoLine)).height,
+      closeTo(LibraryLikeCardMetrics.contentHeight / 5, 0.001),
+    );
     final valueText = tester.widget<Text>(find.text('耳舐め，ASMR'));
     expect(valueText.maxLines, 4);
     expect(valueText.overflow, TextOverflow.ellipsis);
@@ -1151,27 +1185,42 @@ void main() {
           const LibraryLikeSingleAudioCardContent(
             title: 'Track Title',
             lines: [
-              LibraryLikeInfoLineData('CV', '圣纯シオ'),
-              LibraryLikeInfoLineData('社团', 'えたーなるわーくす'),
-              LibraryLikeInfoLineData('销量', '2070'),
+              LibraryLikeInfoLineData(
+                'CV',
+                '圣纯シオ',
+                icon: Icons.record_voice_over_rounded,
+              ),
+              LibraryLikeInfoLineData(
+                '社团',
+                'えたーなるわーくす',
+                icon: Icons.storefront_outlined,
+              ),
+              LibraryLikeInfoLineData(
+                '销量',
+                '2070',
+                icon: Icons.info_outline_rounded,
+              ),
             ],
-            enableMarquee: false,
-            enableTitleMarquee: false,
           ),
         ),
       );
 
       final titleRect = tester.getRect(find.text('Track Title'));
-      final cvRect = tester.getRect(find.text('CV'));
-      final circleRect = tester.getRect(find.text('社团'));
-      final salesRect = tester.getRect(find.text('销量'));
+      final cvRect = tester.getRect(find.text('圣纯シオ'));
+      final circleRect = tester.getRect(find.text('えたーなるわーくす'));
+      final salesRect = tester.getRect(find.text('2070'));
 
       // 4px spacing between title and info block
       expect(cvRect.top - titleRect.bottom, closeTo(4.0, 0.5));
 
-      // 0 gap between consecutive info lines (each line is 18px high)
-      expect(circleRect.top - cvRect.top, 18.0);
-      expect(salesRect.top - circleRect.top, 18.0);
+      expect(
+        circleRect.top - cvRect.top,
+        closeTo(LibraryLikeCardMetrics.contentHeight / 5, 0.001),
+      );
+      expect(
+        salesRect.top - circleRect.top,
+        closeTo(LibraryLikeCardMetrics.contentHeight / 5, 0.001),
+      );
     },
   );
 
@@ -1226,9 +1275,7 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: LibrarySelectionIndicator(
-              path: 'lib-fade-test',
-            ),
+            body: LibrarySelectionIndicator(path: 'lib-fade-test'),
           ),
         ),
       );
@@ -1250,20 +1297,21 @@ void main() {
       // Verify mid-animation opacity
       await tester.pump(const Duration(milliseconds: 225));
       final fadeFinder = find
-          .ancestor(
-            of: checkmarkFinder,
-            matching: find.byType(FadeTransition),
-          )
+          .ancestor(of: checkmarkFinder, matching: find.byType(FadeTransition))
           .first;
-      final midOpacity =
-          tester.widget<FadeTransition>(fadeFinder).opacity.value;
+      final midOpacity = tester
+          .widget<FadeTransition>(fadeFinder)
+          .opacity
+          .value;
       expect(midOpacity, greaterThan(0.0));
       expect(midOpacity, lessThan(1.0));
 
       // After remaining duration
       await tester.pump(const Duration(milliseconds: 225));
-      final fullOpacity =
-          tester.widget<FadeTransition>(fadeFinder).opacity.value;
+      final fullOpacity = tester
+          .widget<FadeTransition>(fadeFinder)
+          .opacity
+          .value;
       expect(fullOpacity, closeTo(1.0, 0.001));
 
       // Deselect
@@ -1369,11 +1417,7 @@ void main() {
 
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: LibraryPinnedIndicator(
-              path: 'pin-test',
-            ),
-          ),
+          home: Scaffold(body: LibraryPinnedIndicator(path: 'pin-test')),
         ),
       );
 
@@ -1409,7 +1453,6 @@ void main() {
             title: 'audio.mp3',
             detail: null,
             detailLoading: false,
-            onPlay: () {},
             isSelected: true,
             isPinned: true,
           ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/search_highlight.dart';
@@ -63,26 +64,80 @@ void main() {
     expect(highlightedRuns(tester), <String>['Rain', 'Ocean', 'Rain']);
   });
 
-  testWidgets('explicit terms win over the scope and match case-insensitively', (
-    tester,
-  ) async {
-    await pumpHighlight(
-      tester,
-      text: 'Ocean Waves',
-      scopeQuery: 'rain',
-      terms: const <String>['OCEAN'],
-    );
-    expect(highlightedRuns(tester), <String>['Ocean']);
-  });
+  testWidgets(
+    'explicit terms win over the scope and match case-insensitively',
+    (tester) async {
+      await pumpHighlight(
+        tester,
+        text: 'Ocean Waves',
+        scopeQuery: 'rain',
+        terms: const <String>['OCEAN'],
+      );
+      expect(highlightedRuns(tester), <String>['Ocean']);
+    },
+  );
 
   testWidgets('merges overlapping term matches into one run', (tester) async {
-    await pumpHighlight(
-      tester,
-      text: 'Rainfall',
-      scopeQuery: 'rain,ainfall',
-    );
+    await pumpHighlight(tester, text: 'Rainfall', scopeQuery: 'rain,ainfall');
     expect(highlightedRuns(tester), <String>['Rainfall']);
   });
+
+  for (final brightness in Brightness.values) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets(
+        'rounded highlights wrap and scale at $scale in $brightness',
+        (tester) async {
+          const text = '中文音频中文音频中文音频';
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: ThemeData(brightness: brightness),
+              home: Material(
+                child: Center(
+                  child: MediaQuery(
+                    data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                    child: const SizedBox(
+                      width: 120,
+                      child: SearchHighlightedText(
+                        text: text,
+                        terms: [text],
+                        style: TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          final paragraph = tester.renderObject<RenderParagraph>(
+            find.descendant(
+              of: find.byType(SearchHighlightedText),
+              matching: find.byType(RichText),
+            ),
+          );
+          expect(paragraph.textScaler.scale(14), 14 * scale);
+          final boxes = paragraph.getBoxesForSelection(
+            const TextSelection(baseOffset: 0, extentOffset: text.length),
+          );
+          expect(boxes.length, greaterThan(1));
+          final pattern = paints..clipRect(rect: Offset.zero & paragraph.size);
+          for (final box in boxes) {
+            pattern.rrect(
+              rrect: RRect.fromRectAndRadius(
+                box.toRect(),
+                const Radius.circular(4),
+              ),
+              color: Theme.of(
+                tester.element(find.byType(SearchHighlightedText)),
+              ).colorScheme.primary.withValues(alpha: 0.18),
+            );
+          }
+          expect(find.byType(SearchHighlightedText), pattern);
+          expect(find.text(text, findRichText: true), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   testWidgets('static library-like card text highlights the scope terms', (
     tester,
@@ -98,12 +153,14 @@ void main() {
               width: 260,
               child: LibraryLikeWorkCardContent(
                 title: title,
-                lines: const [LibraryLikeInfoLineData('Circle', circle)],
+                lines: const [
+                  LibraryLikeInfoLineData(
+                    'Circle',
+                    circle,
+                    icon: Icons.groups_rounded,
+                  ),
+                ],
                 coverBuilder: (_) => const SizedBox(width: 120),
-                onPlay: () {},
-                playTooltip: 'Play',
-                enableMarquee: false,
-                enableTitleMarquee: false,
               ),
             ),
           ),

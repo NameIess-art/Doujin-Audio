@@ -137,7 +137,7 @@ class AsmrDownloadSelectionModel {
 
   int _selectedSizeBytes(AsmrDownloadSelectionNode node) {
     if (node.selected) {
-      return _subtreeSizeBytes(node);
+      return node.totalSizeBytes;
     }
     if (!node.indeterminate) {
       return 0;
@@ -145,17 +145,6 @@ class AsmrDownloadSelectionModel {
     var bytes = 0;
     for (final child in node.children) {
       bytes += _selectedSizeBytes(child);
-    }
-    return bytes;
-  }
-
-  int _subtreeSizeBytes(AsmrDownloadSelectionNode node) {
-    if (!node.track.isFolder) {
-      return node.track.size;
-    }
-    var bytes = 0;
-    for (final child in node.children) {
-      bytes += _subtreeSizeBytes(child);
     }
     return bytes;
   }
@@ -194,6 +183,9 @@ class AsmrDownloadSelectionNode {
   final AsmrTrackFile track;
   final List<AsmrDownloadSelectionNode> _children;
   late final List<AsmrDownloadSelectionNode> children;
+  late final int totalSizeBytes = track.isFolder
+      ? children.fold<int>(0, (bytes, child) => bytes + child.totalSizeBytes)
+      : track.size;
   AsmrDownloadSelectionNode? parent;
   bool selected;
   bool indeterminate;

@@ -11,6 +11,7 @@ import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/library/presentation/library_tree_list.dart';
 import 'package:doujin_audio/app/application/browse_page_state_store.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_edit.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
@@ -20,6 +21,9 @@ import 'package:doujin_audio/features/player/application/native_playback_bridge.
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/library/presentation/library_card_artwork.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/file_tree_row.dart';
+import 'package:doujin_audio/features/library/presentation/library_edit_tree_projection.dart';
+import 'package:doujin_audio/features/library/presentation/library_edit_tree_tiles.dart';
 import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
@@ -532,43 +536,39 @@ void main() {
   testWidgets('library and ASMR skeleton cards omit expand placeholders', (
     WidgetTester tester,
   ) async {
-    for (final compactCoverLayout in <bool>[false, true]) {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Center(
-              child: SizedBox(
-                width: kResponsiveLibraryCardMinWidth,
-                child: LibraryLikeSkeletonCard(
-                  compactCoverLayout: compactCoverLayout,
-                ),
-              ),
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: kResponsiveLibraryCardMinWidth,
+              child: LibraryLikeSkeletonCard(),
             ),
           ),
         ),
-      );
-      final card = find.byType(LibraryLikeSkeletonCard);
-      final playPlaceholder = find.descendant(
-        of: card,
-        matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is ShimmerContainer &&
-              widget.width == 25 &&
-              widget.height == 25,
-        ),
-      );
-      final expandPlaceholder = find.descendant(
-        of: card,
-        matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is ShimmerContainer &&
-              widget.width == 16 &&
-              widget.height == 16,
-        ),
-      );
-      expect(playPlaceholder, findsOneWidget);
-      expect(expandPlaceholder, findsNothing);
-    }
+      ),
+    );
+    final card = find.byType(LibraryLikeSkeletonCard);
+    final playPlaceholder = find.descendant(
+      of: card,
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is ShimmerContainer &&
+            widget.width == 25 &&
+            widget.height == 25,
+      ),
+    );
+    final expandPlaceholder = find.descendant(
+      of: card,
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is ShimmerContainer &&
+            widget.width == 16 &&
+            widget.height == 16,
+      ),
+    );
+    expect(playPlaceholder, findsNothing);
+    expect(expandPlaceholder, findsNothing);
   });
 
   testWidgets('empty library card is centered in the available content area', (
@@ -664,22 +664,6 @@ void main() {
     expect(workCard.shadowColor, Colors.transparent);
     expect(workCard.surfaceTintColor, Colors.transparent);
     expect((workCard.shape as RoundedRectangleBorder).side, BorderSide.none);
-    final swipeCard = tester.widget<SwipeRevealCard>(
-      find.ancestor(of: workTitle, matching: find.byType(SwipeRevealCard)),
-    );
-    expect(
-      swipeCard.closedColor,
-      Theme.of(tester.element(workTitle)).colorScheme.surface,
-    );
-
-    expect(runtimeGraph.library.categorySnapshot, isNull);
-    await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
-    expect(find.byType(LibraryLikeSkeletonCard), findsNothing);
-    expect(runtimeGraph.library.state.isScanning, isTrue);
-
-    runtimeGraph.library.finishScan(scanGeneration);
-    await tester.pump();
-
     final libraryList = tester.widget<ListView>(
       find.byKey(const PageStorageKey<String>('library_list')),
     );
@@ -689,7 +673,7 @@ void main() {
     expect(listPadding.bottom, 148);
     final libraryCards = find.descendant(
       of: find.byKey(const PageStorageKey<String>('library_list')),
-      matching: find.byType(SwipeRevealCard),
+      matching: find.byType(Card),
     );
     expect(libraryCards, findsNWidgets(2));
     expect(
@@ -708,9 +692,15 @@ void main() {
       isTrue,
     );
 
+    await tester.pump(const Duration(milliseconds: 450));
     final cardTop = tester.getTopLeft(libraryCards.at(0)).dy;
-    final pull = await tester.startGesture(tester.getCenter(libraryCards.at(0)));
-    await pull.moveBy(const Offset(0, 60));
+    // The scan progress overlay covers the middle of these compact cards.
+    final pull = await tester.startGesture(
+      tester.getTopRight(libraryCards.first) + const Offset(-2, 24),
+    );
+    await pull.moveBy(const Offset(0, 20));
+    await tester.pump();
+    await pull.moveBy(const Offset(0, 40));
     await tester.pump();
     expect(tester.getTopLeft(libraryCards.at(0)).dy, cardTop);
     expect(find.byType(RefreshProgressIndicator), findsOneWidget);
@@ -739,6 +729,7 @@ void main() {
       findsOneWidget,
     );
     runtimeGraph.library.finishScan(refreshGeneration);
+    await finishLibraryTest(tester, fixture);
   });
 
   testWidgets('wide library lays cards out from left to right', (
@@ -1001,194 +992,203 @@ void main() {
     }),
   );
 
-  testWidgets('library card and work detail share a decoded cover', (
-    WidgetTester tester,
-  ) async {
-    addTearDown(releaseRetainedCoverImages);
-    tester.view.devicePixelRatio = 2;
-    tester.view.physicalSize = const Size(1000, 1800);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final folder = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('shared_library_cover_'),
-    ))!;
-    addTearDown(() async {
-      PaintingBinding.instance.imageCache
-        ..clear()
-        ..clearLiveImages();
-      if (await folder.exists()) await folder.delete(recursive: true);
-    });
-    final trackPath = '${folder.path}${Platform.pathSeparator}track.mp3';
-    final coverPath = '${folder.path}${Platform.pathSeparator}cover.png';
-    final track = testMusicTrack(
-      name: 'Shared cover',
-      path: trackPath,
-      groupKey: folder.path,
-      groupTitle: 'Shared cover',
-    );
-    await tester.runAsync(() async {
-      await File(trackPath).writeAsBytes(const <int>[1]);
-      await File(coverPath).writeAsBytes(base64Decode(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
-        '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-      ));
-      fixture.runtimeGraph.library.addWatchedFolder(folder.path, notify: false);
+  testWidgets(
+    'library card and work detail share a decoded cover',
+    (WidgetTester tester) async {
+      addTearDown(releaseRetainedCoverImages);
+      tester.view.devicePixelRatio = 2;
+      tester.view.physicalSize = const Size(1000, 1800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final folder = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('shared_library_cover_'),
+      ))!;
+      addTearDown(() async {
+        PaintingBinding.instance.imageCache
+          ..clear()
+          ..clearLiveImages();
+        if (await folder.exists()) await folder.delete(recursive: true);
+      });
+      final trackPath = '${folder.path}${Platform.pathSeparator}track.mp3';
+      final coverPath = '${folder.path}${Platform.pathSeparator}cover.png';
+      final track = testMusicTrack(
+        name: 'Shared cover',
+        path: trackPath,
+        groupKey: folder.path,
+        groupTitle: 'Shared cover',
+      );
+      await tester.runAsync(() async {
+        await File(trackPath).writeAsBytes(const <int>[1]);
+        await File(coverPath).writeAsBytes(
+          base64Decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+            '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+          ),
+        );
+        fixture.runtimeGraph.library.addWatchedFolder(
+          folder.path,
+          notify: false,
+        );
+        fixture.runtimeGraph.library.addTracks(
+          [track],
+          notify: false,
+          persist: false,
+        );
+        await fixture.runtimeGraph.library.setFolderManualCover(
+          folder.path,
+          coverPath,
+        );
+        await fixture.runtimeGraph.library.saveAudioDetail(
+          AudioDetail.empty(
+            AudioDetailTarget.libraryRootFolder(folder.path),
+          ).copyWith(workTitle: 'Metadata Work Title'),
+        );
+      });
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+      await pumpUntilFound(tester, find.text('Metadata Work Title'));
+      await tester.runAsync(
+        () => fixture.settings.setWorkNameDisplay(WorkNameDisplay.folderName),
+      );
+      await tester.pump();
+      expect(
+        find.text(folder.path.split(Platform.pathSeparator).last),
+        findsOneWidget,
+      );
+      await tester.runAsync(
+        () => fixture.settings.setWorkNameDisplay(WorkNameDisplay.workTitle),
+      );
+      await tester.pump();
+      expect(find.text('Metadata Work Title'), findsOneWidget);
+      final card = tester.widget<AsyncLocalCoverImage>(
+        find.byType(AsyncLocalCoverImage).first,
+      );
+      expect(card.initialPath, isNotNull);
+      final cardKey = await resizeFileImageIfNeeded(
+        path: card.initialPath!,
+        cacheWidth: card.cacheWidth,
+        cacheHeight: card.cacheHeight,
+        useDefaultCacheWidth: card.useDefaultCacheWidth,
+      ).obtainKey(ImageConfiguration.empty);
+
+      await tester.tap(find.byType(ListTile).first);
+      await pumpUntilFound(tester, find.byType(WorkDetailPage));
+      await pumpUntilNotFound(
+        tester,
+        find.byKey(const ValueKey('work_detail_entries_skeleton')),
+      );
+      await tester.pumpAndSettle();
+      final detail = tester.widget<LocalCoverImage>(
+        find.byType(LocalCoverImage).first,
+      );
+      expect(detail.path, card.initialPath);
+      final detailKey = await resizeFileImageIfNeeded(
+        path: detail.path!,
+        cacheWidth: coverCacheWidth(
+          resolution: fixture.settings.coverImageResolution,
+          cacheWidth: detail.cacheWidth,
+          useDefaultCacheWidth: detail.useDefaultCacheWidth,
+        ),
+        cacheHeight: detail.cacheHeight,
+        useDefaultCacheWidth: false,
+      ).obtainKey(ImageConfiguration.empty);
+      expect(detailKey, cardKey);
+      Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(AsyncLocalCoverImage).first,
+          matching: find.byType(RawImage),
+        ),
+        findsOneWidget,
+      );
+
+      final session = fixture.runtimeGraph.playback.createTrackSession(
+        track,
+        customQueueTracks: [track],
+      );
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pumpAndSettle();
+      final playlistCard = tester.widget<AsyncLocalCoverImage>(
+        find.byType(AsyncLocalCoverImage).first,
+      );
+      expect(playlistCard.initialPath, card.initialPath);
+      final playlistKey = await resizeFileImageIfNeeded(
+        path: playlistCard.initialPath!,
+        cacheWidth: playlistCard.cacheWidth,
+        cacheHeight: playlistCard.cacheHeight,
+        useDefaultCacheWidth: playlistCard.useDefaultCacheWidth,
+      ).obtainKey(ImageConfiguration.empty);
+      expect(playlistKey, cardKey);
+      await tester.pumpWidget(const SizedBox.shrink());
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        PaintingBinding.instance.imageCache.clear();
+      }
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byType(AsyncLocalCoverImage).first,
+          matching: find.byType(RawImage),
+        ),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'Windows library thumbnails use the shared cover decode size',
+    (tester) async {
+      tester.view.devicePixelRatio = 2;
+      tester.view.physicalSize = const Size(1000, 1800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
       fixture.runtimeGraph.library.addTracks(
-        [track],
+        [
+          testMusicTrack(
+            name: 'Windows cover',
+            path: 'C:/music/track.mp3',
+            groupKey: 'C:/music',
+            groupTitle: 'Windows cover',
+          ),
+        ],
         notify: false,
         persist: false,
       );
-      await fixture.runtimeGraph.library.setFolderManualCover(
-        folder.path,
-        coverPath,
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+      final cover = tester.widget<AsyncLocalCoverImage>(
+        find.byType(AsyncLocalCoverImage).first,
       );
-      await fixture.runtimeGraph.library.saveAudioDetail(
-        AudioDetail.empty(
-          AudioDetailTarget.libraryRootFolder(folder.path),
-        ).copyWith(workTitle: 'Metadata Work Title'),
-      );
-    });
-    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
-
-    await tester.pumpWidget(fixture.build(const LibraryTab()));
-    await tester.pump();
-    await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
-    await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
-    await pumpUntilFound(tester, find.text('Metadata Work Title'));
-    await tester.runAsync(
-      () => fixture.settings.setWorkNameDisplay(WorkNameDisplay.folderName),
-    );
-    await tester.pump();
-    expect(
-      find.text(folder.path.split(Platform.pathSeparator).last),
-      findsOneWidget,
-    );
-    await tester.runAsync(
-      () => fixture.settings.setWorkNameDisplay(WorkNameDisplay.workTitle),
-    );
-    await tester.pump();
-    expect(find.text('Metadata Work Title'), findsOneWidget);
-    final card = tester.widget<AsyncLocalCoverImage>(
-      find.byType(AsyncLocalCoverImage).first,
-    );
-    expect(card.initialPath, isNotNull);
-    final cardKey = await resizeFileImageIfNeeded(
-      path: card.initialPath!,
-      cacheWidth: card.cacheWidth,
-      cacheHeight: card.cacheHeight,
-      useDefaultCacheWidth: card.useDefaultCacheWidth,
-    ).obtainKey(ImageConfiguration.empty);
-
-    await tester.tap(find.byType(ListTile).first);
-    await pumpUntilFound(tester, find.byType(WorkDetailPage));
-    await pumpUntilNotFound(
-      tester,
-      find.byKey(const ValueKey('work_detail_entries_skeleton')),
-    );
-    await tester.pumpAndSettle();
-    final detail = tester.widget<LocalCoverImage>(
-      find.byType(LocalCoverImage).first,
-    );
-    expect(detail.path, card.initialPath);
-    final detailKey = await resizeFileImageIfNeeded(
-      path: detail.path!,
-      cacheWidth: coverCacheWidth(
-        resolution: fixture.settings.coverImageResolution,
-        cacheWidth: detail.cacheWidth,
-        useDefaultCacheWidth: detail.useDefaultCacheWidth,
-      ),
-      cacheHeight: detail.cacheHeight,
-      useDefaultCacheWidth: false,
-    ).obtainKey(ImageConfiguration.empty);
-    expect(detailKey, cardKey);
-    Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
-    await tester.pumpAndSettle();
-    expect(
-      find.descendant(
-        of: find.byType(AsyncLocalCoverImage).first,
-        matching: find.byType(RawImage),
-      ),
-      findsOneWidget,
-    );
-
-    final session = fixture.runtimeGraph.playback.createTrackSession(
-      track,
-      customQueueTracks: [track],
-    );
-    addTearDown(session.shutdown);
-    fixture.playbackService.syncSlice(
-      activeSessions: [session],
-      playingSessionCount: 0,
-      focusedSessionId: session.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
-    await tester.pumpWidget(fixture.build(const PlaylistTab()));
-    await tester.pumpAndSettle();
-    final playlistCard = tester.widget<AsyncLocalCoverImage>(
-      find.byType(AsyncLocalCoverImage).first,
-    );
-    expect(playlistCard.initialPath, card.initialPath);
-    final playlistKey = await resizeFileImageIfNeeded(
-      path: playlistCard.initialPath!,
-      cacheWidth: playlistCard.cacheWidth,
-      cacheHeight: playlistCard.cacheHeight,
-      useDefaultCacheWidth: playlistCard.useDefaultCacheWidth,
-    ).obtainKey(ImageConfiguration.empty);
-    expect(playlistKey, cardKey);
-    await tester.pumpWidget(const SizedBox.shrink());
-    if (defaultTargetPlatform == TargetPlatform.windows) {
-      PaintingBinding.instance.imageCache.clear();
-    }
-    await tester.pumpWidget(fixture.build(const LibraryTab()));
-    await tester.pump();
-    expect(
-      find.descendant(
-        of: find.byType(AsyncLocalCoverImage).first,
-        matching: find.byType(RawImage),
-      ),
-      findsOneWidget,
-    );
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 6));
-  }, variant: const TargetPlatformVariant({
-    TargetPlatform.android,
-    TargetPlatform.windows,
-  }));
-
-  testWidgets('Windows library thumbnails use the shared cover decode size', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 2;
-    tester.view.physicalSize = const Size(1000, 1800);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    fixture.runtimeGraph.library.addTracks(
-      [
-        testMusicTrack(
-          name: 'Windows cover',
-          path: 'C:/music/track.mp3',
-          groupKey: 'C:/music',
-          groupTitle: 'Windows cover',
-        ),
-      ],
-      notify: false,
-      persist: false,
-    );
-    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
-
-    await tester.pumpWidget(fixture.build(const LibraryTab()));
-    await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
-    final cover = tester.widget<AsyncLocalCoverImage>(
-      find.byType(AsyncLocalCoverImage).first,
-    );
-    expect(cover.cacheWidth, 600);
-    await tester.pumpWidget(const SizedBox.shrink());
-  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+      expect(cover.cacheWidth, 600);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   testWidgets('library folder expansion does not collide with list storage', (
     WidgetTester tester,
@@ -2150,6 +2150,7 @@ void main() {
     final entryCard = find.byKey(const ValueKey<String>('category_$trackPath'));
     await pumpUntilFound(tester, entryCard);
     await tester.ensureVisible(entryCard);
+    await tester.pumpAndSettle();
     final swipeCard = find.descendant(
       of: entryCard,
       matching: find.byType(SwipeRevealCard),
@@ -2823,18 +2824,29 @@ void main() {
       ),
     );
     final rootFolderHeader = find
-        .descendant(of: rootFolderTile, matching: find.byType(ListTile))
+        .descendant(of: rootFolderTile, matching: find.byType(FileTreeRow))
         .first;
     final rootFolderHeaderHeight = tester.getSize(rootFolderHeader).height;
     final rootFolderCard = find.ancestor(
       of: rootFolderTile,
       matching: find.byType(Card),
     );
-    expect(rootFolderCard, findsOneWidget);
+    expect(rootFolderCard, findsNothing);
+    expect(rootFolderHeaderHeight, closeTo(64, 0.001));
+    final folderIcon = find
+        .descendant(of: rootFolderHeader, matching: find.byType(Icon))
+        .first;
     expect(
-      ListTileTheme.of(tester.element(rootFolderHeader)).shape,
-      tester.widget<Card>(rootFolderCard).shape,
+      tester.widget<Icon>(folderIcon).color,
+      AppDesignTokens.folderIconColor,
     );
+    final folderSurface = tester.widget<Material>(
+      find.byKey(
+        const ValueKey('library-edit-folder-surface:$syntheticChildFolder'),
+      ),
+    );
+    expect(folderSurface.borderRadius, FileTreeRow.borderRadius);
+    expect(folderSurface.color, Colors.transparent);
     final rootExcludeButton = find
         .descendant(
           of: rootFolderTile,
@@ -2858,7 +2870,16 @@ void main() {
     await tester.pump();
 
     expect(find.text('WorkA', findRichText: true), findsOneWidget);
+    expect(find.text('Disc1', findRichText: true), findsNothing);
+    expect(
+      tester.widget<Expansible>(rootFolderTile).controller.isExpanded,
+      isFalse,
+    );
     expect(find.text(languageProvider.tr('restore')), findsOneWidget);
+    expect(
+      tester.widget<Icon>(folderIcon).color,
+      Theme.of(tester.element(rootFolderHeader)).colorScheme.onSurfaceVariant,
+    );
     expect(find.text(languageProvider.tr('excluded')), findsNothing);
     expect(
       tester
@@ -2880,11 +2901,13 @@ void main() {
       ),
     );
     final childFolderHeader = find
-        .descendant(of: childFolderTile, matching: find.byType(ListTile))
+        .descendant(of: childFolderTile, matching: find.byType(FileTreeRow))
         .first;
     final childFolderHeaderHeight = tester.getSize(childFolderHeader).height;
     expect(childFolderHeaderHeight, lessThan(rootFolderHeaderHeight));
     expect(childFolderHeaderHeight, closeTo(48, 0.001));
+    expect(tester.widget<FileTreeRow>(childFolderHeader).titleMaxLines, 1);
+    expect(tester.widget<FileTreeRow>(childFolderHeader).subtitleMaxLines, 1);
     final disabledChildActions = tester
         .widgetList<TextButton>(
           find.widgetWithText(TextButton, languageProvider.tr('exclude')),
@@ -2907,6 +2930,8 @@ void main() {
   testWidgets(
     'library edit defers scans and their results during page transitions',
     (tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       const root = '/deferred-edit';
@@ -2940,11 +2965,20 @@ void main() {
         const ValueKey('library_edit_entries_skeleton'),
       );
       expect(skeleton, findsOneWidget);
-      final skeletonCard = find.descendant(
-        of: skeleton,
-        matching: find.byType(Card),
-      ).first;
-      expect(tester.getSize(skeletonCard).height, 86.0);
+      final skeletonRow = find
+          .descendant(of: skeleton, matching: find.byType(ShimmerLoader))
+          .first;
+      expect(tester.getSize(skeletonRow).height, 64.0);
+      final skeletonBounds = tester.getRect(skeleton);
+      expect(skeletonBounds.bottom, greaterThanOrEqualTo(1000 - 24));
+      expect(skeletonBounds.bottom, lessThan(1000 - 24 + 64));
+      await tester.binding.setSurfaceSize(const Size(800, 1200));
+      await tester.pump();
+      final resizedSkeletonBounds = tester.getRect(skeleton);
+      expect(resizedSkeletonBounds.height, greaterThan(skeletonBounds.height));
+      expect(resizedSkeletonBounds.bottom, greaterThanOrEqualTo(1200 - 24));
+      expect(resizedSkeletonBounds.bottom, lessThan(1200 - 24 + 64));
+      expect(tester.getSize(skeletonRow).height, 64.0);
       expect(find.byType(CircularProgressIndicator), findsNothing);
       expect(tester.widget<PlaceholderContentTransition>(loadingRegion)
           .showPlaceholder, isTrue);
@@ -3320,6 +3354,16 @@ void main() {
             .getSize(find.byKey(ValueKey('library-edit-track-surface:$path')))
             .height,
     };
+    for (final path in surfacePaths) {
+      final surface = find.byKey(ValueKey('library-edit-track-surface:$path'));
+      final icon = find
+          .descendant(of: surface, matching: find.byType(Icon))
+          .first;
+      expect(
+        tester.widget<Icon>(icon).color,
+        Theme.of(tester.element(surface)).colorScheme.primary,
+      );
+    }
 
     await tester.tap(
       find.widgetWithText(TextButton, languageProvider.tr('exclude')).first,
@@ -3342,7 +3386,7 @@ void main() {
     for (final title in <String>[firstTitle, secondTitle]) {
       final tileFinder = find.ancestor(
         of: find.text(title),
-        matching: find.byType(ListTile),
+        matching: find.byType(FileTreeRow),
       );
       final restoreFinder = find.descendant(
         of: tileFinder,
@@ -3353,8 +3397,16 @@ void main() {
       );
       expect(tileFinder, findsOneWidget);
       expect(restoreFinder, findsOneWidget);
-      expect(tester.widget<ListTile>(tileFinder).isThreeLine, isNot(isTrue));
-      expect(tester.widget<ListTile>(tileFinder).subtitle, isNull);
+      expect(tester.widget<FileTreeRow>(tileFinder).titleMaxLines, 2);
+      expect(tester.widget<FileTreeRow>(tileFinder).subtitle, isNull);
+      expect(tester.getSize(tileFinder).height, 48);
+      final audioIcon = find
+          .descendant(of: tileFinder, matching: find.byType(Icon))
+          .first;
+      expect(
+        tester.widget<Icon>(audioIcon).color,
+        Theme.of(tester.element(tileFinder)).colorScheme.onSurfaceVariant,
+      );
       expect(tester.widget<TextButton>(restoreFinder).style, isNull);
       expect(tester.getSize(restoreFinder).height, greaterThanOrEqualTo(44));
       final restoreHighlight = find.descendant(
@@ -3383,6 +3435,217 @@ void main() {
     expect(tileRects.first.bottom, lessThanOrEqualTo(tileRects.last.top));
     expect(tester.takeException(), isNull);
   });
+
+  for (final reduceMotion in [false, true]) {
+    testWidgets(
+      'library edit animates deep folders and preserves actions with large text ($reduceMotion)',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(360, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        const libraryRoot = '/library';
+        const folderPath = '$libraryRoot/work';
+        const trackPath = '$folderPath/long.mp3';
+        const title =
+            'A long audio title that needs two lines at large text size';
+        fixture.runtimeGraph.library.addWatchedLibrary(
+          libraryRoot,
+          notify: false,
+        );
+        fixture.runtimeGraph.library.addTracks(
+          [
+            testMusicTrack(
+              name: title,
+              path: trackPath,
+              groupKey: folderPath,
+              groupTitle: 'work',
+            ),
+          ],
+          notify: false,
+          persist: false,
+        );
+        fixture.libraryService.syncSlice(
+          isInitialized: true,
+          detailRevision: 0,
+        );
+        final folder = LibraryEditFolderTreeNode(
+          folderPath: folderPath,
+          depth: 20,
+          children: [LibraryEditTrackTreeNode(trackPath)],
+        );
+        await tester.pumpWidget(
+          fixture.build(
+            Builder(
+              builder: (context) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  textScaler: const TextScaler.linear(2),
+                  disableAnimations: reduceMotion,
+                ),
+                child: ListView(
+                  children: [
+                    LibraryEditTreeNodeWidget(
+                      libraryPath: libraryRoot,
+                      node: folder,
+                      initiallyExpanded: false,
+                      onRememberFolder: (_, _) {},
+                    ),
+                    const SizedBox(height: 1600),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        final expansible = find.byKey(
+          const PageStorageKey<String>(
+            'library-edit-folder:$libraryRoot:$folderPath',
+          ),
+        );
+        final collapsedHeight = tester.getSize(expansible).height;
+        expect(collapsedHeight, greaterThanOrEqualTo(48));
+        expect(find.text(title), findsNothing);
+        await tester.tap(find.text('work'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 55));
+        final partialHeight = tester.getSize(expansible).height;
+        await tester.pump(const Duration(milliseconds: 250));
+        final expandedHeight = tester.getSize(expansible).height;
+        expect(expandedHeight, greaterThan(collapsedHeight));
+        if (reduceMotion) {
+          expect(partialHeight, expandedHeight);
+        } else {
+          expect(partialHeight, greaterThan(collapsedHeight));
+          expect(partialHeight, lessThan(expandedHeight));
+        }
+        final row = find.ancestor(
+          of: find.text(title),
+          matching: find.byType(FileTreeRow),
+        );
+        final textRect = tester.getRect(find.text(title));
+        final trackSurface = find.byKey(
+          const ValueKey('library-edit-track-surface:$trackPath'),
+        );
+        final surfaceRect = tester.getRect(trackSurface);
+        expect(tester.widget<Text>(find.text(title)).maxLines, 2);
+        expect(tester.getSize(row).height, greaterThan(48));
+        expect(tester.getSize(row).height, lessThan(collapsedHeight));
+        final folderRow = find.byType(FileTreeRow).first;
+        expect(tester.getRect(row).top, tester.getRect(folderRow).bottom);
+        expect(surfaceRect.width, 240);
+        expect(textRect.width, greaterThan(20));
+        expect(find.byIcon(Icons.chevron_right_rounded), findsNothing);
+        final parentButton = find.descendant(
+          of: find.byKey(
+            const ValueKey('library-edit-folder-surface:$folderPath'),
+          ),
+          matching: find.byType(TextButton),
+        );
+        await tester.tap(parentButton);
+        await tester.pump();
+        expect(
+          tester.widget<Expansible>(expansible).controller.isExpanded,
+          isTrue,
+        );
+        final trackButton = find.descendant(
+          of: trackSurface,
+          matching: find.byType(TextButton),
+        );
+        expect(tester.widget<TextButton>(trackButton).onPressed, isNull);
+        await tester.tap(parentButton);
+        await tester.pump();
+        expect(tester.widget<TextButton>(trackButton).onPressed, isNotNull);
+        await tester.tap(find.text('work'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 55));
+        if (!reduceMotion) {
+          final shrinkingHeight = tester.getSize(expansible).height;
+          expect(shrinkingHeight, greaterThan(collapsedHeight));
+          expect(shrinkingHeight, lessThan(expandedHeight));
+        }
+        await tester.pump(const Duration(milliseconds: 250));
+        expect(find.text(title), findsNothing);
+        expect(tester.getSize(expansible).height, collapsedHeight);
+        await tester.tap(find.text('work'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 55));
+        await tester.tap(find.text('work'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 30));
+        await tester.tap(find.text('work'));
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<Expansible>(expansible).controller.isExpanded,
+          isTrue,
+        );
+        await tester.drag(find.byType(ListView), const Offset(0, -700));
+        await tester.pumpAndSettle();
+        expect(find.text('work'), findsNothing);
+        await tester.drag(find.byType(ListView), const Offset(0, 700));
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<Expansible>(expansible).controller.isExpanded,
+          isTrue,
+        );
+        expect(find.text(title), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  testWidgets(
+    'library edit builds large root file lists lazily',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      const root = '/large-edit';
+      final tracks = List.generate(
+        2000,
+        (index) => testMusicTrack(
+          name: 'Audio $index',
+          path: '$root/$index.mp3',
+          groupKey: root,
+          groupTitle: 'Library',
+        ),
+      );
+      fixture.runtimeGraph.library.addWatchedLibrary(root, notify: false);
+      fixture.runtimeGraph.library.addTracks(
+        tracks,
+        notify: false,
+        persist: false,
+      );
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+      final service = _QueuedEntryEditorService([
+        Future.value(
+          LibraryEntryDiskSnapshot(
+            audioFilePaths: tracks.map((track) => track.path).toList(),
+            scannedFolderPaths: const {},
+            authoritative: true,
+          ),
+        ),
+      ]);
+      await tester.pumpWidget(
+        fixture.build(
+          LibraryEditPage(libraryPath: root, entryEditorService: service),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(FileTreeRow).evaluate().length, lessThan(40));
+      await tester.drag(find.byType(ListView).last, const Offset(0, -600));
+      await tester.pumpAndSettle();
+      expect(find.byType(FileTreeRow).evaluate().length, lessThan(40));
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'library edit page renders search bar in header second row capsule and filters tree',
@@ -3458,6 +3721,14 @@ void main() {
 
       expect(find.text('First Song', findRichText: true), findsOneWidget);
       expect(find.text('Second Track', findRichText: true), findsNothing);
+
+      final firstSong = tester.widget<RichText>(
+        find.text('First Song', findRichText: true),
+      );
+      expect(
+        (firstSong.text as TextSpan).children!.first.style!.fontWeight,
+        FontWeight.w900,
+      );
 
       // Filter by non-matching text
       await tester.enterText(searchField, 'Nonexistent');
@@ -3726,23 +3997,13 @@ void main() {
       final size = tester.getSize(childListTileFinder);
       expect(size.height, 44.0);
 
-      final childAddButtonFinder = find.descendant(
-        of: childExpansionTileFinder,
-        matching: find.byType(IconButton),
-      );
-      expect(childAddButtonFinder, findsOneWidget);
-      final childIconButton = tester.widget<IconButton>(childAddButtonFinder);
       expect(
-        childIconButton.tooltip,
-        fixture.languageProvider.tr('add_to_playlist'),
+        find.descendant(
+          of: childExpansionTileFinder,
+          matching: find.byIcon(Icons.add_circle_rounded),
+        ),
+        findsNothing,
       );
-      final iconWidget = tester.widget<Icon>(
-        find.descendant(of: childAddButtonFinder, matching: find.byType(Icon)),
-      );
-      expect(iconWidget.icon, Icons.add_circle_rounded);
-      expect(iconWidget.size, 25.0);
-
-      // Verify child folder is wrapped in SwipeRevealCard and swiping left reveals remove button
       final childFolderSwipeCardFinder = find.ancestor(
         of: discFolderFinder,
         matching: find.byType(SwipeRevealCard),
@@ -3753,15 +4014,8 @@ void main() {
         childFolderSwipeCardFinder,
       );
       expect(swipeCard.actionLabel, fixture.languageProvider.tr('remove'));
-      expect(
-        swipeCard.removeTooltip,
-        fixture.languageProvider.tr('remove_audio_folder'),
-      );
-
       await tester.drag(discFolderFinder, const Offset(-200, 0));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-
+      await tester.pumpAndSettle();
       final removeButtonFinder = find.byTooltip(
         fixture.languageProvider.tr('remove_audio_folder'),
       );
@@ -3830,15 +4084,11 @@ void main() {
         fixture.languageProvider.tr('pin_to_top'),
       );
       expect(swipeCard.leadingActionIcon, Icons.push_pin_rounded);
-      expect(swipeCard.leadingActionIconWidget, isNull);
-      expect(swipeCard.onSecondaryLeadingAction, isNull);
-      expect(swipeCard.secondaryLeadingActionLabel, isNull);
       expect(swipeCard.onSecondaryAction, isNotNull);
       expect(
         swipeCard.secondaryActionLabel,
         fixture.languageProvider.tr('download'),
       );
-      expect(swipeCard.secondaryActionIcon, Icons.download_rounded);
 
       // Pin badge not shown initially
       expect(
@@ -3895,7 +4145,6 @@ void main() {
       expect(pinPosition.top, -2);
       expect(pinPosition.left, isNull);
 
-      // Swipe card now shows unpin
       final updatedSwipeCard = tester.widget<SwipeRevealCard>(swipeCardFinder);
       expect(
         updatedSwipeCard.leadingActionLabel,
@@ -3908,7 +4157,7 @@ void main() {
   );
 
   testWidgets(
-    'root folder card left-swipe download action finds ASMR work and navigates to AsmrDownloadPage',
+    'root folder card swipe download action finds ASMR work and navigates to AsmrDownloadPage',
     (WidgetTester tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -4111,6 +4360,18 @@ void main() {
         await tester.pump(const Duration(milliseconds: 350));
         final title = find.text(track.displayName, findRichText: true);
         expect(title, findsOneWidget);
+        final content = find.ancestor(
+          of: title,
+          matching: find.byType(SwipeRevealCard),
+        );
+        expect(
+          find.descendant(of: content, matching: find.byIcon(Icons.add_circle_rounded)),
+          findsNothing,
+        );
+        expect(
+          find.descendant(of: content, matching: find.byIcon(Icons.play_arrow_rounded)),
+          findsNothing,
+        );
         await tester.tap(title);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 350));
@@ -4257,46 +4518,8 @@ void main() {
   );
 
   testWidgets(
-    'single track without cover added to playlist is not highlighted',
+    'single track without cover stays unhighlighted without entry buttons',
     (WidgetTester tester) async {
-      var prepareCalls = 0;
-      Map<String, Object?>? preparedSnapshot;
-      final messenger =
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(nativePlaybackChannel, (call) async {
-        if (call.method == NativePlaybackMethod.prepareSession) {
-          prepareCalls++;
-          final arguments = call.arguments as Map<Object?, Object?>;
-          preparedSnapshot = <String, Object?>{
-            'sessionId': arguments['sessionId'],
-            'path': arguments['path'],
-            'uri': arguments['uri'],
-            'playing': false,
-            'playWhenReady': false,
-            'processingState': 'ready',
-            'positionMs': 0,
-            'bufferedPositionMs': 0,
-            'volume': 1.0,
-          };
-          return <String, Object?>{'ok': true, 'value': preparedSnapshot};
-        }
-        if (call.method == NativePlaybackMethod.play) {
-          final arguments = call.arguments as Map<Object?, Object?>;
-          return <String, Object?>{
-            'ok': true,
-            'value': <String, Object?>{
-              ...preparedSnapshot!,
-              'playing': true,
-              'playWhenReady': true,
-              'transportCommandId': arguments['transportCommandId'],
-            },
-          };
-        }
-        return <String, Object?>{'ok': true, 'value': null};
-      });
-      addTearDown(
-        () => messenger.setMockMethodCallHandler(nativePlaybackChannel, null),
-      );
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       final runtimeGraph = fixture.runtimeGraph;
@@ -4324,11 +4547,8 @@ void main() {
       await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
       await tester.pump(const Duration(milliseconds: 350));
 
-      final addButton = find.byIcon(Icons.add_circle_rounded);
-      expect(addButton, findsOneWidget);
-      await tester.tap(addButton);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byIcon(Icons.add_circle_rounded), findsNothing);
+      expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
 
       final cardFinder = find.ancestor(
         of: find.text('single.mp3', findRichText: true),
@@ -4336,14 +4556,7 @@ void main() {
       );
       final card = tester.widget<Card>(cardFinder.first);
       expect(card.color, Colors.transparent);
-      expect(prepareCalls, 0);
-      expect(runtimeGraph.playback.activeSessions.single.isTemporary, isFalse);
-      expect(
-        PathMatcher.normalize(
-          runtimeGraph.playback.activeSessions.single.currentTrackPath,
-        ),
-        PathMatcher.normalize(singleTrack.path),
-      );
+      expect(runtimeGraph.playback.activeSessions, isEmpty);
 
       await finishLibraryTest(tester, fixture);
     },
@@ -4382,20 +4595,17 @@ void main() {
 
       final rootFolderFinder = find.text('Work_A', findRichText: true);
       expect(rootFolderFinder, findsOneWidget);
-      final swipeCard = find.ancestor(
+      final card = find.ancestor(
         of: rootFolderFinder,
         matching: find.byType(SwipeRevealCard),
       );
-      expect(swipeCard, findsOneWidget);
-      // The card tap surface must live inside the swipe card surface. An
-      // InkWell outside of it paints its highlight and ripple below the opaque
-      // closed background, so presses looked different from playlist rows.
+      expect(card, findsOneWidget);
       expect(
-        find.ancestor(of: swipeCard, matching: find.byType(InkWell)),
+        find.ancestor(of: card, matching: find.byType(InkWell)),
         findsNothing,
       );
       expect(
-        find.descendant(of: swipeCard, matching: find.byType(InkWell)),
+        find.descendant(of: card, matching: find.byType(InkWell)),
         findsWidgets,
       );
 

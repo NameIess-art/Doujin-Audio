@@ -2,12 +2,15 @@ import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
+import 'package:doujin_audio/core/widgets/library_like_cards.dart';
+import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -27,6 +30,98 @@ void main() {
       const SizedBox.shrink(),
     ],
   );
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'ASMR card omits add and play buttons and retains its menu on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices());
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+
+        final contentFinder = find.byType(LibraryLikeMetadataWorkCardContent);
+        final contentRect = tester.getRect(contentFinder.first);
+        for (final icon in [
+          Icons.add_circle_rounded,
+          Icons.play_arrow_rounded,
+        ]) {
+          expect(
+            find.descendant(
+              of: contentFinder.first,
+              matching: find.byIcon(icon),
+            ),
+            findsNothing,
+          );
+        }
+        expect(contentRect.height, LibraryLikeCardMetrics.coverHeight);
+        final titleRect = tester.getRect(find.text('Published work'));
+        expect(
+          titleRect.left,
+          contentRect.left +
+              LibraryLikeCardMetrics.coverHeight *
+                  LibraryLikeCardMetrics.coverAspectRatio +
+              10,
+        );
+        expect(titleRect.top, contentRect.top);
+        final before = contentRect;
+
+        final swipe = find.ancestor(
+          of: contentFinder.first,
+          matching: find.byType(SwipeRevealCard),
+        );
+        expect(swipe, findsOneWidget);
+        final shell = tester.widget<SwipeRevealCard>(swipe);
+        expect(shell.primaryActionIcon, Icons.favorite_border_rounded);
+        expect(shell.secondaryActionIcon, Icons.download_rounded);
+        expect(shell.onSecondaryAction, isNotNull);
+        final favoriteLabel = fixture.languageProvider.tr(
+          'asmr_favorite_action',
+        );
+        final downloadLabel = fixture.languageProvider.tr('download');
+        if (platform == TargetPlatform.android) {
+          await tester.drag(swipe, const Offset(-150, 0));
+        } else {
+          await tester.tap(
+            find.text('Published work'),
+            buttons: kSecondaryMouseButton,
+            kind: PointerDeviceKind.mouse,
+          );
+        }
+        await tester.pumpAndSettle();
+        if (platform == TargetPlatform.windows) {
+          expect(find.text(favoriteLabel), findsOneWidget);
+          expect(find.text(downloadLabel), findsOneWidget);
+        } else {
+          expect(find.byTooltip(favoriteLabel), findsWidgets);
+          expect(find.byTooltip(downloadLabel), findsWidgets);
+          expect(
+            tester.getRect(contentFinder.first).left,
+            lessThan(before.left),
+          );
+        }
+        await tester.tap(
+          platform == TargetPlatform.windows
+              ? find.text(favoriteLabel)
+              : find.byTooltip(favoriteLabel).last,
+        );
+        await tester.pumpAndSettle();
+        expect(controller.favoriteToggles, 1);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
 
   testWidgets('ASMR rebuilds keep published cards during interaction', (
     tester,
@@ -574,6 +669,7 @@ class _PresentationController extends AsmrLibraryController {
   int initializations = 0;
   int categoryLoads = 0;
   int accountRestores = 0;
+  int favoriteToggles = 0;
   bool cacheValid = true;
   AppLanguage _presentationLanguage = AppLanguage.zh;
 
@@ -682,4 +778,9 @@ class _PresentationController extends AsmrLibraryController {
 
   @override
   Future<void> syncAsmrAccount({bool force = false}) async {}
+
+  @override
+  Future<void> toggleFavorite(AsmrWork work) async {
+    favoriteToggles++;
+  }
 }

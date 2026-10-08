@@ -3,8 +3,67 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_metadata.dart';
+import 'package:doujin_audio/core/widgets/horizontal_edge_fade_scroll.dart';
 
 void main() {
+  testWidgets(
+    'metadata stays still until manually scrolled on both platforms',
+    (tester) async {
+      Future<void> pumpMetadata({required bool overflowing}) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 320,
+                child: WorkDetailMetadata(
+                  key: ValueKey(overflowing),
+                  voiceActors: overflowing
+                      ? List.generate(12, (index) => 'Voice actor $index')
+                      : const ['Voice'],
+                  tags: overflowing
+                      ? List.generate(12, (index) => 'Work tag $index')
+                      : const ['ASMR'],
+                  onCopy: (_) {},
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        for (var frame = 0; frame < 40; frame++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+      }
+
+      ScrollPosition position(String prefix) => tester
+          .state<ScrollableState>(
+            find.descendant(
+              of: find.byKey(ValueKey('work_detail_${prefix}_scroller')),
+              matching: find.byType(Scrollable),
+            ),
+          )
+          .position;
+      await pumpMetadata(overflowing: true);
+      for (final prefix in ['voice_actor', 'tag']) {
+        expect(position(prefix).maxScrollExtent, greaterThan(0));
+        expect(position(prefix).pixels, 0);
+      }
+      await pumpMetadata(overflowing: false);
+      for (final prefix in ['voice_actor', 'tag']) {
+        expect(position(prefix).maxScrollExtent, 0);
+        expect(position(prefix).pixels, 0);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 3));
+      expect(tester.takeException(), isNull);
+      expect(tester.binding.transientCallbackCount, 0);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final scale in [1.0, 2.0]) {
     testWidgets(
       'metadata builds visible capsules and keeps all items reachable at scale $scale',
@@ -14,7 +73,10 @@ void main() {
           MaterialApp(
             home: Scaffold(
               body: MediaQuery(
-                data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                data: MediaQueryData(
+                  textScaler: TextScaler.linear(scale),
+                  disableAnimations: true,
+                ),
                 child: SizedBox(
                   width: 320,
                   child: WorkDetailMetadata(
@@ -33,6 +95,12 @@ void main() {
         expect(find.text('#Long work tag 59'), findsNothing);
         expect(find.byType(InkWell).evaluate().length, lessThan(30));
         for (final prefix in ['voice_actor', 'tag']) {
+          final fade = find.byKey(ValueKey('work_detail_${prefix}_edge_fade'));
+          expect(tester.widget(fade), isA<HorizontalEdgeFadeScroll>());
+          expect(
+            find.descendant(of: fade, matching: find.byType(ShaderMask)),
+            findsOneWidget,
+          );
           final list = find.byKey(ValueKey('work_detail_${prefix}_scroller'));
           final scrollable = find.descendant(
             of: list,

@@ -392,16 +392,13 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                   Positioned.fill(
                     child: PlaceholderContentTransition(
                       showPlaceholder: _loading,
-                      placeholder: SingleChildScrollView(
+                      placeholder: OperationSkeletonList(
+                        showHeader: false,
                         padding: EdgeInsets.fromLTRB(
                           16,
                           listTopPadding,
                           16,
                           listBottomPadding,
-                        ),
-                        child: const OperationSkeletonList(
-                          itemCount: 6,
-                          showHeader: false,
                         ),
                       ),
                       content: _bootstrapError != null || selection == null

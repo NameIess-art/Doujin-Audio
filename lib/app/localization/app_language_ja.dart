@@ -109,6 +109,7 @@ const Map<String, String> appLanguageJa = {
   'skip': 'スキップ',
   'search': '検索',
   'search_audio_placeholder': '音声を検索…',
+  'search_library_placeholder': 'ライブラリを検索…',
   'scanning_title': 'スキャン中',
   'loading_dot': '読み込み中...',
   'playback_loading': '読み込み中',

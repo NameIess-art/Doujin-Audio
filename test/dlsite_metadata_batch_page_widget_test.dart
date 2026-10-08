@@ -7,6 +7,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/dlsite_metadata.dart';
+import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/library/application/dlsite_metadata_batch_session.dart';
 import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
@@ -14,14 +15,20 @@ import 'package:doujin_audio/features/library/domain/audio_library_category.dart
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
 
 void main() {
-  AudioLibraryCategoryEntry resultEntry(String id) {
+  AudioLibraryCategoryEntry resultEntry(
+    String id, {
+    bool hasRjCode = true,
+    String? title,
+  }) {
     final target = AudioDetailTarget.libraryRootFolder('/library/$id');
     return AudioLibraryCategoryEntry(
       target: target,
-      title: 'Work $id',
+      title: title ?? 'Work $id',
       path: target.targetPath,
       isFolder: true,
-      detail: AudioDetail.empty(target).copyWith(rjCode: 'RJ000$id'),
+      detail: AudioDetail.empty(
+        target,
+      ).copyWith(rjCode: hasRjCode ? 'RJ000$id' : ''),
       tracks: const [],
     );
   }
@@ -90,9 +97,20 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
-        matching: find.byIcon(Icons.pending_actions_rounded),
+        matching: find.byIcon(Icons.check_circle_rounded),
       ),
       findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<Icon>(
+            find.descendant(
+              of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
+              matching: find.byType(Icon),
+            ),
+          )
+          .color,
+      Colors.orange,
     );
     expect(
       find.descendant(
@@ -122,7 +140,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('batch_metadata_status_3')),
-        matching: find.byIcon(Icons.pending_actions_rounded),
+        matching: find.byIcon(Icons.check_circle_rounded),
       ),
       findsOneWidget,
     );
@@ -134,6 +152,17 @@ void main() {
         matching: find.byIcon(Icons.check_circle_rounded),
       ),
       findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<Icon>(
+            find.descendant(
+              of: find.byKey(const ValueKey<String>('batch_metadata_status_3')),
+              matching: find.byType(Icon),
+            ),
+          )
+          .color,
+      Colors.green,
     );
   });
 
@@ -184,7 +213,7 @@ void main() {
     );
     expect(
       tester.widget<ListView>(find.byType(ListView)).padding,
-      const EdgeInsets.only(top: 58, bottom: 78),
+      const EdgeInsets.fromLTRB(16, 58, 16, 78),
     );
     expect(
       find.byKey(const ValueKey<String>('batch_metadata_picker_done')),
@@ -193,56 +222,119 @@ void main() {
     expect(find.byType(HeaderFloatingSurface), findsNWidgets(3));
   });
 
-  testWidgets('batch result rows match the work picker row height', (
-    tester,
-  ) async {
-    final languageProvider = AppLanguageProvider();
-    final entry = resultEntry('001');
-    final session = DlsiteMetadataBatchSession(
-      entries: [entry],
-      lookup: (_) =>
-          Future<List<DlsiteMetadata>>.value([resultMetadata('001')]),
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appLanguageProviderInstanceProvider.overrideWithValue(
-            languageProvider,
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('batch rows fit two lines on $platform at scale $scale', (
+        tester,
+      ) async {
+        tester.view.physicalSize = const Size(320, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final languageProvider = AppLanguageProvider();
+        final entries = [
+          resultEntry('001', title: '很长的作品名称用来验证窄窗口只显示一行并省略后续文字'),
+          resultEntry('002', hasRjCode: false),
+        ];
+        final session = DlsiteMetadataBatchSession(
+          entries: entries,
+          lookup: (_) =>
+              Future<List<DlsiteMetadata>>.value([resultMetadata('001')]),
+        );
+        Widget app(Widget page) => ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(
+              languageProvider,
+            ),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(platform: platform),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(scale)),
+              child: child!,
+            ),
+            home: page,
           ),
-        ],
-        child: MaterialApp(
-          home: DlsiteMetadataBatchResultsPage(session: session),
-        ),
-      ),
-    );
-    await tester.pump();
-    final resultRowHeight = tester
-        .getSize(find.byKey(const ValueKey<String>('batch_metadata_result_0')))
-        .height;
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appLanguageProviderInstanceProvider.overrideWithValue(
-            languageProvider,
+        );
+        await tester.pumpWidget(
+          app(DlsiteMetadataBatchResultsPage(session: session)),
+        );
+        await tester.pumpAndSettle();
+        final resultRects = [
+          for (var i = 0; i < entries.length; i++)
+            tester.getRect(
+              find.byKey(ValueKey<String>('batch_metadata_result_$i')),
+            ),
+        ];
+        expect(resultRects[0].height, scale == 1 ? 48 : greaterThan(48));
+        expect(resultRects[1].height, resultRects[0].height);
+        expect(resultRects[1].top, resultRects[0].bottom);
+        for (final text in tester.widgetList<Text>(
+          find.descendant(
+            of: find.byType(FileTreeRow),
+            matching: find.byType(Text),
           ),
-        ],
-        child: MaterialApp(
-          home: DlsiteMetadataWorkPickerPage(
-            entries: [entry],
-            initialSelection: const [],
-          ),
-        ),
-      ),
-    );
-    await tester.pump();
+        )) {
+          expect(text.maxLines, 1);
+        }
+        expect(tester.takeException(), isNull);
 
-    expect(
-      resultRowHeight,
-      tester.getSize(find.byType(CheckboxListTile)).height,
-    );
-  });
+        await tester.pumpWidget(
+          app(
+            DlsiteMetadataWorkPickerPage(
+              entries: entries,
+              initialSelection: const [],
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final pickerRows = find.byType(FileTreeRow);
+        final pickerRects = [
+          for (var i = 0; i < entries.length; i++)
+            tester.getRect(pickerRows.at(i)),
+        ];
+        expect(pickerRects[0].height, resultRects[0].height);
+        expect(pickerRects[1].height, resultRects[0].height);
+        expect(pickerRects[1].top, pickerRects[0].bottom);
+        expect(pickerRects[0].left, resultRects[0].left);
+        expect(pickerRects[0].right, resultRects[0].right);
+        await tester.enterText(find.byType(TextField), 'RJ000001');
+        await tester.pump();
+        expect(find.byType(FileTreeRow), findsOneWidget);
+        expect(
+          tester.getSize(find.byType(FileTreeRow)).height,
+          pickerRects[0].height,
+        );
+        final rjText = tester.widget<RichText>(
+          find.descendant(
+            of: find.byType(FileTreeRow),
+            matching: find.text('RJ000001', findRichText: true),
+          ),
+        );
+        expect(
+          (rjText.text as TextSpan).children!.first.style!.fontWeight,
+          FontWeight.w900,
+        );
+        await tester.tap(find.byIcon(Icons.clear_rounded));
+        await tester.pump();
+        await tester.tap(find.text(entries[0].title));
+        await tester.pump();
+        expect(
+          tester.widget<Checkbox>(find.byType(Checkbox).first).value,
+          isTrue,
+        );
+        await tester.tap(find.byType(Checkbox).first);
+        await tester.pump();
+        expect(
+          tester.widget<Checkbox>(find.byType(Checkbox).first).value,
+          isFalse,
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
 
   testWidgets('batch results wait for all lookups before saving', (
     tester,
@@ -520,7 +612,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
-        matching: find.byIcon(Icons.pending_actions_rounded),
+        matching: find.byIcon(Icons.check_circle_rounded),
       ),
       findsOneWidget,
     );
@@ -545,10 +637,7 @@ void main() {
 
     // Verify opacity is reduced (greyed out)
     final opacityWidget = tester.widget<Opacity>(
-      find.ancestor(
-        of: item0,
-        matching: find.byType(Opacity),
-      ).first,
+      find.ancestor(of: item0, matching: find.byType(Opacity)).first,
     );
     expect(opacityWidget.opacity, closeTo(0.38, 0.01));
 
@@ -560,16 +649,13 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
-        matching: find.byIcon(Icons.pending_actions_rounded),
+        matching: find.byIcon(Icons.check_circle_rounded),
       ),
       findsOneWidget,
     );
 
     final restoredOpacity = tester.widget<Opacity>(
-      find.ancestor(
-        of: item0,
-        matching: find.byType(Opacity),
-      ).first,
+      find.ancestor(of: item0, matching: find.byType(Opacity)).first,
     );
     expect(restoredOpacity.opacity, equals(1.0));
   });

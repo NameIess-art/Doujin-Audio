@@ -53,7 +53,7 @@ class AsmrDownloadTransferService {
     final normalizedRelativePath = _planner.validatedDownloadRelativePath(
       item.relativePath,
     );
-    // The task commits its own work metadata after all transfers finish.
+    // The task saves its own work metadata before transferring remote files.
     if (task.saveMetadata &&
         normalizedRelativePath.toLowerCase() == 'doujin-audio.json') {
       return DownloadWriteResult.skipped(bytesDownloaded: item.size);

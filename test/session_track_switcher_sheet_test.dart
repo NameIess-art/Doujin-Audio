@@ -1,6 +1,8 @@
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
@@ -101,6 +103,34 @@ Future<void> _jumpToEnd(WidgetTester tester, ScrollPosition position) async {
 }
 
 void main() {
+  testWidgets('switcher icons use local and ASMR work accents', (tester) async {
+    final tracks = [
+      _track('local.mp3'),
+      _track(
+        'disc/remote.mp3',
+      ).copyWith(remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne),
+    ];
+    await _pumpSheet(tester, tracks);
+    await tester.tap(find.text('disc'));
+    await tester.pumpAndSettle();
+    final primary = Theme.of(
+      tester.element(find.byType(FileTreeRow).first),
+    ).colorScheme.primary;
+    final expected = {
+      'disc': AppDesignTokens.folderIconColor,
+      'local.mp3': primary,
+      'remote.mp3': AppDesignTokens.light.asmrAccent,
+    };
+    for (final entry in expected.entries) {
+      final row = find.ancestor(
+        of: find.text(entry.key),
+        matching: find.byType(FileTreeRow),
+      );
+      final icon = find.descendant(of: row, matching: find.byType(Icon)).first;
+      expect(tester.widget<Icon>(icon).color, entry.value);
+    }
+  });
+
   for (final reduceAnimations in [false, true]) {
     testWidgets(
       'folder rows have rounded ink and animate both directions (reduced=$reduceAnimations)',
@@ -149,6 +179,16 @@ void main() {
         }
         await tester.pumpAndSettle();
         expect(leaf, findsOneWidget);
+        final rows = find.byType(FileTreeRow);
+        for (var index = 0; index < 3; index++) {
+          expect(tester.getSize(rows.at(index)).height, 44);
+          if (index > 0) {
+            expect(
+              tester.getRect(rows.at(index)).top,
+              tester.getRect(rows.at(index - 1)).bottom,
+            );
+          }
+        }
         expect(
           tester.widget<SizeTransition>(sizeTransition()).sizeFactor.value,
           1,

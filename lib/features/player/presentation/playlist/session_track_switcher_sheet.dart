@@ -4,18 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/natural_sort.dart';
 import '../../../../core/media/path_display.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
+import '../../../../core/widgets/file_tree_row.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/playback_queue.dart';
 import 'playlist_shared_helpers.dart';
-
-const _switcherItemRadius = BorderRadius.all(Radius.circular(12));
 
 class SessionTrackSelection {
   const SessionTrackSelection({required this.track, required this.queueIndex});
@@ -178,11 +178,11 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet> {
       axisAlignment: -1,
       child: FadeTransition(
         opacity: opacity,
-        child: Padding(
+        child: KeyedSubtree(
           key: ValueKey<String>('queue_switcher_row_${row.key}'),
-          padding: EdgeInsetsDirectional.only(start: row.depth * 16),
           child: _QueueTreeNodeTile(
             node: row.node,
+            depth: row.depth,
             expanded: _expandedFolders.contains(row.key),
             onToggleExpansion: () => _toggleFolder(row.key),
             onTrackTap: (selected) => widget.onSelected(
@@ -452,12 +452,14 @@ class _QueueTreeNode {
 class _QueueTreeNodeTile extends StatelessWidget {
   const _QueueTreeNodeTile({
     required this.node,
+    required this.depth,
     required this.expanded,
     required this.onToggleExpansion,
     required this.onTrackTap,
   });
 
   final _QueueTreeNode node;
+  final int depth;
   final bool expanded;
   final VoidCallback onToggleExpansion;
   final ValueChanged<_QueueTreeNode> onTrackTap;
@@ -467,61 +469,28 @@ class _QueueTreeNodeTile extends StatelessWidget {
     if (!node.isFolder) {
       return _QueueTrackLeaf(
         track: node.track!,
+        depth: depth,
         selected: node.selected,
         onTap: node.selected ? null : () => onTrackTap(node),
       );
     }
-
     final cs = Theme.of(context).colorScheme;
     return Semantics(
       expanded: expanded,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: _switcherItemRadius,
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          borderRadius: _switcherItemRadius,
-          onTap: onToggleExpansion,
-          child: SizedBox(
-            height: 52,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(6, 0, 6, 0),
-              child: Row(
-                children: [
-                  Icon(
-                    expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
-                    size: 19,
-                    color: cs.primary.withValues(alpha: 0.78),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      node.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: cs.onSurface.withValues(alpha: 0.9),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  AnimatedRotation(
-                    turns: expanded ? 0.5 : 0,
-                    duration: MediaQuery.disableAnimationsOf(context)
-                        ? Duration.zero
-                        : kAppMotionFast,
-                    curve: Curves.easeOutCubic,
-                    child: Icon(
-                      Icons.expand_more_rounded,
-                      size: 20,
-                      color: cs.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+      child: FileTreeRow(
+        title: node.title,
+        depth: depth,
+        isFolder: true,
+        titleColor: cs.onSurface.withValues(alpha: 0.9),
+        onTap: onToggleExpansion,
+        leading: Icon(
+          expanded
+              ? AppDesignTokens.openFolderIcon
+              : AppDesignTokens.folderIcon,
+          size: AppDesignTokens.fileEntryIconSize,
+          color: AppDesignTokens.folderIconColor,
         ),
+        trailing: FileTreeExpansionArrow(expanded: expanded),
       ),
     );
   }
@@ -530,84 +499,61 @@ class _QueueTreeNodeTile extends StatelessWidget {
 class _QueueTrackLeaf extends StatelessWidget {
   const _QueueTrackLeaf({
     required this.track,
+    required this.depth,
     required this.selected,
     required this.onTap,
   });
 
   final MusicTrack track;
+  final int depth;
   final bool selected;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-      child: Material(
-        key: ValueKey<String>('queue_switcher_track_${track.path}'),
-        color: selected
-            ? cs.primaryContainer.withValues(alpha: 0.24)
-            : Colors.transparent,
-        borderRadius: _switcherItemRadius,
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          borderRadius: _switcherItemRadius,
-          onTap: onTap,
-          child: SizedBox(
-            height: 44,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Row(
-                children: [
-                  Icon(
-                    selected
-                        ? Icons.volume_up_rounded
-                        : Icons.audio_file_rounded,
-                    size: 16,
-                    color: selected
-                        ? cs.primary
-                        : cs.onSurfaceVariant.withValues(alpha: 0.6),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      track.displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: cs.onSurface,
-                        fontWeight: selected
-                            ? FontWeight.w700
-                            : FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    track.duration <= Duration.zero
-                        ? '--:--'
-                        : formatDurationCompact(track.duration),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      fontWeight: FontWeight.w700,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    selected
-                        ? Icons.check_circle_rounded
-                        : Icons.chevron_right_rounded,
-                    size: 20,
-                    color: selected
-                        ? cs.primary
-                        : cs.onSurfaceVariant.withValues(alpha: 0.55),
-                  ),
-                ],
+    return FileTreeRow(
+      surfaceKey: ValueKey<String>('queue_switcher_track_${track.path}'),
+      title: track.displayName,
+      depth: depth,
+      emphasized: selected,
+      backgroundColor: selected
+          ? cs.primaryContainer.withValues(alpha: 0.24)
+          : null,
+      onTap: onTap,
+      leading: Icon(
+        selected ? Icons.volume_up_rounded : AppDesignTokens.audioFileIcon,
+        size: AppDesignTokens.fileEntryIconSize,
+        color: track.usesAsmrVisualTheme
+            ? AppDesignTokens.of(context).asmrAccent
+            : cs.primary,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              track.duration <= Duration.zero
+                  ? '--:--'
+                  : formatDurationCompact(track.duration),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
-        ),
+          const SizedBox(width: 8),
+          Icon(
+            selected ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
+            size: 20,
+            color: selected
+                ? cs.primary
+                : cs.onSurfaceVariant.withValues(alpha: 0.55),
+          ),
+        ],
       ),
     );
   }

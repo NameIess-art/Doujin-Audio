@@ -595,7 +595,37 @@ class AsmrDownloadManager {
           ? Set<String>.from(resumedTask.manuallyRetryingFilePaths)
           : <String>{};
 
-      _store[workId] = resumedTask.copyWith(
+      // Save before media becomes visible to library scans or playback.
+      if (backup != null) {
+        _store[workId] = _store[workId]!.copyWith(
+          currentItemPath: 'doujin-audio.json',
+          message: 'downloading_work_detail',
+        );
+        _store.notifyTaskChanged();
+        final metadataCreated = await _outputs.saveTaskMetadata(
+          taskSnapshot,
+          backup,
+        );
+        if (!metadataAccounted) {
+          if (metadataCreated) {
+            completed++;
+            downloadedBytes += backupBytes;
+          } else {
+            skipped++;
+          }
+        }
+        _store[workId] = _store[workId]!.copyWith(
+          completedFiles: completed,
+          skippedFiles: skipped,
+          downloadedBytes: downloadedBytes,
+        );
+        _store.notifyTaskChanged();
+        // Persist ownership and counters before a pause or interrupted transfer.
+        await flushPersistence();
+        _transfers.throwIfCancelled(workId);
+      }
+
+      _store[workId] = _store[workId]!.copyWith(
         status: AsmrDownloadTaskStatus.downloading,
         completedFiles: completed,
         failedFiles: failed,
@@ -655,26 +685,6 @@ class AsmrDownloadManager {
       }
 
       _transfers.throwIfCancelled(workId);
-      if (backup != null) {
-        _store[workId] = _store[workId]!.copyWith(
-          currentItemPath: 'doujin-audio.json',
-          message: 'downloading_work_detail',
-        );
-        _store.notifyTaskChanged();
-        final metadataCreated = await _outputs.saveTaskMetadata(
-          taskSnapshot,
-          backup,
-        );
-        _transfers.throwIfCancelled(workId);
-        if (!metadataAccounted) {
-          if (metadataCreated) {
-            completed++;
-            downloadedBytes += backupBytes;
-          } else {
-            skipped++;
-          }
-        }
-      }
       final finalDownloadedBytes = failed > 0
           ? downloadedBytes
           : _store[workId]!.totalBytes;

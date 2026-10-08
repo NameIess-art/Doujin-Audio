@@ -12,6 +12,7 @@ import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/page_header_inset.dart';
+import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/library_entry_editor_service.dart';
 import '../application/library_facade.dart';
@@ -297,96 +298,105 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
     final snapshotError = _diskSnapshotError;
 
     final headerTopInset = MediaQuery.paddingOf(context).top + 98;
-    return PageHeaderInset(
-      topInset: headerTopInset,
-      child: Stack(
-        children: [
-          AppPageContentTransition(
-            child: PlaceholderContentTransition(
-              showPlaceholder: localSnapshotPending,
-              placeholder: ListView(
-                padding: EdgeInsets.fromLTRB(16, headerTopInset, 16, 24),
-                children: const [
-                  LibraryEditTreeSkeleton(
-                    key: ValueKey('library_edit_entries_skeleton'),
+    return SearchHighlightScope(
+      query: _searchQuery,
+      child: PageHeaderInset(
+        topInset: headerTopInset,
+        child: Stack(
+          children: [
+            AppPageContentTransition(
+              child: PlaceholderContentTransition(
+                showPlaceholder: localSnapshotPending,
+                placeholder: LayoutBuilder(
+                  builder: (context, constraints) => ListView(
+                    padding: EdgeInsets.fromLTRB(16, headerTopInset, 16, 24),
+                    children: [
+                      LibraryEditTreeSkeleton(
+                        key: const ValueKey('library_edit_entries_skeleton'),
+                        viewportHeight: (constraints.maxHeight -
+                                headerTopInset -
+                                24)
+                            .clamp(0.0, double.infinity),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              content: ListView.builder(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  MediaQuery.paddingOf(context).top + 98,
-                  16,
-                  24,
                 ),
-                itemCount: isEmpty
-                    ? 1
-                    : snapshotError
-                    ? editTree.length + 1
-                    : editTree.length,
-                itemBuilder: (context, index) {
-                  if (snapshotError && index == 0) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 96),
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              i18n.tr('scan_failed_next_step'),
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodyLarge
-                                  ?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                            const SizedBox(height: 12),
-                            FilledButton.tonal(
-                              onPressed: _requestDiskSnapshotRefresh,
-                              child: Text(i18n.tr('retry')),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }
-                  if (isEmpty) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 96),
-                      child: Center(
-                        child: Text(
-                          _searchQuery.isEmpty
-                              ? i18n.tr('library_edit_empty')
-                              : i18n.tr('no_search_results'),
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(
-                                color: cs.onSurfaceVariant,
-                                fontWeight: FontWeight.w700,
+                content: ListView.builder(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    MediaQuery.paddingOf(context).top + 98,
+                    16,
+                    24,
+                  ),
+                  itemCount: isEmpty
+                      ? 1
+                      : snapshotError
+                      ? editTree.length + 1
+                      : editTree.length,
+                  itemBuilder: (context, index) {
+                    if (snapshotError && index == 0) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 96),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                i18n.tr('scan_failed_next_step'),
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodyLarge
+                                    ?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                               ),
+                              const SizedBox(height: 12),
+                              FilledButton.tonal(
+                                onPressed: _requestDiskSnapshotRefresh,
+                                child: Text(i18n.tr('retry')),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
+                      );
+                    }
+                    if (isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 96),
+                        child: Center(
+                          child: Text(
+                            _searchQuery.isEmpty
+                                ? i18n.tr('library_edit_empty')
+                                : i18n.tr('no_search_results'),
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ),
+                      );
+                    }
+                    final node = editTree[index - (snapshotError ? 1 : 0)];
+                    return LibraryEditTreeNodeWidget(
+                      key: ValueKey(node.pathValue),
+                      libraryPath: widget.libraryPath,
+                      node: node,
+                      initiallyExpanded: _searchQuery.isNotEmpty,
+                      onRememberFolder: rememberFolderStructureSnapshot,
                     );
-                  }
-                  final node = editTree[index - (snapshotError ? 1 : 0)];
-                  return LibraryEditTreeNodeWidget(
-                    key: ValueKey(node.pathValue),
-                    libraryPath: widget.libraryPath,
-                    node: node,
-                    initiallyExpanded: _searchQuery.isNotEmpty,
-                    onRememberFolder: rememberFolderStructureSnapshot,
-                  );
-                },
+                  },
+                ),
               ),
             ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: widget.headerBuilder(context, _buildSearchBar(i18n)),
-          ),
-        ],
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: widget.headerBuilder(context, _buildSearchBar(i18n)),
+            ),
+          ],
+        ),
       ),
     );
   }

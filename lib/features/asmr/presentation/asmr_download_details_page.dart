@@ -243,12 +243,10 @@ class _AsmrDownloadDetailsPageState
                                   ),
                                   leading: Icon(
                                     expanded
-                                        ? Icons.folder_open_rounded
-                                        : Icons.folder_rounded,
-                                    color: expanded
-                                        ? accent
-                                        : cs.onSurfaceVariant,
-                                    size: 22,
+                                        ? AppDesignTokens.openFolderIcon
+                                        : AppDesignTokens.folderIcon,
+                                    color: AppDesignTokens.folderIconColor,
+                                    size: AppDesignTokens.fileEntryIconSize,
                                   ),
                                 ),
                               );
@@ -436,8 +434,12 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
           children: [
             Icon(
               asmrDownloadFileIcon(node),
-              size: 20,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+              size: AppDesignTokens.fileEntryIconSize,
+              color: asmrDownloadFileColor(
+                node,
+                audioColor: asmrBlue,
+                fallbackColor: cs.onSurfaceVariant,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(

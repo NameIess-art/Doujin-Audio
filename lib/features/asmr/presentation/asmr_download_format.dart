@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../app/theme/app_design_tokens.dart';
 import '../domain/asmr_models.dart';
 
 String formatAsmrDownloadSize(int bytes) {
@@ -14,28 +15,32 @@ String formatAsmrDownloadSize(int bytes) {
 }
 
 IconData asmrDownloadFileIcon(AsmrTrackFile track) {
-  if (track.isSubtitle) {
-    return Icons.subtitles_rounded;
-  }
+  if (track.isFolder) return AppDesignTokens.folderIcon;
+  if (track.isVideo) return Icons.videocam_outlined;
+  if (track.isAudio) return AppDesignTokens.audioFileIcon;
+  if (track.isText || track.isSubtitle) return AppDesignTokens.textFileIcon;
+  if (track.isImage) return AppDesignTokens.imageFileIcon;
   switch (track.resolvedExtension) {
-    case '.jpg':
-    case '.jpeg':
-    case '.png':
-    case '.webp':
-    case '.gif':
-      return Icons.image_rounded;
-    case '.txt':
-    case '.md':
     case '.json':
     case '.cue':
-      return Icons.description_rounded;
+      return AppDesignTokens.textFileIcon;
     case '.zip':
     case '.7z':
     case '.rar':
       return Icons.archive_rounded;
     default:
-      return track.isAudio
-          ? Icons.audio_file_rounded
-          : Icons.insert_drive_file_rounded;
+      return Icons.insert_drive_file_rounded;
   }
 }
+
+Color asmrDownloadFileColor(
+  AsmrTrackFile track, {
+  required Color audioColor,
+  required Color fallbackColor,
+}) => switch (asmrDownloadFileIcon(track)) {
+  AppDesignTokens.folderIcon => AppDesignTokens.folderIconColor,
+  AppDesignTokens.audioFileIcon || Icons.videocam_outlined => audioColor,
+  AppDesignTokens.textFileIcon => AppDesignTokens.textFileIconColor,
+  AppDesignTokens.imageFileIcon => AppDesignTokens.imageFileIconColor,
+  _ => fallbackColor,
+};

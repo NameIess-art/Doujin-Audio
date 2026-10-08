@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'search_highlight.dart';
+
 class RjCodeOverlay extends StatelessWidget {
   const RjCodeOverlay({
     super.key,
@@ -22,10 +24,9 @@ class RjCodeOverlay extends StatelessWidget {
         color: Colors.black.withValues(alpha: 0.65),
         borderRadius: BorderRadius.circular(3),
       ),
-      child: Text(
-        code,
+      child: SearchHighlightedText(
+        text: code,
         maxLines: 1,
-        overflow: TextOverflow.ellipsis,
         style: const TextStyle(
           color: Color(0xFFF8F5F7),
           fontSize: 9,

@@ -1729,15 +1729,20 @@ void main() {
 
   for (final usesSaf in [false, true]) {
     test(
-      'metadata commits after files and before completion (SAF: $usesSaf)',
+      'metadata commits before files and blocks transfers on write failure '
+      '(SAF: $usesSaf)',
       () async {
         final tempDir = await Directory.systemTemp.createTemp(
           'asmr_metadata_commit_',
         );
         final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
         var requests = 0;
+        final metadata = File(path.join(tempDir.path, 'doujin-audio.json'));
+        String? titleAtFirstRequest;
         server.listen((request) async {
           requests++;
+          titleAtFirstRequest = (jsonDecode(await metadata.readAsString())
+              as Map<String, dynamic>)['workTitle'] as String?;
           request.response
             ..contentLength = 1
             ..add([7]);
@@ -1760,7 +1765,6 @@ void main() {
         final destination = usesSaf
             ? 'content://downloads/tree/root'
             : tempDir.path;
-        final metadata = File(path.join(tempDir.path, 'doujin-audio.json'));
         try {
           await manager.startDownload(
             work: _work(),
@@ -1776,15 +1780,16 @@ void main() {
           await documents.writeStarted.future.timeout(
             const Duration(seconds: 5),
           );
-          expect(manager.getTask(1)?.completedFilePaths, contains('Track.mp3'));
+          expect(requests, 0);
+          expect(manager.getTask(1)?.completedFilePaths, isEmpty);
           if (usesSaf) {
-            expect(gateway.copiedRelativePaths, ['Track.mp3']);
+            expect(gateway.copiedRelativePaths, isEmpty);
           } else {
             expect(
               await File(
                 path.join(tempDir.path, 'Work', 'Track.mp3'),
-              ).readAsBytes(),
-              [7],
+              ).exists(),
+              isFalse,
             );
           }
           expect(
@@ -1794,7 +1799,7 @@ void main() {
           expect(documents.location?.usesSaf, usesSaf);
           expect(
             manager.getTask(1)?.status,
-            AsmrDownloadTaskStatus.downloading,
+            AsmrDownloadTaskStatus.preparing,
           );
           expect(await metadata.exists(), isFalse);
           expect(completions, isEmpty);
@@ -1808,7 +1813,8 @@ void main() {
             allowFailure: true,
           );
           expect(manager.getTask(1)?.error, contains('metadata_write_failed'));
-          expect(manager.getTask(1)?.completedFiles, 1);
+          expect(manager.getTask(1)?.completedFiles, 0);
+          expect(requests, 0);
           expect(completions, isEmpty);
 
           documents.rejectWrite = false;
@@ -1821,6 +1827,7 @@ void main() {
           await completed.future.timeout(const Duration(seconds: 5));
           expect(completions, hasLength(1));
           expect(requests, 1);
+          expect(titleAtFirstRequest, 'Work');
           expect(manager.getTask(1)?.completedFiles, 2);
           expect(
             manager.getTask(1)?.downloadedBytes,
@@ -1844,6 +1851,67 @@ void main() {
         }
       },
     );
+  }
+
+  for (final usesSaf in [false, true]) {
+    for (final action in ['pause', 'cancel_keep', 'cancel_delete']) {
+      test('metadata committed during $action retains correct ownership '
+          '(SAF: $usesSaf)', () async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'asmr_early_metadata_',
+        );
+        final documents = _CompletionMetadataStore(tempDir.path);
+        final manager = AsmrDownloadManager(
+          fileCacheGateway: _StatefulSafGateway(),
+          jsonDocumentStore: documents,
+          persistTasks: false,
+          stagingDirectoryProvider: () async => tempDir,
+        );
+        final metadata = File(path.join(tempDir.path, 'doujin-audio.json'));
+        try {
+          await manager.startDownload(
+            work: _work(),
+            selectedRoots: [
+              _file(downloadUrl: 'https://example.invalid/track.mp3'),
+            ],
+            destinationRoot: usesSaf
+                ? 'content://downloads/tree/root'
+                : tempDir.path,
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          );
+          await documents.writeStarted.future.timeout(
+            const Duration(seconds: 5),
+          );
+          final interrupted = action == 'pause'
+              ? manager.pauseTask(1)
+              : manager.cancelTask(
+                  1,
+                  deleteDownloaded: action == 'cancel_delete',
+                );
+          documents.releaseWrite.complete();
+          await interrupted.timeout(const Duration(seconds: 5));
+          expect(await metadata.exists(), action != 'cancel_delete');
+          if (action == 'pause') {
+            final paused = manager.getTask(1)!;
+            expect(paused.status, AsmrDownloadTaskStatus.paused);
+            expect(paused.completedFiles, 1);
+            expect(paused.skippedFiles, 0);
+            expect(paused.completedFilePaths, isEmpty);
+            expect(paused.downloadedBytes, await metadata.length());
+            await manager.deleteTask(1);
+            expect(await metadata.exists(), isFalse);
+          } else {
+            expect(manager.getTask(1), isNull);
+          }
+        } finally {
+          if (!documents.releaseWrite.isCompleted) {
+            documents.releaseWrite.complete();
+          }
+          await manager.shutdown();
+          await tempDir.delete(recursive: true);
+        }
+      });
+    }
   }
 
   test(

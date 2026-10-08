@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
+import '../../../core/widgets/horizontal_edge_fade_scroll.dart';
 import 'page_translation_scope.dart';
 
 const double _workMetadataCapsuleRadius = 999;
@@ -188,31 +188,21 @@ class WorkDetailMetadata extends StatelessWidget {
         MediaQuery.textScalerOf(context).scale(12) * lineHeight +
         _workMetadataCapsulePadding.vertical +
         2;
-    return ShaderMask(
+    return HorizontalEdgeFadeScroll(
       key: ValueKey<String>('work_detail_${keyPrefix}_edge_fade'),
-      blendMode: BlendMode.dstIn,
-      shaderCallback: (bounds) => const LinearGradient(
-        colors: [
-          Colors.transparent,
-          Colors.black,
-          Colors.black,
-          Colors.transparent,
-        ],
-        stops: [0, 0.06, 0.94, 1],
-      ).createShader(bounds),
-      child: WindowsHorizontalWheelScroll(
-        builder: (scrollController) => SizedBox(
-          height: height,
-          child: ListView.builder(
-            key: ValueKey<String>('work_detail_${keyPrefix}_scroller'),
-            controller: scrollController,
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: items.length,
-            itemBuilder: (context, index) => Padding(
-              padding: EdgeInsets.only(right: gap),
-              child: itemBuilder(items[index]),
+      builder: (scrollController) => SizedBox(
+        height: height,
+        child: ListView.builder(
+          key: ValueKey<String>('work_detail_${keyPrefix}_scroller'),
+          controller: scrollController,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          itemCount: items.length,
+          itemBuilder: (context, index) => Padding(
+            padding: EdgeInsets.only(
+              right: index == items.length - 1 ? 0 : gap,
             ),
+            child: itemBuilder(items[index]),
           ),
         ),
       ),

@@ -92,33 +92,6 @@ class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
 class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   static const double _rootTileHeight = LibraryLikeCardMetrics.rootTileHeight;
 
-  Future<void> _playWork(BuildContext context) async {
-    final playback = ref.read(asmrPlaybackCoordinatorProvider);
-    if (playback == null) return;
-    await ref
-        .read(uiOperationServiceProvider)
-        .run<void>(
-          scope: UiOperationScope.asmrWork(
-            AsmrOperationKind.play,
-            widget.work.id,
-          ),
-          labelKey: 'loading_dot',
-          task: (_) => playback.playWork(widget.work),
-        );
-    if (!context.mounted) {
-      return;
-    }
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    showAppSnackBar(
-      context,
-      i18n.tr('asmr_added_to_playlist', {'title': widget.work.title}),
-      tone: AppFeedbackTone.success,
-      icon: Icons.add_circle_rounded,
-      iconColor: asmrBlue,
-    );
-  }
-
   Future<void> _toggleFavorite(BuildContext context) async {
     final wasFavorite = widget.work.isFavorite;
     await _toggleAsmrWorksFavorite(ref, [widget.work]);
@@ -141,13 +114,6 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
-    final playBusy = ref
-        .watch(
-          uiOperationForScopeProvider(
-            UiOperationScope.asmrWork(AsmrOperationKind.play, widget.work.id),
-          ),
-        )
-        .isBusy;
     const cardShape = LibraryLikeCardMetrics.cardShape;
 
     final cardContent = Card(
@@ -190,12 +156,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                   isSelected: widget.isSelected,
                   rjCode: widget.work.rjCode,
                 ),
-                onPlay: () => unawaited(_playWork(context)),
-                playTooltip: i18n.tr('asmr_add_to_playlist'),
                 accentColor: asmrBlue,
-                enableMarquee: false,
-                enableTitleMarquee: false,
-                playLoading: playBusy,
               ),
             ),
           ),

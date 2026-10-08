@@ -249,9 +249,6 @@ class RootFolderCardContent extends ConsumerWidget {
     required this.folderDuration,
     required this.detail,
     required this.detailLoading,
-    required this.expanded,
-    required this.hasChildren,
-    required this.onPlay,
     this.isSelected = false,
     this.isPinned = false,
     this.index,
@@ -262,9 +259,6 @@ class RootFolderCardContent extends ConsumerWidget {
   final Duration folderDuration;
   final AudioDetail? detail;
   final bool detailLoading;
-  final bool expanded;
-  final bool hasChildren;
-  final VoidCallback onPlay;
   final bool isSelected;
   final bool isPinned;
   final int? index;
@@ -283,9 +277,6 @@ class RootFolderCardContent extends ConsumerWidget {
           : folderName,
       detail: detail,
       detailLoading: detailLoading,
-      expanded: expanded,
-      showExpandIndicator: hasChildren,
-      onPlay: onPlay,
       index: index,
       coverBuilder: (coverWidth) {
         final rj = detail?.rjCode.trim() ?? '';
@@ -342,9 +333,6 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
     required this.detail,
     required this.detailLoading,
     required this.coverBuilder,
-    required this.onPlay,
-    this.expanded = false,
-    this.showExpandIndicator = false,
     this.index,
   });
 
@@ -352,9 +340,6 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
   final AudioDetail? detail;
   final bool detailLoading;
   final Widget Function(double coverWidth) coverBuilder;
-  final VoidCallback onPlay;
-  final bool expanded;
-  final bool showExpandIndicator;
   final int? index;
 
   @override
@@ -373,12 +358,6 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
       ratingLabel: i18n.tr('card_info_rating'),
       loading: detailLoading || detail == null,
       coverBuilder: coverBuilder,
-      onPlay: onPlay,
-      expanded: expanded,
-      showExpandIndicator: showExpandIndicator,
-      playTooltip: i18n.tr('play'),
-      enableMarquee: false,
-      enableTitleMarquee: false,
     );
   }
 }
@@ -414,8 +393,6 @@ class SingleAudioFileCardContent extends ConsumerWidget {
     return LibraryLikeSingleAudioCardContent(
       title: title,
       lines: lines,
-      enableMarquee: false,
-      enableTitleMarquee: false,
     );
   }
 }
@@ -427,7 +404,6 @@ class SingleMediaFileCardContent extends StatelessWidget {
     required this.title,
     required this.detail,
     required this.detailLoading,
-    required this.onPlay,
     this.isSelected = false,
     this.isPinned = false,
     this.index,
@@ -437,7 +413,6 @@ class SingleMediaFileCardContent extends StatelessWidget {
   final String title;
   final AudioDetail? detail;
   final bool detailLoading;
-  final VoidCallback onPlay;
   final bool isSelected;
   final bool isPinned;
   final int? index;
@@ -448,7 +423,6 @@ class SingleMediaFileCardContent extends StatelessWidget {
       title: title,
       detail: detail,
       detailLoading: detailLoading,
-      onPlay: onPlay,
       index: index,
       coverBuilder: (coverWidth) {
         final rj = detail?.rjCode.trim() ?? '';

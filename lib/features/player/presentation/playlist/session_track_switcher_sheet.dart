@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,9 +10,12 @@ import '../../../../core/media/path_display.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
+import '../../../../core/widgets/app_transitions.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/playback_queue.dart';
 import 'playlist_shared_helpers.dart';
+
+const _switcherItemRadius = BorderRadius.all(Radius.circular(12));
 
 class SessionTrackSelection {
   const SessionTrackSelection({required this.track, required this.queueIndex});
@@ -42,6 +47,9 @@ class SessionTrackSwitcherSheet extends StatefulWidget {
 
 class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet> {
   final Set<String> _expandedFolders = <String>{};
+  GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
+  Timer? _removalTimer;
+  int _removingRowCount = 0;
   List<_QueueTreeNode> _tree = const [];
   List<({_QueueTreeNode node, int depth, String key})> _rows = const [];
 
@@ -70,6 +78,9 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet> {
   }
 
   void _rebuildTree({required bool expandSelected}) {
+    _removalTimer?.cancel();
+    _removingRowCount = 0;
+    _listKey = GlobalKey<AnimatedListState>();
     _tree = _buildQueueTree(
       widget.tracks,
       session: widget.session,
@@ -114,44 +125,97 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet> {
   }
 
   void _toggleFolder(String key) {
+    final previousRows = _rows;
+    final folderIndex = _rows.indexWhere((row) => row.key == key);
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : kAppMotionStandard;
     setState(() {
       if (!_expandedFolders.remove(key)) _expandedFolders.add(key);
       _projectRows();
+      final list = _listKey.currentState!;
+      final count = _rows.length - previousRows.length;
+      if (count > 0) {
+        list.insertAllItems(folderIndex + 2, count, duration: duration);
+      } else {
+        if (duration != Duration.zero && count < 0) {
+          _removingRowCount -= count;
+          _removalTimer?.cancel();
+          _removalTimer = Timer(duration, () {
+            setState(() => _removingRowCount = 0);
+          });
+        }
+        for (var offset = -count; offset > 0; offset--) {
+          final rowIndex = folderIndex + offset;
+          final row = previousRows[rowIndex];
+          list.removeItem(
+            rowIndex + 1,
+            (context, animation) => IgnorePointer(
+              child: ExcludeSemantics(child: _buildRow(row, animation)),
+            ),
+            duration: duration,
+          );
+        }
+      }
     });
+  }
+
+  @override
+  void dispose() {
+    _removalTimer?.cancel();
+    super.dispose();
+  }
+
+  Widget _buildRow(
+    ({_QueueTreeNode node, int depth, String key}) row,
+    Animation<double> animation,
+  ) {
+    final opacity = animation.drive(CurveTween(curve: Curves.easeInOutCubic));
+    return SizeTransition(
+      // Keep a non-zero extent during lazy-list insertion, as zero-height rows
+      // would cause large folders to build every child in their first frame.
+      sizeFactor: opacity.drive(Tween<double>(begin: 0.2, end: 1)),
+      axisAlignment: -1,
+      child: FadeTransition(
+        opacity: opacity,
+        child: Padding(
+          key: ValueKey<String>('queue_switcher_row_${row.key}'),
+          padding: EdgeInsetsDirectional.only(start: row.depth * 16),
+          child: _QueueTreeNodeTile(
+            node: row.node,
+            expanded: _expandedFolders.contains(row.key),
+            onToggleExpansion: () => _toggleFolder(row.key),
+            onTrackTap: (selected) => widget.onSelected(
+              SessionTrackSelection(
+                track: selected.track!,
+                queueIndex: selected.queueIndex,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      child: ListView.builder(
-        shrinkWrap: _rows.length <= 8,
+      child: AnimatedList(
+        key: _listKey,
+        // Collapsing a large folder must retain the lazy viewport until its
+        // outgoing rows are gone, rather than laying them all out to shrink.
+        shrinkWrap: _rows.length + _removingRowCount <= 8,
         padding: AppBottomSheet.contentPadding,
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        itemCount: _rows.length + 1,
-        itemBuilder: (context, index) {
+        initialItemCount: _rows.length + 1,
+        itemBuilder: (context, index, animation) {
           if (index == 0) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: _QueueSheetHeader(count: widget.tracks.length),
             );
           }
-          final row = _rows[index - 1];
-          return Padding(
-            key: ValueKey<String>('queue_switcher_row_${row.key}'),
-            padding: EdgeInsetsDirectional.only(start: row.depth * 16),
-            child: _QueueTreeNodeTile(
-              node: row.node,
-              expanded: _expandedFolders.contains(row.key),
-              onToggleExpansion: () => _toggleFolder(row.key),
-              onTrackTap: (selected) => widget.onSelected(
-                SessionTrackSelection(
-                  track: selected.track!,
-                  queueIndex: selected.queueIndex,
-                ),
-              ),
-            ),
-          );
+          return _buildRow(_rows[index - 1], animation);
         },
       ),
     );
@@ -411,42 +475,50 @@ class _QueueTreeNodeTile extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Semantics(
       expanded: expanded,
-      child: InkWell(
-        onTap: onToggleExpansion,
-        child: SizedBox(
-          height: 52,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 0, 6, 0),
-            child: Row(
-              children: [
-                Icon(
-                  expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
-                  size: 19,
-                  color: cs.primary.withValues(alpha: 0.78),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    node.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: cs.onSurface.withValues(alpha: 0.9),
-                      fontWeight: FontWeight.w700,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: _switcherItemRadius,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          borderRadius: _switcherItemRadius,
+          onTap: onToggleExpansion,
+          child: SizedBox(
+            height: 52,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(6, 0, 6, 0),
+              child: Row(
+                children: [
+                  Icon(
+                    expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
+                    size: 19,
+                    color: cs.primary.withValues(alpha: 0.78),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      node.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: cs.onSurface.withValues(alpha: 0.9),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-                AnimatedRotation(
-                  turns: expanded ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  child: Icon(
-                    Icons.expand_more_rounded,
-                    size: 20,
-                    color: cs.onSurfaceVariant,
+                  AnimatedRotation(
+                    turns: expanded ? 0.5 : 0,
+                    duration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : kAppMotionFast,
+                    curve: Curves.easeOutCubic,
+                    child: Icon(
+                      Icons.expand_more_rounded,
+                      size: 20,
+                      color: cs.onSurfaceVariant,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -469,7 +541,6 @@ class _QueueTrackLeaf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    const borderRadius = BorderRadius.all(Radius.circular(12));
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
       child: Material(
@@ -477,10 +548,10 @@ class _QueueTrackLeaf extends StatelessWidget {
         color: selected
             ? cs.primaryContainer.withValues(alpha: 0.24)
             : Colors.transparent,
-        borderRadius: borderRadius,
+        borderRadius: _switcherItemRadius,
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          borderRadius: borderRadius,
+          borderRadius: _switcherItemRadius,
           onTap: onTap,
           child: SizedBox(
             height: 44,

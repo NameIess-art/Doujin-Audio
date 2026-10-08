@@ -47,6 +47,7 @@ Future<void> _pumpSheet(
   PlaybackQueueDefinition? queue,
   int currentQueueIndex = 0,
   String? currentPath,
+  bool reduceAnimations = false,
   ValueChanged<SessionTrackSelection>? onSelected,
 }) async {
   SharedPreferences.setMockInitialValues({});
@@ -59,6 +60,12 @@ Future<void> _pumpSheet(
         appLanguageProviderInstanceProvider.overrideWithValue(language),
       ],
       child: MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(disableAnimations: reduceAnimations),
+          child: child!,
+        ),
         home: Scaffold(
           body: SessionTrackSwitcherSheet(
             tracks: tracks,
@@ -94,7 +101,109 @@ Future<void> _jumpToEnd(WidgetTester tester, ScrollPosition position) async {
 }
 
 void main() {
+  for (final reduceAnimations in [false, true]) {
+    testWidgets(
+      'folder rows have rounded ink and animate both directions (reduced=$reduceAnimations)',
+      (tester) async {
+        final tracks = [_track('Current'), _track('disc/Other')];
+        SessionTrackSelection? selected;
+        await _pumpSheet(
+          tester,
+          tracks,
+          reduceAnimations: reduceAnimations,
+          onSelected: (value) => selected = value,
+        );
+        final folder = find.text('disc');
+        final folderInk = tester.widget<InkWell>(
+          find.ancestor(of: folder, matching: find.byType(InkWell)),
+        );
+        final folderMaterial = tester.widget<Material>(
+          find.ancestor(of: folder, matching: find.byType(Material)).first,
+        );
+        const radius = BorderRadius.all(Radius.circular(12));
+        expect(folderInk.borderRadius, radius);
+        expect(folderMaterial.borderRadius, radius);
+        expect(folderMaterial.clipBehavior, Clip.antiAlias);
+
+        final leaf = find.byKey(
+          ValueKey('queue_switcher_track_${tracks.last.path}'),
+        );
+        Finder sizeTransition() =>
+            find.ancestor(of: leaf, matching: find.byType(SizeTransition));
+        Finder fadeTransition() => find
+            .ancestor(of: leaf, matching: find.byType(FadeTransition))
+            .first;
+        expect(leaf, findsNothing);
+        await tester.tap(folder);
+        await tester.pump();
+        if (!reduceAnimations) {
+          await tester.pump(const Duration(milliseconds: 80));
+          expect(
+            tester.widget<SizeTransition>(sizeTransition()).sizeFactor.value,
+            inExclusiveRange(0.2, 1),
+          );
+          expect(
+            tester.widget<FadeTransition>(fadeTransition()).opacity.value,
+            inExclusiveRange(0, 1),
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(leaf, findsOneWidget);
+        expect(
+          tester.widget<SizeTransition>(sizeTransition()).sizeFactor.value,
+          1,
+        );
+        await tester.tap(folder);
+        await tester.pump();
+        if (!reduceAnimations) {
+          await tester.pump(const Duration(milliseconds: 80));
+          expect(leaf, findsOneWidget);
+          expect(
+            tester.widget<SizeTransition>(sizeTransition()).sizeFactor.value,
+            inExclusiveRange(0.2, 1),
+          );
+          await tester.tap(leaf, warnIfMissed: false);
+          expect(selected, isNull);
+        }
+        await tester.pumpAndSettle();
+        expect(leaf, findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'rapid nested folder toggles retain the final rows on $platform',
+      (tester) async {
+        final tracks = [
+          _track('Current'),
+          _track('disc/nested/Other'),
+          _track('disc/Last'),
+        ];
+        SessionTrackSelection? selected;
+        await _pumpSheet(
+          tester,
+          tracks,
+          onSelected: (value) => selected = value,
+        );
+        await tester.tap(find.text('disc'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('nested'));
+        await tester.pump(const Duration(milliseconds: 80));
+        await tester.tap(find.text('disc'));
+        await tester.pump(const Duration(milliseconds: 40));
+        await tester.tap(find.text('disc'));
+        await tester.pumpAndSettle();
+        expect(find.text('Other'), findsOneWidget);
+        expect(find.text('Last'), findsOneWidget);
+        await tester.tap(find.text('Other'));
+        expect(selected?.queueIndex, 1);
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     testWidgets(
       'large selected folder uses lazy rows and preserves queueIndex on $platform',
       (tester) async {
@@ -110,9 +219,14 @@ void main() {
         expect(find.text('Track 1999'), findsNothing);
         expect(_trackRows().evaluate().length, lessThan(30));
         await tester.tap(find.text('disc'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(_trackRows().evaluate().length, lessThan(100));
         await tester.pumpAndSettle();
         expect(_trackRows(), findsNothing);
         await tester.tap(find.text('disc'));
+        await tester.pump();
+        expect(_trackRows().evaluate().length, lessThan(100));
         await tester.pumpAndSettle();
         expect(find.text('Track 0'), findsOneWidget);
         final position = tester

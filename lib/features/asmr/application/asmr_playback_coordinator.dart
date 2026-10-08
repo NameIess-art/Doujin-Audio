@@ -24,6 +24,14 @@ class AsmrPlaybackCoordinator {
   final AsmrPlaybackSource _source;
   final PlaybackSessionLauncher _launcher;
 
+  Future<bool> playDirectWork(AsmrWork work) async {
+    final started = await _launcher.playDirect(
+      _source.loadPlayableTracks(work),
+    );
+    if (started) await _source.recordHistory(work);
+    return started;
+  }
+
   Future<bool> playDirectTrack(AsmrWork work, AsmrTrackFile target) async {
     // Pass the pending load to the launcher so a later local or remote click
     // supersedes this request before its network work completes.

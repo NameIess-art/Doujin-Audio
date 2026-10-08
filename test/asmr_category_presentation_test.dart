@@ -7,6 +7,10 @@ import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_playback_coordinator.dart';
+import 'package:doujin_audio/features/player/application/playback_session_launcher.dart';
+import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 import 'support/asmr_controller_test_fixture.dart';
+import 'support/test_playback_commands.dart';
 
 void main() {
   final interaction = UiInteractionCoordinator.instance;
@@ -33,7 +38,109 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'ASMR card omits add and play buttons and retains its menu on $platform',
+      'ASMR card play uses a temporary session and add creates a playlist on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices());
+        final fixture = AppRuntimeWidgetTestFixture();
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          notificationsChannel,
+          (_) async => {'ok': true, 'value': null},
+        );
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+        );
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+              asmrPlaybackCoordinatorProvider.overrideWithValue(
+                AsmrPlaybackCoordinator(
+                  source: controller,
+                  launcher: PlaybackFacadeSessionLauncher(fixture.playback),
+                ),
+              ),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+        fixture.playback.detachCommandPort();
+        fixture.playback.attachPlaybackCommands(
+          prepareSession:
+              (
+                session, {
+                required nextPath,
+                autoPlay = true,
+                forceStartAtZero = false,
+                showLoading = true,
+                targetQueueIndex,
+              }) async {
+                session.currentTrackPath = nextPath;
+                return true;
+              },
+          pauseSession: (_) async {},
+          startSession: (_, {required shouldStartTriggerCountdown}) async =>
+              true,
+          resolveAdvance: (_, {required forward}) => null,
+          hasAdjacent: (_, {required forward}) => false,
+        );
+        final actions = find.byType(LibraryLikeCardActions);
+        final buttons = find.descendant(
+          of: actions,
+          matching: find.byType(IconButton),
+        );
+        await tester.tap(buttons.at(1));
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 30)),
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        final temporary = fixture.playback.activeSessions.single;
+        expect(temporary.isTemporary, isTrue);
+        expect(temporary.customQueueTracks?.map((track) => track.path), [
+          'one',
+          'two',
+        ]);
+        expect(controller.historyCount, 1);
+        expect(find.byType(WorkDetailPage), findsNothing);
+        await tester.tap(buttons.at(1));
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 30)),
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(fixture.playback.activeSessions.single, same(temporary));
+        await tester.tap(buttons.first);
+        await tester.pumpAndSettle();
+        expect(
+          fixture.playback.activeSessions.where(
+            (session) => !session.isTemporary,
+          ),
+          hasLength(1),
+        );
+        expect(
+          fixture.playback.activeSessions
+              .where((session) => session.isTemporary)
+              .single,
+          same(temporary),
+        );
+        expect(find.byType(WorkDetailPage), findsNothing);
+        await tester.longPress(find.text('Published work'));
+        await tester.pump();
+        final disabled = tester.widget<LibraryLikeCardActions>(actions);
+        expect(disabled.onAdd, isNull);
+        expect(disabled.onPlay, isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'ASMR card exposes compact add and play buttons and retains its menu on $platform',
       (tester) async {
         final controller = _PresentationController(createTestAsmrServices());
         final fixture = AppRuntimeWidgetTestFixture();
@@ -51,18 +158,15 @@ void main() {
 
         final contentFinder = find.byType(LibraryLikeMetadataWorkCardContent);
         final contentRect = tester.getRect(contentFinder.first);
-        for (final icon in [
-          Icons.add_circle_rounded,
-          Icons.play_arrow_rounded,
-        ]) {
-          expect(
-            find.descendant(
-              of: contentFinder.first,
-              matching: find.byIcon(icon),
-            ),
-            findsNothing,
-          );
-        }
+        final actions = find.descendant(
+          of: contentFinder.first,
+          matching: find.byType(LibraryLikeCardActions),
+        );
+        expect(actions, findsOneWidget);
+        expect(
+          find.descendant(of: actions, matching: find.byType(IconButton)),
+          findsNWidgets(2),
+        );
         expect(contentRect.height, LibraryLikeCardMetrics.coverHeight);
         final titleRect = tester.getRect(find.text('Published work'));
         expect(
@@ -672,6 +776,26 @@ class _PresentationController extends AsmrLibraryController {
   int favoriteToggles = 0;
   bool cacheValid = true;
   AppLanguage _presentationLanguage = AppLanguage.zh;
+
+  int historyCount = 0;
+
+  @override
+  Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async => [
+    for (final path in ['one', 'two'])
+      MusicTrack(
+        path: path,
+        displayName: path,
+        groupKey: 'work-${work.id}',
+        groupTitle: work.title,
+        groupSubtitle: '',
+        isSingle: false,
+      ),
+  ];
+
+  @override
+  Future<void> recordHistory(AsmrWork work) async {
+    historyCount++;
+  }
 
   void publish(String value) {
     title = value;

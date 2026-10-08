@@ -91,7 +91,7 @@ ScrollPosition _cardTextPosition(
 
 void main() {
   testWidgets(
-    'Windows marquee starts at the beginning when rows enter a scrolled list',
+    'card text starts at the beginning when rows enter a scrolled list',
     (tester) async {
       final verticalController = ScrollController();
       addTearDown(verticalController.dispose);
@@ -101,18 +101,30 @@ void main() {
             key: const PageStorageKey('marquee-list'),
             controller: verticalController,
             cacheExtent: 0,
-            itemExtent: 100,
+            itemExtent: 140,
             itemCount: 30,
             itemBuilder: (context, index) => MarqueePauseScope(
               isPaused: true,
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: SizedBox(
-                  width: 160,
-                  child: LibraryLikeScrollableText(
-                    text:
+                  width: 300,
+                  child: LibraryLikeWorkCardContent(
+                    title:
                         'A long work title for row $index that exceeds the available width',
-                    style: const TextStyle(fontSize: 14),
+                    lines: const [
+                      LibraryLikeInfoLineData(
+                        'Voice',
+                        'Voice actor one and voice actor two with a long display name',
+                        icon: Icons.record_voice_over_rounded,
+                      ),
+                      LibraryLikeInfoLineData(
+                        'Tags',
+                        '#ASMR #Sleep #A_very_long_tag #Another_very_long_tag',
+                        icon: Icons.local_offer_rounded,
+                      ),
+                    ],
+                    coverBuilder: (width) => SizedBox(width: width, height: 90),
                   ),
                 ),
               ),
@@ -141,7 +153,10 @@ void main() {
       expect(verticalController.offset, 1000);
       expect(tester.takeException(), isNull);
     },
-    variant: const TargetPlatformVariant({TargetPlatform.windows}),
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(

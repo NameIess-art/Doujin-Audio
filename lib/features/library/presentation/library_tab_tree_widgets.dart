@@ -26,6 +26,7 @@ import 'audio_detail_sheet.dart';
 import '../../../app/theme/app_styles.dart';
 
 import 'library_card_artwork.dart';
+import 'library_tab_ui_helpers.dart';
 
 const Color _librarySelectionCheckmarkColor = Color(0xFF4CAF50);
 const Duration _libraryIndicatorFadeDuration = Duration(milliseconds: 450);
@@ -468,6 +469,28 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
 
     final Widget content;
     if (isRootFolder) {
+      final selection = LibraryBatchSelection.fromNode(folder);
+      final canPlay = !widget.isSelectionMode && selection.firstTrack != null;
+      final actions = LibraryLikeCardActions(
+        onAdd: canPlay
+            ? () => unawaited(runLibraryCardAction(
+                context: context,
+                ref: ref,
+                selection: selection,
+                temporary: false,
+              ))
+            : null,
+        onPlay: canPlay
+            ? () => unawaited(runLibraryCardAction(
+                context: context,
+                ref: ref,
+                selection: selection,
+                temporary: true,
+              ))
+            : null,
+        addLabel: i18n.tr('add'),
+        playLabel: i18n.tr('play'),
+      );
       content = ListTile(
         contentPadding: LibraryLikeCardMetrics.rootTilePadding,
         minTileHeight: _rootFolderTileHeight,
@@ -482,6 +505,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
           folderDuration: folder.totalDuration,
           detail: rootDetail,
           detailLoading: isRootDetailLoading,
+          trailingActions: actions,
           index: widget.index,
           isSelected: widget.isSelected,
           isPinned: isPinned,
@@ -826,6 +850,20 @@ class _TrackNodeWidget extends ConsumerWidget {
       }
     }
 
+    final actions = LibraryLikeCardActions(
+      onAdd: isSelectionMode
+          ? null
+          : () => unawaited(runLibraryCardAction(
+              context: context,
+              ref: ref,
+              selection: LibraryBatchSelection.fromNode(trackNode),
+              temporary: false,
+            )),
+      onPlay: isSelectionMode ? null : () => unawaited(playSingleTrack()),
+      addLabel: i18n.tr('add'),
+      playLabel: i18n.tr('play'),
+    );
+
     Widget buildSingleTrackCard(bool useFeaturedCard) {
       return SwipeRevealCard(
         shape: cardShape,
@@ -892,6 +930,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                       title: track.displayName,
                       detail: singleDetail,
                       detailLoading: isSingleDetailLoading,
+                      trailingActions: actions,
                       index: index,
                       isSelected: isSelected,
                       isPinned: isPinned,
@@ -899,24 +938,22 @@ class _TrackNodeWidget extends ConsumerWidget {
                   )
                 : Padding(
                     padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
-                    child: IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          LibraryLeadingIndicators(
-                            path: track.path,
-                            isSelected: isSelected,
-                            isPinned: isPinned,
+                    child: Row(
+                      children: [
+                        LibraryLeadingIndicators(
+                          path: track.path,
+                          isSelected: isSelected,
+                          isPinned: isPinned,
+                        ),
+                        Expanded(
+                          child: SingleAudioFileCardContent(
+                            title: track.displayName,
+                            detail: singleDetail,
+                            detailLoading: isSingleDetailLoading,
+                            trailingActions: actions,
                           ),
-                          Expanded(
-                            child: SingleAudioFileCardContent(
-                              title: track.displayName,
-                              detail: singleDetail,
-                              detailLoading: isSingleDetailLoading,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
           ),

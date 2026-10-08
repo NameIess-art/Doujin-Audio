@@ -82,6 +82,58 @@ void main() {
     expect(highlightedRuns(tester), <String>['Rainfall']);
   });
 
+  for (final scale in [1.0, 2.0]) {
+    testWidgets('highlight keeps all corners within a tight line at $scale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Material(
+            child: Center(
+              child: MediaQuery(
+                data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                child: const SearchHighlightedText(
+                  text: 'Rain',
+                  terms: ['Rain'],
+                  maxLines: 1,
+                  style: TextStyle(fontSize: 20, height: 0.7),
+                  strutStyle: StrutStyle(
+                    fontSize: 20,
+                    height: 0.7,
+                    forceStrutHeight: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(
+          of: find.byType(SearchHighlightedText),
+          matching: find.byType(RichText),
+        ),
+      );
+      final box = paragraph
+          .getBoxesForSelection(
+            const TextSelection(baseOffset: 0, extentOffset: 4),
+          )
+          .single;
+      expect(box.top, lessThan(0));
+      expect(box.bottom, greaterThan(paragraph.size.height));
+      expect(
+        find.byType(SearchHighlightedText),
+        paints..rrect(
+          rrect: RRect.fromRectAndRadius(
+            Rect.fromLTRB(box.left, 0, box.right, paragraph.size.height),
+            const Radius.circular(4),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final brightness in Brightness.values) {
     for (final scale in [1.0, 2.0]) {
       testWidgets(
@@ -123,7 +175,7 @@ void main() {
           for (final box in boxes) {
             pattern.rrect(
               rrect: RRect.fromRectAndRadius(
-                box.toRect(),
+                box.toRect().intersect(Offset.zero & paragraph.size),
                 const Radius.circular(4),
               ),
               color: Theme.of(

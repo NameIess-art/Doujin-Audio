@@ -28,6 +28,7 @@ import '../../../app/theme/app_styles.dart';
 
 import 'library_tab_tree_widgets.dart';
 import 'library_card_artwork.dart';
+import 'library_tab_ui_helpers.dart';
 
 @visibleForTesting
 class LibraryCategoryTermBox extends StatefulWidget {
@@ -546,7 +547,6 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
     const cardShape = LibraryLikeCardMetrics.cardShape;
     const cardHeight = LibraryLikeCardMetrics.rootTileHeight;
     final folderNode = folder;
-
     if (entry.isFolder && folderNode != null) {
       return LibraryFolderNodeWidget(
         folder: folderNode,
@@ -558,6 +558,29 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
         onToggleSelect: onToggleSelect,
       );
     }
+
+    final selection = LibraryBatchSelection.fromCategoryEntry(entry);
+    final canPlay = !isSelectionMode && firstTrack != null;
+    final actions = LibraryLikeCardActions(
+      onAdd: canPlay
+          ? () => unawaited(runLibraryCardAction(
+              context: context,
+              ref: ref,
+              selection: selection,
+              temporary: false,
+            ))
+          : null,
+      onPlay: canPlay
+          ? () => unawaited(runLibraryCardAction(
+              context: context,
+              ref: ref,
+              selection: selection,
+              temporary: true,
+            ))
+          : null,
+      addLabel: i18n.tr('add'),
+      playLabel: i18n.tr('play'),
+    );
 
     Widget buildEntryCard(bool useFeaturedCard) {
       return SwipeRevealCard(
@@ -622,6 +645,7 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
               firstTrack,
               cardHeight,
               isPinned: isPinned,
+              trailingActions: actions,
               useFeaturedCardOverride: useFeaturedCard,
             ),
           ),
@@ -649,6 +673,7 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
     MusicTrack? firstTrack,
     double cardHeight, {
     required bool isPinned,
+    required Widget trailingActions,
     bool? useFeaturedCardOverride,
   }) {
     if (entry.isFolder) {
@@ -660,6 +685,7 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
           folderDuration: folder?.totalDuration ?? Duration.zero,
           detail: entry.detail,
           detailLoading: false,
+          trailingActions: trailingActions,
           isSelected: isSelected,
           isPinned: isPinned,
         ),
@@ -676,6 +702,7 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
             title: entry.title,
             detail: entry.detail,
             detailLoading: false,
+            trailingActions: trailingActions,
             isSelected: isSelected,
             isPinned: isPinned,
           ),
@@ -684,24 +711,22 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
 
       return Padding(
         padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              LibraryLeadingIndicators(
-                path: entry.path,
-                isSelected: isSelected,
-                isPinned: isPinned,
+        child: Row(
+          children: [
+            LibraryLeadingIndicators(
+              path: entry.path,
+              isSelected: isSelected,
+              isPinned: isPinned,
+            ),
+            Expanded(
+              child: SingleAudioFileCardContent(
+                title: entry.title,
+                detail: entry.detail,
+                detailLoading: false,
+                trailingActions: trailingActions,
               ),
-              Expanded(
-                child: SingleAudioFileCardContent(
-                  title: entry.title,
-                  detail: entry.detail,
-                  detailLoading: false,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }

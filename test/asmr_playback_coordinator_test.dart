@@ -44,6 +44,40 @@ void main() {
   );
 
   test(
+    'direct work playback starts a temporary queue and records success',
+    () async {
+      final source = _FakeAsmrPlaybackSource(
+        workTracks: [_track('one'), _track('two')],
+      );
+      final launcher = _RecordingPlaybackSessionLauncher();
+      final coordinator = AsmrPlaybackCoordinator(
+        source: source,
+        launcher: launcher,
+      );
+      expect(await coordinator.playDirectWork(work), isTrue);
+      expect(launcher.directCount, 1);
+      expect(launcher.launchCount, 0);
+      expect(launcher.tracks.map((track) => track.path), ['one', 'two']);
+      expect(source.recordedWorks, [work]);
+    },
+  );
+
+  test(
+    'empty direct work queue does not record history or create a playlist',
+    () async {
+      final source = _FakeAsmrPlaybackSource();
+      final launcher = _RecordingPlaybackSessionLauncher();
+      final coordinator = AsmrPlaybackCoordinator(
+        source: source,
+        launcher: launcher,
+      );
+      expect(await coordinator.playDirectWork(work), isFalse);
+      expect(launcher.launchCount, 0);
+      expect(source.recordedWorks, isEmpty);
+    },
+  );
+
+  test(
     'work playback launches an ordered folder queue and records history',
     () async {
       final source = _FakeAsmrPlaybackSource(

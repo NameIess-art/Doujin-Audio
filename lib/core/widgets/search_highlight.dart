@@ -150,19 +150,21 @@ class _RenderRoundedSearchHighlights extends RenderProxyBox {
     final paragraph = child! as RenderParagraph;
     final canvas = context.canvas;
     final paint = Paint()..color = color;
+    final bounds = Offset.zero & size;
     canvas.save();
-    canvas.clipRect(offset & size);
+    canvas.clipRect(bounds.shift(offset));
     // Use the laid-out glyph boxes so wrapping, ellipsis and text scaling
     // share the exact same geometry as the foreground text.
     for (final (start, end) in ranges) {
       for (final box in paragraph.getBoxesForSelection(
         TextSelection(baseOffset: start, extentOffset: end),
       )) {
+        // Tight struts can put glyph boxes outside the line. Fit the background
+        // before rounding so clipping does not cut off its corners.
+        final rect = box.toRect().intersect(bounds);
+        if (rect.isEmpty) continue;
         canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            box.toRect().shift(offset),
-            const Radius.circular(4),
-          ),
+          RRect.fromRectAndRadius(rect.shift(offset), const Radius.circular(4)),
           paint,
         );
       }

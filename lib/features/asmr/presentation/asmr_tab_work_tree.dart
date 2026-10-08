@@ -91,6 +91,38 @@ class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
 
 class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   static const double _rootTileHeight = LibraryLikeCardMetrics.rootTileHeight;
+  bool _runningAction = false;
+
+  Future<void> _runAction({required bool play}) async {
+    if (_runningAction || widget.isSelectionMode) return;
+    final playback = ref.read(asmrPlaybackCoordinatorProvider);
+    if (playback == null) return;
+    setState(() => _runningAction = true);
+    try {
+      if (play) {
+        final started = await playback.playDirectWork(widget.work);
+        if (!started) throw StateError('The work could not be played.');
+      } else {
+        await _addAsmrWorksToPlaylist(
+          context: context,
+          ref: ref,
+          works: [widget.work],
+          exitSelectionMode: () {},
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr('operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+      );
+    } finally {
+      if (mounted) setState(() => _runningAction = false);
+    }
+  }
 
   Future<void> _toggleFavorite(BuildContext context) async {
     final wasFavorite = widget.work.isFavorite;
@@ -114,6 +146,10 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
+    final actionsEnabled =
+        !widget.isSelectionMode &&
+        !_runningAction &&
+        ref.watch(asmrPlaybackCoordinatorProvider) != null;
     const cardShape = LibraryLikeCardMetrics.cardShape;
 
     final cardContent = Card(
@@ -157,6 +193,16 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                   rjCode: widget.work.rjCode,
                 ),
                 accentColor: asmrBlue,
+                trailingActions: LibraryLikeCardActions(
+                  addLabel: i18n.tr('add'),
+                  playLabel: i18n.tr('play'),
+                  onAdd: actionsEnabled
+                      ? () => unawaited(_runAction(play: false))
+                      : null,
+                  onPlay: actionsEnabled
+                      ? () => unawaited(_runAction(play: true))
+                      : null,
+                ),
               ),
             ),
           ),

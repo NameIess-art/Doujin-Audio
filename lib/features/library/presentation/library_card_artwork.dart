@@ -252,6 +252,7 @@ class RootFolderCardContent extends ConsumerWidget {
     this.isSelected = false,
     this.isPinned = false,
     this.index,
+    this.trailingActions,
   });
 
   final String folderPath;
@@ -262,6 +263,7 @@ class RootFolderCardContent extends ConsumerWidget {
   final bool isSelected;
   final bool isPinned;
   final int? index;
+  final Widget? trailingActions;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -278,6 +280,7 @@ class RootFolderCardContent extends ConsumerWidget {
       detail: detail,
       detailLoading: detailLoading,
       index: index,
+      trailingActions: trailingActions,
       coverBuilder: (coverWidth) {
         final rj = detail?.rjCode.trim() ?? '';
         final rjCode = rj.isNotEmpty
@@ -334,6 +337,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
     required this.detailLoading,
     required this.coverBuilder,
     this.index,
+    this.trailingActions,
   });
 
   final String title;
@@ -341,6 +345,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
   final bool detailLoading;
   final Widget Function(double coverWidth) coverBuilder;
   final int? index;
+  final Widget? trailingActions;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -357,6 +362,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
       releaseDateLabel: i18n.tr('card_info_release_date'),
       ratingLabel: i18n.tr('card_info_rating'),
       loading: detailLoading || detail == null,
+      trailingActions: trailingActions,
       coverBuilder: coverBuilder,
     );
   }
@@ -368,11 +374,13 @@ class SingleAudioFileCardContent extends ConsumerWidget {
     required this.title,
     required this.detail,
     required this.detailLoading,
+    this.trailingActions,
   });
 
   final String title;
   final AudioDetail? detail;
   final bool detailLoading;
+  final Widget? trailingActions;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -393,6 +401,7 @@ class SingleAudioFileCardContent extends ConsumerWidget {
     return LibraryLikeSingleAudioCardContent(
       title: title,
       lines: lines,
+      trailingActions: trailingActions,
     );
   }
 }
@@ -407,6 +416,7 @@ class SingleMediaFileCardContent extends StatelessWidget {
     this.isSelected = false,
     this.isPinned = false,
     this.index,
+    this.trailingActions,
   });
 
   final MusicTrack track;
@@ -416,6 +426,7 @@ class SingleMediaFileCardContent extends StatelessWidget {
   final bool isSelected;
   final bool isPinned;
   final int? index;
+  final Widget? trailingActions;
 
   @override
   Widget build(BuildContext context) {
@@ -424,6 +435,7 @@ class SingleMediaFileCardContent extends StatelessWidget {
       detail: detail,
       detailLoading: detailLoading,
       index: index,
+      trailingActions: trailingActions,
       coverBuilder: (coverWidth) {
         final rj = detail?.rjCode.trim() ?? '';
         final rjCode = rj.isNotEmpty

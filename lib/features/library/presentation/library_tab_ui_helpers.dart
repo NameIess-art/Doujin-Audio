@@ -1,5 +1,6 @@
 import '../../../app/presentation/app_presentation_providers.dart';
 import 'library_removal_feedback.dart';
+import 'library_providers.dart';
 import '../../player/presentation/playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
@@ -76,6 +77,45 @@ class LibraryBatchSelection {
   final MusicTrack? firstTrack;
   final AudioDetailTarget target;
   final LibraryRemovalTarget removalTarget;
+}
+
+Future<void> runLibraryCardAction({
+  required BuildContext context,
+  required WidgetRef ref,
+  required LibraryBatchSelection selection,
+  required bool temporary,
+}) async {
+  final track = selection.firstTrack;
+  if (track == null) return;
+  final playback = ref.read(playbackFacadeProvider);
+  final library = ref.read(libraryFacadeProvider);
+  final i18n = ref.read(appLanguageProviderInstanceProvider);
+  unawaited(
+    AppInteractionFeedback.trigger(
+      AppInteractionFeedbackType.tap,
+      context: context,
+    ),
+  );
+  final succeeded = temporary
+      ? await playback.playDirect(
+          selection.removalTarget == LibraryRemovalTarget.folder
+              ? library.loadLibraryFolderTree(selection.path).then(
+                  (folder) => folder?.allTracks ?? const <MusicTrack>[],
+                )
+              : [track],
+        )
+      : await playback.spawnSession(track);
+  if (!context.mounted) return;
+  if (!succeeded || !temporary) {
+    showAppSnackBar(
+      context,
+      succeeded
+          ? i18n.tr('session_created', {'name': track.displayName})
+          : i18n.tr('operation_failed_retry'),
+      tone: succeeded ? AppFeedbackTone.success : AppFeedbackTone.destructive,
+      icon: succeeded ? Icons.queue_music_rounded : Icons.error_outline_rounded,
+    );
+  }
 }
 
 Future<void> addLibraryBatchSelectionsToPlaylist({

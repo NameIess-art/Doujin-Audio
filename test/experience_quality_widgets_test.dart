@@ -76,10 +76,12 @@ LibraryLikeWorkCardContent _buildFeaturedCard({
   required String title,
   required List<LibraryLikeInfoLineData> lines,
   required Key coverKey,
+  Widget? trailingActions,
 }) {
   return LibraryLikeWorkCardContent(
     title: title,
     lines: lines,
+    trailingActions: trailingActions,
     coverBuilder: (coverWidth) => Container(
       key: coverKey,
       width: coverWidth,
@@ -628,6 +630,125 @@ void main() {
       TargetPlatform.windows,
     }),
   );
+
+  for (final scale in [1.0, 2.0]) {
+    testWidgets(
+      'card actions fit after rating and consume taps at text scale $scale',
+      (tester) async {
+        var additions = 0;
+        var plays = 0;
+        var outerTaps = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: MediaQuery(
+                  data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                  child: SizedBox(
+                    width: 320,
+                    child: InkWell(
+                      onTap: () => outerTaps++,
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: _buildFeaturedCard(
+                          title: 'A long work title in a small card',
+                          coverKey: const ValueKey('actions-cover'),
+                          lines: const [
+                            LibraryLikeInfoLineData(
+                              'Voice',
+                              'Actor',
+                              icon: Icons.record_voice_over_rounded,
+                            ),
+                            LibraryLikeInfoLineData(
+                              'Date',
+                              '2026-10-09',
+                              icon: Icons.calendar_today_rounded,
+                              isSecondary: true,
+                            ),
+                            LibraryLikeInfoLineData(
+                              'Rating',
+                              '4.5',
+                              icon: Icons.star_rounded,
+                              isSecondary: true,
+                            ),
+                          ],
+                          trailingActions: LibraryLikeCardActions(
+                            addLabel: 'Add',
+                            playLabel: 'Play',
+                            onAdd: () => additions++,
+                            onPlay: () => plays++,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        final content = tester.getRect(find.byType(LibraryLikeWorkCardContent));
+        final cover = tester.getRect(
+          find.byKey(const ValueKey('actions-cover')),
+        );
+        final add = tester.getRect(
+          find.widgetWithIcon(IconButton, Icons.add_circle_rounded),
+        );
+        final play = tester.getRect(
+          find.widgetWithIcon(IconButton, Icons.play_arrow_rounded),
+        );
+        final rating = tester.getRect(find.text('4.5'));
+        expect(find.text('Add'), findsNothing);
+        expect(find.text('Play'), findsNothing);
+        expect(find.byTooltip('Add'), findsOneWidget);
+        expect(find.byTooltip('Play'), findsOneWidget);
+        expect(content.height, 90);
+        expect(cover.height, 90);
+        expect(add.height, 18);
+        expect(play.height, 18);
+        expect(
+          tester.getSize(find.byIcon(Icons.add_circle_rounded)),
+          const Size(18, 18),
+        );
+        expect(
+          tester.getSize(find.byIcon(Icons.play_arrow_rounded)),
+          const Size(18, 18),
+        );
+        expect(add.left, greaterThanOrEqualTo(rating.right));
+        expect(play.left, greaterThanOrEqualTo(add.right));
+        expect(play.right, lessThanOrEqualTo(content.right + 0.001));
+        expect(play.bottom, lessThanOrEqualTo(content.bottom + 0.001));
+        expect(add.center.dy, closeTo(play.center.dy, 0.001));
+        expect(add.center.dy, closeTo(rating.center.dy, 0.001));
+        await tester.tap(
+          find.widgetWithIcon(IconButton, Icons.add_circle_rounded),
+        );
+        await tester.tap(
+          find.widgetWithIcon(IconButton, Icons.play_arrow_rounded),
+        );
+        await tester.pump();
+        expect(additions, 1);
+        expect(plays, 1);
+        expect(outerTaps, 0);
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  testWidgets('card actions disable unavailable callbacks', (tester) async {
+    await tester.pumpWidget(
+      _buildSurface(
+        const LibraryLikeCardActions(addLabel: 'Add', playLabel: 'Play'),
+      ),
+    );
+    final buttons = tester.widgetList<IconButton>(find.byType(IconButton));
+    expect(buttons, hasLength(2));
+    expect(buttons.map((button) => button.onPressed), everyElement(isNull));
+  });
 
   testWidgets('library card retains cover dimensions without action buttons', (
     tester,

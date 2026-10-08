@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
+import 'package:doujin_audio/core/widgets/library_like_cards.dart';
+import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_shared_helpers.dart';
@@ -17,6 +19,120 @@ void main() {
   final coordinator = UiInteractionCoordinator.instance;
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
+
+  for (final singleAudio in [false, true]) {
+    for (final direction in [-1.0, 1.0]) {
+      for (final target in ['blank', 'short', 'start', 'end', 'middle']) {
+        testWidgets(
+          '$target information area drags ${singleAudio ? 'audio' : 'work'} card in direction $direction',
+          (tester) async {
+            final longText =
+                target == 'start' || target == 'end' || target == 'middle';
+            final text = longText
+                ? 'A long voice actor name that exceeds the visible row ' * 8
+                : 'Actor';
+            final lines = [
+              LibraryLikeInfoLineData(
+                'Voice',
+                text,
+                icon: Icons.record_voice_over_rounded,
+              ),
+            ];
+            await tester.pumpWidget(
+              MaterialApp(
+                scrollBehavior: const AppScrollBehavior().copyWith(
+                  scrollbars: false,
+                  physics: AppScrollBehavior.defaultScrollPhysics,
+                ),
+                home: Scaffold(
+                  body: Center(
+                    child: SizedBox(
+                      width: 420,
+                      child: SwipeRevealCard(
+                        shape: LibraryLikeCardMetrics.cardShape,
+                        actionLabel: 'Remove',
+                        removeTooltip: 'Remove',
+                        onRemove: () {},
+                        leadingActionLabel: 'Pin',
+                        leadingActionTooltip: 'Pin',
+                        leadingActionIcon: Icons.push_pin_rounded,
+                        onLeadingAction: () {},
+                        child: singleAudio
+                            ? LibraryLikeSingleAudioCardContent(
+                                title: 'Title',
+                                lines: lines,
+                              )
+                            : LibraryLikeWorkCardContent(
+                                title: 'Title',
+                                lines: lines,
+                                coverBuilder: (width) =>
+                                    SizedBox(width: width, height: 90),
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+            await tester.pump();
+            final row = find.byWidgetPredicate(
+              (widget) =>
+                  widget is LibraryLikeScrollableText && widget.text == text,
+            );
+            final position = tester
+                .state<ScrollableState>(
+                  find.descendant(of: row, matching: find.byType(Scrollable)),
+                )
+                .position;
+            if (target == 'end') position.jumpTo(position.maxScrollExtent);
+            if (target == 'middle') {
+              position.jumpTo(position.maxScrollExtent / 2);
+            }
+            await tester.pump();
+            final before = position.pixels;
+            final rect = tester.getRect(row);
+            final start = target == 'blank'
+                ? Offset(rect.right - 24, rect.center.dy)
+                : tester.getCenter(find.text(text));
+            // Long text is wider than the viewport, so start within its visible part.
+            final visibleStart = longText ? rect.center : start;
+            await tester.dragFrom(visibleStart, Offset(direction * 180, 0));
+            await tester.pumpAndSettle();
+            final shouldSwipe =
+                !longText ||
+                (target == 'start' && direction > 0) ||
+                (target == 'end' && direction < 0);
+            expect(
+              find.byTooltip(direction < 0 ? 'Remove' : 'Pin'),
+              shouldSwipe ? findsOneWidget : findsNothing,
+            );
+            if (shouldSwipe) {
+              expect(position.pixels, before);
+            } else {
+              expect(
+                position.pixels,
+                direction < 0 ? greaterThan(before) : lessThan(before),
+              );
+            }
+            if (target == 'middle') {
+              final gesture = await tester.startGesture(rect.center);
+              await gesture.moveBy(const Offset(-50, 0));
+              await tester.pump();
+              await gesture.cancel();
+              await tester.pumpAndSettle();
+              final removingGesture = await tester.startGesture(rect.center);
+              await removingGesture.moveBy(const Offset(-50, 0));
+              await tester.pumpWidget(const SizedBox.shrink());
+              await removingGesture.cancel();
+              await tester.pumpAndSettle();
+            }
+            expect(tester.takeException(), isNull);
+          },
+          variant: const TargetPlatformVariant({TargetPlatform.android}),
+        );
+      }
+    }
+  }
 
   for (final kind in ['library', 'playlist']) {
     testWidgets('$kind pin fades only after the entry closes', (tester) async {

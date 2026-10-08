@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_category_widgets.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
 import 'package:doujin_audio/features/library/presentation/library_tree_list.dart';
 import 'package:doujin_audio/app/application/browse_page_state_store.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
@@ -4364,13 +4366,14 @@ void main() {
           of: title,
           matching: find.byType(SwipeRevealCard),
         );
-        expect(
-          find.descendant(of: content, matching: find.byIcon(Icons.add_circle_rounded)),
-          findsNothing,
+        final actions = tester.widget<LibraryLikeCardActions>(
+          find.descendant(of: content, matching: find.byType(LibraryLikeCardActions)),
         );
+        expect(actions.onAdd, isNotNull);
+        expect(actions.onPlay, isNotNull);
         expect(
-          find.descendant(of: content, matching: find.byIcon(Icons.play_arrow_rounded)),
-          findsNothing,
+          tester.getSize(content).height,
+          lessThanOrEqualTo(LibraryLikeCardMetrics.rootTileHeight),
         );
         await tester.tap(title);
         await tester.pump();
@@ -4392,6 +4395,10 @@ void main() {
         );
         final temporarySession = fixture.playback.activeSessions.single;
         expect(temporarySession.isTemporary, isTrue);
+        actions.onPlay!();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(fixture.playback.activeSessions.single, same(temporarySession));
         expect(
           fixture.playback.activeSessions.where(
             (session) => !session.isTemporary,
@@ -4561,6 +4568,105 @@ void main() {
       await finishLibraryTest(tester, fixture);
     },
   );
+
+  for (final kind in ['folder', 'category folder', 'category audio']) {
+    testWidgets(
+      '$kind card adds to playlist and plays temporarily from its compact actions',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: _NoCoverArtworkCacheService(),
+        );
+        addTearDown(fixture.dispose);
+        fixture.playback.detachCommandPort();
+        const root = '/library/compact-actions';
+        final isFolder = kind != 'category audio';
+        final tracks = [
+          for (var i = 0; i < (isFolder ? 2 : 1); i++)
+            MusicTrack(
+              path: '$root/track$i.mp3',
+              displayName: 'Compact action track $i',
+              groupKey: isFolder ? root : '__single_files__',
+              groupTitle: 'Compact actions',
+              groupSubtitle: '',
+              isSingle: !isFolder,
+            ),
+        ];
+        fixture.library.addWatchedFolder(root, notify: false);
+        fixture.library.addTracks(tracks, notify: false, persist: false);
+        fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+        final target = isFolder
+            ? AudioDetailTarget.libraryRootFolder(root)
+            : AudioDetailTarget.singleAudioFile(tracks.first.path);
+        final detail = AudioDetail.empty(target).copyWith(rating: 4.5);
+        final folder = FolderNode('Compact actions', root)
+          ..addChildren(tracks.map(TrackNode.new));
+        Widget buildCard(bool selectionMode) => kind == 'folder'
+            ? LibraryFolderNodeWidget(
+                folder: folder,
+                initiallyExpanded: false,
+                searchQuery: '',
+                isSelectionMode: selectionMode,
+              )
+            : AudioLibraryCategoryEntryCard(
+                entry: AudioLibraryCategoryEntry(
+                  target: target,
+                  title: 'Compact actions',
+                  path: target.targetPath,
+                  isFolder: isFolder,
+                  detail: detail,
+                  tracks: tracks,
+                ),
+                folder: null,
+                secondaryIcon: Icons.sell_outlined,
+                secondaryText: 'Tag',
+                isSelectionMode: selectionMode,
+              );
+        await tester.pumpWidget(fixture.build(buildCard(false)));
+        await tester.pump(const Duration(milliseconds: 350));
+        final actionsFinder = find.byType(LibraryLikeCardActions);
+        final actions = tester.widget<LibraryLikeCardActions>(actionsFinder);
+        expect(actions.onAdd, isNotNull);
+        expect(actions.onPlay, isNotNull);
+        await tester.tap(find.descendant(
+          of: actionsFinder,
+          matching: find.widgetWithIcon(IconButton, Icons.play_arrow_rounded),
+        ));
+        for (var attempt = 0;
+            attempt < 50 && fixture.playback.activeSessions.isEmpty;
+            attempt++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump();
+        }
+        final temporary = fixture.playback.activeSessions.single;
+        expect(temporary.isTemporary, isTrue);
+        expect(temporary.customQueueTracks, hasLength(tracks.length));
+        expect(find.byType(WorkDetailPage), findsNothing);
+        await tester.tap(find.descendant(
+          of: actionsFinder,
+          matching: find.widgetWithIcon(IconButton, Icons.add_circle_rounded),
+        ));
+        await tester.pump();
+        expect(fixture.playback.activeSessions, hasLength(2));
+        expect(
+          fixture.playback.activeSessions.where((session) => !session.isTemporary),
+          hasLength(1),
+        );
+        expect(fixture.playback.activeSessions.contains(temporary), isTrue);
+        await tester.pumpWidget(fixture.build(buildCard(true)));
+        await tester.pump(const Duration(milliseconds: 350));
+        final disabled = tester.widget<LibraryLikeCardActions>(actionsFinder);
+        expect(disabled.onAdd, isNull);
+        expect(disabled.onPlay, isNull);
+        await finishLibraryTest(tester, fixture);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   testWidgets(
     'root folder card tap opens WorkDetailPage and does not expand folder tree inline',

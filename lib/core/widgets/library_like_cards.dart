@@ -320,12 +320,14 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
     required this.lines,
     required this.coverBuilder,
     this.accentColor,
+    this.trailingActions,
   });
 
   final String title;
   final List<LibraryLikeInfoLineData> lines;
   final Widget Function(double coverWidth) coverBuilder;
   final Color? accentColor;
+  final Widget? trailingActions;
 
   @override
   Widget build(BuildContext context) {
@@ -389,7 +391,11 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
                               loading: false,
                               accentColor: accentColor,
                             ),
-                          _libraryLikeSecondaryInfo(context, secondaryLines),
+                          _libraryLikeSecondaryInfo(
+                            context,
+                            secondaryLines,
+                            trailingActions: trailingActions,
+                          ),
                         ],
                       ),
                     ),
@@ -406,8 +412,9 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
 
 Widget _libraryLikeSecondaryInfo(
   BuildContext context,
-  List<LibraryLikeInfoLineData> lines,
-) {
+  List<LibraryLikeInfoLineData> lines, {
+  Widget? trailingActions,
+}) {
   final color = Theme.of(
     context,
   ).colorScheme.onSurfaceVariant.withValues(alpha: 0.6);
@@ -420,30 +427,91 @@ Widget _libraryLikeSecondaryInfo(
     height: _libraryLikeInfoLineHeight,
     child: Align(
       alignment: Alignment.bottomRight,
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.bottomRight,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < lines.length; i++) ...[
-              if (i > 0) const SizedBox(width: 12),
-              Tooltip(
-                message: lines[i].label,
-                child: Icon(lines[i].icon, size: 12, color: color),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (lines.isNotEmpty)
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.bottomRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < lines.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 12),
+                      Tooltip(
+                        message: lines[i].label,
+                        child: Icon(lines[i].icon, size: 12, color: color),
+                      ),
+                      const SizedBox(width: 4),
+                      SearchHighlightedText(
+                        text: lines[i].text,
+                        maxLines: 1,
+                        style: style,
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              const SizedBox(width: 4),
-              SearchHighlightedText(
-                text: lines[i].text,
-                maxLines: 1,
-                style: style,
-              ),
-            ],
+            ),
+          if (trailingActions != null) ...[
+            if (lines.isNotEmpty) const SizedBox(width: 6),
+            trailingActions,
           ],
-        ),
+        ],
       ),
     ),
   );
+}
+
+class LibraryLikeCardActions extends StatelessWidget {
+  const LibraryLikeCardActions({
+    super.key,
+    required this.addLabel,
+    required this.playLabel,
+    this.onAdd,
+    this.onPlay,
+  });
+
+  final String addLabel;
+  final String playLabel;
+  final VoidCallback? onAdd;
+  final VoidCallback? onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = IconButton.styleFrom(
+      minimumSize: Size.zero,
+      fixedSize: const Size(22, _libraryLikeInfoLineHeight),
+      padding: EdgeInsets.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.standard,
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          onPressed: onAdd,
+          style: style,
+          tooltip: addLabel,
+          icon: const Icon(
+            Icons.add_circle_rounded,
+            size: _libraryLikeInfoLineHeight,
+          ),
+        ),
+        IconButton(
+          onPressed: onPlay,
+          style: style,
+          tooltip: playLabel,
+          icon: const Icon(
+            Icons.play_arrow_rounded,
+            size: _libraryLikeInfoLineHeight,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class LibraryLikeScrollableText extends StatelessWidget {
@@ -478,9 +546,12 @@ class LibraryLikeScrollableText extends StatelessWidget {
       );
     }
     return HorizontalEdgeFadeScroll(
+      deferDragAtEdges: true,
       builder: (controller) => SingleChildScrollView(
         controller: controller,
         scrollDirection: Axis.horizontal,
+        // Empty space belongs to the enclosing card's swipe gesture.
+        hitTestBehavior: HitTestBehavior.deferToChild,
         child: child,
       ),
     );
@@ -501,6 +572,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
     this.listSeparator = '\uFF0C',
     this.loading = false,
     this.accentColor,
+    this.trailingActions,
   });
 
   final String title;
@@ -512,6 +584,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   final String ratingLabel;
   final String listSeparator;
   final bool loading;
+  final Widget? trailingActions;
   final Widget Function(double coverWidth) coverBuilder;
   final Color? accentColor;
 
@@ -532,6 +605,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
             ),
       coverBuilder: coverBuilder,
       accentColor: accentColor,
+      trailingActions: trailingActions,
     );
   }
 }
@@ -542,11 +616,13 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
     required this.title,
     required this.lines,
     this.accentColor,
+    this.trailingActions,
   });
 
   final String title;
   final List<LibraryLikeInfoLineData> lines;
   final Color? accentColor;
+  final Widget? trailingActions;
 
   @override
   Widget build(BuildContext context) {
@@ -598,11 +674,13 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
                   ),
               ],
             ),
+          ],
+          if (lines.isNotEmpty || trailingActions != null)
             _libraryLikeSecondaryInfo(
               context,
               lines.where((line) => line.isSecondary).toList(),
+              trailingActions: trailingActions,
             ),
-          ],
         ],
       ),
     );

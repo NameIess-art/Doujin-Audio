@@ -2838,6 +2838,76 @@ void main() {
     },
   );
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'ASMR search invalidates input immediately and debounces dispatch on $platform',
+      (tester) async {
+        final controller = _QueuedEmptyAsmrLibraryController(
+          services: createTestAsmrServices(),
+        );
+        addTearDown(controller.dispose);
+        final harness = AppRuntimeWidgetTestFixture();
+        addTearDown(harness.dispose);
+        await tester.pumpWidget(
+          harness.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey<String>('asmr_search_button')),
+        );
+        await tester.pumpAndSettle();
+        controller.refreshRequests.clear();
+        final field = find.byKey(const ValueKey<String>('app_search_field'));
+        await tester.enterText(field, 'old');
+        expect(controller.searchInputs, [(AsmrCategoryType.collected, 'old')]);
+        await tester.pump(const Duration(milliseconds: 120));
+        expect(controller.refreshRequests, isEmpty);
+        await tester.enterText(field, 'old ');
+        await tester.pump(const Duration(milliseconds: 120));
+        for (var i = 0; i < 20 && controller.refreshRequests.isEmpty; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(controller.refreshRequests, [
+          (AsmrCategoryType.collected, 'old'),
+        ]);
+        await tester.enterText(field, 'new');
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.enterText(field, 'newest');
+        expect(controller.searchInputs.map((input) => input.$2), [
+          'old',
+          'new',
+          'newest',
+        ]);
+        await tester.pump(const Duration(milliseconds: 239));
+        expect(controller.refreshRequests, hasLength(1));
+        for (var i = 0; i < 20 && controller.refreshRequests.length < 2; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(controller.refreshRequests, [
+          (AsmrCategoryType.collected, 'old'),
+          (AsmrCategoryType.collected, 'newest'),
+        ]);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('app_search_close')),
+        );
+        await tester.pumpAndSettle();
+        expect(controller.searchInputs.last.$2, '');
+        await tester.tap(
+          find.byKey(const ValueKey<String>('app_search_close')),
+        );
+        await tester.pumpAndSettle();
+        expect(controller.searchSessionEnds, 1);
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
   for (final leavePage in [false, true]) {
     testWidgets(
       'ASMR search skips initialization waits superseded by ${leavePage ? 'page exit' : 'new input'}',
@@ -6015,6 +6085,21 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   final Completer<void> _recommendationRefresh = Completer<void>();
   Future<void>? initializationWait;
   final refreshRequests = <(AsmrCategoryType, String)>[];
+  final searchInputs = <(AsmrCategoryType, String)>[];
+  int searchSessionEnds = 0;
+
+  @override
+  void setSearchQuery(String query, AsmrCategoryType category) {
+    searchInputs.add((category, query));
+    super.setSearchQuery(query, category);
+  }
+
+  @override
+  void endSearchSession() {
+    searchSessionEnds++;
+    super.endSearchSession();
+  }
+
   final categoryLoadRequests = <AsmrCategoryType>[];
   final categoryLoadLanguages = <AppLanguage>[];
   final pageLanguageChanges = <AppLanguage>[];

@@ -8,6 +8,249 @@ void registerAsmrControllerStateTests({
   late AsmrPreferencesStore preferences;
   setUp(() => preferences = preferencesStore());
 
+  for (final clearQuery in [true, false]) {
+    test(
+      '${clearQuery ? 'clearing' : 'closing'} search cancels requests and retains root pages',
+      () async {
+        await resetPrefs();
+        final started = Completer<void>();
+        final release = Completer<void>();
+        final api = _FakeAsmrApiService(
+          beforeFetchSearchResponse: (_) async {
+            started.complete();
+            await release.future;
+          },
+        );
+        final controller = createTestAsmrController(
+          preferencesStore: preferences,
+          apiService: api,
+          persistenceRepository: persistenceRepository(),
+        );
+        addTearDown(controller.dispose);
+        await controller.ensureCategoryLoaded(AsmrCategoryType.release);
+        final root = controller.worksFor(AsmrCategoryType.release);
+        controller.beginSearchSession();
+        final pending = controller.ensureCategoryLoaded(
+          AsmrCategoryType.release,
+          searchQuery: 'old',
+          searchSession: true,
+        );
+        await started.future;
+        if (clearQuery) {
+          controller.setSearchQuery('', AsmrCategoryType.release);
+        } else {
+          controller.endSearchSession();
+        }
+        await pending.timeout(const Duration(seconds: 1));
+        expect(release.isCompleted, isFalse);
+        expect(controller.worksFor(AsmrCategoryType.release), same(root));
+        expect(
+          controller
+              .categoryViewState(AsmrCategoryType.release, searchSession: true)
+              .works,
+          same(root),
+        );
+        expect(
+          controller
+              .categoryViewState(
+                AsmrCategoryType.release,
+                searchQuery: 'old',
+                searchSession: true,
+              )
+              .hasAttemptedLoad,
+          isFalse,
+        );
+        release.complete();
+      },
+    );
+  }
+
+  test(
+    'changing search keywords cancels pending work and discards old results',
+    () async {
+      await resetPrefs();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var calls = 0;
+      final api = _FakeAsmrApiService(
+        beforeFetchSearchResponse: (_) async {
+          if (++calls == 1) {
+            started.complete();
+            await release.future;
+          }
+        },
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      addTearDown(controller.dispose);
+      await controller.ensureCategoryLoaded(AsmrCategoryType.release);
+      final root = controller.worksFor(AsmrCategoryType.release);
+      controller.beginSearchSession();
+      final pending = controller.ensureCategoryLoaded(
+        AsmrCategoryType.release,
+        searchQuery: 'old',
+        searchSession: true,
+      );
+      await started.future;
+      controller.setSearchQuery('new', AsmrCategoryType.release);
+      await pending.timeout(const Duration(seconds: 1));
+      release.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        controller
+            .categoryViewState(
+              AsmrCategoryType.release,
+              searchQuery: 'old',
+              searchSession: true,
+            )
+            .hasAttemptedLoad,
+        isFalse,
+      );
+      expect(controller.worksFor(AsmrCategoryType.release), same(root));
+      await controller.ensureCategoryLoaded(
+        AsmrCategoryType.release,
+        searchQuery: 'new',
+        searchSession: true,
+      );
+      await controller.ensureCategoryLoaded(
+        AsmrCategoryType.release,
+        searchQuery: 'old',
+        searchSession: true,
+      );
+      expect(api.searchKeywords, ['old', 'new', 'old']);
+    },
+  );
+
+  test(
+    'switching search categories cancels pagination and preserves completed pages',
+    () async {
+      await resetPrefs();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var pageTwoCalls = 0;
+      final api = _FakeAsmrApiService(
+        largeRecommendationPool: true,
+        pagedSearchWorks: true,
+        beforeFetchSearchResponse: (request) async {
+          if (request == 'release:desc:2' && ++pageTwoCalls == 1) {
+            started.complete();
+            await release.future;
+          }
+        },
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      addTearDown(controller.dispose);
+      controller.beginSearchSession();
+      await controller.ensureCategoryLoaded(
+        AsmrCategoryType.release,
+        searchQuery: 'sleep',
+        searchSession: true,
+      );
+      final before = controller
+          .categoryViewState(
+            AsmrCategoryType.release,
+            searchQuery: 'sleep',
+            searchSession: true,
+          )
+          .works;
+      final pending = controller.loadMoreCategory(
+        AsmrCategoryType.release,
+        searchQuery: 'sleep',
+        searchSession: true,
+      );
+      await started.future;
+      controller.setSearchQuery('sleep', AsmrCategoryType.collected);
+      await pending.timeout(const Duration(seconds: 1));
+      final cancelled = controller.categoryViewState(
+        AsmrCategoryType.release,
+        searchQuery: 'sleep',
+        searchSession: true,
+      );
+      expect(cancelled.works, same(before));
+      expect(cancelled.isLoadingMore, isFalse);
+      expect(cancelled.needsLoadMoreRetry, isFalse);
+      expect(cancelled.lastError, isNull);
+      await controller.ensureCategoryLoaded(
+        AsmrCategoryType.release,
+        searchQuery: 'sleep',
+        searchSession: true,
+      );
+      expect(api.searchWorkRequests, ['release:desc:1', 'release:desc:2']);
+      await controller.loadMoreCategory(
+        AsmrCategoryType.release,
+        searchQuery: 'sleep',
+        searchSession: true,
+      );
+      release.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        controller
+            .categoryViewState(
+              AsmrCategoryType.release,
+              searchQuery: 'sleep',
+              searchSession: true,
+            )
+            .works,
+        hasLength(80),
+      );
+    },
+  );
+
+  test(
+    'returning to a cancelled first search load starts a replacement request',
+    () async {
+      await resetPrefs();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var calls = 0;
+      final api = _FakeAsmrApiService(
+        beforeFetchSearchResponse: (_) async {
+          if (++calls == 1) {
+            started.complete();
+            await release.future;
+          }
+        },
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      addTearDown(controller.dispose);
+      controller.beginSearchSession();
+      final pending = controller.ensureCategoryLoaded(
+        AsmrCategoryType.release,
+        searchQuery: 'sleep',
+        searchSession: true,
+      );
+      await started.future;
+      controller.setSearchQuery('sleep', AsmrCategoryType.collected);
+      await pending.timeout(const Duration(seconds: 1));
+      await controller.ensureCategoryLoaded(
+        AsmrCategoryType.release,
+        searchQuery: 'sleep',
+        searchSession: true,
+      );
+      release.complete();
+      expect(api.searchKeywords, ['sleep', 'sleep']);
+      final state = controller.categoryViewState(
+        AsmrCategoryType.release,
+        searchQuery: 'sleep',
+        searchSession: true,
+      );
+      expect(state.works, hasLength(1));
+      expect(state.isLoading, isFalse);
+      expect(state.lastError, isNull);
+    },
+  );
+
   for (final count in [100, 1000, 5000]) {
     test(
       '$count category works preserve order and filtered cache identity',
@@ -1721,6 +1964,7 @@ class _BrowseChangingApi extends AsmrApiService {
     int pageSize = 40,
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     pages.add(page);
     return AsmrWorkPage(

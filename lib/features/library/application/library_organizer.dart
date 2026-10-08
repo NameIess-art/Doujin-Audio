@@ -145,15 +145,21 @@ class LibraryOrganizer {
         : parentPath;
   }
 
+  /// [rootsAlreadySorted] applies to both lists, in descending path length.
   String rootPathForTrack(
     MusicTrack track,
     List<String> watchedRoots, {
     List<String> watchedLibraries = const <String>[],
+    bool rootsAlreadySorted = false,
   }) {
-    final sortedRoots = watchedRoots.toList(growable: false)
-      ..sort((a, b) => b.length.compareTo(a.length));
-    final sortedLibraries = watchedLibraries.toList(growable: false)
-      ..sort((a, b) => b.length.compareTo(a.length));
+    final sortedRoots = rootsAlreadySorted
+        ? watchedRoots
+        : (watchedRoots.toList(growable: false)
+            ..sort((a, b) => b.length.compareTo(a.length)));
+    final sortedLibraries = rootsAlreadySorted
+        ? watchedLibraries
+        : (watchedLibraries.toList(growable: false)
+            ..sort((a, b) => b.length.compareTo(a.length)));
     return _rootPathForTrack(track, sortedRoots, sortedLibraries);
   }
 
@@ -180,14 +186,20 @@ class LibraryOrganizer {
     return track.groupKey;
   }
 
+  /// Prepared lists use descending path length. [watchedFolderByPath] uses
+  /// PathMatcher path equivalence and stores normalized root paths.
   String rootFolderPath(
     String folderPath,
     List<String> watchedFolders, {
     List<String> watchedLibraries = const <String>[],
+    bool rootsAlreadySorted = false,
+    Map<String, String>? watchedFolderByPath,
   }) {
     final normalizedFolder = PathMatcher.normalize(folderPath);
-    final sortedLibraries = watchedLibraries.toList(growable: false)
-      ..sort((a, b) => b.length.compareTo(a.length));
+    final sortedLibraries = rootsAlreadySorted
+        ? watchedLibraries
+        : (watchedLibraries.toList(growable: false)
+            ..sort((a, b) => b.length.compareTo(a.length)));
     for (final libraryRoot in sortedLibraries) {
       if (PathMatcher.isWithinOrEqual(normalizedFolder, libraryRoot)) {
         return workScopeFolderPath(libraryRoot, normalizedFolder) ??
@@ -195,8 +207,13 @@ class LibraryOrganizer {
       }
     }
 
-    final sortedFolders = watchedFolders.toList(growable: false)
-      ..sort((a, b) => b.length.compareTo(a.length));
+    final exactFolder = watchedFolderByPath?[normalizedFolder];
+    if (exactFolder != null) return exactFolder;
+
+    final sortedFolders = rootsAlreadySorted
+        ? watchedFolders
+        : (watchedFolders.toList(growable: false)
+            ..sort((a, b) => b.length.compareTo(a.length)));
     for (final watchedFolder in sortedFolders) {
       if (PathMatcher.isWithinOrEqual(normalizedFolder, watchedFolder)) {
         return PathMatcher.normalize(watchedFolder);

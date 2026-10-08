@@ -8,6 +8,130 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 
 void main() {
   test(
+    'cancelled requests abort an openUrl result that arrives late',
+    () async {
+      final client = _PendingOpenClient();
+      final service = AsmrApiService(httpClient: client);
+      final token = AsmrRequestCancellationToken();
+      final loading = service.fetchWorks(
+        order: 'release',
+        sort: 'desc',
+        cancellationToken: token,
+      );
+      final cancelled = expectLater(
+        loading,
+        throwsA(isA<AsmrRequestCancelled>()),
+      );
+      token.cancel();
+      await cancelled;
+      final request = _AbortTrackingRequest();
+      client.opened.complete(request);
+      await Future<void>.delayed(Duration.zero);
+      expect(request.aborted, isTrue);
+      expect(client.openCount, 1);
+      service.close();
+    },
+  );
+
+  test('already cancelled requests do not open a connection', () async {
+    final client = _PendingOpenClient();
+    final service = AsmrApiService(httpClient: client);
+    final token = AsmrRequestCancellationToken()..cancel();
+    await expectLater(
+      service.searchWorks(
+        keyword: 'old',
+        order: 'release',
+        sort: 'desc',
+        cancellationToken: token,
+      ),
+      throwsA(isA<AsmrRequestCancelled>()),
+    );
+    expect(client.openCount, 0);
+    service.close();
+  });
+
+  for (final readingBody in [false, true]) {
+    test(
+      'search cancellation stops ${readingBody ? 'body reading' : 'header waiting'} without domain failover',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final started = Completer<void>();
+        var searchRequests = 0;
+        final subscription = server.listen((request) async {
+          if (request.uri.path == '/api/search/') {
+            searchRequests++;
+            if (readingBody) {
+              request.response.headers.contentType = ContentType.json;
+              request.response.write('{"works":[');
+              await request.response.flush();
+            }
+            started.complete();
+            return;
+          }
+          request.response.write(
+            '{"works":[],"pagination":{"currentPage":1,"pageSize":40,"totalCount":0}}',
+          );
+          await request.response.close();
+        });
+        final hosts = <String>[];
+        final client = HttpClient()
+          ..findProxy = (uri) {
+            hosts.add(uri.host);
+            return 'DIRECT';
+          };
+        final service = AsmrApiService(
+          httpClient: client,
+          baseUri: Uri.parse('http://${server.address.address}:${server.port}'),
+        );
+        try {
+          final token = AsmrRequestCancellationToken();
+          final cancelled = expectLater(
+            service.searchWorks(
+              keyword: 'old',
+              order: 'release',
+              sort: 'desc',
+              cancellationToken: token,
+            ),
+            throwsA(isA<AsmrRequestCancelled>()),
+          );
+          await started.future;
+          token.cancel();
+          await cancelled.timeout(const Duration(seconds: 2));
+          final sibling = await service.fetchWorks(
+            order: 'release',
+            sort: 'desc',
+          );
+          expect(sibling.works, isEmpty);
+          expect(searchRequests, 1);
+          expect(hosts, everyElement(server.address.address));
+          expect(service.isClosed, isFalse);
+        } finally {
+          service.close();
+          await subscription.cancel();
+          await server.close(force: true);
+        }
+      },
+    );
+  }
+
+  test(
+    'cancellation consumes a task error that arrives after cancellation',
+    () async {
+      final token = AsmrRequestCancellationToken();
+      final task = Completer<void>();
+      final cancelled = expectLater(
+        token.waitFor(task.future),
+        throwsA(isA<AsmrRequestCancelled>()),
+      );
+      token.cancel();
+      token.cancel();
+      await cancelled;
+      task.completeError(const SocketException('late error'));
+      await Future<void>.delayed(Duration.zero);
+    },
+  );
+
+  test(
     'background decoding preserves localized pages and nested tracks',
     () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -226,4 +350,27 @@ void main() {
       await server.close(force: true);
     }
   });
+}
+
+class _PendingOpenClient extends Fake implements HttpClient {
+  final opened = Completer<HttpClientRequest>();
+  int openCount = 0;
+
+  @override
+  Future<HttpClientRequest> openUrl(String method, Uri url) {
+    openCount++;
+    return opened.future;
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+class _AbortTrackingRequest extends Fake implements HttpClientRequest {
+  bool aborted = false;
+
+  @override
+  void abort([Object? exception, StackTrace? stackTrace]) {
+    aborted = true;
+  }
 }

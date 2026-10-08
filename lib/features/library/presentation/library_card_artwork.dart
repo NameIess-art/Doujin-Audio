@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/theme/app_styles.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/media/music_track.dart';
@@ -338,6 +339,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
     required this.coverBuilder,
     this.index,
     this.trailingActions,
+    this.titleLeading,
   });
 
   final String title;
@@ -346,6 +348,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
   final Widget Function(double coverWidth) coverBuilder;
   final int? index;
   final Widget? trailingActions;
+  final Widget? titleLeading;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -363,6 +366,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
       ratingLabel: i18n.tr('card_info_rating'),
       loading: detailLoading || detail == null,
       trailingActions: trailingActions,
+      titleLeading: titleLeading,
       coverBuilder: coverBuilder,
     );
   }
@@ -436,6 +440,14 @@ class SingleMediaFileCardContent extends StatelessWidget {
       detailLoading: detailLoading,
       index: index,
       trailingActions: trailingActions,
+      titleLeading: Padding(
+        padding: EdgeInsets.only(right: isPinned ? AppSpacing.xs : 0),
+        child: LibraryPinnedIndicator(
+          isPinned: isPinned,
+          path: track.path,
+          isSelected: isSelected,
+        ),
+      ),
       coverBuilder: (coverWidth) {
         final rj = detail?.rjCode.trim() ?? '';
         final rjCode = rj.isNotEmpty
@@ -455,24 +467,12 @@ class SingleMediaFileCardContent extends StatelessWidget {
               Positioned(
                 left: 4,
                 top: 4,
-                child: RjCodeOverlay(
-                  rjCode: rjCode,
-                  maxWidth: isPinned ? (coverWidth - 32) : (coverWidth - 8),
-                ),
+                child: RjCodeOverlay(rjCode: rjCode, maxWidth: coverWidth - 8),
               ),
             Positioned(
               left: -2,
               bottom: -2,
               child: LibrarySelectionIndicator(
-                path: track.path,
-                isSelected: isSelected,
-              ),
-            ),
-            Positioned(
-              right: -2,
-              top: -2,
-              child: LibraryPinnedIndicator(
-                isPinned: isPinned,
                 path: track.path,
                 isSelected: isSelected,
               ),

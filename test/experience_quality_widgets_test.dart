@@ -1474,6 +1474,7 @@ void main() {
           path: 'fade-pin',
           isSelected: false,
           isPinned: pinned,
+          child: const SizedBox(height: 52),
         ),
       };
       return MaterialApp(
@@ -1553,7 +1554,7 @@ void main() {
   );
 
   testWidgets(
-    'SingleMediaFileCardContent places selection checkmark at bottom-left and pin at top-right',
+    'SingleMediaFileCardContent places selection at bottom-left and pin before title',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -1592,17 +1593,13 @@ void main() {
       expect(selectionPosition.bottom, -2);
       expect(selectionPosition.top, isNull);
 
-      final pinPosition = tester.widget<Positioned>(
-        find
-            .ancestor(
-              of: find.byType(LibraryPinnedIndicator),
-              matching: find.byType(Positioned),
-            )
-            .first,
+      final pinRect = tester.getRect(find.byType(LibraryPinnedIndicator));
+      final titleRect = tester.getRect(
+        find.text('audio.mp3', findRichText: true),
       );
-      expect(pinPosition.right, -2);
-      expect(pinPosition.top, -2);
-      expect(pinPosition.bottom, isNull);
+      expect(pinRect.right, lessThanOrEqualTo(titleRect.left));
+      expect(pinRect.top, titleRect.top);
+      expect(tester.takeException(), isNull);
     },
   );
 }

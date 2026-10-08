@@ -51,6 +51,7 @@ class QueueTrackCoverState extends ConsumerState<QueueTrackCover> {
       initialPath: widget.coverPath,
       cacheWidth: widget.coverCacheWidth,
       useDefaultCacheWidth: widget.coverCacheWidth != null,
+      deferLoadDuringInteraction: true,
       fit: BoxFit.cover,
     );
   }

@@ -111,7 +111,8 @@ class TestPersistenceRepository extends SqliteLibraryRepository
     operations: operations,
   );
   @override
-  Future<List<MusicTrack>> loadTracksForRecommendations() => loadAllTracks();
+  Future<List<MusicTrack>> loadTracksForRecommendations() =>
+      _asmr.loadTracksForRecommendations();
   @override
   Future<void> clearForTest() => _asmr.clearForTest();
 }

@@ -69,23 +69,29 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   }
 
   void _onChanged(String value) {
+    final query = normalizeSearchQuery(value);
+    if (_query == query) return;
     _debounceTimer?.cancel();
+    _resetScroll();
+    _searchController?.setSearchQuery(query, _category);
+    UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
+    _refreshPending = false;
+    setState(() {
+      _query = query;
+      _requestSerial++;
+      _showSearchPlaceholder = query.isNotEmpty;
+      _clearSelection();
+    });
     _debounceTimer = Timer(const Duration(milliseconds: 240), () {
       if (!mounted) return;
-      final query = value.trim();
-      if (_query == query) return;
-      _resetScroll();
-      setState(() {
-        _query = query;
-        _clearSelection();
-      });
       _scheduleRefresh(showSearchPlaceholder: query.isNotEmpty);
     });
   }
 
   Future<void> _onSubmitted(String value) async {
     _debounceTimer?.cancel();
-    final query = value.trim();
+    final query = normalizeSearchQuery(value);
+    _searchController?.setSearchQuery(query, _category);
     if (_query != query) {
       _resetScroll();
       setState(() {
@@ -104,6 +110,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     }
     _debounceTimer?.cancel();
     _controller.clear();
+    _searchController?.setSearchQuery('', _category);
     _resetScroll();
     setState(() {
       _query = '';
@@ -116,6 +123,8 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
 
   void _selectCategory(AsmrCategoryType category) {
     if (_category == category) return;
+    _debounceTimer?.cancel();
+    _searchController?.setSearchQuery(_query, category);
     final outgoingScroll = _scrollControllers[_category]!;
     if (outgoingScroll.hasClients) outgoingScroll.jumpTo(outgoingScroll.offset);
     if (_isSelectionMode) setState(_clearSelection);

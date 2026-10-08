@@ -13,6 +13,30 @@ extension AppDatabaseTracks on AppDatabase {
     });
   }
 
+  Future<List<MusicTrack>> loadTracksForRecommendations() async {
+    final rows = await _runDatabaseRead((db) async {
+      final tracks = await db.rawQuery('''
+        SELECT
+          t.path,
+          t.display_name,
+          t.group_key,
+          t.group_title,
+          t.group_subtitle,
+          t.is_single,
+          remote.remote_metadata_json
+        FROM tracks t
+        LEFT JOIN track_remote_metadata remote ON remote.path = t.path
+      ''');
+      final tags = await db.rawQuery(
+        'SELECT path, tag FROM track_tags ORDER BY sort_order ASC',
+      );
+      return (tracks, tags);
+    });
+    // Recommendation metadata can contain large remote track trees. Decode and
+    // freeze only the ranking inputs away from the UI isolate.
+    return compute(_recommendationTracksFromRows, rows);
+  }
+
   Future<List<MusicTrack>> loadTrackSummaries() async {
     return _runDatabaseRead((db) async {
       final rows = await db.query(

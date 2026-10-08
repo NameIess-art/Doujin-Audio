@@ -6,11 +6,13 @@ import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/features/library/domain/library_entry.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_recommendation_engine.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:doujin_audio/features/player/domain/time_segment_label.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
+import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'support/test_persistence_repository.dart';
 
@@ -885,6 +887,156 @@ void main() {
     final loaded = await appDatabase.loadAllTracks();
     expect(loaded.single.toJson(), track.toJson());
   });
+
+  test(
+    'recommendation reads retain ranking inputs without track details',
+    () async {
+      final track = MusicTrack(
+        path: r'E:\音频 库\RJ000042\track.mp3',
+        displayName: 'RJ000043 track',
+        groupKey: 'work',
+        groupTitle: 'Dream Circle',
+        groupSubtitle: 'RJ000044',
+        isSingle: false,
+        tags: const ['sleep', 'whisper'],
+        lastPlayedPosition: const Duration(seconds: 42),
+        coverCachePath: '/cache/cover.jpg',
+        duration: const Duration(hours: 1),
+        remoteMetadataKind: 'asmr.one',
+        remoteMetadata: const {
+          'id': 45,
+          'circleName': 'Remote Circle',
+          'sourceId': 'RJ000046',
+          'tags': [
+            'relax',
+            {'name': 'rain'},
+          ],
+          'voiceActors': ['Mika'],
+          'vas': [
+            {'name': 'Yuki'},
+          ],
+          'children': [
+            {'title': 'Unused remote track tree'},
+          ],
+          'playbackUrls': ['https://example.test/track.mp3'],
+        },
+      );
+      await appDatabase.saveAllTracks([track]);
+
+      // The recommendation adapter must also use the slim read.
+      final loaded = (await SqliteAsmrRepository(
+        database: appDatabase,
+      ).loadTracksForRecommendations()).single;
+      expect(loaded.path, track.path);
+      expect(loaded.displayName, track.displayName);
+      expect(loaded.groupKey, track.groupKey);
+      expect(loaded.groupTitle, track.groupTitle);
+      expect(loaded.groupSubtitle, track.groupSubtitle);
+      expect(loaded.isSingle, track.isSingle);
+      expect(loaded.tags, track.tags);
+      expect(loaded.remoteMetadata, {
+        for (final key in [
+          'id',
+          'circleName',
+          'sourceId',
+          'tags',
+          'voiceActors',
+          'vas',
+        ])
+          key: track.remoteMetadata![key],
+      });
+      expect(loaded.lastPlayedPosition, Duration.zero);
+      expect(loaded.coverCachePath, isNull);
+      expect(loaded.duration, Duration.zero);
+      expect(() => loaded.tags.add('changed'), throwsUnsupportedError);
+      expect(() => loaded.remoteMetadata!['id'] = 99, throwsUnsupportedError);
+    },
+  );
+
+  test(
+    'slim recommendation reads preserve ranking and owned exclusions',
+    () async {
+      MusicTrack track(String path, {Map<String, Object?>? metadata}) =>
+          MusicTrack(
+            path: path,
+            displayName: 'Track RJ000003',
+            groupKey: 'work',
+            groupTitle: 'Dream Circle RJ000004',
+            groupSubtitle: 'RJ000005',
+            isSingle: true,
+            tags: const ['sleep', 'sleep', 'whisper'],
+            remoteMetadata: metadata,
+          );
+      await appDatabase.saveAllTracks([
+        track(
+          '/local/RJ000002/track.mp3',
+          metadata: {
+            'id': 1,
+            'sourceId': 'RJ000006',
+            'circleName': 'Remote Circle',
+            'tags': [
+              'relax',
+              {'name': 'rain'},
+            ],
+            'voiceActors': ['Mika'],
+            'vas': [
+              {'name': 'Yuki'},
+            ],
+            'unused': {
+              'nested': ['payload'],
+            },
+          },
+        ),
+        track('content://audio/track2'),
+        track('/local/invalid.mp3'),
+        track('/local/non-map.mp3'),
+      ]);
+      await db.update(
+        'track_remote_metadata',
+        {'remote_metadata_json': '{invalid'},
+        where: 'path = ?',
+        whereArgs: ['/local/invalid.mp3'],
+      );
+      await db.update(
+        'track_remote_metadata',
+        {'remote_metadata_json': '["non-map"]'},
+        where: 'path = ?',
+        whereArgs: ['/local/non-map.mp3'],
+      );
+      final complete = await appDatabase.loadAllTracks();
+      final slim = await SqliteAsmrRepository(
+        database: appDatabase,
+      ).loadTracksForRecommendations();
+      expect(slim.where((track) => track.remoteMetadata == null), hasLength(3));
+      final candidates = [
+        for (var id = 1; id <= 100; id++)
+          AsmrWork.fromJson({
+            'id': id,
+            'title': 'Candidate $id',
+            'sourceId': 'RJ${id.toString().padLeft(6, '0')}',
+            'circleName': id.isEven ? 'Remote Circle' : 'Dream Circle RJ000004',
+            'tags': [if (id % 3 == 0) 'sleep', if (id % 4 == 0) 'rain'],
+            'voiceActors': [if (id % 5 == 0) 'Mika', if (id % 7 == 0) 'Yuki'],
+          }),
+      ];
+      const engine = AsmrRecommendationEngine();
+      for (final seed in [0, 1, 2]) {
+        List<int> rankedIds(List<MusicTrack> tracks) => engine
+            .rank(
+              candidates: candidates,
+              localTracks: tracks,
+              favoriteWorks: [candidates[6]],
+              historyWorks: [candidates[7]],
+              refreshSeed: seed,
+            )
+            .map((work) => work.id)
+            .toList();
+        final slimIds = rankedIds(slim);
+        expect(slimIds, rankedIds(complete));
+        expect(slimIds.toSet().intersection({1, 2, 3, 4, 5, 6, 7, 8}), isEmpty);
+      }
+    },
+  );
 
   test(
     'insertTracks replaces existing rows and deleteTracks removes by path',

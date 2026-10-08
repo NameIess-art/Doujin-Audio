@@ -6,6 +6,9 @@ import 'package:flutter/foundation.dart';
 
 import '../domain/asmr_models.dart';
 import '../domain/asmr_media_sources.dart';
+import 'asmr_request_cancellation.dart';
+
+export 'asmr_request_cancellation.dart';
 
 class AsmrApiService {
   AsmrApiService({HttpClient? httpClient, Uri? baseUri})
@@ -180,6 +183,7 @@ class AsmrApiService {
     int pageSize = 40,
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     final query = <String, String>{
       'order': order,
@@ -193,6 +197,7 @@ class AsmrApiService {
       path: '/api/works',
       queryParameters: query,
       token: token,
+      cancellationToken: cancellationToken,
     );
     return AsmrWorkPage.fromJson(response, language: language);
   }
@@ -205,11 +210,13 @@ class AsmrApiService {
     int pageSize = 40,
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     final response = await _sendJsonRequest(
       method: 'POST',
       path: '/api/search/',
       token: token,
+      cancellationToken: cancellationToken,
       body: <String, Object?>{
         'keyword': keyword,
         'order': order,
@@ -243,6 +250,7 @@ class AsmrApiService {
     Map<String, String>? queryParameters,
     String? token,
     Object? body,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     final response = await _send(
       method: method,
@@ -250,6 +258,7 @@ class AsmrApiService {
       queryParameters: queryParameters,
       token: token,
       body: body,
+      cancellationToken: cancellationToken,
     );
     if (response is Map<String, dynamic>) {
       return response;
@@ -264,6 +273,7 @@ class AsmrApiService {
     String? token,
     Object? body,
     ComputeCallback<String, Object?> decodeResponse = jsonDecode,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     final startDomainIndex = _currentDomainIndex;
     int attempt = 0;
@@ -271,16 +281,36 @@ class AsmrApiService {
     StackTrace? lastStackTrace;
 
     while (attempt < _candidateDomains.length) {
+      cancellationToken?.throwIfCancelled();
       final domainIndex =
           (startDomainIndex + attempt) % _candidateDomains.length;
       final domain = _candidateDomains[domainIndex];
       final baseUri = Uri.parse(domain);
       final uri = baseUri.replace(path: path, queryParameters: queryParameters);
 
+      void Function()? removeAbortListener;
+      HttpClientRequest? openedRequest;
+      var attemptRetired = false;
       try {
-        final request = await _httpClient
-            .openUrl(method, uri)
+        final opening = _httpClient.openUrl(method, uri).then((request) {
+          // openUrl may finish after the caller has already been cancelled.
+          if (cancellationToken?.isCancelled ?? false) {
+            request.abort(const AsmrRequestCancelled());
+            throw const AsmrRequestCancelled();
+          }
+          if (attemptRetired) {
+            request.abort();
+            throw const HttpException('ASMR API request attempt has ended.');
+          }
+          openedRequest = request;
+          return request;
+        });
+        final request = await (cancellationToken?.waitFor(opening) ?? opening)
             .timeout(_requestTimeout);
+        removeAbortListener = cancellationToken?.addListener(
+          () => request.abort(const AsmrRequestCancelled()),
+        );
+        cancellationToken?.throwIfCancelled();
         request.headers.set(HttpHeaders.acceptHeader, 'application/json');
         request.headers.set(HttpHeaders.acceptLanguageHeader, _acceptLanguage);
         request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
@@ -290,10 +320,20 @@ class AsmrApiService {
         if (body != null) {
           request.add(utf8.encode(json.encode(body)));
         }
-        final response = await request.close().timeout(_requestTimeout);
-        final responseBody = await utf8
-            .decodeStream(response)
-            .timeout(const Duration(seconds: 30));
+        final closing = request.close().then((response) {
+          if (cancellationToken?.isCancelled ?? false) {
+            unawaited(response.listen(null).cancel());
+            throw const AsmrRequestCancelled();
+          }
+          return response;
+        });
+        final response = await (cancellationToken?.waitFor(closing) ?? closing)
+            .timeout(_requestTimeout);
+        final responseBody = await _readResponseBody(
+          response,
+          cancellationToken,
+        );
+        cancellationToken?.throwIfCancelled();
         if (response.statusCode >= 500 && response.statusCode <= 599) {
           throw AsmrApiException(
             'ASMR API server error (${response.statusCode}).',
@@ -316,8 +356,11 @@ class AsmrApiService {
         }
         // Responses can arrive during a later navigation or dock animation.
         // Decode off the UI isolate even when the request started while idle.
-        return await compute(decodeResponse, responseBody);
+        final decoding = compute(decodeResponse, responseBody);
+        return await (cancellationToken?.waitFor(decoding) ?? decoding);
       } catch (error, stackTrace) {
+        cancellationToken?.throwIfCancelled();
+        if (error is AsmrRequestCancelled) rethrow;
         lastError = error;
         lastStackTrace = stackTrace;
         if (error is AsmrApiException && error.statusCode < 500) {
@@ -326,6 +369,12 @@ class AsmrApiService {
         // Model field errors are not endpoint failures and previously escaped
         // from fetchTrackTree after JSON decoding without retrying a domain.
         if (error is Error) rethrow;
+      } finally {
+        // A timeout also retires this attempt; it must not keep a socket alive
+        // after failover has moved on and detached its cancellation listener.
+        attemptRetired = true;
+        removeAbortListener?.call();
+        openedRequest?.abort();
       }
       attempt++;
     }
@@ -337,6 +386,42 @@ class AsmrApiService {
       );
     }
     throw const HttpException('All ASMR API candidates failed.');
+  }
+
+  Future<String> _readResponseBody(
+    HttpClientResponse response,
+    AsmrRequestCancellationToken? cancellationToken,
+  ) async {
+    final body = StringBuffer();
+    final completed = Completer<String>();
+    final subscription = response
+        .transform(utf8.decoder)
+        .listen(
+          body.write,
+          onError: (Object error, StackTrace stackTrace) {
+            if (!completed.isCompleted) {
+              completed.completeError(error, stackTrace);
+            }
+          },
+          onDone: () {
+            if (!completed.isCompleted) completed.complete(body.toString());
+          },
+          cancelOnError: true,
+        );
+    // HttpClientRequest.abort no longer affects an already received response;
+    // cancel its body subscription too to stop downloading stale search data.
+    final removeListener = cancellationToken?.addListener(() {
+      unawaited(subscription.cancel());
+      if (!completed.isCompleted) {
+        completed.completeError(const AsmrRequestCancelled());
+      }
+    });
+    try {
+      return await completed.future.timeout(const Duration(seconds: 30));
+    } finally {
+      removeListener?.call();
+      await subscription.cancel();
+    }
   }
 }
 

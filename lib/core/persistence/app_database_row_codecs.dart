@@ -82,6 +82,10 @@ Future<Map<String, List<String>>> _loadTrackTags(
     'SELECT path, tag FROM track_tags $where ORDER BY sort_order ASC',
     args,
   );
+  return _trackTagsByPath(rows);
+}
+
+Map<String, List<String>> _trackTagsByPath(List<Map<String, Object?>> rows) {
   final tagsByPath = <String, List<String>>{};
   for (final row in rows) {
     final path = row['path'] as String;
@@ -204,34 +208,38 @@ MusicTrack _trackStartupFromRow(Map<String, dynamic> row) => MusicTrack(
   duration: Duration(milliseconds: (row['duration_ms'] as num?)?.toInt() ?? 0),
 );
 
-MusicTrack _trackFromRow(Map<String, dynamic> row, List<String>? tags) =>
-    MusicTrack(
-      path: row['path'] as String,
-      displayName: row['display_name'] as String,
-      groupKey: row['group_key'] as String,
-      groupTitle: row['group_title'] as String,
-      groupSubtitle: row['group_subtitle'] as String,
-      isSingle: (row['is_single'] as int) == 1,
-      isVideo: (row['is_video'] as int? ?? 0) == 1,
-      scannedAt: _dateTimeFromMs(row['scanned_at_ms']),
-      fileSizeBytes: (row['file_size_bytes'] as num?)?.toInt(),
-      modifiedAt: _dateTimeFromMs(row['modified_at_ms']),
-      lastPlayedPosition: Duration(
-        milliseconds: (row['last_played_position_ms'] as num?)?.toInt() ?? 0,
-      ),
-      lastPlayedAt: _dateTimeFromMs(row['last_played_at_ms']),
-      isFavorite: (row['is_favorite'] as int? ?? 0) == 1,
-      tags: tags ?? const <String>[],
-      coverCachePath: row['cover_cache_path'] as String?,
-      lyricsPath: row['lyrics_path'] as String?,
-      manualCoverPath: row['manual_cover_path'] as String?,
-      remoteCoverUrl: row['remote_cover_url'] as String?,
-      remoteMetadataKind: row['remote_metadata_kind'] as String?,
-      remoteMetadata: _decodeJsonMap(row['remote_metadata_json']),
-      duration: Duration(
-        milliseconds: (row['duration_ms'] as num?)?.toInt() ?? 0,
-      ),
-    );
+MusicTrack _trackFromRow(
+  Map<String, dynamic> row,
+  List<String>? tags, {
+  List<String>? remoteMetadataKeys,
+}) => MusicTrack(
+  path: row['path'] as String,
+  displayName: row['display_name'] as String,
+  groupKey: row['group_key'] as String,
+  groupTitle: row['group_title'] as String,
+  groupSubtitle: row['group_subtitle'] as String,
+  isSingle: (row['is_single'] as int) == 1,
+  isVideo: (row['is_video'] as int? ?? 0) == 1,
+  scannedAt: _dateTimeFromMs(row['scanned_at_ms']),
+  fileSizeBytes: (row['file_size_bytes'] as num?)?.toInt(),
+  modifiedAt: _dateTimeFromMs(row['modified_at_ms']),
+  lastPlayedPosition: Duration(
+    milliseconds: (row['last_played_position_ms'] as num?)?.toInt() ?? 0,
+  ),
+  lastPlayedAt: _dateTimeFromMs(row['last_played_at_ms']),
+  isFavorite: (row['is_favorite'] as int? ?? 0) == 1,
+  tags: tags ?? const <String>[],
+  coverCachePath: row['cover_cache_path'] as String?,
+  lyricsPath: row['lyrics_path'] as String?,
+  manualCoverPath: row['manual_cover_path'] as String?,
+  remoteCoverUrl: row['remote_cover_url'] as String?,
+  remoteMetadataKind: row['remote_metadata_kind'] as String?,
+  remoteMetadata: _decodeJsonMap(
+    row['remote_metadata_json'],
+    keys: remoteMetadataKeys,
+  ),
+  duration: Duration(milliseconds: (row['duration_ms'] as num?)?.toInt() ?? 0),
+);
 
 Map<String, dynamic> _libraryEntryToRow(
   LibraryEntryRecord entry, {
@@ -879,12 +887,17 @@ String? _encodeJsonMap(Map<String, Object?>? value) {
   return json.encode(value);
 }
 
-Map<String, Object?>? _decodeJsonMap(Object? value) {
+Map<String, Object?>? _decodeJsonMap(Object? value, {List<String>? keys}) {
   if (value is! String || value.isEmpty) return null;
   try {
     final raw = json.decode(value);
     if (raw is! Map) return null;
-    return raw.cast<String, Object?>();
+    final metadata = raw.cast<String, Object?>();
+    if (keys == null) return metadata;
+    return <String, Object?>{
+      for (final key in keys)
+        if (metadata.containsKey(key)) key: metadata[key],
+    };
   } catch (_) {
     return null;
   }
@@ -892,4 +905,26 @@ Map<String, Object?>? _decodeJsonMap(Object? value) {
 
 List<MusicTrack> _startupTracksFromRows(List<Map<String, Object?>> rows) {
   return rows.map(_trackStartupFromRow).toList(growable: false);
+}
+
+List<MusicTrack> _recommendationTracksFromRows(
+  (List<Map<String, Object?>>, List<Map<String, Object?>>) rows,
+) {
+  final tagsByPath = _trackTagsByPath(rows.$2);
+  return rows.$1
+      .map(
+        (row) => _trackFromRow(
+          row,
+          tagsByPath[row['path'] as String],
+          remoteMetadataKeys: const [
+            'id',
+            'circleName',
+            'tags',
+            'voiceActors',
+            'vas',
+            'sourceId',
+          ],
+        ),
+      )
+      .toList(growable: false);
 }

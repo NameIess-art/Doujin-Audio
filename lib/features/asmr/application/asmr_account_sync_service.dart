@@ -7,22 +7,6 @@ import 'asmr_api_service.dart';
 import 'asmr_auth_service.dart';
 import 'asmr_preferences.dart';
 
-class AsmrSyncCancellationToken {
-  bool _cancelled = false;
-
-  bool get isCancelled => _cancelled;
-
-  void cancel() => _cancelled = true;
-
-  void throwIfCancelled() {
-    if (_cancelled) throw const AsmrSyncCancelled();
-  }
-}
-
-class AsmrSyncCancelled implements Exception {
-  const AsmrSyncCancelled();
-}
-
 class AsmrAccountSnapshot {
   AsmrAccountSnapshot({
     this.session,
@@ -220,7 +204,7 @@ class AsmrAccountSyncService {
 
   Future<AsmrAccountSyncResult> synchronize({
     required AsmrContentLanguage language,
-    required AsmrSyncCancellationToken cancellationToken,
+    required AsmrRequestCancellationToken cancellationToken,
   }) async {
     var session = _snapshot.session;
     if (session == null || !session.isValid) {
@@ -264,7 +248,7 @@ class AsmrAccountSyncService {
   Future<void> _runSync(
     AsmrAuthSession session,
     AsmrContentLanguage language,
-    AsmrSyncCancellationToken token,
+    AsmrRequestCancellationToken token,
   ) async {
     do {
       token.throwIfCancelled();
@@ -302,7 +286,7 @@ class AsmrAccountSyncService {
   Future<List<AsmrSyncOperation>> _flushOperations(
     String tokenValue,
     List<AsmrSyncOperation> batch,
-    AsmrSyncCancellationToken token,
+    AsmrRequestCancellationToken token,
   ) async {
     final uploaded = <AsmrSyncOperation>[];
     final failed = <AsmrSyncOperation>[];
@@ -379,7 +363,7 @@ class AsmrAccountSyncService {
   Future<void> _preflightProtectedProgress(
     String tokenValue,
     AsmrContentLanguage language,
-    AsmrSyncCancellationToken token,
+    AsmrRequestCancellationToken token,
   ) async {
     const filters = <String>['marked', 'listened', 'replay', 'postponed'];
     final pages = await Future.wait(
@@ -399,7 +383,7 @@ class AsmrAccountSyncService {
   Future<List<AsmrReviewRecord>> _fetchRemoteState(
     String tokenValue,
     AsmrContentLanguage language,
-    AsmrSyncCancellationToken token,
+    AsmrRequestCancellationToken token,
   ) async {
     const filters = <String>[
       'marked',
@@ -420,7 +404,7 @@ class AsmrAccountSyncService {
     String tokenValue,
     String filter,
     AsmrContentLanguage language,
-    AsmrSyncCancellationToken token,
+    AsmrRequestCancellationToken token,
   ) async {
     final records = <AsmrReviewRecord>[];
     for (var page = 1; ; page++) {

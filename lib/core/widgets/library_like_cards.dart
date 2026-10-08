@@ -321,6 +321,7 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
     required this.coverBuilder,
     this.accentColor,
     this.trailingActions,
+    this.titleLeading,
   });
 
   final String title;
@@ -328,6 +329,7 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
   final Widget Function(double coverWidth) coverBuilder;
   final Color? accentColor;
   final Widget? trailingActions;
+  final Widget? titleLeading;
 
   @override
   Widget build(BuildContext context) {
@@ -344,6 +346,10 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
     );
     final primaryLines = lines.where((line) => !line.isSecondary);
     final secondaryLines = lines.where((line) => line.isSecondary).toList();
+    final titleText = LibraryLikeScrollableText(
+      text: title,
+      style: _libraryLikeFixedLineStyle(titleStyle),
+    );
     const coverWidth =
         LibraryLikeCardMetrics.coverHeight *
         LibraryLikeCardMetrics.coverAspectRatio;
@@ -377,10 +383,16 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
                             constraints: const BoxConstraints(
                               minHeight: _libraryLikeInfoLineHeight,
                             ),
-                            child: LibraryLikeScrollableText(
-                              text: title,
-                              style: _libraryLikeFixedLineStyle(titleStyle),
-                            ),
+                            child: titleLeading == null
+                                ? titleText
+                                : Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      titleLeading!,
+                                      Expanded(child: titleText),
+                                    ],
+                                  ),
                           ),
                           for (final line in primaryLines)
                             LibraryLikeDetailInfoLine(
@@ -573,6 +585,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
     this.loading = false,
     this.accentColor,
     this.trailingActions,
+    this.titleLeading,
   });
 
   final String title;
@@ -585,6 +598,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   final String listSeparator;
   final bool loading;
   final Widget? trailingActions;
+  final Widget? titleLeading;
   final Widget Function(double coverWidth) coverBuilder;
   final Color? accentColor;
 
@@ -606,6 +620,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
       coverBuilder: coverBuilder,
       accentColor: accentColor,
       trailingActions: trailingActions,
+      titleLeading: titleLeading,
     );
   }
 }

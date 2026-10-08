@@ -4470,59 +4470,108 @@ void main() {
     );
   }
 
-  testWidgets(
-    'single track without cover shows pin in leading indicator and checkmark at bottom-left when selected',
-    (WidgetTester tester) async {
-      final fixture = AppRuntimeWidgetTestFixture();
-      addTearDown(fixture.dispose);
-      final runtimeGraph = fixture.runtimeGraph;
-      const libraryPath = '/library/single-track-test';
-      final singleTrack = MusicTrack(
-        path: '/library/single-track-test/single.mp3',
-        displayName: 'single.mp3',
-        groupKey: libraryPath,
-        groupTitle: 'single-track-test',
-        groupSubtitle: '',
-        isSingle: true,
-        duration: const Duration(minutes: 2),
+  for (final withCover in [false, true]) {
+    for (final pinned in [false, true]) {
+      testWidgets(
+        'single audio selection keeps content and indicators visible (cover: $withCover, pinned: $pinned)',
+        (WidgetTester tester) async {
+          final fixture = AppRuntimeWidgetTestFixture(
+            coverArtworkCacheService: _NoCoverArtworkCacheService(),
+          );
+          addTearDown(fixture.dispose);
+          final runtimeGraph = fixture.runtimeGraph;
+          const libraryPath = '/library/single-track-test';
+          final singleTrack = MusicTrack(
+            path: '/library/single-track-test/single.mp3',
+            displayName: 'single.mp3',
+            groupKey: libraryPath,
+            groupTitle: 'single-track-test',
+            groupSubtitle: '',
+            isSingle: true,
+            duration: const Duration(minutes: 2),
+            manualCoverPath: withCover ? '/test/cover.png' : null,
+          );
+          runtimeGraph.library
+            ..addWatchedLibrary(libraryPath, notify: false)
+            ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
+              singleTrack,
+            ], persist: false)
+            ..addTracks(
+              <MusicTrack>[singleTrack],
+              notify: false,
+              persist: false,
+            );
+          fixture.libraryService.syncSlice(
+            isInitialized: true,
+            detailRevision: 0,
+          );
+
+          if (pinned) {
+            await fixture.settings.toggleLibraryPathPinned(singleTrack.path);
+          }
+
+          await tester.pumpWidget(fixture.build(const LibraryTab()));
+          await tester.pump();
+          await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+          await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+          await tester.pump(const Duration(milliseconds: 350));
+
+          final pinBadge = find.byKey(
+            ValueKey<String>(
+              'library_pinned_${PathMatcher.normalize(singleTrack.path)}',
+            ),
+          );
+          expect(pinBadge, pinned ? findsOneWidget : findsNothing);
+          expect(tester.takeException(), isNull);
+
+          // Long press on single track to enter multi-select
+          final trackFinder = find.text('single.mp3', findRichText: true);
+          await tester.longPress(trackFinder);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+
+          expect(trackFinder, findsOneWidget);
+          final selectionBadge = find.byKey(
+            ValueKey<String>(
+              'library_selection_indicator_${PathMatcher.normalize(singleTrack.path)}',
+            ),
+          );
+          expect(selectionBadge, findsOneWidget);
+          expect(pinBadge, pinned ? findsOneWidget : findsNothing);
+          final cardFinder = find
+              .ancestor(of: trackFinder, matching: find.byType(Card))
+              .first;
+          final cardRect = tester.getRect(cardFinder);
+          final titleRect = tester.getRect(trackFinder);
+          final selectionRect = tester.getRect(selectionBadge);
+          expect(selectionRect.left, lessThan(titleRect.left));
+          expect(selectionRect.top, greaterThanOrEqualTo(titleRect.bottom));
+          expect(cardRect.contains(selectionRect.topLeft), isTrue);
+          expect(cardRect.contains(selectionRect.bottomRight), isTrue);
+          if (pinned) {
+            final pinRect = tester.getRect(pinBadge);
+            expect(pinRect.right, lessThanOrEqualTo(titleRect.left));
+            expect(pinRect.top, titleRect.top);
+          }
+          expect(tester.takeException(), isNull);
+          await tester.tap(
+            find.byKey(const ValueKey('library_exit_selection_button')),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(trackFinder, findsOneWidget);
+          expect(selectionBadge, findsNothing);
+          expect(tester.takeException(), isNull);
+
+          await finishLibraryTest(tester, fixture);
+        },
+        variant: const TargetPlatformVariant({
+          TargetPlatform.android,
+          TargetPlatform.windows,
+        }),
       );
-      runtimeGraph.library
-        ..addWatchedLibrary(libraryPath, notify: false)
-        ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
-          singleTrack,
-        ], persist: false)
-        ..addTracks(<MusicTrack>[singleTrack], notify: false, persist: false);
-      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
-
-      // Pre-pin the single track
-      await fixture.settings.toggleLibraryPathPinned(singleTrack.path);
-
-      await tester.pumpWidget(fixture.build(const LibraryTab()));
-      await tester.pump();
-      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
-      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
-      await tester.pump(const Duration(milliseconds: 350));
-
-      // Pin indicator should be inside _LibraryLeadingIndicators
-      final pinBadge = find.byKey(
-        ValueKey<String>(
-          'library_pinned_${PathMatcher.normalize(singleTrack.path)}',
-        ),
-      );
-      expect(pinBadge, findsOneWidget);
-
-      // Long press on single track to enter multi-select
-      final trackFinder = find.text('single.mp3', findRichText: true);
-      await tester.longPress(trackFinder);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-
-      // Selection checkmark should be displayed
-      expect(find.byIcon(Icons.check_rounded), findsOneWidget);
-
-      await finishLibraryTest(tester, fixture);
-    },
-  );
+    }
+  }
 
   testWidgets(
     'single track without cover stays unhighlighted without entry buttons',
@@ -4620,6 +4669,7 @@ void main() {
                 secondaryIcon: Icons.sell_outlined,
                 secondaryText: 'Tag',
                 isSelectionMode: selectionMode,
+                isSelected: selectionMode,
               );
         await tester.pumpWidget(fixture.build(buildCard(false)));
         await tester.pump(const Duration(milliseconds: 350));

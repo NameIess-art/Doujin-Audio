@@ -5,6 +5,7 @@ import '../../../core/media/search_query_utils.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_library_view_state.dart';
 import 'asmr_remote_catalog_service.dart';
+import 'asmr_request_cancellation.dart';
 
 typedef AsmrCategoryRequestContext = ({
   int authEpoch,
@@ -43,7 +44,10 @@ final class _CategoryState {
   int requestSerial = 0;
   Future<void>? refreshTask;
   Future<void>? loadMoreTask;
+  AsmrRequestCancellationToken? cancellationToken;
   void invalidateRequest() {
+    cancellationToken?.cancel();
+    cancellationToken = null;
     requestSerial++;
     isLoading = false;
     isLoadingMore = false;
@@ -77,6 +81,8 @@ final class AsmrCategoryCatalog {
   final Map<_CategoryKey, _CategoryState> _categories = {};
   int _searchEpoch = 1;
   int get searchEpoch => _searchEpoch;
+  String _searchQuery = '';
+  AsmrCategoryType? _searchCategory;
   final Map<AsmrCategoryType, String> _lastQueries = {};
   final Map<AsmrCategoryType, String> _pendingAuthRefreshes = {};
   final LinkedHashMap<_FilteredWorksKey, List<AsmrWork>> _filteredWorksCache =
@@ -99,10 +105,23 @@ final class AsmrCategoryCatalog {
     AsmrCategoryType category, [
     String? query,
     bool searchSession = false,
-  ]) => _categories.putIfAbsent(
-    _key(category, query ?? _lastQueries[category] ?? '', null, searchSession),
-    _CategoryState.new,
-  );
+  ]) {
+    final effectiveQuery = normalizeSearchQuery(
+      query ?? _lastQueries[category] ?? '',
+    );
+    // Offstage providers can read the previous keyword during invalidation.
+    // Do not recreate discarded query entries while they unsubscribe.
+    if (searchSession &&
+        effectiveQuery.isNotEmpty &&
+        effectiveQuery != _searchQuery) {
+      return _CategoryState();
+    }
+    return _categories.putIfAbsent(
+      _key(category, effectiveQuery, null, searchSession),
+      _CategoryState.new,
+    );
+  }
+
   static bool isRemote(AsmrCategoryType category) =>
       category != AsmrCategoryType.favorites &&
       category != AsmrCategoryType.history;
@@ -154,7 +173,8 @@ final class AsmrCategoryCatalog {
       isLoadingMore: state.isLoadingMore,
       isRefreshing: state.isLoading && state.works != null,
       isStale: state.isLoading && state.works != null,
-      hasAttemptedLoad: state.query != null || state.requestSerial > 0,
+      hasAttemptedLoad:
+          state.query != null || state.error != null || state.isLoading,
       hasMore: state.hasMore,
       needsLoadMoreRetry: state.needsLoadMoreRetry,
       totalCount: isRemote(category)
@@ -287,10 +307,14 @@ final class AsmrCategoryCatalog {
     _filteredWorksCache.clear();
   }
 
-  void clearWorks() {
+  void cancelRequests() {
     for (final state in _categories.values) {
       state.invalidateRequest();
     }
+  }
+
+  void clearWorks() {
+    cancelRequests();
     _categories.clear();
     _lastQueries.clear();
     _pendingAuthRefreshes.clear();
@@ -299,6 +323,8 @@ final class AsmrCategoryCatalog {
 
   void clearSearchQueries() {
     _searchEpoch++;
+    _searchQuery = '';
+    _searchCategory = null;
     _categories.removeWhere((key, state) {
       if (key.searchEpoch == 0) return false;
       state.invalidateRequest();
@@ -306,6 +332,37 @@ final class AsmrCategoryCatalog {
     });
     _filteredWorksCache.clear();
   }
+
+  void setSearchQuery(String query, AsmrCategoryType category) {
+    final normalized = normalizeSearchQuery(query);
+    final changed = normalized != _searchQuery || category != _searchCategory;
+    if (!changed) return;
+    var stateChanged = false;
+    if (normalized != _searchQuery) {
+      stateChanged = _categories.entries.any(
+        (entry) =>
+            entry.key.searchEpoch != 0 && entry.value.cancellationToken != null,
+      );
+      clearSearchQueries();
+    }
+    _searchQuery = normalized;
+    _searchCategory = category;
+    for (final entry in _categories.entries) {
+      if (entry.key.searchEpoch != 0 &&
+          entry.key.category != category &&
+          entry.value.cancellationToken != null) {
+        entry.value.invalidateRequest();
+        stateChanged = true;
+      }
+    }
+    // Query-dependent views subscribe to the new key themselves. Only broadcast
+    // cancellation of live state; completed query eviction does not alter roots.
+    if (stateChanged) _onChanged();
+  }
+
+  bool isSearchRequestCurrent(String query, AsmrCategoryType category) =>
+      normalizeSearchQuery(query) == _searchQuery &&
+      (_searchQuery.isEmpty || _searchCategory == category);
 
   bool _isCurrent(_CategoryKey key, _CategoryRequestKey request) =>
       _isContextCurrent(request.context) &&
@@ -318,21 +375,30 @@ final class AsmrCategoryCatalog {
     bool searchSession = false,
   }) async {
     final query = normalizeSearchQuery(searchQuery);
+    if (searchSession && !isSearchRequestCurrent(query, category)) return;
     if (!searchSession) _lastQueries[category] = query;
     final cacheKey = _key(category, query, context, searchSession);
     final state = _categories.putIfAbsent(cacheKey, _CategoryState.new);
     final pagination = state.loadMoreTask;
     if (pagination != null) await pagination;
     if (!_isContextCurrent(context) ||
+        (searchSession && !isSearchRequestCurrent(query, category)) ||
         (cacheKey.searchEpoch != 0 && cacheKey.searchEpoch != _searchEpoch)) {
       return;
     }
     if (state.refreshTask != null) return state.refreshTask;
     final request = (context: context, serial: ++state.requestSerial);
+    final cancellationToken = AsmrRequestCancellationToken();
+    state.cancellationToken = cancellationToken;
     late final Future<void> task;
-    task = _refresh(cacheKey, state, request).whenComplete(() {
-      if (identical(state.refreshTask, task)) state.refreshTask = null;
-    });
+    task = _refresh(cacheKey, state, request, cancellationToken).whenComplete(
+      () {
+        if (identical(state.refreshTask, task)) state.refreshTask = null;
+        if (identical(state.cancellationToken, cancellationToken)) {
+          state.cancellationToken = null;
+        }
+      },
+    );
     state.refreshTask = task;
     await task;
   }
@@ -342,6 +408,7 @@ final class AsmrCategoryCatalog {
     AsmrCategoryRequestContext context,
     int page,
     int serial,
+    AsmrRequestCancellationToken cancellationToken,
   ) async {
     if (key.category == AsmrCategoryType.recommendation) {
       final ranked = await _remoteCatalogService.loadRecommendations(
@@ -351,6 +418,7 @@ final class AsmrCategoryCatalog {
         favoriteWorks: _localWorks(AsmrCategoryType.favorites),
         historyWorks: _localWorks(AsmrCategoryType.history),
         refreshSeed: serial,
+        cancellationToken: cancellationToken,
       );
       return AsmrWorkPage(
         works: ranked,
@@ -365,6 +433,7 @@ final class AsmrCategoryCatalog {
       page: page,
       language: context.language,
       token: context.token,
+      cancellationToken: cancellationToken,
     );
   }
 
@@ -372,6 +441,7 @@ final class AsmrCategoryCatalog {
     _CategoryKey cacheKey,
     _CategoryState state,
     _CategoryRequestKey request,
+    AsmrRequestCancellationToken cancellationToken,
   ) async {
     state.isLoading = true;
     state.needsLoadMoreRetry = false;
@@ -384,7 +454,13 @@ final class AsmrCategoryCatalog {
         state.hasMore = false;
         return;
       }
-      final result = await _fetch(cacheKey, request.context, 1, request.serial);
+      final result = await _fetch(
+        cacheKey,
+        request.context,
+        1,
+        request.serial,
+        cancellationToken,
+      );
       if (!_isCurrent(cacheKey, request)) return;
       final ids = <int>{};
       final frozen = immutableList(
@@ -394,6 +470,8 @@ final class AsmrCategoryCatalog {
       _applyPageResult(state, cacheKey.query, result);
       state.revision++;
       _onChanged();
+    } on AsmrRequestCancelled {
+      // Superseded searches are normal invalidation, not network failures.
     } catch (error) {
       if (_isCurrent(cacheKey, request)) state.error = error;
     } finally {
@@ -410,10 +488,12 @@ final class AsmrCategoryCatalog {
     required AsmrCategoryRequestContext context,
     bool searchSession = false,
   }) async {
+    if (searchSession && !isSearchRequestCurrent(searchQuery, category)) return;
     final state = _state(category, searchQuery, searchSession);
     final refresh = state.refreshTask;
     if (refresh != null) await refresh;
     if (!_isContextCurrent(context) ||
+        (searchSession && !isSearchRequestCurrent(searchQuery, category)) ||
         (searchSession && !_categories.containsValue(state))) {
       return;
     }
@@ -440,10 +520,12 @@ final class AsmrCategoryCatalog {
     bool searchSession = false,
   }) async {
     final query = normalizeSearchQuery(searchQuery);
+    if (searchSession && !isSearchRequestCurrent(query, category)) return;
     final state = _state(category, query, searchSession);
     final refreshTask = state.refreshTask;
     if (refreshTask != null) await refreshTask;
     if (!isRemote(category) ||
+        (searchSession && !isSearchRequestCurrent(query, category)) ||
         category == AsmrCategoryType.recommendation ||
         state.isLoadingMore ||
         !_isContextCurrent(context)) {
@@ -460,13 +542,21 @@ final class AsmrCategoryCatalog {
     }
     if (!state.hasMore) return;
     final key = _key(category, query, context, searchSession);
-    final request = (context: context, serial: state.requestSerial);
+    final request = (context: context, serial: ++state.requestSerial);
+    final cancellationToken = AsmrRequestCancellationToken();
+    state.cancellationToken = cancellationToken;
     state.isLoadingMore = true;
     state.needsLoadMoreRetry = false;
     state.error = null;
     _onChanged();
     try {
-      final result = await _fetch(key, context, state.page + 1, request.serial);
+      final result = await _fetch(
+        key,
+        context,
+        state.page + 1,
+        request.serial,
+        cancellationToken,
+      );
       if (!_isCurrent(key, request)) return;
       final ids = state.works!.map((work) => work.id).toSet();
       final additions = result.works
@@ -478,12 +568,17 @@ final class AsmrCategoryCatalog {
       _applyPageResult(state, query, result);
       state.needsLoadMoreRetry = additions.isEmpty && state.hasMore;
       _onChanged();
+    } on AsmrRequestCancelled {
+      // Retain completed pages so returning to this category can resume.
     } catch (error) {
       if (_isCurrent(key, request)) {
         state.error = error;
         state.needsLoadMoreRetry = true;
       }
     } finally {
+      if (identical(state.cancellationToken, cancellationToken)) {
+        state.cancellationToken = null;
+      }
       if (_isCurrent(key, request)) {
         state.isLoadingMore = false;
         _onChanged();

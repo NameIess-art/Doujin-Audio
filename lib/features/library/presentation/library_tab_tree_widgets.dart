@@ -165,53 +165,44 @@ class LibraryLeadingIndicators extends StatelessWidget {
     this.path,
     required this.isSelected,
     required this.isPinned,
+    required this.child,
   });
 
   final String? path;
   final bool isSelected;
   final bool isPinned;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : _libraryIndicatorFadeDuration;
-    return AnimatedSwitcher(
-      duration: duration,
-      reverseDuration: duration,
-      switchInCurve: Curves.easeInOut,
-      switchOutCurve: Curves.easeInOut,
-      child: !isPinned && !isSelected
-          ? const SizedBox.shrink()
-          : Padding(
-              key: const ValueKey<String>('library_leading_indicators'),
-              padding: const EdgeInsets.only(right: AppSpacing.xs),
-              child: SizedBox(
-                width: 24,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Positioned(
-                      top: 0,
-                      left: 1,
-                      child: LibraryPinnedIndicator(
-                        isPinned: isPinned,
-                        path: path,
-                        isSelected: isSelected,
-                      ),
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      left: 1,
-                      child: LibrarySelectionIndicator(
-                        path: path,
-                        isSelected: isSelected,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+    // The content gives the overlay a finite height inside lazy lists.
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        ConstrainedBox(
+          constraints: BoxConstraints(minHeight: isSelected ? 44 : 22),
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: isPinned || isSelected ? 24 + AppSpacing.xs : 0,
             ),
+            child: child,
+          ),
+        ),
+        Positioned(
+          top: 0,
+          left: 1,
+          child: LibraryPinnedIndicator(
+            isPinned: isPinned,
+            path: path,
+            isSelected: isSelected,
+          ),
+        ),
+        Positioned(
+          bottom: 0,
+          left: 1,
+          child: LibrarySelectionIndicator(path: path, isSelected: isSelected),
+        ),
+      ],
     );
   }
 }
@@ -938,22 +929,16 @@ class _TrackNodeWidget extends ConsumerWidget {
                   )
                 : Padding(
                     padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
-                    child: Row(
-                      children: [
-                        LibraryLeadingIndicators(
-                          path: track.path,
-                          isSelected: isSelected,
-                          isPinned: isPinned,
-                        ),
-                        Expanded(
-                          child: SingleAudioFileCardContent(
-                            title: track.displayName,
-                            detail: singleDetail,
-                            detailLoading: isSingleDetailLoading,
-                            trailingActions: actions,
-                          ),
-                        ),
-                      ],
+                    child: LibraryLeadingIndicators(
+                      path: track.path,
+                      isSelected: isSelected,
+                      isPinned: isPinned,
+                      child: SingleAudioFileCardContent(
+                        title: track.displayName,
+                        detail: singleDetail,
+                        detailLoading: isSingleDetailLoading,
+                        trailingActions: actions,
+                      ),
                     ),
                   ),
           ),

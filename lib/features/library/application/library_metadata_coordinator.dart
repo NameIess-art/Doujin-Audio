@@ -59,12 +59,21 @@ final class LibraryMetadataCoordinator {
   bool _pendingCoverNotification = false;
   int _epoch = 0;
   bool _disposed = false;
+  int _rootsGeneration = -1;
+  List<String> _sortedWatchedFolders = const <String>[];
+  List<String> _sortedWatchedLibraries = const <String>[];
+  final Map<String, String> _watchedFolderByPath =
+      LibraryService.createPathIndex<String>();
 
   void prepareForReset() {
     _epoch++;
     _pendingCoverNotification = false;
     _missingDurationBackfill = null;
     _backfillRequestedAgain = false;
+    _rootsGeneration = -1;
+    _sortedWatchedFolders = const <String>[];
+    _sortedWatchedLibraries = const <String>[];
+    _watchedFolderByPath.clear();
   }
 
   void dispose() {
@@ -202,24 +211,46 @@ final class LibraryMetadataCoordinator {
 
   AudioDetailTarget targetForTrack(MusicTrack track) {
     if (track.isSingle) return AudioDetailTarget.singleAudioFile(track.path);
+    _prepareRootPaths();
     return AudioDetailTarget.libraryRootFolder(
       const LibraryOrganizer().rootPathForTrack(
         track,
-        _service.watchedFolders,
-        watchedLibraries: _service.watchedLibraries,
+        _sortedWatchedFolders,
+        watchedLibraries: _sortedWatchedLibraries,
+        rootsAlreadySorted: true,
       ),
     );
   }
 
   AudioDetailTarget canonicalTarget(AudioDetailTarget target) {
     if (!target.isLibraryRootFolder) return target;
+    _prepareRootPaths();
     return AudioDetailTarget.libraryRootFolder(
       const LibraryOrganizer().rootFolderPath(
         target.targetPath,
-        _service.watchedFolders,
-        watchedLibraries: _service.watchedLibraries,
+        _sortedWatchedFolders,
+        watchedLibraries: _sortedWatchedLibraries,
+        rootsAlreadySorted: true,
+        watchedFolderByPath: _watchedFolderByPath,
       ),
     );
+  }
+
+  void _prepareRootPaths() {
+    if (_rootsGeneration == _service.libraryDerivedGeneration) return;
+    // The generation changes inside batches before structureRevision commits.
+    _sortedWatchedFolders = _service.watchedFolders.toList(growable: false)
+      ..sort((a, b) => b.length.compareTo(a.length));
+    _sortedWatchedLibraries = _service.watchedLibraries.toList(growable: false)
+      ..sort((a, b) => b.length.compareTo(a.length));
+    _watchedFolderByPath.clear();
+    for (final folderPath in _sortedWatchedFolders) {
+      _watchedFolderByPath.putIfAbsent(
+        folderPath,
+        () => PathMatcher.normalize(folderPath),
+      );
+    }
+    _rootsGeneration = _service.libraryDerivedGeneration;
   }
 
   AudioDetailTarget targetForPath(String trackPath) {

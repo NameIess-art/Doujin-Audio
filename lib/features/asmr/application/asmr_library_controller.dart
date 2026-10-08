@@ -11,6 +11,7 @@ import 'asmr_download_manager.dart';
 import 'asmr_playback_coordinator.dart';
 import 'asmr_preferences.dart';
 import 'asmr_remote_catalog_service.dart';
+import 'asmr_request_cancellation.dart';
 import 'asmr_library_view_state.dart';
 import 'asmr_work_content_mapping.dart';
 import 'asmr_work_content_store.dart';
@@ -69,7 +70,7 @@ class AsmrLibraryController extends ChangeNotifier
   Future<void>? _authRestoreTask;
   final Map<_AsmrSyncRequestKey, Future<void>> _syncTasks =
       <_AsmrSyncRequestKey, Future<void>>{};
-  AsmrSyncCancellationToken? _activeSyncCancellationToken;
+  AsmrRequestCancellationToken? _activeSyncCancellationToken;
   Future<void> _stateMutationTail = Future<void>.value();
   bool _initialized = false;
   int _globalRevision = 0;
@@ -82,6 +83,8 @@ class AsmrLibraryController extends ChangeNotifier
 
   void beginSearchSession() => _catalog.clearSearchQueries();
   void endSearchSession() => _catalog.clearSearchQueries();
+  void setSearchQuery(String query, AsmrCategoryType category) =>
+      _catalog.setSearchQuery(query, category);
 
   void clearRuntimeCaches() {
     _runtimeCacheEpoch++;
@@ -449,7 +452,7 @@ class AsmrLibraryController extends ChangeNotifier
 
   Future<void> _syncAsmrAccountInternal(_AsmrSyncRequestKey key) async {
     if (key.authEpoch != _authEpoch || key.token != _authSession?.token) return;
-    final cancellationToken = AsmrSyncCancellationToken();
+    final cancellationToken = AsmrRequestCancellationToken();
     _activeSyncCancellationToken?.cancel();
     _activeSyncCancellationToken = cancellationToken;
     _syncPhase = AsmrSyncPhase.syncing;
@@ -475,7 +478,7 @@ class AsmrLibraryController extends ChangeNotifier
           ? AsmrSyncPhase.succeeded
           : AsmrSyncPhase.failed;
       _lastSyncError = result.failure;
-    } on AsmrSyncCancelled {
+    } on AsmrRequestCancelled {
       return;
     } catch (error) {
       if (_disposed ||
@@ -592,6 +595,7 @@ class AsmrLibraryController extends ChangeNotifier
     String searchQuery = '',
     bool searchSession = false,
   }) async {
+    if (searchSession) setSearchQuery(searchQuery, category);
     final searchEpoch = _catalog.searchEpoch;
     final authEpoch = _authEpoch;
     final contentEpoch = _contentEpoch;
@@ -599,7 +603,9 @@ class AsmrLibraryController extends ChangeNotifier
     if (_disposed ||
         authEpoch != _authEpoch ||
         contentEpoch != _contentEpoch ||
-        (searchSession && searchEpoch != _catalog.searchEpoch)) {
+        (searchSession &&
+            (searchEpoch != _catalog.searchEpoch ||
+                !_catalog.isSearchRequestCurrent(searchQuery, category)))) {
       return;
     }
     final pending = _catalog.pendingRefresh(
@@ -631,6 +637,7 @@ class AsmrLibraryController extends ChangeNotifier
     String searchQuery = '',
     bool searchSession = false,
   }) async {
+    if (searchSession) setSearchQuery(searchQuery, category);
     final searchEpoch = _catalog.searchEpoch;
     final authEpoch = _authEpoch;
     final contentEpoch = _contentEpoch;
@@ -638,7 +645,9 @@ class AsmrLibraryController extends ChangeNotifier
     if (_disposed ||
         authEpoch != _authEpoch ||
         contentEpoch != _contentEpoch ||
-        (searchSession && searchEpoch != _catalog.searchEpoch)) {
+        (searchSession &&
+            (searchEpoch != _catalog.searchEpoch ||
+                !_catalog.isSearchRequestCurrent(searchQuery, category)))) {
       return;
     }
     await _catalog.refresh(
@@ -654,6 +663,7 @@ class AsmrLibraryController extends ChangeNotifier
     String searchQuery = '',
     bool searchSession = false,
   }) async {
+    if (searchSession) setSearchQuery(searchQuery, category);
     final searchEpoch = _catalog.searchEpoch;
     final authEpoch = _authEpoch;
     final contentEpoch = _contentEpoch;
@@ -661,7 +671,9 @@ class AsmrLibraryController extends ChangeNotifier
     if (_disposed ||
         authEpoch != _authEpoch ||
         contentEpoch != _contentEpoch ||
-        (searchSession && searchEpoch != _catalog.searchEpoch)) {
+        (searchSession &&
+            (searchEpoch != _catalog.searchEpoch ||
+                !_catalog.isSearchRequestCurrent(searchQuery, category)))) {
       return;
     }
     await _catalog.loadMore(
@@ -888,6 +900,7 @@ class AsmrLibraryController extends ChangeNotifier
     _activeSyncCancellationToken = null;
     _authEpoch++;
     _contentEpoch++;
+    _catalog.cancelRequests();
     super.dispose();
   }
 }

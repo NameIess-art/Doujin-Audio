@@ -8,6 +8,80 @@ void registerAsmrRemoteCatalogTests({
   setUp(() => preferences = preferencesStore());
 
   test(
+    'cancelled recommendations stop all candidate sources before page two',
+    () async {
+      await resetPrefs();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var requests = 0;
+      final api = _FakeAsmrApiService(
+        largeRecommendationPool: true,
+        pagedSearchWorks: true,
+        beforeFetchSearchResponse: (_) async {
+          if (++requests == 4) started.complete();
+          await release.future;
+        },
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: _FakeTestPersistenceRepository(const []),
+      );
+      addTearDown(controller.dispose);
+      controller.beginSearchSession();
+      final pending = controller.ensureCategoryLoaded(
+        AsmrCategoryType.recommendation,
+        searchQuery: 'old',
+        searchSession: true,
+      );
+      await started.future;
+      controller.setSearchQuery('new', AsmrCategoryType.recommendation);
+      await pending.timeout(const Duration(seconds: 1));
+      release.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(api.searchWorkRequests, hasLength(4));
+      expect(api.searchWorkRequests, everyElement(endsWith(':1')));
+      final state = controller.categoryViewState(
+        AsmrCategoryType.recommendation,
+        searchQuery: 'new',
+        searchSession: true,
+      );
+      expect(state.works, isEmpty);
+      expect(state.lastError, isNull);
+      expect(state.isLoading, isFalse);
+    },
+  );
+
+  test(
+    'cancelled catalog retry delay does not dispatch another request',
+    () async {
+      final api = _FakeAsmrApiService(transientFetchFailuresRemaining: 1);
+      final service = createTestAsmrServices(
+        apiService: api,
+        persistenceRepository: _FakeTestPersistenceRepository(const []),
+      ).remoteCatalogService;
+      final token = AsmrRequestCancellationToken();
+      final cancelled = expectLater(
+        service.loadPage(
+          AsmrCategoryType.release,
+          searchQuery: '',
+          page: 1,
+          language: AsmrContentLanguage.en,
+          token: null,
+          cancellationToken: token,
+        ),
+        throwsA(isA<AsmrRequestCancelled>()),
+      );
+      await Future<void>.delayed(Duration.zero);
+      token.cancel();
+      await cancelled.timeout(const Duration(seconds: 1));
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(api.fetchWorkRequests, ['release:desc:1']);
+      api.close();
+    },
+  );
+
+  test(
     'ASMR controller ranks recommendations from ordinary work lists',
     () async {
       await resetPrefs();

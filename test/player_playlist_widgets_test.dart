@@ -1,5 +1,6 @@
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -19,12 +20,14 @@ import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_layout.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_panel.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playback_queue_cover.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_viewport.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_surface.dart';
@@ -4144,6 +4147,103 @@ void main() {
     expect(coverCache.requestedPaths, [track.path, track.path]);
     await tester.pump(const Duration(milliseconds: 200));
   });
+
+  for (final cached in [false, true]) {
+    testWidgets(
+      'queue cover defers cold decoding and reuses decoded artwork during navigation (cached: $cached)',
+      (tester) async {
+        final interaction = UiInteractionCoordinator.instance;
+        interaction.resetForTest();
+        addTearDown(interaction.resetForTest);
+        final directory = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('queue-cover-navigation-'),
+        ))!;
+        final file = File('${directory.path}/cover.png');
+        await tester.runAsync(
+          () => file.writeAsBytes(
+            base64Decode(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            ),
+          ),
+        );
+        final provider = resizeFileImageIfNeeded(
+          path: file.path,
+          cacheWidth: 8,
+        );
+        final key = await provider.obtainKey(ImageConfiguration.empty);
+        addTearDown(() async {
+          releaseRetainedCoverImage(provider);
+          await provider.evict();
+          await tester.runAsync(() => file.delete());
+          await tester.runAsync(() => directory.delete());
+        });
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        if (cached) {
+          await tester.pumpWidget(fixture.build(const SizedBox.shrink()));
+          await tester.runAsync(
+            () =>
+                precacheImage(provider, tester.element(find.byType(Scaffold))),
+          );
+          await tester.pump();
+        }
+        final imageCache = PaintingBinding.instance.imageCache;
+        expect(imageCache.statusForKey(key).tracked, cached);
+        expect(imageCache.statusForKey(key).pending, isFalse);
+        final navigation = Object();
+        interaction.beginNavigation(navigation);
+        final track = testMusicTrack(
+          name: 'Queue artwork',
+          path: '/library/queue/artwork.mp3',
+          groupKey: '/library/queue',
+          groupTitle: 'Queue work',
+        );
+        await tester.pumpWidget(
+          fixture.build(
+            Center(
+              child: SizedBox.square(
+                dimension: 52,
+                child: QueueTrackCover(
+                  track: track,
+                  coverPath: file.path,
+                  coverCacheWidth: 8,
+                  future: SynchronousFuture<String?>(file.path),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        final decodedArtwork = find.descendant(
+          of: find.descendant(
+            of: find.byType(QueueTrackCover),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Image && widget.image == provider,
+            ),
+          ),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is RawImage && widget.image != null,
+          ),
+        );
+        expect(interaction.navigationAllowed.value, isFalse);
+        expect(imageCache.statusForKey(key).tracked, cached);
+        expect(imageCache.statusForKey(key).pending, isFalse);
+        expect(decodedArtwork, cached ? findsOneWidget : findsNothing);
+
+        interaction.endNavigation(navigation);
+        await tester.pump();
+        expect(imageCache.statusForKey(key).tracked, isTrue);
+        await pumpUntilFound(tester, decodedArtwork);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 200));
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   for (final count in [1, 2, 3, 4]) {
     testWidgets('$count queue covers fill equal sectors at their centroids', (

@@ -22,6 +22,68 @@ import 'support/test_persistence_repository.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('metadata roots refresh during batches and after reset', () {
+    const parent = r'E:\音频 库';
+    const work = r'E:\音频 库\作品 A';
+    const disc = r'E:\音频 库\作品 A\Disc';
+    final library = LibraryService()..addWatchedFolder(parent);
+    final coordinator = _metadataCoordinator(library);
+    addTearDown(coordinator.dispose);
+    final item = _track(path: '$disc/01.mp3', groupKey: disc);
+    final target = AudioDetailTarget.libraryRootFolder('e:/音频 库/作品 a/disc');
+    expect(coordinator.canonicalTarget(target).targetPath, parent);
+    expect(coordinator.targetForTrack(item).targetPath, parent);
+
+    final structureRevision = library.structureRevision;
+    library.libraryBatchDepth = 1;
+    library.addWatchedFolder(disc);
+    expect(library.structureRevision, structureRevision);
+    expect(coordinator.canonicalTarget(target).targetPath, disc);
+    expect(coordinator.targetForTrack(item).targetPath, disc);
+
+    library.addWatchedLibrary(parent);
+    expect(
+      PathMatcher.equalsNormalized(
+        coordinator.canonicalTarget(target).targetPath,
+        work,
+      ),
+      isTrue,
+    );
+    expect(coordinator.targetForTrack(item).targetPath, work);
+    library.removeWatchedLibrary(parent);
+    library.removeWatchedFolder(disc);
+    expect(coordinator.canonicalTarget(target).targetPath, parent);
+    expect(coordinator.targetForTrack(item).targetPath, parent);
+    library.libraryBatchDepth = 0;
+
+    coordinator.prepareForReset();
+    // Restore replaces roots before the next catalog generation is published.
+    library.watchedFolders
+      ..clear()
+      ..add(work);
+    expect(coordinator.canonicalTarget(target).targetPath, work);
+    expect(coordinator.targetForTrack(item).targetPath, work);
+  });
+
+  test('metadata roots canonicalize equivalent SAF documents', () {
+    const root =
+        'content://com.android.externalstorage.documents/tree/primary%3ALibrary';
+    const document = '$root/document/primary%3ALibrary%2FWork';
+    final library = LibraryService()..addWatchedFolder(document);
+    final coordinator = _metadataCoordinator(library);
+    addTearDown(coordinator.dispose);
+    final target = AudioDetailTarget.libraryRootFolder('$root::Work');
+    final item = _track(
+      path: '$root/document/primary%3ALibrary%2FWork%2FDisc%2F01.mp3',
+      groupKey: '$root::Work/Disc',
+    );
+    expect(coordinator.canonicalTarget(target).targetPath, document);
+    expect(coordinator.targetForTrack(item).targetPath, document);
+    library.addWatchedLibrary(root);
+    expect(coordinator.canonicalTarget(target).targetPath, '$root::Work');
+    expect(coordinator.targetForTrack(item).targetPath, '$root::Work');
+  });
+
   test(
     'clear prevents old card and full tree requests from repopulating folder sources',
     () async {
@@ -1011,6 +1073,26 @@ class _BatchMetadataService implements DlsiteMetadataService {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+LibraryMetadataCoordinator _metadataCoordinator(LibraryService library) {
+  final cache = AudioDetailCacheService(
+    repository: _FakeAudioDetailRepository(),
+  );
+  return LibraryMetadataCoordinator(
+    databaseRepository: TestPersistenceRepository(),
+    detailCacheService: cache,
+    metadataService: _BatchMetadataService(),
+    asmrMetadataService: null,
+    service: library,
+    snapshotCacheService: LibrarySnapshotCacheService(
+      libraryService: library,
+      detailCacheService: cache,
+    ),
+    coverArtwork: () => _BatchCoverArtwork(),
+    syncState: () {},
+    notifyCoverChanged: () {},
+  );
 }
 
 MusicTrack _track({required String path, required String groupKey}) {

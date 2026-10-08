@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
   const organizer = LibraryOrganizer();
@@ -175,6 +177,93 @@ void main() {
       '/music/b',
     ]);
   });
+
+  test('prepared folder roots preserve longest match and path equivalence', () {
+    const safRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic';
+    const safWork = '$safRoot/document/primary%3AMusic%2FWork';
+    final roots = <String>[
+      '/music',
+      '/music/album',
+      r'E:\音频 库',
+      r'E:\音频 库\作品 A',
+      safRoot,
+      safWork,
+    ]..sort((a, b) => b.length.compareTo(a.length));
+    final index = LibraryService.createPathIndex<String>();
+    for (final root in roots) {
+      index.putIfAbsent(root, () => PathMatcher.normalize(root));
+    }
+    final cases = <String, String>{
+      '/music/album': '/music/album',
+      '/music/album/disc': '/music/album',
+      '/music/other': '/music',
+      'e:/音频 库/作品 a': r'E:\音频 库\作品 A',
+      'e:/音频 库/作品 a/Disc': r'E:\音频 库\作品 A',
+      '$safRoot::Work': safWork,
+      '$safRoot::Work/Disc': safWork,
+      '/unwatched/work': PathMatcher.normalize('/unwatched/work'),
+    };
+    for (final entry in cases.entries) {
+      expect(
+        organizer.rootFolderPath(
+          entry.key,
+          roots,
+          rootsAlreadySorted: true,
+          watchedFolderByPath: index,
+        ),
+        PathMatcher.normalize(entry.value),
+        reason: entry.key,
+      );
+    }
+  });
+
+  test(
+    'prepared roots retain library priority and grouped track semantics',
+    () {
+      const library = '/library';
+      const nestedLibrary = '/library/collection';
+      const exactFolder = '/library/collection/work/disc';
+      final roots = <String>[exactFolder, '/outside'];
+      final libraries = <String>[nestedLibrary, library];
+      final index = LibraryService.createPathIndex<String>({
+        exactFolder: exactFolder,
+        '/outside': '/outside',
+      });
+      expect(
+        organizer.rootFolderPath(
+          exactFolder,
+          roots,
+          watchedLibraries: libraries,
+          rootsAlreadySorted: true,
+          watchedFolderByPath: index,
+        ),
+        PathMatcher.normalize('/library/collection/work'),
+      );
+      for (final (item, expected) in <(MusicTrack, String)>[
+        (
+          track('$exactFolder/01.mp3', groupKey: exactFolder),
+          PathMatcher.normalize('/library/collection/work'),
+        ),
+        (track('/outside/01.mp3', groupKey: '/unwatched'), '/outside'),
+        (track('$exactFolder/01.mp3', groupKey: '/outside'), nestedLibrary),
+        (
+          track('/single.mp3', isSingle: true, groupKey: '__single_files__'),
+          '/single.mp3',
+        ),
+      ]) {
+        expect(
+          organizer.rootPathForTrack(
+            item,
+            roots,
+            watchedLibraries: libraries,
+            rootsAlreadySorted: true,
+          ),
+          expected,
+        );
+      }
+    },
+  );
 
   test('topLevelNodeIds reflects removed folder state', () {
     final remainingTracks = <MusicTrack>[

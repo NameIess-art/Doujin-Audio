@@ -50,12 +50,15 @@ class AsmrRemoteCatalogService {
     required int page,
     required AsmrContentLanguage language,
     required String? token,
+    AsmrRequestCancellationToken? cancellationToken,
   }) {
+    cancellationToken?.throwIfCancelled();
     final spec = _sortSpecFor(category);
     final pageSize = _pageSizes[category] ?? 40;
     return _retryTransientLoad(
       category: category,
       page: page,
+      cancellationToken: cancellationToken,
       load: () => searchQuery.isNotEmpty
           ? _apiService.searchWorks(
               keyword: searchQuery,
@@ -65,6 +68,7 @@ class AsmrRemoteCatalogService {
               pageSize: pageSize,
               token: token,
               language: language,
+              cancellationToken: cancellationToken,
             )
           : _apiService.fetchWorks(
               order: spec.order,
@@ -73,6 +77,7 @@ class AsmrRemoteCatalogService {
               pageSize: pageSize,
               token: token,
               language: language,
+              cancellationToken: cancellationToken,
             ),
     );
   }
@@ -84,7 +89,9 @@ class AsmrRemoteCatalogService {
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,
     required int refreshSeed,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     final localTracksFuture = _loadLocalTracks();
     final results = await Future.wait(
       _recommendationSources.map(
@@ -94,9 +101,11 @@ class AsmrRemoteCatalogService {
           language: language,
           token: token,
           refreshSeed: refreshSeed,
+          cancellationToken: cancellationToken,
         ),
       ),
     );
+    cancellationToken?.throwIfCancelled();
     final candidates = <int, AsmrWork>{};
     final firstPageIds = <int>{};
     final explorationIds = <int>{};
@@ -116,7 +125,10 @@ class AsmrRemoteCatalogService {
         ? explorationIds
         : const <int>{};
     final candidateList = candidates.values.toList(growable: false);
-    final localTracks = await localTracksFuture;
+    final localTracks =
+        await (cancellationToken?.waitFor(localTracksFuture) ??
+            localTracksFuture);
+    cancellationToken?.throwIfCancelled();
     final request = AsmrRecommendationRankRequest(
       candidates: candidateList,
       localTracks: localTracks,
@@ -126,7 +138,7 @@ class AsmrRemoteCatalogService {
       limit: null,
       explorationWorkIds: promotedIds,
     );
-    return AppLogService.measureAsync(
+    final ranking = AppLogService.measureAsync(
       'asmr_recommendation_rank',
       () => _recommendationEngine.rankAsync(
         candidates: candidateList,
@@ -146,6 +158,7 @@ class AsmrRemoteCatalogService {
         ),
       },
     );
+    return await (cancellationToken?.waitFor(ranking) ?? ranking);
   }
 
   Future<List<AsmrTrackFile>> loadTrackTree(
@@ -161,6 +174,7 @@ class AsmrRemoteCatalogService {
     required AsmrContentLanguage language,
     required String? token,
     required int refreshSeed,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     final pages = <AsmrWorkPage>[];
     try {
@@ -170,7 +184,9 @@ class AsmrRemoteCatalogService {
         page: 1,
         language: language,
         token: token,
+        cancellationToken: cancellationToken,
       );
+      cancellationToken?.throwIfCancelled();
       pages.add(firstPage);
       if (firstPage.hasMore) {
         final totalPages =
@@ -186,10 +202,13 @@ class AsmrRemoteCatalogService {
             page: nextPage,
             language: language,
             token: token,
+            cancellationToken: cancellationToken,
           ),
         );
       }
       return _RecommendationPagesResult(pages: pages);
+    } on AsmrRequestCancelled {
+      rethrow;
     } catch (error, stackTrace) {
       AppLogService.error(
         'asmr_recommendation_candidate_load_failed category=${category.name}',
@@ -217,11 +236,18 @@ class AsmrRemoteCatalogService {
     required AsmrCategoryType category,
     required int page,
     required Future<AsmrWorkPage> Function() load,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     for (var attempt = 0; ; attempt++) {
+      cancellationToken?.throwIfCancelled();
       try {
-        return await load();
+        final loading = load();
+        final result = await (cancellationToken?.waitFor(loading) ?? loading);
+        cancellationToken?.throwIfCancelled();
+        return result;
       } catch (error, stackTrace) {
+        cancellationToken?.throwIfCancelled();
+        if (error is AsmrRequestCancelled) rethrow;
         if (attempt >= _retryDelays.length || !_isTransient(error)) rethrow;
         AppLogService.warning(
           'asmr_catalog_transient_retry category=${category.name} '
@@ -229,7 +255,11 @@ class AsmrRemoteCatalogService {
           error: error,
           stackTrace: stackTrace,
         );
-        await Future<void>.delayed(_retryDelays[attempt]);
+        if (cancellationToken == null) {
+          await Future<void>.delayed(_retryDelays[attempt]);
+        } else {
+          await cancellationToken.delay(_retryDelays[attempt]);
+        }
       }
     }
   }

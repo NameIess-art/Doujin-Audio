@@ -359,6 +359,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     int pageSize = 40,
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
   }) {
     final request = '$order:$sort:$page';
     calls.add('works:$order:$sort:$page');
@@ -480,6 +481,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     int pageSize = 40,
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
   }) {
     searchKeywords.add(keyword);
     searchWorkRequests.add('$order:$sort:$page');
@@ -666,7 +668,7 @@ class _FakeTestPersistenceRepository extends TestPersistenceRepository {
   final List<MusicTrack> tracks;
 
   @override
-  Future<List<MusicTrack>> loadAllTracks() async => tracks;
+  Future<List<MusicTrack>> loadTracksForRecommendations() async => tracks;
 }
 
 AsmrWork _work({

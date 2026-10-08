@@ -53,7 +53,7 @@ class SqliteAsmrRepository implements AsmrPersistenceRepository {
   );
   @override
   Future<List<MusicTrack>> loadTracksForRecommendations() =>
-      _database.loadAllTracks();
+      _database.loadTracksForRecommendations();
   @override
   Future<void> clearForTest() async {
     final db = await _database.databaseForTest;

@@ -85,6 +85,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     int pageSize = 40,
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     return AsmrWorkPage(
       works: works,

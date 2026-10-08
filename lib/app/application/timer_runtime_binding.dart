@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/timer_facade.dart';
@@ -26,10 +28,17 @@ final class TimerRuntimeBinding implements RuntimeBinding {
       sessions: () => playback.sessions.values,
       pauseSession: playbackCommands.pauseSession,
       activateAudioSession: keepAlive.activateAudioSession,
-      resumeSession: (session) => playbackCommands.startSession(
-        session,
-        shouldStartTriggerCountdown: false,
-      ),
+      resumeSession: (session) async {
+        final fade = await playback.nativeRepository.setFadeMultiplier(
+          session.id,
+          0,
+        );
+        if (fade.isFailure) return false;
+        return playbackCommands.startSession(
+          session,
+          shouldStartTriggerCountdown: false,
+        );
+      },
       onStateChanged: () {
         keepAlive.sync();
         syncTimerState();
@@ -40,8 +49,22 @@ final class TimerRuntimeBinding implements RuntimeBinding {
         syncTimerState();
       },
       applyFadeMultiplier: playback.applyFadeMultiplierToPlayingSessions,
+      applySessionFadeMultiplier: (sessionId, multiplier) {
+        unawaited(
+          playback.nativeRepository.setFadeMultiplier(sessionId, multiplier),
+        );
+      },
       flushSessionPersistence: (sessionId) =>
           playback.flushSessionStatePersistence(sessionId: sessionId),
+      setNativeTrackStop: (sessionId, enabled) async {
+        final result = await playback.nativeRepository.setStopAfterCurrentTrack(
+          sessionId,
+          enabled,
+        );
+        final snapshot = result.valueOrNull;
+        if (snapshot != null) playbackCommands.handleNativeSnapshot(snapshot);
+        return result.isOk;
+      },
     );
     final binding = TimerRuntimeBinding._(timer);
     _attached[timer] = binding;

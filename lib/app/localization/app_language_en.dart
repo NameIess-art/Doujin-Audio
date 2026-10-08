@@ -405,6 +405,8 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_rename_file': 'Rename file',
   'audio_detail_rename_failed':
       'Rename failed. Check whether the file exists or is in use.',
+  'audio_detail_rename_conflict':
+      'A file or folder already uses that name. Choose another name.',
   'audio_detail_value_removed': 'Removed "{value}"',
   'dlsite_review_title': 'Review work data',
   'dlsite_save_cover': 'Save cover to folder',

@@ -107,6 +107,7 @@ final class PlaybackCommandCoordinator
   final Map<String, String> _activePlaybackCachePaths = {};
 
   void releaseSessionResources(String sessionId) {
+    unawaited(_timerFacade.clearTimerPauseForManualStop(sessionId));
     _activePlaybackCacheLeases.remove(sessionId)?.release();
     _activePlaybackCachePaths.remove(sessionId);
   }
@@ -234,13 +235,14 @@ final class PlaybackCommandCoordinator
     PlaybackSession session,
     Duration position,
   ) {
-    if (_timerFacade.stopAfterCurrentTrack &&
+    if (_timerFacade.stopsAfterCurrentTrack(session.id) &&
         session.duration != null &&
         session.duration! > Duration.zero) {
       final remaining = session.duration! - position;
       if (remaining <= const Duration(seconds: 15) &&
           remaining > Duration.zero) {
-        _timerFacade.applyFadeMultiplier(
+        _timerFacade.applyTrackEndFade(
+          session.id,
           (remaining.inMilliseconds / 15000.0).clamp(0.0, 1.0),
         );
       }

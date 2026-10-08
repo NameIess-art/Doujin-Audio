@@ -1,4 +1,5 @@
 import '../../../core/media/music_track.dart';
+import '../../../core/media/path_matcher.dart';
 
 bool mergedLibraryTrackHasChanges(MusicTrack existing, MusicTrack scanned) {
   return existing.displayName != scanned.displayName ||
@@ -22,9 +23,11 @@ bool mergedLibraryTrackHasChanges(MusicTrack existing, MusicTrack scanned) {
 
 MusicTrack mergeLibraryTrackState(MusicTrack existing, MusicTrack scanned) {
   return MusicTrack(
-    path: scanned.path,
+    path: existing.path,
     displayName: scanned.displayName,
-    groupKey: scanned.groupKey,
+    groupKey: PathMatcher.equalsNormalized(existing.groupKey, scanned.groupKey)
+        ? existing.groupKey
+        : scanned.groupKey,
     groupTitle: scanned.groupTitle,
     groupSubtitle: scanned.groupSubtitle,
     isSingle: scanned.isSingle,

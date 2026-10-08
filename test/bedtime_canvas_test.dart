@@ -171,6 +171,31 @@ void main() {
         expect(find.text(i18n.tr('no_timer_set')), findsOneWidget);
 
         // 2. stopAfterCurrentTrack enabled
+        final session = PlaybackSession(
+          id: 'timer-target',
+          currentTrackPath: '/timer-target.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.folderSequential,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: const PlayerState(true, ProcessingState.buffering),
+        );
+        fixture.playback.registerSession(session);
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == 'setStopAfterCurrentTrack') {
+                return {
+                  'ok': true,
+                  'value': {
+                    'sessionId': session.id,
+                    'playWhenReady': true,
+                    'processingState': 'buffering',
+                    'stopAfterCurrentTrack': (call.arguments as Map)['enabled'],
+                  },
+                };
+              }
+              return {'ok': true, 'value': null};
+            });
         fixture.timer.setStopAfterCurrentTrack(true);
         await tester.pump();
 

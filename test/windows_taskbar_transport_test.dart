@@ -87,12 +87,15 @@ void main() {
         ),
       );
     }
-    await attachWindowsRuntime(
+    final desktop = WindowsRuntimeBinding();
+    await desktop.attach();
+    desktop.bindRuntime(
       runtime: _NoopRuntime(),
       playback: playback,
       notifications: notifications,
       timer: timer,
     );
+    await desktop.initializeRuntime(() async {});
 
     await _sendDesktopAction(channel, 'deviceDisconnected');
     expect(native.deviceDisconnectCount, 1);

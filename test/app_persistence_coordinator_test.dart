@@ -138,6 +138,7 @@ void main() {
 
     await coordinator.loadPersistedState();
 
+    expect(coordinator.hasLoadedState, isTrue);
     expect(settings.slice.state.isInitialized, isTrue);
     expect(library.state.isInitialized, isTrue);
     expect(playback.state.isInitialized, isTrue);
@@ -146,6 +147,7 @@ void main() {
     settings.failNextLoad = true;
     await expectLater(coordinator.reloadPersistedState(), throwsStateError);
 
+    expect(coordinator.hasLoadedState, isFalse);
     expect(settings.slice.state.isInitialized, isFalse);
     expect(library.state.isInitialized, isFalse);
     expect(playback.state.isInitialized, isFalse);
@@ -295,6 +297,7 @@ void main() {
       );
       await load;
 
+      expect(coordinator.hasLoadedState, isFalse);
       expect(library.state.isInitialized, isFalse);
       expect(playback.state.isInitialized, isFalse);
       expect(timer.state.isInitialized, isFalse);

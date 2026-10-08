@@ -10,7 +10,7 @@ internal class NativePlaybackTimerExecution(
     private var generation: Int? = null
 
     fun arm(targets: List<String>, generation: Int) {
-        sessionIds.clear()
+        cancel()
         sessionIds.addAll(targets)
         this.generation = generation
         targets.forEach {
@@ -19,17 +19,26 @@ internal class NativePlaybackTimerExecution(
         }
     }
 
-    fun onTrackEnded(sessionId: String) {
+    fun generationFor(sessionId: String): Int? = generation.takeIf { sessionId in sessionIds }
+
+    fun onTrackEnded(sessionId: String, expectedGeneration: Int?) {
+        if (expectedGeneration == null || expectedGeneration != generation) return
         if (!sessionIds.remove(sessionId)) return
         setPauseAtEnd(sessionId, false)
+        restoreFade(sessionId)
         if (sessionIds.isEmpty()) {
             onAllTracksFinished(generation)
             generation = null
         }
     }
 
+    fun removeTarget(sessionId: String) = onTrackEnded(sessionId, generationFor(sessionId))
+
     fun cancel() {
-        sessionIds.forEach { setPauseAtEnd(it, false) }
+        sessionIds.forEach {
+            setPauseAtEnd(it, false)
+            restoreFade(it)
+        }
         sessionIds.clear()
         generation = null
     }

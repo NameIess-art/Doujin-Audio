@@ -45,8 +45,16 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
   bool _disposed = false;
   bool _reloading = false;
   bool _needsResetBeforeLoad = false;
+  bool _hasLoadedState = false;
+
+  bool get hasLoadedState => _hasLoadedState;
+
+  void invalidatePendingLoad() {
+    _loadEpoch++;
+  }
 
   Future<void> loadPersistedState() async {
+    _hasLoadedState = false;
     final epoch = ++_loadEpoch;
     bool isCurrent() => !_disposed && epoch == _loadEpoch;
     try {
@@ -115,6 +123,7 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
     await _library.ensureCardSnapshot();
     if (!isCurrent()) return;
     _syncSlices(isInitialized: true);
+    _hasLoadedState = true;
     _library.schedulePostStartupMaintenance();
   }
 
@@ -135,6 +144,7 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
   @override
   Future<void> reloadPersistedState() async {
     if (_disposed) return;
+    _hasLoadedState = false;
     _loadEpoch++;
     await _resetRuntimeState();
     if (_disposed) return;

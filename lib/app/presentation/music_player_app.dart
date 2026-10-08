@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../localization/app_language_provider.dart';
 import '../application/app_bootstrap_controller.dart';
 import '../application/app_runtime_graph.dart';
+import '../application/windows_runtime_binding.dart';
 import '../state/app_runtime_providers.dart';
 import '../presentation/app_presentation_providers.dart';
 import '../presentation/app_bootstrap_host.dart';
@@ -38,6 +39,7 @@ Widget createAudioPlayerApp({
   required ThemeProvider themeProvider,
   StartupRestoreOutcome? startupRestoreOutcome,
   VoidCallback? onBootstrapSettled,
+  WindowsRuntimeBinding? windowsRuntime,
 }) {
   final (
     :runtimeGraph,
@@ -49,7 +51,9 @@ Widget createAudioPlayerApp({
     :asmrPlaybackCoordinator,
     :asmrApiService,
     :initializeRuntimeData,
-  ) = createProductionAppRuntime();
+  ) = createProductionAppRuntime(
+    windowsRuntime: windowsRuntime,
+  );
 
   final app = ProviderScope(
     overrides: [

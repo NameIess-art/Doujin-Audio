@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import 'page_translation_scope.dart';
 
-const double _workMetadataCapsuleRadius = 14;
+const double _workMetadataCapsuleRadius = 999;
 const EdgeInsets _workMetadataCapsulePadding = EdgeInsets.symmetric(
   horizontal: 10,
   vertical: 4,
@@ -22,6 +22,7 @@ class WorkDetailMetadata extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final rowIconColor = cs.onSurfaceVariant.withValues(alpha: 0.8);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -29,7 +30,7 @@ class WorkDetailMetadata extends StatelessWidget {
         if (voiceActors.isNotEmpty) ...[
           Row(
             children: [
-              Icon(Icons.badge_outlined, size: 17, color: cs.onSurfaceVariant),
+              Icon(Icons.record_voice_over_rounded, size: 16, color: rowIconColor),
               const SizedBox(width: 8),
               Expanded(
                 child: _buildVoiceActorScroller(context, cs, voiceActors),
@@ -44,9 +45,9 @@ class WorkDetailMetadata extends StatelessWidget {
           Row(
             children: [
               Icon(
-                Icons.local_offer_outlined,
-                size: 17,
-                color: cs.onSurfaceVariant,
+                Icons.local_offer_rounded,
+                size: 16,
+                color: rowIconColor,
               ),
               const SizedBox(width: 8),
               Expanded(child: _buildTagScroller(context, cs, tags)),
@@ -76,21 +77,33 @@ class WorkDetailMetadata extends StatelessWidget {
           child: Container(
             padding: _workMetadataCapsulePadding,
             decoration: BoxDecoration(
-              color: cs.primaryContainer.withValues(
-                alpha: isDark ? 0.34 : 0.56,
+              color: cs.primary.withValues(
+                alpha: isDark ? 0.14 : 0.10,
               ),
               borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
               border: Border.all(
-                color: cs.primary.withValues(alpha: isDark ? 0.28 : 0.20),
+                color: cs.primary.withValues(alpha: isDark ? 0.30 : 0.22),
+                width: 0.8,
               ),
             ),
-            child: Text(
-              voiceActor,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: cs.onPrimaryContainer,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.person_rounded,
+                  size: 13,
+                  color: isDark ? cs.primary : cs.primary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  voiceActor,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: isDark ? cs.primary : cs.onSurface,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -112,11 +125,12 @@ class WorkDetailMetadata extends StatelessWidget {
           padding: _workMetadataCapsulePadding,
           decoration: BoxDecoration(
             color: isDark
-                ? cs.surfaceContainerHighest.withValues(alpha: 0.5)
-                : cs.surfaceContainerHigh.withValues(alpha: 0.6),
+                ? cs.surfaceContainerHighest.withValues(alpha: 0.50)
+                : cs.surfaceContainerHigh.withValues(alpha: 0.60),
             borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
             border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.45),
+              color: cs.outlineVariant.withValues(alpha: isDark ? 0.25 : 0.35),
+              width: 0.8,
             ),
           ),
           child: WorkPageTranslationText(

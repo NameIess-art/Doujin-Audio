@@ -15,23 +15,45 @@ void main() {
   });
 
   test(
-    'temporary preparation carries persistence exclusion',
+    'track stop carries explicit args and decodes readonly boundary flag',
     () async {
-      final calls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-            calls.add(call);
-            return <String, Object?>{'ok': true, 'value': null};
+            expect(call.method, NativePlaybackMethod.setStopAfterCurrentTrack);
+            expect(call.arguments, {'sessionId': 'session', 'enabled': true});
+            return {
+              'ok': true,
+              'value': {'sessionId': 'session', 'stopAfterCurrentTrack': true},
+            };
           });
-      await NativePlaybackBridge.instance.prepareSession(
-        sessionId: 'temporary',
-        uri: Uri.parse('https://example.com/a.mp3'),
-        title: 'Audio',
-        isTemporary: true,
+      final result = await NativePlaybackBridge.instance
+          .setStopAfterCurrentTrack('session', true);
+      expect(result.isOk, true);
+      expect(result.valueOrNull!.stopAfterCurrentTrack, true);
+      expect(
+        result.valueOrNull!
+            .copyWith(position: Duration.zero)
+            .stopAfterCurrentTrack,
+        true,
       );
-      expect((calls.single.arguments as Map)['isTemporary'], isTrue);
     },
   );
+
+  test('temporary preparation carries persistence exclusion', () async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return <String, Object?>{'ok': true, 'value': null};
+        });
+    await NativePlaybackBridge.instance.prepareSession(
+      sessionId: 'temporary',
+      uri: Uri.parse('https://example.com/a.mp3'),
+      title: 'Audio',
+      isTemporary: true,
+    );
+    expect((calls.single.arguments as Map)['isTemporary'], isTrue);
+  });
 
   test('progress event decodes independently from legacy snapshots', () {
     final updates = parseNativePlaybackProgressEvent(<String, Object?>{

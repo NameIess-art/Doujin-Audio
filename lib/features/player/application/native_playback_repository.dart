@@ -177,6 +177,11 @@ class NativePlaybackRepository {
     return _bridge.removeSession(sessionId);
   }
 
+  Future<NativeResult<NativePlaybackSnapshot>> setStopAfterCurrentTrack(
+    String sessionId,
+    bool enabled,
+  ) => _bridge.setStopAfterCurrentTrack(sessionId, enabled);
+
   Future<NativeResult<void>> pauseAll() => _bridge.pauseAll();
 
   Future<void> handleDeviceDisconnected() async {

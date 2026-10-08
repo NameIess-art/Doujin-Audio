@@ -3209,6 +3209,13 @@ void main() {
       await tester.pump();
       expect(find.text('new', findRichText: true), findsOneWidget);
 
+      final retainedTrack = testMusicTrack(
+        name: 'new',
+        path: '$libraryRoot/new.mp3',
+        groupKey: libraryRoot,
+        groupTitle: 'Library',
+      );
+      fixture.runtimeGraph.library.addTracks([retainedTrack], persist: false);
       WidgetsBinding.instance.handleAppLifecycleStateChanged(
         AppLifecycleState.resumed,
       );
@@ -3222,6 +3229,19 @@ void main() {
       );
       await tester.pump();
       expect(find.text('new', findRichText: true), findsOneWidget);
+      expect(
+        fixture.runtimeGraph.library.trackByPath(retainedTrack.path),
+        same(retainedTrack),
+      );
+      expect(
+        fixture.runtimeGraph.library.libraryEntriesForLibrary(libraryRoot)
+            .map((entry) => entry.path),
+        contains(retainedTrack.path),
+      );
+      expect(
+        find.text(fixture.languageProvider.tr('scan_failed_next_step')),
+        findsWidgets,
+      );
       expect(tester.takeException(), isNull);
     },
   );

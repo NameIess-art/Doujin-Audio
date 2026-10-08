@@ -6,6 +6,7 @@ import 'work_detail_metadata.dart';
 import 'work_detail_entries.dart';
 import 'work_detail_header.dart';
 import 'dart:async';
+import '../application/library_facade.dart' show AudioDetailRenameException;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -758,7 +759,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     try {
       final oldPath = sourcePath;
       final renamedPath = await ref
-          .read(libraryFacadeProvider)
+          .read(audioPathCoordinatorProvider)
           .renameWorkEntryToName(
             libraryRootPath: _localTarget!.targetPath,
             entryPath: oldPath,
@@ -773,11 +774,15 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       }
       if (!mounted) return;
       await _loadLocalData();
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       showAppSnackBar(
         context,
-        i18n.tr('audio_detail_rename_failed'),
+        i18n.tr(
+          error is AudioDetailRenameException && error.reason == 'nameConflict'
+              ? 'audio_detail_rename_conflict'
+              : 'audio_detail_rename_failed',
+        ),
         tone: AppFeedbackTone.warning,
       );
     }

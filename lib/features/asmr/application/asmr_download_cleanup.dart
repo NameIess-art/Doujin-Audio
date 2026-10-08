@@ -223,6 +223,31 @@ class AsmrDownloadOutputStore {
     }
   }
 
+  Future<void> discardTaskStaging(
+    AsmrDownloadTaskSnapshot task,
+    List<PlannedDownloadFile> plannedFiles,
+    Set<String> ownedPaths,
+  ) async {
+    if (ownedPaths.isEmpty) return;
+    for (final item in plannedFiles) {
+      final relativePath = _planner.validatedDownloadRelativePath(
+        item.relativePath,
+      );
+      final usesCache =
+          PathMatcher.isContentUri(task.workRootPath) ||
+          (!item.isCover &&
+              path.extension(relativePath).toLowerCase() == '.json');
+      final staging = usesCache
+          ? await persistentStagingFile(task.workRootPath, relativePath)
+          : File(
+              '${_planner.resolveLocalPathWithin(task.workRootPath, relativePath)}.doujin.part',
+            );
+      if (ownedPaths.contains(staging.path)) {
+        await deleteFileIfPresent(staging);
+      }
+    }
+  }
+
   Future<JsonDocumentWriteResult> writeWorkDetailBackup(
     AudioDetail detail,
     JsonDocumentLocation location,

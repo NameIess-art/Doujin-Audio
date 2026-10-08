@@ -5,6 +5,7 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/windows_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart'
     as playback;
@@ -68,6 +69,69 @@ void main() {
     expect(snapshot.playing, true);
   });
 
+  test('timer reset restores fade on a released Windows session', () async {
+    await prepare('one');
+    final graph = createTestRuntimeGraph(
+      nativePlaybackRepository: NativePlaybackRepository(bridge: bridge),
+    );
+    addTearDown(graph.runtime.dispose);
+    graph.playback.registerSession(
+      PlaybackSession(
+        id: 'one',
+        currentTrackPath: 'https://example.com/one.wav',
+        loopMode: playback.SessionLoopMode.single,
+        nonSingleLoopMode: playback.SessionLoopMode.folderSequential,
+        volume: 1,
+        createdAt: DateTime.now(),
+        state: const playback.PlayerState(false, playback.ProcessingState.idle),
+      ),
+    );
+    await bridge.setFadeMultiplier('one', 0);
+    await bridge.pause('one');
+    graph.playback.applyFadeMultiplierToPlayingSessions(1);
+    await bridge.play('one');
+    expect(players.last.state.volume, 100);
+  });
+
+  test(
+    'track stop limits native queue without reloading the current decoder',
+    () async {
+      final queue = [
+        for (final name in ['a', 'b', 'c'])
+          <String, Object?>{
+            'uri': 'https://example.com/$name.wav',
+            'path': name,
+          },
+      ];
+      await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse(queue[1]['uri']! as String),
+        title: 'b',
+        queue: queue,
+        queueStartIndex: 1,
+        repeatAll: true,
+        autoPlay: true,
+      );
+      await bridge.seek('one', const Duration(seconds: 12));
+      final result = await bridge.setStopAfterCurrentTrack('one', true);
+      expect(result.isOk, true);
+      expect(players.single.opens, 1);
+      expect(players.single.state.playlist.medias, hasLength(1));
+      expect(players.single.state.position, const Duration(seconds: 12));
+      expect(players.single.state.playlistMode, PlaylistMode.none);
+      expect(
+        (await bridge.snapshot()).valueOrNull!.sessions.single.retainedUris,
+        hasLength(3),
+      );
+      await bridge.setStopAfterCurrentTrack('one', false);
+      expect(players.single.state.playlist.medias, hasLength(3));
+      expect(players.single.state.playlist.index, 1);
+      expect(players.single.opens, 1);
+      expect(players.single.state.position, const Duration(seconds: 12));
+      expect(players.single.state.playlistMode, PlaylistMode.loop);
+    },
+  );
+
   test(
     'sessions play concurrently and exclusive play pauses only others',
     () async {
@@ -79,6 +143,105 @@ void main() {
       await bridge.play('one', exclusive: true);
       expect(players[0].state.playing, true);
       expect(players[1].state.playing, false);
+    },
+  );
+
+  test(
+    'shuffle reordering preserves duplicate logical entries across track-stop cancellation',
+    () async {
+      configureNextPlayer = (player) => player.reorderOnShuffle = true;
+      final queue = [
+        for (final name in ['a', 'b', 'c'])
+          <String, Object?>{
+            'uri': 'https://example.com/same.wav',
+            'path': name,
+          },
+      ];
+      await bridge.prepareSession(
+        sessionId: 'shuffle',
+        uri: Uri.parse(queue[1]['uri'] as String),
+        title: 'b',
+        queue: queue,
+        queueStartIndex: 1,
+        autoPlay: true,
+        shuffle: true,
+        repeatAll: true,
+      );
+      await bridge.seek('shuffle', const Duration(seconds: 12));
+      final decoder = bridge.playerForSession('shuffle');
+      for (var cycle = 0; cycle < 2; cycle++) {
+        expect(
+          (await bridge.setStopAfterCurrentTrack('shuffle', true)).isOk,
+          true,
+        );
+        expect(
+          (await bridge.setStopAfterCurrentTrack('shuffle', false)).isOk,
+          true,
+        );
+        await Future<void>.delayed(Duration.zero);
+        final restored = (await bridge.snapshot()).valueOrNull!.sessions.single;
+        expect(restored.queueIndex, 1);
+        expect(restored.path, 'b');
+        expect(restored.position, const Duration(seconds: 12));
+        expect(bridge.playerForSession('shuffle'), same(decoder));
+      }
+      await bridge.setStopAfterCurrentTrack('shuffle', true);
+      players.single.completeBeforePlayingEvent();
+      await Future<void>.delayed(Duration.zero);
+      final stopped = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(stopped.queueIndex, 1);
+      expect(stopped.path, 'b');
+    },
+  );
+
+  test(
+    'queue edits reconcile shuffled duplicate entries without replacing the decoder',
+    () async {
+      configureNextPlayer = (player) => player.reorderOnShuffle = true;
+      final queue = [
+        for (final name in ['a', 'b', 'c', 'd'])
+          <String, Object?>{
+            'uri': 'https://example.com/same.wav',
+            'path': name,
+          },
+      ];
+      await bridge.prepareSession(
+        sessionId: 'shuffle',
+        uri: Uri.parse(queue[1]['uri'] as String),
+        title: 'b',
+        queue: queue.take(3).toList(),
+        queueStartIndex: 1,
+        autoPlay: true,
+        shuffle: true,
+      );
+      await Future<void>.delayed(Duration.zero);
+      await bridge.seek('shuffle', const Duration(seconds: 12));
+      final player = players.single;
+      final before = player.state.playlist;
+      final decoder = before.medias[before.index];
+      final third = before.medias.first;
+      expect(
+        (await bridge.updateQueue(
+          'shuffle',
+          queue: [queue[2], queue[1], queue[3]],
+          queueRevision: 1,
+          shuffle: true,
+        )).isOk,
+        true,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(player.state.playlist.medias.first, same(third));
+      expect(player.state.playlist.medias[1], same(decoder));
+      final updated = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(updated.path, 'b');
+      expect(updated.queueIndex, 1);
+      expect(updated.position, const Duration(seconds: 12));
+      player.advance(0);
+      await Future<void>.delayed(Duration.zero);
+      final advanced = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(advanced.path, 'c');
+      expect(advanced.queueIndex, 0);
+      expect(player.opens, 1);
     },
   );
 
@@ -1343,6 +1506,8 @@ class _Player extends PlatformPlayer {
       disposeGate,
       disposeStarted;
   bool disposed = false;
+  bool reorderOnShuffle = false;
+  List<Media>? _unshuffledMedias;
   final seeks = <Duration>[];
   @override
   Future<void> add(Media media) async {
@@ -1451,8 +1616,38 @@ class _Player extends PlatformPlayer {
   Future<void> setPlaylistMode(PlaylistMode mode) async =>
       state = state.copyWith(playlistMode: mode);
   @override
-  Future<void> setShuffle(bool shuffle) async =>
+  Future<void> setShuffle(bool shuffle) async {
+    if (reorderOnShuffle && shuffle != state.shuffle) {
+      final items = state.playlist.medias;
+      final current = items[state.playlist.index];
+      final List<Media> reordered;
+      if (shuffle) {
+        _unshuffledMedias = [...items];
+        reordered = [items.last, ...items.take(items.length - 1)];
+      } else {
+        reordered = [
+          for (final media in _unshuffledMedias ?? items)
+            if (items.any((item) => identical(item, media))) media,
+          for (final media in items)
+            if (!(_unshuffledMedias ?? items).any(
+              (item) => identical(item, media),
+            ))
+              media,
+        ];
+      }
+      state = state.copyWith(
+        playlist: Playlist(
+          reordered,
+          index: reordered.indexWhere((item) => identical(item, current)),
+        ),
+        shuffle: shuffle,
+      );
+      playlistController.add(state.playlist);
+    } else {
       state = state.copyWith(shuffle: shuffle);
+    }
+  }
+
   @override
   Future<void> dispose() async {
     disposed = true;

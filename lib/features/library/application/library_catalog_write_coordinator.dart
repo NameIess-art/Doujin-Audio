@@ -407,8 +407,10 @@ final class LibraryCatalogWriteCoordinator {
     if (derivedGeneration != _service.libraryDerivedGeneration) return;
     _service
       ..library = List<MusicTrack>.of(snapshot.library)
-      ..libraryByPath = Map<String, MusicTrack>.of(snapshot.libraryByPath)
-      ..libraryIndexByPath = Map<String, int>.of(snapshot.libraryIndexByPath)
+      ..libraryByPath = LibraryService.createPathIndex(snapshot.libraryByPath)
+      ..libraryIndexByPath = LibraryService.createPathIndex(
+        snapshot.libraryIndexByPath,
+      )
       ..tracksByGroup = Map<String, List<MusicTrack>>.of(snapshot.tracksByGroup)
       ..sortedLibraryTracks = snapshot.sortedLibraryTracks
       ..sortedLibraryTrackPaths = snapshot.sortedLibraryTrackPaths
@@ -440,11 +442,13 @@ final class _LibraryBatchSnapshot {
 
   void restore(LibraryService service) {
     service.library = List<MusicTrack>.of(tracks);
-    service.libraryByPath = {for (final track in tracks) track.path: track};
-    service.libraryIndexByPath = {
+    service.libraryByPath = LibraryService.createPathIndex({
+      for (final track in tracks) track.path: track,
+    });
+    service.libraryIndexByPath = LibraryService.createPathIndex({
       for (var index = 0; index < tracks.length; index++)
         tracks[index].path: index,
-    };
+    });
     service.watchedFolders
       ..clear()
       ..addAll(folders);

@@ -75,22 +75,28 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                         );
                         widget.onNavigate(-1);
                       },
-                      child: Padding(
+                      child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
+                          horizontal: 8,
                           vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.5,
+                          ),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.home_rounded, size: 18, color: cs.primary),
+                            Icon(Icons.home_rounded, size: 16, color: cs.primary),
                             const SizedBox(width: 4),
                             Text(
                               widget.i18n.tr('root_directory'),
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: cs.primary,
-                                fontSize: 13,
+                                fontSize: 12.5,
                               ),
                             ),
                           ],
@@ -98,7 +104,14 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                       ),
                     ),
                     for (var i = 0; i < widget.segments.length; i++) ...[
-                      const Text(' > ', style: TextStyle(color: Colors.grey)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Icon(
+                          Icons.chevron_right_rounded,
+                          size: 16,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                        ),
+                      ),
                       InkWell(
                         borderRadius: BorderRadius.circular(8),
                         onTap: () {

@@ -477,6 +477,15 @@ class AsmrLibraryController extends ChangeNotifier
       _lastSyncError = result.failure;
     } on AsmrSyncCancelled {
       return;
+    } catch (error) {
+      if (_disposed ||
+          cancellationToken.isCancelled ||
+          key.authEpoch != _authEpoch ||
+          !identical(_activeSyncCancellationToken, cancellationToken)) {
+        return;
+      }
+      _syncPhase = AsmrSyncPhase.failed;
+      _lastSyncError = error;
     } finally {
       if (identical(_activeSyncCancellationToken, cancellationToken)) {
         _activeSyncCancellationToken = null;

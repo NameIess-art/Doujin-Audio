@@ -40,7 +40,8 @@ final class TimerFacade {
   final Duration resumeFadeInDuration;
   Timer? _resumeFadeTimer;
   Timer? _trackEndFadeTimer;
-  double? _pendingTrackEndFade;
+  final _trackEndFades = <String, double>{};
+  double _fadeMultiplier = 1.0;
   final TimerService _service;
   final PowerPlatformService powerPlatformService;
   final Future<SharedPreferences> Function() _persistencePreferencesLoader;
@@ -62,6 +63,12 @@ final class TimerFacade {
       );
   // Sessions retained for an armed countdown when Windows restarts with players paused.
   final _restoredCountdownSessions = <String>{};
+  final _trackEndTargets = <String, String>{};
+  final _armedTrackEndTargets = <String>{};
+  Future<void>? _trackEndSync;
+  int _trackEndGeneration = 0;
+  Future<bool> Function(String sessionId, bool enabled) _setNativeTrackStop =
+      _noopTrackStop;
   bool get _isWindows => defaultTargetPlatform == TargetPlatform.windows;
   static const TimerRuntimeCalculator _runtimeCalculator =
       TimerRuntimeCalculator();
@@ -74,6 +81,8 @@ final class TimerFacade {
   void Function() _onStateChanged = _noop;
   void Function() _onRuntimeRestored = _noop;
   void Function(double multiplier) _applyFadeMultiplier = _noopFade;
+  void Function(String sessionId, double multiplier)
+  _applySessionFadeMultiplier = _noopSessionFade;
   Future<void> Function(String sessionId) _flushSessionPersistence =
       _noopSessionPersistence;
 
@@ -106,6 +115,9 @@ final class TimerFacade {
     required void Function() onRuntimeRestored,
     required void Function(double multiplier) applyFadeMultiplier,
     Future<void> Function(String sessionId)? flushSessionPersistence,
+    Future<bool> Function(String sessionId, bool enabled)? setNativeTrackStop,
+    void Function(String sessionId, double multiplier)?
+    applySessionFadeMultiplier,
   }) {
     _hasPlayingSession = hasPlayingSession;
     _sessions = sessions;
@@ -117,9 +129,13 @@ final class TimerFacade {
     _applyFadeMultiplier = applyFadeMultiplier;
     _flushSessionPersistence =
         flushSessionPersistence ?? _noopSessionPersistence;
+    _setNativeTrackStop = setNativeTrackStop ?? _noopTrackStop;
+    _applySessionFadeMultiplier =
+        applySessionFadeMultiplier ?? _noopSessionFade;
   }
 
   void detachRuntime() {
+    setStopAfterCurrentTrack(false);
     _cancelPendingTrackEndFade();
     _hasPlayingSession = () => false;
     _sessions = _emptySessions;
@@ -129,6 +145,7 @@ final class TimerFacade {
     _onStateChanged = _noop;
     _onRuntimeRestored = _noop;
     _applyFadeMultiplier = _noopFade;
+    _applySessionFadeMultiplier = _noopSessionFade;
     _flushSessionPersistence = _noopSessionPersistence;
   }
 
@@ -197,25 +214,135 @@ final class TimerFacade {
 
   void setStopAfterCurrentTrack(bool enabled) {
     if (_service.stopAfterCurrentTrack == enabled) return;
-    _service.stopAfterCurrentTrack = enabled;
-    _cancelPendingTrackEndFade();
-    if (!enabled) {
-      _setFadeMultiplier(1.0);
+    final previousTargets = _trackEndTargets.keys.toList();
+    for (final id in previousTargets) {
+      _restoreTrackEndFade(id);
     }
+    _trackEndTargets.clear();
+    _armedTrackEndTargets.clear();
+    if (enabled) {
+      for (final session in _sessions()) {
+        if (session.playbackRequested) {
+          _trackEndTargets[session.id] = session.currentTrackPath;
+        }
+      }
+    }
+    _service.stopAfterCurrentTrack = enabled && _trackEndTargets.isNotEmpty;
+    final generation = ++_trackEndGeneration;
+    _queueTrackStops(previousTargets, false, generation);
+    _queueTrackStops(_trackEndTargets.keys.toList(), true, generation);
+    _cancelPendingTrackEndFade();
     _changed();
   }
 
-  void applyFadeMultiplier(double multiplier) {
+  Future<void> get pendingTrackStopSync =>
+      _trackEndSync ?? Future<void>.value();
+
+  bool stopsAfterCurrentTrack(String sessionId) =>
+      _trackEndTargets.containsKey(sessionId);
+
+  void _queueTrackStops(List<String> ids, bool enabled, int generation) {
+    final command = _setNativeTrackStop;
+    if (ids.isEmpty) return;
+    _trackEndSync = pendingTrackStopSync.then((_) async {
+      for (final id in ids) {
+        if (enabled &&
+            (generation != _trackEndGeneration ||
+                !_trackEndTargets.containsKey(id))) {
+          continue;
+        }
+        final session = _sessions()
+            .where((session) => session.id == id)
+            .firstOrNull;
+        if (enabled &&
+            session != null &&
+            (session.isLoading || session.pendingNativeTrackPath != null)) {
+          continue;
+        }
+        var success = false;
+        try {
+          success = await command(id, enabled);
+        } catch (error, stackTrace) {
+          AppLogService.error(
+            'set_track_stop_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+        if (enabled && generation == _trackEndGeneration) {
+          if (success) {
+            _armedTrackEndTargets.add(id);
+          } else {
+            _trackEndTargets.remove(id);
+            _restoreTrackEndFade(id);
+          }
+        }
+      }
+      if (generation == _trackEndGeneration) reconcileTrackStopTargets();
+    });
+  }
+
+  void reconcileTrackStopTargets() {
     if (!_service.stopAfterCurrentTrack) return;
-    _pendingTrackEndFade = multiplier;
-    // One native progress event may contain several session positions. Keep
-    // its final global multiplier instead of fanning out each intermediate one.
+    final sessions = {for (final session in _sessions()) session.id: session};
+    for (final entry in _trackEndTargets.entries.toList()) {
+      final session = sessions[entry.key];
+      if (session != null &&
+          session.playbackRequested &&
+          !_armedTrackEndTargets.contains(entry.key)) {
+        _trackEndTargets[entry.key] = session.currentTrackPath;
+        continue;
+      }
+      if (session == null ||
+          !session.playbackRequested ||
+          session.currentTrackPath != entry.value ||
+          (_armedTrackEndTargets.contains(entry.key) &&
+              !session.nativeStopAfterCurrentTrack)) {
+        _trackEndTargets.remove(entry.key);
+        _armedTrackEndTargets.remove(entry.key);
+        _restoreTrackEndFade(entry.key);
+        _queueTrackStops([entry.key], false, _trackEndGeneration);
+      }
+    }
+    if (_trackEndTargets.isEmpty) setStopAfterCurrentTrack(false);
+  }
+
+  Future<void> armTrackStopBeforePlayback(PlaybackSession session) async {
+    if (!stopsAfterCurrentTrack(session.id) ||
+        _armedTrackEndTargets.contains(session.id)) {
+      return;
+    }
+    _trackEndTargets[session.id] = session.currentTrackPath;
+    _queueTrackStops([session.id], true, _trackEndGeneration);
+    await pendingTrackStopSync;
+  }
+
+  Future<void> releaseTrackStopTarget(String sessionId) async {
+    if (!_trackEndTargets.containsKey(sessionId)) return;
+    _trackEndTargets.remove(sessionId);
+    _armedTrackEndTargets.remove(sessionId);
+    _restoreTrackEndFade(sessionId);
+    _queueTrackStops([sessionId], false, _trackEndGeneration);
+    if (_trackEndTargets.isEmpty) setStopAfterCurrentTrack(false);
+    await pendingTrackStopSync;
+  }
+
+  Future<void> clearTimerPauseForManualStop(String sessionId) async {
+    await releaseTrackStopTarget(sessionId);
+    await clearTimerPauseForManualPlayback(sessionId);
+    _restoredCountdownSessions.remove(sessionId);
+  }
+
+  void applyTrackEndFade(String sessionId, double multiplier) {
+    if (!stopsAfterCurrentTrack(sessionId)) return;
+    _trackEndFades[sessionId] = multiplier;
     _trackEndFadeTimer ??= Timer(Duration.zero, () {
       _trackEndFadeTimer = null;
-      final latest = _pendingTrackEndFade;
-      _pendingTrackEndFade = null;
-      if (_service.stopAfterCurrentTrack && latest != null) {
-        _applyFadeMultiplier(latest);
+      for (final entry in _trackEndFades.entries) {
+        _applySessionFadeMultiplier(
+          entry.key,
+          math.min(_fadeMultiplier, entry.value),
+        );
       }
     });
   }
@@ -223,12 +350,20 @@ final class TimerFacade {
   void _cancelPendingTrackEndFade() {
     _trackEndFadeTimer?.cancel();
     _trackEndFadeTimer = null;
-    _pendingTrackEndFade = null;
+  }
+
+  void _restoreTrackEndFade(String sessionId) {
+    if (_trackEndFades.remove(sessionId) != null) {
+      _applySessionFadeMultiplier(sessionId, _fadeMultiplier);
+    }
   }
 
   void _setFadeMultiplier(double multiplier) {
-    _cancelPendingTrackEndFade();
+    _fadeMultiplier = multiplier;
     _applyFadeMultiplier(multiplier);
+    for (final entry in _trackEndFades.entries) {
+      _applySessionFadeMultiplier(entry.key, math.min(multiplier, entry.value));
+    }
   }
 
   void setAutoResume(bool enabled, int hour, int minute) {
@@ -337,6 +472,7 @@ final class TimerFacade {
     bool clearPausedSessions = true,
     bool restoreFadeMultiplier = true,
   }) {
+    setStopAfterCurrentTrack(false);
     _cancelPendingTrackEndFade();
     _cancelResumeFadeIn();
     _restoredCountdownSessions.clear();
@@ -676,6 +812,8 @@ final class TimerFacade {
   void _changed() => _onStateChanged();
 
   Future<void> dispose() async {
+    setStopAfterCurrentTrack(false);
+    if (_trackEndSync != null) await pendingTrackStopSync;
     _cancelPendingTrackEndFade();
     _cancelResumeFadeIn();
     _service.countdownTimer?.cancel();
@@ -687,7 +825,9 @@ final class TimerFacade {
 
 void _noop() {}
 void _noopFade(double _) {}
+void _noopSessionFade(String _, double _) {}
 Iterable<PlaybackSession> _emptySessions() => const <PlaybackSession>[];
 Future<bool> _falseSession(PlaybackSession _) async => false;
 Future<bool> _falseAsync() async => false;
 Future<void> _noopSessionPersistence(String _) async {}
+Future<bool> _noopTrackStop(String _, bool _) async => true;

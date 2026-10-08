@@ -80,38 +80,42 @@ void main() {
     expect(cache.disposeCount, 1);
   });
 
-  test('failed persistence still releases playback runtime on exit', () async {
-    final repository = _FailingPlaybackPersistenceRepository();
-    final library = LibraryFacade.create(databaseRepository: repository);
-    final playback = PlaybackFacade.create(databaseRepository: repository);
-    final cache = _RecordingPlaybackCacheService();
-    final graph = createAppRuntimeGraph(
-      library: library,
-      playback: playback,
-      timer: TimerFacade.create(),
-      notifications: NotificationFacade.create(
-        service: PlaybackNotificationService(),
-      ),
-      settings: SettingsRepository(),
-      asmrPlaybackCacheService: cache,
-    );
-    final session = playback.createTrackSession(
-      MusicTrack(
-        path: '/audio/exit.mp3',
-        displayName: 'Exit',
-        groupKey: '/audio',
-        groupTitle: 'Audio',
-        groupSubtitle: '',
-        isSingle: true,
-      ),
-    );
+  test(
+    'uninitialized runtime disposes without writing default sessions',
+    () async {
+      final repository = _FailingPlaybackPersistenceRepository();
+      final library = LibraryFacade.create(databaseRepository: repository);
+      final playback = PlaybackFacade.create(databaseRepository: repository);
+      final cache = _RecordingPlaybackCacheService();
+      final graph = createAppRuntimeGraph(
+        library: library,
+        playback: playback,
+        timer: TimerFacade.create(),
+        notifications: NotificationFacade.create(
+          service: PlaybackNotificationService(),
+        ),
+        settings: SettingsRepository(),
+        asmrPlaybackCacheService: cache,
+      );
+      final session = playback.createTrackSession(
+        MusicTrack(
+          path: '/audio/exit.mp3',
+          displayName: 'Exit',
+          groupKey: '/audio',
+          groupTitle: 'Audio',
+          groupSubtitle: '',
+          isSingle: true,
+        ),
+      );
 
-    await expectLater(graph.runtime.dispose(), throwsStateError);
+      await graph.runtime.dispose();
 
-    expect(playback.sessions, isEmpty);
-    expect(session.isDisposed, true);
-    expect(cache.disposeCount, 1);
-  });
+      expect(repository.sessionWrites, 0);
+      expect(playback.sessions, isEmpty);
+      expect(session.isDisposed, true);
+      expect(cache.disposeCount, 1);
+    },
+  );
 
   test('failed download pause persistence still releases runtime', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -506,12 +510,14 @@ final class _RecordingPlaybackCacheService extends AsmrPlaybackCacheService {
 
 final class _FailingPlaybackPersistenceRepository
     extends TestPersistenceRepository {
+  int sessionWrites = 0;
   @override
   Future<void> upsertSession(
     PersistedPlaybackSession session, {
     bool includeQueue = true,
     bool includeEffects = true,
   }) async {
+    sessionWrites++;
     throw StateError('disk write failed');
   }
 }

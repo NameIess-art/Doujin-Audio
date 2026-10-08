@@ -17,6 +17,35 @@ void main() {
   );
 
   test(
+    'track stop completion survives an immediately cleared native flag',
+    () async {
+      final session = createSession();
+      addTearDown(session.shutdown);
+      NativePlaybackSnapshot snapshot(String processing, bool stop) =>
+          NativePlaybackSnapshot(
+            sessionId: session.id,
+            playing: processing == 'buffering',
+            playWhenReady: processing == 'buffering',
+            processingState: processing,
+            position: Duration.zero,
+            bufferedPosition: Duration.zero,
+            volume: 1,
+            boostGain: 1,
+            channelSwapEnabled: false,
+            stopAfterCurrentTrack: stop,
+          );
+      session.applyNativeSnapshot(snapshot('buffering', true));
+      expect(session.playbackRequested, true);
+      session.applyNativeSnapshot(snapshot('completed', false));
+      expect(session.completedByTrackStop, true);
+      session.applyNativeSnapshot(snapshot('completed', false));
+      expect(session.completedByTrackStop, true);
+      session.applyNativeSnapshot(snapshot('ready', false));
+      expect(session.completedByTrackStop, false);
+    },
+  );
+
+  test(
     'completed runtime preserves final progress without a loaded source',
     () {
       final session = createSession()

@@ -366,6 +366,7 @@ const Map<String, String> appLanguageJa = {
   'audio_detail_current_cover': '現在のカバー',
   'audio_detail_rename_file': 'ファイル名を変更',
   'audio_detail_rename_failed': '名前の変更に失敗しました。ファイルの存在や使用状態を確認してください。',
+  'audio_detail_rename_conflict': '同名のファイルまたはフォルダーが存在します。別の名前を選んでください。',
   'audio_detail_value_removed': '「{value}」を削除しました',
   'dlsite_review_title': '作品データを確認',
   'dlsite_save_cover': 'カバーをフォルダに保存',

@@ -589,6 +589,11 @@ object PlaybackTimerAlarmScheduler {
         logInfo(context, "manual_playback_cleared_timer_pause sessionId=$sessionId")
     }
 
+    fun onManualPlaybackStopped(context: Context, sessionId: String) {
+        // A user-paused or removed session is no longer an automatic-resume target.
+        onPlaybackStarted(context, sessionId)
+    }
+
     fun logInfo(context: Context, message: String) {
         AppFileLogger.info(context.applicationContext, logTag, message)
     }

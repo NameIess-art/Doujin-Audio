@@ -648,103 +648,122 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                         _focusedIndex < widget.cues.length)
                       Positioned(
                         left: 12,
-                        right: 6,
-                        top: max(0.0, (_viewportHeight - 44) / 2),
-                        height: 44,
+                        right: 12,
+                        top: max(0.0, (_viewportHeight - 36) / 2),
+                        height: 36,
                         child: Row(
                           children: [
-                            Expanded(
+                            SizedBox(
+                              width: 36,
                               child: IgnorePointer(
-                                child: CustomPaint(
-                                  painter: _DashedLinePainter(
-                                    color: cs.primary.withValues(alpha: 0.5),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            IgnorePointer(
-                              child: Container(
-                                height: 24,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                ),
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? cs.surfaceContainerHighest.withValues(
-                                          alpha: 0.85,
-                                        )
-                                      : cs.surfaceContainerHighest.withValues(
-                                          alpha: 0.90,
-                                        ),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: cs.primary.withValues(alpha: 0.35),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: isDark ? 0.3 : 0.08,
-                                      ),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 1),
-                                    ),
-                                  ],
-                                ),
-                                child: Text(
-                                  formatDurationCompact(
-                                    widget.cues[_focusedIndex].start,
-                                  ),
-                                  style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: cs.primary,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 11,
-                                        fontFeatures: const [
-                                          FontFeature.tabularFigures(),
+                                child: ShaderMask(
+                                  shaderCallback: (bounds) =>
+                                      const LinearGradient(
+                                        colors: [
+                                          Colors.white,
+                                          Colors.transparent,
                                         ],
+                                      ).createShader(bounds),
+                                  blendMode: BlendMode.dstIn,
+                                  child: CustomPaint(
+                                    painter: _DashedLinePainter(
+                                      color: cs.primary.withValues(
+                                        alpha: isDark ? 0.6 : 0.45,
                                       ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 6),
+                            const Spacer(),
                             Container(
-                              width: 38,
-                              height: 38,
+                              height: 32,
+                              padding: const EdgeInsets.only(
+                                left: 10,
+                                right: 3,
+                              ),
                               decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: cs.primary,
+                                color: isDark
+                                    ? cs.surfaceContainerHighest.withValues(
+                                        alpha: 0.88,
+                                      )
+                                    : cs.surfaceContainerHighest.withValues(
+                                        alpha: 0.94,
+                                      ),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: cs.primary.withValues(
+                                    alpha: isDark ? 0.35 : 0.25,
+                                  ),
+                                  width: 0.8,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: cs.primary.withValues(alpha: 0.40),
+                                    color: Colors.black.withValues(
+                                      alpha: isDark ? 0.35 : 0.08,
+                                    ),
                                     blurRadius: 8,
                                     offset: const Offset(0, 2),
                                   ),
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.14),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 1),
-                                  ),
                                 ],
                               ),
-                              child: Material(
-                                type: MaterialType.transparency,
-                                shape: const CircleBorder(),
-                                clipBehavior: Clip.antiAlias,
-                                child: IconButton(
-                                  key: const ValueKey(
-                                    'subtitle_timeline_seek_button',
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IgnorePointer(
+                                    child: Text(
+                                      formatDurationCompact(
+                                        widget.cues[_focusedIndex].start,
+                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: cs.primary,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 11.5,
+                                            fontFeatures: const [
+                                              FontFeature.tabularFigures(),
+                                            ],
+                                          ),
+                                    ),
                                   ),
-                                  padding: EdgeInsets.zero,
-                                  tooltip: i18n.tr('seek_to_subtitle'),
-                                  onPressed: _seekToFocusedSubtitle,
-                                  icon: Icon(
-                                    Icons.play_arrow_rounded,
-                                    color: cs.onPrimary,
-                                    size: 24,
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    width: 1,
+                                    height: 12,
+                                    color: cs.outlineVariant.withValues(
+                                      alpha: isDark ? 0.35 : 0.5,
+                                    ),
                                   ),
-                                ),
+                                  const SizedBox(width: 4),
+                                  Container(
+                                    width: 26,
+                                    height: 26,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: cs.primary,
+                                    ),
+                                    child: Material(
+                                      type: MaterialType.transparency,
+                                      shape: const CircleBorder(),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: IconButton(
+                                        key: const ValueKey(
+                                          'subtitle_timeline_seek_button',
+                                        ),
+                                        padding: EdgeInsets.zero,
+                                        tooltip: i18n.tr('seek_to_subtitle'),
+                                        onPressed: _seekToFocusedSubtitle,
+                                        icon: Icon(
+                                          Icons.play_arrow_rounded,
+                                          color: cs.onPrimary,
+                                          size: 18,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],

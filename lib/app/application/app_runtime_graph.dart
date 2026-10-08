@@ -1,5 +1,4 @@
 import '../../features/library/application/work_text_service.dart';
-import 'dart:io';
 import '../localization/app_language_provider.dart';
 import 'windows_runtime_binding.dart';
 import '../../features/asmr/application/asmr_library_controller.dart';
@@ -272,7 +271,9 @@ AppRuntimeGraph createAppRuntimeGraph({
   );
 }
 
-ProductionAppRuntime createProductionAppRuntime() {
+ProductionAppRuntime createProductionAppRuntime({
+  WindowsRuntimeBinding? windowsRuntime,
+}) {
   final notificationService = PlaybackNotificationService();
   final database = AppDatabase.instance;
   final libraryRepository = SqliteLibraryRepository(database: database);
@@ -336,7 +337,15 @@ ProductionAppRuntime createProductionAppRuntime() {
         LibraryScanLabels.fromTranslator(appLanguageProvider),
   );
 
-  Future<void> initializeRuntimeData() async {
+  windowsRuntime?.bindRuntime(
+    runtime: runtimeGraph.runtime,
+    playback: playbackFacade,
+    notifications: notificationFacade,
+    timer: timerFacade,
+    invalidateInitialization: runtimeGraph.persistence.invalidatePendingLoad,
+  );
+
+  Future<void> initialize() async {
     await appLanguageProvider.initialized;
     await Future.wait<void>([
       runtimeGraph.runtime.start(),
@@ -347,15 +356,10 @@ ProductionAppRuntime createProductionAppRuntime() {
         ),
       ),
     ]);
-    if (Platform.isWindows) {
-      await attachWindowsRuntime(
-        runtime: runtimeGraph.runtime,
-        playback: playbackFacade,
-        notifications: notificationFacade,
-        timer: timerFacade,
-      );
-    }
   }
+
+  Future<void> initializeRuntimeData() =>
+      windowsRuntime?.initializeRuntime(initialize) ?? initialize();
 
   return (
     runtimeGraph: runtimeGraph,

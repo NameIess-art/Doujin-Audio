@@ -38,6 +38,8 @@ class PlaybackSession {
 
   final String id;
   bool isTemporary;
+  bool nativeStopAfterCurrentTrack = false;
+  bool completedByTrackStop = false;
   final DateTime createdAt;
   DateTime? lastPlayedAt;
   final List<StreamSubscription<dynamic>> subscriptions = [];
@@ -345,9 +347,16 @@ class PlaybackSession {
       _isPlaybackStarting = false;
     }
     _playbackError = snapshot.error;
+    final wasStoppingAtTrackEnd = nativeStopAfterCurrentTrack;
+    nativeStopAfterCurrentTrack = snapshot.stopAfterCurrentTrack;
     final nativeProcessingState = _nativeProcessingState(
       snapshot.processingState,
     );
+    if (nativeProcessingState != ProcessingState.completed) {
+      completedByTrackStop = false;
+    } else if (snapshot.stopAfterCurrentTrack || wasStoppingAtTrackEnd) {
+      completedByTrackStop = true;
+    }
     final hasLoadedSource =
         snapshot.playWhenReady ||
         (nativeProcessingState != ProcessingState.idle &&

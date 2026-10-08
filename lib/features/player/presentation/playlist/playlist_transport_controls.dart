@@ -213,16 +213,19 @@ class _PlaybackPrimaryControls extends StatelessWidget {
         enabled && (session.position.inSeconds > 3 || hasPrevious);
     final canNext = enabled && hasNext;
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return SizedBox(
       height: 92,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 400;
-          final skipIconSize = compact ? 48.0 : 54.0;
-          final playIconSize = compact ? 76.0 : 86.0;
+          final skipIconSize = compact ? 28.0 : 32.0;
+          final playIconSize = compact ? 50.0 : 58.0;
+          final playButtonSize = compact ? 72.0 : 80.0;
           final sideBox = BoxConstraints.tightFor(
-            width: compact ? 56 : 64,
-            height: compact ? 56 : 64,
+            width: compact ? 48 : 54,
+            height: compact ? 48 : 54,
           );
 
           return Row(
@@ -245,7 +248,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                 constraints: sideBox,
                 enabled: enabled,
                 icon: Icons.replay_5_rounded,
-                iconSize: skipIconSize * 0.8,
+                iconSize: skipIconSize * 0.85,
                 onPressed: () {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
@@ -260,12 +263,23 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: enabled ? primaryColor : cs.surfaceContainerHighest,
+                  boxShadow: enabled
+                      ? [
+                          BoxShadow(
+                            color: primaryColor.withValues(
+                              alpha: isDark ? 0.38 : 0.24,
+                            ),
+                            blurRadius: 18,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                      : null,
                 ),
                 child: IconButton(
                   tooltip: showPauseIcon ? i18n.tr('pause') : i18n.tr('play'),
                   constraints: BoxConstraints.tightFor(
-                    width: compact ? 80 : 92,
-                    height: compact ? 80 : 92,
+                    width: playButtonSize,
+                    height: playButtonSize,
                   ),
                   padding: EdgeInsets.zero,
                   onPressed: enabled
@@ -725,19 +739,31 @@ class _PrimaryTransportButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final color = sessionDetailForeground(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final iconColor = sessionDetailForeground(
       cs,
-      SessionDetailForegroundLevel.medium,
+      SessionDetailForegroundLevel.strong,
     );
-    return IconButton(
-      tooltip: tooltip,
+    final plateColor = isDark
+        ? cs.surfaceContainerHighest.withValues(alpha: enabled ? 0.35 : 0.15)
+        : cs.surfaceContainerHighest.withValues(alpha: enabled ? 0.50 : 0.20);
+
+    return Container(
       constraints: constraints,
-      padding: EdgeInsets.zero,
-      onPressed: enabled ? onPressed : null,
-      icon: Icon(
-        icon,
-        size: iconSize,
-        color: enabled ? color : color.withValues(alpha: 0.35),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: plateColor,
+      ),
+      child: IconButton(
+        tooltip: tooltip,
+        constraints: constraints,
+        padding: EdgeInsets.zero,
+        onPressed: enabled ? onPressed : null,
+        icon: Icon(
+          icon,
+          size: iconSize,
+          color: enabled ? iconColor : iconColor.withValues(alpha: 0.35),
+        ),
       ),
     );
   }

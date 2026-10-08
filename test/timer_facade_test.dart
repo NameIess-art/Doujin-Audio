@@ -74,28 +74,49 @@ void main() {
     });
 
     test(
-      'track end fades keep the final global source once per event turn',
+      'track end captures playback intent and fades each target independently',
       () async {
-        final multipliers = <double>[];
+        final multipliers = <(String, double)>[];
+        final first = _TestSession('first')..requested = true;
+        final second = _TestSession('second')..requested = true;
+        final sessions = <PlaybackSession>[first, second];
+        final commands = <(String, bool)>[];
         final timer = TimerFacade.create();
         addTearDown(timer.dispose);
-        _attachNoopRuntime(timer, applyFadeMultiplier: multipliers.add);
+        _attachNoopRuntime(
+          timer,
+          sessions: () => sessions,
+          applySessionFadeMultiplier: (id, value) =>
+              multipliers.add((id, value)),
+          setNativeTrackStop: (id, enabled) async {
+            commands.add((id, enabled));
+            return true;
+          },
+        );
         timer.setStopAfterCurrentTrack(true);
-        timer.applyFadeMultiplier(0.8);
-        timer.applyFadeMultiplier(0.3);
-        timer.applyFadeMultiplier(0.6);
+        await timer.pendingTrackStopSync;
+        sessions.add(_TestSession('new')..requested = true);
+        expect(commands, [('first', true), ('second', true)]);
+        timer.applyTrackEndFade('first', 0.8);
+        timer.applyTrackEndFade('first', 0.3);
+        timer.applyTrackEndFade('second', 0.6);
+        timer.applyTrackEndFade('new', 0.1);
         expect(multipliers, isEmpty);
         await Future<void>.delayed(Duration.zero);
-        expect(multipliers, [0.6]);
+        expect(multipliers, [('first', 0.3), ('second', 0.6)]);
 
-        // A subsequent round still reaches all current sessions, including new ones.
-        timer.applyFadeMultiplier(0.6);
-        await Future<void>.delayed(Duration.zero);
-        expect(multipliers, [0.6, 0.6]);
-        timer.applyFadeMultiplier(0.2);
+        await timer.releaseTrackStopTarget('first');
+        expect(timer.stopAfterCurrentTrack, true);
+        expect(multipliers.last, ('first', 1.0));
+        timer.applyTrackEndFade('second', 0.2);
         timer.setStopAfterCurrentTrack(false);
         await Future<void>.delayed(Duration.zero);
-        expect(multipliers, [0.6, 0.6, 1.0]);
+        expect(multipliers, [
+          ('first', 0.3),
+          ('second', 0.6),
+          ('first', 1.0),
+          ('second', 1.0),
+        ]);
       },
     );
 
@@ -104,9 +125,14 @@ void main() {
         final multipliers = <double>[];
         final timer = TimerFacade.create();
         addTearDown(timer.dispose);
-        _attachNoopRuntime(timer, applyFadeMultiplier: multipliers.add);
+        _attachNoopRuntime(
+          timer,
+          sessions: () => [_TestSession('one')..requested = true],
+          applyFadeMultiplier: multipliers.add,
+          applySessionFadeMultiplier: (_, value) => multipliers.add(value),
+        );
         timer.setStopAfterCurrentTrack(true);
-        timer.applyFadeMultiplier(0.2);
+        timer.applyTrackEndFade('one', 0.2);
         if (cleanup == 'reset') {
           timer.resetRuntimeState();
         } else if (cleanup == 'detach') {
@@ -115,9 +141,76 @@ void main() {
           await timer.dispose();
         }
         await Future<void>.delayed(Duration.zero);
-        expect(multipliers, cleanup == 'reset' ? [1.0] : isEmpty);
+        expect(multipliers, cleanup == 'reset' ? [1.0, 1.0] : [1.0]);
       });
     }
+
+    test(
+      'failed track stop commands release targets and allow retry',
+      () async {
+        final timer = TimerFacade.create();
+        addTearDown(timer.dispose);
+        var attempt = 0;
+        _attachNoopRuntime(
+          timer,
+          sessions: () => [_TestSession('one')..requested = true],
+          setNativeTrackStop: (_, enabled) async {
+            if (!enabled) return true;
+            attempt++;
+            if (attempt == 1) return false;
+            if (attempt == 2) throw StateError('channel unavailable');
+            return true;
+          },
+        );
+        for (var index = 0; index < 2; index++) {
+          timer.setStopAfterCurrentTrack(true);
+          await timer.pendingTrackStopSync;
+          expect(timer.stopAfterCurrentTrack, false);
+        }
+        timer.setStopAfterCurrentTrack(true);
+        await timer.pendingTrackStopSync;
+        expect(timer.stopsAfterCurrentTrack('one'), true);
+        await timer.clearTimerPauseForManualStop('one');
+        expect(timer.stopAfterCurrentTrack, false);
+        expect(attempt, 3);
+      },
+    );
+
+    test(
+      'stale arming skips targets and finishing every target clears toggle',
+      () async {
+        final timer = TimerFacade.create();
+        addTearDown(timer.dispose);
+        final first = _TestSession('first')..requested = true;
+        final second = _TestSession('second')..requested = true;
+        final sessions = [first, second];
+        final calls = <(String, bool)>[];
+        _attachNoopRuntime(
+          timer,
+          sessions: () => sessions,
+          setNativeTrackStop: (id, enabled) async {
+            calls.add((id, enabled));
+            return true;
+          },
+        );
+        timer.setStopAfterCurrentTrack(true);
+        timer.setStopAfterCurrentTrack(false);
+        timer.setStopAfterCurrentTrack(true);
+        await timer.pendingTrackStopSync;
+        expect(calls.where((call) => call.$2), [
+          ('first', true),
+          ('second', true),
+        ]);
+        first.requested = false;
+        timer.reconcileTrackStopTargets();
+        expect(timer.stopsAfterCurrentTrack('first'), false);
+        expect(timer.stopAfterCurrentTrack, true);
+        sessions.clear();
+        timer.reconcileTrackStopTargets();
+        await timer.pendingTrackStopSync;
+        expect(timer.stopAfterCurrentTrack, false);
+      },
+    );
 
     for (final target in [TargetPlatform.android, TargetPlatform.windows]) {
       test(
@@ -569,7 +662,7 @@ void main() {
       final fadeMultipliers = <double>[];
       timer.attachRuntime(
         hasPlayingSession: () => false,
-        sessions: () => const [],
+        sessions: () => [_TestSession('one')..requested = true],
         pauseSession: (_) async => false,
         activateAudioSession: () async => false,
         resumeSession: (_) async => false,
@@ -592,7 +685,7 @@ void main() {
       timer.setStopAfterCurrentTrack(false);
       expect(timer.stopAfterCurrentTrack, isFalse);
       expect(timer.state.stopAfterCurrentTrack, isFalse);
-      expect(fadeMultipliers, contains(1.0));
+      expect(fadeMultipliers, isEmpty);
 
       timer.setStopAfterCurrentTrack(true);
       timer.cancelTimer();
@@ -651,6 +744,17 @@ class _TestSession extends Fake implements PlaybackSession {
   final String id;
   @override
   bool get effectivePlaying => false;
+  bool requested = false;
+  @override
+  bool get playbackRequested => requested;
+  @override
+  String get currentTrackPath => id;
+  @override
+  bool get nativeStopAfterCurrentTrack => true;
+  @override
+  bool get isLoading => false;
+  @override
+  String? get pendingNativeTrackPath => null;
 }
 
 void _attachNoopRuntime(
@@ -658,6 +762,8 @@ void _attachNoopRuntime(
   List<PlaybackSession> Function()? sessions,
   Future<void> Function(String sessionId)? flushSessionPersistence,
   void Function(double multiplier)? applyFadeMultiplier,
+  void Function(String, double)? applySessionFadeMultiplier,
+  Future<bool> Function(String, bool)? setNativeTrackStop,
 }) {
   timer.attachRuntime(
     hasPlayingSession: () => false,
@@ -669,6 +775,8 @@ void _attachNoopRuntime(
     onRuntimeRestored: () {},
     applyFadeMultiplier: applyFadeMultiplier ?? (_) {},
     flushSessionPersistence: flushSessionPersistence,
+    applySessionFadeMultiplier: applySessionFadeMultiplier,
+    setNativeTrackStop: setNativeTrackStop,
   );
 }
 

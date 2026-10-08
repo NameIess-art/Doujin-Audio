@@ -879,4 +879,87 @@ void registerAsmrAccountSyncTests({
     expect(controller.asmrAccountName, 'bob');
     expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
   });
+
+  test('last sync write failure permits retry and logout', () async {
+    await resetPrefs();
+    final failingPreferences = _LastSyncFailurePreferences(
+      repository: TestPersistenceRepository(),
+    );
+    final api = _FakeAsmrApiService();
+    final controller = createTestAsmrController(
+      preferencesStore: failingPreferences,
+      persistenceRepository: _FakeTestPersistenceRepository(const []),
+      apiService: api,
+      authService: AsmrAuthService(
+        apiService: api,
+        tokenStore: _MemoryAsmrTokenStore(),
+      ),
+    );
+    await controller.initialize();
+    await controller.loginAsmrAccount('alice', 'password');
+    failingPreferences.rejectWrite = true;
+    await controller.syncAsmrAccount(force: true);
+    expect(controller.syncViewState.phase, AsmrSyncPhase.failed);
+    expect(controller.syncViewState.lastError, isA<FileSystemException>());
+    failingPreferences.rejectWrite = false;
+    await controller.syncAsmrAccount(force: true);
+    expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+    failingPreferences.rejectWrite = true;
+    await controller.syncAsmrAccount(force: true);
+    await controller.logoutAsmrAccount();
+    expect(controller.isAsmrAccountLoggedIn, isFalse);
+    expect(controller.syncViewState.phase, AsmrSyncPhase.idle);
+  });
+
+  test(
+    'late sync write failure cannot overwrite a new account state',
+    () async {
+      await resetPrefs();
+      final failingPreferences = _LastSyncFailurePreferences(
+        repository: TestPersistenceRepository(),
+      );
+      final api = _FakeAsmrApiService();
+      final controller = createTestAsmrController(
+        preferencesStore: failingPreferences,
+        persistenceRepository: _FakeTestPersistenceRepository(const []),
+        apiService: api,
+        authService: AsmrAuthService(
+          apiService: api,
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+      );
+      await controller.initialize();
+      await controller.loginAsmrAccount('alice', 'password');
+      failingPreferences.blockWrite = true;
+      final oldSync = controller.syncAsmrAccount(force: true);
+      await failingPreferences.writeStarted.future;
+      await controller.logoutAsmrAccount();
+      await controller.loginAsmrAccount('bob', 'password');
+      failingPreferences.releaseWrite.complete();
+      await oldSync;
+      expect(controller.asmrAccountName, 'bob');
+      expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+      expect(controller.syncViewState.lastError, isNull);
+    },
+  );
+}
+
+class _LastSyncFailurePreferences extends AsmrPreferencesStore {
+  _LastSyncFailurePreferences({required super.repository});
+  bool rejectWrite = false;
+  bool blockWrite = false;
+  final writeStarted = Completer<void>();
+  final releaseWrite = Completer<void>();
+
+  @override
+  Future<void> saveLastSyncAt(DateTime value) async {
+    if (blockWrite) {
+      blockWrite = false;
+      writeStarted.complete();
+      await releaseWrite.future;
+      throw const FileSystemException('late last sync write failure');
+    }
+    if (rejectWrite) throw const FileSystemException('last sync write failure');
+    await super.saveLastSyncAt(value);
+  }
 }

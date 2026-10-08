@@ -13,6 +13,7 @@ import 'package:doujin_audio/app/presentation/global_shortcuts.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
@@ -48,6 +49,7 @@ Future<WorkDetailNavigation> _pumpApp(
   WidgetTester tester, {
   Size size = const Size(1280, 800),
   bool withSession = false,
+  bool withNavigationLock = false,
   Widget? home,
 }) async {
   tester.view.devicePixelRatio = 1;
@@ -87,13 +89,26 @@ Future<WorkDetailNavigation> _pumpApp(
   final root = GlobalKey<NavigatorState>();
   final navigation = WorkDetailNavigation(rootNavigatorKey: root);
   addTearDown(navigation.dispose);
+  final rootObserver = UiInteractionNavigatorObserver();
+  addTearDown(rootObserver.dispose);
   await tester.pumpWidget(
     fixture.build(
       WorkDetailNavigationScope(
         navigation: navigation,
         child: GlobalShortcuts(
           navigatorKey: root,
-          child: MaterialApp(navigatorKey: root, home: home ?? const MainScreen()),
+          child: MaterialApp(
+            navigatorKey: root,
+            navigatorObservers: [if (withNavigationLock) rootObserver],
+            builder: (_, child) => withNavigationLock
+                ? AppNavigationInputLock(
+                    navigationAllowed:
+                        UiInteractionCoordinator.instance.navigationAllowed,
+                    child: child!,
+                  )
+                : child!,
+            home: home ?? const MainScreen(),
+          ),
         ),
       ),
       overrides: [
@@ -267,6 +282,90 @@ void main() {
   );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final asmr in [false, true]) {
+      testWidgets(
+        'search results open visible details and return with input unlocked (asmr=$asmr) on $platform',
+        (tester) async {
+          final navigation = await _pumpApp(tester, withNavigationLock: true);
+          final root = navigation.rootNavigatorKey.currentState!;
+          final controller = TextEditingController(text: 'Search work');
+          final focus = FocusNode();
+          addTearDown(controller.dispose);
+          addTearDown(focus.dispose);
+          final work = AsmrWork.fromJson(const {
+            'id': 42,
+            'title': 'Search work',
+          });
+          var finished = false;
+          unawaited(
+            root.push(
+              buildAppPageRoute<void>(
+                context: root.overlay!.context,
+                duration: Duration.zero,
+                child: Builder(
+                  builder: (context) => AppSearchPageScaffold<int>(
+                    controller: controller,
+                    focusNode: focus,
+                    hintText: 'Search',
+                    categories: const [
+                      AppSearchCategory(value: 0, label: 'All'),
+                    ],
+                    selectedCategory: 0,
+                    onCategorySelected: (_) {},
+                    onChanged: (_) {},
+                    onSubmitted: (_) {},
+                    onCloseOrClear: () => root.pop(),
+                    body: Center(
+                      child: TextButton(
+                        onPressed: () => unawaited(
+                          (asmr
+                                  ? showAsmrWorkDetailSheet(context, work)
+                                  : showAudioDetailSheet(
+                                      context,
+                                      AudioDetailTarget.libraryRootFolder(
+                                        '/library/search-work',
+                                      ),
+                                    ))
+                              .then((_) => finished = true),
+                        ),
+                        child: const Text('Open search result'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await _settle(tester);
+          await tester.tap(find.text('Open search result'));
+          await _finishRouteAnimation(tester);
+
+          expect(
+            UiInteractionCoordinator.instance.navigationAllowed.value,
+            isTrue,
+          );
+          final detail = find.byType(WorkDetailPage);
+          expect(detail, findsOneWidget);
+          expect(navigation.isOpen, isFalse);
+          expect(finished, isFalse);
+          expect(Navigator.of(tester.element(detail)), same(root));
+          root.pop();
+          await _settle(tester);
+          expect(finished, isTrue);
+          expect(find.byType(AppSearchPageScaffold<int>), findsOneWidget);
+          expect(controller.text, 'Search work');
+          expect(
+            UiInteractionCoordinator.instance.navigationAllowed.value,
+            isTrue,
+          );
+          await tester.tap(find.byKey(const ValueKey('app_search_close')));
+          await _settle(tester);
+          expect(root.canPop(), isFalse);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
     testWidgets(
       'local and ASMR public entrypoints share the detail pane on $platform',
       (tester) async {

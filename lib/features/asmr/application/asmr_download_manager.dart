@@ -402,24 +402,6 @@ class AsmrDownloadManager {
     final workId = work.id;
     if (!_startingTasks.add(workId)) return;
     try {
-      final existingTask = _store[workId];
-      if (existingTask != null) {
-        if (existingTask.isActive ||
-            _queue.contains(workId) ||
-            _activeTasks.contains(workId)) {
-          return; // Already downloading or queued
-        }
-        if (existingTask.status == AsmrDownloadTaskStatus.paused ||
-            existingTask.status == AsmrDownloadTaskStatus.failed) {
-          _enqueueExistingTask(existingTask);
-          await _store.pendingPersistenceWrites;
-          return;
-        }
-        _store.remove(workId);
-        _outputs.createdOutputPaths.remove(workId);
-        _outputs.createdJsonDocuments.remove(workId);
-      }
-
       final workFolderName =
           customWorkFolderName != null && customWorkFolderName.trim().isNotEmpty
           ? customWorkFolderName.trim()
@@ -436,6 +418,55 @@ class AsmrDownloadManager {
         normalizedDestination,
         workFolderName,
       );
+      final existingTask = _store[workId];
+      if (existingTask != null) {
+        final existingFiles = _planner.collectPlannedFiles(
+          existingTask.selectedRoots,
+        );
+        if (existingTask.saveCover) {
+          final existingCover = _planner.plannedCoverFile(existingTask.work);
+          if (existingCover != null) existingFiles.add(existingCover);
+        }
+        final sameConfiguration =
+            PathMatcher.equalsNormalized(
+              existingTask.workRootPath,
+              workRootPath,
+            ) &&
+            existingTask.conflictPolicy == conflictPolicy &&
+            existingTask.saveMetadata == saveMetadata &&
+            existingTask.saveCover == (coverFile != null) &&
+            existingTask.automaticFileRetryCount == normalizedRetryCount &&
+            listEquals(
+              existingFiles
+                  .map((file) => (file.url, file.relativePath, file.size))
+                  .toList(),
+              plannedFiles
+                  .map((file) => (file.url, file.relativePath, file.size))
+                  .toList(),
+            );
+        if (sameConfiguration) {
+          if (existingTask.isActive ||
+              _queue.contains(workId) ||
+              _activeTasks.contains(workId)) {
+            return;
+          }
+          if (existingTask.status == AsmrDownloadTaskStatus.paused ||
+              existingTask.status == AsmrDownloadTaskStatus.failed) {
+            _enqueueExistingTask(existingTask);
+            await _store.pendingPersistenceWrites;
+            return;
+          }
+        }
+        // Keep the live ownership set until cancellation drains in-flight commits.
+        // Completed files remain in place; only this task's staging is discarded.
+        final ownedPaths = _outputs.createdOutputPaths[workId];
+        await cancelTask(workId, deleteDownloaded: false);
+        await _outputs.discardTaskStaging(
+          existingTask,
+          existingFiles,
+          ownedPaths ?? const <String>{},
+        );
+      }
       if (_disposed) {
         return;
       }
@@ -783,7 +814,7 @@ class AsmrDownloadManager {
   }
 
   Future<void> _resumeTask(int workId) async {
-    if (_disposed) return;
+    if (_disposed || _startingTasks.contains(workId)) return;
     final task = _store[workId];
     if (task == null ||
         (task.status != AsmrDownloadTaskStatus.paused &&
@@ -794,9 +825,9 @@ class AsmrDownloadManager {
   }
 
   Future<bool> _retryFailedFile(int workId, String relativePath) async {
-    if (_disposed) return false;
+    if (_disposed || _startingTasks.contains(workId)) return false;
     await initialize();
-    if (_disposed) return false;
+    if (_disposed || _startingTasks.contains(workId)) return false;
     final task = _store[workId];
     final normalizedPath = relativePath.trim();
     if (task == null ||

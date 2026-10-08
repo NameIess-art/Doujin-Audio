@@ -1,9 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'dart:collection';
+import 'dart:io';
+import 'package:path/path.dart' as path;
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'support/app_runtime_test_fixture.dart';
+import 'support/test_persistence_repository.dart';
 
 class _CountingTracks extends ListBase<MusicTrack> {
   _CountingTracks(this.tracks);
@@ -35,6 +39,146 @@ class _CountingLibrary extends LibraryService {
 
 void main() {
   AppRuntimeTestFixture.initialize();
+  for (final isDirectory in [false, true]) {
+    test(
+      'work ${isDirectory ? 'folder' : 'file'} rename retargets every playback queue',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'work_queue_rename_',
+        );
+        addTearDown(() => root.delete(recursive: true));
+        final folder = await Directory(path.join(root.path, 'disc')).create();
+        final media = File(path.join(folder.path, 'original.mp3'));
+        await media.writeAsString('media');
+        final nested = await Directory(path.join(folder.path, 'nested')).create();
+        final child = File(path.join(nested.path, 'child.mp3'));
+        await child.writeAsString('child');
+        final database = await AppRuntimeTestFixture.installSharedDatabase();
+        addTearDown(() => AppRuntimeTestFixture.disposeSharedDatabase(database));
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(nativePlaybackChannel, (_) async {
+          return <String, Object?>{'ok': true, 'value': null};
+        });
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(nativePlaybackChannel, null),
+        );
+        final repository = TestPersistenceRepository();
+        final graph = createTestRuntimeGraph(persistenceRepository: repository);
+        addTearDown(graph.runtime.dispose);
+        final original = MusicTrack(
+          path: media.path,
+          displayName: 'original',
+          groupKey: folder.path,
+          groupTitle: 'disc',
+          groupSubtitle: '',
+          isSingle: false,
+        );
+        final descendant = MusicTrack(
+          path: child.path,
+          displayName: 'child',
+          groupKey: nested.path,
+          groupTitle: 'nested',
+          groupSubtitle: '',
+          isSingle: false,
+        );
+        graph.library.addWatchedFolder(root.path, notify: false);
+        graph.library.addTracks(
+          [original, descendant],
+          notify: false,
+          persist: false,
+        );
+        final first = graph.playback.createTrackSession(
+          original,
+          customQueueTracks: [original, descendant],
+        );
+        final second = graph.playback.createPlaybackQueue('Work queue');
+        await graph.playback.addWorkToPlaybackQueue(
+          second.id,
+          title: 'disc',
+          tracks: [original, descendant],
+          workRootPath: folder.path,
+        );
+        graph.playback.configurePersistence(enabled: true);
+        await graph.playback.savePersistedState();
+        final renamed = await graph.audioPaths.renameWorkEntryToName(
+          libraryRootPath: root.path,
+          entryPath: isDirectory ? folder.path : media.path,
+          targetName: 'renamed',
+          isMedia: !isDirectory,
+          isDirectory: isDirectory,
+        );
+        final nextPath = isDirectory
+            ? path.join(renamed, 'original.mp3')
+            : renamed;
+        final nextChildPath = isDirectory
+            ? path.join(renamed, 'nested', 'child.mp3')
+            : child.path;
+        for (final session in [first, second]) {
+          expect(
+            graph.playback.sessionById(session.id)!.currentTrackPath,
+            nextPath,
+          );
+          expect(
+            graph.playback
+                .sessionById(session.id)!
+                .customQueueTracks!
+                .map((track) => track.path),
+            [nextPath, nextChildPath],
+          );
+        }
+        expect(await File(nextPath).readAsString(), 'media');
+        expect(await File(nextChildPath).readAsString(), 'child');
+        await graph.playback.savePersistedState();
+        final saved = await repository.loadAllSessions();
+        expect(saved, hasLength(2));
+        for (final session in saved) {
+          expect(session.trackPath, nextPath);
+          expect(
+            (session.customQueueTracks ?? session.playbackQueue!.expandedTracks)
+                .map((track) => track.path),
+            [nextPath, nextChildPath],
+          );
+        }
+        final savedQueue = saved.singleWhere((item) => item.id == second.id);
+        expect(savedQueue.customQueueTracks, isNull);
+        expect(
+          savedQueue.playbackQueue!.expandedTracks.map((track) => track.path),
+          [nextPath, nextChildPath],
+        );
+        expect(
+          savedQueue.playbackQueue!.entries.single.workRootPath,
+          isDirectory ? renamed : folder.path,
+        );
+        await graph.runtime.dispose();
+
+        final restarted = PlaybackFacade.create(databaseRepository: repository);
+        addTearDown(restarted.dispose);
+        await restarted.loadPersistedState();
+        expect(restarted.sessions, hasLength(2));
+        for (final id in [first.id, second.id]) {
+          final session = restarted.sessionById(id)!;
+          expect(session.currentTrackPath, nextPath);
+          expect(
+            (session.customQueueTracks ?? session.playbackQueue!.expandedTracks)
+                .map((track) => track.path),
+            [nextPath, nextChildPath],
+          );
+        }
+        final restoredQueue = restarted.sessionById(second.id)!;
+        expect(restoredQueue.currentQueueIndex, 0);
+        expect(restoredQueue.customQueueTracks, isNull);
+        expect(
+          restoredQueue.playbackQueue!.expandedTracks.map((track) => track.path),
+          [nextPath, nextChildPath],
+        );
+        expect(
+          restoredQueue.playbackQueue!.entries.single.workRootPath,
+          isDirectory ? renamed : folder.path,
+        );
+      },
+    );
+  }
   test('selected local track keeps every work audio in the switcher', () async {
     final graph = createTestRuntimeGraph();
     addTearDown(graph.runtime.dispose);
@@ -328,7 +472,7 @@ void main() {
     );
   });
 
-  test('command lookup does not traverse the normalized library fallback', () {
+  test('command lookup resolves equivalent indexed library paths', () {
     final service = LibraryService();
     final graph = createTestRuntimeGraph(libraryService: service);
     addTearDown(graph.runtime.dispose);
@@ -340,7 +484,7 @@ void main() {
         r'c:\audio\track.mp3',
         includeLibraryFallback: false,
       ),
-      isNull,
+      same(local),
     );
   });
 

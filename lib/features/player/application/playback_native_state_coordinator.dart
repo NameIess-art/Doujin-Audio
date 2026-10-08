@@ -42,6 +42,7 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
       final shouldAutoAdvanceAfterCompletion =
           isNewCompletion &&
           !session.loopMode.isOneShot &&
+          !session.completedByTrackStop &&
           !session.isLoading &&
           !session.isAdvancingAfterCompletion &&
           session.playbackError == null &&
@@ -261,7 +262,7 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
 
   void applyFadeMultiplierToPlayingSessions(double multiplier) {
     for (final session in _service.sessions.values) {
-      if (!session.state.playing) continue;
+      if (multiplier != 1 && !session.playbackRequested) continue;
       unawaited(nativeRepository.setFadeMultiplier(session.id, multiplier));
     }
   }

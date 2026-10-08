@@ -364,6 +364,100 @@ void main() {
           expect(players, hasLength(3));
           await bridge.pause('one');
           expect(bridge.playerForSession('one'), isNull);
+
+          for (final mode in [
+            'repeatOne',
+            'repeatAll',
+            'shuffle',
+            'sequential',
+            'oneShot',
+          ]) {
+            final queue = [
+              for (var index = 0; index < (mode == 'oneShot' ? 1 : 3); index++)
+                <String, Object?>{
+                  'uri': track.uri.toString(),
+                  'path': '${track.path}#$index',
+                  'title': '$mode $index',
+                },
+            ];
+            final index = queue.length == 1 ? 0 : 1;
+            final prepared = await bridge.prepareSession(
+              sessionId: mode,
+              uri: track.uri,
+              title: mode,
+              queue: queue,
+              queueStartIndex: index,
+              repeatOne: mode == 'repeatOne',
+              repeatAll: mode == 'repeatAll' || mode == 'shuffle',
+              shuffle: mode == 'shuffle',
+              autoPlay: true,
+              startPosition: const Duration(seconds: 2),
+            );
+            expect(prepared.isOk, true, reason: prepared.errorOrNull);
+            final decoder = bridge.playerForSession(mode)!;
+            final readyUntil = DateTime.now().add(const Duration(seconds: 15));
+            while ((!decoder.state.playing ||
+                    decoder.state.position < const Duration(seconds: 1)) &&
+                DateTime.now().isBefore(readyUntil)) {
+              await Future<void>.delayed(const Duration(milliseconds: 50));
+            }
+            expect(decoder.state.playing, true, reason: mode);
+            final position = decoder.state.position;
+            expect(
+              (await bridge.setStopAfterCurrentTrack(mode, true)).isOk,
+              true,
+            );
+            expect(decoder.state.playlist.medias, hasLength(1), reason: mode);
+            expect(
+              (await bridge.setStopAfterCurrentTrack(mode, false)).isOk,
+              true,
+            );
+            expect(bridge.playerForSession(mode), same(decoder), reason: mode);
+            expect(
+              decoder.state.playlist.medias,
+              hasLength(queue.length),
+              reason: mode,
+            );
+            expect(
+              decoder.state.position.inMilliseconds,
+              inInclusiveRange(
+                position.inMilliseconds - 100,
+                position.inMilliseconds + 2000,
+              ),
+              reason: 'Cancellation must retain decoder position for $mode',
+            );
+            final restored = (await bridge.snapshot()).valueOrNull!.sessions
+                .singleWhere((session) => session.sessionId == mode);
+            expect(restored.queueIndex, index, reason: mode);
+            expect(
+              restored.retainedUris,
+              hasLength(queue.length),
+              reason: mode,
+            );
+            expect(
+              (await bridge.setStopAfterCurrentTrack(mode, true)).isOk,
+              true,
+            );
+            expect(
+              (await bridge.seek(mode, const Duration(seconds: 9))).isOk,
+              true,
+            );
+            final stoppedUntil = DateTime.now().add(
+              const Duration(seconds: 15),
+            );
+            while (bridge.playerForSession(mode) != null &&
+                DateTime.now().isBefore(stoppedUntil)) {
+              await Future<void>.delayed(const Duration(milliseconds: 50));
+            }
+            final stopped = (await bridge.snapshot()).valueOrNull!.sessions
+                .singleWhere((session) => session.sessionId == mode);
+            expect(stopped.playWhenReady, false, reason: mode);
+            expect(stopped.processingState, 'completed', reason: mode);
+            expect(stopped.queueIndex, index, reason: mode);
+            expect(stopped.retainedUris, hasLength(queue.length), reason: mode);
+            expect(bridge.playerForSession(mode), isNull, reason: mode);
+            await bridge.removeSession(mode);
+          }
         } finally {
           await structureSub.cancel();
           await progressSub.cancel();

@@ -74,6 +74,44 @@ void main() {
     subtitles.dispose();
   });
 
+  test(
+    'track-stop completion cannot advance the shared logical queue',
+    () async {
+      final session = PlaybackSession(
+        id: 'stopped',
+        currentTrackPath: catalog.tracks.first.path,
+        loopMode: SessionLoopMode.crossSequential,
+        nonSingleLoopMode: SessionLoopMode.crossSequential,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(true, ProcessingState.ready),
+        customQueueTracks: catalog.tracks,
+      );
+      playback.registerSession(session);
+      commands.handleNativeSnapshot(
+        NativePlaybackSnapshot(
+          sessionId: session.id,
+          path: session.currentTrackPath,
+          playing: false,
+          playWhenReady: false,
+          processingState: 'completed',
+          position: Duration.zero,
+          bufferedPosition: Duration.zero,
+          volume: 1,
+          boostGain: 1,
+          channelSwapEnabled: false,
+          stopAfterCurrentTrack: true,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await commands.handleSessionCompleted(session.id);
+      expect(native.prepared, isEmpty);
+      expect(native.played, isEmpty);
+      expect(session.currentTrackPath, catalog.tracks.first.path);
+      expect(session.state.processingState, ProcessingState.completed);
+    },
+  );
+
   PlaybackSession register(
     String id, {
     bool playing = false,
@@ -136,6 +174,50 @@ void main() {
       release.complete();
       expect(await firstPreparation, true);
       expect(native.played, ['b', 'a']);
+    },
+  );
+
+  test(
+    'track stop enabled during initial prepare arms before native play',
+    () async {
+      final session = register('preparing');
+      final release = Completer<void>();
+      native.blocked[session.id] = release.future;
+      var ready = false;
+      final calls = <String>[];
+      timer.attachRuntime(
+        hasPlayingSession: () => false,
+        sessions: () => playback.sessions.values,
+        pauseSession: commands.pauseSession,
+        activateAudioSession: () async => true,
+        resumeSession: (_) async => false,
+        onStateChanged: () {},
+        onRuntimeRestored: () {},
+        applyFadeMultiplier: (_) {},
+        setNativeTrackStop: (id, enabled) async {
+          calls.add('$enabled:$ready');
+          if (!ready) return false;
+          expect(native.played, isEmpty);
+          session.nativeStopAfterCurrentTrack = enabled;
+          native.trackStops[id] = enabled;
+          return true;
+        },
+      );
+      final preparing = commands.prepareSession(
+        session,
+        nextPath: session.currentTrackPath,
+      );
+      await native.startedFor(session.id).future;
+      timer.setStopAfterCurrentTrack(true);
+      await timer.pendingTrackStopSync;
+      expect(timer.stopsAfterCurrentTrack(session.id), true);
+      expect(calls, isEmpty);
+      ready = true;
+      release.complete();
+      expect(await preparing, true);
+      expect(native.played, [session.id]);
+      expect(calls, ['true:true']);
+      expect(timer.stopsAfterCurrentTrack(session.id), true);
     },
   );
 
@@ -640,6 +722,7 @@ class _Catalog implements PlaybackLibraryCatalog {
 }
 
 class _Native extends NativePlaybackRepository {
+  final trackStops = <String, bool>{};
   List<NativePlaybackSnapshot> runtimeSnapshots = [];
   final blocked = <String, Future<void>>{};
   final blockedPlay = <String, Future<void>>{};
@@ -793,5 +876,6 @@ class _Native extends NativePlaybackRepository {
     boostGain: 1,
     channelSwapEnabled: false,
     transportCommandId: commandId,
+    stopAfterCurrentTrack: trackStops[id] ?? false,
   );
 }

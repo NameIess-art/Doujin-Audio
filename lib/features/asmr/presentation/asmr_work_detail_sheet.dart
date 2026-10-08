@@ -24,7 +24,8 @@ Future<void> showAsmrWorkDetailSheet(
     return;
   }
   final detailNavigation = WorkDetailNavigationScope.maybeOf(context);
-  if (detailNavigation != null) {
+  if (detailNavigation != null &&
+      (returnToMain || detailNavigation.canOpenInPane(context))) {
     await detailNavigation.open(
       ('asmr', work.id),
       buildRoute,

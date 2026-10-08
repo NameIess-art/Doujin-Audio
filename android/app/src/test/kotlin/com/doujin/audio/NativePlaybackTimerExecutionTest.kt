@@ -16,13 +16,13 @@ class NativePlaybackTimerExecutionTest {
             onAllTracksFinished = completions::add
         )
         execution.arm(listOf("first", "second"), 7)
-        execution.onTrackEnded("unrelated")
-        execution.onTrackEnded("first")
+        execution.onTrackEnded("unrelated", 7)
+        execution.onTrackEnded("first", 7)
         assertTrue(completions.isEmpty())
         assertEquals(false, pauseAtEnd["first"])
         assertEquals(true, pauseAtEnd["second"])
-        execution.onTrackEnded("second")
-        execution.onTrackEnded("second")
+        execution.onTrackEnded("second", 7)
+        execution.onTrackEnded("second", 7)
         assertEquals(listOf(7), completions)
     }
 
@@ -37,7 +37,7 @@ class NativePlaybackTimerExecutionTest {
         )
         execution.arm(listOf("session"), 3)
         execution.cancel()
-        execution.onTrackEnded("session")
+        execution.onTrackEnded("session", execution.generationFor("session"))
         assertEquals(false, pauseAtEnd["session"])
         assertTrue(completions.isEmpty())
     }
@@ -53,8 +53,27 @@ class NativePlaybackTimerExecutionTest {
         )
         execution.arm(listOf("session"), 3)
         execution.arm(listOf("session"), 5)
-        execution.onTrackEnded("session")
-        assertEquals(listOf("session", "session"), fadesRestored)
+        execution.onTrackEnded("session", 3)
+        assertTrue(completions.isEmpty())
+        execution.onTrackEnded("session", execution.generationFor("session"))
+        assertEquals(listOf("session", "session", "session", "session"), fadesRestored)
         assertEquals(listOf(5), completions)
+    }
+
+    @Test
+    fun `manual removal finishes remaining targets and rearm clears old flags`() {
+        val flags = mutableMapOf<String, Boolean>()
+        val completions = mutableListOf<Int?>()
+        val execution = NativePlaybackTimerExecution(
+            setPauseAtEnd = { id, value -> flags[id] = value },
+            restoreFade = {}, onAllTracksFinished = completions::add
+        )
+        execution.arm(listOf("old"), 2)
+        execution.arm(listOf("first", "second"), 3)
+        assertEquals(false, flags["old"])
+        execution.removeTarget("first")
+        assertTrue(completions.isEmpty())
+        execution.removeTarget("second")
+        assertEquals(listOf(3), completions)
     }
 }

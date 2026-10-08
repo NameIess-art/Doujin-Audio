@@ -26,6 +26,15 @@ class WorkDetailNavigation extends ChangeNotifier {
 
   bool get isOpen => _routes.length > 1 || _closing.isNotEmpty;
 
+  bool canOpenInPane(BuildContext context) {
+    final originNavigator = Navigator.of(context);
+    // Root pages such as search cover the main route and mute its navigator's
+    // tickers. Their details must stay on the visible root stack.
+    return originNavigator == navigatorKey.currentState ||
+        (originNavigator == rootNavigatorKey.currentState &&
+            ModalRoute.of(context)?.isFirst == true);
+  }
+
   void updateIdentity(Object current, Object next) {
     if (_identity == current) _identity = next;
   }

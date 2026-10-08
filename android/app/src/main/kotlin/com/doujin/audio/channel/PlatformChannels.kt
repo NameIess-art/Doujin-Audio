@@ -25,6 +25,7 @@ internal object NativePlaybackMethods {
     const val UPDATE_QUEUE = "updateQueue"
     const val SET_AUDIO_EFFECTS = "setAudioEffects"
     const val SET_FADE_MULTIPLIER = "setFadeMultiplier"
+    const val SET_STOP_AFTER_CURRENT_TRACK = "setStopAfterCurrentTrack"
     const val REMOVE_SESSION = "removeSession"
     const val PAUSE_ALL = "pauseAll"
     const val CLEAR_ALL = "clearAll"

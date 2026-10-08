@@ -18,6 +18,8 @@ import 'library_catalog_write_coordinator.dart';
 import 'library_service.dart';
 import 'library_snapshot_cache_service.dart';
 
+export 'library_entry_editor_service.dart' show AudioDetailRenameException;
+
 enum LibraryRemovalKind {
   standaloneAudioPermanent,
   standaloneFolderPermanent,
@@ -37,12 +39,6 @@ class AudioDetailRenameResult {
   final AudioDetail detail;
   final bool renamed;
   final bool backupFailed;
-}
-
-class AudioDetailRenameException implements Exception {
-  const AudioDetailRenameException(this.reason);
-
-  final String reason;
 }
 
 /// Owns destructive and recoverable library mutations and path retargeting.

@@ -37,6 +37,7 @@ class NativePlaybackSnapshot {
     List<String> retainedUris = const <String>[],
     this.hasRetainedUrisPayload = false,
     this.transportCommandId,
+    this.stopAfterCurrentTrack = false,
   }) : retainedUris = immutableList(retainedUris),
        audioEffects = audioEffects ?? AudioEffectsState.flat,
        eqCapabilities = eqCapabilities ?? EqCapabilities.unsupported;
@@ -66,6 +67,7 @@ class NativePlaybackSnapshot {
   final List<String> retainedUris;
   final bool hasRetainedUrisPayload;
   final int? transportCommandId;
+  final bool stopAfterCurrentTrack;
 
   NativePlaybackSnapshot copyWith({
     String? sessionId,
@@ -101,6 +103,7 @@ class NativePlaybackSnapshot {
     bool? hasRetainedUrisPayload,
     int? transportCommandId,
     bool clearTransportCommandId = false,
+    bool? stopAfterCurrentTrack,
   }) {
     return NativePlaybackSnapshot(
       sessionId: sessionId ?? this.sessionId,
@@ -135,6 +138,8 @@ class NativePlaybackSnapshot {
       transportCommandId: clearTransportCommandId
           ? null
           : (transportCommandId ?? this.transportCommandId),
+      stopAfterCurrentTrack:
+          stopAfterCurrentTrack ?? this.stopAfterCurrentTrack,
     );
   }
 
@@ -184,6 +189,7 @@ class NativePlaybackSnapshot {
           const <String>[],
       hasRetainedUrisPayload: map.containsKey('retainedUris'),
       transportCommandId: (map['transportCommandId'] as num?)?.toInt(),
+      stopAfterCurrentTrack: map['stopAfterCurrentTrack'] as bool? ?? false,
     );
   }
 }
@@ -359,6 +365,11 @@ abstract interface class NativePlaybackBridgeBase {
   );
 
   Future<NativeResult<void>> removeSession(String sessionId);
+
+  Future<NativeResult<NativePlaybackSnapshot>> setStopAfterCurrentTrack(
+    String sessionId,
+    bool enabled,
+  );
 
   Future<NativeResult<void>> pauseAll();
 
@@ -749,6 +760,15 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
       'sessionId': sessionId,
     });
   }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setStopAfterCurrentTrack(
+    String sessionId,
+    bool enabled,
+  ) => _invokeSnapshot(NativePlaybackMethod.setStopAfterCurrentTrack, {
+    'sessionId': sessionId,
+    'enabled': enabled,
+  });
 
   @override
   Future<NativeResult<void>> pauseAll() {

@@ -8,6 +8,8 @@ class _WindowsPlaybackSession {
   final subscriptions = <StreamSubscription<dynamic>>[];
   Future<void> serial = Future.value();
   bool retired = false, eventPending = false;
+  bool stopAfterCurrentTrack = false, nativeQueueLimited = false;
+  final nativeQueueIndices = <int, int>{};
   Object? lastEventKey;
   int queueRevision = 0, externalQueueRevision = 0, emittedQueueRevision = -1;
   Duration? lastProgressPosition;
@@ -109,16 +111,62 @@ class _WindowsPlaybackSession {
           : const [],
       hasRetainedUrisPayload: includeRetainedUris,
       transportCommandId: commandId,
+      stopAfterCurrentTrack: stopAfterCurrentTrack,
     );
   }
 
   static String _queueKey(Map<String, Object?> item) =>
       (item['path'] ?? item['uri']) as String;
 
+  Future<List<int>> nativeEntryIds(Player player) async {
+    final platform = player.platform;
+    if (platform is NativePlayer) {
+      final count = int.parse(await platform.getProperty('playlist/count'));
+      return [
+        for (var i = 0; i < count; i++)
+          int.parse(await platform.getProperty('playlist/$i/id')),
+      ];
+    }
+    return player.state.playlist.medias.map(identityHashCode).toList();
+  }
+
+  Future<int?> currentNativeEntryId(Player player) async {
+    final platform = player.platform;
+    if (platform is NativePlayer) {
+      final index = int.parse(
+        await platform.getProperty('playlist-playing-pos'),
+      );
+      return index < 0
+          ? null
+          : int.parse(await platform.getProperty('playlist/$index/id'));
+    }
+    final playlist = player.state.playlist;
+    return playlist.index < 0 || playlist.index >= playlist.medias.length
+        ? null
+        : identityHashCode(playlist.medias[playlist.index]);
+  }
+
+  Future<void> mapNativeEntries(Player player) async {
+    final generation = this.generation;
+    final ids = await nativeEntryIds(player);
+    if (retired ||
+        !identical(this.player, player) ||
+        generation != this.generation) {
+      return;
+    }
+    nativeQueueIndices
+      ..clear()
+      ..addAll({
+        for (var i = 0; i < ids.length; i++)
+          ids[i]: nativeQueueLimited ? index : i,
+      });
+  }
+
   Future<void> updateQueue(
     List<Map<String, Object?>> queue, {
     int? queueStartIndex,
     required bool Function() isCurrent,
+    bool restoreNativeQueue = false,
   }) async {
     final previousQueue = this.queue;
     final previous = previousQueue[this.index];
@@ -146,19 +194,29 @@ class _WindowsPlaybackSession {
       index = 0;
     }
     final player = this.player;
-    if (player != null) {
-      final currentToken = this.index;
-      final order = List.generate(previousQueue.length, (i) => i);
-      final nativeItems = [...previousQueue];
+    if (player != null && (!nativeQueueLimited || restoreNativeQueue)) {
+      // mpv shuffles physical entries; their IDs remain stable even when URIs
+      // repeat. Reconcile edits against that order without reopening the decoder.
+      final ids = await nativeEntryIds(player);
+      if (!isCurrent() || !identical(this.player, player)) return;
+      final physicalQueue = [
+        for (final id in ids) previousQueue[nativeQueueIndices[id]!],
+      ];
+      final currentToken = ids.indexWhere(
+        (id) => nativeQueueIndices[id] == this.index,
+      );
+      if (currentToken < 0) throw StateError('Current native entry is missing');
+      final order = List.generate(physicalQueue.length, (i) => i);
+      final nativeItems = [...physicalQueue];
       opening = true;
       try {
         final available = <(String, Object?), List<int>>{};
-        for (var i = 0; i < previousQueue.length; i++) {
-          if (i == this.index) continue;
+        for (var i = 0; i < physicalQueue.length; i++) {
+          if (i == currentToken) continue;
           available
               .putIfAbsent((
-                _queueKey(previousQueue[i]),
-                previousQueue[i]['uri'],
+                _queueKey(physicalQueue[i]),
+                physicalQueue[i]['uri'],
               ), () => [])
               .add(i);
         }
@@ -166,7 +224,7 @@ class _WindowsPlaybackSession {
         final desired = <int?>[];
         for (var i = 0; i < items.length; i++) {
           if (i == index) {
-            desired.add(this.index);
+            desired.add(currentToken);
             continue;
           }
           final key = (_queueKey(items[i]), items[i]['uri']);
@@ -212,11 +270,15 @@ class _WindowsPlaybackSession {
           }
           if (!isCurrent()) return;
         }
+        // The edited physical order now matches the requested logical order.
+        nativeQueueLimited = false;
+        await mapNativeEntries(player);
       } catch (_) {
-        if (isCurrent()) {
+        if (isCurrent() && !restoreNativeQueue) {
           // Earlier successful edits remain applied when a later command fails.
           this.queue = nativeItems;
           this.index = order.indexOf(currentToken);
+          await mapNativeEntries(player);
         }
         rethrow;
       } finally {
@@ -225,6 +287,7 @@ class _WindowsPlaybackSession {
     }
     this.queue = items;
     this.index = index;
+    if (restoreNativeQueue) nativeQueueLimited = false;
     if (player != null &&
         pendingStart != null &&
         player.state.duration > Duration.zero) {
@@ -247,6 +310,8 @@ class _WindowsPlaybackSession {
       duration = current.state.duration;
     }
     player = null;
+    nativeQueueIndices.clear();
+    nativeQueueLimited = false;
     videoController = null;
     pendingStart = null;
     lastProgressPosition = null;

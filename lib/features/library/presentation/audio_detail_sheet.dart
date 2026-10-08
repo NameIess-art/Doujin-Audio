@@ -115,7 +115,8 @@ Future<void> showAudioDetailSheet(
     return;
   }
   final detailNavigation = WorkDetailNavigationScope.maybeOf(context);
-  if (detailNavigation != null) {
+  if (detailNavigation != null &&
+      (returnToMain || detailNavigation.canOpenInPane(context))) {
     await detailNavigation.open(
       ('local', target),
       buildRoute,
@@ -452,7 +453,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
           tone: AppFeedbackTone.warning,
         );
       }
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _savingField = null;
@@ -462,7 +463,11 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
         context,
         ProviderScope.containerOf(context, listen: false)
             .read(appLanguageProviderInstanceProvider)
-            .tr('audio_detail_rename_failed'),
+            .tr(
+              error is AudioDetailRenameException && error.reason == 'nameConflict'
+                  ? 'audio_detail_rename_conflict'
+                  : 'audio_detail_rename_failed',
+            ),
         tone: AppFeedbackTone.warning,
       );
     }

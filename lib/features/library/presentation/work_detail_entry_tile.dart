@@ -78,6 +78,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final item = widget.item;
     final isFolder = item.type == WorkEntryType.folder;
     final icon = switch (item.type) {
@@ -90,10 +91,13 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       WorkEntryType.image => Icons.image_outlined,
     };
     final color = switch (item.type) {
-      WorkEntryType.folder => const Color(0xFFFFA000),
+      WorkEntryType.folder => const Color(0xFFF59E0B),
       WorkEntryType.audio => widget.accentColor,
-      _ => cs.onSurfaceVariant,
+      WorkEntryType.text => const Color(0xFF0EA5E9),
+      WorkEntryType.image => const Color(0xFFEC4899),
     };
+    final badgeBg = color.withValues(alpha: isDark ? 0.15 : 0.10);
+    final badgeBorder = color.withValues(alpha: isDark ? 0.25 : 0.18);
     final isHighlighted =
         defaultTargetPlatform == TargetPlatform.windows && _isMenuOpen;
 
@@ -126,22 +130,37 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
         clipBehavior: Clip.antiAlias,
         child: ListTile(
           dense: true,
-          contentPadding: const EdgeInsets.only(left: 16),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 2,
+          ),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           splashColor: color.withValues(alpha: 0.16),
           hoverColor: color.withValues(alpha: 0.08),
           selected: isHighlighted,
           selectedTileColor: widget.accentColor.withValues(alpha: 0.16),
           selectedColor: widget.accentColor,
-          leading: Icon(icon, color: color),
+          leading: Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: badgeBg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: badgeBorder, width: 0.8),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
           title: WorkPageTranslationText(
             item.name,
             fileName: !isFolder,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: isFolder
-                ? const TextStyle(fontWeight: FontWeight.w600)
-                : null,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: isFolder ? FontWeight.w600 : FontWeight.w500,
+              color: cs.onSurface,
+            ),
           ),
           trailing: SizedBox.square(
             dimension: 44,
@@ -149,7 +168,8 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
               builder: (buttonContext) => IconButton(
                 key: ValueKey<String>('work_entry_more_${item.relativePath}'),
                 padding: EdgeInsets.zero,
-                iconSize: 22,
+                iconSize: 20,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.7),
                 icon: const Icon(Icons.more_vert_rounded),
                 tooltip: widget.moreLabel,
                 onPressed: () => _showButtonMenu(buttonContext),

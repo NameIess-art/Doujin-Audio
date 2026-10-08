@@ -20,13 +20,47 @@ class WorkDetailActions extends StatelessWidget {
   final VoidCallback onDownload;
   final VoidCallback onToggleFavorite;
 
-  Widget _button({
+  Widget _button(
+    BuildContext context, {
     required String keyName,
     required VoidCallback onPressed,
     required IconData icon,
     required String label,
+    bool isPrimary = false,
     bool favorite = false,
   }) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onAccentColor =
+        ThemeData.estimateBrightnessForColor(accentColor) == Brightness.dark
+            ? Colors.white
+            : const Color(0xFF0F172A);
+
+    final Color backgroundColor;
+    final Color foregroundColor;
+    final BorderSide borderSide;
+
+    if (isPrimary) {
+      backgroundColor = accentColor;
+      foregroundColor = onAccentColor;
+      borderSide = BorderSide.none;
+    } else if (favorite) {
+      backgroundColor = accentColor.withValues(alpha: isDark ? 0.22 : 0.16);
+      foregroundColor = accentColor;
+      borderSide = BorderSide(
+        color: accentColor.withValues(alpha: 0.40),
+      );
+    } else {
+      backgroundColor = isDark
+          ? cs.surfaceContainerHighest.withValues(alpha: 0.45)
+          : cs.surfaceContainerHigh.withValues(alpha: 0.65);
+      foregroundColor = cs.onSurface;
+      borderSide = BorderSide(
+        color: cs.outlineVariant.withValues(alpha: isDark ? 0.30 : 0.45),
+        width: 0.8,
+      );
+    }
+
     return Expanded(
       child: FilledButton.tonalIcon(
         key: ValueKey<String>(keyName),
@@ -35,12 +69,17 @@ class WorkDetailActions extends StatelessWidget {
           minimumSize: const Size.fromHeight(46),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           shape: const StadiumBorder(),
+          side: borderSide,
+          elevation: isPrimary ? 1.5 : 0,
+          shadowColor: isPrimary
+              ? accentColor.withValues(alpha: isDark ? 0.35 : 0.25)
+              : Colors.transparent,
           visualDensity: VisualDensity.standard,
           textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-          backgroundColor: favorite ? accentColor.withValues(alpha: 0.2) : null,
-          foregroundColor: favorite ? accentColor : null,
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
         ),
-        icon: Icon(icon, size: 18, color: favorite ? accentColor : null),
+        icon: Icon(icon, size: 18, color: foregroundColor),
         label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
     );
@@ -51,6 +90,7 @@ class WorkDetailActions extends StatelessWidget {
     children: [
       if (isLocal)
         _button(
+          context,
           keyName: 'work_detail_fetch_info',
           onPressed: onFetchInfo,
           icon: Icons.cloud_download_rounded,
@@ -58,14 +98,17 @@ class WorkDetailActions extends StatelessWidget {
         ),
       if (isLocal) const SizedBox(width: 8),
       _button(
+        context,
         keyName: isLocal ? 'work_detail_download' : 'asmr_work_detail_download',
         onPressed: onDownload,
         icon: Icons.download_rounded,
         label: i18n.tr('download'),
+        isPrimary: true,
       ),
       if (!isLocal) ...[
         const SizedBox(width: 8),
         _button(
+          context,
           keyName: 'asmr_work_detail_favorite',
           onPressed: onToggleFavorite,
           icon: isFavorite

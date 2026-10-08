@@ -5,6 +5,18 @@ import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:path/path.dart' as path;
+import 'package:doujin_audio/features/library/application/library_scan_models.dart';
+
+class _ScanDocumentGateway extends Fake implements FileCachePlatformGateway {
+  _ScanDocumentGateway(this.result);
+  final NativeScanResult result;
+
+  @override
+  Future<NativeScanResult> scanFolder(String folderPath) async => result;
+
+  @override
+  Future<List<dynamic>?> scanFolderPayload(String folderPath) async => [];
+}
 
 class _RenameDocumentGateway extends Fake implements FileCachePlatformGateway {
   String? renamedPath;
@@ -22,6 +34,115 @@ class _RenameDocumentGateway extends Fake implements FileCachePlatformGateway {
 }
 
 void main() {
+  for (final kind in ['file', 'directory', 'link']) {
+    test('rename rejects an existing $kind without replacing it', () async {
+      final root = await Directory.systemTemp.createTemp('rename_conflict_');
+      addTearDown(() => root.delete(recursive: true));
+      final source = File(path.join(root.path, 'source.mp3'));
+      final target = path.join(root.path, 'target.mp3');
+      await source.writeAsString('source');
+      if (kind == 'directory') {
+        await Directory(target).create();
+      } else if (kind == 'link') {
+        final linked = File(path.join(root.path, 'linked.mp3'));
+        await linked.writeAsString('linked');
+        try {
+          await Link(target).create(linked.path);
+        } on FileSystemException {
+          return; // Windows may require Developer Mode to create symlinks.
+        }
+      } else {
+        await File(target).writeAsString('target');
+      }
+      await expectLater(
+        LibraryEntryEditorService(
+          isAndroid: () => false,
+        ).renameEntry(source.path, 'target', isDirectory: false),
+        throwsA(
+          isA<AudioDetailRenameException>().having(
+            (error) => error.reason,
+            'reason',
+            'nameConflict',
+          ),
+        ),
+      );
+      expect(await source.readAsString(), 'source');
+      if (kind == 'file') expect(await File(target).readAsString(), 'target');
+      if (kind == 'link') {
+        expect(await Link(target).target(), endsWith('linked.mp3'));
+      }
+    });
+  }
+  for (final result in [
+    NativeScanResult.success([], {}, failureCount: 1, completenessKnown: true),
+    NativeScanResult.success(
+      [],
+      {},
+      wasCancelled: true,
+      completenessKnown: true,
+    ),
+    NativeScanResult.success([], {}),
+    NativeScanResult.failed(code: 'provider_failed'),
+  ]) {
+    test(
+      'incomplete SAF scan cannot authorize removing library entries ${result.errorCode ?? '${result.failureCount}/${result.wasCancelled}/${result.completenessKnown}'}',
+      () async {
+        final snapshot = await LibraryEntryEditorService(
+          fileCacheGateway: _ScanDocumentGateway(result),
+          isAndroid: () => true,
+        ).loadDiskSnapshot('content://provider/tree/root');
+        expect(snapshot.authoritative, isFalse);
+      },
+    );
+  }
+
+  test('complete SAF scan retains tracks with opaque document IDs', () async {
+    const mediaPath = 'content://provider/tree/root/document/123';
+    final snapshot = await LibraryEntryEditorService(
+      fileCacheGateway: _ScanDocumentGateway(
+        NativeScanResult.success(
+          [
+            const ScannedTrack(
+              path: mediaPath,
+              groupKey: 'content://provider/tree/root',
+              groupTitle: 'root',
+              groupSubtitle: 'root',
+              isSingle: false,
+              isVideo: false,
+            ),
+          ],
+          {mediaPath},
+          completenessKnown: true,
+        ),
+      ),
+      isAndroid: () => true,
+    ).loadDiskSnapshot('content://provider/tree/root');
+    expect(snapshot.authoritative, isTrue);
+    expect(snapshot.audioFilePaths, [mediaPath]);
+  });
+
+  test('folder rename rejects an existing empty destination folder', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'rename_folder_conflict_',
+    );
+    addTearDown(() => root.delete(recursive: true));
+    final source = await Directory(path.join(root.path, 'source')).create();
+    final target = await Directory(path.join(root.path, 'target')).create();
+    await expectLater(
+      LibraryEntryEditorService(
+        isAndroid: () => false,
+      ).renameEntry(source.path, 'target', isDirectory: true),
+      throwsA(
+        isA<AudioDetailRenameException>().having(
+          (error) => error.reason,
+          'reason',
+          'nameConflict',
+        ),
+      ),
+    );
+    expect(await source.exists(), isTrue);
+    expect(await target.exists(), isTrue);
+  });
   test('enumerates supported media recursively in natural order', () async {
     final root = await Directory.systemTemp.createTemp('library_editor_');
     addTearDown(() => root.delete(recursive: true));

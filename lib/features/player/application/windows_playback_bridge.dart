@@ -92,7 +92,18 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
           !session.wantsPlay) {
         return;
       }
-      await player.jump(session.index);
+      final ids = await session.nativeEntryIds(player);
+      if (!_isCurrent(session) ||
+          generation != session.generation ||
+          !identical(session.player, player) ||
+          !session.wantsPlay) {
+        return;
+      }
+      final index = ids.indexWhere(
+        (id) => session.nativeQueueIndices[id] == session.index,
+      );
+      if (index < 0) throw StateError('Current native entry is missing');
+      await player.jump(index);
       if (_isCurrent(session) &&
           generation == session.generation &&
           session.wantsPlay) {
@@ -148,6 +159,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         snapshot.error,
         snapshot.queueIndex,
         snapshot.transportCommandId,
+        snapshot.stopAfterCurrentTrack,
         session.queueRevision,
       );
       if (key == session.lastEventKey) return;
@@ -290,6 +302,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
               channelSwapEnabled: false,
             );
         session.repeatOne = repeatOne;
+        session.stopAfterCurrentTrack = false;
         session.repeatAll = repeatAll;
         session.shuffle = shuffle;
         session.position = startPosition < Duration.zero
@@ -334,13 +347,17 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         : null;
     try {
       final playlist = Playlist([
-        for (var i = 0; i < session.queue.length; i++)
-          Media(session.queue[i]['uri'] as String),
-      ], index: session.index);
+        if (session.stopAfterCurrentTrack)
+          Media(session.queue[session.index]['uri'] as String)
+        else
+          for (final item in session.queue) Media(item['uri'] as String),
+      ], index: session.stopAfterCurrentTrack ? 0 : session.index);
       await player.open(playlist, play: false);
+      session.nativeQueueLimited = session.stopAfterCurrentTrack;
       if (!_isCurrent(session) || generation != session.generation) {
         throw ArgumentError('Playback preparation was superseded');
       }
+      await session.mapNativeEntries(player);
       await _applyMode(session);
       await _applyEffects(session);
       await player.setVolume(session.volume * session.fade * 100);
@@ -365,41 +382,67 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         if (!_isCurrent(session) ||
             !identical(session.player, player) ||
             session.opening ||
+            session.nativeQueueLimited ||
             playlist.medias.isEmpty) {
           return;
         }
-        final index = playlist.index;
-        if (index >= 0 &&
-            index < session.queue.length &&
-            index != session.index) {
-          session.index = index;
-          session.position = Duration.zero;
-          session.retryAttempt = 0;
-          session.error = null;
-          if (session.hasRetainedCurrent && index != 0) {
-            final generation = session.generation;
-            unawaited(
-              _change(session.id, (current) async {
+        final generation = session.generation;
+        unawaited(
+          _run<void>(() async {
+            final id = await session.currentNativeEntryId(player);
+            if (!_isCurrent(session) ||
+                generation != session.generation ||
+                !identical(session.player, player) ||
+                session.opening ||
+                session.nativeQueueLimited) {
+              return;
+            }
+            final index = session.nativeQueueIndices[id];
+            if (index == null || index == session.index) return;
+            session.index = index;
+            session.position = Duration.zero;
+            session.retryAttempt = 0;
+            session.error = null;
+            if (session.hasRetainedCurrent && index != 0) {
+              final cleanup = await _change(session.id, (current) async {
                 if (generation != current.generation ||
                     !current.hasRetainedCurrent ||
                     current.index == 0) {
                   return;
                 }
-                current.hasRetainedCurrent = false;
                 current.opening = true;
                 try {
-                  await current.player?.remove(0);
+                  if (identical(current.player, player)) {
+                    final ids = await current.nativeEntryIds(player);
+                    final retainedIndex = ids.indexWhere(
+                      (id) => current.nativeQueueIndices[id] == 0,
+                    );
+                    await player.remove(retainedIndex);
+                    current.nativeQueueIndices.remove(ids[retainedIndex]);
+                    current.nativeQueueIndices.updateAll(
+                      (_, index) => index - 1,
+                    );
+                  }
+                  current.hasRetainedCurrent = false;
                   current.queue.removeAt(0);
                   current.invalidateRetainedUris();
                   current.index--;
                 } finally {
                   current.opening = false;
                 }
-              }),
-            );
-          }
-        }
-        _emit(session);
+              });
+              if (cleanup.isFailure) throw StateError(cleanup.errorOrNull!);
+            }
+            _emit(session);
+          }).then((result) {
+            if (result.isFailure &&
+                _isCurrent(session) &&
+                generation == session.generation &&
+                identical(session.player, player)) {
+              _handleError(session, result.errorOrNull!);
+            }
+          }),
+        );
       }),
       player.stream.playing.listen((_) => _emit(session)),
       player.stream.completed.listen((completed) {
@@ -523,14 +566,18 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
 
   Future<void> _applyMode(_WindowsPlaybackSession session) async {
     await session.player?.setPlaylistMode(
-      session.repeatOne
+      session.stopAfterCurrentTrack
+          ? PlaylistMode.none
+          : session.repeatOne
           ? PlaylistMode.single
           : session.repeatAll
           ? PlaylistMode.loop
           : PlaylistMode.none,
     );
     await session.player?.setShuffle(
-      session.shuffle && session.queue.length > 1,
+      !session.stopAfterCurrentTrack &&
+          session.shuffle &&
+          session.queue.length > 1,
     );
   }
 
@@ -603,6 +650,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     }
     return _change(sessionId, (session) async {
       if (session.wantsPlay) return;
+      session.stopAfterCurrentTrack = false;
       await session.player?.pause();
       await _releaseIfIdle(session);
     });
@@ -615,6 +663,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     current?.cancelRetry();
     return _change(sessionId, (session) async {
       if (session.wantsPlay) return;
+      session.stopAfterCurrentTrack = false;
       session.pendingStart = null;
       session.completed = false;
       await session.player?.pause();
@@ -748,6 +797,60 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   ) => _change(sessionId, (session) async {
     session.fade = _finite(multiplier, 0, 1);
     await session.player?.setVolume(session.volume * session.fade * 100);
+  });
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setStopAfterCurrentTrack(
+    String sessionId,
+    bool enabled,
+  ) => _change(sessionId, (session) async {
+    if (session.stopAfterCurrentTrack == enabled) return;
+    session.stopAfterCurrentTrack = enabled;
+    final player = session.player;
+    if (player == null) return;
+    try {
+      if (enabled) {
+        session.opening = true;
+        try {
+          await _applyMode(session);
+          final ids = await session.nativeEntryIds(player);
+          final currentId = await session.currentNativeEntryId(player);
+          final currentIndex = ids.indexOf(currentId ?? -1);
+          if (currentIndex < 0) {
+            throw StateError('Current native entry is missing');
+          }
+          final logicalIndex = session.nativeQueueIndices[currentId];
+          if (logicalIndex == null) {
+            throw StateError('Native entry is unmapped');
+          }
+          session.index = logicalIndex;
+          for (var i = ids.length - 1; i >= 0; i--) {
+            if (i != currentIndex) await player.remove(i);
+          }
+          session.nativeQueueLimited = true;
+          await session.mapNativeEntries(player);
+        } finally {
+          session.opening = false;
+        }
+      } else if (session.nativeQueueLimited) {
+        await session.updateQueue(
+          session.queue,
+          queueStartIndex: session.index,
+          isCurrent: () => _isCurrent(session),
+          restoreNativeQueue: true,
+        );
+        await _applyMode(session);
+      } else {
+        await _applyMode(session);
+      }
+    } catch (_) {
+      // A partially edited native playlist cannot describe the retained queue.
+      // Keep the logical queue and discard only the failed decoder.
+      session.stopAfterCurrentTrack = false;
+      session.wantsPlay = false;
+      await session.releasePlayer();
+      rethrow;
+    }
   });
   @override
   Future<NativeResult<void>> removeSession(String sessionId) {

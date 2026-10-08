@@ -16,6 +16,239 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
+  test(
+    'resubmitting a failed download honors new files and destination',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('asmr_reconfigure_');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        request.response.statusCode = request.uri.path == '/failed'
+            ? HttpStatus.notFound
+            : HttpStatus.ok;
+        request.response.add([7]);
+        await request.response.close();
+      });
+      final manager = _manager();
+      final base = 'http://${server.address.host}:${server.port}';
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: [
+            _file(downloadUrl: '$base/good', title: 'Good.mp3'),
+            _file(downloadUrl: '$base/failed', title: 'Failed.mp3'),
+          ],
+          destinationRoot: temp.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+        );
+        await _waitForTaskStatus(
+          manager,
+          1,
+          AsmrDownloadTaskStatus.failed,
+          allowFailure: true,
+        );
+        final original = File(path.join(temp.path, 'Work', 'Good.mp3'));
+        final destination = path.join(temp.path, 'New');
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: [_file(downloadUrl: '$base/new', title: 'New.mp3')],
+          destinationRoot: destination,
+          conflictPolicy: AsmrDownloadConflictPolicy.skip,
+          saveMetadata: false,
+          automaticFileRetryCount: 3,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+        expect(manager.getTask(1)?.destinationRoot, destination);
+        expect(
+          manager.getTask(1)?.conflictPolicy,
+          AsmrDownloadConflictPolicy.skip,
+        );
+        expect(manager.getTask(1)?.automaticFileRetryCount, 3);
+        expect(
+          await File(path.join(destination, 'Work', 'New.mp3')).readAsBytes(),
+          [7],
+        );
+        await manager.deleteTask(1);
+        expect(await original.readAsBytes(), [7]);
+      } finally {
+        await manager.shutdown();
+        await server.close(force: true);
+        await temp.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'reconfiguring an active download waits for SAF copies to drain',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'asmr_reconfigure_drain_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        request.response.add([7]);
+        await request.response.close();
+      });
+      final copying = Completer<void>();
+      final releaseCopy = Completer<void>();
+      final gateway = _StatefulSafGateway(
+        beforeCopy: (relativePath) async {
+          if (relativePath == 'Old.mp3') {
+            copying.complete();
+            await releaseCopy.future;
+          }
+        },
+      );
+      final manager = AsmrDownloadManager(
+        persistTasks: false,
+        fileCacheGateway: gateway,
+        stagingDirectoryProvider: () async => temp,
+      );
+      final base = 'http://${server.address.host}:${server.port}';
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: [_file(downloadUrl: '$base/old', title: 'Old.mp3')],
+          destinationRoot: 'content://downloads/old',
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+        );
+        await copying.future.timeout(const Duration(seconds: 5));
+        var restarted = false;
+        final replacement = manager
+            .startDownload(
+              work: _work(),
+              selectedRoots: [
+                _file(downloadUrl: '$base/new', title: 'New.mp3'),
+              ],
+              destinationRoot: 'content://downloads/new',
+              conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+              saveMetadata: false,
+            )
+            .then((_) => restarted = true);
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        expect(restarted, isFalse);
+        releaseCopy.complete();
+        await replacement;
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+        await manager.deleteTask(1);
+        expect(
+          gateway.existingPaths,
+          contains('content://downloads/old::Work/Old.mp3'),
+        );
+        expect(
+          gateway.existingPaths,
+          isNot(contains('content://downloads/new::Work/New.mp3')),
+        );
+        expect(
+          await temp
+              .list(recursive: true)
+              .where((entry) => entry is File)
+              .toList(),
+          isEmpty,
+        );
+      } finally {
+        if (!releaseCopy.isCompleted) releaseCopy.complete();
+        await manager.shutdown();
+        await server.close(force: true);
+        await temp.delete(recursive: true);
+      }
+    },
+  );
+
+  for (final action in ['resubmit', 'resume', 'replace']) {
+    test('$action handles partial download ownership', () async {
+      final temp = await Directory.systemTemp.createTemp('asmr_same_config_');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final rangeStarts = <int>[];
+        const size = 512 * 1024;
+      server.listen((request) async {
+        final range = request.headers.value(HttpHeaders.rangeHeader);
+        final start = range == null
+            ? 0
+            : int.parse(range.substring(6, range.length - 1));
+        rangeStarts.add(start);
+        if (start > 0) {
+          request.response.statusCode = HttpStatus.partialContent;
+          request.response.headers.set(
+            HttpHeaders.contentRangeHeader,
+            'bytes $start-${size - 1}/$size',
+          );
+        }
+        request.response.contentLength = size - start;
+        try {
+          if (rangeStarts.length == 1) {
+              for (var offset = start; offset < size; offset += 8192) {
+                request.response.add(List<int>.filled(8192, 7));
+                await request.response.flush();
+                await Future<void>.delayed(const Duration(milliseconds: 4));
+              }
+          } else {
+            request.response.add(List<int>.filled(size - start, 7));
+          }
+          } catch (_) {
+            // Pausing closes the first response while its staging file is kept.
+        } finally {
+          await request.response.close().catchError((_) {});
+        }
+      });
+      final manager = _manager();
+      final roots = [
+        _file(
+          downloadUrl: 'http://${server.address.host}:${server.port}/track',
+          size: size,
+        ),
+      ];
+      Future<void> start({String? destination}) => manager.startDownload(
+        work: _work(),
+        selectedRoots: roots,
+        destinationRoot: destination ?? temp.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveMetadata: false,
+      );
+      try {
+        await start();
+        final partial = File(
+          path.join(temp.path, 'Work', 'Track.mp3.doujin.part'),
+        );
+        await _waitForFiles([partial]);
+        final deadline = DateTime.now().add(const Duration(seconds: 5));
+          while (await partial.length() < 32768 &&
+            DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        await manager.pauseTask(1);
+        final pausedBytes = await partial.length();
+        expect(pausedBytes, greaterThan(0));
+          expect(pausedBytes, lessThan(size));
+        final unrelated = File(
+          path.join(temp.path, 'Work', 'Unrelated.doujin.part'),
+        );
+        await unrelated.writeAsBytes([9]);
+        final destination = action == 'replace'
+            ? path.join(temp.path, 'New')
+            : temp.path;
+        if (action == 'resume') {
+          await manager.resumeTask(1);
+        } else {
+          await start(destination: destination);
+        }
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+        expect(rangeStarts, [0, action == 'replace' ? 0 : pausedBytes]);
+        expect(
+          await File(path.join(destination, 'Work', 'Track.mp3')).length(),
+          size,
+        );
+        expect(await unrelated.readAsBytes(), [9]);
+        expect(await partial.exists(), isFalse);
+      } finally {
+        await manager.shutdown();
+        await server.close(force: true);
+        await temp.delete(recursive: true);
+      }
+    });
+  }
+
   for (final outcome in ['success', 'failure', 'shutdown']) {
     test('completion event waits for persistence and excludes failed writes '
         '(outcome: $outcome)', () async {
@@ -887,6 +1120,8 @@ void main() {
           ],
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+          automaticFileRetryCount: 3,
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 

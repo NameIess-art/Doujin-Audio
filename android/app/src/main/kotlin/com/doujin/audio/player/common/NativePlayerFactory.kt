@@ -117,6 +117,7 @@ internal interface NativePlayerEventCallbacks {
 internal class NativePlayerFactory(
     private val context: Context,
     private val resolveUriToPath: (String) -> String? = { null },
+    private val isCurrentPlayer: (String, Player) -> Boolean,
     private val callbacks: NativePlayerEventCallbacks
 ) {
     fun create(
@@ -175,26 +176,32 @@ internal class NativePlayerFactory(
                 )
                 player.addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (!isCurrentPlayer(sessionId, player) || player.playbackState != playbackState) return
                         callbacks.onPlaybackStateChanged(sessionId, playbackState)
                     }
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        if (!isCurrentPlayer(sessionId, player)) return
                         callbacks.onMediaItemTransition(sessionId, reason)
                     }
 
                     override fun onEvents(player: Player, events: Player.Events) {
+                        if (!isCurrentPlayer(sessionId, player)) return
                         callbacks.onPlayerEvents(sessionId)
                     }
 
                     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                        if (!isCurrentPlayer(sessionId, player) || player.playWhenReady != playWhenReady) return
                         callbacks.onPlayWhenReadyChanged(sessionId, playWhenReady, reason)
                     }
 
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        if (!isCurrentPlayer(sessionId, player)) return
                         callbacks.onIsPlayingChanged(sessionId, isPlaying)
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
+                        if (!isCurrentPlayer(sessionId, player)) return
                         callbacks.onPlayerError(sessionId, error)
                     }
                 })

@@ -10,6 +10,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativePlaybackCommandPayloadsTest {
+    @Test(expected = IllegalArgumentException::class)
+    fun `track stop requires enabled rather than silently disabling`() {
+        parsePlaybackCommand(MethodCall(NativePlaybackMethods.SET_STOP_AFTER_CURRENT_TRACK,
+            mapOf("sessionId" to "session")))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `track stop requires a session id`() {
+        parsePlaybackCommand(MethodCall(NativePlaybackMethods.SET_STOP_AFTER_CURRENT_TRACK,
+            mapOf("enabled" to true)))
+    }
     @Test
     fun `deferred prepare uses only the background file command even when another service exists`() {
         val command = parsePlaybackCommand(MethodCall(NativePlaybackMethods.PREPARE_SESSION,

@@ -117,6 +117,14 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     bool shouldStartTriggerCountdown = true,
   }) async {
     if (!_isRegisteredSession(session)) return false;
+    if (!PathMatcher.equalsNormalized(session.currentTrackPath, nextPath) ||
+        (targetQueueIndex != null &&
+            targetQueueIndex != session.currentQueueIndex)) {
+      final generation = session.playbackCommandGeneration;
+      await _timerFacade.clearTimerPauseForManualStop(session.id);
+      if (generation != session.playbackCommandGeneration) return false;
+      if (!_isRegisteredSession(session)) return false;
+    }
     if (!autoPlay) {
       if (session.loadedPath != null ||
           session.pendingNativeTrackPath != null ||

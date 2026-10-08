@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'app/application/app_bootstrap_controller.dart';
 import 'app/application/app_startup.dart';
+import 'app/application/windows_runtime_binding.dart';
 import 'app/presentation/app_bootstrap_host.dart';
 import 'app/presentation/app_error_view.dart';
 import 'app/presentation/app_orientation_controller.dart';
@@ -48,22 +49,29 @@ Future<void> main() async {
       bool? shouldShowOnboarding;
       StartupRestoreOutcome? startupRestoreOutcome;
       final themeProvider = ThemeProvider(loadPersistedState: false);
+      final windowsRuntime = Platform.isWindows
+          ? WindowsRuntimeBinding()
+          : null;
+      await windowsRuntime?.attach();
 
       late final AppBootstrapController appBootstrapController;
+      Future<void> initialize() async {
+        await initializePlatformRuntime();
+        await AppPreferences.init();
+        startupRestoreOutcome = await _initializeAudioPlayerApp();
+        await themeProvider.reloadPersistedState();
+        unawaited(
+          AppLifecyclePlatformService().syncAppTheme(
+            preset: themeProvider.appThemeColor.name,
+            themeMode: themeProvider.themeMode.name,
+          ),
+        );
+        shouldShowOnboarding = AppPreferences.shouldShowOnboardingSync();
+      }
+
       appBootstrapController = AppBootstrapController(
-        initializer: () async {
-          await initializePlatformRuntime();
-          await AppPreferences.init();
-          startupRestoreOutcome = await _initializeAudioPlayerApp();
-          await themeProvider.reloadPersistedState();
-          unawaited(
-            AppLifecyclePlatformService().syncAppTheme(
-              preset: themeProvider.appThemeColor.name,
-              themeMode: themeProvider.themeMode.name,
-            ),
-          );
-          shouldShowOnboarding = AppPreferences.shouldShowOnboardingSync();
-        },
+        initializer: () =>
+            windowsRuntime?.initializeStartup(initialize) ?? initialize(),
       );
 
       runApp(
@@ -75,6 +83,7 @@ Future<void> main() async {
             themeProvider: themeProvider,
             startupRestoreOutcome: startupRestoreOutcome,
             onBootstrapSettled: allowFirstFrame,
+            windowsRuntime: windowsRuntime,
           ),
           onBootstrapSettled: () {
             if (appBootstrapController.state.phase ==

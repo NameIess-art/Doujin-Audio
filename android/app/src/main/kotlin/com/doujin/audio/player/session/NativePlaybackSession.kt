@@ -147,6 +147,13 @@ internal class NativePlaybackSession(
     var artUri: String? = null
     var volume: Float = 1f
     var fadeMultiplier: Float = 1f
+    var stopAfterCurrentTrack: Boolean = false
+    var timerStopAfterCurrentTrack: Boolean = false
+    var stoppedAtTrackBoundary: Boolean = false
+
+    fun syncPauseAtTrackEnd() {
+        _player?.pauseAtEndOfMediaItems = stopAfterCurrentTrack || timerStopAfterCurrentTrack
+    }
     var focusDuckMultiplier: Float = 1f
         private set
     var speed: Float = 1f
@@ -234,6 +241,7 @@ internal class NativePlaybackSession(
             audioProcessors()
         )
         _player = p
+        syncPauseAtTrackEnd()
 
         val descriptors = queue.takeIf { it.isNotEmpty() }
             ?: uri?.let {
@@ -406,6 +414,7 @@ internal class NativePlaybackSession(
             sessionId,
             audioProcessors()
         ).also { _player = it }
+        syncPauseAtTrackEnd()
         p.setMediaItems(
             queueStructure.mediaItems,
             queueStartIndex.coerceIn(0, this.queue.lastIndex),
@@ -655,6 +664,7 @@ internal class NativePlaybackSession(
             "eqCapabilities" to eqCapabilitiesSnapshot(),
             "queueIndex" to queueIndex,
             "transportCommandId" to transportCommandId,
+            "stopAfterCurrentTrack" to (stopAfterCurrentTrack || timerStopAfterCurrentTrack || stoppedAtTrackBoundary),
             "queueRevision" to queueRevision,
             "error" to p?.playerError?.message
         )

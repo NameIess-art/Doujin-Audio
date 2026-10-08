@@ -159,7 +159,9 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
       }
     }
 
-    await attempt(_playback.flushSessionStatePersistence);
+    if (_persistence.hasLoadedState) {
+      await attempt(_playback.flushSessionStatePersistence);
+    }
     if (_disposeWorkTexts != null) await attempt(_disposeWorkTexts);
     await attempt(_persistence.dispose);
     await attempt(_playback.cancelScheduledPersistence);

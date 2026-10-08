@@ -316,6 +316,26 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     }
     return result;
   }
+
+  Future<String> renameWorkEntryToName({
+    required String libraryRootPath,
+    required String entryPath,
+    required String targetName,
+    required bool isMedia,
+    required bool isDirectory,
+  }) async {
+    final renamedPath = await _library.renameWorkEntryToName(
+      libraryRootPath: libraryRootPath,
+      entryPath: entryPath,
+      targetName: targetName,
+      isMedia: isMedia,
+      isDirectory: isDirectory,
+    );
+    if (!PathMatcher.equalsNormalized(entryPath, renamedPath)) {
+      await _playback.retargetPath(entryPath, renamedPath);
+    }
+    return renamedPath;
+  }
 }
 
 final class _WorkTracksCache {

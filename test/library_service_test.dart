@@ -5,6 +5,105 @@ import 'package:doujin_audio/features/library/domain/library_entry.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
+  test(
+    'equivalent Windows paths preserve spelling and user state when merged',
+    () async {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+      final original = MusicTrack(
+        path: r'C:\Music\Track.mp3',
+        displayName: 'original',
+        groupKey: r'C:\Music',
+        groupTitle: 'Music',
+        groupSubtitle: '',
+        isSingle: false,
+        isFavorite: true,
+        lastPlayedPosition: const Duration(seconds: 12),
+      );
+      service.addTracks([original], persist: false);
+      expect(service.trackByPath(r'c:/music/track.mp3'), same(original));
+      service.addOrReplaceTracks([
+        MusicTrack(
+          path: r'c:\music\track.mp3',
+          displayName: 'updated',
+          groupKey: r'C:\Music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: false,
+        ),
+      ], persist: false);
+      expect(service.library, hasLength(1));
+      expect(service.library.single.path, original.path);
+      expect(service.library.single.displayName, 'updated');
+      expect(service.library.single.isFavorite, isTrue);
+      expect(
+        service.library.single.lastPlayedPosition,
+        const Duration(seconds: 12),
+      );
+      service.addTracks([original], persist: false);
+      expect(service.library, hasLength(1));
+    },
+  );
+
+  test(
+    'equivalent Windows paths replace all fields without duplicating tracks',
+    () async {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+      final original = MusicTrack(
+        path: r'C:\Music\Track.mp3',
+        displayName: 'original',
+        groupKey: r'C:\Music',
+        groupTitle: 'Music',
+        groupSubtitle: '',
+        isSingle: false,
+        isFavorite: true,
+        lastPlayedPosition: const Duration(seconds: 12),
+        manualCoverPath: r'C:\Music\old.jpg',
+      );
+      service.addTracks([original], persist: false);
+      final replacement = MusicTrack(
+        path: r'c:/music/track.mp3',
+        displayName: 'replacement',
+        groupKey: r'C:\Music',
+        groupTitle: 'Music',
+        groupSubtitle: '',
+        isSingle: false,
+        duration: const Duration(seconds: 30),
+      );
+
+      final mutation = service.addOrReplaceTracks(
+        [replacement],
+        persist: false,
+        mergeExistingState: false,
+      );
+
+      expect(service.library, hasLength(1));
+      final stored = service.library.single;
+      expect(stored.path, original.path);
+      expect(stored.displayName, replacement.displayName);
+      expect(stored.duration, replacement.duration);
+      expect(stored.isFavorite, isFalse);
+      expect(stored.lastPlayedPosition, Duration.zero);
+      expect(stored.manualCoverPath, isNull);
+      expect(service.trackByPath(replacement.path), same(stored));
+      expect(mutation.tracks.single, same(stored));
+    },
+  );
+
+  test('retarget moves and deduplicates every watched descendant', () async {
+    final service = LibraryService();
+    addTearDown(service.dispose);
+    service.watchedFolders.addAll([
+      r'C:\Old\Child',
+      r'C:\Old\Child\Nested',
+      r'c:\NEW\child',
+    ]);
+    service.watchedLibraries.addAll([r'C:\Old', r'C:\Old\Child']);
+    service.retargetLibraryFolder(r'C:\Old', r'C:\New', 'New');
+    expect(service.watchedFolders, [r'C:\New\Child', r'C:\New\Child\Nested']);
+    expect(service.watchedLibraries, [r'C:\New', r'C:\New\Child']);
+  });
   test('scan rollback replaces all fields of an existing track', () async {
     final service = LibraryService();
     addTearDown(service.dispose);

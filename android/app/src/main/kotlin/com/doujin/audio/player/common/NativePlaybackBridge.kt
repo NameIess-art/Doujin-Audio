@@ -246,6 +246,7 @@ internal fun isSupportedNativePlaybackMethod(method: String): Boolean = method i
     NativePlaybackMethods.SET_SPEED,
     NativePlaybackMethods.SET_TEMPORARY_SPEED,
     NativePlaybackMethods.SET_FADE_MULTIPLIER,
+    NativePlaybackMethods.SET_STOP_AFTER_CURRENT_TRACK,
     NativePlaybackMethods.SET_REPEAT_ONE,
     NativePlaybackMethods.UPDATE_QUEUE,
     NativePlaybackMethods.SET_AUDIO_EFFECTS,
@@ -353,6 +354,11 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
             val sessionId = arguments.requiredString("sessionId")
             val multiplier = finiteFloatInRange("multiplier", 0.0..1.0)
             ParsedPlaybackCommand { service -> service.setFadeMultiplier(sessionId, multiplier) }
+        }
+        NativePlaybackMethods.SET_STOP_AFTER_CURRENT_TRACK -> {
+            val sessionId = arguments.requiredString("sessionId")
+            val enabled = arguments.requiredBoolean("enabled")
+            ParsedPlaybackCommand { service -> service.setStopAfterCurrentTrack(sessionId, enabled) }
         }
         NativePlaybackMethods.SET_REPEAT_ONE -> {
             val repeat = NativePlaybackCommandPayloads.parseRepeatOne(call.argumentsMap())

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 
@@ -15,13 +16,21 @@ import 'library_state_models.dart';
 class LibraryService {
   static const LibraryOrganizer organizer = LibraryOrganizer();
 
+  static Map<String, T> createPathIndex<T>([Map<String, T>? values]) =>
+      HashMap<String, T>(
+        equals: (first, second) =>
+            PathMatcher.equivalenceKey(first) ==
+            PathMatcher.equivalenceKey(second),
+        hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
+      )..addAll(values ?? <String, T>{});
+
   List<MusicTrack> library = <MusicTrack>[];
-  Map<String, MusicTrack> libraryByPath = <String, MusicTrack>{};
+  Map<String, MusicTrack> libraryByPath = createPathIndex<MusicTrack>();
 
   /// Maps each track path to its index in [library].  Kept in sync by
   /// [_rebuildLibraryIndexes] so that [addOrReplaceTracks] can update
   /// existing entries in O(1) instead of O(n).
-  Map<String, int> libraryIndexByPath = <String, int>{};
+  Map<String, int> libraryIndexByPath = createPathIndex<int>();
   Map<String, List<MusicTrack>> tracksByGroup = <String, List<MusicTrack>>{};
   List<MusicTrack> sortedLibraryTracks = const <MusicTrack>[];
   List<String> sortedLibraryTrackPaths = const <String>[];
@@ -387,15 +396,16 @@ class LibraryService {
       retargetedTracks[track.path] = updatedTrack;
     }
 
-    for (var i = 0; i < watchedFolders.length; i++) {
-      if (PathMatcher.equalsNormalized(watchedFolders[i], oldRoot)) {
-        watchedFolders[i] = newRoot;
+    for (final roots in [watchedFolders, watchedLibraries]) {
+      final seen = <String>{};
+      final migrated = <String>[];
+      for (final root in roots) {
+        final next = PathMatcher.replaceWithinOrEqual(root, oldRoot, newRoot);
+        if (seen.add(PathMatcher.equivalenceKey(next))) migrated.add(next);
       }
-    }
-    for (var i = 0; i < watchedLibraries.length; i++) {
-      if (PathMatcher.equalsNormalized(watchedLibraries[i], oldRoot)) {
-        watchedLibraries[i] = newRoot;
-      }
+      roots
+        ..clear()
+        ..addAll(migrated);
     }
     for (var i = 0; i < groupOrder.length; i++) {
       if (PathMatcher.isWithinOrEqual(groupOrder[i], oldRoot)) {
@@ -872,9 +882,12 @@ class LibraryService {
 
     for (final track in tracks) {
       final existing = libraryByPath[track.path];
-      final nextTrack = existing == null || !mergeExistingState
+      var nextTrack = existing == null || !mergeExistingState
           ? track
           : mergeLibraryTrackState(existing, track);
+      if (existing != null && nextTrack.path != existing.path) {
+        nextTrack = _copyTrackForRetarget(nextTrack, path: existing.path);
+      }
       if (existing != null &&
           mergeExistingState &&
           !mergedLibraryTrackHasChanges(existing, track)) {

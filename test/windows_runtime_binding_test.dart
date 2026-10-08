@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:doujin_audio/app/application/app_runtime_lifecycle.dart';
 import 'package:doujin_audio/app/application/windows_runtime_binding.dart';
+import 'package:doujin_audio/core/platform/windows_desktop_service.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
@@ -23,10 +24,13 @@ void main() {
   late _Runtime runtime;
   late List<String> calls;
   Completer<void>? saveGate;
+  Object? saveError;
+  late WindowsRuntimeBinding binding;
 
   setUp(() {
     calls = [];
     saveGate = null;
+    saveError = null;
     SharedPreferences.setMockInitialValues({});
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call.method);
@@ -42,10 +46,14 @@ void main() {
       preferencesLoader: () async {
         calls.add('saveTimer');
         await saveGate?.future;
+        if (saveError case final error?) throw error;
         return SharedPreferences.getInstance();
       },
     );
     runtime = _Runtime(calls);
+    binding = WindowsRuntimeBinding(
+      desktop: WindowsDesktopService(channel: channel),
+    );
   });
   tearDown(() async {
     messenger.setMockMethodCallHandler(channel, null);
@@ -55,13 +63,86 @@ void main() {
     await timer.dispose();
   });
   Future<void> attach() async {
-    await attachWindowsRuntime(
+    await binding.attach();
+    binding.bindRuntime(
       runtime: runtime,
       playback: playback,
       notifications: notifications,
       timer: timer,
     );
+    await binding.initializeRuntime(() async {});
   }
+
+  test('bootstrap failure can exit without saving default state', () async {
+    await binding.attach();
+    await expectLater(
+      binding.initializeStartup(() async => throw StateError('startup failed')),
+      throwsStateError,
+    );
+    await _sendAction(channel, 'play');
+    await _sendAction(channel, 'exit');
+    expect(calls, ['ready', 'exit']);
+  });
+
+  test('exit invalidates and drains initialization before disposing', () async {
+    final initialization = Completer<void>();
+    await binding.attach();
+    var invalidations = 0;
+    binding.bindRuntime(
+      runtime: runtime,
+      playback: playback,
+      notifications: notifications,
+      timer: timer,
+      invalidateInitialization: () => invalidations++,
+    );
+    final attempt = binding.initializeRuntime(() => initialization.future);
+    final failedAttempt = expectLater(attempt, throwsStateError);
+    final exit = _sendAction(channel, 'exit');
+    final repeated = _sendAction(channel, 'exit');
+    await Future<void>.delayed(Duration.zero);
+    expect(invalidations, 1);
+    expect(calls, ['ready']);
+    initialization.complete();
+    await Future.wait([failedAttempt, exit, repeated]);
+    expect(calls, ['ready', 'dispose', 'exit']);
+  });
+
+  test(
+    'runtime failure and retry keep a single desktop registration',
+    () async {
+      await binding.attach();
+      binding.bindRuntime(
+        runtime: runtime,
+        playback: playback,
+        notifications: notifications,
+        timer: timer,
+      );
+      await expectLater(
+        binding.initializeRuntime(() async => throw StateError('load failed')),
+        throwsStateError,
+      );
+      await binding.attach();
+      await binding.initializeRuntime(() async {});
+      await _sendAction(channel, 'exit');
+      expect(calls, ['ready', 'saveTimer', 'dispose', 'exit']);
+    },
+  );
+
+  test('failed runtime is disposed without persisting partial state', () async {
+    await binding.attach();
+    binding.bindRuntime(
+      runtime: runtime,
+      playback: playback,
+      notifications: notifications,
+      timer: timer,
+    );
+    await expectLater(
+      binding.initializeRuntime(() async => throw StateError('load failed')),
+      throwsStateError,
+    );
+    await _sendAction(channel, 'endSession');
+    expect(calls, ['ready', 'dispose']);
+  });
 
   test('endSession acknowledges only after saving and disposing', () async {
     saveGate = Completer<void>();
@@ -116,7 +197,7 @@ void main() {
     },
   );
 
-  test('cleanup failure returns an error reply and permits retry', () async {
+  test('cleanup failure replies without repeating disposal', () async {
     runtime.disposeError = StateError('cleanup failed');
     await attach();
     await expectLater(
@@ -125,9 +206,22 @@ void main() {
     );
     expect(calls, ['ready', 'saveTimer', 'dispose']);
     runtime.disposeError = null;
-    await _sendAction(channel, 'endSession');
-    expect(calls, ['ready', 'saveTimer', 'dispose', 'dispose']);
+    await expectLater(
+      _sendAction(channel, 'endSession'),
+      throwsA(isA<PlatformException>()),
+    );
+    expect(calls, ['ready', 'saveTimer', 'dispose']);
   });
+
+  test(
+    'timer save failure still releases runtime and permits tray exit',
+    () async {
+      await attach();
+      saveError = StateError('disk full');
+      await _sendAction(channel, 'exit');
+      expect(calls, ['ready', 'saveTimer', 'dispose', 'exit']);
+    },
+  );
 }
 
 Future<void> _sendAction(MethodChannel channel, String action) {

@@ -13,6 +13,12 @@ import '../../../core/media/media_file_support.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_matcher.dart';
 
+class AudioDetailRenameException implements Exception {
+  const AudioDetailRenameException(this.reason);
+
+  final String reason;
+}
+
 class LibraryEntryDiskSnapshot {
   LibraryEntryDiskSnapshot({
     required List<String> audioFilePaths,
@@ -85,6 +91,10 @@ class LibraryEntryEditorService {
             '$safeName${path.extension(oldPath)}',
           );
     if (PathMatcher.equalsNormalized(oldPath, newPath)) return newPath;
+    if (await FileSystemEntity.type(newPath, followLinks: false) !=
+        FileSystemEntityType.notFound) {
+      throw const AudioDetailRenameException('nameConflict');
+    }
     if (isDirectory) {
       await Directory(oldPath).rename(newPath);
     } else {
@@ -265,8 +275,8 @@ class LibraryEntryEditorService {
       );
     }
     try {
-      final payload = await _fileCacheGateway.scanFolderPayload(libraryPath);
-      if (payload == null) {
+      final result = await _fileCacheGateway.scanFolder(libraryPath);
+      if (!result.isComplete) {
         return LibraryEntryDiskSnapshot(
           audioFilePaths: <String>[],
           scannedFolderPaths: <String>{},
@@ -275,19 +285,12 @@ class LibraryEntryEditorService {
       }
       final audioFiles = <String>{};
       final folderPaths = <String>{};
-      for (final item in payload) {
-        if (item is! Map) continue;
-        final map = item.cast<Object?, Object?>();
-        final scannedPath = map['path']?.toString().trim();
-        if (scannedPath == null ||
-            scannedPath.isEmpty ||
-            !isSupportedMediaFile(scannedPath)) {
-          continue;
-        }
+      for (final track in result.tracks) {
+        final scannedPath = track.path.trim();
+        if (scannedPath.isEmpty) continue;
         audioFiles.add(PathMatcher.normalize(scannedPath));
-        final groupKey = map['groupKey']?.toString().trim();
-        if (groupKey != null &&
-            groupKey.isNotEmpty &&
+        final groupKey = track.groupKey.trim();
+        if (groupKey.isNotEmpty &&
             !PathMatcher.equalsNormalized(groupKey, libraryPath)) {
           folderPaths.add(PathMatcher.normalize(groupKey));
         }

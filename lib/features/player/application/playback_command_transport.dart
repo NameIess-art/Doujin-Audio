@@ -20,11 +20,13 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     final previousCommandGeneration = session.playbackCommandGeneration;
     if (shouldStartTriggerCountdown) {
       await _timerFacade.clearTimerPauseForManualPlayback(session.id);
-      if (!_isRegisteredSession(session) ||
-          session.loadGeneration != preparationGeneration ||
-          session.playbackCommandGeneration != previousCommandGeneration) {
-        return false;
-      }
+      await _nativePlaybackRepository.setFadeMultiplier(session.id, 1);
+    }
+    await _timerFacade.armTrackStopBeforePlayback(session);
+    if (!_isRegisteredSession(session) ||
+        session.loadGeneration != preparationGeneration ||
+        session.playbackCommandGeneration != previousCommandGeneration) {
+      return false;
     }
     final generation = _playbackFacade.nextTransportCommandId();
     final token = _playbackCommandRunner.start(
@@ -141,6 +143,8 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     );
     session.beginTransportCommand(commandId: generation, playing: false);
     _notifyPlaybackChanged(session.id);
+    await _timerFacade.clearTimerPauseForManualStop(session.id);
+    if (!_isSessionCommandCurrent(session, token)) return false;
     if (!hadNativeWork) {
       session.confirmPaused();
       session.setOptimisticState(processingState: ProcessingState.idle);
@@ -195,20 +199,9 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
 
   Future<void> _handleSessionCompleted(String sessionId) async {
     final session = _sessions[sessionId];
-    if (session == null) return;
+    if (session == null || session.completedByTrackStop) return;
     final completionGeneration = session.playbackCommandGeneration;
     final preparationGeneration = session.loadGeneration;
-    if (_timerFacade.stopAfterCurrentTrack) {
-      _timerFacade.setStopAfterCurrentTrack(false);
-      session.finishCompletionAdvance(
-        commandGeneration: completionGeneration,
-        preparationGeneration: preparationGeneration,
-      );
-      await _pauseSessionPlayback(session);
-      _syncNotificationState();
-      _notifyPlaybackChanged(session.id);
-      return;
-    }
     final nextTarget = _nextPathFor(session, forward: true);
     if (nextTarget == null) {
       session.finishCompletionAdvance(

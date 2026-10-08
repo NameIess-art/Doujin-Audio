@@ -17,6 +17,22 @@ import java.nio.ByteOrder
 
 class NativePlaybackSessionStateTest {
     @Test
+    fun `track stop snapshot preserves independent reasons and the final boundary`() {
+        val session = NativePlaybackSession(
+            sessionId = "stop", createPlayer = { _, _ -> error("snapshot must not create a player") },
+            logWarn = { _, _, _ -> }, elapsedRealtimeMs = { 1_000L }
+        )
+        session.stopAfterCurrentTrack = true
+        session.timerStopAfterCurrentTrack = true
+        session.stopAfterCurrentTrack = false
+        assertEquals(true, session.snapshot()["stopAfterCurrentTrack"])
+        session.timerStopAfterCurrentTrack = false
+        session.stoppedAtTrackBoundary = true
+        assertEquals(true, session.snapshot()["stopAfterCurrentTrack"])
+        session.stoppedAtTrackBoundary = false
+        assertEquals(false, session.snapshot()["stopAfterCurrentTrack"])
+    }
+    @Test
     fun `paused queue navigation changes only data and preserves duplicate indices`() {
         val descriptor = NativeMediaItemDescriptor("/same.mp3", "file:///same.mp3", "Audio", null, null)
         val session = NativePlaybackSession(

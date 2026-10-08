@@ -38,6 +38,7 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
           _sessionTrackForPath(currentSession, path) != null,
     );
     if (!application.applied) return;
+    _timerFacade.reconcileTrackStopTargets();
     _syncActivePlaybackCacheLease(application.session!);
     final normalizedSnapshot = application.snapshot;
     final session = application.session;

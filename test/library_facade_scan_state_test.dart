@@ -10,12 +10,33 @@ import 'package:doujin_audio/features/library/application/audio_detail_repositor
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_scan_models.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/library_persistence_coordinator.dart';
 import 'package:doujin_audio/features/library/domain/library_entry.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
+  });
+
+  test('renamed watched descendants survive persisted state reload', () async {
+    final repository = _RestoredLibraryRepository();
+    final service = LibraryService();
+    addTearDown(service.dispose);
+    service.watchedFolders.addAll([r'C:\Old\Child', r'C:\Old\Child\Nested']);
+    service.watchedLibraries.addAll([r'C:\Old', r'C:\Old\Child']);
+    service.retargetLibraryFolder(r'C:\Old', r'C:\New', 'New');
+    final persistence = LibraryPersistenceCoordinator(
+      repository: repository,
+      service: service,
+    );
+    await persistence.saveWatchedFolders();
+    await persistence.saveWatchedLibraries();
+    final restored = LibraryFacade.create(databaseRepository: repository);
+    addTearDown(restored.dispose);
+    await restored.loadPersistedState();
+    expect(restored.watchedFolders, [r'C:\New\Child', r'C:\New\Child\Nested']);
+    expect(restored.watchedLibraries, [r'C:\New', r'C:\New\Child']);
   });
 
   test('import batch commits only the final watched directory lists', () async {

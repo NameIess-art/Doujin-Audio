@@ -136,6 +136,7 @@ class PlaybackQueueColorPanel extends StatelessWidget {
                       Expanded(
                         child: Center(
                           child: _buildPresetColorButton(
+                            context: context,
                             cs: cs,
                             presetColor: _queuePresetColors[i],
                             currentColor: color,
@@ -190,6 +191,7 @@ class PlaybackQueueColorPanel extends StatelessWidget {
   }
 
   Widget _buildPresetColorButton({
+    required BuildContext context,
     required ColorScheme cs,
     required Color presetColor,
     required Color currentColor,
@@ -204,7 +206,9 @@ class PlaybackQueueColorPanel extends StatelessWidget {
         onTap: () => onColorChanged(presetColor.toARGB32()),
         customBorder: const CircleBorder(),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 180),
           width: 36,
           height: 36,
           decoration: BoxDecoration(

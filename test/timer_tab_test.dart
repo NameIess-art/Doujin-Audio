@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -196,6 +197,117 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'reduced motion timer wheels apply draft changes without scrolling frames',
+    (tester) async {
+      tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(const TimerTab(showHeader: false, compactOnly: true)),
+      );
+      await tester.pumpAndSettle();
+      fixture.timer.setTimerDraft(
+        TimerMode.manual,
+        const Duration(minutes: 45),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      final minuteWheel = find.byType(ListWheelScrollView).at(1);
+      final controller = tester
+          .widget<ListWheelScrollView>(minuteWheel)
+          .controller!;
+      expect(controller.position.pixels, 45 * 42);
+      expect(fixture.timer.state.draftDuration, const Duration(minutes: 45));
+      if (Theme.of(tester.element(minuteWheel)).platform ==
+          TargetPlatform.windows) {
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: tester.getCenter(minuteWheel),
+            scrollDelta: const Offset(0, 120),
+          ),
+        );
+        await tester.pump();
+        expect(controller.position.pixels, 46 * 42);
+        expect(fixture.timer.state.draftDuration, const Duration(minutes: 46));
+      }
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'enabling reduced motion stops timer scrolling and commits its final value',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      addTearDown(
+        tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await tester.pumpWidget(
+        fixture.build(const TimerTab(showHeader: false, compactOnly: true)),
+      );
+      await tester.pumpAndSettle();
+      final minuteWheel = find.byType(ListWheelScrollView).at(1);
+      final controller = tester
+          .widget<ListWheelScrollView>(minuteWheel)
+          .controller!;
+      final isWindows =
+          Theme.of(tester.element(minuteWheel)).platform ==
+          TargetPlatform.windows;
+      final expectedDraft = isWindows
+          ? const Duration(minutes: 31)
+          : const Duration(hours: 1, minutes: 45, seconds: 20);
+      if (isWindows) {
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: tester.getCenter(minuteWheel),
+            scrollDelta: const Offset(0, 120),
+          ),
+        );
+      } else {
+        fixture.timer.setTimerDraft(TimerMode.manual, expectedDraft);
+        await tester.pump();
+      }
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 30));
+      expect(controller.position.isScrollingNotifier.value, isTrue);
+      tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      await tester.pump();
+      final expectedItems = [
+        expectedDraft.inHours,
+        expectedDraft.inMinutes.remainder(60),
+        expectedDraft.inSeconds.remainder(60),
+      ];
+      for (var index = 0; index < expectedItems.length; index++) {
+        final wheelController = tester
+            .widget<ListWheelScrollView>(
+              find.byType(ListWheelScrollView).at(index),
+            )
+            .controller!;
+        expect(wheelController.position.pixels, expectedItems[index] * 42);
+        expect(wheelController.position.isScrollingNotifier.value, isFalse);
+      }
+      await tester.pumpAndSettle();
+      expect(fixture.timer.state.draftDuration, expectedDraft);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'compact timer panels share a centered full-height layout',

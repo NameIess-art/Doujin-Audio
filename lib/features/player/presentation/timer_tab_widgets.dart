@@ -37,7 +37,9 @@ class _ModeSelector extends ConsumerWidget {
           onChanged(mode);
         },
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 200),
           margin: EdgeInsets.only(bottom: compact ? 6 : 8),
           padding: EdgeInsets.symmetric(
             horizontal: compact ? 12 : 14,

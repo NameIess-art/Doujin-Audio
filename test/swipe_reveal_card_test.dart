@@ -348,7 +348,34 @@ void main() {
         ),
       ),
     );
-    await tester.drag(find.text('Swipe target'), const Offset(-180, 0));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('Swipe target')),
+    );
+    await gesture.moveBy(const Offset(-50, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(-10, 0));
+    await tester.pump();
+    final scale = tester.widget<AnimatedScale>(find.byType(AnimatedScale));
+    final scaleTransition = tester.widget<ScaleTransition>(
+      find.descendant(
+        of: find.byType(AnimatedScale),
+        matching: find.byType(ScaleTransition),
+      ),
+    );
+    expect(scale.duration, Duration.zero);
+    expect(scaleTransition.scale.value, scale.scale);
+    final opacity = tester.widget<AnimatedOpacity>(
+      find.byType(AnimatedOpacity),
+    );
+    final fade = tester.widget<FadeTransition>(
+      find.descendant(
+        of: find.byType(AnimatedOpacity),
+        matching: find.byType(FadeTransition),
+      ),
+    );
+    expect(opacity.duration, Duration.zero);
+    expect(fade.opacity.value, opacity.opacity);
+    await gesture.up();
     await tester.pump();
     expect(
       tester

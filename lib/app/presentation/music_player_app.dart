@@ -207,6 +207,9 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
         (state) => state.value?.reduceAnimations ?? false,
       ),
     );
+    final disableAnimations =
+        reduceAnimations ||
+        (MediaQuery.maybeDisableAnimationsOf(context) ?? false);
     final platformBrightness =
         MediaQuery.maybePlatformBrightnessOf(context) ?? Brightness.light;
     final windowSurface = switch (themeProvider.themeMode) {
@@ -246,6 +249,9 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
               theme: themeProvider.lightTheme,
               darkTheme: themeProvider.darkTheme,
               themeMode: themeProvider.themeMode,
+              themeAnimationStyle: disableAnimations
+                  ? AnimationStyle.noAnimation
+                  : null,
               scrollBehavior: const AppScrollBehavior().copyWith(
                 scrollbars: true,
                 physics: AppScrollBehavior.defaultScrollPhysics,
@@ -291,7 +297,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                   padding: effectivePadding,
                   viewPadding: effectiveViewPadding,
                   disableAnimations:
-                      reduceAnimations || mediaQuery.disableAnimations,
+                      disableAnimations || mediaQuery.disableAnimations,
                 );
 
                 final navigatorChild =

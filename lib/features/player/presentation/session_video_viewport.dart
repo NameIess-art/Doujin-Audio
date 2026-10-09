@@ -264,26 +264,28 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
               child: AnimatedOpacity(
                 key: const ValueKey<String>('session_video_fullscreen_control'),
                 opacity: _isControlVisible ? 1 : 0,
-                duration: kAppMotionFast,
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : kAppMotionFast,
                 child: IgnorePointer(
                   ignoring: !_isControlVisible,
-                child: Material(
-                  color: Colors.black.withValues(alpha: 0.58),
-                  shape: const CircleBorder(),
-                  child: IconButton(
-                    tooltip: widget.fullscreenTooltip,
-                    onPressed: _handleFullscreen,
-                    color: Colors.white,
-                    icon: Icon(
-                      widget.isFullscreen
-                          ? Icons.fullscreen_exit_rounded
-                          : Icons.fullscreen_rounded,
+                  child: Material(
+                    color: Colors.black.withValues(alpha: 0.58),
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      tooltip: widget.fullscreenTooltip,
+                      onPressed: _handleFullscreen,
+                      color: Colors.white,
+                      icon: Icon(
+                        widget.isFullscreen
+                            ? Icons.fullscreen_exit_rounded
+                            : Icons.fullscreen_rounded,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );

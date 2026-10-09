@@ -46,7 +46,7 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(seconds: 22),
     );
     if (widget.isPlaying) {
       _controller.repeat();
@@ -130,8 +130,9 @@ class _SoundWavePainter extends CustomPainter {
   final double barWidth;
   final double barSpacing;
 
-  // Staggered speed and phase multipliers for natural equalizer bouncing
-  static const List<double> _speeds = [1.0, 1.45, 1.15, 1.6];
+  // Whole cycles in 22 seconds preserve the bar speeds and match both height
+  // and velocity at the loop boundary.
+  static const List<int> _cycles = [20, 29, 23, 32];
   static const List<double> _phases = [0.0, 1.2, 2.7, 4.1];
   static const List<double> _minHeights = [0.25, 0.35, 0.20, 0.30];
   static const List<double> _maxHeights = [0.85, 1.0, 0.75, 0.95];
@@ -147,7 +148,7 @@ class _SoundWavePainter extends CustomPainter {
     final t = isPlaying ? animation.value : 0.0;
 
     for (var i = 0; i < barCount; i++) {
-      final speed = _speeds[i % _speeds.length];
+      final cycles = _cycles[i % _cycles.length];
       final phase = _phases[i % _phases.length];
       final minH = _minHeights[i % _minHeights.length];
       final maxH = _maxHeights[i % _maxHeights.length];
@@ -155,7 +156,7 @@ class _SoundWavePainter extends CustomPainter {
 
       final double fraction;
       if (isPlaying) {
-        final sinVal = math.sin((2 * math.pi * speed * t) + phase);
+        final sinVal = math.sin((2 * math.pi * cycles * t) + phase);
         fraction = minH + (maxH - minH) * ((sinVal + 1) / 2);
       } else {
         fraction = idleH;

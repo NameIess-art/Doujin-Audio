@@ -83,12 +83,8 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
   void initState() {
     super.initState();
     final count = widget.images.length;
-    _currentIndex = widget.initialIndex.clamp(
-      0,
-      count == 0 ? 0 : count - 1,
-    );
+    _currentIndex = widget.initialIndex.clamp(0, count == 0 ? 0 : count - 1);
     final initialPage = _pageForIndex(_currentIndex, count);
-    _targetVirtualPage = initialPage;
     _pageController = PageController(initialPage: initialPage);
   }
 
@@ -101,7 +97,8 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
   void _onPageChanged(int page) {
     final count = widget.images.length;
     if (count == 0) return;
-    _targetVirtualPage = page;
+    // Intermediate pages must not replace the target of rapid button presses.
+    if (_targetVirtualPage != null && page != _targetVirtualPage) return;
     final index = _indexForPage(page, count);
     if (_currentIndex != index || _isCurrentZoomed) {
       setState(() {
@@ -120,13 +117,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     if (!_pageController.hasClients) return;
     final current = _pageController.page ??
         _pageForIndex(_currentIndex, widget.images.length).toDouble();
-    int basePage;
-    if (_targetVirtualPage != null &&
-        (current - _targetVirtualPage!).abs() <= 1.0) {
-      basePage = _targetVirtualPage!;
-    } else {
-      basePage = current.round();
-    }
+    final basePage = _targetVirtualPage ?? current.round();
     final targetPage = basePage + delta;
     _targetVirtualPage = targetPage;
     setState(() {
@@ -145,6 +136,17 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
         curve: Curves.easeInOutCubic,
       );
     }
+  }
+
+  bool _handlePageScroll(ScrollNotification notification) {
+    if (notification.depth != 0 || !_pageController.hasClients) return false;
+    if ((notification is ScrollStartNotification &&
+            notification.dragDetails != null) ||
+        notification is ScrollEndNotification) {
+      _targetVirtualPage = null;
+      _onPageChanged(_pageController.page!.round());
+    }
+    return false;
   }
 
   Future<void> _handleSetAsCover() async {
@@ -305,29 +307,33 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                     PointerDeviceKind.stylus,
                   },
                 ),
-                child: PageView.builder(
-                  key: const ValueKey<String>('work_image_viewport'),
-                  controller: _pageController,
-                  physics: _isCurrentZoomed
-                      ? const NeverScrollableScrollPhysics()
-                      : (widget.images.length > 1
-                          ? const PageScrollPhysics()
-                          : const NeverScrollableScrollPhysics()),
-                  onPageChanged: _onPageChanged,
-                  itemCount:
-                      widget.images.length > 1 ? null : widget.images.length,
-                  itemBuilder: (context, page) {
-                    final index = _indexForPage(page, widget.images.length);
-                    final img = widget.images[index];
-                    return _WorkImageViewerItem(
-                      key: ValueKey<String>('image_item_${img.path}_$page'),
-                      isActive: index == _currentIndex,
-                      onZoomChanged: (zoomed) {
-                        setState(() => _isCurrentZoomed = zoomed);
-                      },
-                      child: _buildImage(img, cs),
-                    );
-                  },
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _handlePageScroll,
+                  child: PageView.builder(
+                    key: const ValueKey<String>('work_image_viewport'),
+                    controller: _pageController,
+                    physics: _isCurrentZoomed
+                        ? const NeverScrollableScrollPhysics()
+                        : (widget.images.length > 1
+                              ? const PageScrollPhysics()
+                              : const NeverScrollableScrollPhysics()),
+                    onPageChanged: _onPageChanged,
+                    itemCount: widget.images.length > 1
+                        ? null
+                        : widget.images.length,
+                    itemBuilder: (context, page) {
+                      final index = _indexForPage(page, widget.images.length);
+                      final img = widget.images[index];
+                      return _WorkImageViewerItem(
+                        key: ValueKey<String>('image_item_${img.path}_$page'),
+                        isActive: index == _currentIndex,
+                        onZoomChanged: (zoomed) {
+                          setState(() => _isCurrentZoomed = zoomed);
+                        },
+                        child: _buildImage(img, cs),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),

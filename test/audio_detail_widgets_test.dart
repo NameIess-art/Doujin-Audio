@@ -1788,6 +1788,128 @@ void main() {
     );
   }
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final reduceMotion in [false, true]) {
+      testWidgets(
+        'library motion: cover navigation retains rapid targets and follows manual dragging ($reduceMotion)',
+        (tester) async {
+          final fixture = AppRuntimeWidgetTestFixture(
+            coverArtworkCacheService: _DetailCoverCacheService(
+              currentCoverPath: '/covers/0.jpg',
+              candidates: [for (var i = 0; i < 5; i++) '/covers/$i.jpg'],
+            ),
+          );
+          addTearDown(fixture.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              Builder(
+                builder: (context) => MediaQuery(
+                  data: MediaQuery.of(
+                    context,
+                  ).copyWith(disableAnimations: reduceMotion),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 300,
+                      child: FolderCoverSelector(
+                        folderPath: '/library/Work',
+                        compactNavigation: true,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+          await tester.pump();
+          final viewport = find.byKey(
+            const ValueKey('audio_detail_cover_content'),
+          );
+          final controller = tester
+              .widget<PageView>(find.byType(PageView))
+              .controller!;
+          final initialPage = controller.page!.round();
+          Future<void> next() async {
+            if (platform == TargetPlatform.windows) {
+              await tester.sendEventToBinding(
+                PointerScrollEvent(
+                  position: tester.getCenter(viewport),
+                  scrollDelta: const Offset(0, 120),
+                ),
+              );
+            } else {
+              await tester.tap(
+                find.byKey(const ValueKey('audio_detail_cover_next_button')),
+              );
+            }
+          }
+
+          await next();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 20));
+          await next();
+          await tester.pump();
+          if (!reduceMotion) {
+            for (
+              var i = 0;
+              i < 30 && controller.page! < initialPage + 0.6;
+              i++
+            ) {
+              await tester.pump(const Duration(milliseconds: 10));
+            }
+          }
+          await next();
+          await tester.pump();
+          if (reduceMotion) expect(controller.page, initialPage + 3);
+          await tester.pump(const Duration(milliseconds: 300));
+          expect(controller.page, initialPage + 3);
+          expect(find.text('4/5'), findsOneWidget);
+          await next();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 20));
+          await tester.drag(viewport, const Offset(220, 0));
+          await tester.pump(const Duration(milliseconds: 300));
+          final draggedPage = controller.page!.round();
+          await next();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+          expect(controller.page, draggedPage + 1);
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+    testWidgets(
+      'library motion: idle cover saves stop scheduling hidden progress frames',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: _DetailCoverCacheService(
+            currentCoverPath: '/covers/candidate.jpg',
+          ),
+        );
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const Center(
+              child: SizedBox(
+                width: 300,
+                child: FolderCoverSelector(folderPath: '/library/Work'),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 2));
+        expect(tester.binding.transientCallbackCount, 0);
+        expect(tester.binding.hasScheduledFrame, isFalse);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
   testWidgets('folder cover remains visible while candidates load or fail', (
     WidgetTester tester,
   ) async {

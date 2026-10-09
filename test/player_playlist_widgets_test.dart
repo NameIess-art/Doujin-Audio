@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -285,6 +286,192 @@ void main() {
     expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
     expect(tester.takeException(), isNull);
   });
+
+  for (final reducedMotion in [false, true]) {
+    testWidgets(
+      'speed wheel releases same-position adjustments (reduced: $reducedMotion)',
+      (tester) async {
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          notificationsChannel,
+          (_) async => <String, Object?>{'ok': true, 'value': null},
+        );
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+        );
+        tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+            FakeAccessibilityFeatures(disableAnimations: reducedMotion);
+        addTearDown(
+          tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+        );
+        final result = await _pumpSubtitleDetail(
+          tester: tester,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+          initialPosition: Duration.zero,
+          physicalSize: defaultTargetPlatform == TargetPlatform.windows
+              ? const Size(3840, 2400)
+              : const Size(1080, 2400),
+        );
+        await tester.tap(find.byIcon(Icons.tune_rounded));
+        await tester.pumpAndSettle();
+        final wheel = find.byKey(const ValueKey('playback_speed_wheel'));
+        await tester.tap(
+          find.descendant(
+            of: wheel,
+            matching: find.text(formatSpeedValue(1.0)),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final playback = result.fixture.runtimeGraph.playback;
+        await playback.setSessionSpeed(result.session.id, 1.5, persist: false);
+        await tester.pumpAndSettle();
+        expect(result.session.speed, 1.5);
+        expect(find.byKey(const ValueKey<double>(1.5)), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('restore_playback_speed')));
+        await tester.pumpAndSettle();
+        expect(result.session.speed, 1.0);
+        await playback.setSessionSpeed(result.session.id, 1.25, persist: false);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey<double>(1.25)), findsOneWidget);
+
+        if (defaultTargetPlatform == TargetPlatform.windows) {
+          await playback.setSessionSpeed(
+            result.session.id,
+            0.25,
+            persist: false,
+          );
+          await tester.pumpAndSettle();
+          await tester.sendEventToBinding(
+            PointerScrollEvent(
+              position: tester.getCenter(wheel),
+              scrollDelta: const Offset(0, -120),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await playback.setSessionSpeed(
+            result.session.id,
+            1.5,
+            persist: false,
+          );
+          await tester.pumpAndSettle();
+          expect(find.byKey(const ValueKey<double>(1.5)), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  testWidgets(
+    'reduced motion speed selection and reset jump to their final item',
+    (tester) async {
+      final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        notificationsChannel,
+        (_) async => <String, Object?>{'ok': true, 'value': null},
+      );
+      addTearDown(() => messenger.setMockMethodCallHandler(notificationsChannel, null));
+      tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      final result = await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+        physicalSize: defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(3840, 2400)
+            : const Size(1080, 2400),
+      );
+      await tester.tap(find.byIcon(Icons.tune_rounded));
+      await tester.pumpAndSettle();
+      final wheel = find.byKey(const ValueKey('playback_speed_wheel'));
+      final controller = tester.widget<ListWheelScrollView>(wheel).controller!;
+      await tester.tap(
+        find.descendant(of: wheel, matching: find.text(formatSpeedValue(1.25))),
+      );
+      await tester.pump();
+      expect(controller.position.pixels, 4 * 52);
+      await tester.pumpAndSettle();
+      expect(result.session.speed, 1.25);
+      await tester.tap(find.byKey(const ValueKey('restore_playback_speed')));
+      await tester.pump();
+      expect(controller.position.pixels, 3 * 52);
+      await tester.pumpAndSettle();
+      expect(result.session.speed, 1.0);
+      tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue();
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(
+        find.descendant(of: wheel, matching: find.text(formatSpeedValue(1.5))),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 30));
+      expect(controller.position.isScrollingNotifier.value, isTrue);
+      tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      await tester.pump();
+      await tester.pump();
+      expect(controller.position.pixels, 5 * 52);
+      expect(controller.position.isScrollingNotifier.value, isFalse);
+      await tester.pumpAndSettle();
+      expect(result.session.speed, 1.5);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'reduced motion portrait panel opens without an intermediate size',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(360, 800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      Widget page(bool expanded) => MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(
+            body: SessionDetailLayout(
+              isLandscape: false,
+              padding: EdgeInsets.zero,
+              segmentPanelExpanded: expanded,
+              artwork: const SizedBox(),
+              isVideo: false,
+              title: 'Test',
+              sessionId: 'Test',
+              progress: const SizedBox(height: 44),
+              transport: const SizedBox(height: 50),
+              subtitle: const SizedBox(),
+              segmentPanelBuilder: (_) => const SizedBox(height: 220),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(page(false));
+      await tester.pumpWidget(page(true));
+      await tester.pump();
+      expect(tester.getSize(find.byType(AnimatedContainer)).height, 42);
+      final panelTransition = find.descendant(
+        of: find.byType(SessionDetailLayout),
+        matching: find.byType(SizeTransition),
+      );
+      expect(
+        tester.widget<SizeTransition>(panelTransition).sizeFactor.value,
+        1,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
@@ -4614,7 +4801,10 @@ void main() {
         tester.element(find.byType(PlaylistTab)),
       ).colorScheme.onSurfaceVariant,
     );
-    expect(firstTrackName.data, queueTrack.displayName);
+    expect(
+      firstTrackName.textSpan!.toPlainText(includePlaceholders: false),
+      queueTrack.displayName,
+    );
     expect(firstTrackName.style?.fontSize, 14);
     expect(firstTrackName.style?.fontWeight, FontWeight.w800);
     expect(firstTrackName.style?.height, 1.12);
@@ -4677,7 +4867,8 @@ void main() {
           .widget<Text>(
             find.byKey(ValueKey('playback_queue_track_0_${queueSession.id}')),
           )
-          .data,
+          .textSpan!
+          .toPlainText(includePlaceholders: false),
       remoteCurrentTrack.displayName,
     );
     expect(

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 void main() {
   testWidgets('overlay ink background fades with the panel on dismissal', (
@@ -171,6 +172,68 @@ void main() {
 
     expect(result, 'Night');
     expect(find.byType(AppDialog), findsNothing);
+  });
+
+  testWidgets('IME submission keeps an entering dialog scrim continuous', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator.instance;
+    final observer = UiInteractionNavigatorObserver();
+    coordinator.resetForTest();
+    addTearDown(() {
+      observer.dispose();
+      coordinator.resetForTest();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: [observer],
+        builder: (_, child) => AppNavigationInputLock(
+          navigationAllowed: coordinator.navigationAllowed,
+          child: child!,
+        ),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAppDialog<void>(
+                context: context,
+                builder: (dialogContext) => AppDialog(
+                  title: 'Rename',
+                  content: TextFormField(
+                    initialValue: 'Track',
+                    autofocus: true,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => Navigator.of(dialogContext).pop(),
+                  ),
+                ),
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 110));
+    double scrimOpacity() => tester
+        .widget<ColoredBox>(find.byKey(const ValueKey('app_dialog_scrim')))
+        .color
+        .a;
+    final beforeClose = scrimOpacity();
+    expect(
+      beforeClose,
+      closeTo(kSecondaryOverlayConfig.backgroundOpacity, 0.001),
+    );
+    expect(coordinator.navigationAllowed.value, isFalse);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    expect(scrimOpacity(), closeTo(beforeClose, 0.001));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(scrimOpacity(), inExclusiveRange(0, beforeClose));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppDialog), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('shared app dialog dismisses when tapping background scrim', (

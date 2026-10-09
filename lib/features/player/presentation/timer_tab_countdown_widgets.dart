@@ -304,9 +304,48 @@ class _WheelPickerState extends State<_WheelPicker> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context) &&
+        _controller.hasClients &&
+        _controller.position.isScrollingNotifier.value) {
+      // Jump notifications can update TimerTab, which cannot rebuild during
+      // this dependency change. Finish at the latest target after the frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            !_controller.hasClients ||
+            !MediaQuery.disableAnimationsOf(context)) {
+          return;
+        }
+        _scrollToItem(
+          _wheelTargetItem ?? _controller.selectedItem,
+          duration: Duration.zero,
+        );
+      });
+    }
+  }
+
+  void _scrollToItem(int item, {required Duration duration}) {
+    _wheelTargetItem = item;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.jumpToItem(item);
+      _wheelTargetItem = null;
+    } else {
+      _controller.animateToItem(
+        item,
+        duration: duration,
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  @override
   void didUpdateWidget(_WheelPicker oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.value != oldWidget.value) {
+      // The owner already supplied this value; a jump must not report it back
+      // synchronously while that owner is building.
+      _lastReportedValue = widget.value;
       if (_wheelTargetItem != null) {
         final targetLogicalIndex = _wheelTargetItem! % (widget.max + 1);
         if (widget.value == targetLogicalIndex) {
@@ -330,10 +369,9 @@ class _WheelPickerState extends State<_WheelPicker> {
         final targetLogicalIndex = currentLogicalIndex + diff;
 
         if (currentLogicalIndex != targetLogicalIndex) {
-          _controller.animateToItem(
+          _scrollToItem(
             targetLogicalIndex,
             duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutCubic,
           );
         }
       }
@@ -413,19 +451,21 @@ class _WheelPickerState extends State<_WheelPicker> {
               behavior: HitTestBehavior.translucent,
               onPointerSignal: (signal) {
                 if (signal is PointerScrollEvent) {
-                  GestureBinding.instance.pointerSignalResolver.register(signal, (event) {
-                    final scrollEvent = event as PointerScrollEvent;
-                    if (scrollEvent.scrollDelta.dy == 0) return;
-                    final delta = scrollEvent.scrollDelta.dy > 0 ? 1 : -1;
-                    final baseItem = _wheelTargetItem ?? _controller.selectedItem;
-                    final nextItem = baseItem + delta;
-                    _wheelTargetItem = nextItem;
-                    _controller.animateToItem(
-                      nextItem,
-                      duration: const Duration(milliseconds: 150),
-                      curve: Curves.easeOutCubic,
-                    );
-                  });
+                  GestureBinding.instance.pointerSignalResolver.register(
+                    signal,
+                    (event) {
+                      final scrollEvent = event as PointerScrollEvent;
+                      if (scrollEvent.scrollDelta.dy == 0) return;
+                      final delta = scrollEvent.scrollDelta.dy > 0 ? 1 : -1;
+                      final baseItem =
+                          _wheelTargetItem ?? _controller.selectedItem;
+                      final nextItem = baseItem + delta;
+                      _scrollToItem(
+                        nextItem,
+                        duration: const Duration(milliseconds: 150),
+                      );
+                    },
+                  );
                 }
               },
             ),

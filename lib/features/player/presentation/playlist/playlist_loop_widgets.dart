@@ -116,7 +116,9 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
                             },
                           ),
                           AnimatedOpacity(
-                            duration: const Duration(milliseconds: 200),
+                            duration: MediaQuery.disableAnimationsOf(context)
+                                ? Duration.zero
+                                : const Duration(milliseconds: 200),
                             opacity: _single ? 0.38 : 1.0,
                             child: IgnorePointer(
                               ignoring: _single,

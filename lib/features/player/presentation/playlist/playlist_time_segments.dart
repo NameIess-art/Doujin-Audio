@@ -506,7 +506,9 @@ class SegmentPanelPageHeader extends StatelessWidget {
                           borderRadius: BorderRadius.circular(15),
                           onTap: () => onSelected(index),
                           child: AnimatedContainer(
-                            duration: tokens.motionFast,
+                            duration: MediaQuery.disableAnimationsOf(context)
+                                ? Duration.zero
+                                : tokens.motionFast,
                             alignment: Alignment.center,
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             decoration: BoxDecoration(

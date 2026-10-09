@@ -718,7 +718,9 @@ class _SessionVideoFullscreenPageState
           builder: (context, feedback, _) {
             return AnimatedSwitcher(
               key: const ValueKey<String>('fullscreen_video_gesture_feedback'),
-              duration: const Duration(milliseconds: 120),
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 120),
               child: feedback == null
                   ? const SizedBox.shrink()
                   : Material(
@@ -767,7 +769,9 @@ class _SessionVideoFullscreenPageState
     return AnimatedOpacity(
       key: const ValueKey<String>('fullscreen_video_controls'),
       opacity: _controlsVisible ? 1 : 0,
-      duration: const Duration(milliseconds: 160),
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 160),
       child: IgnorePointer(
         ignoring: !_controlsVisible,
         child: Stack(

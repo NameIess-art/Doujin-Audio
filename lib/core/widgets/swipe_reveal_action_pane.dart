@@ -53,6 +53,7 @@ class SwipeRevealActionPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
     final destructive = actions.any((action) => action.destructive);
     final baseColor =
         color ??
@@ -120,7 +121,9 @@ class SwipeRevealActionPane extends StatelessWidget {
                   ? const SizedBox.shrink()
                   : AnimatedOpacity(
                       opacity: 0.24 + progress * 0.76,
-                      duration: const Duration(milliseconds: 160),
+                      duration: disableAnimations
+                          ? Duration.zero
+                          : const Duration(milliseconds: 160),
                       curve: Curves.easeOutCubic,
                       child: LayoutBuilder(
                         builder: (context, constraints) => Column(
@@ -191,7 +194,9 @@ class SwipeRevealActionPane extends StatelessWidget {
               ),
               child: AnimatedScale(
                 scale: 0.92 + progress * 0.08,
-                duration: const Duration(milliseconds: 180),
+                duration: disableAnimations
+                    ? Duration.zero
+                    : const Duration(milliseconds: 180),
                 curve: Curves.easeOutBack,
                 child: showVertical
                     ? SizedBox(

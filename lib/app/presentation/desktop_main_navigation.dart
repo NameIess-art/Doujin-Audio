@@ -50,6 +50,7 @@ class DesktopMainNavigation extends StatefulWidget {
 
 class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
   final Object _motionInteraction = Object();
+  final GlobalKey _menuToggleKey = GlobalKey();
   bool _motionActive = false;
   bool _tickerModeEnabled = true;
   bool _disableAnimations = false;
@@ -215,9 +216,35 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                       child: Stack(
                         children: [
                           NavigationRail(
+                            // Its internal controllers have no duration option.
+                            // Recreate only reduced motion states at their final
+                            // layout so they stay aligned with the snapped shell.
+                            key: _disableAnimations
+                                ? ValueKey((isMenuCollapsed, activeIndex))
+                                : null,
                             backgroundColor: Colors.transparent,
                             selectedIndex: activeIndex,
-                            onDestinationSelected: onSwitchPage,
+                            onDestinationSelected: (index) {
+                              final iconKey =
+                                  menuIconKeys[destinations[index].type.index];
+                              final iconContext = iconKey.currentContext;
+                              final restoreFocus =
+                                  _disableAnimations &&
+                                  iconContext != null &&
+                                  Focus.of(iconContext).hasPrimaryFocus;
+                              onSwitchPage(index);
+                              if (restoreFocus) {
+                                // Recreating the rail disposes its internal focus nodes.
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  final nextContext = iconKey.currentContext;
+                                  if (mounted && nextContext != null) {
+                                    Focus.of(nextContext).requestFocus();
+                                  }
+                                });
+                              }
+                            },
                             extended: !isMenuCollapsed,
                             minWidth: railMinWidth,
                             minExtendedWidth: railMinExtendedWidth,
@@ -232,6 +259,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                           : 72,
                                       child: Center(
                                         child: IconButton(
+                                          key: _menuToggleKey,
                                           style: IconButton.styleFrom(
                                             shape: const CircleBorder(),
                                           ),
@@ -255,6 +283,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                       ),
                                       child: isMenuCollapsed
                                           ? IconButton(
+                                              key: _menuToggleKey,
                                               style: IconButton.styleFrom(
                                                 shape: const CircleBorder(),
                                               ),
@@ -300,6 +329,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                                   ),
                                                 ),
                                                 IconButton(
+                                                  key: _menuToggleKey,
                                                   style: IconButton.styleFrom(
                                                     shape: const CircleBorder(),
                                                   ),

@@ -337,8 +337,14 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                           child: Builder(
                             builder: (context) {
                               Widget artworkWidget = AnimatedSwitcher(
-                                duration: kAppMotionSlow,
-                                reverseDuration: kAppMotionStandard,
+                                duration:
+                                    MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : kAppMotionSlow,
+                                reverseDuration:
+                                    MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : kAppMotionStandard,
                                 switchInCurve: Curves.easeOutCubic,
                                 switchOutCurve: Curves.easeInCubic,
                                 transitionBuilder: (child, animation) =>

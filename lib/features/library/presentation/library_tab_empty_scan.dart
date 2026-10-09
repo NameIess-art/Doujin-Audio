@@ -294,7 +294,9 @@ class LibraryScanProgressCard extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 180),
                       child: Text(
                         stageLabel,
                         key: ValueKey(scanState.stage),

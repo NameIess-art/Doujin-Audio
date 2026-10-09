@@ -10,6 +10,8 @@ import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_category_widgets.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_empty_scan.dart';
+import 'package:doujin_audio/features/library/presentation/library_view_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_tree_list.dart';
 import 'package:doujin_audio/app/application/browse_page_state_store.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
@@ -134,6 +136,83 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'library motion: reduced folder arrows reach their new state immediately',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final folder = FolderNode('Disc', '/library/Work/Disc', depth: 1)
+          ..addChild(
+            FolderNode('Nested', '/library/Work/Disc/Nested', depth: 2),
+          );
+        await tester.pumpWidget(
+          fixture.build(
+            MediaQuery(
+              data: const MediaQueryData(disableAnimations: true),
+              child: ListView(
+                children: [
+                  LibraryTreeItem(node: folder, renderChildrenInline: false),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.tap(find.text('Disc'));
+        await tester.pump();
+        final arrow = find.ancestor(
+          of: find.byIcon(Icons.expand_more_rounded),
+          matching: find.byType(RotationTransition),
+        );
+        expect(tester.widget<RotationTransition>(arrow).turns.value, 0.5);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'library motion: reduced scan stages replace text immediately',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        Widget page(FolderScanStage stage) => fixture.build(
+          MediaQuery(
+            data: const MediaQueryData(disableAnimations: true),
+            child: LibraryScanProgressCard(
+              i18n: fixture.languageProvider,
+              onCancel: () {},
+              scanState: LibraryScanUiState(
+                isScanning: true,
+                isBackgroundScanning: false,
+                source: 'Music',
+                stage: stage,
+                processed: 0,
+                total: 1,
+                foundCount: 0,
+                duplicateCount: 0,
+                failureCount: 0,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpWidget(page(FolderScanStage.preparing));
+        await tester.pumpWidget(page(FolderScanStage.saving));
+        expect(
+          find.text(fixture.languageProvider.tr('scan_stage_preparing')),
+          findsNothing,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('scan_stage_saving')),
+          findsOneWidget,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+  }
 
   testWidgets(
     'loaded folder rows share the content fade and do not replay when scrolled',

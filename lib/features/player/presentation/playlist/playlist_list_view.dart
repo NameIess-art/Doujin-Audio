@@ -56,10 +56,7 @@ class PlaylistSelectionIndicator extends StatelessWidget {
           switchInCurve: Curves.easeInOut,
           switchOutCurve: Curves.easeInOut,
           transitionBuilder: (child, animation) {
-            return FadeTransition(
-              opacity: animation,
-              child: child,
-            );
+            return FadeTransition(opacity: animation, child: child);
           },
           child: isSelected
               ? Container(
@@ -577,39 +574,41 @@ class SessionListCard extends ConsumerWidget {
                                         ),
                                   ),
                                   const SizedBox(height: 3),
-                                  Row(
-                                    children: [
-                                      if (isPlaying) ...[
-                                        Padding(
-                                          padding: const EdgeInsets.only(right: 6),
-                                          child: PlayingSoundWaveIndicator(
-                                            key: ValueKey<String>(
-                                              'playlist_sound_wave_$sessionId',
-                                            ),
-                                            color: activeColor,
-                                            isPlaying: isPlaying,
-                                          ),
-                                        ),
-                                      ],
-                                      Expanded(
-                                        child: Text(
-                                          displayName,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleMedium
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w800,
-                                                fontSize: 14,
-                                                height: 1.12,
-                                                color: isPlaying
-                                                    ? activeColor
-                                                    : null,
+                                  Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        if (isPlaying)
+                                          WidgetSpan(
+                                            alignment:
+                                                PlaceholderAlignment.middle,
+                                            child: Padding(
+                                              padding: const EdgeInsets.only(
+                                                right: 6,
                                               ),
+                                              child: PlayingSoundWaveIndicator(
+                                                key: ValueKey<String>(
+                                                  'playlist_sound_wave_$sessionId',
+                                                ),
+                                                color: activeColor,
+                                                isPlaying: isPlaying,
+                                              ),
+                                            ),
+                                          ),
+                                        TextSpan(text: displayName),
+                                      ],
+                                    ),
+                                    semanticsLabel: displayName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 14,
+                                          height: 1.12,
+                                          color: isPlaying ? activeColor : null,
                                         ),
-                                      ),
-                                    ],
                                   ),
                                 ],
                               ),
@@ -643,7 +642,10 @@ class SessionListCard extends ConsumerWidget {
                                 padding: EdgeInsets.zero,
                               ),
                               icon: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 120),
+                                duration:
+                                    MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 120),
                                 transitionBuilder: (child, animation) {
                                   return ScaleTransition(
                                     scale: Tween<double>(begin: 0.4, end: 1.0)
@@ -689,9 +691,6 @@ class SessionListCard extends ConsumerWidget {
         ),
       ),
     );
-    return UndoableRemovalTransition(
-      hidden: isHidden,
-      child: swipeCard,
-    );
+    return UndoableRemovalTransition(hidden: isHidden, child: swipeCard);
   }
 }

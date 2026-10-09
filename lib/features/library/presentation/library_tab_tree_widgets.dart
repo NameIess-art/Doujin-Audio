@@ -545,7 +545,9 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
                     child: IgnorePointer(
                       child: AnimatedRotation(
                         turns: _expanded ? 0.5 : 0,
-                        duration: const Duration(milliseconds: 180),
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : const Duration(milliseconds: 180),
                         curve: Curves.easeOutCubic,
                         child: Icon(
                           Icons.expand_more_rounded,

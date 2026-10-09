@@ -44,6 +44,27 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context) &&
+        _controller.hasClients &&
+        _controller.position.isScrollingNotifier.value) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            !MediaQuery.disableAnimationsOf(context) ||
+            !_controller.hasClients ||
+            !_controller.position.isScrollingNotifier.value) {
+          return;
+        }
+        _scrollToSpeedIndex(
+          _wheelTargetIndex ?? _selectedIndex,
+          duration: Duration.zero,
+        );
+      });
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant SpeedWheelPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session.id != widget.session.id ||
@@ -114,11 +135,34 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
 
   void _resetSpeed() {
     final index = _nearestSpeedIndex(1.0);
+    _scrollToSpeedIndex(index, duration: const Duration(milliseconds: 180));
+  }
+
+  void _scrollToSpeedIndex(int index, {required Duration duration}) {
+    if (index == _selectedIndex &&
+        index == _controller.selectedItem &&
+        !_controller.position.isScrollingNotifier.value) {
+      _wheelTargetIndex = null;
+      _finishAdjustment();
+      return;
+    }
+    _wheelTargetIndex = index;
     _setSpeedIndex(index);
-    _controller.animateToItem(
-      index,
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.jumpToItem(index);
+      _finishAdjustment();
+      return;
+    }
+    final generation = _adjustmentGeneration;
+    unawaited(
+      _controller
+          .animateToItem(index, duration: duration, curve: Curves.easeOutCubic)
+          .then((_) {
+            // Same-position animations do not send a scroll-end notification.
+            if (mounted && generation == _adjustmentGeneration) {
+              _finishAdjustment();
+            }
+          }),
     );
   }
 
@@ -172,6 +216,9 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
               NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
                   if (notification is ScrollStartNotification) {
+                    if (notification.dragDetails != null) {
+                      _wheelTargetIndex = null;
+                    }
                     _isAdjusting = true;
                     _adjustmentGeneration++;
                   } else if (notification is ScrollEndNotification) {
@@ -198,24 +245,21 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                       final selected = index == _selectedIndex;
                       return InkWell(
                         onTap: () {
-                          _wheelTargetIndex = null;
-                          _isAdjusting = true;
-                          _adjustmentGeneration++;
-                          AppInteractionFeedback.trigger(
-                            AppInteractionFeedbackType.selection,
-                          );
-                          _controller.animateToItem(
+                          _scrollToSpeedIndex(
                             index,
                             duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOutCubic,
                           );
                         },
                         child: Center(
                           child: AnimatedDefaultTextStyle(
-                            duration: const Duration(milliseconds: 140),
+                            duration: MediaQuery.disableAnimationsOf(context)
+                                ? Duration.zero
+                                : const Duration(milliseconds: 140),
                             curve: Curves.easeOutCubic,
                             style: selected
-                                ? Theme.of(context).textTheme.headlineMedium!.copyWith(
+                                ? Theme.of(
+                                    context,
+                                  ).textTheme.headlineMedium!.copyWith(
                                     color: cs.primary,
                                     fontWeight: FontWeight.w900,
                                     fontSize: 28,
@@ -264,15 +308,9 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                             );
                             if (nextIndex != _selectedIndex ||
                                 _wheelTargetIndex != nextIndex) {
-                              _wheelTargetIndex = nextIndex;
-                              AppInteractionFeedback.trigger(
-                                AppInteractionFeedbackType.selection,
-                              );
-                              _setSpeedIndex(nextIndex);
-                              _controller.animateToItem(
+                              _scrollToSpeedIndex(
                                 nextIndex,
                                 duration: const Duration(milliseconds: 150),
-                                curve: Curves.easeOutCubic,
                               );
                             }
                           },

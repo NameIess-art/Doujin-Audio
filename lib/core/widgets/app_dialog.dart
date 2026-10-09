@@ -3,29 +3,74 @@ import 'package:flutter/material.dart';
 import '../../app/theme/app_styles.dart';
 import 'app_transitions.dart';
 
-double _appScrimProgress(Animation<double> animation) {
-  if (animation.status != AnimationStatus.reverse) return 1;
-  return kSecondaryOverlayConfig.reverseCurve.transform(animation.value);
-}
-
-class _AppAnimatedScrim extends AnimatedWidget {
+class _AppAnimatedScrim extends StatefulWidget {
   const _AppAnimatedScrim({
-    required Animation<double> animation,
+    required this.animation,
     required this.scrimKey,
     this.curve,
-  }) : super(listenable: animation);
+  });
 
+  final Animation<double> animation;
   final Key scrimKey;
   final Curve? curve;
 
   @override
+  State<_AppAnimatedScrim> createState() => _AppAnimatedScrimState();
+}
+
+class _AppAnimatedScrimState extends State<_AppAnimatedScrim> {
+  double _reverseStartValue = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _handleStatus(widget.animation.status);
+    widget.animation.addStatusListener(_handleStatus);
+  }
+
+  void _handleStatus(AnimationStatus status) {
+    if (status == AnimationStatus.reverse) {
+      // IME submission can close before entry finishes. Start fading from the
+      // full scrim already on screen, including when its route value is below 1.
+      _reverseStartValue = widget.animation.value;
+    }
+  }
+
+  @override
+  void didUpdateWidget(_AppAnimatedScrim oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation) {
+      oldWidget.animation.removeStatusListener(_handleStatus);
+      _handleStatus(widget.animation.status);
+      widget.animation.addStatusListener(_handleStatus);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.animation.removeStatusListener(_handleStatus);
+    super.dispose();
+  }
+
+  double get _progress {
+    final animation = widget.animation;
+    if (widget.curve case final curve?) {
+      return curve.transform(animation.value);
+    }
+    if (animation.status != AnimationStatus.reverse) return 1;
+    if (_reverseStartValue == 0) return 0;
+    return kSecondaryOverlayConfig.reverseCurve.transform(
+      (animation.value / _reverseStartValue).clamp(0.0, 1.0),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final animation = listenable as Animation<double>;
-    return ColoredBox(
-      key: scrimKey,
-      color: kSecondaryOverlayConfig.scrimColor(
-        context,
-        curve?.transform(animation.value) ?? _appScrimProgress(animation),
+    return AnimatedBuilder(
+      animation: widget.animation,
+      builder: (context, _) => ColoredBox(
+        key: widget.scrimKey,
+        color: kSecondaryOverlayConfig.scrimColor(context, _progress),
       ),
     );
   }

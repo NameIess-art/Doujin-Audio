@@ -161,7 +161,9 @@ class SessionDetailLayout extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               AnimatedContainer(
-                duration: const Duration(milliseconds: 280),
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 280),
                 curve: Curves.easeInOutCubic,
                 height: coverHeight,
                 width: double.infinity,
@@ -236,7 +238,9 @@ class SessionDetailLayout extends StatelessWidget {
                 child: transport,
               ),
               AnimatedSwitcher(
-                duration: const Duration(milliseconds: 280),
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 280),
                 switchInCurve: Curves.easeOutCubic,
                 switchOutCurve: Curves.easeInCubic,
                 transitionBuilder: (child, animation) {

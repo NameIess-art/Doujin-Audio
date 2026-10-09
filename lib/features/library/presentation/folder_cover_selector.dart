@@ -125,7 +125,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
         _images = images;
         _currentCoverPath = currentCover ?? widget.initialCoverPath;
         _currentIndex = initialIndex;
-        _targetVirtualPage = initialPage;
+        _targetVirtualPage = null;
         _pageController = controller;
         _loading = false;
       });
@@ -139,7 +139,8 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
 
   void _handlePageChanged(int page) {
     if (_images.isEmpty) return;
-    _targetVirtualPage = page;
+    // Intermediate pages must not replace the target of rapid button/wheel input.
+    if (_targetVirtualPage != null && page != _targetVirtualPage) return;
     final index = _indexForPage(page, _images.length);
     if (_currentIndex == index) return;
     setState(() => _currentIndex = index);
@@ -155,13 +156,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
     if (controller == null || !controller.hasClients) return;
     final current = controller.page ??
         _pageForIndex(_currentIndex, _images.length).toDouble();
-    int basePage;
-    if (_targetVirtualPage != null &&
-        (current - _targetVirtualPage!).abs() <= 1.0) {
-      basePage = _targetVirtualPage!;
-    } else {
-      basePage = current.round();
-    }
+    final basePage = _targetVirtualPage ?? current.round();
     final targetPage = basePage + delta;
     _targetVirtualPage = targetPage;
     setState(() => _currentIndex = _indexForPage(targetPage, _images.length));
@@ -177,6 +172,22 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
         curve: Curves.easeOutCubic,
       );
     }
+  }
+
+  bool _handlePageScroll(ScrollNotification notification) {
+    final controller = _pageController;
+    if (notification.depth != 0 ||
+        controller == null ||
+        !controller.hasClients) {
+      return false;
+    }
+    if ((notification is ScrollStartNotification &&
+            notification.dragDetails != null) ||
+        notification is ScrollEndNotification) {
+      _targetVirtualPage = null;
+      _handlePageChanged(controller.page!.round());
+    }
+    return false;
   }
 
   void _handleWindowsWheel(PointerSignalEvent signal) {
@@ -208,7 +219,9 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
     bool transparent = false,
   }) {
     return AnimatedOpacity(
-      duration: kAppMotionFast,
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : kAppMotionFast,
       opacity: enabled ? 1 : 0.35,
       child: Material(
         color: transparent
@@ -407,137 +420,147 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
           child: Listener(
             onPointerSignal: _handleWindowsWheel,
             child: AspectRatio(
-            aspectRatio: kStandardCoverAspectRatio,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(color: cs.surfaceContainerHighest),
-                  child: ScrollConfiguration(
-                    behavior: ScrollConfiguration.of(context).copyWith(
-                      dragDevices: {
-                        PointerDeviceKind.touch,
-                        PointerDeviceKind.mouse,
-                        PointerDeviceKind.trackpad,
-                        PointerDeviceKind.stylus,
-                      },
+              aspectRatio: kStandardCoverAspectRatio,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerHighest,
                     ),
-                    child: PageView.builder(
-                      controller: _pageController,
-                      itemCount: _images.length > 1 ? null : _images.length,
-                      physics: _images.length > 1
-                          ? const PageScrollPhysics()
-                          : const NeverScrollableScrollPhysics(),
-                      onPageChanged: _handlePageChanged,
-                      itemBuilder: (context, page) {
-                        final index = _indexForPage(page, _images.length);
-                        return RetryingFileImage(
-                          key: ValueKey<String>(
-                            'cover_item_${_images[index]}_$page',
-                          ),
-                          path: _images[index],
-                          fit: BoxFit.cover,
-                          cacheWidth: coverCacheWidth,
-                          useDefaultCacheWidth: coverCacheWidth != null,
-                          deferLoadDuringInteraction: true,
-                          fallbackBuilder: (_) =>
-                              const CoverFallbackArtwork(),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                if (widget.compactNavigation) ...[
-                  Positioned(
-                    left: 12,
-                    bottom: 12,
-                    child: _buildCompactCoverAction(i18n),
-                  ),
-                  Positioned(
-                    right: 12,
-                    bottom: 12,
-                    child: _buildCompactNavigation(i18n),
-                  ),
-                ] else ...[
-                  if (defaultTargetPlatform == TargetPlatform.windows &&
-                      _images.length > 1) ...[
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: _buildNavButton(
-                          key: const ValueKey<String>(
-                            'audio_detail_cover_prev_button',
-                          ),
-                          icon: Icons.chevron_left_rounded,
-                          tooltip: i18n.tr('previous'),
-                          enabled: _images.length > 1 && !_saving,
-                          onPressed: _goToPrevious,
+                    child: ScrollConfiguration(
+                      behavior: ScrollConfiguration.of(context).copyWith(
+                        dragDevices: {
+                          PointerDeviceKind.touch,
+                          PointerDeviceKind.mouse,
+                          PointerDeviceKind.trackpad,
+                          PointerDeviceKind.stylus,
+                        },
+                      ),
+                      child: NotificationListener<ScrollNotification>(
+                        onNotification: _handlePageScroll,
+                        child: PageView.builder(
+                          controller: _pageController,
+                          itemCount: _images.length > 1 ? null : _images.length,
+                          physics: _images.length > 1
+                              ? const PageScrollPhysics()
+                              : const NeverScrollableScrollPhysics(),
+                          onPageChanged: _handlePageChanged,
+                          itemBuilder: (context, page) {
+                            final index = _indexForPage(page, _images.length);
+                            return RetryingFileImage(
+                              key: ValueKey<String>(
+                                'cover_item_${_images[index]}_$page',
+                              ),
+                              path: _images[index],
+                              fit: BoxFit.cover,
+                              cacheWidth: coverCacheWidth,
+                              useDefaultCacheWidth: coverCacheWidth != null,
+                              deferLoadDuringInteraction: true,
+                              fallbackBuilder: (_) =>
+                                  const CoverFallbackArtwork(),
+                            );
+                          },
                         ),
                       ),
                     ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: _buildNavButton(
-                          key: const ValueKey<String>(
-                            'audio_detail_cover_next_button',
+                  ),
+                  if (widget.compactNavigation) ...[
+                    Positioned(
+                      left: 12,
+                      bottom: 12,
+                      child: _buildCompactCoverAction(i18n),
+                    ),
+                    Positioned(
+                      right: 12,
+                      bottom: 12,
+                      child: _buildCompactNavigation(i18n),
+                    ),
+                  ] else ...[
+                    if (defaultTargetPlatform == TargetPlatform.windows &&
+                        _images.length > 1) ...[
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: _buildNavButton(
+                            key: const ValueKey<String>(
+                              'audio_detail_cover_prev_button',
+                            ),
+                            icon: Icons.chevron_left_rounded,
+                            tooltip: i18n.tr('previous'),
+                            enabled: _images.length > 1 && !_saving,
+                            onPressed: _goToPrevious,
                           ),
-                          icon: Icons.chevron_right_rounded,
-                          tooltip: i18n.tr('next'),
-                          enabled: _images.length > 1 && !_saving,
-                          onPressed: _goToNext,
                         ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _buildNavButton(
+                            key: const ValueKey<String>(
+                              'audio_detail_cover_next_button',
+                            ),
+                            icon: Icons.chevron_right_rounded,
+                            tooltip: i18n.tr('next'),
+                            enabled: _images.length > 1 && !_saving,
+                            onPressed: _goToNext,
+                          ),
+                        ),
+                      ),
+                    ],
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 12,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _CoverCaption(
+                            text: '${_currentIndex + 1} / ${_images.length}',
+                          ),
+                          Flexible(
+                            child: _CoverCaption(
+                              text: i18n.tr('audio_detail_cover_swipe_hint'),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                   Positioned(
-                    left: 12,
                     right: 12,
-                    bottom: 12,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _CoverCaption(
-                          text: '${_currentIndex + 1} / ${_images.length}',
-                        ),
-                        Flexible(
-                          child: _CoverCaption(
-                            text: i18n.tr('audio_detail_cover_swipe_hint'),
+                    top: 12,
+                    child: AnimatedOpacity(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 160),
+                      opacity: _saving ? 1 : 0,
+                      child: TickerMode(
+                        enabled: _saving,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.58),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ],
-                Positioned(
-                  right: 12,
-                  top: 12,
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 160),
-                    opacity: _saving ? 1 : 0,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.58),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
             ),
           ),
         ),

@@ -702,7 +702,9 @@ class _PlaybackSecondaryControlsState
         ),
       ),
       child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 200),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 200),
         child: _volumeMode ? buildVolumeBar() : buildButtonsRow(),
       ),
     );
@@ -811,7 +813,9 @@ class _SecondaryControlButton extends StatelessWidget {
             }
           : null,
       icon: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 250),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 250),
         transitionBuilder: (child, animation) {
           return ScaleTransition(
             scale: Tween<double>(begin: 0.4, end: 1.0).animate(

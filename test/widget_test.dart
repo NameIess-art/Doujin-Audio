@@ -5920,6 +5920,167 @@ void main() {
     debugDefaultTargetPlatformOverride = previousPlatform;
   });
 
+  for (final systemSetting in [false, true]) {
+    final motionSource = systemSetting ? 'system' : 'application';
+    testWidgets(
+      'theme changes snap with $motionSource reduced motion and retain pages',
+      (tester) async {
+        await AppPreferences.init();
+        _setLogicalTestViewSize(
+          tester,
+          defaultTargetPlatform == TargetPlatform.windows
+              ? const Size(1280, 800)
+              : const Size(390, 820),
+        );
+        await _pumpAppShell(tester, includePlaybackSession: false);
+        final mainScreen = find.byType(MainScreen);
+        final originalState = tester.state(mainScreen);
+        final container = ProviderScope.containerOf(
+          tester.element(mainScreen),
+          listen: false,
+        );
+        final settings = container.read(settingsRepositoryProvider);
+        final theme = container.read(themeProviderInstanceProvider);
+        if (systemSetting) {
+          tester.platformDispatcher.accessibilityFeaturesTestValue =
+              const FakeAccessibilityFeatures(disableAnimations: true);
+          addTearDown(
+            tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+          );
+        } else {
+          await settings.setReduceAnimations(true);
+        }
+        await tester.pump();
+        await tester.pump();
+        expect(
+          MediaQuery.disableAnimationsOf(tester.element(mainScreen)),
+          isTrue,
+        );
+
+        await theme.setThemeMode(ThemeMode.dark);
+        await tester.pump();
+        await tester.pump();
+        expect(
+          Theme.of(tester.element(mainScreen)).colorScheme.surface,
+          theme.darkTheme.colorScheme.surface,
+        );
+        await theme.setAppThemeColor(ThemeAccentPreset.mint);
+        await tester.pump();
+        await tester.pump();
+        expect(
+          Theme.of(tester.element(mainScreen)).colorScheme.primary,
+          theme.darkTheme.colorScheme.primary,
+        );
+        expect(tester.state(mainScreen), same(originalState));
+
+        if (systemSetting) {
+          tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
+        } else {
+          await settings.setReduceAnimations(false);
+        }
+        await tester.pump();
+        await tester.pump();
+        await theme.setThemeMode(ThemeMode.light);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(
+          Theme.of(tester.element(mainScreen)).colorScheme.surface,
+          isNot(theme.lightTheme.colorScheme.surface),
+        );
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(tester.state(mainScreen), same(originalState));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 200));
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+
+    testWidgets(
+      'sidebar snaps without overflow with $motionSource reduced motion',
+      (tester) async {
+        await AppPreferences.init();
+        _setLogicalTestViewSize(tester, const Size(1280, 800));
+        await _pumpAppShell(tester, includePlaybackSession: false);
+        final mainScreen = find.byType(MainScreen);
+        final container = ProviderScope.containerOf(
+          tester.element(mainScreen),
+          listen: false,
+        );
+        if (systemSetting) {
+          tester.platformDispatcher.accessibilityFeaturesTestValue =
+              const FakeAccessibilityFeatures(disableAnimations: true);
+          addTearDown(
+            tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+          );
+        } else {
+          await container
+              .read(settingsRepositoryProvider)
+              .setReduceAnimations(true);
+        }
+        await tester.pump();
+        await tester.pump();
+
+        for (final collapsed in [true, false, true]) {
+          final menuIcon = find.byIcon(
+            collapsed ? Icons.menu_open_rounded : Icons.menu_rounded,
+          );
+          final menuFocus = Focus.of(tester.element(menuIcon));
+          menuFocus.requestFocus();
+          await tester.pump();
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await tester.pump();
+          final rail = tester.widget<NavigationRail>(
+            find.byType(NavigationRail),
+          );
+          expect(rail.extended, !collapsed);
+          final animation = NavigationRail.extendedAnimation(
+            tester.element(
+              find.byIcon(
+                collapsed ? Icons.menu_rounded : Icons.menu_open_rounded,
+              ),
+            ),
+          );
+          expect(animation.value, collapsed ? 0 : 1);
+          expect(animation.isAnimating, isFalse);
+          expect(menuFocus.hasPrimaryFocus, isTrue);
+          expect(tester.takeException(), isNull);
+        }
+        final originalState = tester.state(mainScreen);
+        final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
+        final destination = find
+            .descendant(
+              of: find.byType(NavigationRail),
+              matching: find.byType(CompositedTransformTarget),
+            )
+            .last;
+        Focus.of(tester.element(destination)).requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pump();
+        await tester.pump();
+        expect(
+          tester
+              .widget<NavigationRail>(find.byType(NavigationRail))
+              .selectedIndex,
+          rail.destinations.length - 1,
+        );
+        expect(Focus.of(tester.element(destination)).hasPrimaryFocus, isTrue);
+        expect(tester.state(mainScreen), same(originalState));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 200));
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets('main screen background follows the active theme surface', (
     tester,
   ) async {

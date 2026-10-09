@@ -38,6 +38,7 @@ import 'package:doujin_audio/features/library/presentation/work_detail_page.dart
 import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/presentation/work_image_viewer_page.dart';
+import 'package:doujin_audio/features/library/presentation/work_detail_breadcrumbs.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/features/library/application/work_text_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
@@ -2201,6 +2202,116 @@ void main() {
   });
 
   group('WorkImageViewerPage', () {
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      for (final reduceMotion in [false, true]) {
+        testWidgets(
+          'library motion: image navigation retains rapid targets and follows manual dragging ($reduceMotion)',
+          (tester) async {
+            final fixture = AppRuntimeWidgetTestFixture();
+            addTearDown(fixture.dispose);
+            final images = [
+              for (var i = 0; i < 5; i++)
+                WorkImageItem(name: '$i.jpg', path: '/covers/$i.jpg'),
+            ];
+            await tester.pumpWidget(
+              fixture.build(
+                Builder(
+                  builder: (context) => MediaQuery(
+                    data: MediaQuery.of(
+                      context,
+                    ).copyWith(disableAnimations: reduceMotion),
+                    child: WorkImageViewerPage(images: images),
+                  ),
+                ),
+              ),
+            );
+            await tester.pump();
+            final viewport = find.byKey(const ValueKey('work_image_viewport'));
+            final controller = tester.widget<PageView>(viewport).controller!;
+            final initialPage = controller.page!.round();
+            final next = find.byKey(const ValueKey('image_viewer_next_button'));
+            await tester.tap(next);
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 40));
+            await tester.tap(next);
+            await tester.pump();
+            if (!reduceMotion) {
+              for (
+                var i = 0;
+                i < 30 && controller.page! < initialPage + 0.6;
+                i++
+              ) {
+                await tester.pump(const Duration(milliseconds: 10));
+              }
+            }
+            await tester.tap(next);
+            await tester.pump();
+            if (reduceMotion) expect(controller.page, initialPage + 3);
+            await tester.pump(const Duration(milliseconds: 400));
+            expect(controller.page, initialPage + 3);
+            expect(find.text('4 / 5'), findsOneWidget);
+
+            // A user drag interrupts the pending button target and becomes the
+            // baseline for the next command, including looped image indices.
+            await tester.tap(next);
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 40));
+            await tester.drag(viewport, const Offset(500, 0));
+            await tester.pump(const Duration(milliseconds: 400));
+            final draggedPage = controller.page!.round();
+            await tester.tap(next);
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 400));
+            expect(controller.page, draggedPage + 1);
+            expect(tester.takeException(), isNull);
+            await tester.pumpWidget(const SizedBox.shrink());
+          },
+          variant: TargetPlatformVariant({platform}),
+        );
+      }
+
+      testWidgets(
+        'library motion: reduced breadcrumbs reveal the newest segment immediately',
+        (tester) async {
+          final fixture = AppRuntimeWidgetTestFixture();
+          addTearDown(fixture.dispose);
+          Widget page(List<String> segments) => fixture.build(
+            MediaQuery(
+              data: const MediaQueryData(disableAnimations: true),
+              child: Center(
+                child: SizedBox(
+                  width: 240,
+                  child: WorkDetailBreadcrumbs(
+                    key: const ValueKey('motion-breadcrumbs'),
+                    segments: segments,
+                    entryCount: 1,
+                    i18n: fixture.languageProvider,
+                    onNavigate: (_) {},
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpWidget(page(['first long directory']));
+          await tester.pumpWidget(
+            page([
+              'first long directory',
+              'second long directory',
+              'third long directory',
+            ]),
+          );
+          final position = tester
+              .state<ScrollableState>(find.byType(Scrollable))
+              .position;
+          expect(position.maxScrollExtent, greaterThan(0));
+          expect(position.pixels, position.maxScrollExtent);
+          expect(position.isScrollingNotifier.value, isFalse);
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
     testWidgets(
       'image browsing starts at the requested entry without restoring cache',
       (tester) async {

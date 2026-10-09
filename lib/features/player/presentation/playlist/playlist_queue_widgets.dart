@@ -311,42 +311,41 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                                     ),
                               ),
                               const SizedBox(height: 3),
-                              Row(
-                                children: [
-                                  if (isPlaying) ...[
-                                    Padding(
-                                      padding: const EdgeInsets.only(right: 6),
-                                      child: PlayingSoundWaveIndicator(
-                                        key: ValueKey<String>(
-                                          'playback_queue_sound_wave_${session.id}',
-                                        ),
-                                        color: activeColor,
-                                        isPlaying: isPlaying,
-                                      ),
-                                    ),
-                                  ],
-                                  Expanded(
-                                    child: Text(
-                                      currentTrackName,
-                                      key: ValueKey<String>(
-                                        'playback_queue_track_0_${session.id}',
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 14,
-                                            height: 1.12,
-                                            color: isPlaying
-                                                ? activeColor
-                                                : null,
+                              Text.rich(
+                                TextSpan(
+                                  children: [
+                                    if (isPlaying)
+                                      WidgetSpan(
+                                        alignment: PlaceholderAlignment.middle,
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(
+                                            right: 6,
                                           ),
+                                          child: PlayingSoundWaveIndicator(
+                                            key: ValueKey<String>(
+                                              'playback_queue_sound_wave_${session.id}',
+                                            ),
+                                            color: activeColor,
+                                            isPlaying: isPlaying,
+                                          ),
+                                        ),
+                                      ),
+                                    TextSpan(text: currentTrackName),
+                                  ],
+                                ),
+                                key: ValueKey<String>(
+                                  'playback_queue_track_0_${session.id}',
+                                ),
+                                semanticsLabel: currentTrackName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14,
+                                      height: 1.12,
+                                      color: isPlaying ? activeColor : null,
                                     ),
-                                  ),
-                                ],
                               ),
                             ],
                           ),
@@ -392,7 +391,10 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                                     padding: EdgeInsets.zero,
                                   ),
                                   icon: AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 120),
+                                    duration:
+                                        MediaQuery.disableAnimationsOf(context)
+                                        ? Duration.zero
+                                        : const Duration(milliseconds: 120),
                                     transitionBuilder: (child, animation) {
                                       return ScaleTransition(
                                         scale:

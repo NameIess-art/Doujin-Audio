@@ -12,6 +12,7 @@ import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/playing_sound_wave_indicator.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../library/application/library_facade.dart';
@@ -449,15 +450,11 @@ class SessionListCard extends ConsumerWidget {
         : i18n.tr('imported_files');
     final isPlaying = cardState.isPlaying;
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAsmrOne = currentTrack?.isRemoteAsmr ?? false;
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
     final localPlayRose = cs.primary;
 
-    final highlightColor = isAsmrOne
-        ? asmrBlue.withValues(alpha: isDark ? 0.18 : 0.14)
-        : localPlayRose.withValues(alpha: isDark ? 0.16 : 0.12);
     final activeColor = isAsmrOne ? asmrBlue : localPlayRose;
 
     final cardShape = isTemporary
@@ -500,10 +497,7 @@ class SessionListCard extends ConsumerWidget {
                 DecoratedBox(
                   key: ValueKey<String>('playlist_card_highlight_$sessionId'),
                   decoration: ShapeDecoration(
-                    gradient: playlistActiveHighlightGradient(
-                      isPlaying,
-                      highlightColor,
-                    ),
+                    gradient: playlistActiveHighlightGradient(isPlaying),
                     shape: playlistRowShape,
                   ),
                   child: InkWell(
@@ -583,18 +577,39 @@ class SessionListCard extends ConsumerWidget {
                                         ),
                                   ),
                                   const SizedBox(height: 3),
-                                  Text(
-                                    displayName,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 14,
-                                          height: 1.12,
+                                  Row(
+                                    children: [
+                                      if (isPlaying) ...[
+                                        Padding(
+                                          padding: const EdgeInsets.only(right: 6),
+                                          child: PlayingSoundWaveIndicator(
+                                            key: ValueKey<String>(
+                                              'playlist_sound_wave_$sessionId',
+                                            ),
+                                            color: activeColor,
+                                            isPlaying: isPlaying,
+                                          ),
                                         ),
+                                      ],
+                                      Expanded(
+                                        child: Text(
+                                          displayName,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleMedium
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 14,
+                                                height: 1.12,
+                                                color: isPlaying
+                                                    ? activeColor
+                                                    : null,
+                                              ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),

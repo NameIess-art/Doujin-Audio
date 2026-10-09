@@ -50,68 +50,87 @@ void main() {
     service.close();
   });
 
-  for (final readingBody in [false, true]) {
-    test(
-      'search cancellation stops ${readingBody ? 'body reading' : 'header waiting'} without domain failover',
-      () async {
-        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-        final started = Completer<void>();
-        var searchRequests = 0;
-        final subscription = server.listen((request) async {
-          if (request.uri.path == '/api/search/') {
-            searchRequests++;
-            if (readingBody) {
-              request.response.headers.contentType = ContentType.json;
-              request.response.write('{"works":[');
-              await request.response.flush();
-            }
-            started.complete();
-            return;
-          }
-          request.response.write(
-            '{"works":[],"pagination":{"currentPage":1,"pageSize":40,"totalCount":0}}',
-          );
-          await request.response.close();
-        });
-        final hosts = <String>[];
-        final client = HttpClient()
-          ..findProxy = (uri) {
-            hosts.add(uri.host);
-            return 'DIRECT';
+  for (final operation in ['search', 'review', 'tree']) {
+    for (final readingBody in [false, true]) {
+      test(
+        '$operation cancellation stops ${readingBody ? 'body reading' : 'header waiting'} without domain failover',
+        () async {
+          final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+          final started = Completer<void>();
+          var cancelledRequests = 0;
+          final path = switch (operation) {
+            'review' => '/api/review',
+            'tree' => '/api/tracks/72',
+            _ => '/api/search/',
           };
-        final service = AsmrApiService(
-          httpClient: client,
-          baseUri: Uri.parse('http://${server.address.address}:${server.port}'),
-        );
-        try {
-          final token = AsmrRequestCancellationToken();
-          final cancelled = expectLater(
-            service.searchWorks(
-              keyword: 'old',
+          final subscription = server.listen((request) async {
+            if (request.uri.path == path) {
+              cancelledRequests++;
+              if (readingBody) {
+                request.response.headers.contentType = ContentType.json;
+                request.response.write(
+                  operation == 'tree' ? '[' : '{"works":[',
+                );
+                await request.response.flush();
+              }
+              started.complete();
+              return;
+            }
+            request.response.write(
+              '{"works":[],"pagination":{"currentPage":1,"pageSize":40,"totalCount":0}}',
+            );
+            await request.response.close();
+          });
+          final hosts = <String>[];
+          final client = HttpClient()
+            ..findProxy = (uri) {
+              hosts.add(uri.host);
+              return 'DIRECT';
+            };
+          final service = AsmrApiService(
+            httpClient: client,
+            baseUri: Uri.parse(
+              'http://${server.address.address}:${server.port}',
+            ),
+          );
+          try {
+            final token = AsmrRequestCancellationToken();
+            final loading = switch (operation) {
+              'review' => service.fetchReviews(
+                token: 'test-token',
+                cancellationToken: token,
+              ),
+              'tree' => service.fetchTrackTree(72, cancellationToken: token),
+              _ => service.searchWorks(
+                keyword: 'old',
+                order: 'release',
+                sort: 'desc',
+                cancellationToken: token,
+              ),
+            };
+            final cancelled = expectLater(
+              loading,
+              throwsA(isA<AsmrRequestCancelled>()),
+            );
+            await started.future;
+            token.cancel();
+            await cancelled.timeout(const Duration(seconds: 2));
+            final sibling = await service.fetchWorks(
               order: 'release',
               sort: 'desc',
-              cancellationToken: token,
-            ),
-            throwsA(isA<AsmrRequestCancelled>()),
-          );
-          await started.future;
-          token.cancel();
-          await cancelled.timeout(const Duration(seconds: 2));
-          final sibling = await service.fetchWorks(
-            order: 'release',
-            sort: 'desc',
-          );
-          expect(sibling.works, isEmpty);
-          expect(searchRequests, 1);
-          expect(hosts, everyElement(server.address.address));
-          expect(service.isClosed, isFalse);
-        } finally {
-          service.close();
-          await subscription.cancel();
-          await server.close(force: true);
-        }
-      },
-    );
+            );
+            expect(sibling.works, isEmpty);
+            expect(cancelledRequests, 1);
+            expect(hosts, everyElement(server.address.address));
+            expect(service.isClosed, isFalse);
+          } finally {
+            service.close();
+            await subscription.cancel();
+            await server.close(force: true);
+          }
+        },
+      );
+    }
   }
 
   test(

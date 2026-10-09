@@ -159,54 +159,6 @@ class LibraryPinnedIndicator extends StatelessWidget {
   }
 }
 
-class LibraryLeadingIndicators extends StatelessWidget {
-  const LibraryLeadingIndicators({
-    super.key,
-    this.path,
-    required this.isSelected,
-    required this.isPinned,
-    required this.child,
-  });
-
-  final String? path;
-  final bool isSelected;
-  final bool isPinned;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    // The content gives the overlay a finite height inside lazy lists.
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        ConstrainedBox(
-          constraints: BoxConstraints(minHeight: isSelected ? 44 : 22),
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: isPinned || isSelected ? 24 + AppSpacing.xs : 0,
-            ),
-            child: child,
-          ),
-        ),
-        Positioned(
-          top: 0,
-          left: 1,
-          child: LibraryPinnedIndicator(
-            isPinned: isPinned,
-            path: path,
-            isSelected: isSelected,
-          ),
-        ),
-        Positioned(
-          bottom: 0,
-          left: 1,
-          child: LibrarySelectionIndicator(path: path, isSelected: isSelected),
-        ),
-      ],
-    );
-  }
-}
-
 @visibleForTesting
 class LibraryTreeItem extends StatelessWidget {
   const LibraryTreeItem({
@@ -928,17 +880,17 @@ class _TrackNodeWidget extends ConsumerWidget {
                     ),
                   )
                 : Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
-                    child: LibraryLeadingIndicators(
+                    padding: const EdgeInsets.all(
+                      LibraryLikeCardMetrics.coverDistance,
+                    ),
+                    child: SingleAudioFileCardContent(
                       path: track.path,
                       isSelected: isSelected,
                       isPinned: isPinned,
-                      child: SingleAudioFileCardContent(
-                        title: track.displayName,
-                        detail: singleDetail,
-                        detailLoading: isSingleDetailLoading,
-                        trailingActions: actions,
-                      ),
+                      title: track.displayName,
+                      detail: singleDetail,
+                      detailLoading: isSingleDetailLoading,
+                      trailingActions: actions,
                     ),
                   ),
           ),

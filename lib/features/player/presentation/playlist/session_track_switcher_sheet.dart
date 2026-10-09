@@ -13,6 +13,7 @@ import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/file_tree_row.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/playing_sound_wave_indicator.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/playback_queue.dart';
 import 'playlist_shared_helpers.dart';
@@ -184,6 +185,7 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet> {
             node: row.node,
             depth: row.depth,
             expanded: _expandedFolders.contains(row.key),
+            isPlaying: widget.session.playbackRequested,
             onToggleExpansion: () => _toggleFolder(row.key),
             onTrackTap: (selected) => widget.onSelected(
               SessionTrackSelection(
@@ -454,6 +456,7 @@ class _QueueTreeNodeTile extends StatelessWidget {
     required this.node,
     required this.depth,
     required this.expanded,
+    required this.isPlaying,
     required this.onToggleExpansion,
     required this.onTrackTap,
   });
@@ -461,6 +464,7 @@ class _QueueTreeNodeTile extends StatelessWidget {
   final _QueueTreeNode node;
   final int depth;
   final bool expanded;
+  final bool isPlaying;
   final VoidCallback onToggleExpansion;
   final ValueChanged<_QueueTreeNode> onTrackTap;
 
@@ -471,6 +475,7 @@ class _QueueTreeNodeTile extends StatelessWidget {
         track: node.track!,
         depth: depth,
         selected: node.selected,
+        isPlaying: isPlaying,
         onTap: node.selected ? null : () => onTrackTap(node),
       );
     }
@@ -501,17 +506,22 @@ class _QueueTrackLeaf extends StatelessWidget {
     required this.track,
     required this.depth,
     required this.selected,
+    this.isPlaying = false,
     required this.onTap,
   });
 
   final MusicTrack track;
   final int depth;
   final bool selected;
+  final bool isPlaying;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final accentColor = track.usesAsmrVisualTheme
+        ? AppDesignTokens.of(context).asmrAccent
+        : cs.primary;
     return FileTreeRow(
       surfaceKey: ValueKey<String>('queue_switcher_track_${track.path}'),
       title: track.displayName,
@@ -521,13 +531,23 @@ class _QueueTrackLeaf extends StatelessWidget {
           ? cs.primaryContainer.withValues(alpha: 0.24)
           : null,
       onTap: onTap,
-      leading: Icon(
-        selected ? Icons.volume_up_rounded : AppDesignTokens.audioFileIcon,
-        size: AppDesignTokens.fileEntryIconSize,
-        color: track.usesAsmrVisualTheme
-            ? AppDesignTokens.of(context).asmrAccent
-            : cs.primary,
-      ),
+      leading: selected && isPlaying
+          ? SizedBox(
+              width: AppDesignTokens.fileEntryIconSize,
+              height: AppDesignTokens.fileEntryIconSize,
+              child: Center(
+                child: PlayingSoundWaveIndicator(
+                  color: accentColor,
+                ),
+              ),
+            )
+          : Icon(
+              selected
+                  ? Icons.volume_up_rounded
+                  : AppDesignTokens.audioFileIcon,
+              size: AppDesignTokens.fileEntryIconSize,
+              color: accentColor,
+            ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

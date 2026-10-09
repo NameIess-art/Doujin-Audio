@@ -182,7 +182,7 @@ class _DlsiteMetadataBatchPageState
     final topInset = AppPageHeaderMetrics.contentTopInset(context);
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: cs.surface,
+      backgroundColor: appPageBackgroundColor(context, cs.surface),
       body: PageHeaderInset(
         topInset: topInset,
         child: Stack(

@@ -1977,6 +1977,7 @@ void main() {
       find.byKey(const ValueKey<String>('library_search_button')),
     );
     await tester.pump();
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump(const Duration(milliseconds: 200));
     final tagsLabel = languageProvider.tr('library_category_tags');
@@ -2133,6 +2134,8 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('library_search_button')),
     );
+    await tester.pump();
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     await pumpUntilFound(
       tester,
@@ -2294,6 +2297,7 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('library_search_button')),
     );
+    await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump(const Duration(milliseconds: 200));
@@ -2506,6 +2510,7 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey<String>('library_search_button')),
       );
+      await tester.pump();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
       await tester.pump(const Duration(milliseconds: 200));
@@ -3793,6 +3798,7 @@ void main() {
         find.byKey(const ValueKey<String>('library_search_button')),
       );
       await tester.pump();
+      await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
       await pumpUntilFound(
         tester,
@@ -3879,6 +3885,7 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('library_search_button')),
     );
+    await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     await tester.tap(
@@ -4470,10 +4477,10 @@ void main() {
     );
   }
 
-  for (final withCover in [false, true]) {
+  for (final kind in ['plain', 'covered', 'video']) {
     for (final pinned in [false, true]) {
       testWidgets(
-        'single audio selection keeps content and indicators visible (cover: $withCover, pinned: $pinned)',
+        'single audio selection keeps content and indicators visible (kind: $kind, pinned: $pinned)',
         (WidgetTester tester) async {
           final fixture = AppRuntimeWidgetTestFixture(
             coverArtworkCacheService: _NoCoverArtworkCacheService(),
@@ -4489,7 +4496,8 @@ void main() {
             groupSubtitle: '',
             isSingle: true,
             duration: const Duration(minutes: 2),
-            manualCoverPath: withCover ? '/test/cover.png' : null,
+            manualCoverPath: kind == 'covered' ? '/test/cover.png' : null,
+            isVideo: kind == 'video',
           );
           runtimeGraph.library
             ..addWatchedLibrary(libraryPath, notify: false)
@@ -4544,14 +4552,27 @@ void main() {
           final cardRect = tester.getRect(cardFinder);
           final titleRect = tester.getRect(trackFinder);
           final selectionRect = tester.getRect(selectionBadge);
-          expect(selectionRect.left, lessThan(titleRect.left));
+          expect(selectionRect.left, lessThanOrEqualTo(titleRect.left));
           expect(selectionRect.top, greaterThanOrEqualTo(titleRect.bottom));
           expect(cardRect.contains(selectionRect.topLeft), isTrue);
           expect(cardRect.contains(selectionRect.bottomRight), isTrue);
           if (pinned) {
             final pinRect = tester.getRect(pinBadge);
-            expect(pinRect.right, lessThanOrEqualTo(titleRect.left));
-            expect(pinRect.top, titleRect.top);
+            if (kind == 'plain') {
+              expect(pinRect.right, lessThan(titleRect.left));
+              expect(pinRect.top, titleRect.top - 2);
+            } else {
+              final position = tester.widget<Positioned>(
+                find
+                    .ancestor(
+                      of: pinBadge,
+                      matching: find.byType(Positioned),
+                    )
+                    .first,
+              );
+              expect(position.top, -2);
+              expect(position.right, -2);
+            }
           }
           expect(tester.takeException(), isNull);
           await tester.tap(

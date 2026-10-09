@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/persistence/json_document_store.dart';
@@ -70,6 +72,124 @@ void main() {
     expect(repository.explicitSaveCount, 0);
   });
 
+  for (final paths in <(String, String)>[
+    ('/library/work', '/library/work'),
+    ('E:/Library/Work', r'e:\library\work'),
+  ]) {
+    test('single read reuses a pending batch for ${paths.$1}', () async {
+      final target = AudioDetailTarget.libraryRootFolder(paths.$1);
+      final alias = AudioDetailTarget.libraryRootFolder(paths.$2);
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final repository =
+          _FakeAudioDetailRepository(
+              AudioDetail.empty(target).copyWith(workTitle: 'Saved work'),
+            )
+            ..beforeBatchLoad = (_) async {
+              started.complete();
+              await release.future;
+            };
+      final cache = AudioDetailCacheService(repository: repository);
+      final batch = cache.loadMany([target]);
+      await started.future;
+      final single = cache.load(alias);
+      release.complete();
+
+      final batchResult = await batch;
+      expect(await single, same(batchResult.single));
+      expect(repository.batchRequests, hasLength(1));
+      expect(repository.loadCount, 0);
+    });
+  }
+
+  test('overlapping batches only query unresolved targets in order', () async {
+    final targets = <AudioDetailTarget>[
+      for (final name in ['a', 'b', 'c'])
+        AudioDetailTarget.libraryRootFolder('/library/$name'),
+    ];
+    final started = Completer<void>();
+    final release = Completer<void>();
+    final repository =
+        _FakeAudioDetailRepository(AudioDetail.empty(targets.first))
+          ..beforeBatchLoad = (_) async {
+            if (started.isCompleted) return;
+            started.complete();
+            await release.future;
+          };
+    final cache = AudioDetailCacheService(repository: repository);
+    final first = cache.loadMany(targets.take(2));
+    await started.future;
+    final second = cache.loadMany([targets[1], targets[2], targets[1]]);
+    release.complete();
+
+    await first;
+    expect((await second).map((result) => result.detail.target), [
+      targets[1],
+      targets[2],
+      targets[1],
+    ]);
+    expect(repository.batchRequests, [
+      targets.take(2).toList(),
+      [targets[2]],
+    ]);
+    expect(repository.loadCount, 0);
+  });
+
+  test('queued read observes a save after a pending batch', () async {
+    final target = AudioDetailTarget.libraryRootFolder('/library/work');
+    final started = Completer<void>();
+    final release = Completer<void>();
+    final repository =
+        _FakeAudioDetailRepository(
+            AudioDetail.empty(target).copyWith(workTitle: 'Before'),
+          )
+          ..beforeBatchLoad = (_) async {
+            started.complete();
+            await release.future;
+          };
+    final cache = AudioDetailCacheService(repository: repository);
+    final batch = cache.loadMany([target]);
+    await started.future;
+    final save = cache.save(repository.detail.copyWith(workTitle: 'After'));
+    final read = cache.load(target);
+    release.complete();
+
+    expect((await batch).single.detail.workTitle, 'Before');
+    await save;
+    expect((await read).detail.workTitle, 'After');
+    expect(repository.batchRequests, hasLength(1));
+    expect(repository.loadCount, 0);
+    expect(repository.explicitSaveCount, 1);
+  });
+
+  test('failed batch leaves overlapping reads able to retry', () async {
+    final target = AudioDetailTarget.libraryRootFolder('/library/work');
+    final started = Completer<void>();
+    final release = Completer<void>();
+    final repository =
+        _FakeAudioDetailRepository(
+            AudioDetail.empty(target).copyWith(workTitle: 'Retried'),
+          )
+          ..beforeBatchLoad = (_) async {
+            if (started.isCompleted) return;
+            started.complete();
+            await release.future;
+            throw StateError('Batch failed');
+          };
+    final cache = AudioDetailCacheService(repository: repository);
+    final first = cache.loadMany([target]);
+    final failure = expectLater(first, throwsStateError);
+    await started.future;
+    final retry = cache.loadMany([target]);
+    release.complete();
+
+    await failure;
+    expect((await retry).single.detail.workTitle, 'Retried');
+    expect(repository.batchRequests, hasLength(2));
+    expect((await cache.load(target)).detail.workTitle, 'Retried');
+    expect(repository.loadCount, 0);
+  });
+
   test('suspend cancels new operations', () async {
     final target = AudioDetailTarget.libraryRootFolder('/library/work');
     final cache = AudioDetailCacheService(
@@ -119,6 +239,8 @@ final class _FakeAudioDetailRepository implements AudioDetailRepository {
   AudioDetail detail;
   int loadCount = 0;
   int explicitSaveCount = 0;
+  final List<List<AudioDetailTarget>> batchRequests = [];
+  Future<void> Function(List<AudioDetailTarget>)? beforeBatchLoad;
 
   @override
   Future<AudioDetailLoadResult> load(AudioDetailTarget target) async {
@@ -129,9 +251,15 @@ final class _FakeAudioDetailRepository implements AudioDetailRepository {
   @override
   Future<List<AudioDetailLoadResult>> loadMany(
     Iterable<AudioDetailTarget> targets,
-  ) async => <AudioDetailLoadResult>[
-    for (final _ in targets) AudioDetailLoadResult(detail: detail),
-  ];
+  ) async {
+    final values = targets.toList(growable: false);
+    batchRequests.add(values);
+    await beforeBatchLoad?.call(values);
+    return <AudioDetailLoadResult>[
+      for (final target in values)
+        AudioDetailLoadResult(detail: detail.copyWith(target: target)),
+    ];
+  }
 
   @override
   Future<AudioDetailSaveResult> save(AudioDetail next) async {

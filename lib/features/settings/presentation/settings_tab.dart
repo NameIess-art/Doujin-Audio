@@ -593,7 +593,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
         final pinnedTop = _pinnedTop(context);
 
         return Scaffold(
-          backgroundColor: cs.surface,
+          backgroundColor: appPageBackgroundColor(context, cs.surface),
           body: PageHeaderInset(
             topInset: contentTopInset,
             child: Stack(

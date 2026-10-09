@@ -7,84 +7,103 @@ import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 void main() {
-  testWidgets('search route opens and closes without page animation', (
-    tester,
-  ) async {
-    late BuildContext routeContext;
-    final controller = TextEditingController();
-    final focusNode = FocusNode();
-    addTearDown(controller.dispose);
-    addTearDown(focusNode.dispose);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (context) {
-            routeContext = context;
-            return const SizedBox.expand();
-          },
+  testWidgets(
+    'search route retains the previous page during entry and exit',
+    (tester) async {
+      late BuildContext routeContext;
+      final controller = TextEditingController();
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              routeContext = context;
+              return const ColoredBox(
+                color: Colors.red,
+                child: SizedBox.expand(key: ValueKey('previous_page')),
+              );
+            },
+          ),
         ),
-      ),
-    );
-
-    final route = buildAppPageRoute<void>(
-      context: routeContext,
-      duration: Duration.zero,
-      child: AppSearchPageScaffold<int>(
-        controller: controller,
-        focusNode: focusNode,
-        hintText: 'Search audio',
-        categories: const <AppSearchCategory<int>>[
-          AppSearchCategory(value: 0, label: 'All'),
-        ],
-        selectedCategory: 0,
-        onCategorySelected: (_) {},
-        onChanged: (_) {},
-        onSubmitted: (_) {},
-        onCloseOrClear: () => Navigator.of(routeContext).pop(),
-
-        body: const SizedBox.expand(
-          key: ValueKey<String>('instant_search_body'),
-        ),
-      ),
-    );
-    expect(route.transitionDuration, Duration.zero);
-    expect(route.reverseTransitionDuration, Duration.zero);
-
-    unawaited(Navigator.of(routeContext).push(route));
-    await tester.pump();
-
-    final page = find.byType(AppSearchPageScaffold<int>);
-    expect(page, findsOneWidget);
-    expect(route.animation!.status, AnimationStatus.completed);
-    expect(
-      tester.getTopLeft(
-        find.byKey(const ValueKey<String>('instant_search_body')),
-      ),
-      Offset.zero,
-    );
-    expect(
-      tester.getTopLeft(
-        find.byKey(const ValueKey<String>('app_search_field_shell')),
-      ),
-      const Offset(16, 6),
-    );
-    for (final transitionType in [
-      SlideTransition,
-      FadeTransition,
-      ShaderMask,
-    ]) {
-      expect(
-        find.ancestor(of: page, matching: find.byType(transitionType)),
-        findsNothing,
       );
-    }
-    expect(find.byType(ShaderMask), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey<String>('app_search_close')));
-    await tester.pump();
-    expect(page, findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+      final route = buildAppPageRoute<void>(
+        context: routeContext,
+        child: AppSearchPageScaffold<int>(
+          controller: controller,
+          focusNode: focusNode,
+          hintText: 'Search audio',
+          categories: const <AppSearchCategory<int>>[
+            AppSearchCategory(value: 0, label: 'All'),
+          ],
+          selectedCategory: 0,
+          onCategorySelected: (_) {},
+          onChanged: (_) {},
+          onSubmitted: (_) {},
+          onCloseOrClear: () => Navigator.of(routeContext).pop(),
+
+          body: const SizedBox.expand(
+            key: ValueKey<String>('animated_search_body'),
+          ),
+        ),
+      );
+      expect(route.transitionDuration, kAppMotionSlow);
+      expect(route.reverseTransitionDuration, kAppMotionSlow);
+
+      final previous = find.byKey(const ValueKey('previous_page'));
+      final previousRect = tester.getRect(previous);
+      unawaited(Navigator.of(routeContext).push(route));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+
+      final page = find.byType(AppSearchPageScaffold<int>);
+      final body = find.byKey(const ValueKey('animated_search_body'));
+      final scaffold = find.descendant(
+        of: page,
+        matching: find.byType(Scaffold),
+      );
+      expect(page, findsOneWidget);
+      expect(route.animation!.status, AnimationStatus.forward);
+      expect(tester.getRect(previous), previousRect);
+      expect(tester.getTopLeft(body).dx, greaterThan(0));
+      expect(
+        tester.widget<Scaffold>(scaffold).backgroundColor,
+        Colors.transparent,
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('app_search_field_shell'))),
+        const Offset(16, 6),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(body), Offset.zero);
+      expect(focusNode.hasFocus, isTrue);
+      expect(
+        tester.widget<Scaffold>(scaffold).backgroundColor,
+        isNot(Colors.transparent),
+      );
+
+      await tester.tap(find.byKey(const ValueKey<String>('app_search_close')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 240));
+      expect(page, findsOneWidget);
+      expect(tester.getRect(previous), previousRect);
+      expect(tester.getTopLeft(body).dx, greaterThan(0));
+      expect(
+        tester.widget<Scaffold>(scaffold).backgroundColor,
+        Colors.transparent,
+      );
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'search page stays usable in small landscape with keyboard and large text',

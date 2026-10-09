@@ -710,17 +710,15 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
       }
 
       return Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
-        child: LibraryLeadingIndicators(
+        padding: const EdgeInsets.all(LibraryLikeCardMetrics.coverDistance),
+        child: SingleAudioFileCardContent(
           path: entry.path,
           isSelected: isSelected,
           isPinned: isPinned,
-          child: SingleAudioFileCardContent(
-            title: entry.title,
-            detail: entry.detail,
-            detailLoading: false,
-            trailingActions: trailingActions,
-          ),
+          title: entry.title,
+          detail: entry.detail,
+          detailLoading: false,
+          trailingActions: trailingActions,
         ),
       );
     }

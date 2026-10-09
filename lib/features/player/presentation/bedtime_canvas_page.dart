@@ -23,7 +23,10 @@ class BedtimeCanvasPage extends ConsumerStatefulWidget {
   static Route<void> route(BuildContext context) {
     return buildAppPageRoute<void>(
       context: context,
-      child: const BedtimeCanvasPage(),
+      child: const AppPageContentTransition(
+        backgroundColor: Colors.black,
+        child: BedtimeCanvasPage(),
+      ),
     );
   }
 

@@ -380,7 +380,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final listTopPadding = effectiveHeaderHeight + 8;
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: appPageBackgroundColor(
+        context,
+        Theme.of(context).colorScheme.surface,
+      ),
       body: PageHeaderInset(
         topInset: listTopPadding,
         child: Stack(

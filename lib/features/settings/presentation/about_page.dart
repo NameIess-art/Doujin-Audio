@@ -96,7 +96,10 @@ class AboutPage extends ConsumerWidget {
         AppPageHeaderMetrics.bottomSpacing;
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: appPageBackgroundColor(
+        context,
+        Theme.of(context).colorScheme.surface,
+      ),
       body: PageHeaderInset(
         topInset: headerHeight,
         child: Stack(

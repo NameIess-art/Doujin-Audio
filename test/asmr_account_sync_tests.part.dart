@@ -603,6 +603,196 @@ void registerAsmrAccountSyncTests({
     );
   });
 
+  for (final history in [false, true]) {
+    test(
+      'sync completion drains ${history ? 'history' : 'favorites'} queued during the timestamp write',
+      () async {
+        await resetPrefs();
+        final blockingPreferences = _LastSyncFailurePreferences(
+          repository: TestPersistenceRepository(),
+        )..failBlockedWrite = false;
+        final api = _FakeAsmrApiService();
+        final controller = createTestAsmrController(
+          preferencesStore: blockingPreferences,
+          persistenceRepository: _FakeTestPersistenceRepository(const []),
+          apiService: api,
+          authService: AsmrAuthService(
+            apiService: api,
+            tokenStore: _MemoryAsmrTokenStore(),
+          ),
+        );
+        await controller.initialize();
+        await controller.loginAsmrAccount('alice', 'password');
+        blockingPreferences.blockWrite = true;
+        final sync = controller.syncAsmrAccount();
+        await blockingPreferences.writeStarted.future;
+        final work = _work(id: 407, title: 'Queued during completion');
+        if (history) {
+          await controller.recordHistory(work);
+        } else {
+          await controller.toggleFavorite(work);
+        }
+        expect(api.reviewPuts, isEmpty);
+        expect(controller.syncViewState.pendingCount, 1);
+        blockingPreferences.releaseWrite.complete();
+        await sync.timeout(const Duration(seconds: 2));
+        expect(api.reviewPuts, ['407:${history ? 'listening' : 'marked'}']);
+        expect(controller.syncViewState.pendingCount, 0);
+        expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+      },
+    );
+  }
+
+  for (final history in [false, true]) {
+    test(
+      'recovered token sync drains ${history ? 'history' : 'favorites'} queued during the timestamp write',
+      () async {
+        await resetPrefs();
+        final blockingPreferences = _LastSyncFailurePreferences(
+          repository: TestPersistenceRepository(),
+        )..failBlockedWrite = false;
+        final api = _FakeAsmrApiService();
+        final tokenStore = _MemoryAsmrTokenStore();
+        final services = createTestAsmrServices(
+          preferencesStore: blockingPreferences,
+          persistenceRepository: _FakeTestPersistenceRepository(const []),
+          apiService: api,
+          authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
+        );
+        final controller = AsmrLibraryController(
+          preferencesStore: services.preferencesStore,
+          remoteCatalogService: services.remoteCatalogService,
+          accountSyncService: services.accountSyncService,
+        );
+        addTearDown(controller.dispose);
+        await controller.initialize();
+        await controller.loginAsmrAccount('alice', 'password');
+        api.loginTokenOverride = 'token-alice-renewed';
+        api.fetchReviewAuthFailuresRemaining = 1;
+        api.checkSessionAuthFailuresRemaining = 1;
+        blockingPreferences.blockWrite = true;
+        final sync = controller.syncAsmrAccount();
+        await blockingPreferences.writeStarted.future;
+        expect(tokenStore.token, 'token-alice-renewed');
+        final work = _work(id: 410, title: 'Queued after token recovery');
+        // Exercise the shared outbox while the controller still owns the old
+        // request key; the successful sync must apply and continue the new one.
+        if (history) {
+          await services.accountSyncService.recordHistory(work);
+        } else {
+          await services.accountSyncService.toggleFavorite(work);
+        }
+        expect(controller.syncAsmrAccount(), same(sync));
+        expect(api.reviewPuts, isEmpty);
+        blockingPreferences.releaseWrite.complete();
+        await sync.timeout(const Duration(seconds: 2));
+        expect(api.reviewPuts, ['410:${history ? 'listening' : 'marked'}']);
+        expect(api.reviewPutTokens, ['token-alice-renewed']);
+        expect(controller.syncViewState.pendingCount, 0);
+        expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+      },
+    );
+  }
+
+  test(
+    'failed sync completion retains new operations without retrying',
+    () async {
+      await resetPrefs();
+      final blockingPreferences = _LastSyncFailurePreferences(
+        repository: TestPersistenceRepository(),
+      );
+      final api = _FakeAsmrApiService();
+      final controller = createTestAsmrController(
+        preferencesStore: blockingPreferences,
+        persistenceRepository: _FakeTestPersistenceRepository(const []),
+        apiService: api,
+        authService: AsmrAuthService(
+          apiService: api,
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+      );
+      await controller.initialize();
+      await controller.loginAsmrAccount('alice', 'password');
+      blockingPreferences.blockWrite = true;
+      final sync = controller.syncAsmrAccount();
+      await blockingPreferences.writeStarted.future;
+      await controller.toggleFavorite(_work(id: 408, title: 'Pending retry'));
+      final calls = api.calls.length;
+      blockingPreferences.releaseWrite.complete();
+      await sync.timeout(const Duration(seconds: 2));
+      expect(api.reviewPuts, isEmpty);
+      expect(api.calls.length, calls);
+      expect(controller.syncViewState.phase, AsmrSyncPhase.failed);
+      expect(controller.syncViewState.pendingCount, 1);
+    },
+  );
+
+  test(
+    'logout cancels all pending account reads without requesting another page',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: _FakeTestPersistenceRepository(const []),
+        apiService: api,
+        authService: AsmrAuthService(
+          apiService: api,
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+      );
+      await controller.initialize();
+      await controller.loginAsmrAccount('alice', 'password');
+      api.calls.clear();
+      api.reviewCancellationTokens.clear();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      api.beforeFetchReviews = () async {
+        if (api.reviewCancellationTokens.length == 5) started.complete();
+        await release.future;
+      };
+      final sync = controller.syncAsmrAccount();
+      await started.future;
+      await controller.logoutAsmrAccount();
+      await sync.timeout(const Duration(seconds: 2));
+      expect(api.reviewCancellationTokens, hasLength(5));
+      expect(
+        api.reviewCancellationTokens.every((token) => token!.isCancelled),
+        isTrue,
+      );
+      expect(api.calls.every((call) => call.endsWith(':1')), isTrue);
+      expect(controller.syncViewState.phase, AsmrSyncPhase.idle);
+      release.complete();
+    },
+  );
+
+  test(
+    'failed persistent logout preserves the active account and permits retry',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final tokenStore = _MemoryAsmrTokenStore();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: _FakeTestPersistenceRepository(const []),
+        apiService: api,
+        authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
+      );
+      await controller.initialize();
+      await controller.loginAsmrAccount('alice', 'password');
+      tokenStore.failClearToken = true;
+      await expectLater(
+        controller.logoutAsmrAccount(),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(controller.isAsmrAccountLoggedIn, isTrue);
+      expect(controller.asmrAccountName, 'alice');
+      tokenStore.failClearToken = false;
+      await controller.logoutAsmrAccount();
+      expect(controller.isAsmrAccountLoggedIn, isFalse);
+    },
+  );
+
   test('ASMR local timestamps keep new favorites and history first', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService(
@@ -911,43 +1101,52 @@ void registerAsmrAccountSyncTests({
     expect(controller.syncViewState.phase, AsmrSyncPhase.idle);
   });
 
-  test(
-    'late sync write failure cannot overwrite a new account state',
-    () async {
-      await resetPrefs();
-      final failingPreferences = _LastSyncFailurePreferences(
-        repository: TestPersistenceRepository(),
-      );
-      final api = _FakeAsmrApiService();
-      final controller = createTestAsmrController(
-        preferencesStore: failingPreferences,
-        persistenceRepository: _FakeTestPersistenceRepository(const []),
-        apiService: api,
-        authService: AsmrAuthService(
+  for (final failWrite in [false, true]) {
+    test(
+      'late sync write ${failWrite ? 'failure' : 'success'} cannot resume the old account sync',
+      () async {
+        await resetPrefs();
+        final failingPreferences = _LastSyncFailurePreferences(
+          repository: TestPersistenceRepository(),
+        )..failBlockedWrite = failWrite;
+        final api = _FakeAsmrApiService();
+        final controller = createTestAsmrController(
+          preferencesStore: failingPreferences,
+          persistenceRepository: _FakeTestPersistenceRepository(const []),
           apiService: api,
-          tokenStore: _MemoryAsmrTokenStore(),
-        ),
-      );
-      await controller.initialize();
-      await controller.loginAsmrAccount('alice', 'password');
-      failingPreferences.blockWrite = true;
-      final oldSync = controller.syncAsmrAccount(force: true);
-      await failingPreferences.writeStarted.future;
-      await controller.logoutAsmrAccount();
-      await controller.loginAsmrAccount('bob', 'password');
-      failingPreferences.releaseWrite.complete();
-      await oldSync;
-      expect(controller.asmrAccountName, 'bob');
-      expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
-      expect(controller.syncViewState.lastError, isNull);
-    },
-  );
+          authService: AsmrAuthService(
+            apiService: api,
+            tokenStore: _MemoryAsmrTokenStore(),
+          ),
+        );
+        await controller.initialize();
+        await controller.loginAsmrAccount('alice', 'password');
+        failingPreferences.blockWrite = true;
+        final oldSync = controller.syncAsmrAccount(force: true);
+        await failingPreferences.writeStarted.future;
+        await controller.toggleFavorite(
+          _work(id: 409, title: 'Account transition'),
+        );
+        await controller.logoutAsmrAccount();
+        await controller.loginAsmrAccount('bob', 'password');
+        final calls = api.calls.length;
+        failingPreferences.releaseWrite.complete();
+        await oldSync;
+        expect(api.calls.length, calls);
+        expect(api.reviewPutTokens, ['token-bob']);
+        expect(controller.asmrAccountName, 'bob');
+        expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
+        expect(controller.syncViewState.lastError, isNull);
+      },
+    );
+  }
 }
 
 class _LastSyncFailurePreferences extends AsmrPreferencesStore {
   _LastSyncFailurePreferences({required super.repository});
   bool rejectWrite = false;
   bool blockWrite = false;
+  bool failBlockedWrite = true;
   final writeStarted = Completer<void>();
   final releaseWrite = Completer<void>();
 
@@ -957,7 +1156,9 @@ class _LastSyncFailurePreferences extends AsmrPreferencesStore {
       blockWrite = false;
       writeStarted.complete();
       await releaseWrite.future;
-      throw const FileSystemException('late last sync write failure');
+      if (failBlockedWrite) {
+        throw const FileSystemException('late last sync write failure');
+      }
     }
     if (rejectWrite) throw const FileSystemException('last sync write failure');
     await super.saveLastSyncAt(value);

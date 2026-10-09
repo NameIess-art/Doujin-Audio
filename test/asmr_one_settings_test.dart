@@ -288,6 +288,9 @@ class _FakeAsmrApiService extends AsmrApiService {
   final List<int> deletedReviewWorkIds = <int>[];
   final List<String> calls = <String>[];
   final List<int> trackFetchWorkIds = <int>[];
+  final List<String?> trackFetchTokens = [];
+  final List<AsmrRequestCancellationToken?> trackCancellationTokens = [];
+  final List<AsmrRequestCancellationToken?> reviewCancellationTokens = [];
   final bool largeRecommendationPool;
   final bool repeatPaginatedWorks;
   final int recommendationPageCount;
@@ -301,11 +304,13 @@ class _FakeAsmrApiService extends AsmrApiService {
   final Future<void> Function(String request)? beforeFetchWorkResponse;
   final Future<void> Function(String request)? beforeFetchSearchResponse;
   final Future<void> Function(int workId)? beforeFetchTrackTree;
+  Future<void> Function()? beforeFetchReviews;
   int failPutReviewCount;
   int transientFetchFailuresRemaining;
   int checkSessionAuthFailuresRemaining = 0;
   int fetchReviewAuthFailuresRemaining = 0;
   int? loginFailureStatusCode;
+  String? loginTokenOverride;
   int loginCount = 0;
   String _lastLoginName = '';
   Future<void> Function(int workId, String progress)? onPutReview;
@@ -328,7 +333,10 @@ class _FakeAsmrApiService extends AsmrApiService {
       );
     }
     _lastLoginName = name;
-    return AsmrAuthSession(token: 'token-$name', userName: name);
+    return AsmrAuthSession(
+      token: loginTokenOverride ?? 'token-$name',
+      userName: name,
+    );
   }
 
   @override
@@ -511,9 +519,16 @@ class _FakeAsmrApiService extends AsmrApiService {
   Future<List<AsmrTrackFile>> fetchTrackTree(
     int workId, {
     String? token,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     trackFetchWorkIds.add(workId);
-    await beforeFetchTrackTree?.call(workId);
+    trackFetchTokens.add(token);
+    trackCancellationTokens.add(cancellationToken);
+    final loading = beforeFetchTrackTree?.call(workId);
+    if (loading != null) {
+      await (cancellationToken?.waitFor(loading) ?? loading);
+    }
+    cancellationToken?.throwIfCancelled();
     return trackTree;
   }
 
@@ -525,8 +540,15 @@ class _FakeAsmrApiService extends AsmrApiService {
     String order = 'updated_at',
     String sort = 'desc',
     AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     calls.add('fetch:${filter ?? 'all'}:$page');
+    reviewCancellationTokens.add(cancellationToken);
+    final loading = beforeFetchReviews?.call();
+    if (loading != null) {
+      await (cancellationToken?.waitFor(loading) ?? loading);
+    }
+    cancellationToken?.throwIfCancelled();
     if (fetchReviewAuthFailuresRemaining > 0) {
       fetchReviewAuthFailuresRemaining--;
       throw AsmrApiException(
@@ -577,9 +599,11 @@ class _FakeAsmrApiService extends AsmrApiService {
 class _MemoryAsmrTokenStore implements AsmrTokenStore {
   String? token;
   Map<String, String>? credentials;
+  bool failClearToken = false;
 
   @override
   Future<void> clearToken() async {
+    if (failClearToken) throw const FileSystemException('token clear failed');
     token = null;
   }
 

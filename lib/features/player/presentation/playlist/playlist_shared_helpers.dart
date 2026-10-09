@@ -96,25 +96,16 @@ RoundedRectangleBorder playlistTemporaryRowShape(BuildContext context) {
   return playlistRowShape.copyWith(side: playlistCapsuleBorderSide(context));
 }
 
-LinearGradient playlistActiveHighlightGradient(
-  bool isPlaying,
-  Color highlightColor,
-) => LinearGradient(
+LinearGradient playlistActiveHighlightGradient([
+  bool isPlaying = false,
+  Color highlightColor = Colors.transparent,
+]) => const LinearGradient(
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
-  colors: isPlaying
-      ? <Color>[
-          highlightColor,
-          Colors.transparent,
-          Colors.transparent,
-          Colors.transparent,
-        ]
-      : const <Color>[
-          Colors.transparent,
-          Colors.transparent,
-          Colors.transparent,
-          Colors.transparent,
-        ],
+  colors: <Color>[
+    Colors.transparent,
+    Colors.transparent,
+  ],
 );
 
 UndoableRemovalKey playbackSessionRemovalKey(String sessionId) =>

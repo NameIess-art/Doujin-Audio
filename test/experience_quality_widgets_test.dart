@@ -14,6 +14,7 @@ import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
@@ -618,6 +619,9 @@ void main() {
       final dateStyle = tester.widget<Text>(find.text('2026-06-09')).style!;
       final ratingStyle = tester.widget<Text>(find.text('4.5')).style!;
       final voiceStyle = tester.widget<Text>(find.text('Voice')).style!;
+      final circleStyle = tester.widget<Text>(find.text('Circle')).style!;
+      final tagsStyle = tester.widget<Text>(find.text('#ASMR #Sleep')).style!;
+      expect(tagsStyle.color, Color.lerp(circleStyle.color, dateStyle.color, 0.5));
       expect(dateStyle.fontSize, 11);
       expect(ratingStyle.fontSize, 11);
       expect(dateStyle.color, ratingStyle.color);
@@ -1299,50 +1303,166 @@ void main() {
   });
 
   testWidgets(
-    'single audio card keeps info line vertical spacing consistent with with-cover cards',
+    'single audio card matches covered card text spacing',
     (tester) async {
-      await tester.pumpWidget(
-        _buildSurface(
-          const LibraryLikeSingleAudioCardContent(
-            title: 'Track Title',
-            lines: [
-              LibraryLikeInfoLineData(
-                'CV',
-                '圣纯シオ',
-                icon: Icons.record_voice_over_rounded,
-              ),
-              LibraryLikeInfoLineData(
-                '社团',
-                'えたーなるわーくす',
-                icon: Icons.storefront_outlined,
-              ),
-              LibraryLikeInfoLineData(
-                '销量',
-                '2070',
-                icon: Icons.info_outline_rounded,
-              ),
-            ],
-          ),
+      const lines = [
+        LibraryLikeInfoLineData('CV', 'Actor', icon: Icons.record_voice_over),
+        LibraryLikeInfoLineData('Circle', 'Studio', icon: Icons.storefront),
+        LibraryLikeInfoLineData('Tags', 'ASMR', icon: Icons.label),
+        LibraryLikeInfoLineData(
+          'Date',
+          '2026-10-09',
+          icon: Icons.event,
+          isSecondary: true,
+        ),
+      ];
+      Future<List<Rect>> measure(Widget content) async {
+        await tester.pumpWidget(_buildSurface(content));
+        return [
+          for (final text in [
+            'Track Title',
+            'Actor',
+            'Studio',
+            'ASMR',
+            '2026-10-09',
+          ])
+            tester.getRect(find.text(text, findRichText: true)),
+        ];
+      }
+
+      final covered = await measure(
+        _buildFeaturedCard(
+          title: 'Track Title',
+          lines: lines,
+          coverKey: const ValueKey('cover'),
         ),
       );
-
-      final titleRect = tester.getRect(find.text('Track Title'));
-      final cvRect = tester.getRect(find.text('圣纯シオ'));
-      final circleRect = tester.getRect(find.text('えたーなるわーくす'));
-      final salesRect = tester.getRect(find.text('2070'));
-
-      // 4px spacing between title and info block
-      expect(cvRect.top - titleRect.bottom, closeTo(4.0, 0.5));
-
-      expect(
-        circleRect.top - cvRect.top,
-        closeTo(LibraryLikeCardMetrics.contentHeight / 5, 0.001),
+      final uncovered = await measure(
+        const LibraryLikeSingleAudioCardContent(
+          title: 'Track Title',
+          lines: lines,
+        ),
       );
-      expect(
-        salesRect.top - circleRect.top,
-        closeTo(LibraryLikeCardMetrics.contentHeight / 5, 0.001),
-      );
+      for (var i = 0; i < covered.length; i++) {
+        expect(uncovered[i].top, closeTo(covered[i].top, 0.001));
+        expect(uncovered[i].bottom, closeTo(covered[i].bottom, 0.001));
+      }
+      expect(tester.takeException(), isNull);
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'uncovered audio pin narrows only title and selection stays bottom-left',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final detail = AudioDetail(
+        target: AudioDetailTarget.singleAudioFile('/test/plain.mp3'),
+        rjCode: '',
+        workTitle: '',
+        circleName: 'Studio',
+        voiceActors: ['Actor'],
+        tags: ['ASMR'],
+        releaseDate: DateTime(2026, 10, 9),
+      );
+      Future<List<Rect>> measure(bool pinned, bool selected) async {
+        await tester.pumpWidget(
+          fixture.build(
+            Center(
+              child: SizedBox(
+                width: 360,
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(
+                      LibraryLikeCardMetrics.coverDistance,
+                    ),
+                    child: SingleAudioFileCardContent(
+                      path: '/test/plain.mp3',
+                      title: 'plain.mp3',
+                      detail: detail,
+                      detailLoading: false,
+                      isPinned: pinned,
+                      isSelected: selected,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        return [
+          for (final text in [
+            'plain.mp3',
+            'Actor',
+            'Studio',
+            '#ASMR',
+            '2026-10-09',
+          ])
+            tester.getRect(find.text(text, findRichText: true)),
+        ];
+      }
+
+      final original = await measure(false, false);
+      expect(
+        tester.widget<Text>(find.text('#ASMR')).style!.color,
+        Color.lerp(
+          tester.widget<Text>(find.text('Studio')).style!.color,
+          tester.widget<Text>(find.text('2026-10-09')).style!.color,
+          0.5,
+        ),
+      );
+      for (final pinned in [false, true]) {
+        for (final selected in [false, true]) {
+          final current = await measure(pinned, selected);
+          expect(current[0].left, original[0].left + (pinned ? 30 : 0));
+          for (var i = 0; i < current.length; i++) {
+            expect(current[i].top, original[i].top);
+            expect(current[i].bottom, original[i].bottom);
+            if (i > 0) expect(current[i].left, original[i].left);
+          }
+          final content = tester.getRect(
+            find.byType(SingleAudioFileCardContent),
+          );
+          final card = tester.getRect(find.byType(Card));
+          expect(content.top - card.top, LibraryLikeCardMetrics.coverDistance);
+          expect(
+            card.bottom - content.bottom,
+            LibraryLikeCardMetrics.coverDistance,
+          );
+          if (pinned) {
+            final pin = tester.getRect(
+              find.byKey(
+                ValueKey(
+                  'library_pinned_${PathMatcher.normalize('/test/plain.mp3')}',
+                ),
+              ),
+            );
+            expect(pin.right, lessThan(current[0].left));
+          }
+          if (selected) {
+            final check = tester.getRect(
+              find.byKey(
+                ValueKey(
+                  'library_selection_indicator_${PathMatcher.normalize('/test/plain.mp3')}',
+                ),
+              ),
+            );
+            expect(check.left, content.left - 2);
+            expect(check.bottom, content.bottom + 2);
+          }
+          expect(tester.takeException(), isNull);
+        }
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   test('settings, feedback, and recovery labels stay available', () {
@@ -1456,26 +1576,12 @@ void main() {
     },
   );
 
-  for (final kind in [
-    'library',
-    'library anonymous',
-    'playlist',
-    'library leading',
-  ]) {
+  for (final kind in ['library', 'library anonymous', 'playlist']) {
     Widget buildPinned(bool pinned, {bool disableAnimations = false}) {
       final indicator = switch (kind) {
         'library' => LibraryPinnedIndicator(path: 'fade-pin', isPinned: pinned),
         'library anonymous' => LibraryPinnedIndicator(isPinned: pinned),
-        'playlist' => PlaylistPinnedIndicator(
-          sessionId: 'fade-pin',
-          isPinned: pinned,
-        ),
-        _ => LibraryLeadingIndicators(
-          path: 'fade-pin',
-          isSelected: false,
-          isPinned: pinned,
-          child: const SizedBox(height: 52),
-        ),
+        _ => PlaylistPinnedIndicator(sessionId: 'fade-pin', isPinned: pinned),
       };
       return MaterialApp(
         home: Scaffold(
@@ -1554,7 +1660,7 @@ void main() {
   );
 
   testWidgets(
-    'SingleMediaFileCardContent places selection at bottom-left and pin before title',
+    'SingleMediaFileCardContent places selection checkmark at bottom-left and pin at top-right',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -1593,12 +1699,17 @@ void main() {
       expect(selectionPosition.bottom, -2);
       expect(selectionPosition.top, isNull);
 
-      final pinRect = tester.getRect(find.byType(LibraryPinnedIndicator));
-      final titleRect = tester.getRect(
-        find.text('audio.mp3', findRichText: true),
+      final pinPosition = tester.widget<Positioned>(
+        find
+            .ancestor(
+              of: find.byType(LibraryPinnedIndicator),
+              matching: find.byType(Positioned),
+            )
+            .first,
       );
-      expect(pinRect.right, lessThanOrEqualTo(titleRect.left));
-      expect(pinRect.top, titleRect.top);
+      expect(pinPosition.right, -2);
+      expect(pinPosition.top, -2);
+      expect(pinPosition.bottom, isNull);
       expect(tester.takeException(), isNull);
     },
   );

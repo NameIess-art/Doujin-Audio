@@ -5,6 +5,7 @@ import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_library_view_state.dart';
+import 'asmr_request_cancellation.dart';
 
 typedef AsmrWorkRequestKey = ({
   int workId,
@@ -28,8 +29,14 @@ final class AsmrWorkContentStore {
   _playableTrackCache = {};
   final Set<int> _loadingTrackWorkIds = <int>{};
   final Map<int, Object> _trackTreeErrors = <int, Object>{};
-  final Map<AsmrWorkRequestKey, Future<List<AsmrTrackFile>>> _trackTreeTasks =
-      <AsmrWorkRequestKey, Future<List<AsmrTrackFile>>>{};
+  final Map<
+    AsmrWorkRequestKey,
+    ({
+      Future<List<AsmrTrackFile>> task,
+      AsmrRequestCancellationToken cancellationToken,
+    })
+  >
+  _trackTreeTasks = {};
   final Map<int, int> _trackRevisions = <int, int>{};
 
   Set<String> get hiddenTracks => UnmodifiableSetView(_hiddenTracks);
@@ -60,10 +67,17 @@ final class AsmrWorkContentStore {
   }
 
   void clearCaches({bool clearErrors = false}) {
+    cancelRequests();
     _trackCache.clear();
     _visibleTrackCache.clear();
     _playableTrackCache.clear();
     if (clearErrors) _trackTreeErrors.clear();
+  }
+
+  void cancelRequests() {
+    for (final request in _trackTreeTasks.values.toList(growable: false)) {
+      request.cancellationToken.cancel();
+    }
   }
 
   void clearTrackTreeError(int workId) => _trackTreeErrors.remove(workId);
@@ -86,10 +100,10 @@ final class AsmrWorkContentStore {
 
   Future<List<AsmrTrackFile>> requestTrackTree(
     AsmrWorkRequestKey key,
-    Future<List<AsmrTrackFile>> Function() load,
+    Future<List<AsmrTrackFile>> Function(AsmrRequestCancellationToken) load,
   ) {
     final existing = _trackTreeTasks[key];
-    if (existing != null) return existing;
+    if (existing != null) return existing.task;
     _trackTreeErrors.remove(key.workId);
     if (!_trackTreeTasks.keys.any(
           (candidate) => candidate.workId == key.workId,
@@ -98,9 +112,10 @@ final class AsmrWorkContentStore {
       bumpTrackRevision(key.workId);
       _onChanged();
     }
+    final cancellationToken = AsmrRequestCancellationToken();
     late final Future<List<AsmrTrackFile>> task;
-    task = load().whenComplete(() {
-      if (identical(_trackTreeTasks[key], task)) {
+    task = load(cancellationToken).whenComplete(() {
+      if (identical(_trackTreeTasks[key]?.task, task)) {
         _trackTreeTasks.remove(key);
       }
       if (!_trackTreeTasks.keys.any(
@@ -112,7 +127,7 @@ final class AsmrWorkContentStore {
         _onChanged();
       }
     });
-    _trackTreeTasks[key] = task;
+    _trackTreeTasks[key] = (task: task, cancellationToken: cancellationToken);
     return task;
   }
 

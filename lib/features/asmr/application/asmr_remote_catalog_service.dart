@@ -164,8 +164,13 @@ class AsmrRemoteCatalogService {
   Future<List<AsmrTrackFile>> loadTrackTree(
     int workId, {
     required String? token,
+    AsmrRequestCancellationToken? cancellationToken,
   }) {
-    return _apiService.fetchTrackTree(workId, token: token);
+    return _apiService.fetchTrackTree(
+      workId,
+      token: token,
+      cancellationToken: cancellationToken,
+    );
   }
 
   Future<_RecommendationPagesResult> _loadRecommendationPagesSafely(

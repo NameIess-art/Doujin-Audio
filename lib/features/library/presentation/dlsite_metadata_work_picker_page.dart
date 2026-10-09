@@ -82,7 +82,10 @@ class _DlsiteMetadataWorkPickerPageState
     final topInset = AppPageHeaderMetrics.contentTopInset(context);
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: appPageBackgroundColor(
+        context,
+        Theme.of(context).colorScheme.surface,
+      ),
       body: SearchHighlightScope(
         query: _searchQuery,
         child: PageHeaderInset(

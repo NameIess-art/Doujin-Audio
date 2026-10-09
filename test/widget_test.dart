@@ -1939,6 +1939,7 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
     await tester.pump();
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump(const Duration(milliseconds: 200));
 
@@ -2106,6 +2107,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
+    await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 550));
 
@@ -2979,6 +2981,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
     await tester.pump();
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 550));
 
     final searchPage = find.byKey(
@@ -3072,6 +3075,7 @@ void main() {
     expect(find.text('Loaded work', findRichText: true), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
+    await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 550));
     await tester.enterText(

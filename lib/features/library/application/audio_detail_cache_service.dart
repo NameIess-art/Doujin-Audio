@@ -41,6 +41,8 @@ class AudioDetailCacheService {
     future = _runSerialized<AudioDetailLoadResult>(
       <AudioDetailTarget>[target],
       () async {
+        final resolved = _takeResolved(key);
+        if (resolved != null) return resolved;
         final result = await _repository.load(target);
         if (epoch == _cacheEpoch) {
           final resultKey = AudioLibraryDetailKey.forTarget(
@@ -101,7 +103,20 @@ class AudioDetailCacheService {
       final batchResults = await _runSerialized<List<AudioDetailLoadResult>>(
         batchTargetsByKey.values,
         () async {
-          final results = await _repository.loadMany(batchTargetsByKey.values);
+          final results = <AudioDetailLoadResult>[];
+          final missing = <AudioDetailTarget>[];
+          // A preceding batch or write can resolve targets while this read waits.
+          for (final entry in batchTargetsByKey.entries) {
+            final resolved = _takeResolved(entry.key);
+            if (resolved == null) {
+              missing.add(entry.value);
+            } else {
+              results.add(resolved);
+            }
+          }
+          if (missing.isNotEmpty) {
+            results.addAll(await _repository.loadMany(missing));
+          }
           if (epoch == _cacheEpoch) {
             for (final result in results) {
               _storeLoadResult(result);

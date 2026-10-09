@@ -710,6 +710,267 @@ void main() {
   );
 
   test(
+    'duration backfill probes 30 works with global concurrency and commits once',
+    () async {
+      final root = await Directory.systemTemp.createTemp('duration_batch_');
+      addTearDown(() => root.delete(recursive: true));
+      final repository = _CountingTestPersistenceRepository(
+        AppDatabase.test(db),
+      );
+      final library = LibraryFacade.create(databaseRepository: repository)
+        ..configurePersistence(enabled: false);
+      addTearDown(library.dispose);
+      final tracks = <MusicTrack>[];
+      for (var index = 0; index < 30; index++) {
+        final work = await Directory(
+          path.join(root.path, 'work_$index'),
+        ).create();
+        library.addWatchedFolder(work.path, notify: false);
+        tracks.add(_localDurationTrack(work.path));
+      }
+      library.addTracks(tracks, notify: false, persist: false);
+      final beforeRevision = library.structureRevision;
+      var publications = 0;
+      final subscription = library.states.listen((_) => publications++);
+      addTearDown(subscription.cancel);
+      await Future<void>.delayed(Duration.zero);
+      publications = 0;
+      var active = 0;
+      var peak = 0;
+      var probes = 0;
+
+      await library.backfillMissingLibraryDurations(
+        durationReader: (_) async {
+          probes++;
+          active++;
+          if (active > peak) peak = active;
+          await Future<void>.delayed(Duration.zero);
+          active--;
+          return const Duration(minutes: 2);
+        },
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(probes, 30);
+      expect(peak, 2);
+      expect(repository.upsertTracksCallCount, 1);
+      expect(repository.upsertedTrackPaths, tracks.map((track) => track.path));
+      expect(library.structureRevision, beforeRevision + 1);
+      expect(publications, 1);
+      expect(library.state.detailRevision, library.detailCacheService.revision);
+      for (final track in tracks) {
+        final target = library.audioDetailTargetForTrack(track);
+        expect(
+          (await repository.load(target))?.duration,
+          const Duration(minutes: 2),
+        );
+      }
+    },
+  );
+
+  test(
+    'duration backfill retains edits and deletions and isolates probe failures',
+    () async {
+      final root = await Directory.systemTemp.createTemp('duration_live_');
+      addTearDown(() => root.delete(recursive: true));
+      final repository = _CountingTestPersistenceRepository(
+        AppDatabase.test(db),
+      );
+      final library = LibraryFacade.create(databaseRepository: repository)
+        ..configurePersistence(enabled: false);
+      addTearDown(library.dispose);
+      final tracks = <MusicTrack>[];
+      for (final name in ['edited', 'deleted', 'resolved', 'failed']) {
+        final work = await Directory(path.join(root.path, name)).create();
+        library.addWatchedFolder(work.path, notify: false);
+        tracks.add(_localDurationTrack(work.path));
+      }
+      library.addTracks(
+        [
+          ...tracks,
+          _localDurationTrack(
+            tracks.first.groupKey,
+            filename: 'known.mp3',
+          ).copyWith(duration: const Duration(minutes: 1)),
+        ],
+        notify: false,
+        persist: false,
+      );
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var probes = 0;
+      final backfill = library.backfillMissingLibraryDurations(
+        durationReader: (trackPath) async {
+          if (++probes == 2) started.complete();
+          await release.future;
+          if (trackPath == tracks.last.path) {
+            throw StateError('unreadable media');
+          }
+          return const Duration(minutes: 2);
+        },
+      );
+      await started.future;
+      library.addOrReplaceTracks(
+        [
+          tracks.first.copyWith(
+            isFavorite: true,
+            duration: const Duration(minutes: 9),
+          ),
+        ],
+        notify: false,
+        persist: false,
+        mergeExistingState: false,
+      );
+      library.removeTracksByPath([tracks[1].path]);
+      release.complete();
+      await backfill;
+
+      expect(library.trackByPath(tracks.first.path)?.isFavorite, isTrue);
+      expect(
+        library.trackByPath(tracks.first.path)?.duration,
+        const Duration(minutes: 9),
+      );
+      expect(library.trackByPath(tracks[1].path), isNull);
+      expect(repository.upsertedTrackPaths, [tracks[2].path]);
+      expect(
+        (await repository.load(
+          library.audioDetailTargetForTrack(tracks.first),
+        ))?.duration,
+        const Duration(minutes: 10),
+      );
+      expect(
+        (await repository.load(
+          library.audioDetailTargetForTrack(tracks[2]),
+        ))?.duration,
+        const Duration(minutes: 2),
+      );
+      for (final track in [tracks[1], tracks[3]]) {
+        expect(
+          (await repository.load(
+            library.audioDetailTargetForTrack(track),
+          ))?.duration,
+          isNull,
+        );
+        expect(
+          await File(
+            path.join(track.groupKey, audioDetailDocumentName),
+          ).exists(),
+          isFalse,
+        );
+      }
+    },
+  );
+
+  test(
+    'duration backfill publishes completed details after a later save fails',
+    () async {
+      final root = await Directory.systemTemp.createTemp('duration_partial_');
+      addTearDown(() => root.delete(recursive: true));
+      final repository = _CountingTestPersistenceRepository(
+        AppDatabase.test(db),
+      );
+      final library = LibraryFacade.create(databaseRepository: repository)
+        ..configurePersistence(enabled: false);
+      addTearDown(library.dispose);
+      final tracks = <MusicTrack>[];
+      for (var index = 0; index < 2; index++) {
+        final work = await Directory(
+          path.join(root.path, 'work_$index'),
+        ).create();
+        library.addWatchedFolder(work.path, notify: false);
+        tracks.add(_localDurationTrack(work.path));
+      }
+      library.addTracks(tracks, notify: false, persist: false);
+      repository.failingDetailPath = tracks.last.groupKey;
+      final beforeRevision = library.structureRevision;
+      var publications = 0;
+      final subscription = library.states.listen((_) => publications++);
+      addTearDown(subscription.cancel);
+      await Future<void>.delayed(Duration.zero);
+      publications = 0;
+
+      await expectLater(
+        library.backfillMissingLibraryDurations(
+          durationReader: (_) async => const Duration(minutes: 2),
+        ),
+        throwsStateError,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repository.upsertTracksCallCount, 1);
+      expect(library.state.structureRevision, beforeRevision + 1);
+      expect(library.state.detailRevision, 1);
+      expect(publications, 1);
+      expect(
+        (await repository.load(
+          library.audioDetailTargetForTrack(tracks.first),
+        ))?.duration,
+        const Duration(minutes: 2),
+      );
+      expect(
+        (await repository.load(
+          library.audioDetailTargetForTrack(tracks.last),
+        ))?.duration,
+        isNull,
+      );
+    },
+  );
+
+  test(
+    'duration backfill repeats when a new work is added during probing',
+    () async {
+      final root = await Directory.systemTemp.createTemp('duration_repeat_');
+      addTearDown(() => root.delete(recursive: true));
+      final repository = _CountingTestPersistenceRepository(
+        AppDatabase.test(db),
+      );
+      final library = LibraryFacade.create(databaseRepository: repository)
+        ..configurePersistence(enabled: false);
+      addTearDown(library.dispose);
+      final first = await Directory(path.join(root.path, 'first')).create();
+      final later = await Directory(path.join(root.path, 'later')).create();
+      library.addWatchedFolder(first.path, notify: false);
+      library.addWatchedFolder(later.path, notify: false);
+      final firstTrack = _localDurationTrack(first.path);
+      final laterTrack = _localDurationTrack(later.path);
+      library.addTracks([firstTrack], notify: false, persist: false);
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final requestedPaths = <String>[];
+      final backfill = library.backfillMissingLibraryDurations(
+        durationReader: (trackPath) async {
+          requestedPaths.add(trackPath);
+          if (trackPath == firstTrack.path) {
+            started.complete();
+            await release.future;
+          }
+          return const Duration(minutes: 2);
+        },
+      );
+      await started.future;
+      library.addTracks([laterTrack], notify: false, persist: false);
+      final repeated = library.backfillMissingLibraryDurations(
+        durationReader: (_) async =>
+            throw StateError('must use in-flight reader'),
+      );
+      expect(identical(repeated, backfill), isTrue);
+      release.complete();
+      await backfill;
+
+      expect(requestedPaths, [firstTrack.path, laterTrack.path]);
+      expect(repository.upsertTracksCallCount, 2);
+      for (final track in [firstTrack, laterTrack]) {
+        expect(
+          (await repository.load(
+            library.audioDetailTargetForTrack(track),
+          ))?.duration,
+          const Duration(minutes: 2),
+        );
+      }
+    },
+  );
+
+  test(
     'duration backfill fills track data without overwriting work duration',
     () async {
       final workDir = await Directory.systemTemp.createTemp(
@@ -807,12 +1068,23 @@ void main() {
         const Duration(minutes: 9),
       );
       final revision = runtimeGraph.library.detailCacheService.revision;
+      final structureRevision = runtimeGraph.library.structureRevision;
+      var publications = 0;
+      final subscription = runtimeGraph.library.states.listen(
+        (_) => publications++,
+      );
+      addTearDown(subscription.cancel);
+      await Future<void>.delayed(Duration.zero);
+      publications = 0;
       await runtimeGraph.library.backfillMissingLibraryDurations(
         durationReader: readDuration,
       );
+      await Future<void>.delayed(Duration.zero);
       expect(probes, 0);
       expect(await file.readAsBytes(), bytes);
       expect(runtimeGraph.library.detailCacheService.revision, revision);
+      expect(runtimeGraph.library.structureRevision, structureRevision);
+      expect(publications, 0);
     },
   );
 
@@ -2399,11 +2671,42 @@ class _JsonPreservationScanDataSource implements LibraryScanDataSource {
   );
 }
 
+MusicTrack _localDurationTrack(
+  String workPath, {
+  String filename = 'audio.mp3',
+}) => MusicTrack(
+  path: path.join(workPath, filename),
+  displayName: 'Audio',
+  groupKey: workPath,
+  groupTitle: path.basename(workPath),
+  groupSubtitle: workPath,
+  isSingle: false,
+);
+
 class _CountingTestPersistenceRepository extends TestPersistenceRepository {
   _CountingTestPersistenceRepository(AppDatabase database)
     : super(database: database);
 
   int upsertLibraryEntriesCallCount = 0;
+  int upsertTracksCallCount = 0;
+  final upsertedTrackPaths = <String>[];
+  String? failingDetailPath;
+
+  @override
+  Future<void> upsertTracks(List<MusicTrack> tracks) {
+    upsertTracksCallCount++;
+    upsertedTrackPaths.addAll(tracks.map((track) => track.path));
+    return super.upsertTracks(tracks);
+  }
+
+  @override
+  Future<void> upsert(AudioDetail detail) {
+    if (detail.target.targetPath == failingDetailPath &&
+        detail.duration != null) {
+      return Future<void>.error(StateError('detail save failure'));
+    }
+    return super.upsert(detail);
+  }
 
   @override
   Future<void> upsertLibraryEntries(

@@ -321,7 +321,6 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
     required this.coverBuilder,
     this.accentColor,
     this.trailingActions,
-    this.titleLeading,
   });
 
   final String title;
@@ -329,7 +328,6 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
   final Widget Function(double coverWidth) coverBuilder;
   final Color? accentColor;
   final Widget? trailingActions;
-  final Widget? titleLeading;
 
   @override
   Widget build(BuildContext context) {
@@ -346,10 +344,6 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
     );
     final primaryLines = lines.where((line) => !line.isSecondary);
     final secondaryLines = lines.where((line) => line.isSecondary).toList();
-    final titleText = LibraryLikeScrollableText(
-      text: title,
-      style: _libraryLikeFixedLineStyle(titleStyle),
-    );
     const coverWidth =
         LibraryLikeCardMetrics.coverHeight *
         LibraryLikeCardMetrics.coverAspectRatio;
@@ -383,16 +377,10 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
                             constraints: const BoxConstraints(
                               minHeight: _libraryLikeInfoLineHeight,
                             ),
-                            child: titleLeading == null
-                                ? titleText
-                                : Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      titleLeading!,
-                                      Expanded(child: titleText),
-                                    ],
-                                  ),
+                            child: LibraryLikeScrollableText(
+                              text: title,
+                              style: _libraryLikeFixedLineStyle(titleStyle),
+                            ),
                           ),
                           for (final line in primaryLines)
                             LibraryLikeDetailInfoLine(
@@ -585,7 +573,6 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
     this.loading = false,
     this.accentColor,
     this.trailingActions,
-    this.titleLeading,
   });
 
   final String title;
@@ -598,7 +585,6 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   final String listSeparator;
   final bool loading;
   final Widget? trailingActions;
-  final Widget? titleLeading;
   final Widget Function(double coverWidth) coverBuilder;
   final Color? accentColor;
 
@@ -620,7 +606,6 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
       coverBuilder: coverBuilder,
       accentColor: accentColor,
       trailingActions: trailingActions,
-      titleLeading: titleLeading,
     );
   }
 }
@@ -632,12 +617,14 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
     required this.lines,
     this.accentColor,
     this.trailingActions,
+    this.titleLeading,
   });
 
   final String title;
   final List<LibraryLikeInfoLineData> lines;
   final Color? accentColor;
   final Widget? trailingActions;
+  final Widget? titleLeading;
 
   @override
   Widget build(BuildContext context) {
@@ -646,7 +633,6 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
         Theme.of(context).textTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w800,
           fontSize: 14,
-          height: 1.06,
           color: cs.onSurface,
         ) ??
         const TextStyle();
@@ -654,49 +640,71 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
         Theme.of(context).textTheme.labelSmall?.copyWith(
           fontWeight: FontWeight.w700,
           fontSize: 11,
-          height: 1.05,
           color: cs.onSurface.withValues(alpha: 0.82),
         ) ??
         TextStyle(
           fontWeight: FontWeight.w700,
           fontSize: 11,
-          height: 1.05,
           color: cs.onSurface.withValues(alpha: 0.82),
         );
 
     return MarqueePauseScope(
       isPaused: false,
       hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          LibraryLikeScrollableText(text: title, style: titleStyle),
-          if (lines.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final line in lines.where((line) => !line.isSecondary))
-                  LibraryLikeDetailInfoLine(
-                    label: line.label,
-                    icon: line.icon,
-                    text: line.text,
-                    style: infoStyle,
-                    loading: false,
-                    accentColor: accentColor,
-                  ),
-              ],
+      child: SizedBox(
+        height: LibraryLikeCardMetrics.contentHeight,
+        child: LayoutBuilder(
+          builder: (context, constraints) => FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.topLeft,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: LibraryLikeCardMetrics.contentHeight,
+              ),
+              child: SizedBox(
+                width: constraints.maxWidth,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minHeight: _libraryLikeInfoLineHeight,
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ?titleLeading,
+                          Expanded(
+                            child: LibraryLikeScrollableText(
+                              text: title,
+                              style: _libraryLikeFixedLineStyle(titleStyle),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    for (final line in lines.where((line) => !line.isSecondary))
+                      LibraryLikeDetailInfoLine(
+                        label: line.label,
+                        icon: line.icon,
+                        text: line.text,
+                        style: infoStyle,
+                        loading: false,
+                        accentColor: accentColor,
+                      ),
+                    _libraryLikeSecondaryInfo(
+                      context,
+                      lines.where((line) => line.isSecondary).toList(),
+                      trailingActions: trailingActions,
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ],
-          if (lines.isNotEmpty || trailingActions != null)
-            _libraryLikeSecondaryInfo(
-              context,
-              lines.where((line) => line.isSecondary).toList(),
-              trailingActions: trailingActions,
-            ),
-        ],
+          ),
+        ),
       ),
     );
   }
@@ -728,7 +736,17 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final lineCount = lines.clamp(1, LibraryLikeInfoLineData.maxLines);
-    final fixedStyle = _libraryLikeFixedLineStyle(style);
+    final fixedStyle = _libraryLikeFixedLineStyle(
+      icon == Icons.local_offer_rounded
+          ? style.copyWith(
+              color: Color.lerp(
+                style.color,
+                cs.onSurfaceVariant.withValues(alpha: 0.6),
+                0.5,
+              ),
+            )
+          : style,
+    );
     Widget buildLabel(String label, IconData icon) => Align(
       alignment: Alignment.centerLeft,
       child: Tooltip(

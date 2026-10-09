@@ -130,6 +130,7 @@ class AsmrApiService {
     String order = 'updated_at',
     String sort = 'desc',
     AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     final query = <String, String>{
       'order': order,
@@ -144,6 +145,7 @@ class AsmrApiService {
       path: '/api/review',
       token: token,
       queryParameters: query,
+      cancellationToken: cancellationToken,
     );
     return (response['works'] as List<dynamic>? ?? const <dynamic>[])
         .whereType<Map<String, dynamic>>()
@@ -233,12 +235,14 @@ class AsmrApiService {
   Future<List<AsmrTrackFile>> fetchTrackTree(
     int workId, {
     String? token,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     final response = await _send(
       method: 'GET',
       path: '/api/tracks/$workId',
       token: token,
       decodeResponse: _decodeTrackTree,
+      cancellationToken: cancellationToken,
     );
     if (response is List<AsmrTrackFile>) return response;
     throw const HttpException('Unexpected API response list.');
@@ -409,7 +413,7 @@ class AsmrApiService {
           cancelOnError: true,
         );
     // HttpClientRequest.abort no longer affects an already received response;
-    // cancel its body subscription too to stop downloading stale search data.
+    // cancel its body subscription too to stop downloading stale response data.
     final removeListener = cancellationToken?.addListener(() {
       unawaited(subscription.cancel());
       if (!completed.isCompleted) {

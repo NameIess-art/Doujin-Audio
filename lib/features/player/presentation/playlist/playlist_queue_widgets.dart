@@ -15,6 +15,7 @@ import '../../../../core/media/path_matcher.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
+import '../../../../core/widgets/playing_sound_wave_indicator.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../library/application/library_facade.dart';
 import '../../application/playback_facade.dart';
@@ -120,9 +121,6 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
         ? cs.primary
         : activeColor;
     final isPlaying = cardState.isPlaying;
-    final highlightColor = activeColor.withValues(
-      alpha: Theme.of(context).brightness == Brightness.dark ? 0.16 : 0.12,
-    );
     final coverTracks = queue.entries
         .where((entry) => entry.tracks.isNotEmpty)
         .map((entry) => entry.tracks.first);
@@ -231,10 +229,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
             child: DecoratedBox(
               key: ValueKey('playback_queue_active_highlight_${session.id}'),
               decoration: ShapeDecoration(
-                gradient: playlistActiveHighlightGradient(
-                  isPlaying,
-                  highlightColor,
-                ),
+                gradient: playlistActiveHighlightGradient(isPlaying),
                 shape: playlistRowShape,
               ),
               child: InkWell(
@@ -316,19 +311,42 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                                     ),
                               ),
                               const SizedBox(height: 3),
-                              Text(
-                                currentTrackName,
-                                key: ValueKey<String>(
-                                  'playback_queue_track_0_${session.id}',
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 14,
-                                      height: 1.12,
+                              Row(
+                                children: [
+                                  if (isPlaying) ...[
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 6),
+                                      child: PlayingSoundWaveIndicator(
+                                        key: ValueKey<String>(
+                                          'playback_queue_sound_wave_${session.id}',
+                                        ),
+                                        color: activeColor,
+                                        isPlaying: isPlaying,
+                                      ),
                                     ),
+                                  ],
+                                  Expanded(
+                                    child: Text(
+                                      currentTrackName,
+                                      key: ValueKey<String>(
+                                        'playback_queue_track_0_${session.id}',
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 14,
+                                            height: 1.12,
+                                            color: isPlaying
+                                                ? activeColor
+                                                : null,
+                                          ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

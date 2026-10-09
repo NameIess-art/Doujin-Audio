@@ -414,6 +414,7 @@ class AsmrAccountSyncService {
         filter: filter,
         page: page,
         language: language,
+        cancellationToken: token,
       );
       token.throwIfCancelled();
       if (values.isEmpty) break;

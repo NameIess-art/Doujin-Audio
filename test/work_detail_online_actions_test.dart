@@ -614,6 +614,7 @@ class _TrackApi extends AsmrApiService {
   Future<List<AsmrTrackFile>> fetchTrackTree(
     int workId, {
     String? token,
+    AsmrRequestCancellationToken? cancellationToken,
   }) async {
     treeRequests++;
     return treeResponseBuilder != null

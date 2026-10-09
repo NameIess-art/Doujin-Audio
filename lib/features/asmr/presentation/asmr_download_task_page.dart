@@ -39,7 +39,10 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: appPageBackgroundColor(
+        context,
+        Theme.of(context).colorScheme.surface,
+      ),
       body: PageHeaderInset(
         topInset: headerHeight + 16,
         child: Stack(

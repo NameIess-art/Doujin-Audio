@@ -1187,6 +1187,8 @@ void registerAsmrControllerStateTests({
     ];
     await trackStarted.future;
     expect(api.trackFetchWorkIds, <int>[404]);
+    expect(trees.last, same(trees.first));
+    expect(api.trackCancellationTokens.single!.isCancelled, isFalse);
     trackRelease.complete();
     await Future.wait(trees);
   });
@@ -1574,33 +1576,93 @@ void registerAsmrControllerStateTests({
     );
   }
 
-  test(
-    'runtime clearing rejects pending file trees without starting a replacement request',
-    () async {
-      await resetPrefs();
-      final started = Completer<void>();
-      final release = Completer<void>();
-      final api = _FakeAsmrApiService(
-        beforeFetchTrackTree: (_) async {
-          started.complete();
-          await release.future;
-        },
-      );
-      final controller = createTestAsmrController(
-        preferencesStore: preferences,
-        apiService: api,
-        persistenceRepository: persistenceRepository(),
-      );
-      final request = controller.ensureTrackTree(_work(id: 72, title: 'Work'));
-      await started.future;
-      final rejected = expectLater(request, throwsStateError);
-      controller.clearRuntimeCaches();
-      release.complete();
-      await rejected;
-      expect(api.trackFetchWorkIds, [72]);
-      expect(controller.trackTreeFor(72), isNull);
-    },
-  );
+  for (final dispose in [false, true]) {
+    test(
+      '${dispose ? 'dispose' : 'runtime clearing'} cancels pending file trees without starting a replacement request',
+      () async {
+        await resetPrefs();
+        final started = Completer<void>();
+        final release = Completer<void>();
+        final api = _FakeAsmrApiService(
+          beforeFetchTrackTree: (_) async {
+            started.complete();
+            await release.future;
+          },
+        );
+        final controller = createTestAsmrController(
+          preferencesStore: preferences,
+          apiService: api,
+          persistenceRepository: persistenceRepository(),
+        );
+        final request = controller.ensureTrackTree(
+          _work(id: 72, title: 'Work'),
+        );
+        await started.future;
+        final rejected = expectLater(request, throwsStateError);
+        if (dispose) {
+          controller.dispose();
+        } else {
+          controller.clearRuntimeCaches();
+        }
+        await rejected.timeout(const Duration(seconds: 2));
+        expect(api.trackCancellationTokens.single!.isCancelled, isTrue);
+        expect(api.trackFetchWorkIds, [72]);
+        expect(controller.trackTreeFor(72), isNull);
+        release.complete();
+      },
+    );
+  }
+
+  for (final accountChange in [false, true]) {
+    test(
+      '${accountChange ? 'account' : 'language'} changes cancel a shared pending tree and redirect its callers',
+      () async {
+        await resetPrefs();
+        final started = Completer<void>();
+        final releaseOldTree = Completer<void>();
+        var fetches = 0;
+        final api = _FakeAsmrApiService(
+          trackTree: [_trackFile('Current.mp3', 'Current.mp3')],
+          beforeFetchTrackTree: (_) async {
+            if (++fetches == 1) {
+              started.complete();
+              await releaseOldTree.future;
+            }
+          },
+        );
+        final controller = createTestAsmrController(
+          preferencesStore: preferences,
+          apiService: api,
+          persistenceRepository: persistenceRepository(),
+        );
+        await controller.initializeForVisiblePage();
+        if (accountChange) {
+          await controller.loginAsmrAccount('alice', 'password');
+        }
+        final work = _work(id: 73, title: 'Shared cancellation');
+        final first = controller.ensureTrackTree(work);
+        final second = controller.ensureTrackTree(work);
+        expect(second, same(first));
+        await started.future;
+        if (accountChange) {
+          await controller.logoutAsmrAccount();
+        } else {
+          controller.setPageLanguage(AppLanguage.en);
+        }
+        final trees = await Future.wait([
+          first,
+          second,
+        ]).timeout(const Duration(seconds: 2));
+        expect(api.trackFetchWorkIds, [73, 73]);
+        expect(api.trackFetchTokens.last, isNull);
+        expect(api.trackCancellationTokens.first!.isCancelled, isTrue);
+        expect(api.trackCancellationTokens.last!.isCancelled, isFalse);
+        expect(trees.last, same(trees.first));
+        expect(controller.trackTreeFor(73), same(trees.first));
+        releaseOldTree.complete();
+      },
+    );
+  }
 
   test(
     'runtime clearing removes root pages and suppresses pending list responses',

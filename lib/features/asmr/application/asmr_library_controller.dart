@@ -402,6 +402,7 @@ class AsmrLibraryController extends ChangeNotifier
       if (operationEpoch != _authEpoch) return;
       operationEpoch = ++_authEpoch;
       _catalog.invalidateForAuthChange();
+      _invalidateRemoteWorkCaches();
       _applyAccountSnapshot(snapshot);
       await syncAsmrAccount(force: true);
       _refreshLoadedCategoriesForCurrentAuth();
@@ -418,11 +419,24 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   Future<void> logoutAsmrAccount() async {
+    final previousSession = _authSession;
     final logoutEpoch = ++_authEpoch;
+    _authSession = null;
     _cancelActiveSync();
     _catalog.invalidateForAuthChange();
     _invalidateRemoteWorkCaches();
-    final snapshot = await _accountSyncService.logout();
+    final AsmrAccountSnapshot snapshot;
+    try {
+      snapshot = await _accountSyncService.logout();
+    } catch (_) {
+      if (logoutEpoch == _authEpoch) {
+        _authSession = previousSession;
+        _authEpoch++;
+        _catalog.invalidateForAuthChange();
+        _invalidateRemoteWorkCaches();
+      }
+      rethrow;
+    }
     if (logoutEpoch != _authEpoch) return;
     _applyAccountSnapshot(snapshot);
     _syncPhase = AsmrSyncPhase.idle;
@@ -441,17 +455,35 @@ class AsmrLibraryController extends ChangeNotifier
       return existing;
     }
     late final Future<void> task;
-    task = _syncAsmrAccountInternal(key).whenComplete(() {
-      if (identical(_syncTasks[key], task)) {
-        _syncTasks.remove(key);
-      }
-    });
+    task = _syncAsmrAccountInternal(key)
+        .then<void>((completedKey) async {
+          if (!identical(_syncTasks[key], task)) return;
+          unawaited(_syncTasks.remove(key));
+          // Mutations can arrive after the batch drained, during the last sync
+          // timestamp write. Token recovery can also change the completed key.
+          if (!_disposed &&
+              completedKey != null &&
+              completedKey.authEpoch == _authEpoch &&
+              completedKey.token == _authSession?.token &&
+              _accountSyncService.snapshot.pendingOperations.isNotEmpty) {
+            await syncAsmrAccount();
+          }
+        })
+        .whenComplete(() {
+          if (identical(_syncTasks[key], task)) {
+            unawaited(_syncTasks.remove(key));
+          }
+        });
     _syncTasks[key] = task;
     return task;
   }
 
-  Future<void> _syncAsmrAccountInternal(_AsmrSyncRequestKey key) async {
-    if (key.authEpoch != _authEpoch || key.token != _authSession?.token) return;
+  Future<_AsmrSyncRequestKey?> _syncAsmrAccountInternal(
+    _AsmrSyncRequestKey key,
+  ) async {
+    if (key.authEpoch != _authEpoch || key.token != _authSession?.token) {
+      return null;
+    }
     final cancellationToken = AsmrRequestCancellationToken();
     _activeSyncCancellationToken?.cancel();
     _activeSyncCancellationToken = cancellationToken;
@@ -465,7 +497,9 @@ class AsmrLibraryController extends ChangeNotifier
         language: _contentLanguage,
         cancellationToken: cancellationToken,
       );
-      if (cancellationToken.isCancelled || key.authEpoch != _authEpoch) return;
+      if (cancellationToken.isCancelled || key.authEpoch != _authEpoch) {
+        return null;
+      }
       final previousToken = _authSession?.token;
       _applyAccountSnapshot(result.snapshot);
       tokenChanged = _authSession?.token != previousToken;
@@ -478,14 +512,18 @@ class AsmrLibraryController extends ChangeNotifier
           ? AsmrSyncPhase.succeeded
           : AsmrSyncPhase.failed;
       _lastSyncError = result.failure;
+      final session = _authSession;
+      return result.succeeded && session != null
+          ? (authEpoch: _authEpoch, token: session.token)
+          : null;
     } on AsmrRequestCancelled {
-      return;
+      return null;
     } catch (error) {
       if (_disposed ||
           cancellationToken.isCancelled ||
           key.authEpoch != _authEpoch ||
           !identical(_activeSyncCancellationToken, cancellationToken)) {
-        return;
+        return null;
       }
       _syncPhase = AsmrSyncPhase.failed;
       _lastSyncError = error;
@@ -502,6 +540,7 @@ class AsmrLibraryController extends ChangeNotifier
         }
       }
     }
+    return null;
   }
 
   Future<void> refreshCategoryWithSync(
@@ -794,18 +833,22 @@ class AsmrLibraryController extends ChangeNotifier
     final key = _workRequestKey(work.id);
     return _workContent.requestTrackTree(
       key,
-      () => _loadTrackTreeOnce(work, key),
+      (cancellationToken) => _loadTrackTreeOnce(work, key, cancellationToken),
     );
   }
 
   Future<List<AsmrTrackFile>> _loadTrackTreeOnce(
     AsmrWork work,
     AsmrWorkRequestKey key,
+    AsmrRequestCancellationToken cancellationToken,
   ) async {
     try {
-      final tree = await _remoteCatalogService.loadTrackTree(
-        work.id,
-        token: _authSession?.token,
+      final tree = await cancellationToken.waitFor(
+        _remoteCatalogService.loadTrackTree(
+          work.id,
+          token: _authSession?.token,
+          cancellationToken: cancellationToken,
+        ),
       );
       if (_isWorkRequestCurrent(key)) {
         final sortedTree = await compute(sortAsmrTrackTreeNaturally, tree);
@@ -820,6 +863,12 @@ class AsmrLibraryController extends ChangeNotifier
       if (_disposed || key.runtimeCacheEpoch != _runtimeCacheEpoch) {
         throw StateError('asmr_content_invalidated');
       }
+      return ensureTrackTree(work);
+    } on AsmrRequestCancelled {
+      if (_disposed || key.runtimeCacheEpoch != _runtimeCacheEpoch) {
+        throw StateError('asmr_content_invalidated');
+      }
+      if (_isWorkRequestCurrent(key)) rethrow;
       return ensureTrackTree(work);
     } catch (error) {
       if (_isWorkRequestCurrent(key)) {
@@ -901,6 +950,7 @@ class AsmrLibraryController extends ChangeNotifier
     _authEpoch++;
     _contentEpoch++;
     _catalog.cancelRequests();
+    _workContent.cancelRequests();
     super.dispose();
   }
 }

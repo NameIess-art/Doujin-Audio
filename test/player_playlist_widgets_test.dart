@@ -2075,7 +2075,8 @@ void main() {
             subtitleService: subtitleService,
           ),
         );
-        await tester.pumpAndSettle();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
 
         final titleFinder = find.text('Invariant Track Title');
         expect(titleFinder, findsWidgets);

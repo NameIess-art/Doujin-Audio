@@ -339,7 +339,6 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
     required this.coverBuilder,
     this.index,
     this.trailingActions,
-    this.titleLeading,
   });
 
   final String title;
@@ -348,7 +347,6 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
   final Widget Function(double coverWidth) coverBuilder;
   final int? index;
   final Widget? trailingActions;
-  final Widget? titleLeading;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -366,7 +364,6 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
       ratingLabel: i18n.tr('card_info_rating'),
       loading: detailLoading || detail == null,
       trailingActions: trailingActions,
-      titleLeading: titleLeading,
       coverBuilder: coverBuilder,
     );
   }
@@ -376,12 +373,18 @@ class SingleAudioFileCardContent extends ConsumerWidget {
   const SingleAudioFileCardContent({
     super.key,
     required this.title,
+    required this.path,
+    this.isPinned = false,
+    this.isSelected = false,
     required this.detail,
     required this.detailLoading,
     this.trailingActions,
   });
 
   final String title;
+  final String path;
+  final bool isPinned;
+  final bool isSelected;
   final AudioDetail? detail;
   final bool detailLoading;
   final Widget? trailingActions;
@@ -402,10 +405,40 @@ class SingleAudioFileCardContent extends ConsumerWidget {
             releaseDateLabel: i18n.tr('card_info_release_date'),
             ratingLabel: i18n.tr('card_info_rating'),
           );
-    return LibraryLikeSingleAudioCardContent(
-      title: title,
-      lines: lines,
-      trailingActions: trailingActions,
+    // The text content bounds the selection overlay inside lazy lists.
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        LibraryLikeSingleAudioCardContent(
+          title: title,
+          lines: lines,
+          trailingActions: trailingActions,
+          titleLeading: Padding(
+            padding: EdgeInsets.only(right: isPinned ? AppSpacing.xs : 0),
+            child: SizedBox(
+              width: isPinned ? 22 : 0,
+              height: LibraryLikeCardMetrics.contentHeight / 5,
+              child: OverflowBox(
+                alignment: Alignment.centerLeft,
+                minWidth: 22,
+                maxWidth: 22,
+                minHeight: 22,
+                maxHeight: 22,
+                child: LibraryPinnedIndicator(
+                  path: path,
+                  isPinned: isPinned,
+                  isSelected: isSelected,
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: -2,
+          bottom: -2,
+          child: LibrarySelectionIndicator(path: path, isSelected: isSelected),
+        ),
+      ],
     );
   }
 }
@@ -440,14 +473,6 @@ class SingleMediaFileCardContent extends StatelessWidget {
       detailLoading: detailLoading,
       index: index,
       trailingActions: trailingActions,
-      titleLeading: Padding(
-        padding: EdgeInsets.only(right: isPinned ? AppSpacing.xs : 0),
-        child: LibraryPinnedIndicator(
-          isPinned: isPinned,
-          path: track.path,
-          isSelected: isSelected,
-        ),
-      ),
       coverBuilder: (coverWidth) {
         final rj = detail?.rjCode.trim() ?? '';
         final rjCode = rj.isNotEmpty
@@ -467,12 +492,24 @@ class SingleMediaFileCardContent extends StatelessWidget {
               Positioned(
                 left: 4,
                 top: 4,
-                child: RjCodeOverlay(rjCode: rjCode, maxWidth: coverWidth - 8),
+                child: RjCodeOverlay(
+                  rjCode: rjCode,
+                  maxWidth: isPinned ? (coverWidth - 32) : (coverWidth - 8),
+                ),
               ),
             Positioned(
               left: -2,
               bottom: -2,
               child: LibrarySelectionIndicator(
+                path: track.path,
+                isSelected: isSelected,
+              ),
+            ),
+            Positioned(
+              right: -2,
+              top: -2,
+              child: LibraryPinnedIndicator(
+                isPinned: isPinned,
                 path: track.path,
                 isSelected: isSelected,
               ),

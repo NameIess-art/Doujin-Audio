@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/path_display.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/library_entry_editor_service.dart';
 import 'library_removal_feedback.dart';
@@ -42,7 +43,7 @@ class LibraryEditPage extends ConsumerWidget {
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: cs.surface,
+      backgroundColor: appPageBackgroundColor(context, cs.surface),
       body: LibraryEditTree(
         libraryPath: libraryPath,
         entryEditorService: entryEditorService,

@@ -630,8 +630,8 @@ class _SessionVideoFullscreenPageState
         child: Focus(
           autofocus: true,
           child: Scaffold(
-            backgroundColor: appPageBackgroundColor(context, Colors.black),
-            body: AppPageContentTransition(backgroundColor: Colors.black, child: MouseRegion(
+            backgroundColor: Colors.black,
+            body: AppPageContentTransition(child: MouseRegion(
               onHover: (_) => _showControls(),
               child: LayoutBuilder(
                 builder: (context, constraints) {

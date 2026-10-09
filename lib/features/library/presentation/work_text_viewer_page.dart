@@ -276,7 +276,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
 
     final page = Scaffold(
-      backgroundColor: appPageBackgroundColor(context, cs.surface),
+      backgroundColor: cs.surface,
       body: PageHeaderInset(
         topInset: contentTopInset,
         child: Stack(

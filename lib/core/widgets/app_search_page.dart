@@ -14,7 +14,7 @@ class AppSearchCategory<T> {
   final String label;
 }
 
-class AppSearchPageScaffold<T> extends StatefulWidget {
+class AppSearchPageScaffold<T> extends StatelessWidget {
   const AppSearchPageScaffold({
     super.key,
     required this.controller,
@@ -48,56 +48,13 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
       MediaQuery.paddingOf(context).top + 92;
 
   @override
-  State<AppSearchPageScaffold<T>> createState() =>
-      _AppSearchPageScaffoldState<T>();
-}
-
-class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
-  bool _autofocusRequested = false;
-
-  void _requestAutofocus() {
-    final route = ModalRoute.of(context);
-    if (route != null &&
-        (route.offstage ||
-            !route.isCurrent ||
-            route.animation?.status != AnimationStatus.completed)) {
-      return;
-    }
-    if (_autofocusRequested ||
-        widget.controlsOverlay != null ||
-        !TickerMode.valuesOf(context).enabled) {
-      return;
-    }
-    _autofocusRequested = true;
-    // The entering route excludes focus until its animation has completed.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.focusNode.canRequestFocus) {
-        widget.focusNode.requestFocus();
-      }
-    });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _requestAutofocus();
-  }
-
-  @override
-  void didUpdateWidget(AppSearchPageScaffold<T> oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.focusNode != widget.focusNode) _autofocusRequested = false;
-    _requestAutofocus();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
-    final accent = widget.accentColor ?? cs.primary;
+    final accent = accentColor ?? cs.primary;
     final content = Scaffold(
-      backgroundColor: appPageBackgroundColor(context, cs.surface),
+      backgroundColor: cs.surface,
       resizeToAvoidBottomInset: false,
       body: Stack(
         key: const ValueKey<String>('app_search_stack'),
@@ -110,8 +67,8 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
             right: 0,
             bottom: MediaQuery.viewInsetsOf(context).bottom,
             child: PageHeaderInset(
-              topInset: AppSearchPageScaffold.controlsTopInset(context),
-              child: AppPageContentTransition(child: widget.body),
+              topInset: controlsTopInset(context),
+              child: AppPageContentTransition(child: body),
             ),
           ),
           Positioned(
@@ -124,13 +81,13 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
               direction: AppEdgeFadeDirection.towardTop,
             ),
           ),
-          if (widget.controlsOverlay != null)
+          if (controlsOverlay != null)
             Positioned(
               key: const ValueKey<String>('app_search_controls_overlay'),
               top: 0,
               left: 0,
               right: 0,
-              child: AppPageHeaderTransition(child: widget.controlsOverlay!),
+              child: AppPageHeaderTransition(child: controlsOverlay!),
             )
           else
             Positioned(
@@ -157,14 +114,14 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
                               ),
                               child: TextField(
                                 key: const ValueKey<String>('app_search_field'),
-                                controller: widget.controller,
-                                focusNode: widget.focusNode,
+                                controller: controller,
+                                focusNode: focusNode,
                                 autofocus: true,
                                 cursorColor: accent,
                                 textInputAction: TextInputAction.search,
                                 textAlignVertical: TextAlignVertical.center,
-                                onChanged: widget.onChanged,
-                                onSubmitted: widget.onSubmitted,
+                                onChanged: onChanged,
+                                onSubmitted: onSubmitted,
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   fontSize: 14,
                                 ),
@@ -181,7 +138,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
                                         width: 38,
                                         height: 38,
                                       ),
-                                  hintText: widget.hintText,
+                                  hintText: hintText,
                                   hintStyle: theme.textTheme.bodyMedium
                                       ?.copyWith(
                                         color: cs.onSurfaceVariant,
@@ -207,7 +164,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
                           radius: 19,
                           child: IconButton(
                             key: const ValueKey<String>('app_search_close'),
-                            onPressed: widget.onCloseOrClear,
+                            onPressed: onCloseOrClear,
                             icon: const Icon(Icons.close_rounded, size: 20),
                             color: cs.onSurfaceVariant,
                             padding: EdgeInsets.zero,
@@ -239,11 +196,11 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
                         ),
                         scrollDirection: Axis.horizontal,
                         physics: const ClampingScrollPhysics(),
-                        itemCount: widget.categories.length,
+                        itemCount: categories.length,
                         separatorBuilder: (_, _) => const SizedBox(width: 2),
                         itemBuilder: (context, index) {
-                          final category = widget.categories[index];
-                          final selected = category.value == widget.selectedCategory;
+                          final category = categories[index];
+                          final selected = category.value == selectedCategory;
                           return Semantics(
                             button: true,
                             selected: selected,
@@ -252,7 +209,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
                                 'app_search_category_${category.value}',
                               ),
                               borderRadius: BorderRadius.circular(15),
-                              onTap: () => widget.onCategorySelected(category.value),
+                              onTap: () => onCategorySelected(category.value),
                               child: AnimatedContainer(
                                 duration: tokens.motionFast,
                                 alignment: Alignment.center,

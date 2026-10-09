@@ -54,7 +54,7 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
         .toList(growable: false);
     final headerTopInset = MediaQuery.paddingOf(context).top + 98;
     return Scaffold(
-      backgroundColor: appPageBackgroundColor(context, cs.surface),
+      backgroundColor: cs.surface,
       body: SearchHighlightScope(
         query: _searchController.text,
         child: PageHeaderInset(

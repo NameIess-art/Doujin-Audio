@@ -118,7 +118,7 @@ class _PlaybackQueueAudioEditPageState
         AppPageHeaderMetrics.bottomSpacing;
 
     return Scaffold(
-      backgroundColor: appPageBackgroundColor(context, cs.surface),
+      backgroundColor: cs.surface,
       body: PageHeaderInset(
         topInset: headerHeight,
         child: Stack(

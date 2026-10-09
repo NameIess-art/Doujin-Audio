@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
-import 'page_header_inset.dart';
 
 const kPlaceholderContentTransitionDuration = Duration(milliseconds: 450);
 const kAppMotionFast = Duration(milliseconds: 180);
@@ -100,29 +99,17 @@ class _AppPageMotionScope extends InheritedWidget {
     super.key,
     required this.contentBuilder,
     required this.headerBuilder,
-    this.backgroundIsMoving = false,
     this.configuration,
     required super.child,
   });
 
   final _PageTransitionBuilder contentBuilder;
   final _PageTransitionBuilder headerBuilder;
-  final bool backgroundIsMoving;
   final Object? configuration;
 
   @override
   bool updateShouldNotify(_AppPageMotionScope oldWidget) =>
-      configuration == null ||
-      configuration != oldWidget.configuration ||
-      backgroundIsMoving != oldWidget.backgroundIsMoving;
-}
-
-// A stationary Scaffold background would conceal the retained page before
-// its moving content arrives. Restore it when the page has settled.
-Color appPageBackgroundColor(BuildContext context, Color color) {
-  final motion = context
-      .dependOnInheritedWidgetOfExactType<_AppPageMotionScope>();
-  return motion?.backgroundIsMoving == true ? Colors.transparent : color;
+      configuration == null || configuration != oldWidget.configuration;
 }
 
 class AppPageContentTransition extends StatelessWidget {
@@ -138,12 +125,9 @@ class AppPageContentTransition extends StatelessWidget {
   Widget build(BuildContext context) {
     final motion = context
         .dependOnInheritedWidgetOfExactType<_AppPageMotionScope>();
-    final content = backgroundColor == null && motion == null
+    final content = backgroundColor == null
         ? child
-        : ColoredBox(
-            color: backgroundColor ?? Theme.of(context).colorScheme.surface,
-            child: child,
-          );
+        : ColoredBox(color: backgroundColor!, child: child);
     if (motion == null) return content;
     return motion.contentBuilder(context, content);
   }
@@ -160,51 +144,6 @@ class AppPageHeaderTransition extends StatelessWidget {
     if (motion == null) return child;
     return motion.headerBuilder(context, child);
   }
-}
-
-class _HeaderContentClipper extends CustomClipper<Rect> {
-  const _HeaderContentClipper({
-    required this.contentContext,
-    required this.headerContext,
-    required this.topInset,
-    required this.visibleHeaders,
-  });
-
-  final BuildContext contentContext;
-  final BuildContext headerContext;
-  final double topInset;
-  final Iterable<({BuildContext context, double topInset})> Function()
-  visibleHeaders;
-
-  @override
-  Rect getClip(Size size) {
-    final content = contentContext.findRenderObject()! as RenderBox;
-    final header = headerContext.findRenderObject()! as RenderBox;
-    // Content overlays can start below the header already; keep their local
-    // clip aligned to the page rather than cutting off their first rows.
-    final origin = content.localToGlobal(Offset.zero, ancestor: header);
-    var top = topInset.clamp(0.0, header.size.height) - origin.dy;
-    for (final region in visibleHeaders()) {
-      final box = region.context.findRenderObject()! as RenderBox;
-      final bottom = box.localToGlobal(
-        Offset(0, region.topInset.clamp(0.0, box.size.height)),
-      );
-      top = math.max(top, content.globalToLocal(bottom).dy);
-    }
-    return Rect.fromLTRB(
-      -origin.dx,
-      top,
-      header.size.width - origin.dx,
-      header.size.height - origin.dy,
-    );
-  }
-
-  @override
-  bool shouldReclip(_HeaderContentClipper oldClipper) =>
-      oldClipper.topInset != topInset ||
-      oldClipper.contentContext != contentContext ||
-      oldClipper.headerContext != headerContext ||
-      oldClipper.visibleHeaders != visibleHeaders;
 }
 
 class _CoveringPageTransition extends StatefulWidget {
@@ -295,11 +234,8 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
 
   void _handleStatusChanged(AnimationStatus _) {
     final interactive = _isInteractive;
-    if (_interactive == interactive && widget.workDetailTransition) return;
-    setState(() {
-      _interactive = interactive;
-      if (!widget.workDetailTransition) _transition = null;
-    });
+    if (_interactive == interactive) return;
+    setState(() => _interactive = interactive);
   }
 
   @override
@@ -325,22 +261,22 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
         widget.secondaryAnimation,
         constraints.maxWidth,
         widget.workDetailTransition,
-        widget.workDetailTransition ? null : widget.animation.status,
       ),
-      backgroundIsMoving:
-          !widget.workDetailTransition &&
-          widget.animation.status != AnimationStatus.completed,
-      contentBuilder: (context, content) => AnimatedBuilder(
-        animation: _position,
-        child: RepaintBoundary(child: content),
-        builder: (context, content) => Transform.translate(
-          offset: Offset(constraints.maxWidth * _position.value.dx, 0),
-          child: content,
-        ),
-      ),
+      contentBuilder: (context, content) => widget.workDetailTransition
+          ? AnimatedBuilder(
+              animation: _position,
+              child: RepaintBoundary(child: content),
+              builder: (context, content) => Transform.translate(
+                offset: Offset(constraints.maxWidth * _position.value.dx, 0),
+                child: content,
+              ),
+            )
+          : RepaintBoundary(child: content),
       headerBuilder: (context, header) => AnimatedBuilder(
         animation: _headerAnimation,
-        child: RepaintBoundary(child: header),
+        child: widget.workDetailTransition
+            ? RepaintBoundary(child: header)
+            : header,
         builder: (context, header) {
           final incoming = Curves.easeOutCubic.transform(
             (widget.animation.value / 0.6).clamp(0.0, 1.0),
@@ -348,14 +284,29 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
           final outgoing = Curves.easeOutCubic.transform(
             (widget.secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
           );
-          return Opacity(opacity: incoming * (1 - outgoing), child: header);
+          final fadedHeader = Opacity(
+            opacity: incoming * (1 - outgoing),
+            child: header,
+          );
+          if (widget.workDetailTransition) return fadedHeader;
+          // Generic routes translate the whole page; cancel that motion
+          // for headers narrower than the page so menus change in place.
+          return Transform.translate(
+            offset: Offset(-constraints.maxWidth * _position.value.dx, 0),
+            child: fadedHeader,
+          );
         },
       ),
       child: widget.child,
     );
-    // Moving the whole page also sweeps its background behind fixed headers.
-    // Animate only content regions so header fades paint uniformly.
-    return page;
+    // Keep header fades out of the moving content's recording/cache layer.
+    // Every detail region moves in route coordinates, including overlays.
+    return widget.workDetailTransition
+        ? page
+        : SlideTransition(
+            position: _position,
+            child: RepaintBoundary(child: page),
+          );
   }
 
   @override
@@ -972,6 +923,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   late final Animation<double> _progress;
   late final Animation<double> _reverseProgress;
   late final List<Animation<Offset>> _incomingPositions;
+  late final List<Animation<Offset>> _outgoingPositions;
   late int _currentIndex;
   late int _targetIndex;
   int _transitionDirection = 1;
@@ -979,7 +931,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   late List<Widget?> _lazyChildren;
   final Set<int> _dirtyChildren = {};
   late List<GlobalKey> _pageKeys;
-  final Map<int, ({BuildContext context, double topInset})> _headerRegions = {};
   final Object _transitionInteraction = Object();
   final Set<int> _preparedPages = {};
   BoxConstraints? _preparedConstraints;
@@ -987,13 +938,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
 
   bool get _isLazy => widget.itemBuilder != null;
   int get _itemCount => widget.itemCount;
-
-  Iterable<({BuildContext context, double topInset})> _visibleHeaders() sync* {
-    for (final index in {_currentIndex, _targetIndex, ?_pendingIndex}) {
-      final region = _headerRegions[index];
-      if (region != null && region.context.mounted) yield region;
-    }
-  }
 
   @override
   void initState() {
@@ -1013,6 +957,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _incomingPositions = [
       for (final direction in [-1.0, 1.0])
         _progress.drive(Tween(begin: Offset(direction, 0), end: Offset.zero)),
+    ];
+    _outgoingPositions = [
+      for (final direction in [-1.0, 1.0])
+        _progress.drive(Tween(begin: Offset.zero, end: Offset(-direction, 0))),
     ];
     widget.indexListenable.addListener(_handleIndexChanged);
   }
@@ -1061,7 +1009,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   }
 
   void _resetLazyChildren() {
-    _headerRegions.removeWhere((index, _) => index >= _itemCount);
     final previousKeys = _pageKeys;
     final previousChildren = _lazyChildren;
     _lazyChildren = List<Widget?>.generate(
@@ -1140,12 +1087,21 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         });
         return;
       }
-      // Retarget the front layer while retaining the original page below it.
+      final direction = nextIndex > _currentIndex ? 1 : -1;
+      if (direction == _transitionDirection) {
+        setState(() => _targetIndex = nextIndex);
+        _controller.forward();
+        return;
+      }
+      // Swap the visible source when the new destination is on the other side.
+      // Invert decelerate so its position survives the direction change.
+      final progress = Curves.decelerate.transform(_controller.value);
       setState(() {
+        _currentIndex = _targetIndex;
         _targetIndex = nextIndex;
-        _transitionDirection = nextIndex > _currentIndex ? 1 : -1;
+        _transitionDirection = direction;
       });
-      _controller.forward();
+      _controller.forward(from: 1 - math.sqrt(progress));
       return;
     }
 
@@ -1289,6 +1245,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           : const AlwaysStoppedAnimation<Offset>(Offset(1, 0));
     } else if (incoming) {
       position = _incomingPositions[directionIndex];
+    } else if (outgoing) {
+      position = _outgoingPositions[directionIndex];
     } else {
       position = const AlwaysStoppedAnimation<Offset>(Offset.zero);
     }
@@ -1304,7 +1262,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     return KeyedSubtree(
       key: ValueKey<String>('app_indexed_page_$index'),
       child: _AppPageMotionScope(
-        backgroundIsMoving: incoming || preparing,
         configuration: (
           animation,
           outgoing,
@@ -1312,38 +1269,13 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           preparing,
           outgoing || incoming || preparing ? _transitionDirection : 0,
         ),
-        contentBuilder: (context, content) {
-          final slidingContent = SlideTransition(
-            position: position,
+        contentBuilder: (context, content) => SlideTransition(
+          position: position,
+          child: ColoredBox(
+            color: Theme.of(context).colorScheme.surface,
             child: RepaintBoundary(child: content),
-          );
-          final inset = context
-              .dependOnInheritedWidgetOfExactType<PageHeaderInset>();
-          if (inset == null) {
-            _headerRegions.remove(index);
-            return slidingContent;
-          }
-          final headerContext = context
-              .getElementForInheritedWidgetOfExactType<PageHeaderInset>()!;
-          _headerRegions[index] = (
-            context: headerContext,
-            topInset: inset.topInset,
-          );
-          // Full-page lists include padding behind floating headers. During
-          // a switch that background must not sweep across either header.
-          return ClipRect(
-            clipBehavior: outgoing || incoming || preparing
-                ? Clip.hardEdge
-                : Clip.none,
-            clipper: _HeaderContentClipper(
-              contentContext: context,
-              headerContext: headerContext,
-              topInset: inset.topInset,
-              visibleHeaders: _visibleHeaders,
-            ),
-            child: slidingContent,
-          );
-        },
+          ),
+        ),
         headerBuilder: (_, header) => FadeTransition(
           opacity: preparing
               ? const AlwaysStoppedAnimation<double>(0)

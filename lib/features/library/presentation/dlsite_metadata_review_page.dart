@@ -650,10 +650,7 @@ class _DlsiteMetadataReviewPageState
         : null;
 
     return Scaffold(
-      backgroundColor: appPageBackgroundColor(
-        context,
-        Theme.of(context).colorScheme.surface,
-      ),
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: PageHeaderInset(
         topInset: listTopPadding,
         child: Stack(

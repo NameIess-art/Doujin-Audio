@@ -1977,7 +1977,6 @@ void main() {
       find.byKey(const ValueKey<String>('library_search_button')),
     );
     await tester.pump();
-    await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump(const Duration(milliseconds: 200));
     final tagsLabel = languageProvider.tr('library_category_tags');
@@ -2134,8 +2133,6 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('library_search_button')),
     );
-    await tester.pump();
-    await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     await pumpUntilFound(
       tester,
@@ -2297,7 +2294,6 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('library_search_button')),
     );
-    await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump(const Duration(milliseconds: 200));
@@ -2510,7 +2506,6 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey<String>('library_search_button')),
       );
-      await tester.pump();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
       await tester.pump(const Duration(milliseconds: 200));
@@ -3798,7 +3793,6 @@ void main() {
         find.byKey(const ValueKey<String>('library_search_button')),
       );
       await tester.pump();
-      await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
       await pumpUntilFound(
         tester,
@@ -3885,7 +3879,6 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('library_search_button')),
     );
-    await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     await tester.tap(

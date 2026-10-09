@@ -149,6 +149,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       buildAppPageRoute<void>(
         context: context,
         child: const LibrarySearchPage(),
+        duration: Duration.zero,
       ),
     );
   }

@@ -235,7 +235,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     final cs = theme.colorScheme;
     if (widget.images.isEmpty) {
       return Scaffold(
-        backgroundColor: appPageBackgroundColor(context, cs.surface),
+        backgroundColor: cs.surface,
         appBar: PreferredSize(
           preferredSize: const Size.fromHeight(kToolbarHeight),
           child: AppPageHeaderTransition(
@@ -289,7 +289,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
         : bottomInset + 20.0;
 
     return Scaffold(
-      backgroundColor: appPageBackgroundColor(context, cs.surface),
+      backgroundColor: cs.surface,
       body: Stack(
         children: [
           Positioned.fill(

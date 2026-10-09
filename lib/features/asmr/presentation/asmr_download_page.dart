@@ -11,6 +11,7 @@ import '../domain/asmr_models.dart';
 import '../application/asmr_download_models.dart';
 import '../application/asmr_download_selection.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -55,6 +56,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   bool _loading = true;
   bool _starting = false;
   Object? _bootstrapError;
+  VoidCallback? _pendingBootstrapCommit;
+  late final String _bootstrapCommitKey =
+      'asmr_download_bootstrap_${identityHashCode(this)}';
 
   @override
   void initState() {
@@ -63,6 +67,41 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_bootstrap());
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scheduleBootstrapCommit();
+  }
+
+  void _scheduleBootstrapCommit() {
+    if (_pendingBootstrapCommit == null ||
+        !TickerMode.valuesOf(context).enabled ||
+        ModalRoute.isCurrentOf(context) == false) {
+      return;
+    }
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _bootstrapCommitKey,
+      allowDuringScroll: true,
+      commit: () {
+        if (!mounted ||
+            !TickerMode.valuesOf(context).enabled ||
+            ModalRoute.isCurrentOf(context) == false) {
+          return;
+        }
+        final commit = _pendingBootstrapCommit;
+        _pendingBootstrapCommit = null;
+        commit?.call();
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_bootstrapCommitKey);
+    _pendingBootstrapCommit = null;
+    super.dispose();
   }
 
   Future<void> _bootstrap() async {
@@ -87,10 +126,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 if (rjCode == null || rjCode.isEmpty) {
                   throw StateError('No RJ code provided');
                 }
-                work = await findWork!(
-                  rjCode,
-                  language: i18n.language,
-                );
+                work = await findWork!(rjCode, language: i18n.language);
                 if (work == null) {
                   throw StateError(
                     i18n.tr('audio_detail_asmr_work_not_found', {'rj': rjCode}),
@@ -135,52 +171,56 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
             },
           );
       if (!mounted) return;
-      final currentWork = result.work;
-      _work = currentWork;
-      final workTitle = currentWork.title.trim().isNotEmpty
-          ? currentWork.title.trim()
-          : (currentWork.sourceId.trim().isNotEmpty
-                ? currentWork.sourceId.trim()
-                : currentWork.id.toString());
-      final workRootFolder = AsmrTrackFile(
-        hash: 'work_root_${currentWork.id}',
-        title: workTitle,
-        type: 'folder',
-        streamUrl: null,
-        downloadUrl: null,
-        lowQualityUrl: null,
-        duration: Duration.zero,
-        size: 0,
-        children: result.tree,
-        workId: currentWork.id,
-        workTitle: currentWork.title,
-        sourceId: currentWork.sourceId,
-        relativePath: '__work_root_${currentWork.id}__',
-      );
-      setState(() {
-        _selection = AsmrDownloadSelectionModel([workRootFolder]);
-        _destinationRoot = result.destinationRoot;
-        _loading = false;
-        _bootstrapError = null;
-      });
+      _pendingBootstrapCommit = () {
+        final currentWork = result.work;
+        _work = currentWork;
+        final workTitle = currentWork.title.trim().isNotEmpty
+            ? currentWork.title.trim()
+            : (currentWork.sourceId.trim().isNotEmpty
+                  ? currentWork.sourceId.trim()
+                  : currentWork.id.toString());
+        final workRootFolder = AsmrTrackFile(
+          hash: 'work_root_${currentWork.id}',
+          title: workTitle,
+          type: 'folder',
+          streamUrl: null,
+          downloadUrl: null,
+          lowQualityUrl: null,
+          duration: Duration.zero,
+          size: 0,
+          children: result.tree,
+          workId: currentWork.id,
+          workTitle: currentWork.title,
+          sourceId: currentWork.sourceId,
+          relativePath: '__work_root_${currentWork.id}__',
+        );
+        setState(() {
+          _selection = AsmrDownloadSelectionModel([workRootFolder]);
+          _destinationRoot = result.destinationRoot;
+          _loading = false;
+          _bootstrapError = null;
+        });
+        if (destinationMissing) {
+          final i18n = ref.read(appLanguageProviderInstanceProvider);
+          showAppSnackBar(
+            context,
+            i18n.tr('asmr_download_path_missing'),
+            tone: AppFeedbackTone.warning,
+            icon: Icons.folder_off_rounded,
+            iconColor: AppDesignTokens.of(context).asmrAccent,
+          );
+        }
+      };
+      _scheduleBootstrapCommit();
     } catch (error) {
       if (!mounted) return;
-      setState(() {
-        _bootstrapError = error;
-        _loading = false;
-      });
-      return;
-    }
-    if (destinationMissing && mounted) {
-      final i18n = ref.read(appLanguageProviderInstanceProvider);
-      final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-      showAppSnackBar(
-        context,
-        i18n.tr('asmr_download_path_missing'),
-        tone: AppFeedbackTone.warning,
-        icon: Icons.folder_off_rounded,
-        iconColor: asmrBlue,
-      );
+      _pendingBootstrapCommit = () {
+        setState(() {
+          _bootstrapError = error;
+          _loading = false;
+        });
+      };
+      _scheduleBootstrapCommit();
     }
   }
 
@@ -385,8 +425,17 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         topInset: listTopPadding,
         child: Stack(
           children: [
-            AppPageContentTransition(
-              child: Stack(
+            AppPageContentTransition.deferred(
+              placeholder: OperationSkeletonList(
+                showHeader: false,
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  listTopPadding,
+                  16,
+                  listBottomPadding,
+                ),
+              ),
+              builder: (context) => Stack(
                 fit: StackFit.expand,
                 children: [
                   Positioned.fill(

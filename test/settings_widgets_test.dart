@@ -8,6 +8,7 @@ import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/subtitle_window_visual.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
@@ -44,6 +45,66 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  testWidgets(
+    'settings shells defer rows and category scroll survives a covering route',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(fixture.build(const SettingsTab()));
+      final i18n = fixture.languageProvider;
+      expect(find.byType(TopPageHeader), findsOneWidget);
+      expect(find.text(i18n.tr('section_common')), findsNothing);
+      await tester.pumpAndSettle();
+      final homeController = tester
+          .widget<ListView>(find.byType(ListView))
+          .controller!;
+      await tester.tap(find.text(i18n.tr('section_common')));
+      await tester.pump();
+      expect(find.text(i18n.tr('section_common')), findsWidgets);
+      expect(find.text(i18n.tr('interface_language')), findsNothing);
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(find.text(i18n.tr('interface_language')), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text(i18n.tr('interface_language')), findsOneWidget);
+      final list = find.byType(ListView);
+      final controller = tester.widget<ListView>(list).controller!;
+      await tester.drag(list, const Offset(0, -180));
+      await tester.pumpAndSettle();
+      final offset = controller.offset;
+      expect(offset, greaterThan(0));
+      final context = tester.element(find.byType(TopPageHeader));
+      final navigator = Navigator.of(context);
+      unawaited(
+        navigator.push(
+          buildAppPageRoute<void>(
+            context: context,
+            child: const Scaffold(body: Text('Cover settings')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<ListView>(find.byType(ListView)).controller,
+        same(controller),
+      );
+      expect(controller.offset, offset);
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<ListView>(find.byType(ListView)).controller,
+        same(homeController),
+      );
+      expect(find.text(i18n.tr('section_common')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'Windows scrollbar starts below the page header',
@@ -1192,7 +1253,7 @@ void main() {
         ),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     final aboutTile = find.widgetWithText(
       ListTile,

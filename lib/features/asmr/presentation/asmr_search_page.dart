@@ -338,12 +338,25 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
           ),
         )
         .toList(growable: false);
-    final body = AppFadeThroughIndexedStack.lazy(
+    final topInset = _isSelectionMode
+        ? AppPageHeaderMetrics.expandedToolbarHeight +
+              MediaQuery.paddingOf(context).top +
+              AppPageHeaderMetrics.bottomSpacing
+        : AppSearchPageScaffold.controlsTopInset(context);
+    final bottomInset = MediaQuery.paddingOf(context).bottom + 16;
+    Widget buildBody(BuildContext context) => AppFadeThroughIndexedStack.lazy(
       key: const ValueKey<String>('asmr_search_category_stack'),
       indexListenable: _activeCategoryIndex,
       duration: kAppMotionSlow,
       itemCount: kAsmrSelectableCategories.length,
-      contentRevision: Object(),
+      contentRevision: (
+        _query,
+        _showSearchPlaceholder,
+        _isSelectionMode,
+        _selectedWorkIds.join(','),
+        topInset,
+        bottomInset,
+      ),
       itemBuilder: (context, index) {
         final category = kAsmrSelectableCategories[index];
         return _AsmrCategoryList(
@@ -354,12 +367,8 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
           scrollController: _scrollControllers[category]!,
           searchQuery: _query,
           searchSession: true,
-          topInset: _isSelectionMode
-              ? AppPageHeaderMetrics.expandedToolbarHeight +
-                    MediaQuery.paddingOf(context).top +
-                    AppPageHeaderMetrics.bottomSpacing
-              : AppSearchPageScaffold.controlsTopInset(context),
-          bottomInset: MediaQuery.paddingOf(context).bottom + 16,
+          topInset: topInset,
+          bottomInset: bottomInset,
           onRefresh: () => _refresh(force: true),
           isSelectionMode: _isSelectionMode,
           selectedWorkIds: _selectedWorkIds,
@@ -370,8 +379,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     );
     return ValueListenableBuilder<int>(
       valueListenable: _activeCategoryIndex,
-      child: body,
-      builder: (context, _, body) {
+      builder: (context, _, _) {
         final selectedWorks = _isSelectionMode
             ? _selectedWorks()
             : <AsmrWork>[];
@@ -406,7 +414,11 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
                   ),
                 )
               : null,
-          body: body!,
+          bodyBuilder: buildBody,
+          placeholder: LibrarySkeletonListView(
+            topInset: topInset,
+            bottomInset: bottomInset,
+          ),
         );
       },
     );

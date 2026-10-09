@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
+import 'package:doujin_audio/features/library/presentation/library_search_all_results.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_category_widgets.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_empty_scan.dart';
@@ -54,6 +56,7 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 
@@ -143,6 +146,127 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'library search shows controls before building result pages on $platform',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        var detailSubscriptions = 0;
+        await tester.pumpWidget(
+          fixture.build(
+            Builder(
+              builder: (context) => TextButton(
+                onPressed: () => Navigator.of(context).push<void>(
+                  buildAppPageRoute(
+                    context: context,
+                    child: const LibrarySearchPage(),
+                  ),
+                ),
+                child: const Text('Open first search'),
+              ),
+            ),
+            navigatorObservers: [UiInteractionNavigatorObserver()],
+            overrides: [
+              libraryDetailRevisionProvider.overrideWith((ref) {
+                detailSubscriptions++;
+                return 0;
+              }),
+            ],
+          ),
+        );
+        await tester.tap(find.text('Open first search'));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.byType(TextField), findsOneWidget);
+        expect(find.byType(LibraryLoadingSkeleton), findsOneWidget);
+        expect(find.byType(LibrarySearchAllResults), findsNothing);
+        expect(detailSubscriptions, 0);
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pump(const Duration(milliseconds: 180));
+        await tester.pump();
+        expect(find.byType(LibrarySearchAllResults), findsOneWidget);
+        expect(detailSubscriptions, 1);
+        await finishLibraryTest(tester, fixture);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'library first navigation keeps sorting and rows out of the shell on $platform',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final active = ValueNotifier(0);
+        addTearDown(active.dispose);
+        fixture.library.addTracks(
+          [
+            testMusicTrack(
+              name: 'Deferred library track',
+              path: '/deferred-library.mp3',
+              groupKey: '/deferred-library.mp3',
+              groupTitle: '',
+              isSingle: true,
+            ),
+          ],
+          notify: false,
+          persist: false,
+        );
+        await tester.runAsync(fixture.library.ensureCardSnapshot);
+        fixture.library.syncPresentationState(isInitialized: true);
+        var sorts = 0;
+        await tester.pumpWidget(
+          fixture.build(
+            AppFadeThroughIndexedStack.lazy(
+              indexListenable: active,
+              itemCount: 2,
+              itemBuilder: (_, index) => index == 0
+                  ? const SizedBox()
+                  : LibraryTab(activeTabIndexListenable: active),
+            ),
+            overrides: [
+              librarySortedTreeUiProvider.overrideWith((ref) {
+                sorts++;
+                return fixture.library.libraryCards;
+              }),
+            ],
+          ),
+        );
+        active.value = 1;
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(sorts, 0);
+        expect(find.byType(LibraryTreeList), findsNothing);
+        expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
+        expect(
+          find.byKey(const ValueKey('library_search_button')),
+          findsOneWidget,
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pump(const Duration(milliseconds: 180));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 180));
+        expect(sorts, 1);
+        expect(find.byType(LibraryTreeList), findsOneWidget);
+        final retained = tester.element(find.byType(LibraryTreeList));
+        active.value = 0;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 600));
+        active.value = 1;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(tester.element(find.byType(LibraryTreeList)), same(retained));
+        expect(sorts, 1);
+        await finishLibraryTest(tester, fixture);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
 
   Widget libraryRows(
     AppRuntimeWidgetTestFixture fixture,
@@ -1848,6 +1972,8 @@ void main() {
       'firstRowsMs=${expansionStopwatch.elapsedMilliseconds} '
       'builtRows=${builtRows.evaluate().length} totalRows=${tracks.length}',
     );
+    await tester.pump();
+    await tester.pump(kAppMotionFast);
 
     final detailScrollable = find.descendant(
       of: find.byType(WorkDetailPage),

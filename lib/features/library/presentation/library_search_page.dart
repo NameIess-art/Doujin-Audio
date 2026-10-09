@@ -284,11 +284,6 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final libraryFacade = ref.read(libraryFacadeProvider);
-    ref.watch(libraryListUiProvider.select((state) => state.structureRevision));
-    ref.watch(libraryDetailRevisionProvider);
-    final structureRevision = libraryFacade.structureRevision;
-    final detailRevision = libraryFacade.detailCacheService.revision;
     final categories = <AppSearchCategory<AudioLibraryCategoryType>>[
       AppSearchCategory(
         value: AudioLibraryCategoryType.all,
@@ -313,58 +308,63 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
               AppPageHeaderMetrics.bottomSpacing
         : AppSearchPageScaffold.controlsTopInset(context);
 
-    final pinnedLibraryPaths = ref
-        .watch(
-          settingsStateProvider.select(
-            (s) => s.value?.pinnedLibraryPaths ?? const <String>[],
-          ),
-        )
-        .toSet();
-
-    final body = AppFadeThroughIndexedStack.lazy(
-      key: const ValueKey<String>('library_search_category_stack'),
-      indexListenable: _activeCategoryIndex,
-      duration: kAppMotionSlow,
-      contentRevision: Object(),
-      itemCount: _categories.length,
-      itemBuilder: (context, index) {
-        final category = _categories[index];
-        if (category == AudioLibraryCategoryType.all) {
-          return LibrarySearchAllResults(
-            isActive: () => _categoryType == AudioLibraryCategoryType.all,
-            activityListenable: _activeCategoryIndex,
-            query: _query,
-            queryRevision: _queryRevision,
-            structureRevision: structureRevision,
-            detailRevision: detailRevision,
-            scrollController: _scrollControllers[AudioLibraryCategoryType.all]!,
-            topPadding: topInset,
-            isSelectionMode: _isSelectionMode,
-            selectedPaths: _selectedLibraryPaths,
-            onEnterSelectionMode: _enterSelectionMode,
-            onToggleSelection: _toggleLibrarySelection,
-            onTreeChanged: (tree) => _searchSelectionTree = tree,
-          );
-        }
-        return _buildCategoryBody(
-          categoryType: category,
-          libraryFacade: libraryFacade,
-          i18n: i18n,
-          topPadding: topInset,
-          bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
-          cacheExtent: 120,
-          structureRevision: structureRevision,
-          detailRevision: detailRevision,
-          pinnedPaths: pinnedLibraryPaths,
+    final body = Consumer(
+      builder: (context, ref, _) {
+        final libraryFacade = ref.read(libraryFacadeProvider);
+        ref.watch(
+          libraryListUiProvider.select((state) => state.structureRevision),
+        );
+        ref.watch(libraryDetailRevisionProvider);
+        final structureRevision = libraryFacade.structureRevision;
+        final detailRevision = libraryFacade.detailCacheService.revision;
+        final pinnedLibraryPaths = ref
+            .watch(
+              settingsStateProvider.select(
+                (s) => s.value?.pinnedLibraryPaths ?? const <String>[],
+              ),
+            )
+            .toSet();
+        return AppFadeThroughIndexedStack.lazy(
+          key: const ValueKey<String>('library_search_category_stack'),
+          indexListenable: _activeCategoryIndex,
+          duration: kAppMotionSlow,
+          contentRevision: Object(),
+          itemCount: _categories.length,
+          itemBuilder: (context, index) {
+            final category = _categories[index];
+            if (category == AudioLibraryCategoryType.all) {
+              return LibrarySearchAllResults(
+                isActive: () => _categoryType == AudioLibraryCategoryType.all,
+                activityListenable: _activeCategoryIndex,
+                query: _query,
+                queryRevision: _queryRevision,
+                structureRevision: structureRevision,
+                detailRevision: detailRevision,
+                scrollController:
+                    _scrollControllers[AudioLibraryCategoryType.all]!,
+                topPadding: topInset,
+                isSelectionMode: _isSelectionMode,
+                selectedPaths: _selectedLibraryPaths,
+                onEnterSelectionMode: _enterSelectionMode,
+                onToggleSelection: _toggleLibrarySelection,
+                onTreeChanged: (tree) => _searchSelectionTree = tree,
+              );
+            }
+            return _buildCategoryBody(
+              categoryType: category,
+              libraryFacade: libraryFacade,
+              i18n: i18n,
+              topPadding: topInset,
+              bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
+              cacheExtent: 120,
+              structureRevision: structureRevision,
+              detailRevision: detailRevision,
+              pinnedPaths: pinnedLibraryPaths,
+            );
+          },
         );
       },
     );
-
-    final isAllPinned =
-        _selectedLibraryPaths.isNotEmpty &&
-        _selectedLibraryPaths.every(
-          (p) => pinnedLibraryPaths.contains(PathMatcher.normalize(p)),
-        );
 
     return ValueListenableBuilder<int>(
       valueListenable: _activeCategoryIndex,
@@ -384,26 +384,53 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
             onChanged: _onChanged,
             onSubmitted: _onSubmitted,
             onCloseOrClear: _closeOrClear,
-            body: body!,
+            bodyBuilder: (_) => body!,
+            placeholder: LibraryLoadingSkeleton(
+              topInset: topInset,
+              bottomInset: MediaQuery.paddingOf(context).bottom + 16,
+            ),
             controlsOverlay: _isSelectionMode
-                ? LibraryBatchSelectionHeader(
-                    keyPrefix: 'library_search',
-                    i18n: i18n,
-                    selectedCount: _selectedLibraryPaths.length,
-                    isPinned: isAllPinned,
-                    onAddToPlaylist: _selectedLibraryPaths.isEmpty
-                        ? null
-                        : () => unawaited(_addCurrentSelectionsToPlaylist()),
-                    onCompleteMetadata: _selectedLibraryPaths.isEmpty
-                        ? null
-                        : () => unawaited(_completeCurrentSelectionsMetadata()),
-                    onTogglePin: _selectedLibraryPaths.isEmpty
-                        ? null
-                        : () => unawaited(_toggleCurrentSelectionsPinned()),
-                    onRemove: _selectedLibraryPaths.isEmpty
-                        ? null
-                        : () => unawaited(_removeCurrentSelections()),
-                    onExit: _exitSelectionMode,
+                ? Consumer(
+                    builder: (context, ref, _) {
+                      final pinnedLibraryPaths = ref
+                          .watch(
+                            settingsStateProvider.select(
+                              (s) =>
+                                  s.value?.pinnedLibraryPaths ??
+                                  const <String>[],
+                            ),
+                          )
+                          .toSet();
+                      final isAllPinned =
+                          _selectedLibraryPaths.isNotEmpty &&
+                          _selectedLibraryPaths.every(
+                            (p) => pinnedLibraryPaths.contains(
+                              PathMatcher.normalize(p),
+                            ),
+                          );
+                      return LibraryBatchSelectionHeader(
+                        keyPrefix: 'library_search',
+                        i18n: i18n,
+                        selectedCount: _selectedLibraryPaths.length,
+                        isPinned: isAllPinned,
+                        onAddToPlaylist: _selectedLibraryPaths.isEmpty
+                            ? null
+                            : () =>
+                                  unawaited(_addCurrentSelectionsToPlaylist()),
+                        onCompleteMetadata: _selectedLibraryPaths.isEmpty
+                            ? null
+                            : () => unawaited(
+                                _completeCurrentSelectionsMetadata(),
+                              ),
+                        onTogglePin: _selectedLibraryPaths.isEmpty
+                            ? null
+                            : () => unawaited(_toggleCurrentSelectionsPinned()),
+                        onRemove: _selectedLibraryPaths.isEmpty
+                            ? null
+                            : () => unawaited(_removeCurrentSelections()),
+                        onExit: _exitSelectionMode,
+                      );
+                    },
                   )
                 : null,
           ),

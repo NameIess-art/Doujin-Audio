@@ -207,6 +207,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
           Future<String?> loadImage() =>
               coverUi.deferredRemoteCover(imagePath, context: context);
           return AsyncRemoteCoverImage(
+            deferLoadDuringInteraction: true,
             url: imagePath,
             future: resolved != null ? Future.value(resolved) : loadImage(),
             initialPath: resolved,
@@ -222,6 +223,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
       );
     }
     return RetryingFileImage(
+      deferLoadDuringInteraction: true,
       path: imagePath,
       fit: BoxFit.contain,
       useDefaultCacheWidth: false,

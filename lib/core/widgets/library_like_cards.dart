@@ -17,6 +17,8 @@ const _libraryLikeInfoLineHeight = LibraryLikeCardMetrics.contentHeight / 5;
 
 const double kResponsiveLibraryCardMinWidth = 420;
 const double kResponsiveLibraryCardSpacing = 8;
+const String kLibraryLikeTagSeparator = '   ';
+
 
 int responsiveLibraryCardColumnCount(double availableWidth) {
   if (!availableWidth.isFinite || availableWidth <= 0) return 1;
@@ -237,6 +239,7 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
   required String releaseDateLabel,
   required String ratingLabel,
   String listSeparator = '\uFF0C',
+  String tagSeparator = kLibraryLikeTagSeparator,
 }) {
   final result = <LibraryLikeInfoLineData>[];
   if (metadata.voiceActors.isNotEmpty) {
@@ -264,7 +267,7 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
         tagsLabel,
         _normalizeLibraryLikeList(
           metadata.tags,
-        ).map((tag) => tag.startsWith('#') ? tag : '#$tag').join(' '),
+        ).map((tag) => tag.startsWith('#') ? tag : '#$tag').join(tagSeparator),
         icon: Icons.local_offer_rounded,
       ),
     );
@@ -573,6 +576,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
     required this.ratingLabel,
     required this.coverBuilder,
     this.listSeparator = '\uFF0C',
+    this.tagSeparator = kLibraryLikeTagSeparator,
     this.loading = false,
     this.accentColor,
     this.trailingActions,
@@ -587,6 +591,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   final String releaseDateLabel;
   final String ratingLabel;
   final String listSeparator;
+  final String tagSeparator;
   final bool loading;
   final Widget? trailingActions;
   final Widget Function(double coverWidth) coverBuilder;
@@ -618,6 +623,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
                 releaseDateLabel: releaseDateLabel,
                 ratingLabel: ratingLabel,
                 listSeparator: listSeparator,
+                tagSeparator: tagSeparator,
               ),
         coverBuilder: coverBuilder,
         accentColor: accentColor,

@@ -117,20 +117,181 @@ class AppPageContentTransition extends StatelessWidget {
     super.key,
     required this.child,
     this.backgroundColor,
-  });
+  }) : _builder = null,
+       _placeholder = null;
+
+  const AppPageContentTransition.deferred({
+    super.key,
+    required WidgetBuilder builder,
+    required Widget placeholder,
+    this.backgroundColor,
+  }) : child = const SizedBox.shrink(),
+       _builder = builder,
+       _placeholder = placeholder;
+
   final Widget child;
   final Color? backgroundColor;
+  final WidgetBuilder? _builder;
+  final Widget? _placeholder;
 
   @override
   Widget build(BuildContext context) {
     final motion = context
         .dependOnInheritedWidgetOfExactType<_AppPageMotionScope>();
-    final content = backgroundColor == null
+    final body = _builder == null
         ? child
-        : ColoredBox(color: backgroundColor!, child: child);
+        : _DeferredPageContent(builder: _builder, placeholder: _placeholder!);
+    final content = backgroundColor == null
+        ? body
+        : ColoredBox(color: backgroundColor!, child: body);
     if (motion == null) return content;
     return motion.contentBuilder(context, content);
   }
+}
+
+class _DeferredPageContent extends StatefulWidget {
+  const _DeferredPageContent({
+    required this.builder,
+    required this.placeholder,
+  });
+
+  final WidgetBuilder builder;
+  final Widget placeholder;
+
+  @override
+  State<_DeferredPageContent> createState() => _DeferredPageContentState();
+}
+
+class _DeferredPageContentState extends State<_DeferredPageContent>
+    with SingleTickerProviderStateMixin {
+  final _coordinator = UiInteractionCoordinator.instance;
+  late final _commitKey = 'page_content_${identityHashCode(this)}';
+  Animation<double>? _routeAnimation;
+  bool _firstFrameBuilt = false;
+  bool _active = false;
+  bool _ready = false;
+  bool _commitScheduled = false;
+  late final AnimationController _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _fade = AnimationController(vsync: this, duration: kAppMotionFast)
+      ..addStatusListener(_handleFadeStatus);
+    _coordinator.addListener(_scheduleContent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _firstFrameBuilt = true;
+      _scheduleContent();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_ready && MediaQuery.disableAnimationsOf(context)) _fade.value = 1;
+    if (_ready) return;
+    final route = ModalRoute.of(context);
+    _active =
+        TickerMode.valuesOf(context).enabled &&
+        (route == null || route.isCurrent);
+    final animation = route?.animation;
+    if (!identical(animation, _routeAnimation)) {
+      _routeAnimation?.removeStatusListener(_handleRouteStatus);
+      _routeAnimation = animation;
+      animation?.addStatusListener(_handleRouteStatus);
+    }
+    _scheduleContent();
+  }
+
+  void _handleRouteStatus(AnimationStatus _) => _scheduleContent();
+
+  void _handleFadeStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && mounted) setState(() {});
+  }
+
+  @override
+  void deactivate() {
+    _active = false;
+    _coordinator.cancelCommit(_commitKey);
+    _commitScheduled = false;
+    _coordinator.removeListener(_scheduleContent);
+    _routeAnimation?.removeStatusListener(_handleRouteStatus);
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    if (!_ready) {
+      _coordinator.addListener(_scheduleContent);
+      _routeAnimation?.addStatusListener(_handleRouteStatus);
+    }
+  }
+
+  bool get _routeReady =>
+      _routeAnimation == null ||
+      _routeAnimation!.status == AnimationStatus.completed;
+
+  void _scheduleContent() {
+    if (!_firstFrameBuilt ||
+        !_active ||
+        !_routeReady ||
+        _ready ||
+        _commitScheduled) {
+      return;
+    }
+    _commitScheduled = true;
+    _coordinator.scheduleCommit(
+      key: _commitKey,
+      allowDuringScroll: true,
+      commit: () {
+        _commitScheduled = false;
+        if (!mounted ||
+            !_active ||
+            !_routeReady ||
+            _coordinator.isVisualUpdateDeferred) {
+          return;
+        }
+        // Preparing only the shell lets entrance motion start without laying
+        // out cached lists. Later visits keep the mounted content and its state.
+        setState(() => _ready = true);
+        if (MediaQuery.disableAnimationsOf(context)) {
+          _fade.value = 1;
+        } else {
+          _fade.forward();
+        }
+        _coordinator.removeListener(_scheduleContent);
+        _routeAnimation?.removeStatusListener(_handleRouteStatus);
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _coordinator.cancelCommit(_commitKey);
+    _coordinator.removeListener(_scheduleContent);
+    _routeAnimation?.removeStatusListener(_handleRouteStatus);
+    _fade.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      if (!_ready || !_fade.isCompleted)
+        IgnorePointer(
+          key: const ValueKey('deferred_placeholder'),
+          child: TickerMode(enabled: false, child: widget.placeholder),
+        ),
+      FadeTransition(
+        key: const ValueKey('deferred_content'),
+        opacity: _fade,
+        child: _ready ? widget.builder(context) : const SizedBox.shrink(),
+      ),
+    ],
+  );
 }
 
 class AppPageHeaderTransition extends StatelessWidget {

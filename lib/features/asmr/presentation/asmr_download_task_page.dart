@@ -13,6 +13,7 @@ import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/page_header_inset.dart';
+import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
 import 'asmr_download_details_page.dart';
 
@@ -23,17 +24,6 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(asmrDownloadTaskIdsProvider).value;
-    final removalState = ref.watch(undoableRemovalStateProvider);
-    final taskIds =
-        (state ??
-                ref.read(asmrDownloadManagerProvider)?.taskIds ??
-                const <int>[])
-            .where(
-              (workId) =>
-                  !removalState.isHidden(_asmrDownloadTaskRemovalKey(workId)),
-            )
-            .toList(growable: false);
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
@@ -44,29 +34,57 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
         topInset: headerHeight + 16,
         child: Stack(
           children: [
-            AppPageContentTransition(
-              child: taskIds.isEmpty
-                  ? Center(
-                      child: Text(
-                        i18n.tr('asmr_download_no_tasks'),
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        headerHeight + 16,
-                        16,
-                        MediaQuery.paddingOf(context).bottom + 16,
-                      ),
-                      physics: const ClampingScrollPhysics(),
-                      itemCount: taskIds.length,
-                      itemBuilder: (context, index) {
-                        return _DownloadTaskItem(workId: taskIds[index]);
-                      },
-                    ),
+            AppPageContentTransition.deferred(
+              placeholder: OperationSkeletonList(
+                showHeader: false,
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  headerHeight + 16,
+                  16,
+                  MediaQuery.paddingOf(context).bottom + 16,
+                ),
+              ),
+              builder: (context) => Consumer(
+                builder: (context, ref, _) {
+                  final state = ref.watch(asmrDownloadTaskIdsProvider).value;
+                  final removalState = ref.watch(undoableRemovalStateProvider);
+                  final taskIds =
+                      (state ??
+                              ref.read(asmrDownloadManagerProvider)?.taskIds ??
+                              const <int>[])
+                          .where(
+                            (workId) => !removalState.isHidden(
+                              _asmrDownloadTaskRemovalKey(workId),
+                            ),
+                          )
+                          .toList(growable: false);
+                  return taskIds.isEmpty
+                      ? Center(
+                          child: Text(
+                            i18n.tr('asmr_download_no_tasks'),
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            headerHeight + 16,
+                            16,
+                            MediaQuery.paddingOf(context).bottom + 16,
+                          ),
+                          physics: const ClampingScrollPhysics(),
+                          itemCount: taskIds.length,
+                          itemBuilder: (context, index) {
+                            return _DownloadTaskItem(workId: taskIds[index]);
+                          },
+                        );
+                },
+              ),
             ),
             Positioned(
               top: 0,

@@ -10,8 +10,79 @@ import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_details_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 void main() {
+  final interaction = UiInteractionCoordinator.instance;
+  setUp(interaction.resetForTest);
+  tearDown(interaction.resetForTest);
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'download details delay tree rows during entrance and retain collapse on $platform',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final language = AppLanguageProvider();
+        await language.setLanguage(AppLanguage.en);
+        addTearDown(language.dispose);
+        final navigator = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              appLanguageProviderInstanceProvider.overrideWithValue(language),
+              asmrDownloadTaskProvider(1).overrideWithValue(_downloadTree(500)),
+            ],
+            child: MaterialApp(
+              navigatorKey: navigator,
+              navigatorObservers: [UiInteractionNavigatorObserver()],
+              home: const Scaffold(),
+            ),
+          ),
+        );
+        unawaited(
+          navigator.currentState!.push(
+            buildAppPageRoute<void>(
+              context: navigator.currentContext!,
+              child: const AsmrDownloadDetailsPage(workId: 1),
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(
+          find.text('Download details', skipOffstage: false),
+          findsOneWidget,
+        );
+        expect(find.byType(CustomScrollView), findsNothing);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.byType(CustomScrollView), findsNothing);
+        await tester.pumpAndSettle();
+        final list = tester.element(find.byType(CustomScrollView));
+        expect(find.text('File000.mp3'), findsOneWidget);
+        expect(find.text('File499.mp3'), findsNothing);
+        await tester.tap(find.text('Folder'));
+        await tester.pumpAndSettle();
+        expect(find.text('File000.mp3'), findsNothing);
+        unawaited(
+          navigator.currentState!.push(
+            MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+          ),
+        );
+        await tester.pumpAndSettle();
+        navigator.currentState!.pop();
+        await tester.pump();
+        expect(tester.element(find.byType(CustomScrollView)), same(list));
+        expect(find.text('File000.mp3'), findsNothing);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        interaction.resetForTest();
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
   testWidgets('download details follows the selected language', (tester) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     final languageProvider = AppLanguageProvider();

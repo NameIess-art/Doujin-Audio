@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/operation_feedback.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
@@ -85,6 +86,7 @@ class AboutPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final tokens = AppDesignTokens.of(context);
     final bottomInset = MediaQuery.paddingOf(context).bottom;
@@ -101,105 +103,114 @@ class AboutPage extends ConsumerWidget {
         topInset: headerHeight,
         child: Stack(
           children: [
-          Positioned.fill(
-            child: AppPageContentTransition(
-              child: ListView(
-              padding: EdgeInsets.fromLTRB(
-                tokens.pageHorizontalPadding,
-                headerHeight + AppPageHeaderMetrics.firstContentSpacing,
-                tokens.pageHorizontalPadding,
-                bottomInset + AppSpacing.xl,
-              ),
-              children: [
-                _AboutCard(
-                  children: [
-                    const _AboutIdentity(),
-                    const SizedBox(height: AppSpacing.lg),
-                    _AboutVersionTile(versionFuture: versionFuture),
-                    const SizedBox(height: AppSpacing.xs),
-                    _AboutLinkTile(
-                      icon: Icons.code_rounded,
-                      title: i18n.tr('about_source_code'),
-                      onTap: () => unawaited(_openRepository(context, ref)),
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    _AboutLinkTile(
-                      icon: Icons.menu_book_outlined,
-                      title: i18n.tr('about_wiki'),
-                      onTap: () => unawaited(_openReadme(context, ref)),
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    _AboutLinkTile(
-                      icon: Icons.mail_outline_rounded,
-                      title: i18n.tr('about_feedback'),
-                      onTap: () => unawaited(_openFeedback(context, ref)),
-                    ),
-                  ],
+            Positioned.fill(
+              child: AppPageContentTransition.deferred(
+                placeholder: OperationSkeletonList(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.pageHorizontalPadding,
+                    headerHeight + AppPageHeaderMetrics.firstContentSpacing,
+                    tokens.pageHorizontalPadding,
+                    bottomInset + AppSpacing.xl,
+                  ),
                 ),
-                const SizedBox(height: AppSpacing.lg),
-                _AboutCard(
+                builder: (context) => ListView(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.pageHorizontalPadding,
+                    headerHeight + AppPageHeaderMetrics.firstContentSpacing,
+                    tokens.pageHorizontalPadding,
+                    bottomInset + AppSpacing.xl,
+                  ),
                   children: [
-                    ListTile(
-                      leading: const _AboutIconContainer(
-                        icon: Icons.person_outline_rounded,
-                      ),
-                      title: Text(
-                        i18n.tr('about_author'),
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                    _AboutCard(
+                      children: [
+                        const _AboutIdentity(),
+                        const SizedBox(height: AppSpacing.lg),
+                        _AboutVersionTile(versionFuture: versionFuture),
+                        const SizedBox(height: AppSpacing.xs),
+                        _AboutLinkTile(
+                          icon: Icons.code_rounded,
+                          title: i18n.tr('about_source_code'),
+                          onTap: () => unawaited(_openRepository(context, ref)),
                         ),
-                      ),
-                      trailing: const Text(
-                        'NameIess-art',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                        const SizedBox(height: AppSpacing.xs),
+                        _AboutLinkTile(
+                          icon: Icons.menu_book_outlined,
+                          title: i18n.tr('about_wiki'),
+                          onTap: () => unawaited(_openReadme(context, ref)),
                         ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.xs,
-                      ),
+                        const SizedBox(height: AppSpacing.xs),
+                        _AboutLinkTile(
+                          icon: Icons.mail_outline_rounded,
+                          title: i18n.tr('about_feedback'),
+                          onTap: () => unawaited(_openFeedback(context, ref)),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.xs,
-                      ),
-                      child: OutlinedButton.icon(
-                        onPressed: () => unawaited(_openSponsor(context, ref)),
-                        icon: const Icon(Icons.favorite_border_rounded),
-                        label: Text(
-                          i18n.tr('about_reward'),
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                    const SizedBox(height: AppSpacing.lg),
+                    _AboutCard(
+                      children: [
+                        ListTile(
+                          leading: const _AboutIconContainer(
+                            icon: Icons.person_outline_rounded,
+                          ),
+                          title: Text(
+                            i18n.tr('about_author'),
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          trailing: const Text(
+                            'NameIess-art',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xs,
                           ),
                         ),
-                      ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xs,
+                          ),
+                          child: OutlinedButton.icon(
+                            onPressed: () =>
+                                unawaited(_openSponsor(context, ref)),
+                            icon: const Icon(Icons.favorite_border_rounded),
+                            label: Text(
+                              i18n.tr('about_reward'),
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-            ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: TopPageHeader(
-              icon: Icons.info_outline_rounded,
-              leading: BackButton(
-                color: Theme.of(context).colorScheme.onSurface,
               ),
-              title: i18n.tr('about'),
             ),
-          ),
-        ],
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: TopPageHeader(
+                icon: Icons.info_outline_rounded,
+                leading: BackButton(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                title: i18n.tr('about'),
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
   }
 }
 

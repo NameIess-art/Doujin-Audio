@@ -4,6 +4,7 @@ import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
@@ -175,6 +176,17 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 230));
 
+      expect(find.byType(SessionDetailContent), findsNothing);
+      expect(
+        find.byKey(ValueKey<String>('artwork_${session.id}')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('session_detail_close_button')),
+        findsOneWidget,
+      );
+      await tester.pumpAndSettle();
+
       expect(find.byType(ImageFiltered), findsNothing);
       expect(find.byType(BackdropFilter), findsNothing);
       final backdropGate = find.byKey(
@@ -189,6 +201,33 @@ void main() {
         ),
       );
       expect(foregroundImage.cacheWidth, isNull);
+
+      final contentState = tester.state<SessionDetailContentState>(
+        find.byType(SessionDetailContent),
+      );
+      final detailContext = tester.element(find.byType(SessionDetailScaffold));
+      final navigator = Navigator.of(detailContext);
+      unawaited(
+        navigator.push(
+          buildAppPageRoute<void>(
+            context: detailContext,
+            child: const Scaffold(body: Text('Cover session detail')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<SessionDetailContentState>(
+          find.byType(SessionDetailContent),
+        ),
+        same(contentState),
+      );
+      expect(
+        find.byKey(ValueKey<String>('artwork_${session.id}')),
+        findsOneWidget,
+      );
 
       final dismissGesture = tester.widget<GestureDetector>(
         find.byWidgetPredicate(

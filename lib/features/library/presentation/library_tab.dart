@@ -106,7 +106,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           libraryFacade: ref.read(libraryFacadeProvider),
           snapshotRevision: listState.structureRevision,
         );
-        _ensureSortingSnapshot(ref.read(libraryFacadeProvider));
       }
       _ensureStartupRefreshStarted();
       if (_startupRefreshWaiting &&
@@ -524,7 +523,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               return LibraryTreeSnapshot(tree: const [], leafFolderCount: 0);
             })
             .whenComplete(() {
-              if (mounted && _cardSnapshotRequestRevision == structureRevision) {
+              if (mounted &&
+                  _cardSnapshotRequestRevision == structureRevision) {
                 _cardSnapshotRequestRevision = null;
               }
             }),
@@ -669,11 +669,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listStateCanPullRefresh = ref.watch(
       libraryListUiProvider.select((s) => s.canPullRefresh),
     );
-    final pinnedLibraryPaths = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.pinnedLibraryPaths ?? const <String>[],
-      ),
-    ).toSet();
+    final pinnedLibraryPaths = ref
+        .watch(
+          settingsStateProvider.select(
+            (state) => state.value?.pinnedLibraryPaths ?? const <String>[],
+          ),
+        )
+        .toSet();
     final libraryRefreshOperationBusy = ref.watch(
       uiOperationForScopeProvider(
         UiOperationScope.libraryRefresh,
@@ -696,14 +698,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         libraryFacade: libraryFacade,
         snapshotRevision: listStateStructureRevision,
       );
-      _ensureSortingSnapshot(libraryFacade);
     } else {
       _cancelSortingSnapshotPreparation();
     }
-    final tree = ref.watch(librarySortedTreeUiProvider);
-    final selectedSelections = _isSelectionMode
-        ? selectedLibraryNodeSelections(tree, _selectedLibraryPaths)
-        : const <LibraryBatchSelection>[];
     final bottomInset = MobileOverlayInset.of(context);
 
     final headerControlsFullHeight = this.headerControlsFullHeight;
@@ -765,9 +762,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         key: _refreshIndicatorKey,
         lockChildWhileRefreshing: true,
         color: Theme.of(context).colorScheme.primary,
-        backgroundColor: Theme.of(
-          context,
-        ).colorScheme.surfaceContainerHighest,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         onRefresh: _runLibraryPullRefresh,
         // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
         edgeOffset: listTopPadding,
@@ -783,54 +778,69 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            AppPageContentTransition(
-              child: PlaceholderContentTransition(
-                showPlaceholder: !listStateIsInitialized || showLibrarySkeleton,
-                placeholder: LibraryLoadingSkeleton(
-                  bottomInset: listBottomPadding,
-                  topInset: listTopPadding,
-                ),
-                content: tree.isEmpty
-                    ? refreshableEmptyBody()
-                    : GlassRefreshIndicator(
-                        key: _refreshIndicatorKey,
-                        lockChildWhileRefreshing: true,
-                        color: Theme.of(context).colorScheme.primary,
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                        onRefresh: _runLibraryPullRefresh,
-                        edgeOffset: listTopPadding,
-                        displacement: 32,
-                        triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-                        child: LibraryTreeList(
-                          tree: tree,
-                          structureRevision: listStateStructureRevision,
-                          selectedPaths: _selectedLibraryPaths,
-                          isSelectionMode: _isSelectionMode,
-                          scrollController: _scrollController,
-                          i18n: i18n,
-                          topPadding: listTopPadding,
-                          bottomPadding: listBottomPadding,
-                          cacheExtent: listCacheExtent,
-                          physics: canPullRefresh
-                              ? AlwaysScrollableScrollPhysics(
-                                  parent: GlassRefreshIndicatorScrollPhysics(
-                                    isIndicatorVisible: () =>
-                                        _refreshIndicatorKey
-                                            .currentState
-                                            ?.isIndicatorVisible ??
-                                        false,
-                                  ),
-                                )
-                              : null,
-                          loadFolder: libraryFacade.loadLibraryFolderTree,
-                          currentStructureRevision: () =>
-                              libraryFacade.structureRevision,
-                          onLongPress: _enterSelectionMode,
-                          onToggleSelect: _toggleLibrarySelection,
-                        ),
-                      ),
+            AppPageContentTransition.deferred(
+              placeholder: LibraryLoadingSkeleton(
+                bottomInset: listBottomPadding,
+                topInset: listTopPadding,
+              ),
+              builder: (_) => Consumer(
+                builder: (context, ref, _) {
+                  if (_isActive && listStateIsInitialized) {
+                    _ensureSortingSnapshot(libraryFacade);
+                  }
+                  final tree = ref.watch(librarySortedTreeUiProvider);
+                  return PlaceholderContentTransition(
+                    showPlaceholder:
+                        !listStateIsInitialized || showLibrarySkeleton,
+                    placeholder: LibraryLoadingSkeleton(
+                      bottomInset: listBottomPadding,
+                      topInset: listTopPadding,
+                    ),
+                    content: tree.isEmpty
+                        ? refreshableEmptyBody()
+                        : GlassRefreshIndicator(
+                            key: _refreshIndicatorKey,
+                            lockChildWhileRefreshing: true,
+                            color: Theme.of(context).colorScheme.primary,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
+                            onRefresh: _runLibraryPullRefresh,
+                            edgeOffset: listTopPadding,
+                            displacement: 32,
+                            triggerMode:
+                                GlassRefreshIndicatorTriggerMode.anywhere,
+                            child: LibraryTreeList(
+                              tree: tree,
+                              structureRevision: listStateStructureRevision,
+                              selectedPaths: _selectedLibraryPaths,
+                              isSelectionMode: _isSelectionMode,
+                              scrollController: _scrollController,
+                              i18n: i18n,
+                              topPadding: listTopPadding,
+                              bottomPadding: listBottomPadding,
+                              cacheExtent: listCacheExtent,
+                              physics: canPullRefresh
+                                  ? AlwaysScrollableScrollPhysics(
+                                      parent:
+                                          GlassRefreshIndicatorScrollPhysics(
+                                            isIndicatorVisible: () =>
+                                                _refreshIndicatorKey
+                                                    .currentState
+                                                    ?.isIndicatorVisible ??
+                                                false,
+                                          ),
+                                    )
+                                  : null,
+                              loadFolder: libraryFacade.loadLibraryFolderTree,
+                              currentStructureRevision: () =>
+                                  libraryFacade.structureRevision,
+                              onLongPress: _enterSelectionMode,
+                              onToggleSelect: _toggleLibrarySelection,
+                            ),
+                          ),
+                  );
+                },
               ),
             ),
 
@@ -862,50 +872,59 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               left: 0,
               right: 0,
               child: _isSelectionMode
-                  ? LibraryBatchSelectionHeader(
-                      keyPrefix: 'library',
-                      i18n: i18n,
-                      selectedCount: selectedSelections.length,
-                      onAddToPlaylist: selectedSelections.isEmpty
-                          ? null
-                          : () => addLibraryBatchSelectionsToPlaylist(
-                              context: context,
-                              ref: ref,
-                              selections: selectedSelections,
-                              exitSelectionMode: _exitSelectionMode,
-                            ),
-                      onCompleteMetadata: selectedSelections.isEmpty
-                          ? null
-                          : () => completeLibraryBatchSelectionsMetadata(
-                              context: context,
-                              ref: ref,
-                              selections: selectedSelections,
-                              exitSelectionMode: _exitSelectionMode,
-                            ),
-                      onTogglePin: selectedSelections.isEmpty
-                          ? null
-                          : () => toggleLibraryBatchSelectionsPinned(
-                              context: context,
-                              ref: ref,
-                              selections: selectedSelections,
-                              exitSelectionMode: _exitSelectionMode,
-                            ),
-                      isPinned:
-                          selectedSelections.isNotEmpty &&
-                          selectedSelections.every(
-                            (s) => pinnedLibraryPaths.contains(
-                              PathMatcher.normalize(s.path),
-                            ),
-                          ),
-                      onRemove: selectedSelections.isEmpty
-                          ? null
-                          : () => removeLibraryBatchSelections(
-                              context: context,
-                              ref: ref,
-                              selections: selectedSelections,
-                              exitSelectionMode: _exitSelectionMode,
-                            ),
-                      onExit: _exitSelectionMode,
+                  ? Consumer(
+                      builder: (context, ref, _) {
+                        final selectedSelections =
+                            selectedLibraryNodeSelections(
+                              ref.watch(librarySortedTreeUiProvider),
+                              _selectedLibraryPaths,
+                            );
+                        return LibraryBatchSelectionHeader(
+                          keyPrefix: 'library',
+                          i18n: i18n,
+                          selectedCount: selectedSelections.length,
+                          onAddToPlaylist: selectedSelections.isEmpty
+                              ? null
+                              : () => addLibraryBatchSelectionsToPlaylist(
+                                  context: context,
+                                  ref: ref,
+                                  selections: selectedSelections,
+                                  exitSelectionMode: _exitSelectionMode,
+                                ),
+                          onCompleteMetadata: selectedSelections.isEmpty
+                              ? null
+                              : () => completeLibraryBatchSelectionsMetadata(
+                                  context: context,
+                                  ref: ref,
+                                  selections: selectedSelections,
+                                  exitSelectionMode: _exitSelectionMode,
+                                ),
+                          onTogglePin: selectedSelections.isEmpty
+                              ? null
+                              : () => toggleLibraryBatchSelectionsPinned(
+                                  context: context,
+                                  ref: ref,
+                                  selections: selectedSelections,
+                                  exitSelectionMode: _exitSelectionMode,
+                                ),
+                          isPinned:
+                              selectedSelections.isNotEmpty &&
+                              selectedSelections.every(
+                                (s) => pinnedLibraryPaths.contains(
+                                  PathMatcher.normalize(s.path),
+                                ),
+                              ),
+                          onRemove: selectedSelections.isEmpty
+                              ? null
+                              : () => removeLibraryBatchSelections(
+                                  context: context,
+                                  ref: ref,
+                                  selections: selectedSelections,
+                                  exitSelectionMode: _exitSelectionMode,
+                                ),
+                          onExit: _exitSelectionMode,
+                        );
+                      },
                     )
                   : TopPageHeader(
                       key: headerKey,
@@ -913,7 +932,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       collapseController: _scrollController,
                       topCapsuleTitle: i18n.tr('music_library'),
                       topCapsuleData: i18n.tr('library_header_stats', {
-                        'works': tree.length.toString(),
+                        'works': libraryFacade.libraryCards.length.toString(),
                         'sessions': libraryHeaderAudioCount.toString(),
                       }),
                       title: i18n.tr('music_library'),

@@ -108,6 +108,181 @@ class _ListenerCountingController extends AnimationController {
 }
 
 void main() {
+  setUp(UiInteractionCoordinator.instance.resetForTest);
+  tearDown(UiInteractionCoordinator.instance.resetForTest);
+  testWidgets(
+    'deferred route paints a static shell before mounting its content',
+    (tester) async {
+      final navigator = GlobalKey<NavigatorState>();
+      var builds = 0;
+      var placeholderTicks = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigator,
+          navigatorObservers: [UiInteractionNavigatorObserver()],
+          home: const SizedBox(),
+        ),
+      );
+      final route = buildAppPageRoute<void>(
+        context: navigator.currentContext!,
+        child: Scaffold(
+          body: Stack(
+            children: [
+              AppPageContentTransition.deferred(
+                placeholder: _TickingPage(
+                  onTick: () => placeholderTicks++,
+                  child: const Text('static shell'),
+                ),
+                builder: (_) {
+                  builds++;
+                  return const _StateProbe(label: 'deferred content');
+                },
+              ),
+              const Text('page title'),
+            ],
+          ),
+        ),
+      );
+      unawaited(navigator.currentState!.push(route));
+      await tester.pump();
+      expect(find.text('page title', skipOffstage: false), findsOneWidget);
+      expect(find.text('static shell', skipOffstage: false), findsOneWidget);
+      expect(builds, 0);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(builds, 0);
+      expect(placeholderTicks, 0);
+      await tester.pumpAndSettle();
+      expect(find.text('deferred content'), findsOneWidget);
+      expect(builds, greaterThan(0));
+      expect(find.text('static shell'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'deferred content waits for activation and retains loaded state',
+    (tester) async {
+      final active = ValueNotifier(false);
+      addTearDown(active.dispose);
+      var builds = 0;
+      Widget host({bool dark = false, bool reduced = false}) => MaterialApp(
+        theme: dark ? ThemeData.dark() : ThemeData.light(),
+        home: MediaQuery(
+          data: MediaQueryData(disableAnimations: reduced),
+          child: ValueListenableBuilder<bool>(
+            valueListenable: active,
+            builder: (_, enabled, _) => Offstage(
+              offstage: !enabled,
+              child: TickerMode(
+                enabled: enabled,
+                child: AppPageContentTransition.deferred(
+                  placeholder: const Text('waiting'),
+                  builder: (_) {
+                    builds++;
+                    return const _StateProbe(label: 'retained content');
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(host());
+      await tester.pumpAndSettle();
+      expect(builds, 0);
+      final navigation = Object();
+      UiInteractionCoordinator.instance.beginNavigation(navigation);
+      active.value = true;
+      await tester.pump();
+      expect(builds, 0);
+      active.value = false;
+      await tester.pump();
+      UiInteractionCoordinator.instance.endNavigation(navigation);
+      await tester.pumpAndSettle();
+      expect(builds, 0);
+      active.value = true;
+      await tester.pumpAndSettle();
+      final state = tester.state(find.byType(_StateProbe));
+      active.value = false;
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(host(dark: true, reduced: true));
+      active.value = true;
+      await tester.pumpAndSettle();
+      expect(tester.state(find.byType(_StateProbe)), same(state));
+      expect(find.text('waiting'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets('deferred content cancels pending work on disposal', (
+    tester,
+  ) async {
+    final navigation = Object();
+    UiInteractionCoordinator.instance.beginNavigation(navigation);
+    var builds = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppPageContentTransition.deferred(
+          placeholder: const SizedBox(),
+          builder: (_) {
+            builds++;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(builds, 0);
+    expect(UiInteractionCoordinator.instance.pendingCommitCount, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(UiInteractionCoordinator.instance.pendingCommitCount, 0);
+    UiInteractionCoordinator.instance.cancelNavigation(navigation);
+    await tester.pumpAndSettle();
+    expect(builds, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('deferred reduced-motion content mounts during ordinary scroll', (
+    tester,
+  ) async {
+    final scrolling = Object();
+    UiInteractionCoordinator.instance.beginInteraction(scrolling);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: AppPageContentTransition.deferred(
+            placeholder: const Text('waiting'),
+            builder: (_) => const Text('ready'),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('waiting'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('ready'), findsOneWidget);
+    expect(
+      tester
+          .widget<FadeTransition>(
+            find.byKey(const ValueKey('deferred_content')),
+          )
+          .opacity
+          .value,
+      1,
+    );
+    UiInteractionCoordinator.instance.cancelInteraction(scrolling);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('secondary menu fades over a persistent primary in 300 ms', (
     tester,
   ) async {
@@ -220,9 +395,6 @@ void main() {
       }
     }
   });
-
-  setUp(UiInteractionCoordinator.instance.resetForTest);
-  tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   for (final scale in [false, true]) {
     testWidgets('fade owns and releases curve listeners (scale: $scale)', (

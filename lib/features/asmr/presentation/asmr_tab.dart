@@ -844,9 +844,13 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          AppPageContentTransition(
+          AppPageContentTransition.deferred(
             backgroundColor: Theme.of(context).colorScheme.surface,
-            child: RepaintBoundary(
+            placeholder: LibrarySkeletonListView(
+              topInset: headerContentHeight,
+              bottomInset: bottomInset + 24,
+            ),
+            builder: (context) => RepaintBoundary(
               child: PlaceholderContentTransition(
                 showPlaceholder: !globalInitialized,
                 placeholder: LibrarySkeletonListView(

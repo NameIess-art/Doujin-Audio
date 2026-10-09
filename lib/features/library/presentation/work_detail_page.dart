@@ -118,6 +118,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   WorkDirectorySnapshot? _directory;
   bool _preparingDirectory = false;
   int _directoryRequest = 0;
+  bool _cachedSourcesRestored = false;
+  bool _initialFilesStarted = false;
   late final String _directoryCommitKey =
       'work_detail_directory_${identityHashCode(this)}';
 
@@ -149,13 +151,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     _localTarget = widget.localTarget;
     if (widget.isLocal) {
       final library = ref.read(libraryFacadeProvider);
-      final folderPath = _localTarget!.targetPath;
-      final textService = ref.read(workTextServiceProvider);
-      _localFolderNode = library.resolvedLibraryFolderTree(folderPath);
-      final cachedTexts = textService.resolvedWorkTextFiles(folderPath);
-      final cachedImages = textService.resolvedWorkImageFiles(folderPath);
-      _localTextFiles = cachedTexts ?? const [];
-      _localImageReferences = cachedImages ?? const [];
       _localDetail =
           widget.initialDetail ??
           library.resolvedAudioDetail(_localTarget!) ??
@@ -164,6 +159,56 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           widget.initialCoverPath ??
           library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
           _localDetail?.cardCoverPath;
+    }
+  }
+
+  void _scheduleInitialFiles() {
+    if (_initialFilesStarted) return;
+    // The deferred body is the first effective page frame. Loading after that
+    // frame keeps cached directory work out of hidden routes and tab shells.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _initialFilesStarted) return;
+      UiInteractionCoordinator.instance.scheduleCommit(
+        key: _filesCommitKey,
+        allowDuringScroll: true,
+        commit: () {
+          if (!mounted ||
+              _initialFilesStarted ||
+              !TickerMode.valuesOf(context).enabled ||
+              ModalRoute.isCurrentOf(context) == false) {
+            return;
+          }
+          _initialFilesStarted = true;
+          unawaited(_prepareDirectory());
+          if (widget.isLocal) {
+            if (_localDetail == null) {
+              unawaited(_loadLocalData());
+            } else {
+              unawaited(
+                _loadLocalFiles(++_localLoadRequest, _localTarget!.targetPath),
+              );
+            }
+          } else {
+            unawaited(_loadAsmrData());
+          }
+        },
+      );
+    });
+  }
+
+  void _restoreCachedSources() {
+    if (_cachedSourcesRestored) return;
+    _cachedSourcesRestored = true;
+    if (widget.isLocal) {
+      final folderPath = _localTarget!.targetPath;
+      final textService = ref.read(workTextServiceProvider);
+      _localFolderNode = ref
+          .read(libraryFacadeProvider)
+          .resolvedLibraryFolderTree(folderPath);
+      _localTextFiles =
+          textService.resolvedWorkTextFiles(folderPath) ?? const [];
+      _localImageReferences =
+          textService.resolvedWorkImageFiles(folderPath) ?? const [];
     } else {
       _asmrTree = ref
           .read(asmrLibraryControllerProvider)
@@ -171,25 +216,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       _loadingAsmr = _asmrTree == null;
     }
     _directory = _directoryInput.resolved;
-    // Render indexed files and cached discoveries before starting fresh I/O.
-    UiInteractionCoordinator.instance.scheduleCommit(
-      key: _filesCommitKey,
-      commit: () {
-        if (!mounted) return;
-        unawaited(_prepareDirectory());
-        if (widget.isLocal) {
-          if (_localDetail == null) {
-            unawaited(_loadLocalData());
-          } else {
-            unawaited(
-              _loadLocalFiles(++_localLoadRequest, _localTarget!.targetPath),
-            );
-          }
-        } else {
-          unawaited(_loadAsmrData());
-        }
-      },
-    );
   }
 
   Future<void> _loadLocalData() async {
@@ -215,6 +241,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       // File trees, directory scans and cover discovery wait for navigation.
       UiInteractionCoordinator.instance.scheduleCommit(
         key: _filesCommitKey,
+        allowDuringScroll: true,
         commit: () {
           if (mounted && request == _localLoadRequest) {
             unawaited(_loadLocalFiles(request, folderPath));
@@ -478,9 +505,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       await controller.initializeForVisiblePage();
       if (!mounted || ModalRoute.of(context)?.isActive == false) return;
       // Initialization may finish during a later navigation or scroll.
-      if (UiInteractionCoordinator.instance.isInteracting) {
+      if (UiInteractionCoordinator.instance.isVisualUpdateDeferred) {
         UiInteractionCoordinator.instance.scheduleCommit(
           key: _filesCommitKey,
+          allowDuringScroll: true,
           commit: () {
             if (mounted && ModalRoute.of(context)?.isActive != false) {
               unawaited(_loadAsmrData());
@@ -1077,7 +1105,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   Widget build(BuildContext context) =>
       WorkPageTranslationHost(child: _buildPage(context));
 
-  Widget _buildPage(BuildContext context) {
+  Object? _directoryVisibilityKey(WidgetRef ref) {
     final Object? visibilityKey;
     if (widget.isLocal) {
       final library = ref.read(libraryFacadeProvider);
@@ -1097,6 +1125,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         ).select((state) => state.value?.revision),
       );
     }
+    return visibilityKey;
+  }
+
+  Widget _buildPage(BuildContext context) {
     final i18n = ref.watch(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
@@ -1128,12 +1160,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       displayCircle = detail?.circleName ?? '';
       displayVoiceActors = detail?.voiceActors ?? const [];
       displayTags = detail?.tags ?? const [];
-      coverPath =
-          _localManualCover ??
-          detail?.cardCoverPath ??
-          ref
-              .watch(libraryFacadeProvider)
-              .resolvedCoverPathForFolder(_localTarget!.targetPath);
+      coverPath = _localManualCover ?? detail?.cardCoverPath;
     } else {
       final work = widget.asmrWork!;
       displayTitle = work.title;
@@ -1151,126 +1178,139 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     const coverMinHeight = 120.0; // Collapses by half!
     const rjBarHeight = 44.0;
 
-    final currentEntries = _buildCurrentEntries(visibilityKey);
-    final isLoading = widget.isLocal
-        ? (_loadingLocal || _preparingDirectory || _directory == null) &&
-              currentEntries.isEmpty
-        : (_loadingAsmr || _preparingDirectory || _directory == null) &&
-              currentEntries.isEmpty;
-    _updateDirectoryMotion(isLoading);
+    Widget buildCover(BuildContext context, WidgetRef ref) {
+      final String? trimmedCover = coverPath?.trim();
+      final bool hasValidCover =
+          trimmedCover != null && trimmedCover.isNotEmpty;
+      final bool isRemoteCover =
+          hasValidCover &&
+          (trimmedCover.startsWith('http://') ||
+              trimmedCover.startsWith('https://') ||
+              widget.isAsmr);
 
-    final String? trimmedCover = coverPath?.trim();
-    final bool hasValidCover = trimmedCover != null && trimmedCover.isNotEmpty;
-    final bool isRemoteCover =
-        hasValidCover &&
-        (trimmedCover.startsWith('http://') ||
-            trimmedCover.startsWith('https://') ||
-            widget.isAsmr);
-
-    final coverGeneration = ref.watch(coverGenerationProvider);
-    final Widget coverWidget;
-    if (isRemoteCover) {
-      final remoteUrl = trimmedCover;
-      final library = ref.read(libraryFacadeProvider);
-      final coverUi = ref.read(libraryCoverUiControllerProvider);
-      final coverResolution = ref.watch(coverImageResolutionProvider);
-      final cacheWidth = coverCacheWidthForResolution(coverResolution);
-      final resolved = library.resolvedCoverPathForRemoteCover(remoteUrl);
-      final requestKey = (remoteUrl, resolved, coverGeneration);
-      if (_coverRequestKey != requestKey) {
-        _coverRequestKey = requestKey;
-        _coverFuture = resolved != null
-            ? Future.value(resolved)
-            : coverUi.deferredRemoteCover(remoteUrl, context: context);
-      }
-      coverWidget = AsyncRemoteCoverImage(
-        deferLoadDuringInteraction: true,
-        onImageError: ref
-            .read(libraryFacadeProvider)
-            .coverArtworkCacheService
-            .reportArtworkReadFailure,
-        url: remoteUrl,
-        future: _coverFuture!,
-        initialPath: resolved,
-        retryFutureBuilder: () =>
-            coverUi.deferredRemoteCover(remoteUrl, context: context),
-        retryDelay: const Duration(seconds: 3),
-        maxRetryAttempts: 3,
-        fit: BoxFit.cover,
-        cacheWidth: cacheWidth,
-        useDefaultCacheWidth: cacheWidth != null,
-        loadingBuilder: (_) => const CoverLoadingArtwork(
-          placeholder: CoverFallbackArtwork(),
-        ),
-        fallbackBuilder: (_) => const CoverFallbackArtwork(),
-      );
-    } else if (widget.isLocal) {
-      final library = ref.read(libraryFacadeProvider);
-      final resolved =
-          library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
-          coverPath;
-      final requestKey = (_localTarget, resolved, coverGeneration);
-      if (_coverRequestKey != requestKey) {
-        _coverRequestKey = requestKey;
-        _coverFuture = Future.value(resolved);
-      }
-      Future<String?> retryCover() async {
-        final request = _localLoadRequest;
-        final path = await ref
-            .read(libraryCoverUiControllerProvider)
-            .deferredFolderCover(_localTarget!.targetPath, context: context);
-        if (mounted && request == _localLoadRequest) {
-          setState(() => _localManualCover = path);
+      final coverGeneration = ref.watch(coverGenerationProvider);
+      if (isRemoteCover) {
+        final remoteUrl = trimmedCover;
+        final library = ref.read(libraryFacadeProvider);
+        final coverUi = ref.read(libraryCoverUiControllerProvider);
+        final coverResolution = ref.watch(coverImageResolutionProvider);
+        final cacheWidth = coverCacheWidthForResolution(coverResolution);
+        final resolved = library.resolvedCoverPathForRemoteCover(remoteUrl);
+        final requestKey = (remoteUrl, resolved, coverGeneration);
+        if (_coverRequestKey != requestKey) {
+          _coverRequestKey = requestKey;
+          _coverFuture = resolved != null
+              ? Future.value(resolved)
+              : coverUi.deferredRemoteCover(remoteUrl, context: context);
         }
-        return path;
-      }
+        return AsyncRemoteCoverImage(
+          deferLoadDuringInteraction: true,
+          onImageError: ref
+              .read(libraryFacadeProvider)
+              .coverArtworkCacheService
+              .reportArtworkReadFailure,
+          url: remoteUrl,
+          future: _coverFuture!,
+          initialPath: resolved,
+          retryFutureBuilder: () =>
+              coverUi.deferredRemoteCover(remoteUrl, context: context),
+          retryDelay: const Duration(seconds: 3),
+          maxRetryAttempts: 3,
+          fit: BoxFit.cover,
+          cacheWidth: cacheWidth,
+          useDefaultCacheWidth: cacheWidth != null,
+          loadingBuilder: (_) =>
+              const CoverLoadingArtwork(placeholder: CoverFallbackArtwork()),
+          fallbackBuilder: (_) => const CoverFallbackArtwork(),
+        );
+      } else if (widget.isLocal) {
+        final library = ref.read(libraryFacadeProvider);
+        final resolved =
+            library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
+            coverPath;
+        final requestKey = (_localTarget, resolved, coverGeneration);
+        if (_coverRequestKey != requestKey) {
+          _coverRequestKey = requestKey;
+          _coverFuture = Future.value(resolved);
+        }
+        Future<String?> retryCover() async {
+          final request = _localLoadRequest;
+          final path = await ref
+              .read(libraryCoverUiControllerProvider)
+              .deferredFolderCover(_localTarget!.targetPath, context: context);
+          if (mounted && request == _localLoadRequest) {
+            setState(() => _localManualCover = path);
+          }
+          return path;
+        }
 
-      coverWidget = AsyncLocalCoverImage(
-        deferLoadDuringInteraction: true,
-        onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
-        future: _coverFuture!,
-        requestKey: resolved,
-        initialPath: resolved,
-        retryFutureBuilder: retryCover,
-        fit: BoxFit.cover,
-      );
-    } else {
-      coverWidget = const LocalCoverImage(fit: BoxFit.cover);
+        return AsyncLocalCoverImage(
+          deferLoadDuringInteraction: true,
+          onImageError:
+              library.coverArtworkCacheService.reportArtworkReadFailure,
+          future: _coverFuture!,
+          requestKey: resolved,
+          initialPath: resolved,
+          retryFutureBuilder: retryCover,
+          fit: BoxFit.cover,
+        );
+      } else {
+        return const LocalCoverImage(fit: BoxFit.cover);
+      }
     }
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        key: _pageStackKey,
+    Widget buildBody(
+      BuildContext context,
+      WidgetRef ref, {
+      required bool ready,
+    }) {
+      if (ready) {
+        _restoreCachedSources();
+        _scheduleInitialFiles();
+      }
+      final currentEntries = ready
+          ? _buildCurrentEntries(_directoryVisibilityKey(ref))
+          : const <WorkEntryItem>[];
+      final isLoading =
+          !ready ||
+          (widget.isLocal
+              ? (_loadingLocal || _preparingDirectory || _directory == null) &&
+                    currentEntries.isEmpty
+              : (_loadingAsmr || _preparingDirectory || _directory == null) &&
+                    currentEntries.isEmpty);
+      if (ready) _updateDirectoryMotion(isLoading);
+      return Stack(
+        key: ready ? _pageStackKey : null,
         children: [
-          AppPageContentTransition(
-            backgroundColor: cs.surface,
-            child: ScrollConfiguration(
-              behavior: ScrollConfiguration.of(
-                context,
-              ).copyWith(scrollbars: false),
-              child: CustomScrollView(
-                controller: _scrollController,
-                slivers: [
-                  // 1. Collapsible Sticky Header
-                  SliverPersistentHeader(
-                    pinned: true,
-                    delegate: WorkDetailHeaderDelegate(
-                      topSafeArea: topSafeArea,
-                      coverMaxHeight: coverMaxHeight,
-                      coverMinHeight: coverMinHeight,
-                      rjBarHeight: rjBarHeight,
-                      title: displayTitle,
-                      rjCode: displayRj,
-                      circleName: displayCircle,
-                      coverWidget: coverWidget,
-                      accentColor: widget.isAsmr ? asmrBlue : cs.primary,
-                      surfaceColor: cs.surface,
-                      onCopyMetadata: (value) => _copyText(context, value),
-                    ),
+          ScrollConfiguration(
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(scrollbars: false),
+            child: CustomScrollView(
+              controller: ready ? _scrollController : null,
+              slivers: [
+                // 1. Collapsible Sticky Header
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: WorkDetailHeaderDelegate(
+                    topSafeArea: topSafeArea,
+                    coverMaxHeight: coverMaxHeight,
+                    coverMinHeight: coverMinHeight,
+                    rjBarHeight: rjBarHeight,
+                    title: displayTitle,
+                    rjCode: displayRj,
+                    circleName: displayCircle,
+                    coverWidget: ready
+                        ? buildCover(context, ref)
+                        : const CoverFallbackArtwork(),
+                    accentColor: widget.isAsmr ? asmrBlue : cs.primary,
+                    surfaceColor: cs.surface,
+                    onCopyMetadata: (value) => _copyText(context, value),
                   ),
+                ),
 
-                  // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
+                // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
+                if (ready)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -1323,103 +1363,98 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                     ),
                   ),
 
-                  // 4. Directory File Tree List
-                  if (isLoading)
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      sliver: SliverLayoutBuilder(
-                        builder: (context, constraints) => SliverToBoxAdapter(
-                          child: SizedBox(
-                            key: _loadingSkeletonKey,
-                            child: _directorySkeleton(
-                              constraints.remainingPaintExtent -
-                                  bottomOverlayInset,
-                            ),
+                // 4. Directory File Tree List
+                if (isLoading)
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    sliver: SliverLayoutBuilder(
+                      builder: (context, constraints) => SliverToBoxAdapter(
+                        child: SizedBox(
+                          key: ready ? _loadingSkeletonKey : null,
+                          child: _directorySkeleton(
+                            constraints.remainingPaintExtent -
+                                bottomOverlayInset,
                           ),
                         ),
                       ),
-                    )
-                  else
-                    SliverFadeTransition(
-                      key: const ValueKey('work_detail_entries_fade'),
-                      opacity: MediaQuery.disableAnimationsOf(context)
-                          ? const AlwaysStoppedAnimation(1)
-                          : _directoryOpacity,
-                      sliver: currentEntries.isEmpty
-                          ? SliverFillRemaining(
-                              hasScrollBody: false,
-                              child: Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.folder_open_rounded,
-                                      size: 48,
-                                      color: cs.onSurfaceVariant.withValues(
-                                        alpha: 0.5,
-                                      ),
+                    ),
+                  )
+                else
+                  SliverFadeTransition(
+                    key: const ValueKey('work_detail_entries_fade'),
+                    opacity: MediaQuery.disableAnimationsOf(context)
+                        ? const AlwaysStoppedAnimation(1)
+                        : _directoryOpacity,
+                    sliver: currentEntries.isEmpty
+                        ? SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.folder_open_rounded,
+                                    size: 48,
+                                    color: cs.onSurfaceVariant.withValues(
+                                      alpha: 0.5,
                                     ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      i18n.tr('empty_folder'),
-                                      style: TextStyle(
-                                        color: cs.onSurfaceVariant,
-                                      ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    i18n.tr('empty_folder'),
+                                    style: TextStyle(
+                                      color: cs.onSurfaceVariant,
                                     ),
-                                  ],
-                                ),
-                              ),
-                            )
-                          : SliverPadding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              sliver: SliverList(
-                                delegate: SliverChildBuilderDelegate(
-                                  (context, index) {
-                                    final item = currentEntries[index];
-                                    final id =
-                                        '${item.type.name}:${item.relativePath}';
-                                    return FadeTransition(
-                                      key: ValueKey(
-                                        'work_detail_entry_fade_$id',
-                                      ),
-                                      opacity: _entryLoadOpacity(id),
-                                      child: WorkDetailEntryTile(
-                                        key: ValueKey(id),
-                                        item: item,
-                                        accentColor: widget.isAsmr
-                                            ? asmrBlue
-                                            : cs.primary,
-                                        menuEntries: _entryMenuItems(item),
-                                        moreLabel: i18n.tr('more_actions'),
-                                        onAction: (action) =>
-                                            _handleEntryAction(item, action),
-                                      ),
-                                    );
-                                  },
-                                  childCount: currentEntries.length,
-                                  findChildIndexCallback: (key) =>
-                                      _entryIndices[key],
-                                ),
+                                  ),
+                                ],
                               ),
                             ),
+                          )
+                        : SliverPadding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            sliver: SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  final item = currentEntries[index];
+                                  final id =
+                                      '${item.type.name}:${item.relativePath}';
+                                  return FadeTransition(
+                                    key: ValueKey('work_detail_entry_fade_$id'),
+                                    opacity: _entryLoadOpacity(id),
+                                    child: WorkDetailEntryTile(
+                                      key: ValueKey(id),
+                                      item: item,
+                                      accentColor: widget.isAsmr
+                                          ? asmrBlue
+                                          : cs.primary,
+                                      menuEntries: _entryMenuItems(item),
+                                      moreLabel: i18n.tr('more_actions'),
+                                      onAction: (action) =>
+                                          _handleEntryAction(item, action),
+                                    ),
+                                  );
+                                },
+                                childCount: currentEntries.length,
+                                findChildIndexCallback: (key) =>
+                                    _entryIndices[key],
+                              ),
+                            ),
+                          ),
+                  ),
+                if (bottomOverlayInset > 0)
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      key: const ValueKey<String>('work_detail_playback_inset'),
+                      height: bottomOverlayInset,
                     ),
-                  if (bottomOverlayInset > 0)
-                    SliverToBoxAdapter(
-                      child: SizedBox(
-                        key: const ValueKey<String>(
-                          'work_detail_playback_inset',
-                        ),
-                        height: bottomOverlayInset,
-                      ),
-                    ),
-                ],
-              ),
+                  ),
+              ],
             ),
           ),
           if (!isLoading &&
@@ -1427,13 +1462,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               !MediaQuery.disableAnimationsOf(context))
             AnimatedBuilder(
               animation: _directoryFade,
-              child: AppPageContentTransition(
-                child: IgnorePointer(
-                  child: ExcludeSemantics(
-                    child: FadeTransition(
-                      opacity: ReverseAnimation(_directoryOpacity),
-                      child: _directorySkeleton(_departingSkeletonRect!.height),
-                    ),
+              child: IgnorePointer(
+                child: ExcludeSemantics(
+                  child: FadeTransition(
+                    opacity: ReverseAnimation(_directoryOpacity),
+                    child: _directorySkeleton(_departingSkeletonRect!.height),
                   ),
                 ),
               ),
@@ -1444,6 +1477,22 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                       child: child!,
                     ),
             ),
+        ],
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          AppPageContentTransition.deferred(
+            backgroundColor: cs.surface,
+            placeholder: buildBody(context, ref, ready: false),
+            builder: (_) => Consumer(
+              builder: (context, ref, _) =>
+                  buildBody(context, ref, ready: true),
+            ),
+          ),
           // Floating Back Button (top-left)
           Positioned(
             top: topSafeArea + 6,
@@ -1546,10 +1595,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 }
 
 class WorkDetailDirectorySkeleton extends StatelessWidget {
-  const WorkDetailDirectorySkeleton({
-    super.key,
-    required this.viewportHeight,
-  });
+  const WorkDetailDirectorySkeleton({super.key, required this.viewportHeight});
 
   final double viewportHeight;
 
@@ -1589,9 +1635,7 @@ class WorkDetailDirectorySkeleton extends StatelessWidget {
                         child: FractionallySizedBox(
                           widthFactor:
                               _titleFractions[i % _titleFractions.length],
-                          child: const ShimmerContainer(
-                            height: 12,
-                          ),
+                          child: const ShimmerContainer(height: 12),
                         ),
                       ),
                     ),

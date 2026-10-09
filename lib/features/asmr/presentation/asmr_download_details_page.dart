@@ -13,6 +13,7 @@ import '../application/asmr_download_models.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/page_header_inset.dart';
+import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
 
 class AsmrDownloadDetailsPage extends ConsumerStatefulWidget {
@@ -123,7 +124,6 @@ class _AsmrDownloadDetailsPageState
     }
 
     final tracks = structure.roots;
-    _ensureRows(tracks);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -149,127 +149,139 @@ class _AsmrDownloadDetailsPageState
         child: Stack(
           children: [
             Positioned.fill(
-              child: AppPageContentTransition(
-                child: CustomScrollView(
-                  physics: const ClampingScrollPhysics(),
-                  slivers: [
-                    if (tracks.isEmpty)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Text(
-                            i18n.tr('asmr_download_no_files_selected'),
+              child: AppPageContentTransition.deferred(
+                placeholder: OperationSkeletonList(
+                  showHeader: false,
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    listTopPadding,
+                    16,
+                    MediaQuery.paddingOf(context).bottom + 16,
+                  ),
+                ),
+                builder: (context) {
+                  _ensureRows(tracks);
+                  return CustomScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    slivers: [
+                      if (tracks.isEmpty)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(
+                            child: Text(
+                              i18n.tr('asmr_download_no_files_selected'),
+                            ),
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            listTopPadding,
+                            16,
+                            MediaQuery.paddingOf(context).bottom + 16,
+                          ),
+                          sliver: SliverList.builder(
+                            itemCount: _rows.length,
+                            itemBuilder: (context, index) {
+                              final row = _rows[index];
+                              final node = row.node;
+                              final rowKey = ValueKey<String>(
+                                'asmr_download_${row.emptyFolder ? "empty" : "node"}_row_${node.relativePath}',
+                              );
+                              if (row.emptyFolder) {
+                                return Padding(
+                                  key: rowKey,
+                                  padding: EdgeInsetsDirectional.only(
+                                    start: row.depth * 12 + 16,
+                                    end: 8,
+                                    bottom: 8,
+                                  ),
+                                  child: Text(
+                                    i18n.tr('asmr_download_empty_folder'),
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: cs.onSurfaceVariant.withValues(
+                                            alpha: 0.7,
+                                          ),
+                                        ),
+                                  ),
+                                );
+                              }
+                              if (node.isFolder) {
+                                final expanded = !_collapsedPaths.contains(
+                                  node.relativePath,
+                                );
+                                final accent = AppDesignTokens.of(
+                                  context,
+                                ).asmrAccent;
+                                final shape = RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    AppDesignTokens.of(context).radiusSmall,
+                                  ),
+                                );
+                                return Theme(
+                                  key: rowKey,
+                                  data: Theme.of(
+                                    context,
+                                  ).copyWith(dividerColor: Colors.transparent),
+                                  // Descendants belong to the lazy sliver, not
+                                  // this header's eager expansion body.
+                                  child: ExpansionTile(
+                                    expansionAnimationStyle:
+                                        appExpansionAnimationStyle(context),
+                                    initiallyExpanded: expanded,
+                                    onExpansionChanged: (value) =>
+                                        _toggleFolder(node.relativePath, value),
+                                    shape: shape,
+                                    collapsedShape: shape,
+                                    tilePadding: EdgeInsetsDirectional.only(
+                                      start: row.depth * 12 + 16,
+                                      end: 16,
+                                    ),
+                                    minTileHeight: 44,
+                                    iconColor: accent,
+                                    collapsedIconColor: cs.onSurfaceVariant,
+                                    title: Text(
+                                      node.title,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            color: expanded ? accent : null,
+                                          ),
+                                    ),
+                                    leading: Icon(
+                                      expanded
+                                          ? AppDesignTokens.openFolderIcon
+                                          : AppDesignTokens.folderIcon,
+                                      color: AppDesignTokens.folderIconColor,
+                                      size: AppDesignTokens.fileEntryIconSize,
+                                    ),
+                                  ),
+                                );
+                              }
+                              return _AsmrDownloadDetailsFileTile(
+                                key: rowKey,
+                                node: node,
+                                depth: row.depth,
+                                workId: widget.workId,
+                                i18n: i18n,
+                                onRetryFile: downloadManager == null
+                                    ? null
+                                    : (relativePath) =>
+                                          downloadManager.retryFailedFile(
+                                            widget.workId,
+                                            relativePath,
+                                          ),
+                              );
+                            },
                           ),
                         ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: EdgeInsets.fromLTRB(
-                          16,
-                          listTopPadding,
-                          16,
-                          MediaQuery.paddingOf(context).bottom + 16,
-                        ),
-                        sliver: SliverList.builder(
-                          itemCount: _rows.length,
-                          itemBuilder: (context, index) {
-                            final row = _rows[index];
-                            final node = row.node;
-                            final rowKey = ValueKey<String>(
-                              'asmr_download_${row.emptyFolder ? "empty" : "node"}_row_${node.relativePath}',
-                            );
-                            if (row.emptyFolder) {
-                              return Padding(
-                                key: rowKey,
-                                padding: EdgeInsetsDirectional.only(
-                                  start: row.depth * 12 + 16,
-                                  end: 8,
-                                  bottom: 8,
-                                ),
-                                child: Text(
-                                  i18n.tr('asmr_download_empty_folder'),
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: cs.onSurfaceVariant.withValues(
-                                          alpha: 0.7,
-                                        ),
-                                      ),
-                                ),
-                              );
-                            }
-                            if (node.isFolder) {
-                              final expanded = !_collapsedPaths.contains(
-                                node.relativePath,
-                              );
-                              final accent = AppDesignTokens.of(
-                                context,
-                              ).asmrAccent;
-                              final shape = RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  AppDesignTokens.of(context).radiusSmall,
-                                ),
-                              );
-                              return Theme(
-                                key: rowKey,
-                                data: Theme.of(
-                                  context,
-                                ).copyWith(dividerColor: Colors.transparent),
-                                // Descendants belong to the lazy sliver, not
-                                // this header's eager expansion body.
-                                child: ExpansionTile(
-                                  expansionAnimationStyle:
-                                      appExpansionAnimationStyle(context),
-                                  initiallyExpanded: expanded,
-                                  onExpansionChanged: (value) =>
-                                      _toggleFolder(node.relativePath, value),
-                                  shape: shape,
-                                  collapsedShape: shape,
-                                  tilePadding: EdgeInsetsDirectional.only(
-                                    start: row.depth * 12 + 16,
-                                    end: 16,
-                                  ),
-                                  minTileHeight: 44,
-                                  iconColor: accent,
-                                  collapsedIconColor: cs.onSurfaceVariant,
-                                  title: Text(
-                                    node.title,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleSmall
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                          color: expanded ? accent : null,
-                                        ),
-                                  ),
-                                  leading: Icon(
-                                    expanded
-                                        ? AppDesignTokens.openFolderIcon
-                                        : AppDesignTokens.folderIcon,
-                                    color: AppDesignTokens.folderIconColor,
-                                    size: AppDesignTokens.fileEntryIconSize,
-                                  ),
-                                ),
-                              );
-                            }
-                            return _AsmrDownloadDetailsFileTile(
-                              key: rowKey,
-                              node: node,
-                              depth: row.depth,
-                              workId: widget.workId,
-                              i18n: i18n,
-                              onRetryFile: downloadManager == null
-                                  ? null
-                                  : (relativePath) =>
-                                        downloadManager.retryFailedFile(
-                                          widget.workId,
-                                          relativePath,
-                                        ),
-                            );
-                          },
-                        ),
-                      ),
-                  ],
-                ),
+                    ],
+                  );
+                },
               ),
             ),
             Positioned(

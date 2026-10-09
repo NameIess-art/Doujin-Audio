@@ -35,6 +35,7 @@ import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_dropdown.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/operation_feedback.dart';
 import '../../data_support/presentation/data_support_settings_controls.dart';
 import '../../data_support/presentation/storage_usage_card.dart';
 import '../../asmr/domain/asmr_download.dart';
@@ -199,39 +200,44 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
         child: Stack(
           children: [
             Positioned.fill(
-              child: AppPageContentTransition(
-                child: ListView(
-                controller: _scrollController,
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  contentTopInset,
-                  16,
-                  bottomInset + AppSpacing.sm,
+              child: AppPageContentTransition.deferred(
+                placeholder: OperationSkeletonList(
+                  showHeader: false,
+                  padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 24),
                 ),
-                clipBehavior: Clip.none,
-                children: [
-                  _SettingsTileTheme.categories(
-                    child: Column(
-                      children: [
-                        for (
-                          var index = 0;
-                          index < _SettingsCategory.values.length;
-                          index++
-                        )
-                          _SettingsCategoryTile(
-                            category: _SettingsCategory.values[index],
-                            i18n: i18n,
-                            isFirst: index == 0,
-                            isLast: index == _SettingsCategory.values.length - 1,
-                            onTap: () => _openSettingsCategory(
-                              _SettingsCategory.values[index],
-                            ),
-                          ),
-                      ],
-                    ),
+                builder: (context) => ListView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    contentTopInset,
+                    16,
+                    bottomInset + AppSpacing.sm,
                   ),
-                ],
-              ),
+                  clipBehavior: Clip.none,
+                  children: [
+                    _SettingsTileTheme.categories(
+                      child: Column(
+                        children: [
+                          for (
+                            var index = 0;
+                            index < _SettingsCategory.values.length;
+                            index++
+                          )
+                            _SettingsCategoryTile(
+                              category: _SettingsCategory.values[index],
+                              i18n: i18n,
+                              isFirst: index == 0,
+                              isLast:
+                                  index == _SettingsCategory.values.length - 1,
+                              onTap: () => _openSettingsCategory(
+                                _SettingsCategory.values[index],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             Positioned(
@@ -536,9 +542,49 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final cs = Theme.of(context).colorScheme;
+    final contentTopInset = _contentTopInset(context);
+
+    return Scaffold(
+      backgroundColor: cs.surface,
+      body: PageHeaderInset(
+        topInset: contentTopInset,
+        child: Stack(
+          children: [
+            AppPageContentTransition.deferred(
+              placeholder: OperationSkeletonList(
+                padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 24),
+              ),
+              builder: (context) => Consumer(builder: _buildContent),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: TopPageHeader(
+                icon: widget.category.icon,
+                title: i18n.tr(widget.category.labelKey),
+                leading: IconButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
+                  tooltip: i18n.tr('back'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, WidgetRef ref, Widget? child) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final settings = ref.read(settingsRepositoryProvider);
     final settingsController = ref.read(settingsCommandControllerProvider);
     final cs = Theme.of(context).colorScheme;
+    final contentTopInset = _contentTopInset(context);
+    final pinnedTop = _pinnedTop(context);
 
     return ValueListenableBuilder<AppUpdateInfo?>(
       valueListenable: widget.updateInfoListenable,
@@ -589,99 +635,56 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
           ),
           _SettingsCategory.about => const <Widget>[],
         });
-        final contentTopInset = _contentTopInset(context);
-        final pinnedTop = _pinnedTop(context);
 
-        return Scaffold(
-          backgroundColor: cs.surface,
-          body: PageHeaderInset(
-            topInset: contentTopInset,
-            child: Stack(
-              children: [
-                AppPageContentTransition(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Positioned.fill(
-                        child: ListView(
-                          controller: _scrollController,
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            contentTopInset,
-                            16,
-                            24,
-                          ),
-                          children: [
-                            _SettingsTileTheme(
-                              child: Column(children: sections),
-                            ),
-                          ],
-                        ),
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+              child: ListView(
+                controller: _scrollController,
+                padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 24),
+                children: [
+                  _SettingsTileTheme(child: Column(children: sections)),
+                ],
+              ),
+            ),
+            if (_pinnedSectionIndex != null &&
+                _pinnedSectionIndex! < _stickySections.length)
+              Positioned(
+                top: pinnedTop,
+                left: 16,
+                right: 16,
+                child: IgnorePointer(
+                  child: ExcludeSemantics(
+                    child: _SettingsSectionTitlePill(
+                      key: const ValueKey<String>(
+                        'settings_sticky_section_pill',
                       ),
-                      if (_pinnedSectionIndex != null &&
-                          _pinnedSectionIndex! < _stickySections.length)
-                        Positioned(
-                          top: pinnedTop,
-                          left: 16,
-                          right: 16,
-                          child: IgnorePointer(
-                            child: ExcludeSemantics(
-                              child: _SettingsSectionTitlePill(
-                                key: const ValueKey<String>(
-                                  'settings_sticky_section_pill',
-                                ),
-                                title:
-                                    _stickySections[_pinnedSectionIndex!].title,
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (_overlappingNextSectionIndex != null &&
-                          _overlappingNextSectionIndex! <
-                              _stickySections.length)
-                        ValueListenableBuilder<double?>(
-                          valueListenable: _overlappingNextSectionTop,
-                          builder: (context, top, child) => top == null
-                              ? const SizedBox.shrink()
-                              : Positioned(
-                                  top: top,
-                                  left: 16,
-                                  right: 16,
-                                  child: child!,
-                                ),
-                          child: IgnorePointer(
-                            child: ExcludeSemantics(
-                              child: _SettingsSectionTitlePill(
-                                key: const ValueKey<String>(
-                                  'settings_overlapping_section_pill',
-                                ),
-                                title:
-                                    _stickySections[_overlappingNextSectionIndex!]
-                                        .title,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: TopPageHeader(
-                    icon: widget.category.icon,
-                    title: i18n.tr(widget.category.labelKey),
-                    leading: IconButton(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
-                      tooltip: i18n.tr('back'),
+                      title: _stickySections[_pinnedSectionIndex!].title,
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
+              ),
+            if (_overlappingNextSectionIndex != null &&
+                _overlappingNextSectionIndex! < _stickySections.length)
+              ValueListenableBuilder<double?>(
+                valueListenable: _overlappingNextSectionTop,
+                builder: (context, top, child) => top == null
+                    ? const SizedBox.shrink()
+                    : Positioned(top: top, left: 16, right: 16, child: child!),
+                child: IgnorePointer(
+                  child: ExcludeSemantics(
+                    child: _SettingsSectionTitlePill(
+                      key: const ValueKey<String>(
+                        'settings_overlapping_section_pill',
+                      ),
+                      title:
+                          _stickySections[_overlappingNextSectionIndex!].title,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );

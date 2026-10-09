@@ -371,7 +371,7 @@ void main() {
     );
 
     testWidgets(
-      'ASMR empty search uses root cache on its first frame on $platform',
+      'ASMR empty search defers cached cards until entrance completes on $platform',
       (tester) async {
         final controller = _PresentationController(createTestAsmrServices());
         final fixture = AppRuntimeWidgetTestFixture();
@@ -395,10 +395,14 @@ void main() {
         final results = find.byKey(const ValueKey('asmr_search_collected'));
         expect(
           find.descendant(of: results, matching: find.text('Published work')),
-          findsOneWidget,
+          findsNothing,
         );
         expect(controller.categoryReads, reads);
         await tester.pumpAndSettle();
+        expect(
+          find.descendant(of: results, matching: find.text('Published work')),
+          findsOneWidget,
+        );
         expect(controller.categoryReads, reads);
         expect(controller.categoryLoads, loads);
         expect(controller.initializations, initializations);
@@ -558,6 +562,8 @@ void main() {
           skipOffstage: false,
         );
         final columnCount = responsiveLibraryCardColumnCount(1280);
+        expect(searchCards, findsNothing);
+        await tester.pumpAndSettle();
         expect(
           searchCards.evaluate().length,
           lessThan(browseCardCount - columnCount),
@@ -567,7 +573,6 @@ void main() {
           find.descendant(of: results, matching: find.text('Published work')),
           findsOneWidget,
         );
-        await tester.pumpAndSettle();
         final originalCard = tester.widget(searchCards.first);
         final originalWidth = tester.getSize(searchCards.first).width;
         for (final bottom in [60.0, 120.0, 180.0, 240.0, 300.0]) {

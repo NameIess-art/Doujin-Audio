@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +16,79 @@ import 'support/app_runtime_test_fixture.dart';
 
 void main() {
   AppRuntimeTestFixture.initialize();
+
+  for (final cached in [false, true]) {
+    testWidgets(
+      'about route defers cached=$cached content and retains scroll on return',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final version = Completer<AppVersionInfo>();
+        const versionInfo = AppVersionInfo(
+          versionName: '1.2.3',
+          buildNumber: 123,
+        );
+        await tester.pumpWidget(
+          fixture.build(const SizedBox(key: ValueKey('about_source'))),
+        );
+        final context = tester.element(
+          find.byKey(const ValueKey('about_source')),
+        );
+        final navigator = Navigator.of(context);
+        unawaited(
+          navigator.push(
+            buildAppPageRoute<void>(
+              context: context,
+              child: AboutPage(
+                versionFuture: cached
+                    ? SynchronousFuture(versionInfo)
+                    : version.future,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(find.byType(TopPageHeader), findsOneWidget);
+        expect(find.byType(BackButton), findsOneWidget);
+        expect(find.byType(AppBrandIcon), findsNothing);
+        await tester.pump(const Duration(milliseconds: 120));
+        expect(find.byType(AppBrandIcon), findsNothing);
+        if (!cached) version.complete(versionInfo);
+        await tester.pumpAndSettle();
+        expect(find.byType(AppBrandIcon), findsOneWidget);
+        expect(find.text('1.2.3'), findsOneWidget);
+        await tester.drag(find.byType(ListView), const Offset(0, -180));
+        await tester.pumpAndSettle();
+        final scrollable = find.descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        );
+        final state = tester.state<ScrollableState>(scrollable);
+        final offset = state.position.pixels;
+        expect(offset, greaterThan(0));
+        unawaited(
+          navigator.push(
+            buildAppPageRoute<void>(
+              context: tester.element(find.byType(AboutPage)),
+              child: const Scaffold(body: Text('Cover about')),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        navigator.pop();
+        await tester.pumpAndSettle();
+        expect(tester.state<ScrollableState>(scrollable), same(state));
+        expect(state.position.pixels, offset);
+        expect(find.text('1.2.3'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final openResult in [true, false]) {

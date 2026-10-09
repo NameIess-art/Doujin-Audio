@@ -14,6 +14,7 @@ import '../../../../core/media/music_track.dart';
 import '../../../../core/ui/permission_action_controller.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/operation_feedback.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_subtitle_service.dart';
@@ -265,26 +266,163 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
             children: [
               SafeArea(
                 top: false,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isWindows =
-                        defaultTargetPlatform == TargetPlatform.windows;
-                    final isLandscape =
-                        isWindows ||
-                        MediaQuery.orientationOf(context) ==
-                            Orientation.landscape;
-                    final topBarHeight = isWindows ? 48.0 : 40.0;
+                child: AppPageContentTransition.deferred(
+                  placeholder: const OperationSkeletonList(
+                    showHeader: false,
+                    padding: EdgeInsets.fromLTRB(28, 64, 28, 16),
+                  ),
+                  builder: (context) => LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isWindows =
+                          defaultTargetPlatform == TargetPlatform.windows;
+                      final isLandscape =
+                          isWindows ||
+                          MediaQuery.orientationOf(context) ==
+                              Orientation.landscape;
+                      final topBarHeight = isWindows ? 48.0 : 40.0;
 
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Align(
-                          alignment: Alignment.topCenter,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Builder(
-                              builder: (context) {
-                                final settings = ref.watch(
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Align(
+                            alignment: Alignment.topCenter,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              child: Consumer(
+                                builder: (context, ref, child) {
+                                  final settings = ref.watch(
+                                    subtitleSettingsProvider.select(
+                                      (state) => (
+                                        state.isShowEnabled(session.id),
+                                        state.isGlobalEnabled(session.id),
+                                      ),
+                                    ),
+                                  );
+
+                                  return Row(
+                                    children: [
+                                      Expanded(
+                                        child: SizedBox(height: topBarHeight),
+                                      ),
+                                      if (_hasSubtitle &&
+                                          settings.$1 &&
+                                          settings.$2) ...[
+                                        Icon(
+                                          Icons.subtitles_rounded,
+                                          color: sessionDetailForeground(
+                                            cs,
+                                            SessionDetailForegroundLevel.muted,
+                                          ),
+                                          size: isLandscape ? 20 : 18,
+                                        ),
+                                        SizedBox(width: isLandscape ? 8 : 6),
+                                      ],
+                                      Consumer(
+                                        builder: (context, ref, child) {
+                                          final transport = ref.watch(
+                                            sessionDetailTransportProvider(
+                                              session.id,
+                                            ),
+                                          );
+                                          final featureIcons =
+                                              sessionFeatureBadgeIcons(
+                                                showSubtitles: false,
+                                                channelSwapEnabled:
+                                                    transport
+                                                        ?.channelSwapEnabled ??
+                                                    session.channelSwapEnabled,
+                                                audioEffects:
+                                                    transport?.audioEffects ??
+                                                    session.audioEffects,
+                                                speed:
+                                                    transport?.speed ??
+                                                    session.speed,
+                                              );
+                                          if (featureIcons.isEmpty) {
+                                            return const SizedBox.shrink();
+                                          }
+                                          return Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              SessionFeatureIconRow(
+                                                featureIcons: featureIcons,
+                                                color: sessionDetailForeground(
+                                                  cs,
+                                                  SessionDetailForegroundLevel
+                                                      .muted,
+                                                ),
+                                                iconSize: isLandscape ? 20 : 18,
+                                                spacing: isLandscape ? 8 : 6,
+                                                alignment: WrapAlignment.end,
+                                              ),
+                                              SizedBox(
+                                                width: isLandscape ? 8 : 6,
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          Positioned.fill(
+                            top: isLandscape ? 0 : topBarHeight,
+                            child: Consumer(
+                              builder: (context, ref, child) {
+                                Widget artworkWidget = AnimatedSwitcher(
+                                  duration:
+                                      MediaQuery.disableAnimationsOf(context)
+                                      ? Duration.zero
+                                      : kAppMotionSlow,
+                                  reverseDuration:
+                                      MediaQuery.disableAnimationsOf(context)
+                                      ? Duration.zero
+                                      : kAppMotionStandard,
+                                  switchInCurve: Curves.easeOutCubic,
+                                  switchOutCurve: Curves.easeInCubic,
+                                  transitionBuilder: (child, animation) =>
+                                      MediaQuery.disableAnimationsOf(context)
+                                      ? child
+                                      : FadeTransition(
+                                          opacity: animation,
+                                          child: child,
+                                        ),
+                                  layoutBuilder:
+                                      (currentChild, previousChildren) {
+                                        return Stack(
+                                          alignment: Alignment.center,
+                                          fit: StackFit.expand,
+                                          children: [
+                                            ...previousChildren,
+                                            ?currentChild,
+                                          ],
+                                        );
+                                      },
+                                  child: KeyedSubtree(
+                                    key: ValueKey('artwork_${session.id}'),
+                                    child: SessionHeroArtwork(
+                                      session: session,
+                                      height: constraints.maxHeight,
+                                      track: track,
+                                      coverPathFuture: coverPathFuture,
+                                    ),
+                                  ),
+                                );
+
+                                final artwork = artworkWidget;
+
+                                final detailPadding = EdgeInsets.fromLTRB(
+                                  isLandscape ? 8 : 28,
+                                  isLandscape ? topBarHeight : 0,
+                                  isLandscape ? 8 : 28,
+                                  isLandscape ? 8 : 8,
+                                );
+                                final subtitleSettings = ref.watch(
                                   subtitleSettingsProvider.select(
                                     (state) => (
                                       state.isShowEnabled(session.id),
@@ -292,176 +430,48 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                     ),
                                   ),
                                 );
-
-                                return Row(
-                                  children: [
-                                    Expanded(
-                                      child: SizedBox(height: topBarHeight),
-                                    ),
-                                    if (_hasSubtitle &&
-                                        settings.$1 &&
-                                        settings.$2) ...[
-                                      Icon(
-                                        Icons.subtitles_rounded,
-                                        color: sessionDetailForeground(
-                                          cs,
-                                          SessionDetailForegroundLevel.muted,
-                                        ),
-                                        size: isLandscape ? 20 : 18,
-                                      ),
-                                      SizedBox(width: isLandscape ? 8 : 6),
-                                    ],
-                                    Consumer(
-                                      builder: (context, ref, child) {
-                                        final transport = ref.watch(
-                                          sessionDetailTransportProvider(
-                                            session.id,
-                                          ),
-                                        );
-                                        final featureIcons =
-                                            sessionFeatureBadgeIcons(
-                                              showSubtitles: false,
-                                              channelSwapEnabled:
-                                                  transport
-                                                      ?.channelSwapEnabled ??
-                                                  session.channelSwapEnabled,
-                                              audioEffects:
-                                                  transport?.audioEffects ??
-                                                  session.audioEffects,
-                                              speed:
-                                                  transport?.speed ??
-                                                  session.speed,
-                                            );
-                                        if (featureIcons.isEmpty) {
-                                          return const SizedBox.shrink();
+                                return SessionDetailContent(
+                                  transitionActive: widget.transitionActive,
+                                  key: _detailContentKey,
+                                  session: session,
+                                  segmentPanelExpandedNotifier:
+                                      widget.segmentPanelExpandedNotifier,
+                                  isLandscape: isLandscape,
+                                  artworkWidget: artwork,
+                                  detailPadding: detailPadding,
+                                  hasSubtitle: _hasSubtitle,
+                                  subtitleEnabled: subtitleSettings.$1,
+                                  subtitleGlobalEnabled: subtitleSettings.$2,
+                                  onToggleSubtitle: _hasSubtitle
+                                      ? () {
+                                          ref
+                                              .read(
+                                                subtitleSettingsProvider
+                                                    .notifier,
+                                              )
+                                              .toggleShowSubtitles(session.id);
                                         }
-                                        return Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            SessionFeatureIconRow(
-                                              featureIcons: featureIcons,
-                                              color: sessionDetailForeground(
-                                                cs,
-                                                SessionDetailForegroundLevel
-                                                    .muted,
-                                              ),
-                                              iconSize: isLandscape ? 20 : 18,
-                                              spacing: isLandscape ? 8 : 6,
-                                              alignment: WrapAlignment.end,
-                                            ),
-                                            SizedBox(
-                                              width: isLandscape ? 8 : 6,
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    ),
-                                  ],
+                                      : null,
+                                  onToggleGlobalSubtitle: () {
+                                    final notifier = ref.read(
+                                      subtitleSettingsProvider.notifier,
+                                    );
+                                    unawaited(
+                                      _toggleGlobalSubtitleDisplay(
+                                        notifier,
+                                        ref.read(subtitleSettingsProvider),
+                                        session.id,
+                                      ),
+                                    );
+                                  },
                                 );
                               },
                             ),
                           ),
-                        ),
-                        Positioned.fill(
-                          top: isLandscape ? 0 : topBarHeight,
-                          child: Builder(
-                            builder: (context) {
-                              Widget artworkWidget = AnimatedSwitcher(
-                                duration:
-                                    MediaQuery.disableAnimationsOf(context)
-                                    ? Duration.zero
-                                    : kAppMotionSlow,
-                                reverseDuration:
-                                    MediaQuery.disableAnimationsOf(context)
-                                    ? Duration.zero
-                                    : kAppMotionStandard,
-                                switchInCurve: Curves.easeOutCubic,
-                                switchOutCurve: Curves.easeInCubic,
-                                transitionBuilder: (child, animation) =>
-                                    MediaQuery.disableAnimationsOf(context)
-                                    ? child
-                                    : FadeTransition(
-                                        opacity: animation,
-                                        child: child,
-                                      ),
-                                layoutBuilder:
-                                    (currentChild, previousChildren) {
-                                      return Stack(
-                                        alignment: Alignment.center,
-                                        fit: StackFit.expand,
-                                        children: [
-                                          ...previousChildren,
-                                          ?currentChild,
-                                        ],
-                                      );
-                                    },
-                                child: KeyedSubtree(
-                                  key: ValueKey('artwork_${session.id}'),
-                                  child: SessionHeroArtwork(
-                                    session: session,
-                                    height: constraints.maxHeight,
-                                    track: track,
-                                    coverPathFuture: coverPathFuture,
-                                  ),
-                                ),
-                              );
-
-                              final artwork = artworkWidget;
-
-                              final detailPadding = EdgeInsets.fromLTRB(
-                                isLandscape ? 8 : 28,
-                                isLandscape ? topBarHeight : 0,
-                                isLandscape ? 8 : 28,
-                                isLandscape ? 8 : 8,
-                              );
-                              final subtitleSettings = ref.watch(
-                                subtitleSettingsProvider.select(
-                                  (state) => (
-                                    state.isShowEnabled(session.id),
-                                    state.isGlobalEnabled(session.id),
-                                  ),
-                                ),
-                              );
-                              return SessionDetailContent(
-                                transitionActive: widget.transitionActive,
-                                key: _detailContentKey,
-                                session: session,
-                                segmentPanelExpandedNotifier:
-                                    widget.segmentPanelExpandedNotifier,
-                                isLandscape: isLandscape,
-                                artworkWidget: artwork,
-                                detailPadding: detailPadding,
-                                hasSubtitle: _hasSubtitle,
-                                subtitleEnabled: subtitleSettings.$1,
-                                subtitleGlobalEnabled: subtitleSettings.$2,
-                                onToggleSubtitle: _hasSubtitle
-                                    ? () {
-                                        ref
-                                            .read(
-                                              subtitleSettingsProvider.notifier,
-                                            )
-                                            .toggleShowSubtitles(session.id);
-                                      }
-                                    : null,
-                                onToggleGlobalSubtitle: () {
-                                  final notifier = ref.read(
-                                    subtitleSettingsProvider.notifier,
-                                  );
-                                  unawaited(
-                                    _toggleGlobalSubtitleDisplay(
-                                      notifier,
-                                      ref.read(subtitleSettingsProvider),
-                                      session.id,
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
               Positioned(

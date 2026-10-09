@@ -15,7 +15,6 @@ import '../../../app/presentation/main_tab_state_mixin.dart';
 import '../../../app/presentation/screen_view_models.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
-import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -78,8 +77,6 @@ class PlaylistTab extends ConsumerStatefulWidget {
 class _PlaylistTabState extends ConsumerState<PlaylistTab>
     with AutomaticKeepAliveClientMixin, MainTabStateMixin<PlaylistTab> {
   final ScrollController _scrollController = ScrollController();
-  bool _initialPlaceholderDismissed = false;
-  bool _initialPlaceholderDismissScheduled = false;
   bool _isSelectionMode = false;
   final Set<String> _selectedSessionIds = <String>{};
 
@@ -250,53 +247,11 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     return isRouteCurrent && _isSelected;
   }
 
-  void _scheduleInitialPlaceholderDismissal({required bool isInitialized}) {
-    if (_initialPlaceholderDismissed ||
-        _initialPlaceholderDismissScheduled ||
-        !_isActive ||
-        !isInitialized) {
-      return;
-    }
-    _initialPlaceholderDismissScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initialPlaceholderDismissScheduled = false;
-      if (!mounted || _initialPlaceholderDismissed || !_isActive) return;
-      setState(() => _initialPlaceholderDismissed = true);
-    });
-  }
-
   @override
   void initState() {
     super.initState();
-    // A navigation target must lay out ready content in its preparation frame,
-    // rather than replacing a skeleton after the visible slide has started.
-    _initialPlaceholderDismissed =
-        _isSelected &&
-        !UiInteractionCoordinator.instance.navigationAllowed.value &&
-        ref.read(playlistStructureUiProvider).isInitialized;
-    widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     final controller = ref.read(mainScreenControllerProvider);
     initTabState(controller.scrollToTopTab, controller.stopScrollTab);
-  }
-
-  @override
-  void didUpdateWidget(covariant PlaylistTab oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.activeTabIndexListenable != widget.activeTabIndexListenable) {
-      oldWidget.activeTabIndexListenable?.removeListener(
-        _handleActiveTabChanged,
-      );
-      widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
-    }
-    _handleActiveTabChanged();
-  }
-
-  void _handleActiveTabChanged() {
-    if (!mounted || !_isSelected || _initialPlaceholderDismissed) return;
-    if (ref.read(playlistStructureUiProvider).isInitialized) {
-      // Apply ready data before a retained page's next preparation layout.
-      setState(() => _initialPlaceholderDismissed = true);
-    }
   }
 
   Future<void> _clearAllWithUndo(
@@ -383,7 +338,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   @override
   void dispose() {
-    widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
     disposeTabState();
     _scrollController.dispose();
     super.dispose();
@@ -396,24 +350,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final library = ref.read(libraryFacadeProvider);
-    final paths = ref.read(audioPathCoordinatorProvider);
-    final playback = ref.read(playbackFacadeProvider);
-    ref.listen(playlistStructureUiProvider, (_, next) {
-      if (mounted && _isActive) _reconcileSelection(next);
-    });
-    final structureState = ref.watch(playlistStructureUiProvider);
-    final visibleEntries = ref.watch(playlistSortedEntriesUiProvider);
-    final pinnedPlaylistSessionIds = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.pinnedPlaylistSessionIds ?? const <String>[],
-      ),
-    ).toSet();
-    final coverImageResolution = ref.watch(coverImageResolutionProvider);
-    _scheduleInitialPlaceholderDismissal(
-      isInitialized: structureState.isInitialized,
-    );
-    final coverCacheWidth = coverCacheWidthForResolution(coverImageResolution);
     final listBottomInset = MobileOverlayInset.of(context);
     final isLandscape =
         defaultTargetPlatform == TargetPlatform.windows ||
@@ -429,149 +365,50 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final topPadding = effectiveHeaderHeight + 4.0;
     final bottomPadding = listBottomInset + 16.0;
 
-    Widget buildSessionItem(BuildContext context, int index) {
-      if (index == visibleEntries.length) {
-        return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
-      }
-      final structure = visibleEntries[index];
-      final session = structure.session;
-      final isTemporary = session.isTemporary;
-      final isPinned =
-          !isTemporary && pinnedPlaylistSessionIds.contains(session.id);
-      final track = paths.sessionTrackForPath(session.id, structure.trackPath);
-      final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
-      final card = RepaintBoundary(
-        child: structure.isPlaybackQueue
-            ? PlaybackQueueCard(
-                session: session,
-                library: library,
-                playback: playback,
-                coverCacheWidth: coverCacheWidth,
-                isSelectionMode: _isSelectionMode && !isTemporary,
-                isSelected: _selectedSessionIds.contains(session.id),
-                isPinned: isPinned,
-                onLongPress: isTemporary
-                    ? null
-                    : () => _enterSelectionMode(session.id),
-                onToggleSelect: () => _toggleSessionSelection(session.id),
-                onTogglePin: isTemporary
-                    ? null
-                    : () => saveSettingsWithFeedback(
-                        context,
-                        () => ref
-                            .read(settingsRepositoryProvider)
-                            .togglePlaylistSessionPinned(session.id),
-                      ),
-                onOpen: () => session.currentTrackPath.isEmpty
-                    ? showAppSnackBar(
-                        context,
-                        i18n.tr('queue_add_audio_first'),
-                        tone: AppFeedbackTone.warning,
-                        icon: Icons.featured_play_list_rounded,
-                      )
-                    : _openSessionDetail(context, session.id),
-                onEdit: () => _openQueueEditor(context, session.id),
-              )
-            : SessionListCard(
-                sessionId: session.id,
-                track: track,
-                coverPath: coverPath,
-                coverGeneration: structureState.coverGeneration,
-                coverCacheWidth: coverCacheWidth,
-                library: library,
-                playback: playback,
-                isTemporary: isTemporary,
-                isSelectionMode: _isSelectionMode && !isTemporary,
-                isSelected: _selectedSessionIds.contains(session.id),
-                isPinned: isPinned,
-                onLongPress: isTemporary
-                    ? null
-                    : () => _enterSelectionMode(session.id),
-                onToggleSelect: () => _toggleSessionSelection(session.id),
-                onTogglePin: isTemporary
-                    ? null
-                    : () => saveSettingsWithFeedback(
-                        context,
-                        () => ref
-                            .read(settingsRepositoryProvider)
-                            .togglePlaylistSessionPinned(session.id),
-                      ),
-                onOpen: () => _openSessionDetail(context, session.id),
-              ),
-      );
-      return AnimatedReorderItem(
-        key: ValueKey(session.id),
-        id: session.id,
-        child: BrowseAnchor(id: session.id, child: card),
-      );
-    }
-
-    final sessionIndices = <Key, int>{
-      for (var i = 0; i < visibleEntries.length; i++)
-        ValueKey(visibleEntries[i].session.id): i,
-    };
-
     final page = ScrollActivityGate(
       child: PageHeaderInset(
         topInset: topPadding,
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            AppPageContentTransition(child: PlaceholderContentTransition(
-              showPlaceholder:
-                  !_initialPlaceholderDismissed ||
-                  !structureState.isInitialized,
+            AppPageContentTransition.deferred(
               placeholder: PlaylistLoadingSkeleton(
                 key: const ValueKey('playlist_initial_placeholder'),
                 topPadding: topPadding,
                 bottomPadding: bottomPadding,
               ),
-              content: Stack(
-                key: const ValueKey('playlist_loaded_content'),
-                clipBehavior: Clip.none,
-                children: [
-                  if (!structureState.hasSessions)
-                    SessionsEmptyState(
-                      key: const ValueKey('empty_state'),
-                      bottomInset: bottomPadding,
-                      topInset: topPadding,
-                      onOpenLibrary: widget.onOpenLibrary,
-                    ),
-                  if (structureState.hasSessions)
-                    AnimatedReorder(
-                      order: visibleEntries
-                          .map((entry) => entry.session.id)
-                          .toList(),
-                      child: ListView.builder(
-                        key: const PageStorageKey<String>('playlist_list'),
-                        controller: _scrollController,
-                        physics: const ClampingScrollPhysics(),
-                        padding: EdgeInsets.fromLTRB(
-                          playlistListHorizontalPadding,
-                          topPadding,
-                          playlistListHorizontalPadding,
-                          bottomPadding,
-                        ),
-                        cacheExtent: listCacheExtent,
-                        clipBehavior: Clip.none,
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        itemCount: visibleEntries.length + 1,
-                        itemBuilder: buildSessionItem,
-                        findChildIndexCallback: (key) => sessionIndices[key],
-                      ),
-                    ),
-                ],
+              builder: (context) => Consumer(
+                builder: (context, contentRef, _) => _buildPlaylistContent(
+                  context,
+                  contentRef,
+                  topPadding: topPadding,
+                  bottomPadding: bottomPadding,
+                  listCacheExtent: listCacheExtent,
+                ),
               ),
-            )),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Consumer(
-              builder: (context, ref, child) {
-                final headerState = ref.watch(playlistHeaderUiProvider);
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final headerState = ref.watch(playlistHeaderUiProvider);
                   if (_isSelectionMode) {
+                    final visibleEntries = ref.watch(
+                      playlistSortedEntriesUiProvider,
+                    );
+                    final pinnedPlaylistSessionIds = ref
+                        .watch(
+                          settingsStateProvider.select(
+                            (state) =>
+                                state.value?.pinnedPlaylistSessionIds ??
+                                const <String>[],
+                          ),
+                        )
+                        .toSet();
+                    final paths = ref.read(audioPathCoordinatorProvider);
+                    final playback = ref.read(playbackFacadeProvider);
                     final count = _selectedSessionIds.length;
                     final isPlayEnabled = count > 0;
                     final isPauseEnabled = count > 0;
@@ -682,7 +519,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     titleWidget: _buildHeaderLeftActions(
                       context,
                       i18n,
-                      structureState,
+                      headerState.sessionCount > 0,
                     ),
                     trailing: SizedBox(
                       height: 38,
@@ -783,11 +620,167 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         ),
       ),
     );
+    return page;
+  }
+
+  Widget _buildPlaylistContent(
+    BuildContext context,
+    WidgetRef ref, {
+    required double topPadding,
+    required double bottomPadding,
+    required double listCacheExtent,
+  }) {
+    final library = ref.read(libraryFacadeProvider);
+    final paths = ref.read(audioPathCoordinatorProvider);
+    final playback = ref.read(playbackFacadeProvider);
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    ref.listen(playlistStructureUiProvider, (_, next) {
+      if (mounted && _isActive) _reconcileSelection(next);
+    });
+    final structureState = ref.watch(playlistStructureUiProvider);
+    final visibleEntries = ref.watch(playlistSortedEntriesUiProvider);
+    final pinnedPlaylistSessionIds = ref
+        .watch(
+          settingsStateProvider.select(
+            (state) =>
+                state.value?.pinnedPlaylistSessionIds ?? const <String>[],
+          ),
+        )
+        .toSet();
+    final coverImageResolution = ref.watch(coverImageResolutionProvider);
+    final coverCacheWidth = coverCacheWidthForResolution(coverImageResolution);
+    Widget buildSessionItem(BuildContext context, int index) {
+      if (index == visibleEntries.length) {
+        return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
+      }
+      final structure = visibleEntries[index];
+      final session = structure.session;
+      final isTemporary = session.isTemporary;
+      final isPinned =
+          !isTemporary && pinnedPlaylistSessionIds.contains(session.id);
+      final track = paths.sessionTrackForPath(session.id, structure.trackPath);
+      final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
+      final card = RepaintBoundary(
+        child: structure.isPlaybackQueue
+            ? PlaybackQueueCard(
+                session: session,
+                library: library,
+                playback: playback,
+                coverCacheWidth: coverCacheWidth,
+                isSelectionMode: _isSelectionMode && !isTemporary,
+                isSelected: _selectedSessionIds.contains(session.id),
+                isPinned: isPinned,
+                onLongPress: isTemporary
+                    ? null
+                    : () => _enterSelectionMode(session.id),
+                onToggleSelect: () => _toggleSessionSelection(session.id),
+                onTogglePin: isTemporary
+                    ? null
+                    : () => saveSettingsWithFeedback(
+                        context,
+                        () => ref
+                            .read(settingsRepositoryProvider)
+                            .togglePlaylistSessionPinned(session.id),
+                      ),
+                onOpen: () => session.currentTrackPath.isEmpty
+                    ? showAppSnackBar(
+                        context,
+                        i18n.tr('queue_add_audio_first'),
+                        tone: AppFeedbackTone.warning,
+                        icon: Icons.featured_play_list_rounded,
+                      )
+                    : _openSessionDetail(context, session.id),
+                onEdit: () => _openQueueEditor(context, session.id),
+              )
+            : SessionListCard(
+                sessionId: session.id,
+                track: track,
+                coverPath: coverPath,
+                coverGeneration: structureState.coverGeneration,
+                coverCacheWidth: coverCacheWidth,
+                library: library,
+                playback: playback,
+                isTemporary: isTemporary,
+                isSelectionMode: _isSelectionMode && !isTemporary,
+                isSelected: _selectedSessionIds.contains(session.id),
+                isPinned: isPinned,
+                onLongPress: isTemporary
+                    ? null
+                    : () => _enterSelectionMode(session.id),
+                onToggleSelect: () => _toggleSessionSelection(session.id),
+                onTogglePin: isTemporary
+                    ? null
+                    : () => saveSettingsWithFeedback(
+                        context,
+                        () => ref
+                            .read(settingsRepositoryProvider)
+                            .togglePlaylistSessionPinned(session.id),
+                      ),
+                onOpen: () => _openSessionDetail(context, session.id),
+              ),
+      );
+      return AnimatedReorderItem(
+        key: ValueKey(session.id),
+        id: session.id,
+        child: BrowseAnchor(id: session.id, child: card),
+      );
+    }
+
+    final sessionIndices = <Key, int>{
+      for (var i = 0; i < visibleEntries.length; i++)
+        ValueKey(visibleEntries[i].session.id): i,
+    };
+
     return BrowsePageScroll(
       pageKey: 'playlist',
       controller: _scrollController,
       anchorIds: visibleEntries.map((entry) => entry.session.id).toList(),
-      child: page,
+      child: PlaceholderContentTransition(
+        showPlaceholder: !structureState.isInitialized,
+        placeholder: PlaylistLoadingSkeleton(
+          key: const ValueKey('playlist_data_placeholder'),
+          topPadding: topPadding,
+          bottomPadding: bottomPadding,
+        ),
+        content: Stack(
+          key: const ValueKey('playlist_loaded_content'),
+          clipBehavior: Clip.none,
+          children: [
+            if (!structureState.hasSessions)
+              SessionsEmptyState(
+                key: const ValueKey('empty_state'),
+                bottomInset: bottomPadding,
+                topInset: topPadding,
+                onOpenLibrary: widget.onOpenLibrary,
+              ),
+            if (structureState.hasSessions)
+              AnimatedReorder(
+                order: visibleEntries.map((entry) => entry.session.id).toList(),
+                child: ListView.builder(
+                  key: const PageStorageKey<String>('playlist_list'),
+                  controller: _scrollController,
+                  physics: const ClampingScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                    playlistListHorizontalPadding,
+                    topPadding,
+                    playlistListHorizontalPadding,
+                    bottomPadding,
+                  ),
+                  cacheExtent: listCacheExtent,
+                  clipBehavior: Clip.none,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  itemCount: visibleEntries.length + 1,
+                  itemBuilder: buildSessionItem,
+                  findChildIndexCallback: (key) => sessionIndices[key],
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -937,13 +930,13 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   Widget _buildHeaderLeftActions(
     BuildContext context,
     AppLanguageProvider i18n,
-    PlaylistStructureState structureState,
+    bool hasSessions,
   ) {
     return HeaderActionPill(
       children: [
         IconButton(
           key: const ValueKey<String>('playlist_pause_all_button'),
-          onPressed: structureState.hasSessions
+          onPressed: hasSessions
               ? () async {
                   final paused = await ref
                       .read(playbackFacadeProvider)
@@ -969,7 +962,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         ),
         IconButton(
           key: const ValueKey<String>('playlist_clear_all_button'),
-          onPressed: structureState.hasSessions
+          onPressed: hasSessions
               ? () =>
                     _clearAllWithUndo(context, ref.read(playbackFacadeProvider))
               : null,
@@ -982,7 +975,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         IconButton(
           key: const ValueKey<String>('playlist_add_queue_button'),
           onPressed: () {
-            final queueCount = structureState.entries
+            final queueCount = ref
+                .read(playlistStructureUiProvider)
+                .entries
                 .where((entry) => entry.isPlaybackQueue)
                 .length;
             ref

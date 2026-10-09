@@ -30,6 +30,8 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entries.dart';
@@ -96,6 +98,58 @@ class _CountingDetailRepository extends TestPersistenceRepository {
     detailRequests++;
     return super.load(target);
   }
+}
+
+class _DeferredDetailAsmrController extends ChangeNotifier
+    implements AsmrLibraryController {
+  _DeferredDetailAsmrController(this.tree, {required this.cached});
+  final List<AsmrTrackFile> tree;
+  bool cached;
+  int cacheReads = 0;
+  int requests = 0;
+
+  @override
+  List<AsmrTrackFile>? trackTreeFor(int workId) {
+    cacheReads++;
+    return cached ? tree : null;
+  }
+
+  @override
+  Future<void> initializeForVisiblePage({
+    AsmrContentLanguage? defaultLanguage,
+  }) async {}
+
+  @override
+  Future<List<AsmrTrackFile>> ensureTrackTree(
+    AsmrWork work, {
+    bool forceRefresh = false,
+  }) async {
+    requests++;
+    cached = true;
+    return tree;
+  }
+
+  @override
+  bool isFavorite(int workId) => false;
+
+  @override
+  bool isTrackHidden(int workId, AsmrTrackFile node) => false;
+
+  @override
+  AsmrTrackTreeViewState trackTreeViewState(int workId) =>
+      AsmrTrackTreeViewState(
+        workId: workId,
+        tree: cached ? tree : null,
+        visibleTree: cached ? tree : null,
+        isLoading: false,
+        isRefreshing: false,
+        isStale: false,
+        operationError: null,
+        revision: 0,
+      );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _WorkDetailAsmrMetadataService extends AsmrMetadataService {
@@ -219,6 +273,138 @@ void main() {
   });
 
   group('WorkDetailPage', () {
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      for (final cached in [false, true]) {
+        for (final local in [false, true]) {
+          testWidgets(
+            '${local ? 'local' : 'ASMR'} ${cached ? 'cached' : 'cold'} detail defers rows during real navigation on $platform',
+            (tester) async {
+              final interaction = UiInteractionCoordinator.instance;
+              interaction.resetForTest();
+              addTearDown(interaction.resetForTest);
+              SharedPreferences.setMockInitialValues({});
+              final covers = _ControlledWorkDetailCoverService()
+                ..images.complete([])
+                ..cover.complete(null);
+              final fixture = AppRuntimeWidgetTestFixture(
+                coverArtworkCacheService: covers,
+              );
+              addTearDown(fixture.dispose);
+              const folder = 'C:/works/first-detail';
+              final target = AudioDetailTarget.libraryRootFolder(folder);
+              final texts = WorkTextService(
+                discoverImages: (_) async => [],
+                platformGateway: _NestedWorkDetailFileGateway([]),
+              );
+              addTearDown(texts.dispose);
+              final work = AsmrWork.fromJson(const {
+                'id': 10001,
+                'title': 'First detail title',
+                'voiceActors': ['Deferred voice actor'],
+                'mainCoverUrl': 'https://example.test/first-cover.jpg',
+              });
+              final remote = _DeferredDetailAsmrController([
+                AsmrTrackFile(
+                  hash: 'first-detail',
+                  title: 'Deferred audio.mp3',
+                  type: 'audio',
+                  streamUrl: 'https://example.test/audio.mp3',
+                  downloadUrl: null,
+                  lowQualityUrl: null,
+                  duration: const Duration(minutes: 1),
+                  size: 0,
+                  children: const [],
+                  workId: work.id,
+                  workTitle: work.title,
+                  sourceId: '',
+                  relativePath: 'Deferred audio.mp3',
+                ),
+              ], cached: cached);
+              addTearDown(remote.dispose);
+              if (local) {
+                fixture.library.addWatchedFolder(folder, notify: false);
+                fixture.library.addTracks(
+                  [
+                    testMusicTrack(
+                      name: 'Deferred audio.mp3',
+                      path: '$folder/audio.mp3',
+                      groupKey: folder,
+                      groupTitle: 'First detail title',
+                    ),
+                  ],
+                  notify: false,
+                  persist: false,
+                );
+                if (cached) {
+                  await tester.runAsync(() async {
+                    await fixture.library.loadLibraryFolderTree(folder);
+                    await _prewarmDirectory(fixture, folder);
+                  });
+                }
+              } else if (cached) {
+                await tester.runAsync(
+                  () => WorkDirectoryInput.asmr(remote.tree).load(),
+                );
+              }
+              await tester.pumpWidget(
+                fixture.build(
+                  Builder(
+                    builder: (context) => TextButton(
+                      onPressed: () => Navigator.of(context).push<void>(
+                        buildAppPageRoute(
+                          context: context,
+                          child: local
+                              ? WorkDetailPage.forLocal(
+                                  target: target,
+                                  initialDetail: AudioDetail.empty(target)
+                                      .copyWith(
+                                        workTitle: 'First detail title',
+                                        voiceActors: ['Deferred voice actor'],
+                                      ),
+                                )
+                              : WorkDetailPage.forAsmr(work: work),
+                        ),
+                      ),
+                      child: const Text('Open first detail'),
+                    ),
+                  ),
+                  navigatorObservers: [UiInteractionNavigatorObserver()],
+                  overrides: [
+                    workTextServiceProvider.overrideWithValue(texts),
+                    if (!local)
+                      asmrLibraryControllerProvider.overrideWithValue(remote),
+                  ],
+                ),
+              );
+              await tester.tap(find.text('Open first detail'));
+              await tester.pump();
+              await tester.pump();
+              await tester.pump(const Duration(milliseconds: 100));
+              expect(find.text('First detail title'), findsOneWidget);
+              expect(find.byType(WorkDetailEntryTile), findsNothing);
+              expect(find.byType(AsyncLocalCoverImage), findsNothing);
+              expect(find.byType(AsyncRemoteCoverImage), findsNothing);
+              expect(find.text('Deferred voice actor'), findsNothing);
+              expect(find.byType(WorkDetailDirectorySkeleton), findsOneWidget);
+              expect(remote.cacheReads, 0);
+              expect(remote.requests, 0);
+              await _settleDetail(tester);
+              expect(find.byType(WorkDetailEntryTile), findsWidgets);
+              expect(find.text('Deferred voice actor'), findsOneWidget);
+              if (!local) {
+                expect(remote.cacheReads, 1);
+                expect(remote.requests, 1);
+              }
+              await tester.pumpWidget(const SizedBox.shrink());
+              await _settleDetail(tester);
+              expect(tester.takeException(), isNull);
+            },
+            variant: TargetPlatformVariant({platform}),
+          );
+        }
+      }
+    }
+
     testWidgets('leaving the source frame cancels a pending detail push', (
       tester,
     ) async {
@@ -312,9 +498,13 @@ void main() {
           );
           await tester.pump();
           await tester.pump();
+          expect(find.byType(WorkDetailEntryTile), findsNothing);
+          interaction.finishInteractionsForTest();
+          await _settleDetail(tester);
           final list = tester.widget<SliverList>(find.byType(SliverList));
           expect(find.byType(WorkDetailEntryTile), findsWidgets);
 
+          interaction.beginNavigation(Object());
           states.add(fixture.library.state);
           await tester.pump();
           await tester.pump();
@@ -425,6 +615,8 @@ void main() {
           await tester.pump(interaction.idleDelay);
           await tester.pump();
           expect(treeRequests, 1);
+          await tester.pump();
+          await tester.pump(kAppMotionFast + const Duration(milliseconds: 1));
           await tester.runAsync(
             () => Future<void>.delayed(const Duration(milliseconds: 50)),
           );
@@ -501,6 +693,8 @@ void main() {
           await tester.pump();
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 100));
+          expect(find.text('audio.mp3'), findsNothing);
+          await _settleDetail(tester);
           expect(find.text('audio.mp3'), findsOneWidget);
           expect(tester.widget<SliverFadeTransition>(fade).opacity.value, 1);
           expect(
@@ -561,7 +755,9 @@ void main() {
           await _settleDetail(tester);
           Finder rowFade(String id) =>
               find.byKey(ValueKey('work_detail_entry_fade_$id'));
-          final audioRow = find.byKey(const ValueKey('audio:$folder/audio.mp3'));
+          final audioRow = find.byKey(
+            const ValueKey('audio:$folder/audio.mp3'),
+          );
           final audioState = tester.state<State<WorkDetailEntryTile>>(audioRow);
           int? entryIndex(String id) {
             final delegate =
@@ -806,19 +1002,14 @@ void main() {
           await tester.pump();
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 100));
-          for (final text in [
-            detail.workTitle,
-            detail.circleName,
-            detail.voiceActors.single,
-            '#${detail.tags.single}',
-          ]) {
+          for (final text in [detail.workTitle, detail.circleName]) {
             expect(find.text(text), findsOneWidget);
           }
-          final image = tester.widget<LocalCoverImage>(
-            find.byType(LocalCoverImage),
-          );
-          expect(image.path, 'C:/works/card/cover.jpg');
-          expect(image.deferLoadDuringInteraction, isTrue);
+          expect(find.text(detail.voiceActors.single), findsNothing);
+          expect(find.text('#${detail.tags.single}'), findsNothing);
+          expect(find.byType(AsyncLocalCoverImage), findsNothing);
+          expect(find.byType(LocalCoverImage), findsNothing);
+          expect(find.byType(CoverFallbackArtwork), findsOneWidget);
           expect(repository.detailRequests, 0);
           expect(covers.imageRequests, 0);
           expect(covers.coverRequests, 0);
@@ -849,6 +1040,10 @@ void main() {
           });
           Widget page() => fixture.build(WorkDetailPage.forAsmr(work: work));
           await tester.pumpWidget(page());
+          expect(find.byType(AsyncRemoteCoverImage), findsNothing);
+          await tester.pump();
+          await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+          await tester.pump();
           final initial = tester.widget<AsyncRemoteCoverImage>(
             find.byType(AsyncRemoteCoverImage),
           );
@@ -932,8 +1127,8 @@ void main() {
           repository.detailRequests = 0;
           final interaction = UiInteractionCoordinator.instance;
           final source = Object();
-          interaction.beginInteraction(source);
-          addTearDown(() => interaction.cancelInteraction(source));
+          interaction.beginNavigation(source);
+          addTearDown(() => interaction.cancelNavigation(source));
 
           await tester.pumpWidget(
             fixture.build(
@@ -953,18 +1148,20 @@ void main() {
           for (final value in [
             'Card title',
             'Card circle',
-            'Card CV',
-            '#Card tag',
           ]) {
             expect(find.text(value), findsOneWidget);
           }
+          expect(find.text('Card CV'), findsNothing);
+          expect(find.text('#Card tag'), findsNothing);
           await tester.pump(const Duration(milliseconds: 500));
           expect(repository.detailRequests, 0);
           expect(covers.imageRequests, 0);
-          expect(find.text('audio.mp3'), findsOneWidget);
+          expect(find.text('audio.mp3'), findsNothing);
 
-          interaction.cancelInteraction(source);
+          interaction.cancelNavigation(source);
           await _settleDetail(tester);
+          expect(find.text('Card CV'), findsOneWidget);
+          expect(find.text('#Card tag'), findsOneWidget);
           expect(find.text('audio.mp3'), findsOneWidget);
           expect(covers.imageRequests, 1);
           expect(repository.detailRequests, 0);
@@ -974,7 +1171,7 @@ void main() {
       );
 
       testWidgets(
-        'shows cached indexed tree immediately and reuses file snapshots on $platform',
+        'shows cached indexed tree after the shell and reuses file snapshots on $platform',
         (tester) async {
           SharedPreferences.setMockInitialValues(const <String, Object>{});
           final covers = _ControlledWorkDetailCoverService();
@@ -993,8 +1190,8 @@ void main() {
           addTearDown(fixture.dispose);
           final interaction = UiInteractionCoordinator.instance;
           final source = Object();
-          interaction.beginInteraction(source);
-          addTearDown(() => interaction.cancelInteraction(source));
+          interaction.beginNavigation(source);
+          addTearDown(() => interaction.cancelNavigation(source));
           const folderPath = 'C:/works/independent';
           final target = AudioDetailTarget.libraryRootFolder(folderPath);
           fixture.library.addWatchedFolder(folderPath, notify: false);
@@ -1043,11 +1240,11 @@ void main() {
           expect(covers.imageRequests, 0);
           expect(covers.coverRequests, 0);
           expect(treeRequests, 1);
-          expect(find.text('audio.mp3'), findsOneWidget);
-          expect(find.text('Extras'), findsOneWidget);
+          expect(find.text('audio.mp3'), findsNothing);
+          expect(find.text('Extras'), findsNothing);
           expect(find.text('notes.txt'), findsNothing);
 
-          interaction.cancelInteraction(source);
+          interaction.cancelNavigation(source);
           await tester.pump();
           await tester.pump();
           await _settleDetail(tester);
@@ -1075,10 +1272,10 @@ void main() {
           expect(covers.cover.isCompleted, isFalse);
 
           covers.cachedCover = '$folderPath/cover.jpg';
-          interaction.beginInteraction(source);
+          interaction.beginNavigation(source);
           await tester.pumpWidget(buildPage(const ValueKey('reopened')));
-          expect(find.text('notes.txt'), findsOneWidget);
-          expect(find.text('cover.jpg'), findsOneWidget);
+          expect(find.text('notes.txt'), findsNothing);
+          expect(find.text('cover.jpg'), findsNothing);
           expect(covers.imageRequests, 1);
           textEntries
             ..clear()
@@ -1087,7 +1284,7 @@ void main() {
               'relativePath': 'updated.txt',
               'path': '$folderPath/updated.txt',
             });
-          interaction.cancelInteraction(source);
+          interaction.cancelNavigation(source);
           await _settleDetail(tester);
           expect(find.text('notes.txt'), findsNothing);
           expect(find.text('updated.txt'), findsOneWidget);
@@ -1178,32 +1375,29 @@ void main() {
           );
           final interaction = UiInteractionCoordinator.instance;
           final source = Object();
-          interaction.beginInteraction(source);
-          addTearDown(() => interaction.cancelInteraction(source));
+          interaction.beginNavigation(source);
+          addTearDown(() => interaction.cancelNavigation(source));
           await tester.pumpWidget(build(page('second')));
           await tester.pump();
+          expect(find.byType(WorkDetailEntryTile), findsNothing);
+          expect(find.byType(CircularProgressIndicator), findsNothing);
+          interaction.cancelNavigation(source);
+          await _settleDetail(tester);
           expect(tester.widget<CustomScrollView>(scroll).controller!.offset, 0);
           expect(
-            tester
-                .widgetList<WorkDetailEntryTile>(
-                  find.byType(WorkDetailEntryTile),
-                )
-                .every((tile) => tile.item.type == WorkEntryType.folder),
+            tester.widgetList<WorkDetailEntryTile>(
+              find.byType(WorkDetailEntryTile),
+            ).every((tile) => tile.item.type == WorkEntryType.folder),
             isTrue,
           );
-          expect(find.byType(CircularProgressIndicator), findsNothing);
-          expect(find.byType(WorkDetailEntryTile), findsWidgets);
-          interaction.cancelInteraction(source);
-          await _settleDetail(tester);
           await tester.pumpWidget(build(const SizedBox()));
           await _settleDetail(tester);
           fixture.library.snapshotCacheService.clear();
-          interaction.beginInteraction(source);
+          interaction.beginNavigation(source);
           await tester.pumpWidget(build(page('cold-reopen')));
           await tester.pump();
           expect(find.byType(WorkDetailEntryTile), findsNothing);
-          expect(tester.widget<CustomScrollView>(scroll).controller!.offset, 0);
-          interaction.cancelInteraction(source);
+          interaction.cancelNavigation(source);
           await tester.pump();
           await _settleDetail(tester);
           expect(find.byType(WorkDetailEntryTile), findsWidgets);
@@ -1920,7 +2114,7 @@ void main() {
         fixture.build(WorkDetailPage.forAsmr(work: asmrWork)),
       );
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      await _settleDetail(tester);
 
       // Title & pinned row
       expect(find.text('ASMR Remote Work Title'), findsOneWidget);
@@ -2704,6 +2898,70 @@ void main() {
     });
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      for (final remote in [false, true]) {
+        testWidgets(
+          '${remote ? 'remote' : 'local'} viewer defers original image decode during navigation on $platform',
+          (tester) async {
+            final interaction = UiInteractionCoordinator.instance;
+            interaction.resetForTest();
+            addTearDown(interaction.resetForTest);
+            SharedPreferences.setMockInitialValues({});
+            final root = await tester.runAsync(
+              () => Directory.systemTemp.createTemp('viewer_cold_decode_'),
+            );
+            addTearDown(() async {
+              if (await root!.exists()) await root.delete(recursive: true);
+            });
+            final image = File('${root!.path}/first.png');
+            await tester.runAsync(
+              () => image.writeAsBytes(
+                base64Decode(
+                  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+                ),
+              ),
+            );
+            final covers = _ControlledWorkDetailCoverService()
+              ..cachedCover = image.path
+              ..cover.complete(image.path);
+            final fixture = AppRuntimeWidgetTestFixture(
+              coverArtworkCacheService: covers,
+            );
+            addTearDown(fixture.dispose);
+            final source = Object();
+            interaction.beginNavigation(source);
+            await tester.pumpWidget(
+              fixture.build(
+                WorkImageViewerPage(
+                  images: [
+                    WorkImageItem(
+                      name: 'first.png',
+                      path: remote
+                          ? 'https://example.test/first.png'
+                          : image.path,
+                    ),
+                  ],
+                ),
+              ),
+            );
+            await tester.pump();
+            expect(find.byType(Image), findsNothing);
+            final viewerImage = tester.widget<RetryingFileImage>(
+              find.byType(RetryingFileImage),
+            );
+            expect(viewerImage.deferLoadDuringInteraction, isTrue);
+            expect(viewerImage.useDefaultCacheWidth, isFalse);
+            interaction.endNavigation(source);
+            await tester.pump();
+            expect(find.byType(Image), findsOneWidget);
+            await tester.pump(interaction.idleDelay);
+            await tester.pumpWidget(const SizedBox.shrink());
+            PaintingBinding.instance.imageCache.clear();
+            PaintingBinding.instance.imageCache.clearLiveImages();
+          },
+          variant: TargetPlatformVariant({platform}),
+        );
+      }
+
       testWidgets('reuses and repairs cached viewer artwork on $platform', (
         tester,
       ) async {
@@ -3158,7 +3416,7 @@ void main() {
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       testWidgets(
-        'cached file rows are immediately visible without idle animation on $platform',
+        'cached file rows retain their identity without row animation after the shell on $platform',
         (tester) async {
           final interaction = UiInteractionCoordinator.instance;
           interaction.resetForTest();
@@ -3212,6 +3470,8 @@ void main() {
 
           await tester.pump();
           await tester.pump();
+
+          await _settleDetail(tester);
 
           final tileFinder = find.byType(WorkDetailEntryTile);
           expect(tileFinder, findsWidgets);

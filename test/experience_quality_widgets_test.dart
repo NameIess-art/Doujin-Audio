@@ -447,7 +447,7 @@ void main() {
       <String>[
         '声优:Alice，Bob:1:false',
         'Circle:Circle:1:false',
-        'Tags:#sleep #voice:1:false',
+        'Tags:#sleep   #voice:1:false',
         'Release:2026-07-02:1:true',
         'Rating:4:1:true',
       ],
@@ -499,11 +499,27 @@ void main() {
       <String>[
         '声優:Voice A、Voice B:1:false',
         'Circle:Circle:1:false',
-        'Tags:#ASMR #Sleep:1:false',
+        'Tags:#ASMR   #Sleep:1:false',
         'Release:2026-06-09:1:true',
         'Rating:4.5:1:true',
       ],
     );
+  });
+
+  test('library-like info lines allow custom tagSeparator', () {
+    final lines = buildLibraryLikeInfoLines(
+      metadata: const LibraryLikeInfoMetadata(
+        tags: <String>['ASMR', 'Sleep'],
+      ),
+      voiceActorLabel: 'Voice',
+      circleLabel: 'Circle',
+      tagsLabel: 'Tags',
+      releaseDateLabel: 'Release',
+      ratingLabel: 'Rating',
+      tagSeparator: '  ',
+    );
+
+    expect(lines.single.text, '#ASMR  #Sleep');
   });
 
   testWidgets('five metadata lines fit the fixed work card info block', (
@@ -599,7 +615,7 @@ void main() {
         'Work',
         'Voice',
         'Circle',
-        '#ASMR #Sleep',
+        '#ASMR   #Sleep',
         '2026-06-09',
         '4.5',
       ]) {
@@ -610,7 +626,7 @@ void main() {
       }
       expect(
         date.top,
-        greaterThan(tester.getRect(find.text('#ASMR #Sleep')).top),
+        greaterThan(tester.getRect(find.text('#ASMR   #Sleep')).top),
       );
       expect(rating.center.dy, closeTo(date.center.dy, 0.001));
       expect(rating.left, greaterThan(date.right));
@@ -620,7 +636,7 @@ void main() {
       final ratingStyle = tester.widget<Text>(find.text('4.5')).style!;
       final voiceStyle = tester.widget<Text>(find.text('Voice')).style!;
       final circleStyle = tester.widget<Text>(find.text('Circle')).style!;
-      final tagsStyle = tester.widget<Text>(find.text('#ASMR #Sleep')).style!;
+      final tagsStyle = tester.widget<Text>(find.text('#ASMR   #Sleep')).style!;
       expect(tagsStyle.color, Color.lerp(circleStyle.color, dateStyle.color, 0.5));
       expect(dateStyle.fontSize, 11);
       expect(ratingStyle.fontSize, 11);

@@ -261,6 +261,13 @@ void main() {
   AppRuntimeTestFixture.initialize();
   late Database testDatabase;
 
+  // Playing waveforms keep ticking while finite UI transitions finish.
+  Future<void> pumpFiniteTransitions(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+  }
+
   setUpAll(() async {
     testDatabase = await AppRuntimeTestFixture.installSharedDatabase();
   });
@@ -495,14 +502,21 @@ void main() {
         await tester.pump();
         await tester.pump();
         final content = find.byType(SessionDetailContent, skipOffstage: false);
-        expect(content, findsOneWidget);
-        expect(TickerMode.valuesOf(tester.element(content)).enabled, isFalse);
+        final shell = find.byKey(
+          const ValueKey('session_detail_content_cache'),
+          skipOffstage: false,
+        );
+        expect(content, findsNothing);
+        expect(shell, findsOneWidget);
+        expect(TickerMode.valuesOf(tester.element(shell)).enabled, isFalse);
         await tester.pump(const Duration(milliseconds: 60));
-        final firstTop = tester.getTopLeft(content).dy;
+        final firstTop = tester.getTopLeft(shell).dy;
         await tester.pump(const Duration(milliseconds: 60));
-        expect(tester.getTopLeft(content).dy, lessThan(firstTop));
-        expect(TickerMode.valuesOf(tester.element(content)).enabled, isFalse);
+        expect(tester.getTopLeft(shell).dy, lessThan(firstTop));
+        expect(content, findsNothing);
+        expect(TickerMode.valuesOf(tester.element(shell)).enabled, isFalse);
         await tester.pumpAndSettle();
+        expect(content, findsOneWidget);
         expect(TickerMode.valuesOf(tester.element(content)).enabled, isTrue);
 
         final drag = tester.widget<GestureDetector>(
@@ -581,9 +595,10 @@ void main() {
         await tester.pump(const Duration(milliseconds: 80));
         expect(fixture.coverCache.requestedPaths, isEmpty);
         expect(subtitleLoads, cachedSubtitle ? 1 : 0);
+        expect(find.byType(SessionDetailContent), findsNothing);
         expect(
           find.text('Cached or deferred subtitle'),
-          cachedSubtitle ? findsOneWidget : findsNothing,
+          findsNothing,
         );
         if (closeDuringEntrance) navigator.pop();
         for (var frame = 0; frame < 8; frame++) {
@@ -599,6 +614,10 @@ void main() {
           closeDuringEntrance ? 0 : 1,
         );
         expect(subtitleLoads, closeDuringEntrance ? 0 : 1);
+        expect(
+          find.text('Cached or deferred subtitle'),
+          closeDuringEntrance ? findsNothing : findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       },
@@ -2713,7 +2732,7 @@ void main() {
     },
   );
 
-  testWidgets('playlist first open fades its card skeleton out over 300ms', (
+  testWidgets('playlist first open fades its card skeleton out over 180ms', (
     WidgetTester tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
@@ -2822,7 +2841,7 @@ void main() {
     expect(find.byKey(contentKey), findsOneWidget);
 
     await tester.pump(
-      kPlaceholderContentTransitionDuration - const Duration(milliseconds: 1),
+      kAppMotionFast - const Duration(milliseconds: 1),
     );
     expect(find.byKey(placeholderKey), findsOneWidget);
 
@@ -4889,7 +4908,7 @@ void main() {
       coverGeneration: 0,
       isInitialized: true,
     );
-    await tester.pumpAndSettle();
+    await pumpFiniteTransitions(tester);
 
     final queueRowMaterial = tester.widget<Material>(
       find.byKey(ValueKey('playback_queue_row_surface_${queueSession.id}')),
@@ -4903,12 +4922,7 @@ void main() {
     final activeGradient =
         (activeHighlight.decoration as ShapeDecoration).gradient!
             as LinearGradient;
-    final playlistTheme = Theme.of(tester.element(find.byType(PlaylistTab)));
-    expect(activeGradient.colors, <Color>[
-      queueCardColor.withValues(
-        alpha: playlistTheme.brightness == Brightness.dark ? 0.16 : 0.12,
-      ),
-      Colors.transparent,
+    expect(activeGradient.colors, const <Color>[
       Colors.transparent,
       Colors.transparent,
     ]);
@@ -4942,7 +4956,7 @@ void main() {
       coverGeneration: 0,
       isInitialized: true,
     );
-    await tester.pumpAndSettle();
+    await pumpFiniteTransitions(tester);
 
     expect(
       find.descendant(
@@ -4964,7 +4978,7 @@ void main() {
         tester.element(find.byType(PlaylistTab)),
       ).push(buildSessionDetailRoute(sessionId: queueSession.id)),
     );
-    await tester.pumpAndSettle();
+    await pumpFiniteTransitions(tester);
     expect(
       find.descendant(
         of: find.byType(SessionDetailPage),
@@ -4978,7 +4992,7 @@ void main() {
       findsOneWidget,
     );
     Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
-    await tester.pumpAndSettle();
+    await pumpFiniteTransitions(tester);
 
     unawaited(
       showPlaybackQueueEditPanel(
@@ -5121,7 +5135,7 @@ void main() {
       tester.widget<FadeTransition>(colorFade).opacity.value,
       closeTo(0.5, 0.03),
     );
-    await tester.pumpAndSettle();
+    await pumpFiniteTransitions(tester);
     final colorPanelFinder = find.byKey(
       const ValueKey('playback_queue_color_panel'),
     );
@@ -5210,7 +5224,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
     expect(colorPanelFinder, findsNothing);
     await tester.tap(find.text(languageProvider.tr('edit_queue_audio')));
-    await tester.pumpAndSettle();
+    await pumpFiniteTransitions(tester);
     expect(find.byType(PlaybackQueueAudioEditPage), findsOneWidget);
     expect(find.byType(ReorderableListView), findsOneWidget);
     expect(find.byType(ReorderableDragStartListener), findsWidgets);
@@ -6526,7 +6540,9 @@ void main() {
     );
     sync();
     await tester.pumpWidget(fixture.build(const PlaylistTab()));
-    await tester.pumpAndSettle();
+    await pumpUntilFound(tester, find.byType(SessionListCard));
+    await tester.pump(kAppMotionFast);
+    await tester.pump();
     unawaited(
       Navigator.of(
         tester.element(find.byType(PlaylistTab)),
@@ -7601,7 +7617,7 @@ void main() {
       final queueTitle = find.text('Selection queue');
       await pumpUntilFound(tester, trackTitle);
       await pumpUntilFound(tester, queueTitle);
-      await tester.pumpAndSettle();
+      await pumpFiniteTransitions(tester);
 
       final trackContentFinder = find.byKey(
         ValueKey<String>('playlist_card_content_${trackSession.id}'),
@@ -7674,7 +7690,7 @@ void main() {
         findsNothing,
       );
 
-      await tester.pumpAndSettle();
+      await pumpFiniteTransitions(tester);
 
       final batchActions = find.descendant(
         of: batchHeader,
@@ -7747,7 +7763,7 @@ void main() {
       expect(trackSemantics.properties.onTap, isNotNull);
 
       await tester.tap(queueTitle);
-      await tester.pumpAndSettle();
+      await pumpFiniteTransitions(tester);
 
       expect(trackIndicator, findsOneWidget);
       expect(queueIndicator, findsOneWidget);
@@ -7863,26 +7879,26 @@ void main() {
       expect(batchHeader, findsOneWidget);
 
       await tester.tap(trackTitle);
-      await tester.pumpAndSettle();
+      await pumpFiniteTransitions(tester);
       expect(trackIndicator, findsNothing);
       expect(queueIndicator, findsOneWidget);
       await tester.tap(queueTitle);
       await tester.pump();
       expect(find.byType(TopPageHeader), findsNWidgets(2));
-      await tester.pumpAndSettle();
+      await pumpFiniteTransitions(tester);
       expect(batchHeader, findsNothing);
       expect(find.byType(TopPageHeader), findsOneWidget);
 
       await tester.longPress(queueTitle);
-      await tester.pumpAndSettle();
+      await pumpFiniteTransitions(tester);
       expect(queueIndicator, findsOneWidget);
       await tester.tap(trackTitle);
-      await tester.pumpAndSettle();
+      await pumpFiniteTransitions(tester);
       expect(trackIndicator, findsOneWidget);
       final sourceQueueIsFirst =
           tester.getTopLeft(queueTitle).dy < tester.getTopLeft(trackTitle).dy;
       await tester.tap(createQueueIconButton);
-      await tester.pumpAndSettle();
+      await pumpFiniteTransitions(tester);
       final createdQueue = fixture.runtimeGraph.playback.activeSessions
           .where(
             (session) =>
@@ -7929,7 +7945,7 @@ void main() {
         coverGeneration: 0,
         isInitialized: true,
       );
-      await tester.pumpAndSettle();
+      await pumpFiniteTransitions(tester);
       expect(batchHeader, findsNothing);
       expect(find.byType(TopPageHeader), findsOneWidget);
     },

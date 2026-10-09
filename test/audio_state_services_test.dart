@@ -87,7 +87,7 @@ void main() {
   });
 
   group('SettingsRepository', () {
-    test('loads persisted playback and converter settings', () async {
+    test('loads persisted playback settings', () async {
       final preferences = await SharedPreferences.getInstance();
       await preferences.setString(
         'playback_settings_v1',
@@ -118,14 +118,6 @@ void main() {
           'playlistSortAscending': false,
           'playlistGroupByLibrary': true,
           'maxCacheBytes': 256 * 1024 * 1024,
-        }),
-      );
-      await preferences.setString(
-        'converter_settings_v1',
-        json.encode(<String, Object?>{
-          'format': 'flac',
-          'bitrate': '192k',
-          'outputDirectoryPath': '/storage/emulated/0/Music/Converted',
         }),
       );
       final repository = SettingsRepository();
@@ -170,12 +162,6 @@ void main() {
       );
       expect(repository.playlistSortAscending, isFalse);
       expect(repository.playlistGroupByLibrary, isTrue);
-      expect(repository.converterFormat, 'flac');
-      expect(repository.converterBitrate, '192k');
-      expect(
-        repository.converterOutputDirectoryPath,
-        '/storage/emulated/0/Music/Converted',
-      );
     });
 
     test('syncSlice publishes settings from the owning repository', () {
@@ -183,8 +169,6 @@ void main() {
       addTearDown(repository.dispose);
 
       repository
-        ..converterFormat = 'flac'
-        ..converterBitrate = '192k'
         ..startupPage = StartupPage.asmrOne
         ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = ContentLanguagePreference.en
@@ -204,8 +188,6 @@ void main() {
       expect(
         repository.slice.state,
         isA<SettingsState>()
-            .having((state) => state.converterFormat, 'format', 'flac')
-            .having((state) => state.converterBitrate, 'bitrate', '192k')
             .having(
               (state) => state.startupPage,
               'startup page',
@@ -279,7 +261,7 @@ void main() {
       final initial = repository.slice.state;
 
       repository
-        ..converterFormat = 'flac'
+        ..reduceAnimations = true
         ..syncSlice();
       final unrelatedUpdate = repository.slice.state;
       expect(
@@ -669,59 +651,6 @@ void main() {
       repository.syncSlice();
       expect(repository.slice.state.asmrPlaybackCacheEnabled, isTrue);
     });
-
-    test('converter settings validate, publish, and persist once', () async {
-      final repository = SettingsRepository();
-      addTearDown(repository.dispose);
-
-      await repository.setConverterSettings(format: 'flac', bitrate: '192k');
-      await repository.setConverterSettings(format: 'invalid');
-
-      expect(repository.converterFormat, 'flac');
-      expect(repository.converterBitrate, '192k');
-      expect(repository.slice.state.converterFormat, 'flac');
-      expect(repository.slice.state.converterBitrate, '192k');
-      final saved =
-          json.decode(
-                (await SharedPreferences.getInstance()).getString(
-                  'converter_settings_v1',
-                )!,
-              )
-              as Map<String, dynamic>;
-      expect(saved, <String, dynamic>{'format': 'flac', 'bitrate': '192k'});
-    });
-
-    test(
-      'converter output directory persists and publishes to settings state',
-      () async {
-        final repository = SettingsRepository();
-        addTearDown(repository.dispose);
-
-        await repository.setConverterOutputDirectoryPath(
-          '/storage/emulated/0/Music/Converted',
-        );
-
-        expect(
-          repository.converterOutputDirectoryPath,
-          '/storage/emulated/0/Music/Converted',
-        );
-        expect(
-          repository.slice.state.converterOutputDirectoryPath,
-          '/storage/emulated/0/Music/Converted',
-        );
-        final saved =
-            json.decode(
-                  (await SharedPreferences.getInstance()).getString(
-                    'converter_settings_v1',
-                  )!,
-                )
-                as Map<String, dynamic>;
-        expect(
-          saved['outputDirectoryPath'],
-          '/storage/emulated/0/Music/Converted',
-        );
-      },
-    );
 
     test(
       'owned settings commands publish and persist only on change',

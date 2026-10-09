@@ -28,8 +28,6 @@ import '../theme/theme_provider.dart';
 import '../../core/persistence/app_preferences.dart';
 import '../../features/settings/application/settings_state.dart';
 import '../../features/data_support/application/data_backup_service.dart';
-import '../../features/video_converter/application/video_conversion_runner.dart';
-import '../../features/video_converter/presentation/video_conversion_dialog.dart';
 
 import 'routed_playback_dock_host.dart';
 import 'work_detail_navigation.dart';
@@ -132,7 +130,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   var _runtimeBootstrapSettledNotified = false;
   double _stablePortraitTopPadding = 0;
   double _stableLandscapeTopPadding = 0;
-  StreamSubscription<VideoConversionResult>? _conversionSubscription;
 
   @override
   void initState() {
@@ -148,35 +145,14 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
     _shouldShowOnboarding =
         widget.shouldShowOnboarding ??
         AppPreferences.shouldShowOnboardingSync();
-    _conversionSubscription = ref
-        .read(videoConversionCoordinatorProvider)
-        .completionStream
-        .listen(_handleConversionCompletion);
   }
 
   @override
   void dispose() {
-    _conversionSubscription?.cancel();
     _runtimeBootstrapController.removeListener(_handleRuntimeBootstrapState);
     _runtimeBootstrapController.dispose();
     _workDetailNavigation.dispose();
     super.dispose();
-  }
-
-  void _handleConversionCompletion(VideoConversionResult result) {
-    if (result.status == VideoConversionStatus.canceled) return;
-    final context = _navigatorKey.currentContext;
-    if (context == null || !mounted) return;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final coordinator = ref.read(videoConversionCoordinatorProvider);
-    unawaited(
-      showVideoConversionResultDialog(
-        context,
-        result: result,
-        i18n: i18n,
-        videoPath: coordinator.selectedVideoPath,
-      ),
-    );
   }
 
   void _handleRuntimeBootstrapState() {

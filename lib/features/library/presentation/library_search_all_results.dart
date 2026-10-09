@@ -419,7 +419,7 @@ class _LibrarySearchAllResultsState
             LibraryLikeCardMetrics.listHorizontalPadding,
             MediaQuery.paddingOf(context).bottom + 16,
           ),
-          cacheExtent: 320,
+          cacheExtent: 120,
           physics: const ClampingScrollPhysics(),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           itemCount: visibleItems.length + errorItemCount,

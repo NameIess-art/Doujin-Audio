@@ -7,6 +7,48 @@ import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 void main() {
+  testWidgets('keyboard animation does not rebuild search result content', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    addTearDown(tester.view.resetViewInsets);
+    var builds = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppSearchPageScaffold<int>(
+          controller: controller,
+          focusNode: focusNode,
+          hintText: 'Search audio',
+          categories: const [AppSearchCategory(value: 0, label: 'All')],
+          selectedCategory: 0,
+          onCategorySelected: (_) {},
+          onChanged: (_) {},
+          onSubmitted: (_) {},
+          onCloseOrClear: () {},
+          body: Builder(
+            builder: (context) {
+              builds++;
+              // ASMR results use the full MediaQuery to configure their list.
+              MediaQuery.of(context);
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final initialBuilds = builds;
+    for (final bottom in [80.0, 160.0, 240.0, 320.0, 0.0]) {
+      tester.view.viewInsets = FakeViewPadding(bottom: bottom);
+      await tester.pump();
+    }
+    expect(builds, initialBuilds);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('search route opens and closes without page animation', (
     tester,
   ) async {

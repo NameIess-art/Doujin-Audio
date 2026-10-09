@@ -39,13 +39,16 @@ ASMR、同人音声、ローカルメディアライブラリ向けの Android /
 
 <table>
   <tr>
-    <td colspan="2" align="center"><strong>ASMR.ONE</strong><br><img src="docs/screenshots/asmr-one.png" alt="ASMR.ONE ページ" width="260"></td>
-    <td colspan="2" align="center"><strong>ローカル音声ライブラリ</strong><br><img src="docs/screenshots/local-library.png" alt="ローカル音声ライブラリページ" width="260"></td>
-    <td colspan="2" align="center"><strong>プレイリスト</strong><br><img src="docs/screenshots/playlists.png" alt="プレイリストページ" width="260"></td>
+    <td colspan="2" align="center" valign="top"><strong>ローカル音声ライブラリ</strong><br><img src="docs/screenshots/local-library.png" alt="ローカル音声ライブラリページ" width="260"></td>
+    <td colspan="2" align="center" valign="top"><strong>作品詳細情報</strong><br><img src="docs/screenshots/work-details.png" alt="作品詳細情報ページ" width="260"></td>
+    <td colspan="2" align="center" valign="top"><strong>プレイリスト</strong><br><img src="docs/screenshots/playlists.png" alt="プレイリストページ" width="260"></td>
   </tr>
   <tr>
-    <td colspan="3" align="center"><strong>作品詳細情報</strong><br><img src="docs/screenshots/work-details.png" alt="作品詳細情報ページ" width="260"></td>
-    <td colspan="3" align="center"><strong>再生詳細</strong><br><img src="docs/screenshots/playback-details.png" alt="再生詳細ページ" width="260"></td>
+    <td colspan="2" rowspan="2" align="center" valign="top"><strong>再生詳細（縦画面）</strong><br><img src="docs/screenshots/playback-details.png" alt="縦画面の再生詳細ページ" width="260"></td>
+    <td colspan="4" align="center" valign="top"><strong>再生詳細（横画面）</strong><br><img src="docs/screenshots/playback-landscape.png" alt="横画面の再生詳細ページ" width="540"></td>
+  </tr>
+  <tr>
+    <td colspan="4" align="center" valign="top"><strong>ライブラリと作品詳細（横画面）</strong><br><img src="docs/screenshots/library-landscape.png" alt="横画面のライブラリと作品詳細" width="540"></td>
   </tr>
 </table>
 

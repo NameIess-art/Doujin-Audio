@@ -15,7 +15,7 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/work_text_service.dart';
 import 'library_providers.dart';
-import 'page_translation_scope.dart';
+import '../../../core/widgets/page_translation_scope.dart';
 import 'translated_markdown_body.dart';
 
 class WorkTextViewerPage extends ConsumerStatefulWidget {

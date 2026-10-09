@@ -35,10 +35,6 @@ class UiOperationScope {
   static const asmrDownloadInit = UiOperationScope('asmr-download:init');
   static const asmrDownloadStart = UiOperationScope('asmr-download:start');
   static const timerReliability = UiOperationScope('timer:reliability');
-  static const videoConverterPick = UiOperationScope('video-converter:pick');
-  static const videoConverterConvert = UiOperationScope(
-    'video-converter:convert',
-  );
 
   static UiOperationScope audioDetail(String targetKey) {
     return UiOperationScope('audio-detail:$targetKey');

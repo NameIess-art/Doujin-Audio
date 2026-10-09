@@ -50,6 +50,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final mediaQuery = MediaQuery.of(context);
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
     final accent = accentColor ?? cs.primary;
@@ -66,9 +67,16 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
             left: 0,
             right: 0,
             bottom: MediaQuery.viewInsetsOf(context).bottom,
-            child: PageHeaderInset(
-              topInset: controlsTopInset(context),
-              child: AppPageContentTransition(child: body),
+            // The positioned layer already consumes the keyboard inset.
+            // Do not rebuild result cards for each keyboard animation frame.
+            child: MediaQuery(
+              data: mediaQuery.copyWith(
+                viewInsets: mediaQuery.viewInsets.copyWith(bottom: 0),
+              ),
+              child: PageHeaderInset(
+                topInset: controlsTopInset(context),
+                child: AppPageContentTransition(child: body),
+              ),
             ),
           ),
           Positioned(

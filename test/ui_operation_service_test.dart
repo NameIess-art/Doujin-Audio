@@ -56,7 +56,7 @@ void main() {
       );
       expect(
         UiOperationScope.pageOpen('settings'),
-        isNot(UiOperationScope.videoConverterPick),
+        isNot(UiOperationScope.settingsUpdate),
       );
     });
 

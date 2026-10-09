@@ -14,12 +14,6 @@ import 'settings_state.dart';
 
 class SettingsRepository {
   static const _playbackSettingsKey = 'playback_settings_v1';
-  static const _converterSettingsKey = 'converter_settings_v1';
-  static const converterFormats = <String>['mp3', 'flac', 'wav', 'aac', 'ogg'];
-  static const converterBitrates = <String>['128k', '192k', '256k', '320k'];
-  String converterFormat = 'mp3';
-  String converterBitrate = '320k';
-  String? converterOutputDirectoryPath;
   bool autoCheckUpdates = false;
   ContentLanguagePreference dlsiteMetadataLanguage =
       ContentLanguagePreference.followPage;
@@ -190,23 +184,6 @@ class SettingsRepository {
           AppCacheService.defaultMaxCacheBytes;
     }
 
-    final converter = await AppPreferences.readJson<Map<String, dynamic>>(
-      _converterSettingsKey,
-      (value) => (value as Map<Object?, Object?>).map(
-        (key, value) => MapEntry(key.toString(), value),
-      ),
-    );
-    final savedFormat = converter?['format'];
-    final savedBitrate = converter?['bitrate'];
-    converterOutputDirectoryPath = _optionalString(
-      converter?['outputDirectoryPath'],
-    );
-    if (savedFormat is String && converterFormats.contains(savedFormat)) {
-      converterFormat = savedFormat;
-    }
-    if (savedBitrate is String && converterBitrates.contains(savedBitrate)) {
-      converterBitrate = savedBitrate;
-    }
     await AppCacheService.setMaxCacheBytes(maxCacheBytes);
     syncSlice(isInitialized: true);
   }
@@ -262,33 +239,6 @@ class SettingsRepository {
         'sleepModeAutoTrigger': sleepModeAutoTrigger.name,
       },
     );
-    if (!saved) throw StateError('settings_write_failed');
-  }
-
-  Future<void> setConverterSettings({String? format, String? bitrate}) =>
-      _change(() async {
-        if (format != null && converterFormats.contains(format)) {
-          converterFormat = format;
-        }
-        if (bitrate != null && converterBitrates.contains(bitrate)) {
-          converterBitrate = bitrate;
-        }
-      }, converter: true);
-
-  Future<void> setConverterOutputDirectoryPath(String directoryPath) =>
-      _change(() async {
-        final normalized = _optionalString(directoryPath);
-        if (normalized != null) converterOutputDirectoryPath = normalized;
-      }, converter: true);
-
-  Future<void> _persistConverterSettings() async {
-    final saved =
-        await AppPreferences.writeJson(_converterSettingsKey, <String, Object?>{
-          'format': converterFormat,
-          'bitrate': converterBitrate,
-          if (converterOutputDirectoryPath != null)
-            'outputDirectoryPath': converterOutputDirectoryPath,
-        });
     if (!saved) throw StateError('settings_write_failed');
   }
 
@@ -650,7 +600,6 @@ class SettingsRepository {
 
   Future<void> _change(
     Future<void> Function() update, {
-    bool converter = false,
     Future<void> Function(SettingsState)? afterSave,
   }) {
     final operation = _writeTail.then((_) async {
@@ -661,11 +610,7 @@ class SettingsRepository {
           if (_snapshot(isInitialized: snapshot.isInitialized) == snapshot) {
             return;
           }
-          if (converter) {
-            await _persistConverterSettings();
-          } else {
-            await persist();
-          }
+          await persist();
         } catch (_) {
           _restore(snapshot);
           rethrow;
@@ -685,9 +630,6 @@ class SettingsRepository {
   }
 
   void _restore(SettingsState snapshot) {
-    converterFormat = snapshot.converterFormat;
-    converterBitrate = snapshot.converterBitrate;
-    converterOutputDirectoryPath = snapshot.converterOutputDirectoryPath;
     autoCheckUpdates = snapshot.autoCheckUpdates;
     dlsiteMetadataLanguage = snapshot.dlsiteMetadataLanguage;
     librarySortCriterion = snapshot.librarySortCriterion;
@@ -729,9 +671,6 @@ class SettingsRepository {
   }
 
   void _resetValues() {
-    converterFormat = 'mp3';
-    converterBitrate = '320k';
-    converterOutputDirectoryPath = null;
     autoCheckUpdates = false;
     dlsiteMetadataLanguage = ContentLanguagePreference.followPage;
     librarySortCriterion = LibrarySortCriterion.name;
@@ -792,9 +731,6 @@ class SettingsRepository {
   SettingsState _snapshot({required bool isInitialized}) {
     final previous = slice.state;
     return SettingsState(
-      converterFormat: converterFormat,
-      converterBitrate: converterBitrate,
-      converterOutputDirectoryPath: converterOutputDirectoryPath,
       autoCheckUpdates: autoCheckUpdates,
       dlsiteMetadataLanguage: dlsiteMetadataLanguage,
       librarySortCriterion: librarySortCriterion,

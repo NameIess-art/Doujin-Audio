@@ -21,6 +21,8 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/search_highlight.dart';
+import '../../../core/widgets/page_translation_scope.dart';
+import '../../../core/translation/text_translation_service.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import 'audio_detail_sheet.dart';
 import '../../../app/theme/app_styles.dart';
@@ -502,19 +504,27 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SearchHighlightedText(
-                          text: folder.name,
-                          terms: widget.searchQuery.trim().isEmpty
-                              ? null
-                              : extractSearchTerms(widget.searchQuery),
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                                height: 1.06,
-                                color: cs.onSurface.withValues(alpha: 0.9),
-                              ) ??
-                              const TextStyle(),
+                        WorkPageTranslationBuilder(
+                          texts: [folder.name],
+                          builder: (context, translate, _) =>
+                              SearchHighlightedText(
+                                text: translate(folder.name),
+                                terms: widget.searchQuery.trim().isEmpty
+                                    ? null
+                                    : extractSearchTerms(widget.searchQuery),
+                                style:
+                                    Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                      height: 1.06,
+                                      color: cs.onSurface.withValues(
+                                        alpha: 0.9,
+                                      ),
+                                    ) ??
+                                    const TextStyle(),
+                              ),
                         ),
                       ],
                     ),
@@ -744,6 +754,7 @@ class _TrackNodeWidget extends ConsumerWidget {
     final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final track = trackNode.track;
+    final nameParts = textTranslationText(track.displayName, fileName: true);
     final isPinned =
         track.isSingle &&
         ref.watch(
@@ -922,21 +933,27 @@ class _TrackNodeWidget extends ConsumerWidget {
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       Expanded(
-                        child: SearchHighlightedText(
-                          text: track.displayName,
-                          terms: searchQuery.trim().isEmpty
-                              ? null
-                              : extractSearchTerms(searchQuery),
-                          maxLines: 1,
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                                color: isAlreadyPlaying
-                                    ? cs.primary
-                                    : cs.onSurface,
-                              ) ??
-                              const TextStyle(),
+                        child: WorkPageTranslationBuilder(
+                          texts: [nameParts.source],
+                          builder: (context, translate, _) => SearchHighlightedText(
+                            text:
+                                '${translate(nameParts.source)}${nameParts.suffix}',
+                            terms: searchQuery.trim().isEmpty
+                                ? null
+                                : extractSearchTerms(searchQuery),
+                            maxLines: 1,
+                            style:
+                                Theme.of(
+                                  context,
+                                ).textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                  color: isAlreadyPlaying
+                                      ? cs.primary
+                                      : cs.onSurface,
+                                ) ??
+                                const TextStyle(),
+                          ),
                         ),
                       ),
                     ],

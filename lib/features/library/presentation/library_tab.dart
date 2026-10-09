@@ -28,11 +28,11 @@ import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/sort_options_bottom_sheet.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/page_translation_scope.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/glass_refresh_indicator.dart';
 import 'dlsite_metadata_batch_page.dart';
 import 'library_scan_feedback.dart';
-import '../../video_converter/presentation/video_converter_tab.dart';
 import '../../../app/theme/app_styles.dart';
 
 import '../../../app/presentation/main_tab_state_mixin.dart';
@@ -208,16 +208,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         criterion: result.criterion,
         ascending: result.ascending,
         groupByLibrary: result.groupByLibrary,
-      ),
-    );
-  }
-
-  Future<void> _openVideoConverterPage() async {
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      buildAppPageRoute<void>(
-        context: context,
-        child: const VideoConverterTab(),
       ),
     );
   }
@@ -955,6 +945,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                 ),
                               ),
                             ),
+                            const SizedBox(width: 8),
+                            const WorkPageTranslationButton(
+                              buttonKey: 'library_translation',
+                              compact: true,
+                            ),
                             if (isLandscape) ...[
                               const SizedBox(width: 8),
                               HeaderFloatingButton(
@@ -1013,10 +1008,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ),
       ),
     );
-    return BrowsePageScroll(
-      pageKey: 'library',
-      controller: _scrollController,
-      child: page,
+    return WorkPageTranslationHost(
+      child: BrowsePageScroll(
+        pageKey: 'library',
+        controller: _scrollController,
+        child: page,
+      ),
     );
   }
 
@@ -1078,15 +1075,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           onPressed: libraryRefreshBusy ? null : _openBatchMetadataPage,
           icon: const Icon(Icons.library_add_check_rounded),
           tooltip: i18n.tr('batch_metadata'),
-          iconSize: 20,
-          padding: EdgeInsets.zero,
-          constraints: HeaderActionPill.buttonConstraints,
-        ),
-        IconButton(
-          key: const ValueKey<String>('library_video_to_audio_button'),
-          onPressed: libraryRefreshBusy ? null : _openVideoConverterPage,
-          icon: const Icon(Icons.video_library_rounded),
-          tooltip: i18n.tr('video_to_audio'),
           iconSize: 20,
           padding: EdgeInsets.zero,
           constraints: HeaderActionPill.buttonConstraints,

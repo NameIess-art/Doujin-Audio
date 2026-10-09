@@ -125,19 +125,6 @@ void main() {
             ),
           ),
         );
-        expect(
-          () => const MethodChannel(
-            'doujin_audio/power',
-          ).invokeMethod<Object?>('acquireWakeLock', <String, Object?>{}),
-          throwsA(
-            isA<PlatformException>().having(
-              (e) => e.code,
-              'code',
-              'invalid_argument',
-            ),
-          ),
-        );
-
         MediaKit.ensureInitialized();
         final directory = await Directory.systemTemp.createTemp(
           'doujin_windows_playback_',

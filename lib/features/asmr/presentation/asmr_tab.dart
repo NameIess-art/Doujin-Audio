@@ -39,6 +39,7 @@ import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/page_translation_scope.dart';
 
 import 'asmr_download_page.dart';
 import 'asmr_error_text.dart';
@@ -838,7 +839,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         : _minimumExpandedHeaderHeight(context);
     final headerContentHeight = effectiveHeaderHeight + 4.0;
 
-    return PageHeaderInset(
+    final page = PageHeaderInset(
       topInset: headerContentHeight,
       child: Stack(
         clipBehavior: Clip.none,
@@ -968,6 +969,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                                           ),
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
+                                  const WorkPageTranslationButton(
+                                    buttonKey: 'asmr_translation',
+                                    compact: true,
+                                  ),
                                   if (isLandscape) ...[
                                     const SizedBox(width: 8),
                                     HeaderFloatingButton(
@@ -1011,6 +1017,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         ],
       ),
     );
+    return WorkPageTranslationHost(child: page);
   }
 
   void _schedulePageLanguageSync(AppLanguage language) {

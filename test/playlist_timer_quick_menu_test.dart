@@ -23,6 +23,18 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
+      final pause = tester.getRect(
+        find.byKey(const ValueKey('playlist_pause_all_button')),
+      );
+      final clear = tester.getRect(
+        find.byKey(const ValueKey('playlist_clear_all_button')),
+      );
+      final add = tester.getRect(
+        find.byKey(const ValueKey('playlist_add_queue_button')),
+      );
+      expect(clear.center.dx - pause.center.dx, 48);
+      expect(add.center.dx - clear.center.dx, 48);
+
       final quickMenuTrigger = find.ancestor(
         of: find.byTooltip(fixture.languageProvider.tr('timer')),
         matching: find.byWidgetPredicate(

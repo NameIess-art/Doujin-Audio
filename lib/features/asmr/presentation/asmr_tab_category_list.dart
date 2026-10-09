@@ -371,6 +371,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final theme = Theme.of(context);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    double? listWidth;
+    Widget? workList;
     final content = ScrollActivityGate(
       child: MediaQuery(
         data: MediaQuery.of(context).copyWith(
@@ -425,15 +427,21 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               ),
               content: LayoutBuilder(
                 builder: (context, constraints) {
+                  // Keyboard height changes only resize the viewport. New
+                  // data or a width change still rebuilds the row delegates.
+                  if (listWidth == constraints.maxWidth && workList != null) {
+                    return workList!;
+                  }
+                  listWidth = constraints.maxWidth;
                   final columnCount = responsiveLibraryCardColumnCount(
                     constraints.maxWidth,
                   );
                   final rowCount = (visibleWorks.length / columnCount).ceil();
                   final hasLoadMore = state.isLoadingMore || state.hasMore;
-                  return ListView.builder(
+                  return workList = ListView.builder(
                     key: PageStorageKey(widget.category),
                     controller: widget.scrollController,
-                    cacheExtent: 520,
+                    cacheExtent: widget.searchSession ? 120 : 520,
                     physics: AlwaysScrollableScrollPhysics(
                       parent: GlassRefreshIndicatorScrollPhysics(
                         isIndicatorVisible: () =>

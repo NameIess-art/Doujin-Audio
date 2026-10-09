@@ -9,7 +9,7 @@ import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import 'work_detail_entries.dart';
-import 'page_translation_scope.dart';
+import '../../../core/widgets/page_translation_scope.dart';
 
 class WorkDetailEntryTile extends StatefulWidget {
   const WorkDetailEntryTile({

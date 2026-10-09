@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/widgets/horizontal_edge_fade_scroll.dart';
-import 'page_translation_scope.dart';
+import '../../../core/widgets/page_translation_scope.dart';
 
 const double _workMetadataCapsuleRadius = 999;
 const EdgeInsets _workMetadataCapsulePadding = EdgeInsets.symmetric(

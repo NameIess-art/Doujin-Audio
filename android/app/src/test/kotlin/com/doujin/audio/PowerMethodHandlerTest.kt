@@ -6,8 +6,6 @@ import com.doujin.audio.channel.FileCacheTaskExecutor
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PowerMethodHandlerTest {
@@ -16,17 +14,6 @@ class PowerMethodHandlerTest {
         val activity = PowerActivity()
         val handler = PowerMethodHandler(activity, FileCacheTaskExecutor())
         val calls = listOf(
-            MethodCall("acquireWakeLock", emptyMap<String, Any?>()),
-            MethodCall("acquireWakeLock", mapOf("tag" to "")),
-            MethodCall("acquireWakeLock", mapOf("tag" to 123)),
-            MethodCall("acquireWakeLock", mapOf("tag" to "test", "timeoutMs" to "long")),
-            MethodCall("acquireWakeLock", mapOf("tag" to "test", "timeoutMs" to null)),
-            MethodCall("acquireWakeLock", mapOf("tag" to "test", "timeoutMs" to 0)),
-            MethodCall("acquireWakeLock", mapOf("tag" to "test", "timeoutMs" to -1)),
-            MethodCall("acquireWakeLock", mapOf("tag" to "test", "timeoutMs" to 1.5)),
-            MethodCall("releaseWakeLock", emptyMap<String, Any?>()),
-            MethodCall("releaseWakeLock", mapOf("tag" to " ")),
-            MethodCall("releaseWakeLock", mapOf("tag" to false)),
             MethodCall("setKeepScreenOn", emptyMap<String, Any?>()),
             MethodCall("setKeepScreenOn", mapOf("enabled" to 1))
         )
@@ -40,18 +27,6 @@ class PowerMethodHandlerTest {
             assertEquals(1, result.responses)
         }
         assertEquals(0, activity.serviceRequests)
-    }
-
-    @Test
-    fun `optional wake timeout accepts omitted value`() {
-        val activity = PowerActivity()
-        val handler = PowerMethodHandler(activity, FileCacheTaskExecutor())
-        val result = PowerResult()
-        handler.onMethodCall(MethodCall("acquireWakeLock", mapOf("tag" to "test")), result)
-        val envelope = result.value as Map<*, *>
-        assertTrue(envelope["ok"] as Boolean)
-        assertFalse(envelope["value"] as Boolean)
-        assertEquals(1, activity.serviceRequests)
     }
 }
 

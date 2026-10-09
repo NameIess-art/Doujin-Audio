@@ -42,7 +42,6 @@ import '../../core/platform/power_platform_service.dart';
 import '../../core/platform/video_display_platform_gateway.dart';
 import '../../core/platform/video_display_platform_service.dart';
 import '../../core/platform/windows_desktop_service.dart';
-import '../../features/video_converter/application/video_conversion_coordinator.dart';
 
 final themeProviderInstanceProvider = ChangeNotifierProvider<ThemeProvider>(
   (ref) => ThemeProvider(),
@@ -252,12 +251,6 @@ final uiOperationForScopeProvider = Provider.autoDispose
     .family<UiOperationState, UiOperationScope>((ref, scope) {
       ref.watch(_uiOperationScopeStateChangesProvider(scope));
       return ref.watch(uiOperationServiceProvider).operationFor(scope);
-    });
-
-final videoConversionCoordinatorProvider =
-    ChangeNotifierProvider<VideoConversionCoordinator>((ref) {
-      final uiOps = ref.watch(uiOperationServiceProvider);
-      return VideoConversionCoordinator(uiOperationService: uiOps);
     });
 
 final windowsHotkeyStatusProvider = FutureProvider<Map<String, bool>>((ref) {

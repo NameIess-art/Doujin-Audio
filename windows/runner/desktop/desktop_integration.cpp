@@ -129,10 +129,10 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
         if (!map) throw std::invalid_argument("items");
         playing = RequiredBool(*map,"playing") || playing;
       }
-      if (playing) wake_locks_.insert("playback"); else wake_locks_.erase("playback");
+      playback_active_ = playing;
       RefreshPower(); media_->Update(args); Success(result);
     }
-    else if (name == "clearUnifiedPlaybackNotifications") { media_->Clear(); wake_locks_.erase("playback"); RefreshPower(); Success(result); }
+    else if (name == "clearUnifiedPlaybackNotifications") { media_->Clear(); playback_active_ = false; RefreshPower(); Success(result); }
     else result.NotImplemented();
   });
   add("doujin_audio/app_lifecycle",[this](const auto& call, Result& result) {
@@ -175,12 +175,8 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
       if (!Find(args,"generation") || !Find(args,"autoResumeHour") || !Find(args,"autoResumeMinute")) throw std::invalid_argument("timer arguments");
       scheduled_tasks_->Sync(args,std::move(result));
     }
-    else if (name == "acquireWakeLock" || name == "releaseWakeLock" || name == "setKeepScreenOn") {
-      if (name == "setKeepScreenOn") screen_on_ = RequiredBool(args,"enabled");
-      else {
-        auto tag = RequiredText(args,"tag");
-        if (name == "acquireWakeLock") wake_locks_.insert(tag); else wake_locks_.erase(tag);
-      }
+    else if (name == "setKeepScreenOn") {
+      screen_on_ = RequiredBool(args,"enabled");
       RefreshPower(); Success(*result,Value(true));
     } else result->NotImplemented();
     } catch (const std::invalid_argument& e) { result->Error("invalid_argument",e.what()); }
@@ -271,7 +267,7 @@ void DesktopIntegration::Show() {
 }
 void DesktopIntegration::ShowInitial() { ShowWindow(window_,initial_show_command_); }
 void DesktopIntegration::RefreshPower() {
-  const auto flags = ES_CONTINUOUS | (wake_locks_.empty() ? 0 : ES_SYSTEM_REQUIRED) | (screen_on_ ? ES_DISPLAY_REQUIRED : 0);
+  const auto flags = ES_CONTINUOUS | (playback_active_ ? ES_SYSTEM_REQUIRED : 0) | (screen_on_ ? ES_DISPLAY_REQUIRED : 0);
   if (SetThreadExecutionState(flags) == 0) winrt::throw_last_error();
 }
 void DesktopIntegration::SavePlacement() {

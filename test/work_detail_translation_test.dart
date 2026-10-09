@@ -6,7 +6,7 @@ import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/core/translation/text_translation_service.dart';
-import 'package:doujin_audio/features/library/presentation/page_translation_scope.dart';
+import 'package:doujin_audio/core/widgets/page_translation_scope.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_breadcrumbs.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entries.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entry_tile.dart';
@@ -104,6 +104,46 @@ void main() {
   );
   tearDownAll(() => AppRuntimeTestFixture.disposeSharedDatabase(database));
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  for (final hosted in [false, true]) {
+    testWidgets(
+      'inactive untranslated text keeps its content without rebuilding (hosted: $hosted)',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final active = ValueNotifier(true);
+        addTearDown(active.dispose);
+        var builds = 0;
+        final text = WorkPageTranslationBuilder(
+          texts: const ['Original title'],
+          builder: (context, translate, enabled) {
+            builds++;
+            return Text(translate('Original title'));
+          },
+        );
+        await tester.pumpWidget(
+          fixture.build(
+            ValueListenableBuilder<bool>(
+              valueListenable: active,
+              child: hosted ? WorkPageTranslationHost(child: text) : text,
+              builder: (_, enabled, child) =>
+                  TickerMode(enabled: enabled, child: child!),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final initialBuilds = builds;
+        active.value = false;
+        await tester.pumpAndSettle();
+        active.value = true;
+        await tester.pumpAndSettle();
+        expect(builds, initialBuilds);
+        expect(find.text('Original title'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
 
   testWidgets('runtime shares translation service with subtitle engine', (
     tester,
@@ -415,6 +455,93 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets(
+    'hidden retained page cancels requests and resumes the enabled switch',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final service = _TranslationService();
+      final active = ValueNotifier(true);
+      addTearDown(active.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          ValueListenableBuilder<bool>(
+            valueListenable: active,
+            child: _scope(),
+            builder: (_, enabled, child) =>
+                TickerMode(enabled: enabled, child: child!),
+          ),
+          overrides: [
+            textTranslationServiceProvider.overrideWithValue(service),
+          ],
+        ),
+      );
+      await tester.tap(find.byKey(_button));
+      await _batch(tester);
+      final first = service.calls.single;
+      active.value = false;
+      await _batch(tester);
+      expect(first.request.cancelled, isTrue);
+      first.complete();
+      await _batch(tester);
+      expect(find.text('Original title'), findsOneWidget);
+      expect(service.calls, hasLength(1));
+      active.value = true;
+      await _batch(tester);
+      expect(service.calls, hasLength(2));
+      service.calls.last.complete();
+      await _batch(tester);
+      expect(find.text('zh-CN:Original title'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('retained categories register only their active text', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final service = _TranslationService();
+    final firstActive = ValueNotifier(true);
+    addTearDown(firstActive.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        _scope(
+          child: ValueListenableBuilder<bool>(
+            valueListenable: firstActive,
+            builder: (_, first, _) => Column(
+              children: [
+                TickerMode(
+                  enabled: first,
+                  child: const WorkPageTranslationText('First category'),
+                ),
+                TickerMode(
+                  enabled: !first,
+                  child: const WorkPageTranslationText('Second category'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        overrides: [textTranslationServiceProvider.overrideWithValue(service)],
+      ),
+    );
+    await tester.tap(find.byKey(_button));
+    await _batch(tester);
+    expect(service.calls.single.texts, ['First category']);
+    firstActive.value = false;
+    await tester.pump();
+    service.calls.single.complete();
+    await _batch(tester);
+    expect(service.calls, hasLength(2));
+    expect(service.calls.last.texts, ['Second category']);
+    service.calls.last.complete();
+    await _batch(tester);
+    expect(find.text('zh-CN:First category'), findsNothing);
+    expect(find.text('zh-CN:Second category'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets(
     'language changes cancel old results and request current language',

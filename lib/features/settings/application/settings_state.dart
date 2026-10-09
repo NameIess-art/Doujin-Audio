@@ -42,9 +42,6 @@ enum PlaylistSortCriterion {
 @immutable
 class SettingsState {
   SettingsState({
-    this.converterFormat = 'mp3',
-    this.converterBitrate = '320k',
-    this.converterOutputDirectoryPath,
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = ContentLanguagePreference.followPage,
     this.librarySortCriterion = LibrarySortCriterion.name,
@@ -90,9 +87,6 @@ class SettingsState {
          asmrDownloadFolderNameFields,
        );
 
-  final String converterFormat;
-  final String converterBitrate;
-  final String? converterOutputDirectoryPath;
   final bool autoCheckUpdates;
   final ContentLanguagePreference dlsiteMetadataLanguage;
   final LibrarySortCriterion librarySortCriterion;
@@ -134,9 +128,6 @@ class SettingsState {
   @override
   bool operator ==(Object other) {
     return other is SettingsState &&
-        other.converterFormat == converterFormat &&
-        other.converterBitrate == converterBitrate &&
-        other.converterOutputDirectoryPath == converterOutputDirectoryPath &&
         other.autoCheckUpdates == autoCheckUpdates &&
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
         other.librarySortCriterion == librarySortCriterion &&
@@ -182,9 +173,6 @@ class SettingsState {
 
   @override
   int get hashCode => Object.hashAll(<Object?>[
-    converterFormat,
-    converterBitrate,
-    converterOutputDirectoryPath,
     autoCheckUpdates,
     dlsiteMetadataLanguage,
     librarySortCriterion,

@@ -516,6 +516,90 @@ void main() {
     );
 
     testWidgets(
+      'ASMR search builds only nearby cards and retains them during keyboard resize on $platform',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(1280, 800);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetViewInsets);
+        final controller = _PresentationController(createTestAsmrServices())
+          ..workCount = 1000;
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        final browseCards = find.byType(
+          LibraryLikeMetadataWorkCardContent,
+          skipOffstage: false,
+        );
+        final browseCardCount = browseCards.evaluate().length;
+        final reads = controller.categoryReads;
+        final loads = controller.categoryLoads;
+
+        await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
+        await tester.pump();
+        final results = find.byKey(const ValueKey('asmr_search_collected'));
+        final searchCards = find.descendant(
+          of: results,
+          matching: find.byType(
+            LibraryLikeMetadataWorkCardContent,
+            skipOffstage: false,
+          ),
+          skipOffstage: false,
+        );
+        final columnCount = responsiveLibraryCardColumnCount(1280);
+        expect(
+          searchCards.evaluate().length,
+          lessThan(browseCardCount - columnCount),
+          reason: 'Search entrance should build fewer offscreen card rows.',
+        );
+        expect(
+          find.descendant(of: results, matching: find.text('Published work')),
+          findsOneWidget,
+        );
+        await tester.pumpAndSettle();
+        final originalCard = tester.widget(searchCards.first);
+        final originalWidth = tester.getSize(searchCards.first).width;
+        for (final bottom in [60.0, 120.0, 180.0, 240.0, 300.0]) {
+          tester.view.viewInsets = FakeViewPadding(bottom: bottom);
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(tester.widget(searchCards.first), same(originalCard));
+        }
+        await tester.pumpAndSettle();
+        expect(controller.categoryReads, reads);
+        expect(controller.categoryLoads, loads);
+        tester.view.physicalSize = const Size(640, 800);
+        await tester.pumpAndSettle();
+        expect(
+          tester.getSize(searchCards.first).width,
+          greaterThan(originalWidth),
+        );
+        controller.publish('Updated after resize');
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: results,
+            matching: find.text('Updated after resize'),
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
       'ASMR search categories retain content and adopt changed queries on $platform',
       (tester) async {
         final controller = _PresentationController(createTestAsmrServices());

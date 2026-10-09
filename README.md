@@ -49,13 +49,16 @@ DoujinAudio-windows-x64-<tag>-setup.exe.sha256
 
 <table>
   <tr>
-    <td colspan="2" align="center"><strong>ASMR.ONE</strong><br><img src="docs/screenshots/asmr-one.png" alt="ASMR.ONE 页面" width="260"></td>
-    <td colspan="2" align="center"><strong>本地音频库</strong><br><img src="docs/screenshots/local-library.png" alt="本地音频库页面" width="260"></td>
-    <td colspan="2" align="center"><strong>播放列表</strong><br><img src="docs/screenshots/playlists.png" alt="播放列表页面" width="260"></td>
+    <td colspan="2" align="center" valign="top"><strong>本地音频库</strong><br><img src="docs/screenshots/local-library.png" alt="本地音频库页面" width="260"></td>
+    <td colspan="2" align="center" valign="top"><strong>作品详细信息</strong><br><img src="docs/screenshots/work-details.png" alt="作品详细信息页" width="260"></td>
+    <td colspan="2" align="center" valign="top"><strong>播放列表</strong><br><img src="docs/screenshots/playlists.png" alt="播放列表页面" width="260"></td>
   </tr>
   <tr>
-    <td colspan="3" align="center"><strong>作品详细信息</strong><br><img src="docs/screenshots/work-details.png" alt="作品详细信息页" width="260"></td>
-    <td colspan="3" align="center"><strong>播放详情</strong><br><img src="docs/screenshots/playback-details.png" alt="播放详细页" width="260"></td>
+    <td colspan="2" rowspan="2" align="center" valign="top"><strong>播放详情（竖屏）</strong><br><img src="docs/screenshots/playback-details.png" alt="竖屏播放详细页" width="260"></td>
+    <td colspan="4" align="center" valign="top"><strong>播放详情（横屏）</strong><br><img src="docs/screenshots/playback-landscape.png" alt="横屏播放详细页" width="540"></td>
+  </tr>
+  <tr>
+    <td colspan="4" align="center" valign="top"><strong>本地音频库与作品详情（横屏）</strong><br><img src="docs/screenshots/library-landscape.png" alt="横屏本地音频库与作品详情" width="540"></td>
   </tr>
 </table>
 
@@ -114,7 +117,6 @@ DoujinAudio-windows-x64-<tag>-setup.exe.sha256
 - 封面持久缓存支持重启后或离线读取，不按时间或容量自动淘汰。列表、筛选、分页与浏览位置仅在当前运行期间保留，详情重新打开时加载文件树。
 - Android 提供存储分析和分类缓存清理；Windows 隐藏“权限与后台”“缓存”“存储空间”等手机专属设置，内部缓存仍服务于播放和下载。清理保留用户源文件、手选封面、收藏、历史及播放状态。
 - 导出移除敏感账号信息的诊断报告，便于提交故障反馈。
-- 视频转音频支持 MP3、AAC、OGG、WAV、FLAC，提供码率选择、转换进度与取消，完成后可加入媒体库。
 
 ## 支持格式
 
@@ -178,7 +180,7 @@ DoujinAudio-windows-x64-<tag>-setup.exe.sha256
 | --- | --- |
 | `lib/app/` | 启动、依赖组装、路由、全局状态、主题与语言 |
 | `lib/core/` | 持久化、平台网关、共享媒体模型与通用组件 |
-| `lib/features/` | Library、Player、ASMR、Settings、Data Support 与 Video Converter，按 `domain` / `application` / `presentation` 分层 |
+| `lib/features/` | Library、Player、ASMR、Settings 与 Data Support，按 `domain` / `application` / `presentation` 分层 |
 | `android/` | 播放服务、Channel、扫描、存储、元数据、字幕与更新 |
 | `windows/runner/desktop/` | 窗口、托盘、系统媒体控制、悬浮字幕与定时任务 |
 | `test/`、`integration_test/` | 单元、Widget 与平台集成测试 |

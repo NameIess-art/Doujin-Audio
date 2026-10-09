@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
-import 'page_translation_scope.dart';
+import '../../../core/widgets/page_translation_scope.dart';
 
 class WorkDetailBreadcrumbs extends StatefulWidget {
   const WorkDetailBreadcrumbs({

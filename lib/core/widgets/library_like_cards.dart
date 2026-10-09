@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_styles.dart';
 import '../media/time_text_formatters.dart';
+import '../translation/text_translation_service.dart';
 import 'async_cover_image.dart';
 import 'marquee_text.dart';
 import 'search_highlight.dart';
 import 'shimmer_loading.dart';
 import 'horizontal_edge_fade_scroll.dart';
+import 'page_translation_scope.dart';
 
 const _libraryLikeInfoLineHeight = LibraryLikeCardMetrics.contentHeight / 5;
 
@@ -562,6 +564,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   const LibraryLikeMetadataWorkCardContent({
     super.key,
     required this.title,
+    this.titleFileName = false,
     required this.metadata,
     required this.voiceActorLabel,
     required this.circleLabel,
@@ -576,6 +579,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   });
 
   final String title;
+  final bool titleFileName;
   final LibraryLikeInfoMetadata metadata;
   final String voiceActorLabel;
   final String circleLabel;
@@ -590,22 +594,39 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LibraryLikeWorkCardContent(
-      title: title,
-      lines: loading
-          ? const <LibraryLikeInfoLineData>[]
-          : buildLibraryLikeInfoLines(
-              metadata: metadata,
-              voiceActorLabel: voiceActorLabel,
-              circleLabel: circleLabel,
-              tagsLabel: tagsLabel,
-              releaseDateLabel: releaseDateLabel,
-              ratingLabel: ratingLabel,
-              listSeparator: listSeparator,
-            ),
-      coverBuilder: coverBuilder,
-      accentColor: accentColor,
-      trailingActions: trailingActions,
+    final parts = textTranslationText(title, fileName: titleFileName);
+    return WorkPageTranslationBuilder(
+      texts: [
+        parts.source,
+        if (!loading) ...[
+          ...metadata.voiceActors,
+          metadata.circleName,
+          ...metadata.tags,
+        ],
+      ],
+      builder: (context, translate, _) => LibraryLikeWorkCardContent(
+        title: '${translate(parts.source)}${parts.suffix}',
+        lines: loading
+            ? const <LibraryLikeInfoLineData>[]
+            : buildLibraryLikeInfoLines(
+                metadata: LibraryLikeInfoMetadata(
+                  voiceActors: metadata.voiceActors.map(translate).toList(),
+                  circleName: translate(metadata.circleName),
+                  tags: metadata.tags.map(translate).toList(),
+                  releaseDate: metadata.releaseDate,
+                  rating: metadata.rating,
+                ),
+                voiceActorLabel: voiceActorLabel,
+                circleLabel: circleLabel,
+                tagsLabel: tagsLabel,
+                releaseDateLabel: releaseDateLabel,
+                ratingLabel: ratingLabel,
+                listSeparator: listSeparator,
+              ),
+        coverBuilder: coverBuilder,
+        accentColor: accentColor,
+        trailingActions: trailingActions,
+      ),
     );
   }
 }

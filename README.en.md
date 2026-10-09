@@ -39,13 +39,16 @@ Official releases are distributed only through GitHub Releases. App-store AAB pa
 
 <table>
   <tr>
-    <td colspan="2" align="center"><strong>ASMR.ONE</strong><br><img src="docs/screenshots/asmr-one.png" alt="ASMR.ONE" width="260"></td>
-    <td colspan="2" align="center"><strong>Local audio library</strong><br><img src="docs/screenshots/local-library.png" alt="Local audio library" width="260"></td>
-    <td colspan="2" align="center"><strong>Playlists</strong><br><img src="docs/screenshots/playlists.png" alt="Playlists" width="260"></td>
+    <td colspan="2" align="center" valign="top"><strong>Local audio library</strong><br><img src="docs/screenshots/local-library.png" alt="Local audio library" width="260"></td>
+    <td colspan="2" align="center" valign="top"><strong>Work details</strong><br><img src="docs/screenshots/work-details.png" alt="Work details" width="260"></td>
+    <td colspan="2" align="center" valign="top"><strong>Playlists</strong><br><img src="docs/screenshots/playlists.png" alt="Playlists" width="260"></td>
   </tr>
   <tr>
-    <td colspan="3" align="center"><strong>Work details</strong><br><img src="docs/screenshots/work-details.png" alt="Work details" width="260"></td>
-    <td colspan="3" align="center"><strong>Playback details</strong><br><img src="docs/screenshots/playback-details.png" alt="Playback details" width="260"></td>
+    <td colspan="2" rowspan="2" align="center" valign="top"><strong>Playback details (portrait)</strong><br><img src="docs/screenshots/playback-details.png" alt="Playback details in portrait orientation" width="260"></td>
+    <td colspan="4" align="center" valign="top"><strong>Playback details (landscape)</strong><br><img src="docs/screenshots/playback-landscape.png" alt="Playback details in landscape orientation" width="540"></td>
+  </tr>
+  <tr>
+    <td colspan="4" align="center" valign="top"><strong>Library and work details (landscape)</strong><br><img src="docs/screenshots/library-landscape.png" alt="Library and work details in landscape orientation" width="540"></td>
   </tr>
 </table>
 

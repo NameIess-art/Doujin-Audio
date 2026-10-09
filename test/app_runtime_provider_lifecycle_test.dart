@@ -66,7 +66,7 @@ void main() {
       expect(resolutions, [CoverImageResolution.balanced]);
       states.add(SettingsState());
       await container.pump();
-      states.add(SettingsState(converterFormat: 'flac'));
+      states.add(SettingsState(reduceAnimations: true));
       await container.pump();
       expect(resolutions, [CoverImageResolution.balanced]);
       states.add(SettingsState(coverImageResolution: CoverImageResolution.high));

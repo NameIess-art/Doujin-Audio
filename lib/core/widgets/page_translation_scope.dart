@@ -4,11 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/localization/app_language_provider.dart';
-import '../../../app/state/app_runtime_providers.dart';
-import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/top_page_header.dart';
-import '../../../core/translation/text_translation_service.dart';
+import '../../app/localization/app_language_provider.dart';
+import '../../app/state/app_runtime_providers.dart';
+import 'app_feedback.dart';
+import 'top_page_header.dart';
+import '../translation/text_translation_service.dart';
 
 class WorkPageTranslationHost extends ConsumerStatefulWidget {
   const WorkPageTranslationHost({super.key, required this.child});
@@ -30,13 +30,18 @@ class _WorkPageTranslationHostState
   late String _target;
   Timer? _timer;
   TextTranslationRequest? _request;
+  ValueListenable<TickerModeData>? _tickerModeNotifier;
   bool _enabled = false;
   bool _busy = false;
   bool _failed = false;
   bool _routeVisible = true;
   bool _foreground = true;
 
-  bool get _active => _enabled && _routeVisible && _foreground;
+  bool get _active =>
+      _enabled &&
+      _routeVisible &&
+      _foreground &&
+      (_tickerModeNotifier?.value.enabled ?? true);
   bool get _loading => _busy || _timer != null;
 
   String get _languageTarget => switch (_i18n.language) {
@@ -59,9 +64,13 @@ class _WorkPageTranslationHostState
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final visible = ModalRoute.isCurrentOf(context) ?? true;
-    if (visible == _routeVisible) return;
-    _routeVisible = visible;
+    final notifier = TickerMode.getValuesNotifier(context);
+    if (!identical(notifier, _tickerModeNotifier)) {
+      _tickerModeNotifier?.removeListener(_updateActivity);
+      _tickerModeNotifier = notifier;
+      notifier.addListener(_updateActivity);
+    }
+    _routeVisible = ModalRoute.isCurrentOf(context) ?? true;
     _updateActivity();
   }
 
@@ -211,6 +220,7 @@ class _WorkPageTranslationHostState
   @override
   void dispose() {
     _stop();
+    _tickerModeNotifier?.removeListener(_updateActivity);
     WidgetsBinding.instance.removeObserver(this);
     _i18n.removeListener(_languageChanged);
     _status.dispose();
@@ -238,11 +248,13 @@ class WorkPageTranslationButton extends StatelessWidget {
     this.buttonKey = 'work_detail_translation',
     this.backgroundOpacity = 1,
     this.enabled = true,
+    this.compact = false,
   });
 
   final String buttonKey;
   final double backgroundOpacity;
   final bool enabled;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -256,6 +268,11 @@ class WorkPageTranslationButton extends StatelessWidget {
         child: IconButton(
           key: ValueKey(buttonKey),
           onPressed: enabled ? state._toggle : null,
+          iconSize: compact ? 20 : null,
+          padding: compact ? EdgeInsets.zero : null,
+          constraints: compact
+              ? const BoxConstraints.tightFor(width: 38, height: 38)
+              : null,
           tooltip: state._i18n.tr(
             state._loading
                 ? 'work_translation_loading'
@@ -329,13 +346,25 @@ class WorkPageTranslationBuilder extends StatefulWidget {
 class _WorkPageTranslationBuilderState
     extends State<WorkPageTranslationBuilder> {
   _WorkPageTranslationHostState? _host;
+  ValueListenable<TickerModeData>? _tickerModeNotifier;
   final _parts = <String, List<String>>{};
   Set<String> _sources = {};
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final notifier = TickerMode.getValuesNotifier(context);
+    if (!identical(notifier, _tickerModeNotifier)) {
+      _tickerModeNotifier?.removeListener(_activityChanged);
+      _tickerModeNotifier = notifier;
+      notifier.addListener(_activityChanged);
+    }
     _bind();
+  }
+
+  void _activityChanged() {
+    _bind();
+    if (_host?._enabled == true) _changed();
   }
 
   @override
@@ -348,14 +377,21 @@ class _WorkPageTranslationBuilderState
     final host = context
         .dependOnInheritedWidgetOfExactType<_WorkTranslationScope>()
         ?.state;
-    _parts.removeWhere((text, _) => !widget.texts.contains(text));
-    for (final text in widget.texts) {
-      _parts.putIfAbsent(text, () => textTranslationSegments(text));
+    if (host == null) {
+      // Search results have no translation host; keep their original text
+      // without segmenting every card as the route becomes active.
+      _parts.clear();
+    } else {
+      _parts.removeWhere((text, _) => !widget.texts.contains(text));
+      for (final text in widget.texts) {
+        _parts.putIfAbsent(text, () => textTranslationSegments(text));
+      }
     }
-    final sources = _parts.values
-        .expand((parts) => parts)
-        .where(canTranslateText)
-        .toSet();
+    // Retained categories stay mounted, so only their active text may enqueue
+    // translation. Re-entering a category reuses the service cache.
+    final sources = host != null && (_tickerModeNotifier?.value.enabled ?? true)
+        ? _parts.values.expand((parts) => parts).where(canTranslateText).toSet()
+        : <String>{};
     for (final source in _sources) {
       if (host != _host || !sources.contains(source)) {
         _host?._unregister(source, _changed);
@@ -376,6 +412,7 @@ class _WorkPageTranslationBuilderState
 
   @override
   void dispose() {
+    _tickerModeNotifier?.removeListener(_activityChanged);
     for (final source in _sources) {
       _host?._unregister(source, _changed);
     }

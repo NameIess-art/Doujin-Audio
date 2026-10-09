@@ -7,7 +7,6 @@
 #include <optional>
 #include <string>
 #include <vector>
-#include <set>
 
 class SubtitleWindow;
 class MediaControls;
@@ -37,8 +36,8 @@ class DesktopIntegration {
   bool ending_session_ = false;
   bool fullscreen_ = false;
   bool screen_on_ = false;
+  bool playback_active_ = false;
   int initial_show_command_ = SW_SHOWNORMAL;
-  std::set<std::string> wake_locks_;
   WINDOWPLACEMENT placement_{sizeof(WINDOWPLACEMENT)};
   std::vector<std::string> pending_;
   std::unique_ptr<Channel> desktop_;

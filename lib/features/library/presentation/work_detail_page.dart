@@ -47,7 +47,7 @@ import 'dlsite_metadata_review_page.dart';
 import 'audio_detail_sheet.dart' show showAudioDetailEditor;
 import 'library_providers.dart';
 import 'library_removal_feedback.dart';
-import 'page_translation_scope.dart';
+import '../../../core/widgets/page_translation_scope.dart';
 import 'work_image_viewer_page.dart';
 import 'work_text_viewer_page.dart';
 

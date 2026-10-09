@@ -352,7 +352,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           i18n: i18n,
           topPadding: topInset,
           bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
-          cacheExtent: 320,
+          cacheExtent: 120,
           structureRevision: structureRevision,
           detailRevision: detailRevision,
           pinnedPaths: pinnedLibraryPaths,

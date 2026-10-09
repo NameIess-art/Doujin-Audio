@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
 
-import 'page_translation_scope.dart';
+import '../../../core/widgets/page_translation_scope.dart';
 
 class TranslatedMarkdownBody extends StatefulWidget {
   const TranslatedMarkdownBody({

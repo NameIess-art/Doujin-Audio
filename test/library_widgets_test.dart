@@ -2716,10 +2716,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 100));
     expect(batchHeader, findsNothing);
-    expect(
-      find.byTooltip(languageProvider.tr('video_to_audio')),
-      findsOneWidget,
-    );
+    expect(find.byIcon(Icons.video_library_rounded), findsNothing);
     await tester.tap(find.byTooltip(languageProvider.tr('add')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));

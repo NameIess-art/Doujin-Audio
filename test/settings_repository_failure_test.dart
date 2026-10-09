@@ -113,32 +113,6 @@ void main() {
   });
 
   test(
-    'converter changes rollback together and a queued change still succeeds',
-    () async {
-      preferences.beforeSave = () async => false;
-      await expectLater(
-        settings.setConverterSettings(format: 'flac', bitrate: '128k'),
-        throwsStateError,
-      );
-      expect(settings.converterFormat, 'mp3');
-      expect(settings.converterBitrate, '320k');
-      await expectLater(
-        settings.setConverterOutputDirectoryPath('E:/output'),
-        throwsStateError,
-      );
-      expect(settings.converterOutputDirectoryPath, isNull);
-      preferences.beforeSave = null;
-      await Future.wait([
-        settings.setConverterSettings(format: 'wav'),
-        settings.setConverterSettings(bitrate: '192k'),
-      ]);
-      expect(settings.slice.state.converterFormat, 'wav');
-      expect(settings.slice.state.converterBitrate, '192k');
-      expect(preferences.writes.last, {'format': 'wav', 'bitrate': '192k'});
-    },
-  );
-
-  test(
     'failed composite library visibility and sort updates rollback every field',
     () async {
       preferences.beforeSave = () async => false;

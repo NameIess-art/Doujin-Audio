@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'page_translation_scope.dart';
+import '../../../core/widgets/page_translation_scope.dart';
 
 class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   WorkDetailHeaderDelegate({

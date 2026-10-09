@@ -96,8 +96,6 @@ abstract final class PowerMethod {
       'getBackgroundRunDiagnostics';
   static const String executeTimerExpiredNow = 'executeTimerExpiredNow';
   static const String executeAutoResumeNow = 'executeAutoResumeNow';
-  static const String acquireWakeLock = 'acquireWakeLock';
-  static const String releaseWakeLock = 'releaseWakeLock';
   static const String setKeepScreenOn = 'setKeepScreenOn';
 }
 

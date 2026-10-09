@@ -57,8 +57,6 @@ internal object PowerMethods {
     const val OPEN_EXACT_ALARM_SETTINGS = "openExactAlarmSettings"
     const val OPEN_MANAGE_ALL_FILES_ACCESS_SETTINGS = "openManageAllFilesAccessSettings"
     const val SYNC_PLAYBACK_TIMER_ALARMS = "syncPlaybackTimerAlarms"
-    const val ACQUIRE_WAKE_LOCK = "acquireWakeLock"
-    const val RELEASE_WAKE_LOCK = "releaseWakeLock"
     const val SET_KEEP_SCREEN_ON = "setKeepScreenOn"
 }
 

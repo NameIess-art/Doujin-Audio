@@ -16,6 +16,8 @@ import 'library_cover_ui_controller.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/duration_overlay.dart';
+import '../../../core/widgets/page_translation_scope.dart';
+import '../../../core/translation/text_translation_service.dart';
 
 import 'library_tab_tree_widgets.dart';
 
@@ -334,6 +336,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
   const AudioDetailWorkCardContent({
     super.key,
     required this.title,
+    this.titleFileName = false,
     required this.detail,
     required this.detailLoading,
     required this.coverBuilder,
@@ -342,6 +345,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
   });
 
   final String title;
+  final bool titleFileName;
   final AudioDetail? detail;
   final bool detailLoading;
   final Widget Function(double coverWidth) coverBuilder;
@@ -356,6 +360,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
     ).read(appLanguageProviderInstanceProvider);
     return LibraryLikeMetadataWorkCardContent(
       title: title,
+      titleFileName: titleFileName,
       metadata: _audioDetailMetadata(detail),
       voiceActorLabel: i18n.tr('card_info_voice_actors'),
       circleLabel: i18n.tr('library_category_circles'),
@@ -395,50 +400,73 @@ class SingleAudioFileCardContent extends ConsumerWidget {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final lines = (detailLoading || detail == null)
-        ? const <LibraryLikeInfoLineData>[]
-        : buildLibraryLikeInfoLines(
-            metadata: _audioDetailMetadata(detail),
-            voiceActorLabel: i18n.tr('card_info_voice_actors'),
-            circleLabel: i18n.tr('library_category_circles'),
-            tagsLabel: i18n.tr('library_category_tags'),
-            releaseDateLabel: i18n.tr('card_info_release_date'),
-            ratingLabel: i18n.tr('card_info_rating'),
-          );
-    // The text content bounds the selection overlay inside lazy lists.
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        LibraryLikeSingleAudioCardContent(
-          title: title,
-          lines: lines,
-          trailingActions: trailingActions,
-          titleLeading: Padding(
-            padding: EdgeInsets.only(right: isPinned ? AppSpacing.xs : 0),
-            child: SizedBox(
-              width: isPinned ? 22 : 0,
-              height: LibraryLikeCardMetrics.contentHeight / 5,
-              child: OverflowBox(
-                alignment: Alignment.centerLeft,
-                minWidth: 22,
-                maxWidth: 22,
-                minHeight: 22,
-                maxHeight: 22,
-                child: LibraryPinnedIndicator(
-                  path: path,
-                  isPinned: isPinned,
-                  isSelected: isSelected,
+    final metadata = _audioDetailMetadata(detail);
+    final parts = textTranslationText(title, fileName: true);
+    return WorkPageTranslationBuilder(
+      texts: [
+        parts.source,
+        if (!detailLoading && detail != null) ...[
+          ...metadata.voiceActors,
+          metadata.circleName,
+          ...metadata.tags,
+        ],
+      ],
+      builder: (context, translate, _) {
+        final lines = (detailLoading || detail == null)
+            ? const <LibraryLikeInfoLineData>[]
+            : buildLibraryLikeInfoLines(
+                metadata: LibraryLikeInfoMetadata(
+                  voiceActors: metadata.voiceActors.map(translate).toList(),
+                  circleName: translate(metadata.circleName),
+                  tags: metadata.tags.map(translate).toList(),
+                  releaseDate: metadata.releaseDate,
+                  rating: metadata.rating,
+                ),
+                voiceActorLabel: i18n.tr('card_info_voice_actors'),
+                circleLabel: i18n.tr('library_category_circles'),
+                tagsLabel: i18n.tr('library_category_tags'),
+                releaseDateLabel: i18n.tr('card_info_release_date'),
+                ratingLabel: i18n.tr('card_info_rating'),
+              );
+        // The text content bounds the selection overlay inside lazy lists.
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            LibraryLikeSingleAudioCardContent(
+              title: '${translate(parts.source)}${parts.suffix}',
+              lines: lines,
+              trailingActions: trailingActions,
+              titleLeading: Padding(
+                padding: EdgeInsets.only(right: isPinned ? AppSpacing.xs : 0),
+                child: SizedBox(
+                  width: isPinned ? 22 : 0,
+                  height: LibraryLikeCardMetrics.contentHeight / 5,
+                  child: OverflowBox(
+                    alignment: Alignment.centerLeft,
+                    minWidth: 22,
+                    maxWidth: 22,
+                    minHeight: 22,
+                    maxHeight: 22,
+                    child: LibraryPinnedIndicator(
+                      path: path,
+                      isPinned: isPinned,
+                      isSelected: isSelected,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
-        Positioned(
-          left: -2,
-          bottom: -2,
-          child: LibrarySelectionIndicator(path: path, isSelected: isSelected),
-        ),
-      ],
+            Positioned(
+              left: -2,
+              bottom: -2,
+              child: LibrarySelectionIndicator(
+                path: path,
+                isSelected: isSelected,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -469,6 +497,7 @@ class SingleMediaFileCardContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return AudioDetailWorkCardContent(
       title: title,
+      titleFileName: true,
       detail: detail,
       detailLoading: detailLoading,
       index: index,

@@ -78,8 +78,6 @@ class PlatformChannelsTest {
             AppLifecycleMethods.TERMINATE_FOR_PENDING_RESTORE
         )
         assertEquals("syncAppTheme", AppLifecycleMethods.SYNC_APP_THEME)
-        assertEquals("acquireWakeLock", PowerMethods.ACQUIRE_WAKE_LOCK)
-        assertEquals("releaseWakeLock", PowerMethods.RELEASE_WAKE_LOCK)
     }
 
     @Test

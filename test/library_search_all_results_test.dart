@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_all_results.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_empty_scan.dart';
@@ -280,8 +281,10 @@ void main() {
             builder: (context) => Scaffold(
               body: TextButton(
                 onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const LibrarySearchPage(),
+                  buildAppPageRoute<void>(
+                    context: context,
+                    duration: Duration.zero,
+                    child: const LibrarySearchPage(),
                   ),
                 ),
                 child: const Text('Open search'),
@@ -295,6 +298,15 @@ void main() {
       await tester.pump(const Duration(milliseconds: 1));
       expect(find.text('Warm audio 0', findRichText: true), findsWidgets);
       expect(find.byType(LibraryLoadingSkeleton), findsNothing);
+      final firstFrameItems = find.byType(LibraryTreeItem, skipOffstage: false);
+      final bodyHeight = tester
+          .getSize(find.byKey(const ValueKey('app_search_body_layer')))
+          .height;
+      expect(
+        tester.getTopLeft(firstFrameItems.last).dy,
+        lessThan(bodyHeight + 140),
+        reason: 'Opening search should only prebuild about one extra row',
+      );
       await tester.pumpAndSettle();
       await tester.drag(
         find.byKey(const ValueKey('library_search_results_all')),
@@ -318,6 +330,10 @@ void main() {
       expect(builds, 1);
       expect(tester.takeException(), isNull);
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets('late earlier query cannot replace the latest result', (

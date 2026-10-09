@@ -704,7 +704,7 @@ class _Catalog implements PlaybackLibraryCatalog {
   }
 
   @override
-  void updateTrackSnapshot(MusicTrack track) {}
+  void updateTrackDuration(String trackPath, Duration duration) {}
   @override
   String? resolvedPlaybackCoverPathForTrack(
     MusicTrack? track, {

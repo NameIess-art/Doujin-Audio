@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfx/pdfx.dart';
@@ -33,15 +34,11 @@ class WorkTextViewerPage extends ConsumerStatefulWidget {
 }
 
 class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
-  static const int _contentChunkSize = 16 * 1024;
-  static const double _loadMoreThreshold = 800;
-
   late int _currentIndex;
   final ScrollController _scrollController = ScrollController();
 
   bool _loading = true;
-  String _content = '';
-  int _visibleContentLength = 0;
+  PreparedWorkText? _document;
   PdfController? _pdfController;
   bool _loadFailed = false;
   int _loadGeneration = 0;
@@ -52,7 +49,6 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_loadMoreIfNeeded);
     _currentIndex = widget.initialIndex.clamp(
       0,
       widget.files.isEmpty ? 0 : widget.files.length - 1,
@@ -93,8 +89,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     if (file == null) {
       setState(() {
         _loading = false;
-        _content = '';
-        _visibleContentLength = 0;
+        _document = null;
         _loadFailed = false;
       });
       _loadPending = false;
@@ -104,8 +99,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     setState(() {
       _loading = true;
       _loadFailed = false;
-      _content = '';
-      _visibleContentLength = 0;
+      _document = null;
     });
     _loadPending = true;
     _scheduleFileRead();
@@ -131,7 +125,10 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   Future<void> _readFile(WorkTextFile file, int gen) async {
     try {
       final service = ref.read(workTextServiceProvider);
-      final bytes = await service.readDocumentBytes(file);
+      final bytes = file.isPdf ? await service.readDocumentBytes(file) : null;
+      final document = file.isPdf
+          ? null
+          : await service.readPreparedDocument(file);
       _publishFileResult(gen, () {
         if (file.isPdf) {
           if (bytes == null || bytes.isEmpty) {
@@ -149,14 +146,10 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
             _pdfController = controller;
           });
         } else {
-          // Decode after navigation, including reads that completed mid-transition.
-          final text = bytes == null ? '' : decodeWorkText(bytes).text;
           setState(() {
             _loading = false;
-            _content = text;
-            _visibleContentLength = _nextContentEnd(text, 0);
+            _document = document;
           });
-          _scheduleViewportFill(gen);
         }
       });
     } catch (_) {
@@ -187,64 +180,6 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     );
   }
 
-  String get _visibleContent => _content.substring(0, _visibleContentLength);
-
-  int _nextContentEnd(String content, int currentEnd) {
-    if (currentEnd >= content.length) return content.length;
-    var target = (currentEnd + _contentChunkSize).clamp(0, content.length);
-    if (target < content.length) {
-      final newline = content.indexOf('\n', target);
-      if (newline >= 0 && newline - target <= 1024) {
-        target = newline + 1;
-      } else if (target > 0 &&
-          _isHighSurrogate(content.codeUnitAt(target - 1)) &&
-          _isLowSurrogate(content.codeUnitAt(target))) {
-        target++;
-      }
-    }
-    return target;
-  }
-
-  bool _isHighSurrogate(int codeUnit) =>
-      codeUnit >= 0xD800 && codeUnit <= 0xDBFF;
-
-  bool _isLowSurrogate(int codeUnit) =>
-      codeUnit >= 0xDC00 && codeUnit <= 0xDFFF;
-
-  void _loadMoreIfNeeded() {
-    if (!_scrollController.hasClients ||
-        _scrollController.position.extentAfter > _loadMoreThreshold) {
-      return;
-    }
-    _appendContentChunk();
-  }
-
-  bool _appendContentChunk() {
-    if (_loading ||
-        _currentFile?.isPdf == true ||
-        _visibleContentLength >= _content.length) {
-      return false;
-    }
-    setState(() {
-      _visibleContentLength = _nextContentEnd(_content, _visibleContentLength);
-    });
-    return true;
-  }
-
-  void _scheduleViewportFill(int generation) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted ||
-          generation != _loadGeneration ||
-          !_scrollController.hasClients ||
-          _scrollController.position.maxScrollExtent > 0) {
-        return;
-      }
-      if (_appendContentChunk()) {
-        _scheduleViewportFill(generation);
-      }
-    });
-  }
-
   void _onSwitchFile(int newIndex) {
     if (widget.files.length < 2) return;
     final wrappedIndex = newIndex % widget.files.length;
@@ -270,7 +205,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         !_loadFailed &&
         file != null &&
         !file.isPdf &&
-        _content.isNotEmpty;
+        _document?.isEmpty == false;
 
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
     final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
@@ -318,7 +253,9 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
               Positioned(
                 right: 16,
                 bottom: bottomPadding + 20,
-                child: AppPageContentTransition(child: _buildBottomRightSwitcher(context, theme, cs, i18n)),
+                child: AppPageContentTransition(
+                  child: _buildBottomRightSwitcher(context, theme, cs, i18n),
+                ),
               ),
           ],
         ),
@@ -388,7 +325,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
       );
     }
 
-    if (_content.isEmpty) {
+    if (_document?.isEmpty != false) {
       return Center(
         child: Text(
           i18n.tr('empty_file'),
@@ -399,17 +336,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
       );
     }
 
-    if (file.isMarkdown) {
-      return _buildMarkdownContent(
-        context,
-        theme,
-        cs,
-        contentTopInset,
-        bottomPadding,
-      );
-    }
-
-    return _buildTextContent(
+    return _buildDocumentContent(
       context,
       theme,
       cs,
@@ -431,10 +358,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
           : kPlaceholderContentTransitionDuration,
       curve: Curves.easeOutCubic,
       builder: (context, opacity, child) {
-        return Opacity(
-          opacity: opacity,
-          child: child,
-        );
+        return Opacity(opacity: opacity, child: child);
       },
       child: child,
     );
@@ -534,65 +458,90 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     );
   }
 
-  Widget _buildMarkdownContent(
+  Widget _buildDocumentContent(
     BuildContext context,
     ThemeData theme,
     ColorScheme cs,
     double contentTopInset,
     double bottomPadding,
   ) {
+    final document = _document!;
+    final markdown = _currentFile!.isMarkdown;
+    final textStyle = theme.textTheme.bodyLarge?.copyWith(
+      height: 1.65,
+      letterSpacing: 0.2,
+      fontFamilyFallback: const [
+        'Noto Sans CJK SC',
+        'Noto Sans CJK JP',
+        'sans-serif',
+      ],
+    );
+    final markdownStyle = MarkdownStyleSheet.fromTheme(theme).copyWith(
+      p: textStyle,
+      h1: theme.textTheme.headlineMedium?.copyWith(
+        fontWeight: FontWeight.w700,
+        color: cs.onSurface,
+      ),
+      h2: theme.textTheme.headlineSmall?.copyWith(
+        fontWeight: FontWeight.w700,
+        color: cs.onSurface,
+      ),
+      h3: theme.textTheme.titleLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+        color: cs.onSurface,
+      ),
+      code: theme.textTheme.bodyMedium?.copyWith(
+        fontFamily: 'monospace',
+        backgroundColor: cs.surfaceContainerHighest,
+      ),
+      codeblockDecoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+    );
     return SelectionArea(
-      child: SingleChildScrollView(
-        controller: _scrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(
-          20,
-          contentTopInset,
-          20,
-          bottomPadding + 76,
-        ),
+      child: _buildFadeInContent(
+        context: context,
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 960),
-            child: SizedBox(
-              width: double.infinity,
-              child: _buildFadeInContent(
-                context: context,
-                child: TranslatedMarkdownBody(
-                  data: _visibleContent,
-                  styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-                    p: theme.textTheme.bodyLarge?.copyWith(
-                      height: 1.65,
-                      letterSpacing: 0.2,
-                      fontFamilyFallback: const [
-                        'Noto Sans CJK SC',
-                        'Noto Sans CJK JP',
-                        'sans-serif',
-                      ],
-                    ),
-                    h1: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: cs.onSurface,
-                    ),
-                    h2: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: cs.onSurface,
-                    ),
-                    h3: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: cs.onSurface,
-                    ),
-                    code: theme.textTheme.bodyMedium?.copyWith(
-                      fontFamily: 'monospace',
-                      backgroundColor: cs.surfaceContainerHighest,
-                    ),
-                    codeblockDecoration: BoxDecoration(
-                      color: cs.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
+            child: CustomScrollView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    contentTopInset,
+                    20,
+                    bottomPadding + 76,
+                  ),
+                  sliver: SliverList.builder(
+                    itemCount: markdown
+                        ? document.markdownNodes.length
+                        : document.textBlocks.length,
+                    itemBuilder: (context, index) => Padding(
+                      key: ValueKey('work_document_${_loadGeneration}_$index'),
+                      padding: EdgeInsets.only(
+                        bottom: markdown
+                            ? (markdownStyle.blockSpacing ?? 8)
+                            : 0,
+                      ),
+                      child: markdown
+                          ? TranslatedMarkdownBody(
+                              nodes: [document.markdownNodes[index]],
+                              styleSheet: markdownStyle,
+                            )
+                          : _buildTextBlock(
+                              document.textBlocks[index],
+                              textStyle,
+                              collapseBoundary:
+                                  index < document.textBlocks.length - 1,
+                            ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
         ),
@@ -600,49 +549,20 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     );
   }
 
-  Widget _buildTextContent(
-    BuildContext context,
-    ThemeData theme,
-    ColorScheme cs,
-    double contentTopInset,
-    double bottomPadding,
-  ) {
-    return SelectionArea(
-      child: SingleChildScrollView(
-        controller: _scrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(
-          20,
-          contentTopInset,
-          20,
-          bottomPadding + 76,
-        ),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 960),
-            child: SizedBox(
-              width: double.infinity,
-              child: _buildFadeInContent(
-                context: context,
-                child: WorkPageTranslationText(
-                  _visibleContent,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    height: 1.65,
-                    letterSpacing: 0.2,
-                    fontFamilyFallback: const [
-                      'Noto Sans CJK SC',
-                      'Noto Sans CJK JP',
-                      'sans-serif',
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildTextBlock(
+    String block,
+    TextStyle? style, {
+    required bool collapseBoundary,
+  }) => WorkPageTranslationBuilder(
+    texts: [block],
+    builder: (context, translate, _) {
+      final text = translate(block);
+      final content = Text(text, style: style);
+      return collapseBoundary && text.endsWith('\n')
+          ? _TextBlockBoundary(child: content)
+          : content;
+    },
+  );
 
   Widget _buildBottomRightSwitcher(
     BuildContext context,
@@ -686,5 +606,33 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         ],
       ),
     );
+  }
+}
+
+class _TextBlockBoundary extends SingleChildRenderObjectWidget {
+  const _TextBlockBoundary({required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _TextBlockBoundaryBox();
+}
+
+class _TextBlockBoundaryBox extends RenderProxyBox {
+  @override
+  void performLayout() {
+    super.performLayout();
+    RenderBox text = child!;
+    // Selectable Text adds a MouseRegion above its paragraph.
+    while (text is RenderProxyBox) {
+      text = text.child!;
+    }
+    final paragraph = text as RenderParagraph;
+    // Keep the newline in selection/copy, but reuse the paragraph's completed
+    // layout to omit its empty last line. The next block supplies that line.
+    final end = paragraph.getOffsetForCaret(
+      TextPosition(offset: paragraph.text.toPlainText().length),
+      Rect.zero,
+    );
+    size = constraints.constrain(Size(size.width, end.dy));
   }
 }

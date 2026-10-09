@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +18,7 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/library/application/work_text_service.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/presentation/work_text_viewer_page.dart';
+import 'package:doujin_audio/features/library/presentation/translated_markdown_body.dart';
 
 class _FakeFileCacheGateway extends Fake implements FileCachePlatformGateway {
   _FakeFileCacheGateway(this.filesMap);
@@ -42,6 +43,38 @@ class _PendingFileCacheGateway extends Fake
   }
 }
 
+class _CountingTextService extends WorkTextService {
+  _CountingTextService(FileCachePlatformGateway gateway)
+    : super(platformGateway: gateway);
+  int preparations = 0;
+  PreparedWorkText? prepared;
+  final ready = Completer<void>();
+  @override
+  Future<PreparedWorkText> readPreparedDocument(
+    WorkTextFile file, {
+    WorkTextEncoding? encodingOverride,
+  }) async {
+    preparations++;
+    final document = await super.readPreparedDocument(
+      file,
+      encodingOverride: encodingOverride,
+    );
+    prepared = document;
+    if (!ready.isCompleted) ready.complete();
+    return document;
+  }
+}
+
+class _PreparedTextService extends WorkTextService {
+  _PreparedTextService(this.document);
+  final PreparedWorkText document;
+  @override
+  Future<PreparedWorkText> readPreparedDocument(
+    WorkTextFile file, {
+    WorkTextEncoding? encodingOverride,
+  }) async => document;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -62,6 +95,241 @@ void main() {
   );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final extension in ['md', 'txt']) {
+      testWidgets(
+        'one MiB $extension prepares once and lazily mounts blocks across theme and scroll on $platform',
+        (tester) async {
+          SharedPreferences.setMockInitialValues({});
+          final language = AppLanguageProvider();
+          addTearDown(language.dispose);
+          final file = WorkTextFile(
+            name: 'large.$extension',
+            relativePath: 'large.$extension',
+            path: '/large.$extension',
+          );
+          final text = '# 标题\n\n${'正文包含汉字和😀。\n\n' * 40000}末章';
+          final gateway = _FakeFileCacheGateway({
+            file.path: Uint8List.fromList(utf8.encode(text)),
+          });
+          final service = _CountingTextService(gateway);
+          addTearDown(service.dispose);
+          final dark = ValueNotifier(false);
+          addTearDown(dark.dispose);
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [
+                appLanguageProviderInstanceProvider.overrideWithValue(language),
+                workTextServiceProvider.overrideWithValue(service),
+              ],
+              child: ValueListenableBuilder<bool>(
+                valueListenable: dark,
+                builder: (context, value, _) => MaterialApp(
+                  theme: value ? ThemeData.dark() : ThemeData.light(),
+                  home: WorkTextViewerPage(files: [file]),
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+          await tester.pump();
+          for (
+            var attempt = 0;
+            attempt < 100 && !service.ready.isCompleted;
+            attempt++
+          ) {
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 50)),
+            );
+            await tester.pump();
+          }
+          expect(service.ready.isCompleted, isTrue);
+          await tester.pumpAndSettle();
+          expect(service.preparations, 1);
+          final document = service.prepared;
+          Object? node;
+          if (extension == 'md') {
+            expect(
+              find.byType(TranslatedMarkdownBody).evaluate().length,
+              inExclusiveRange(1, 100),
+            );
+            node = tester
+                .widget<TranslatedMarkdownBody>(
+                  find.byType(TranslatedMarkdownBody).first,
+                )
+                .nodes
+                .single;
+          }
+          int mountedBlocks() => find
+              .byWidgetPredicate(
+                (widget) =>
+                    widget.key is ValueKey<String> &&
+                    (widget.key! as ValueKey<String>).value.startsWith(
+                      'work_document_',
+                    ),
+              )
+              .evaluate()
+              .length;
+          expect(mountedBlocks(), inExclusiveRange(0, 100));
+          if (extension == 'txt') {
+            expect(mountedBlocks(), lessThan(document!.textBlocks.length));
+          }
+          dark.value = true;
+          await tester.pumpAndSettle();
+          if (extension == 'md') {
+            expect(
+              tester
+                  .widget<TranslatedMarkdownBody>(
+                    find.byType(TranslatedMarkdownBody).first,
+                  )
+                  .nodes
+                  .single,
+              same(node),
+            );
+          }
+          expect(service.prepared, same(document));
+          await tester.drag(
+            find.byType(CustomScrollView),
+            const Offset(0, -600),
+          );
+          await tester.pumpAndSettle();
+          expect(mountedBlocks(), lessThan(100));
+          expect(service.preparations, 1);
+          expect(find.byType(SelectionArea), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
+    testWidgets(
+      'text selection copies Unicode and original whitespace on $platform',
+      (tester) async {
+        final copied = <String>[];
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async {
+            if (call.method == 'Clipboard.setData') {
+              copied.add((call.arguments as Map)['text'] as String);
+            }
+            return null;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          ),
+        );
+        SharedPreferences.setMockInitialValues({});
+        final language = AppLanguageProvider();
+        addTearDown(language.dispose);
+        const source = '  台本😀\t\nSecond line\n';
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              appLanguageProviderInstanceProvider.overrideWithValue(language),
+              workTextServiceProvider.overrideWithValue(
+                WorkTextService(
+                  platformGateway: _FakeFileCacheGateway({
+                    file1.path: Uint8List.fromList(utf8.encode(source)),
+                  }),
+                ),
+              ),
+            ],
+            child: const MaterialApp(home: WorkTextViewerPage(files: [file1])),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final region = tester.state<SelectableRegionState>(
+          find.byType(SelectableRegion),
+        );
+        region.selectAll();
+        await tester.pump();
+        region.contextMenuButtonItems
+            .firstWhere((item) => item.type == ContextMenuButtonType.copy)
+            .onPressed!();
+        await tester.pump();
+        expect(copied, [source]);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'TXT block boundary adds no empty line and remains copied on $platform',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final language = AppLanguageProvider();
+        addTearDown(language.dispose);
+        const first = 'First😀\n';
+        const second = 'Second line';
+        final copied = <String>[];
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async {
+            if (call.method == 'Clipboard.setData') {
+              copied.add((call.arguments as Map)['text'] as String);
+            }
+            return null;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          ),
+        );
+        final service = _PreparedTextService(
+          PreparedWorkText(
+            encoding: WorkTextEncoding.utf8,
+            textBlocks: const [first, second],
+            markdownNodes: const [],
+          ),
+        );
+        addTearDown(service.dispose);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              appLanguageProviderInstanceProvider.overrideWithValue(language),
+              workTextServiceProvider.overrideWithValue(service),
+            ],
+            child: const MaterialApp(home: WorkTextViewerPage(files: [file1])),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final firstFinder = find.text(first);
+        final secondFinder = find.text(second);
+        expect(firstFinder, findsOneWidget);
+        final richText = tester.widget<RichText>(
+          find.descendant(of: firstFinder, matching: find.byType(RichText)),
+        );
+        final painter = TextPainter(
+          text: TextSpan(
+            text: '$first$second',
+            style: tester.widget<Text>(secondFinder).style,
+          ),
+          textDirection: TextDirection.ltr,
+          textScaler: richText.textScaler,
+        )..layout(maxWidth: tester.getSize(firstFinder).width);
+        expect(
+          tester.getBottomRight(secondFinder).dy -
+              tester.getTopLeft(firstFinder).dy,
+          closeTo(painter.height, 0.01),
+        );
+        painter.dispose();
+        final region = tester.state<SelectableRegionState>(
+          find.byType(SelectableRegion),
+        );
+        region.selectAll();
+        await tester.pump();
+        region.contextMenuButtonItems
+            .firstWhere((item) => item.type == ContextMenuButtonType.copy)
+            .onPressed!();
+        await tester.pump();
+        expect(copied, ['$first$second']);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     for (final exitPage in [false, true]) {
       testWidgets(
         'text reads wait for opening and completion waits for ${exitPage ? 'exit' : 'next route'} on $platform',
@@ -330,23 +598,20 @@ void main() {
     expect(scrollableState.position.pixels, 0.0);
 
     // Drag up to scroll down
-    await tester.drag(
-      find.byType(SingleChildScrollView),
-      const Offset(0, -300),
-    );
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -300));
     await tester.pumpAndSettle();
 
     expect(scrollableState.position.pixels, greaterThan(200.0));
 
     // Drag down to scroll back up
-    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, 300));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 300));
     await tester.pumpAndSettle();
 
     expect(scrollableState.position.pixels, lessThan(50.0));
   });
 
   testWidgets(
-    'WorkTextViewerPage lazily appends large text documents near the scroll end',
+    'WorkTextViewerPage lazily mounts text blocks near the scroll end',
     (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final language = AppLanguageProvider();
@@ -372,23 +637,19 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      Text renderedText() => tester.widget<Text>(
-        find.byWidgetPredicate(
-          (widget) => widget is Text && widget.data?.startsWith('首段内容') == true,
-        ),
-      );
+      expect(find.textContaining(deferredMarker), findsNothing);
 
-      expect(renderedText().data, isNot(contains(deferredMarker)));
-
-      final scrollView = tester.widget<SingleChildScrollView>(
-        find.byType(SingleChildScrollView),
+      final scrollView = tester.widget<CustomScrollView>(
+        find.byType(CustomScrollView),
       );
-      scrollView.controller!.jumpTo(
-        scrollView.controller!.position.maxScrollExtent,
+      await tester.scrollUntilVisible(
+        find.textContaining(deferredMarker),
+        5000,
+        scrollable: find.byType(Scrollable),
+        maxScrolls: 100,
       );
-      await tester.pump();
-
-      expect(renderedText().data, contains(deferredMarker));
+      expect(scrollView.controller!.position.pixels, greaterThan(0));
+      expect(find.textContaining(deferredMarker), findsOneWidget);
     },
   );
 
@@ -432,7 +693,7 @@ void main() {
   );
 
   testWidgets(
-    'WorkTextViewerPage lazily appends large markdown documents near the scroll end',
+    'WorkTextViewerPage lazily mounts parsed markdown blocks near the scroll end',
     (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final language = AppLanguageProvider();
@@ -463,23 +724,21 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      expect(find.text(deferredMarker), findsNothing);
       expect(
-        tester.widget<MarkdownBody>(find.byType(MarkdownBody)).data,
-        isNot(contains(deferredMarker)),
+        find.byType(TranslatedMarkdownBody).evaluate().length,
+        lessThan(100),
       );
 
-      final scrollView = tester.widget<SingleChildScrollView>(
-        find.byType(SingleChildScrollView),
+      final scrollView = tester.widget<CustomScrollView>(
+        find.byType(CustomScrollView),
       );
       scrollView.controller!.jumpTo(
         scrollView.controller!.position.maxScrollExtent,
       );
       await tester.pump();
 
-      expect(
-        tester.widget<MarkdownBody>(find.byType(MarkdownBody)).data,
-        contains(deferredMarker),
-      );
+      expect(find.text(deferredMarker), findsOneWidget);
     },
   );
 
@@ -646,7 +905,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Find MediaQuery wrapping the content inside Scaffold
-        final scrollableFinder = find.byType(SingleChildScrollView);
+        final scrollableFinder = find.byType(CustomScrollView);
         expect(scrollableFinder, findsOneWidget);
 
         final scrollableContext = tester.element(scrollableFinder);
@@ -659,61 +918,59 @@ void main() {
     },
   );
 
-  testWidgets(
-    'WorkTextViewerPage fades in text content smoothly over 450ms',
-    (tester) async {
-      SharedPreferences.setMockInitialValues(const <String, Object>{});
-      final language = AppLanguageProvider();
-      addTearDown(language.dispose);
-      await language.setLanguage(AppLanguage.zh);
+  testWidgets('WorkTextViewerPage fades in text content smoothly over 450ms', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final language = AppLanguageProvider();
+    addTearDown(language.dispose);
+    await language.setLanguage(AppLanguage.zh);
 
-      final fakeGateway = _FakeFileCacheGateway({
-        file1.path: Uint8List.fromList(utf8.encode('台本文本淡入测试')),
-      });
+    final fakeGateway = _FakeFileCacheGateway({
+      file1.path: Uint8List.fromList(utf8.encode('台本文本淡入测试')),
+    });
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            appLanguageProviderInstanceProvider.overrideWithValue(language),
-            workTextServiceProvider.overrideWithValue(
-              WorkTextService(platformGateway: fakeGateway),
-            ),
-          ],
-          child: const MaterialApp(home: WorkTextViewerPage(files: [file1])),
-        ),
-      );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(language),
+          workTextServiceProvider.overrideWithValue(
+            WorkTextService(platformGateway: fakeGateway),
+          ),
+        ],
+        child: const MaterialApp(home: WorkTextViewerPage(files: [file1])),
+      ),
+    );
 
-      // Initially loading
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    // Initially loading
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
-      // Pump to complete async loading and build first frame of text content
-      await tester.pump();
-      await tester.pump();
+    // Pump to complete async loading and build first frame of text content
+    await tester.pump();
+    await tester.pump();
 
-      // Find Opacity ancestor of the Text widget
-      final textFinder = find.text('台本文本淡入测试');
-      expect(textFinder, findsOneWidget);
+    // Find Opacity ancestor of the Text widget
+    final textFinder = find.text('台本文本淡入测试');
+    expect(textFinder, findsOneWidget);
 
-      final opacityFinder = find.ancestor(
-        of: textFinder,
-        matching: find.byType(Opacity),
-      );
-      expect(opacityFinder, findsOneWidget);
+    final opacityFinder = find.ancestor(
+      of: textFinder,
+      matching: find.byType(Opacity),
+    );
+    expect(opacityFinder, findsOneWidget);
 
-      final initialOpacity = tester.widget<Opacity>(opacityFinder).opacity;
-      expect(initialOpacity, lessThan(0.5));
+    final initialOpacity = tester.widget<Opacity>(opacityFinder).opacity;
+    expect(initialOpacity, lessThan(0.5));
 
-      // Advance by 200ms
-      await tester.pump(const Duration(milliseconds: 200));
-      final midOpacity = tester.widget<Opacity>(opacityFinder).opacity;
-      expect(midOpacity, greaterThan(initialOpacity));
-      expect(midOpacity, lessThan(1.0));
+    // Advance by 200ms
+    await tester.pump(const Duration(milliseconds: 200));
+    final midOpacity = tester.widget<Opacity>(opacityFinder).opacity;
+    expect(midOpacity, greaterThan(initialOpacity));
+    expect(midOpacity, lessThan(1.0));
 
-      // Advance past 450ms (200 + 300 = 500ms > 450ms)
-      await tester.pump(const Duration(milliseconds: 300));
-      final finalOpacity = tester.widget<Opacity>(opacityFinder).opacity;
-      expect(finalOpacity, equals(1.0));
-    },
-  );
+    // Advance past 450ms (200 + 300 = 500ms > 450ms)
+    await tester.pump(const Duration(milliseconds: 300));
+    final finalOpacity = tester.widget<Opacity>(opacityFinder).opacity;
+    expect(finalOpacity, equals(1.0));
+  });
 }
-

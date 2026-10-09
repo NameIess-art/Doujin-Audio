@@ -168,6 +168,11 @@ void main() {
             ? 0
             : int.parse(range.substring(6, range.length - 1));
         rangeStarts.add(start);
+        request.response.headers.set(HttpHeaders.etagHeader, '"stable"');
+        expect(
+          request.headers.value(HttpHeaders.ifRangeHeader),
+          start > 0 ? '"stable"' : null,
+        );
         if (start > 0) {
           request.response.statusCode = HttpStatus.partialContent;
           request.response.headers.set(
@@ -371,6 +376,166 @@ void main() {
     }
   });
 
+  for (final outcome in ['success', 'failure', 'pause', 'shutdown']) {
+    test('entity persistence precedes file bytes ($outcome)', () async {
+      final temp = await Directory.systemTemp.createTemp('asmr_entity_flush_');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        expect(
+          request.headers.value(HttpHeaders.acceptEncodingHeader),
+          'identity',
+        );
+        request.response.headers.set(HttpHeaders.etagHeader, '"verified"');
+        request.response.contentLength = 3;
+        request.response.add([1, 2, 3]);
+        await request.response.close();
+      });
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var reject = outcome == 'failure';
+      final manager = AsmrDownloadManager(
+        persistenceWriter: (payload) async {
+          if (payload == null) return;
+          final tasks = (jsonDecode(payload) as Map)['tasks'] as List;
+          final tags = (tasks.single as Map)['fileEntityTags'] as Map;
+          if (tags['Track.mp3'] != '"verified"') return;
+          if (!started.isCompleted) started.complete();
+          await release.future;
+          if (reject) throw StateError('identity_write_failed');
+        },
+      );
+      final target = File(path.join(temp.path, 'Work', 'Track.mp3'));
+      final staging = File('${target.path}.doujin.part');
+      try {
+        await target.parent.create(recursive: true);
+        await target.writeAsBytes([9]);
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: [
+            _file(
+              downloadUrl: 'http://${server.address.host}:${server.port}/track',
+              size: 3,
+            ),
+          ],
+          destinationRoot: temp.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+        );
+        await started.future.timeout(const Duration(seconds: 5));
+        expect(await staging.exists(), isFalse);
+        expect(await target.readAsBytes(), [9]);
+        final interrupted = outcome == 'pause'
+            ? manager.pauseTask(1)
+            : outcome == 'shutdown'
+            ? manager.shutdown()
+            : null;
+        release.complete();
+        await interrupted;
+        if (outcome == 'shutdown') {
+          expect(await target.readAsBytes(), [9]);
+        } else {
+          await _waitForTaskStatus(
+            manager,
+            1,
+            outcome == 'success'
+                ? AsmrDownloadTaskStatus.completed
+                : outcome == 'pause'
+                ? AsmrDownloadTaskStatus.paused
+                : AsmrDownloadTaskStatus.failed,
+            allowFailure: outcome == 'failure',
+          );
+          expect(
+            await target.readAsBytes(),
+            outcome == 'success' ? [1, 2, 3] : [9],
+          );
+          if (outcome != 'pause') {
+            expect(manager.getTask(1)?.fileEntityTags, isEmpty);
+          }
+        }
+        expect(await staging.exists(), isFalse);
+      } finally {
+        reject = false;
+        if (!release.isCompleted) release.complete();
+        await manager.shutdown();
+        await server.close(force: true);
+        await temp.delete(recursive: true);
+      }
+    });
+  }
+
+  for (final responseKind in ['partial', 'compressed']) {
+    test(
+      'full download rejects $responseKind responses before commit',
+      () async {
+        final temp = await Directory.systemTemp.createTemp(
+          'asmr_invalid_full_',
+        );
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        server.listen((request) async {
+          expect(request.headers.value(HttpHeaders.rangeHeader), isNull);
+          expect(
+            request.headers.value(HttpHeaders.acceptEncodingHeader),
+            'identity',
+          );
+          if (responseKind == 'partial') {
+            request.response.statusCode = HttpStatus.partialContent;
+            request.response.headers.set(
+              HttpHeaders.contentRangeHeader,
+              'bytes 0-2/3',
+            );
+          } else {
+            request.response.headers.set(
+              HttpHeaders.contentEncodingHeader,
+              'gzip',
+            );
+          }
+          request.response.contentLength = 3;
+          request.response.add([1, 2, 3]);
+          await request.response.close();
+        });
+        final manager = AsmrDownloadManager(
+          persistTasks: false,
+          automaticFileRetryDelay: Duration.zero,
+        );
+        try {
+          await manager.startDownload(
+            work: _work(),
+            selectedRoots: [
+              _file(
+                downloadUrl:
+                    'http://${server.address.host}:${server.port}/track',
+                size: 3,
+              ),
+            ],
+            destinationRoot: temp.path,
+            saveMetadata: false,
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          );
+          await _waitForTaskStatus(
+            manager,
+            1,
+            AsmrDownloadTaskStatus.failed,
+            allowFailure: true,
+          );
+          expect(
+            await File(path.join(temp.path, 'Work', 'Track.mp3')).exists(),
+            isFalse,
+          );
+          expect(
+            await File(
+              path.join(temp.path, 'Work', 'Track.mp3.doujin.part'),
+            ).exists(),
+            isFalse,
+          );
+        } finally {
+          await manager.shutdown();
+          await server.close(force: true);
+          await temp.delete(recursive: true);
+        }
+      },
+    );
+  }
+
   test('ASMR media requests include the scoped gateway language header', () {
     final headers = asmrMediaRequestHeadersForUrl(
       'https://raw.kiko-play-niptan.one/media/stream/work/track.mp3',
@@ -401,6 +566,8 @@ void main() {
       'bytes 0-127/256',
       'bytes 128-255/512',
       'bytes 128-200/256',
+      'bytes 128-255/*',
+      'bytes 128-255/128',
     ]) {
       expect(
         isValidDownloadContentRange(
@@ -1219,6 +1386,7 @@ void main() {
             ) ??
             0;
         coverRangeStarts.add(start);
+        request.response.headers.set(HttpHeaders.etagHeader, '"cover"');
         if (start > 0) {
           request.response.statusCode = HttpStatus.partialContent;
           request.response.headers.set(
@@ -2943,6 +3111,7 @@ void main() {
     final rangeStarts = <int>[];
     unawaited(
       server.forEach((request) async {
+        request.response.headers.set(HttpHeaders.etagHeader, '"stable"');
         final range = request.headers.value(HttpHeaders.rangeHeader);
         if (range == null) {
           rangeStarts.add(0);
@@ -3001,7 +3170,7 @@ void main() {
   });
 
   test(
-    'v0.18 resumes a changed entity without an If-Range validator',
+    'changed entity restarts instead of mixing staging bytes',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'asmr_download_changed_entity_',
@@ -3058,14 +3227,14 @@ void main() {
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-        expect(ranges, <String?>[null, 'bytes=128-']);
-        expect(ifRanges, <String?>[null, null]);
+        expect(ranges, <String?>[null, 'bytes=128-', null]);
+        expect(ifRanges, <String?>[null, '"entity-a"', null]);
         expect(
           await File(
             '${tempDir.path}${Platform.pathSeparator}Work'
             '${Platform.pathSeparator}changed.mp3',
           ).readAsBytes(),
-          <int>[...firstBytes.take(128), ...replacementBytes.skip(128)],
+          replacementBytes,
         );
       } finally {
         manager.dispose();
@@ -3119,7 +3288,7 @@ void main() {
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       expect(ranges, <String?>[null, 'bytes=128-']);
-      expect(ifRanges, <String?>[null, null]);
+      expect(ifRanges, <String?>[null, '"old"']);
       expect(
         await File(
           '${tempDir.path}${Platform.pathSeparator}Work'
@@ -3134,7 +3303,7 @@ void main() {
     }
   });
 
-  test('a 206 response without a validator resumes in v0.18 mode', () async {
+  test('a 206 response without a validator restarts the download', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_206_no_validator_',
     );
@@ -3183,7 +3352,7 @@ void main() {
       );
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-      expect(ranges, <String?>[null, 'bytes=128-']);
+      expect(ranges, <String?>[null, 'bytes=128-', null]);
       expect(
         await File(
           '${tempDir.path}${Platform.pathSeparator}Work'
@@ -3198,7 +3367,92 @@ void main() {
     }
   });
 
-  test('v0.18 resume does not send If-Range for weak ETags', () async {
+  for (final invalidRange in [
+    'unknown-total',
+    'early-end',
+    'wrong-length',
+    'weak-tag',
+  ]) {
+    test(
+      'invalid resumed response restarts from zero ($invalidRange)',
+      () async {
+        final temp = await Directory.systemTemp.createTemp(
+          'asmr_invalid_range_',
+        );
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final bytes = List<int>.generate(1024, (index) => index % 227);
+        final ranges = <String?>[];
+        server.listen((request) async {
+          ranges.add(request.headers.value(HttpHeaders.rangeHeader));
+          request.response.headers.set(HttpHeaders.etagHeader, '"stable"');
+          if (ranges.length == 1) {
+            request.response.add(bytes.sublist(0, 128));
+          } else if (ranges.length == 2) {
+            expect(
+              request.headers.value(HttpHeaders.ifRangeHeader),
+              '"stable"',
+            );
+            request.response.statusCode = HttpStatus.partialContent;
+            final total = invalidRange == 'unknown-total' ? '*' : '1024';
+            final end = invalidRange == 'early-end' ? 511 : 1023;
+            request.response.headers.set(
+              HttpHeaders.contentRangeHeader,
+              'bytes 128-$end/$total',
+            );
+            if (invalidRange == 'weak-tag') {
+              request.response.headers.set(
+                HttpHeaders.etagHeader,
+                'W/"stable"',
+              );
+            }
+            final body = invalidRange == 'wrong-length'
+                ? bytes.sublist(128, 512)
+                : bytes.sublist(128);
+            request.response.contentLength = body.length;
+            request.response.add(body);
+          } else {
+            request.response.contentLength = bytes.length;
+            request.response.add(bytes);
+          }
+          await request.response.close();
+        });
+        final manager = _manager();
+        try {
+          await manager.startDownload(
+            work: _work(),
+            selectedRoots: [
+              _file(
+                downloadUrl:
+                    'http://${server.address.host}:${server.port}/track',
+                size: bytes.length,
+              ),
+            ],
+            destinationRoot: temp.path,
+            saveMetadata: false,
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          );
+          await _waitForTaskStatus(
+            manager,
+            1,
+            AsmrDownloadTaskStatus.completed,
+          );
+          expect(ranges, [null, 'bytes=128-', null]);
+          expect(
+            await File(path.join(temp.path, 'Work', 'Track.mp3')).readAsBytes(),
+            bytes,
+          );
+          expect(manager.getTask(1)?.downloadedBytes, bytes.length);
+          expect(manager.getTask(1)?.fileEntityTags, isEmpty);
+        } finally {
+          await manager.shutdown();
+          await server.close(force: true);
+          await temp.delete(recursive: true);
+        }
+      },
+    );
+  }
+
+  test('weak ETags restart without Range or Last-Modified fallback', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_last_modified_',
     );
@@ -3218,15 +3472,9 @@ void main() {
         if (requestCount == 1) {
           request.response.add(bytes.take(128).toList());
         } else {
-          expect(range, 'bytes=128-');
-          request.response.statusCode = HttpStatus.partialContent;
-          request.response.headers.set(
-            HttpHeaders.contentRangeHeader,
-            'bytes 128-${bytes.length - 1}/${bytes.length}',
-          );
-          final remaining = bytes.sublist(128);
-          request.response.contentLength = remaining.length;
-          request.response.add(remaining);
+          expect(range, isNull);
+          request.response.contentLength = bytes.length;
+          request.response.add(bytes);
         }
         await request.response.close();
       }),
@@ -3257,7 +3505,7 @@ void main() {
   });
 
   test(
-    'partial file without a validator still sends a range request',
+    'partial file without a validator restarts without a range request',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'asmr_download_no_validator_',
@@ -3296,7 +3544,7 @@ void main() {
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-        expect(ranges, <String?>[null, 'bytes=128-']);
+        expect(ranges, <String?>[null, null]);
         expect(
           await File(
             '${tempDir.path}${Platform.pathSeparator}Work'
@@ -3313,7 +3561,7 @@ void main() {
   );
 
   test(
-    'v0.18 accepts a complete staging file without downloading again',
+    'an equal-sized legacy staging file is downloaded again',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'asmr_download_complete_staging_',
@@ -3353,10 +3601,10 @@ void main() {
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-        expect(ranges, isEmpty);
+        expect(ranges, <String?>[null]);
         expect(
           await File(path.join(workRoot, 'Track.mp3')).readAsBytes(),
-          List<int>.filled(bytes.length, 1),
+          bytes,
         );
       } finally {
         manager.dispose();
@@ -4371,6 +4619,7 @@ void main() {
               ? 0
               : int.parse(RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!);
           rangeStarts.add(start);
+          request.response.headers.set(HttpHeaders.etagHeader, '"resume"');
           if (start > 0 && !rejectedRange) {
             rejectedRange = true;
             request.response.statusCode =
@@ -4457,6 +4706,7 @@ void main() {
         );
         await restoredManager.initialize();
         final restoredTask = restoredManager.getTask(1);
+        expect(restoredTask?.fileEntityTags['Track.mp3'], '"resume"');
         expect(restoredTask?.status, AsmrDownloadTaskStatus.paused);
         expect(restoredManager.taskIds, <int>[1]);
         expect(restoredManager.buttonViewState.visible, isTrue);

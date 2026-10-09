@@ -63,7 +63,7 @@ extension AppDatabaseLibraryEntries on AppDatabase {
           );
         }
       }
-      await _upsertTrackChunks(txn, tracks);
+      await _upsertCatalogTrackChunks(txn, tracks);
       await _upsertEntryChunks(txn, entries);
       final batch = txn.batch();
       for (final setting in catalogSettings.entries) {

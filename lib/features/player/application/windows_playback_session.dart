@@ -1,8 +1,9 @@
 part of 'windows_playback_bridge.dart';
 
 class _WindowsPlaybackSession {
-  _WindowsPlaybackSession(this.id);
+  _WindowsPlaybackSession(this.id, this.readNativePlaylist);
   final String id;
+  final Future<String> Function(Player)? readNativePlaylist;
   Player? player;
   VideoController? videoController;
   final subscriptions = <StreamSubscription<dynamic>>[];
@@ -120,14 +121,26 @@ class _WindowsPlaybackSession {
 
   Future<List<int>> nativeEntryIds(Player player) async {
     final platform = player.platform;
-    if (platform is NativePlayer) {
-      final count = int.parse(await platform.getProperty('playlist/count'));
-      return [
-        for (var i = 0; i < count; i++)
-          int.parse(await platform.getProperty('playlist/$i/id')),
-      ];
+    if (readNativePlaylist == null && platform is! NativePlayer) {
+      return player.state.playlist.medias.map(identityHashCode).toList();
     }
-    return player.state.playlist.medias.map(identityHashCode).toList();
+    // mpv FORMAT_STRING prints NODE properties as JSON. The physical order and
+    // stable entry IDs remain distinct even when multiple entries share a URI.
+    final raw = readNativePlaylist != null
+        ? await readNativePlaylist!(player)
+        : await (platform as NativePlayer).getProperty('playlist');
+    final entries = jsonDecode(raw);
+    if (entries is! List) throw FormatException('Invalid native playlist', raw);
+    final ids = <int>[];
+    final seen = <int>{};
+    for (final entry in entries) {
+      final id = entry is Map ? entry['id'] : null;
+      if (id is! int || !seen.add(id)) {
+        throw FormatException('Invalid native playlist entry ID', entry);
+      }
+      ids.add(id);
+    }
+    return ids;
   }
 
   Future<int?> currentNativeEntryId(Player player) async {
@@ -154,6 +167,7 @@ class _WindowsPlaybackSession {
         generation != this.generation) {
       return;
     }
+    if (ids.isEmpty) throw StateError('Current native playlist is empty');
     nativeQueueIndices
       ..clear()
       ..addAll({

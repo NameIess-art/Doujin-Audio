@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -19,13 +20,21 @@ void main() {
   late WindowsPlaybackBridge bridge;
   late List<_Player> players;
   late Duration elapsed;
+  late int playlistReads;
+  Future<String> Function(Player)? playlistGetter;
   void Function(_Player)? configureNextPlayer;
   setUp(() {
     players = [];
     configureNextPlayer = null;
+    playlistGetter = null;
+    playlistReads = 0;
     elapsed = Duration.zero;
     bridge = WindowsPlaybackBridge(
       monotonicElapsed: () => elapsed,
+      readNativePlaylist: (player) async {
+        playlistReads++;
+        return playlistGetter?.call(player) ?? _playlistJson(player);
+      },
       createPlayer: () {
         final platform = _Player();
         configureNextPlayer?.call(platform);
@@ -52,6 +61,127 @@ void main() {
     );
     expect(result.isOk, true, reason: result.errorOrNull);
   }
+
+  test('a single item prepare reads the whole native playlist once', () async {
+    await prepare('one');
+    expect(playlistReads, 1);
+    expect(players.single.state.playing, true);
+  });
+
+  for (final raw in [
+    'not JSON',
+    '{}',
+    '[{}]',
+    '[{"id":"1"}]',
+    '[{"id":1.5}]',
+    '[{"id":1},{"id":1}]',
+    '[]',
+  ]) {
+    test('invalid playlist $raw fails without starting playback', () async {
+      playlistGetter = (_) async => raw;
+      final result = await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse('https://example.com/one.wav'),
+        title: 'one',
+        autoPlay: true,
+      );
+      expect(result.errorCodeOrNull, NativeErrorCode.playerError);
+      expect(playlistReads, 1);
+      expect(players.single.plays, 0);
+    });
+  }
+
+  for (final action in ['replace', 'remove']) {
+    test(
+      '$action during native playlist read discards its old mapping',
+      () async {
+        final gate = Completer<String>();
+        final started = Completer<void>();
+        playlistGetter = (player) async {
+          if (!started.isCompleted) {
+            started.complete();
+            return gate.future;
+          }
+          return _playlistJson(player);
+        };
+        final old = bridge.prepareSession(
+          sessionId: 'one',
+          uri: Uri.parse('https://example.com/old.wav'),
+          title: 'old',
+          autoPlay: true,
+        );
+        await started.future;
+        final ids = _playlistJson(bridge.playerForSession('one')!);
+        final next = action == 'replace'
+            ? bridge.prepareSession(
+                sessionId: 'one',
+                uri: Uri.parse('https://example.com/new.wav'),
+                title: 'new',
+                autoPlay: true,
+              )
+            : bridge.removeSession('one');
+        gate.complete(ids);
+        expect((await old).isFailure, true);
+        expect((await next).isOk, true);
+        if (action == 'replace') {
+          expect(players.single.opens, 2);
+          expect(players.single.plays, 1);
+          expect(
+            (await bridge.snapshot()).valueOrNull!.sessions.single.title,
+            'new',
+          );
+        } else {
+          expect(bridge.playerForSession('one'), isNull);
+          expect((await bridge.snapshot()).valueOrNull!.sessions, isEmpty);
+        }
+      },
+    );
+  }
+
+  test(
+    'failed live seek preserves position, playback intent and source error',
+    () async {
+      await prepare('one');
+      final player = players.single;
+      player.loaded();
+      await bridge.seek('one', const Duration(seconds: 7));
+      player.seekError = StateError('seek failed');
+      final result = await bridge.seek('one', const Duration(seconds: 20));
+      expect(result.errorCodeOrNull, NativeErrorCode.playerError);
+      final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(snapshot.position, const Duration(seconds: 7));
+      expect(snapshot.playing, true);
+      expect(snapshot.playWhenReady, true);
+      expect(snapshot.error, isNull);
+      expect(player.disposed, false);
+      player.seekError = null;
+      expect(
+        (await bridge.seek('one', const Duration(seconds: 30))).isOk,
+        true,
+      );
+    },
+  );
+
+  test(
+    'a live seek publishes its target only after the player succeeds',
+    () async {
+      await prepare('one');
+      final player = players.single;
+      player.loaded();
+      await bridge.seek('one', const Duration(seconds: 7));
+      player
+        ..seekGate = Completer()
+        ..seekStarted = Completer();
+      final seek = bridge.seek('one', const Duration(seconds: 20));
+      await player.seekStarted!.future;
+      expect(
+        (await bridge.snapshot()).valueOrNull!.sessions.single.position,
+        const Duration(seconds: 7),
+      );
+      player.seekGate!.complete();
+      expect((await seek).valueOrNull!.position, const Duration(seconds: 20));
+    },
+  );
 
   test('deferred sessions create a player only while playing', () async {
     await prepare('one', deferred: true);
@@ -1055,6 +1185,7 @@ void main() {
         autoPlay: true,
       );
       final player = players.single;
+      expect(playlistReads, 1);
       player.loaded();
       await bridge.seek('one', const Duration(seconds: 17));
       final added = {'uri': 'https://example.com/last.wav', 'path': '/last'};
@@ -1069,6 +1200,7 @@ void main() {
       expect(player.adds, 1);
       expect(player.moves, 0);
       expect(player.removes, 0);
+      expect(playlistReads, 3);
       expect(
         (await bridge.updateQueue(
           'one',
@@ -1080,6 +1212,7 @@ void main() {
       expect(player.opens, 1);
       expect(player.removes, 1);
       expect(player.moves, 0);
+      expect(playlistReads, 5);
       expect(
         player.state.playlist.medias.map((item) => item.uri),
         original.map((item) => item['uri']),
@@ -1495,7 +1628,7 @@ class _Player extends PlatformPlayer {
   }
 
   int opens = 0, plays = 0, adds = 0, removes = 0, moves = 0;
-  Object? pauseError, addError;
+  Object? pauseError, addError, seekError;
   Completer<void>? pauseGate, pauseStarted;
   Completer<void>? openGate,
       openStarted,
@@ -1603,6 +1736,7 @@ class _Player extends PlatformPlayer {
     seeks.add(position);
     if (seekStarted?.isCompleted == false) seekStarted!.complete();
     await seekGate?.future;
+    if (seekError != null) throw seekError!;
     state = state.copyWith(position: position);
     positionController.add(position);
   }
@@ -1656,3 +1790,8 @@ class _Player extends PlatformPlayer {
     await super.dispose();
   }
 }
+
+String _playlistJson(Player player) => jsonEncode([
+  for (final media in player.state.playlist.medias)
+    {'id': identityHashCode(media), 'filename': media.uri},
+]);

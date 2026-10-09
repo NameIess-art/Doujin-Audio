@@ -74,7 +74,7 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
         final updatedTrack = track.copyWith(
           duration: normalizedSnapshot.duration!,
         );
-        _libraryFacade.updateTrackSnapshot(updatedTrack);
+        _libraryFacade.updateTrackDuration(trackPath, updatedTrack.duration);
         _playbackFacade.replaceSessionTrackSnapshots(updatedTrack);
       }
     }

@@ -28,8 +28,14 @@ class SqliteLibraryRepository
   Future<void> saveAllTracks(List<MusicTrack> tracks) =>
       _database.saveAllTracks(tracks);
   @override
-  Future<void> upsertTracks(List<MusicTrack> tracks) =>
-      _database.upsertTracks(tracks);
+  Future<void> upsertCatalogTracks(List<MusicTrack> tracks) =>
+      _database.upsertCatalogTracks(tracks);
+  @override
+  Future<void> updateTrackDurations(Map<String, Duration> durations) =>
+      _database.updateTrackDurations(durations);
+  @override
+  Future<void> updateTrackManualCoverPaths(Map<String, String> paths) =>
+      _database.updateTrackManualCoverPaths(paths);
   @override
   Future<void> commitLibraryBatch({
     required List<MusicTrack> tracks,

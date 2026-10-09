@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:charset/charset.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -39,6 +40,112 @@ class _FakeFileCacheGateway extends Fake implements FileCachePlatformGateway {
 }
 
 void main() {
+  group('document preparation', () {
+    test(
+      'one MiB TXT preserves exact whitespace and Unicode at newline boundaries',
+      () async {
+        final service = WorkTextService();
+        final text = '${'  台本😀\t\r\n' * 75000}终章';
+        final bytes = Uint8List.fromList(utf8.encode(text));
+        expect(bytes.length, greaterThan(1024 * 1024));
+        final prepared = await service.prepareDocument(
+          bytes,
+          type: WorkDocType.text,
+        );
+        expect(prepared.encoding, WorkTextEncoding.utf8);
+        expect(prepared.textBlocks.join(), text);
+        expect(prepared.textBlocks.length, greaterThan(10));
+        expect(
+          prepared.textBlocks
+              .take(prepared.textBlocks.length - 1)
+              .every((block) => block.endsWith('\n')),
+          isTrue,
+        );
+        expect(prepared.markdownNodes, isEmpty);
+      },
+    );
+
+    test('a long single line remains one Unicode-safe block', () async {
+      final text = '😀' * 40000;
+      final prepared = await WorkTextService().prepareDocument(
+        Uint8List.fromList(utf8.encode(text)),
+        type: WorkDocType.text,
+      );
+      expect(prepared.textBlocks, [text]);
+    });
+
+    test(
+      'complete Markdown resolves distant references and does not split fenced code lists or tables',
+      () async {
+        final source =
+            '[远端引用][target]\n\n```text\n${'内容😀\n' * 6000}```\n\n'
+            '- 第一项\n- 第二项\n\n| 标题 | 内容 |\n| --- | --- |\n| A | B |\n\n[target]: https://example.com/target\n';
+        final prepared = await WorkTextService().prepareDocument(
+          Uint8List.fromList(utf8.encode(source)),
+          type: WorkDocType.markdown,
+        );
+        final nodes = prepared.markdownNodes.cast<md.Element>();
+        expect(nodes.map((node) => node.tag), ['p', 'pre', 'ul', 'table']);
+        final link = nodes.first.children!.single as md.Element;
+        expect(link.attributes['href'], 'https://example.com/target');
+        expect(nodes.elementAt(1).textContent, '内容😀\n' * 6000);
+        expect(nodes.elementAt(2).children, hasLength(2));
+        expect(prepared.textBlocks, isEmpty);
+      },
+    );
+
+    test(
+      'one MiB Markdown prepares complete top level AST in background',
+      () async {
+        final source = '# 标题\n\n${'段落内容文字。\n\n' * 50000}尾段';
+        final bytes = Uint8List.fromList(utf8.encode(source));
+        expect(bytes.length, greaterThan(1024 * 1024));
+        final prepared = await WorkTextService().prepareDocument(
+          bytes,
+          type: WorkDocType.markdown,
+        );
+        expect(prepared.markdownNodes, hasLength(50002));
+        expect(prepared.markdownNodes.first.textContent, '标题');
+        expect(prepared.markdownNodes.last.textContent, '尾段');
+      },
+    );
+
+    test('preparation supports legacy encoding override and BOM', () async {
+      const text = '台本：おはようございます。';
+      for (final entry in [
+        (Uint8List.fromList(shiftJis.encode(text)), WorkTextEncoding.shiftJis),
+        (Uint8List.fromList(gbk.encode('中文台本')), WorkTextEncoding.gbk),
+        (
+          Uint8List.fromList([
+            0xFF,
+            0xFE,
+            ...text.codeUnits.expand((unit) => [unit & 255, unit >> 8]),
+          ]),
+          WorkTextEncoding.utf16Le,
+        ),
+        (
+          Uint8List.fromList([
+            0xFE,
+            0xFF,
+            ...text.codeUnits.expand((unit) => [unit >> 8, unit & 255]),
+          ]),
+          WorkTextEncoding.utf16Be,
+        ),
+      ]) {
+        final prepared = await WorkTextService().prepareDocument(
+          entry.$1,
+          type: WorkDocType.text,
+          encodingOverride: entry.$2,
+        );
+        expect(prepared.encoding, entry.$2);
+        expect(
+          prepared.textBlocks.join(),
+          decodeWorkText(entry.$1, overrideEncoding: entry.$2).text,
+        );
+      }
+    });
+  });
+
   group('decodeWorkText', () {
     test('decodes UTF-8 text correctly without BOM', () {
       const original = '第一話：おはようございます。汉化剧本测试。';

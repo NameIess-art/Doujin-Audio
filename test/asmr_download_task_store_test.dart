@@ -21,6 +21,7 @@ void main() {
         downloadedBytes: 512,
         fileDownloadedBytes: const {'track.mp3': 512},
         fileRetryAttempts: const {'track.mp3': 2},
+        fileEntityTags: const {'track.mp3': '"entity-a"'},
         manuallyRetryingFilePaths: const {'track.mp3'},
       );
       final payload = await compute(encodePersistedDownloadTasks, [
@@ -43,12 +44,35 @@ void main() {
         'track.mp3',
       );
       expect(restored.tasks.single.task.fileRetryAttempts, isEmpty);
+      expect(restored.tasks.single.task.fileEntityTags, {
+        'track.mp3': '"entity-a"',
+      });
       expect(restored.tasks.single.task.manuallyRetryingFilePaths, isEmpty);
       expect(restored.tasks.single.createdOutputPaths, {
         'C:/Downloads/Work 1/track.mp3',
       });
 
       final decoded = jsonDecode(payload) as Map<String, dynamic>;
+      expect(decoded['version'], 2);
+      final taskJson = (decoded['tasks'] as List).single as Map;
+      taskJson['fileEntityTags'] = {
+        'track.mp3': '"entity-a"',
+        'weak.mp3': 'W/"entity-a"',
+        'invalid.mp3': 'unquoted',
+      };
+      expect(
+        decodePersistedDownloadTasks(
+          jsonEncode(decoded),
+        ).tasks.single.task.fileEntityTags,
+        {'track.mp3': '"entity-a"'},
+      );
+      decoded['version'] = 1;
+      expect(
+        decodePersistedDownloadTasks(
+          jsonEncode(decoded),
+        ).tasks.single.task.fileEntityTags,
+        isEmpty,
+      );
       (decoded['tasks'] as List).add({'work': null});
       final partial = await compute(
         decodePersistedDownloadTasks,
@@ -213,7 +237,7 @@ void main() {
     await manager.debugRunStructuralPersistenceForTesting();
     expect(writes, hasLength(1));
     final payload = jsonDecode(writes.single!) as Map<String, Object?>;
-    expect(payload['version'], 1);
+    expect(payload['version'], 2);
     expect(payload['tasks'], hasLength(2));
   });
 
@@ -251,7 +275,7 @@ void main() {
       hasLength(1),
     );
     final payload = jsonDecode(writes.single!) as Map<String, Object?>;
-    expect(payload['version'], 1);
+    expect(payload['version'], 2);
     final task = (payload['tasks'] as List<Object?>).single as Map;
     expect(task['downloadedBytes'], 100);
 
@@ -321,7 +345,7 @@ void main() {
     expect(shutdownWrites, hasLength(1));
     expect(
       (jsonDecode(shutdownWrites.single!) as Map<String, Object?>)['version'],
-      1,
+      2,
     );
     await shuttingDownManager.shutdown();
     expect(shutdownWrites, hasLength(1));

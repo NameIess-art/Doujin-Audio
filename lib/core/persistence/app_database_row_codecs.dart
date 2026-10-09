@@ -97,7 +97,12 @@ Map<String, List<String>> _trackTagsByPath(List<Map<String, Object?>> rows) {
   );
 }
 
-void _writeTrackToBatch(Batch batch, MusicTrack track, {int? scanGeneration}) {
+void _writeTrackToBatch(
+  Batch batch,
+  MusicTrack track, {
+  int? scanGeneration,
+  bool writeDeferredDetails = true,
+}) {
   batch.insert(
     'tracks',
     _trackCoreRow(track),
@@ -118,6 +123,7 @@ void _writeTrackToBatch(Batch batch, MusicTrack track, {int? scanGeneration}) {
     _trackAssetsRow(track),
     conflictAlgorithm: ConflictAlgorithm.replace,
   );
+  if (!writeDeferredDetails) return;
   batch.insert(
     'track_remote_metadata',
     _trackRemoteMetadataRow(track),

@@ -31,6 +31,12 @@ final class LibraryCatalogWriteCoordinator {
   final void Function() _syncStateSlice;
   void Function(List<String>)? _trackRemovalHandler;
   _LibraryBatchSnapshot? _batchBefore;
+  final _refreshTrackWrites = <String, MusicTrack>{};
+  final _refreshEntryWrites = <String, Map<String, LibraryEntry>>{};
+  final _refreshRemovedTracks = <String, MusicTrack>{};
+  final _refreshRemovedEntries = <String, Map<String, LibraryEntry>>{};
+  final _refreshFolderWrites = <String, bool>{};
+  bool _stagedRefresh = false;
   final _removedTrackPaths = <String>{};
   final _removedEntryPaths = <String, Set<String>>{};
   void attachTrackRemovalHandler(void Function(List<String>) handler) {
@@ -82,6 +88,7 @@ final class LibraryCatalogWriteCoordinator {
     bool persist = true,
     LibraryExclusionMatcher? exclusionMatcher,
     LibraryEntrySnapshot? entrySnapshot,
+    bool refreshWrite = false,
   }) {
     var entries = _service.buildLibraryEntries(
       libraryPath,
@@ -96,6 +103,17 @@ final class LibraryCatalogWriteCoordinator {
     }
     if (entries.isEmpty) return;
     _service.replaceLibraryEntries(entries);
+    if (refreshWrite) {
+      for (final entry in entries) {
+        _refreshEntryWrites.putIfAbsent(
+          PathMatcher.normalize(entry.libraryPath),
+          () => <String, LibraryEntry>{},
+        )[PathMatcher.normalize(entry.path)] = _service.libraryEntryForPath(
+          entry.libraryPath,
+          entry.path,
+        )!;
+      }
+    }
     entrySnapshot?.remember(entries);
     _persistenceCoordinator.queueOrPersistEntries(entries, persist: persist);
   }
@@ -129,7 +147,7 @@ final class LibraryCatalogWriteCoordinator {
     _coverArtwork()?.invalidateCatalogTracks(mutation.tracks);
     _markLibraryStructureChanged();
     if (persist && _persistenceCoordinator.enabled) {
-      unawaited(databaseRepository.upsertTracks(mutation.tracks));
+      unawaited(databaseRepository.upsertCatalogTracks(mutation.tracks));
       if (mutation.didChangeGroupOrder) {
         unawaited(_persistenceCoordinator.saveGroupOrder());
       }
@@ -141,6 +159,7 @@ final class LibraryCatalogWriteCoordinator {
     bool notify = true,
     bool persist = true,
     bool mergeExistingState = true,
+    bool recordEntries = true,
   }) {
     if (tracks.isEmpty) return;
     final mutation = _service.addOrReplaceTracks(
@@ -149,12 +168,14 @@ final class LibraryCatalogWriteCoordinator {
       mergeExistingState: mergeExistingState,
     );
     if (mutation.tracks.isEmpty) return;
-    recordEntriesForTracks(mutation.tracks, persist: persist);
+    if (recordEntries) {
+      recordEntriesForTracks(mutation.tracks, persist: persist);
+    }
     if (mutation.batched) return;
     _coverArtwork()?.invalidateCatalogTracks(mutation.tracks);
     _markLibraryStructureChanged();
     if (persist && _persistenceCoordinator.enabled) {
-      unawaited(databaseRepository.upsertTracks(mutation.tracks));
+      unawaited(databaseRepository.upsertCatalogTracks(mutation.tracks));
       if (mutation.didChangeGroupOrder || mutation.didReplaceGroup) {
         unawaited(_persistenceCoordinator.saveGroupOrder());
       }
@@ -265,12 +286,16 @@ final class LibraryCatalogWriteCoordinator {
 
   void beginStagedLibraryRefresh() {
     beginLibraryBatch();
+    _stagedRefresh = true;
   }
 
   int applyStagedLibraryRefreshChunk({
     required String sourceFolderPath,
     required String libraryRoot,
     List<MusicTrack> tracks = const <MusicTrack>[],
+    List<MusicTrack> entryTracks = const <MusicTrack>[],
+    LibraryExclusionMatcher? exclusionMatcher,
+    LibraryEntrySnapshot? entrySnapshot,
     Iterable<String> folderPaths = const <String>[],
     Iterable<String> removeWatchedFolders = const <String>[],
     Iterable<String> addWatchedFolders = const <String>[],
@@ -280,32 +305,193 @@ final class LibraryCatalogWriteCoordinator {
   }) {
     for (final folderPath in removeWatchedFolders) {
       removeWatchedFolder(folderPath, notify: false);
+      _refreshFolderWrites[PathMatcher.normalize(folderPath)] = false;
     }
-    if (tracks.isNotEmpty || folderPaths.isNotEmpty) {
+    if (tracks.isNotEmpty || entryTracks.isNotEmpty || folderPaths.isNotEmpty) {
       recordLibraryEntriesForTracks(
         libraryRoot,
-        tracks,
+        entryTracks.isEmpty ? tracks : entryTracks,
         folderPaths: folderPaths,
         persist: persist,
+        exclusionMatcher: exclusionMatcher,
+        entrySnapshot: entrySnapshot,
+        refreshWrite: true,
       );
     }
     for (final folderPath in addWatchedFolders) {
       addWatchedFolder(folderPath, notify: false);
+      _refreshFolderWrites[PathMatcher.normalize(folderPath)] = true;
     }
     final beforeCount = _service.library.length;
     if (tracks.isNotEmpty) {
-      addOrReplaceTracks(tracks, notify: false, persist: persist);
+      addOrReplaceTracks(
+        tracks,
+        notify: false,
+        persist: persist,
+        recordEntries: false,
+      );
+      for (final track in tracks) {
+        final current = _service.libraryByPath[track.path];
+        if (current != null) _refreshTrackWrites[current.path] = current;
+      }
     }
     final tracksToRemove = removeTrackPaths.toList(growable: false);
+    for (final trackPath in tracksToRemove) {
+      final current = _service.libraryByPath[trackPath];
+      if (current != null) _refreshRemovedTracks[trackPath] = current;
+    }
     if (tracksToRemove.isNotEmpty) removeTracksByPath(tracksToRemove);
     final entriesToRemove = removeEntryPaths.toList(growable: false);
     if (entriesToRemove.isNotEmpty) {
+      for (final entryPath in entriesToRemove) {
+        final current = _service.libraryEntryForPath(libraryRoot, entryPath);
+        if (current == null) continue;
+        _refreshRemovedEntries.putIfAbsent(
+          PathMatcher.normalize(libraryRoot),
+          () => <String, LibraryEntry>{},
+        )[PathMatcher.normalize(entryPath)] = current;
+      }
       removeLibraryEntriesByPaths(libraryRoot, entriesToRemove);
     }
     return _service.library.length - beforeCount;
   }
 
-  Future<void> finishStagedLibraryRefresh() => endLibraryBatch();
+  Future<void> finishStagedLibraryRefresh({bool commit = true}) async {
+    if (commit) return endLibraryBatch();
+    final before = _batchBefore;
+    if (before == null) return;
+    _batchBefore = null;
+    final changed = _service.libraryBatchChanged;
+    final affected = changed ? _affectedTracks(before) : const <MusicTrack>[];
+    _rollbackRefreshWrites(before);
+    _service.libraryBatchDepth = 0;
+    _clearBatch();
+    if (changed) {
+      await _rebuildDerivedSnapshot();
+      _coverArtwork()?.invalidateCatalogTracks(affected);
+    }
+  }
+
+  void _rollbackRefreshWrites(_LibraryBatchSnapshot before) {
+    final originalTracks = {
+      for (final track in before.tracks) track.path: track,
+    };
+    final tracks = <MusicTrack>[];
+    for (final current in _service.library) {
+      final scanned = _refreshTrackWrites[current.path];
+      if (scanned == null) {
+        tracks.add(current);
+        continue;
+      }
+      final original = originalTracks[current.path];
+      if (original == null) {
+        if (!identical(current, scanned)) tracks.add(current);
+        continue;
+      }
+      tracks.add(_restoreRefreshTrack(current, scanned, original));
+    }
+    for (final entry in _refreshRemovedTracks.entries) {
+      final original = originalTracks[entry.key];
+      if (original == null || _service.libraryByPath.containsKey(entry.key)) {
+        continue;
+      }
+      tracks.add(
+        _restoreRefreshTrack(
+          entry.value,
+          _refreshTrackWrites[entry.key] ?? entry.value,
+          original,
+        ),
+      );
+    }
+    _service.library = tracks;
+    _service.rebuildLibraryIndexes();
+    _service.syncGroupOrderFromLibrary();
+    for (final root in _refreshEntryWrites.entries) {
+      final currentEntries = _service.libraryEntriesByLibrary[root.key];
+      if (currentEntries == null) continue;
+      for (final entry in root.value.entries) {
+        if (!identical(currentEntries[entry.key], entry.value)) continue;
+        final original = before.entries[root.key]?[entry.key];
+        if (original == null) {
+          currentEntries.remove(entry.key);
+        } else {
+          currentEntries[entry.key] = original;
+        }
+      }
+    }
+    for (final root in _refreshRemovedEntries.entries) {
+      final current = _service.libraryEntriesByLibrary[root.key];
+      if (current == null) continue;
+      for (final entry in root.value.entries) {
+        final original = before.entries[root.key]?[entry.key];
+        if (original != null && !current.containsKey(entry.key)) {
+          current[entry.key] = original.copyWith(state: entry.value.state);
+        }
+      }
+    }
+    for (final entry in _refreshFolderWrites.entries) {
+      final present = _service.watchedFolders.any(
+        (folder) => PathMatcher.equalsNormalized(folder, entry.key),
+      );
+      if (present != entry.value) continue;
+      final wasPresent = before.folders.any(
+        (folder) => PathMatcher.equalsNormalized(folder, entry.key),
+      );
+      if (wasPresent) {
+        _service.addWatchedFolder(entry.key);
+      } else {
+        _service.removeWatchedFolder(entry.key);
+      }
+    }
+  }
+
+  // Native snapshots and authored edits can arrive between scan chunks.
+  // Only restore catalog fields still equal to this scan's last write.
+  MusicTrack _restoreRefreshTrack(
+    MusicTrack current,
+    MusicTrack scanned,
+    MusicTrack original,
+  ) => MusicTrack(
+    path: current.path,
+    displayName: current.displayName == scanned.displayName
+        ? original.displayName
+        : current.displayName,
+    groupKey: current.groupKey == scanned.groupKey
+        ? original.groupKey
+        : current.groupKey,
+    groupTitle: current.groupTitle == scanned.groupTitle
+        ? original.groupTitle
+        : current.groupTitle,
+    groupSubtitle: current.groupSubtitle == scanned.groupSubtitle
+        ? original.groupSubtitle
+        : current.groupSubtitle,
+    isSingle: current.isSingle == scanned.isSingle
+        ? original.isSingle
+        : current.isSingle,
+    isVideo: current.isVideo == scanned.isVideo
+        ? original.isVideo
+        : current.isVideo,
+    scannedAt: current.scannedAt == scanned.scannedAt
+        ? original.scannedAt
+        : current.scannedAt,
+    fileSizeBytes: current.fileSizeBytes == scanned.fileSizeBytes
+        ? original.fileSizeBytes
+        : current.fileSizeBytes,
+    modifiedAt: current.modifiedAt == scanned.modifiedAt
+        ? original.modifiedAt
+        : current.modifiedAt,
+    duration: current.duration,
+    lastPlayedPosition: current.lastPlayedPosition,
+    lastPlayedAt: current.lastPlayedAt,
+    isFavorite: current.isFavorite,
+    tags: current.tags,
+    coverCachePath: current.coverCachePath,
+    lyricsPath: current.lyricsPath,
+    manualCoverPath: current.manualCoverPath,
+    remoteCoverUrl: current.remoteCoverUrl,
+    remoteMetadataKind: current.remoteMetadataKind,
+    remoteMetadata: current.remoteMetadata,
+  );
 
   Future<void> endLibraryBatch({bool notify = true}) async {
     if (_service.libraryBatchDepth <= 0) return;
@@ -361,7 +547,11 @@ final class LibraryCatalogWriteCoordinator {
       }
     } catch (_) {
       final affected = _affectedTracks(before);
-      before.restore(_service);
+      if (_stagedRefresh) {
+        _rollbackRefreshWrites(before);
+      } else {
+        before.restore(_service);
+      }
       _clearBatch();
       await _rebuildDerivedSnapshot();
       _coverArtwork()?.invalidateCatalogTracks(affected);
@@ -399,6 +589,12 @@ final class LibraryCatalogWriteCoordinator {
       ..libraryBatchPersistEntriesByKey.clear();
     _removedTrackPaths.clear();
     _removedEntryPaths.clear();
+    _refreshTrackWrites.clear();
+    _refreshEntryWrites.clear();
+    _refreshRemovedTracks.clear();
+    _refreshRemovedEntries.clear();
+    _refreshFolderWrites.clear();
+    _stagedRefresh = false;
   }
 
   Future<void> _rebuildDerivedSnapshot() async {

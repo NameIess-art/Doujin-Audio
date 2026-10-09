@@ -4,10 +4,11 @@ import '../domain/asmr_download.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_download_models.dart';
 import 'asmr_download_internal_models.dart';
+import 'asmr_download_io.dart';
 
 String encodePersistedDownloadTasks(List<PersistedDownloadTask> tasks) =>
     jsonEncode(<String, Object?>{
-      'version': 1,
+      'version': 2,
       'tasks': tasks
           .map(
             (snapshot) => downloadTaskToJson(
@@ -27,7 +28,9 @@ decodePersistedDownloadTasks(String payload) {
     if (decoded is Map && decoded['tasks'] is List) {
       for (final value in decoded['tasks'] as List) {
         if (value is! Map) continue;
-        final restored = downloadTaskFromJson(Map<String, dynamic>.from(value));
+        final taskJson = Map<String, dynamic>.from(value);
+        if (decoded['version'] != 2) taskJson.remove('fileEntityTags');
+        final restored = downloadTaskFromJson(taskJson);
         tasks.add(
           PersistedDownloadTask(
             task: restored.task.copyWith(
@@ -74,6 +77,7 @@ Map<String, Object?> downloadTaskToJson(
   'error': task.error,
   'fileDownloadedBytes': task.fileDownloadedBytes,
   'fileTotalBytes': task.fileTotalBytes,
+  'fileEntityTags': task.fileEntityTags,
   'completedFilePaths': task.completedFilePaths.toList(growable: false),
   'failedFilePaths': task.failedFilePaths.toList(growable: false),
   'selectedRoots': task.selectedRoots.map(_downloadTrackToJson).toList(),
@@ -130,6 +134,7 @@ PersistedDownloadTask downloadTaskFromJson(Map<String, dynamic> json) {
       error: json['error'] as String?,
       fileDownloadedBytes: _jsonIntMap(json['fileDownloadedBytes']),
       fileTotalBytes: _jsonIntMap(json['fileTotalBytes']),
+      fileEntityTags: _jsonEntityTags(json['fileEntityTags']),
       completedFilePaths:
           (json['completedFilePaths'] as List? ?? const <Object>[])
               .whereType<String>()
@@ -210,6 +215,15 @@ Map<String, int> _jsonIntMap(Object? value) {
     for (final entry in value.entries)
       if (entry.key is String && entry.value is num)
         entry.key as String: (entry.value as num).toInt(),
+  };
+}
+
+Map<String, String> _jsonEntityTags(Object? value) {
+  if (value is! Map<Object?, Object?>) return const {};
+  return <String, String>{
+    for (final entry in value.entries)
+      if (entry.key is String)
+        entry.key as String: ?strongDownloadEntityTag(entry.value),
   };
 }
 

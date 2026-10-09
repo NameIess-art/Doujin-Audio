@@ -789,6 +789,9 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     required String sourceFolderPath,
     required String libraryRoot,
     List<MusicTrack> tracks = const <MusicTrack>[],
+    List<MusicTrack> entryTracks = const <MusicTrack>[],
+    LibraryExclusionMatcher? exclusionMatcher,
+    LibraryEntrySnapshot? entrySnapshot,
     Iterable<String> folderPaths = const <String>[],
     Iterable<String> removeWatchedFolders = const <String>[],
     Iterable<String> addWatchedFolders = const <String>[],
@@ -799,6 +802,9 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     sourceFolderPath: sourceFolderPath,
     libraryRoot: libraryRoot,
     tracks: tracks,
+    entryTracks: entryTracks,
+    exclusionMatcher: exclusionMatcher,
+    entrySnapshot: entrySnapshot,
     folderPaths: folderPaths,
     removeWatchedFolders: removeWatchedFolders,
     addWatchedFolders: addWatchedFolders,
@@ -808,8 +814,8 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   );
 
   @override
-  Future<void> finishStagedLibraryRefresh() =>
-      _catalogWrites.finishStagedLibraryRefresh();
+  Future<void> finishStagedLibraryRefresh({bool commit = true}) =>
+      _catalogWrites.finishStagedLibraryRefresh(commit: commit);
 
   @override
   Future<void> endLibraryBatch({bool notify = true}) =>
@@ -955,8 +961,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       libraryService: _service,
       databaseRepository: databaseRepository,
       audioDetailCacheService: detailCacheService,
-      persistRetargetedManualCovers: (tracks) =>
-          addOrReplaceTracks(tracks, mergeExistingState: false),
+      persistRetargetedManualCovers: _persistRetargetedManualCovers,
       isActiveCoverKey: isActiveCoverKey,
       onActiveCoverChanged: onActiveCoverChanged,
       preferEmbeddedCover: preferEmbeddedCover,
@@ -978,14 +983,41 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   }
 
   @override
-  void updateTrackSnapshot(MusicTrack updatedTrack) {
-    final currentTrack = _service.libraryByPath[updatedTrack.path];
-    if (currentTrack == null) return;
-    _service.libraryByPath[updatedTrack.path] = updatedTrack;
-    final index = _service.library.indexOf(currentTrack);
-    if (index >= 0) _service.library[index] = updatedTrack;
+  void updateTrackDuration(String trackPath, Duration duration) {
+    final currentTrack = _service.libraryByPath[trackPath];
+    if (currentTrack == null ||
+        currentTrack.duration > Duration.zero ||
+        duration <= Duration.zero) {
+      return;
+    }
+    final updatedTrack = currentTrack.copyWith(duration: duration);
+    _service.libraryByPath[trackPath] = updatedTrack;
+    final index = _service.libraryIndexByPath[trackPath];
+    if (index != null) _service.library[index] = updatedTrack;
     if (_persistenceCoordinator.enabled) {
-      unawaited(databaseRepository.upsertTracks(<MusicTrack>[updatedTrack]));
+      unawaited(databaseRepository.updateTrackDurations({trackPath: duration}));
+    }
+  }
+
+  Future<void> _persistRetargetedManualCovers(
+    List<({MusicTrack original, String savedPath})> tracks,
+  ) async {
+    final updated = <MusicTrack>[
+      for (final selection in tracks)
+        if (_service.libraryByPath[selection.original.path] case final current?)
+          if (current.manualCoverPath == selection.original.manualCoverPath)
+            current.copyWith(manualCoverPath: selection.savedPath),
+    ];
+    _catalogWrites.addOrReplaceTracks(
+      updated,
+      mergeExistingState: false,
+      persist: false,
+      recordEntries: false,
+    );
+    if (_persistenceCoordinator.enabled) {
+      await databaseRepository.updateTrackManualCoverPaths({
+        for (final track in updated) track.path: track.manualCoverPath!,
+      });
     }
   }
 

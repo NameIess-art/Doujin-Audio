@@ -521,10 +521,33 @@ final class PlaybackFacade {
       _onSessionPositionChanged?.call(session, clamped);
     }
     if (session.loadedPath == null && !session.playbackRequested) {
+      _seekDispatcher.forgetSession(session.id);
       scheduleSessionStatePersistence(sessionId: session.id);
       return;
     }
-    await _seekDispatcher.dispatch(session, clamped, session.loadGeneration);
+    await _seekDispatcher.dispatch(
+      session,
+      clamped,
+      session.loadGeneration,
+      correctPosition: (snapshot) {
+        final path = snapshot.path ?? _pathFromSnapshotUri(snapshot.uri);
+        if (path == null ||
+            !PathMatcher.equalsNormalized(
+              resolveRetargetedPath(path),
+              session.currentTrackPath,
+            )) {
+          return false;
+        }
+        session.setOptimisticPosition(snapshot.position);
+        session.lastPersistedPositionBucket =
+            snapshot.position.inSeconds ~/ positionBucketSeconds;
+        if (!_sessionObserversAttached) {
+          _onSessionPositionChanged?.call(session, snapshot.position);
+        }
+        _scheduleSessionPlaybackStatePersistence(session.id);
+        return true;
+      },
+    );
   }
 
   Future<void> seekSessionByOffset(String sessionId, Duration offset) async {

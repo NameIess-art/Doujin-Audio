@@ -969,6 +969,328 @@ void main() {
     },
   );
 
+  group('seek failure reconciliation', () {
+    late LibraryFacade library;
+    late _RecordingTestPersistenceRepository database;
+    late _RecordingNativePlaybackRepository native;
+    late PlaybackFacade playback;
+    late PlaybackSession session;
+
+    setUp(() {
+      database = _RecordingTestPersistenceRepository();
+      library = LibraryFacade.create(databaseRepository: database);
+      native = _RecordingNativePlaybackRepository();
+      playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      session = _session('failed-seek')
+        ..loadedPath = '/tracks/failed-seek.mp3'
+        ..lastKnownPosition = const Duration(seconds: 7)
+        ..volume = 0.6
+        ..speed = 1.5;
+      playback.registerSession(session);
+      native.snapshotResponse = NativeSuccess(
+        NativePlaybackBundleSnapshot(
+          sessions: [_seekSnapshot(session.id, const Duration(seconds: 7))],
+        ),
+      );
+    });
+    tearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+
+    for (final throws in [false, true]) {
+      test(
+        'a ${throws ? 'thrown' : 'returned'} failure corrects only position',
+        () async {
+          final positions = <Duration>[];
+          playback.attachSessionRuntime(
+            onSessionRegistered: (_) {},
+            onSessionsReordered: () {},
+            onSessionStateChanged: () {},
+            onSessionPositionChanged: (_, position) => positions.add(position),
+          );
+          native.failSeek = !throws;
+          native.seekError = throws ? StateError('native seek failed') : null;
+          await playback.seekSession(session.id, const Duration(seconds: 20));
+
+          expect(native.snapshotCalls, 1);
+          expect(session.position, const Duration(seconds: 7));
+          expect(session.lastPersistedPositionBucket, 1);
+          expect(positions.last, const Duration(seconds: 7));
+          expect(session.currentTrackPath, '/tracks/failed-seek.mp3');
+          expect(session.volume, 0.6);
+          expect(session.speed, 1.5);
+          expect(session.playbackError, isNull);
+        },
+      );
+    }
+
+    for (final firstSucceeds in [true, false]) {
+      test(
+        'coalesced latest failure uses actual position after first ${firstSucceeds ? 'success' : 'failure'}',
+        () async {
+          final gate = Completer<NativeResult<NativePlaybackSnapshot>>();
+          native.seekGate = gate;
+          final first = playback.seekSession(
+            session.id,
+            const Duration(seconds: 10),
+          );
+          final second = playback.seekSession(
+            session.id,
+            const Duration(seconds: 20),
+          );
+          final third = playback.seekSession(
+            session.id,
+            const Duration(seconds: 30),
+          );
+          native
+            ..seekGate = null
+            ..failSeek = true
+            ..snapshotResponse = NativeSuccess(
+              NativePlaybackBundleSnapshot(
+                sessions: [
+                  _seekSnapshot(
+                    session.id,
+                    Duration(seconds: firstSucceeds ? 10 : 7),
+                  ),
+                ],
+              ),
+            );
+          gate.complete(
+            firstSucceeds
+                ? NativeSuccess(
+                    _seekSnapshot(session.id, const Duration(seconds: 10)),
+                  )
+                : const NativeFailure('first seek failed'),
+          );
+          await Future.wait([first, second, third]);
+
+          expect(native.seekPositions, [
+            const Duration(seconds: 10),
+            const Duration(seconds: 30),
+          ]);
+          expect(native.snapshotCalls, 1);
+          expect(session.position, Duration(seconds: firstSucceeds ? 10 : 7));
+        },
+      );
+    }
+
+    test(
+      'the corrected position is persisted instead of the failed target',
+      () async {
+        playback.configurePersistence(enabled: true);
+        await playback.flushSessionStatePersistence(sessionId: session.id);
+        native
+          ..failSeek = true
+          ..snapshotGate = Completer()
+          ..snapshotStarted = Completer();
+        final failed = playback.seekSession(
+          session.id,
+          const Duration(seconds: 20),
+        );
+        await native.snapshotStarted!.future;
+        await playback.flushSessionStatePersistence(sessionId: session.id);
+        expect(database.lastPlaybackState?.positionMs, 20000);
+        database.sessionUpserts.clear();
+        native.snapshotGate!.complete(native.snapshotResponse!);
+        await failed;
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+        expect(database.sessionStateUpserts, 1);
+        expect(database.lastPlaybackState?.positionMs, 7000);
+        expect(database.sessionUpserts, isEmpty);
+      },
+    );
+
+    test(
+      'a cold local seek invalidates an older correction without native work',
+      () async {
+        native
+          ..failSeek = true
+          ..snapshotGate = Completer()
+          ..snapshotStarted = Completer();
+        final failed = playback.seekSession(
+          session.id,
+          const Duration(seconds: 20),
+        );
+        await native.snapshotStarted!.future;
+        session.loadedPath = null;
+        final latest = playback.seekSession(
+          session.id,
+          const Duration(seconds: 30),
+        );
+        native.snapshotGate!.complete(native.snapshotResponse!);
+        await Future.wait([failed, latest]);
+        expect(session.position, const Duration(seconds: 30));
+        expect(native.seekPositions, [const Duration(seconds: 20)]);
+      },
+    );
+
+    test(
+      'successful command payload is not reapplied over stream state',
+      () async {
+        final gate = Completer<NativeResult<NativePlaybackSnapshot>>();
+        native.seekGate = gate;
+        final seek = playback.seekSession(
+          session.id,
+          const Duration(seconds: 20),
+        );
+        gate.complete(
+          NativeSuccess(
+            _seekSnapshot(session.id, Duration.zero, path: '/tracks/stale.mp3'),
+          ),
+        );
+        await seek;
+        expect(session.position, const Duration(seconds: 20));
+        expect(session.currentTrackPath, '/tracks/failed-seek.mp3');
+        expect(session.volume, 0.6);
+        expect(native.snapshotCalls, 0);
+      },
+    );
+
+    test(
+      'a new request discards the previous failure correction in flight',
+      () async {
+        native
+          ..failSeek = true
+          ..snapshotGate = Completer()
+          ..snapshotStarted = Completer();
+        final failed = playback.seekSession(
+          session.id,
+          const Duration(seconds: 20),
+        );
+        await native.snapshotStarted!.future;
+        native.failSeek = false;
+        final latest = playback.seekSession(
+          session.id,
+          const Duration(seconds: 30),
+        );
+        native.snapshotGate!.complete(native.snapshotResponse!);
+        await Future.wait([failed, latest]);
+        expect(session.position, const Duration(seconds: 30));
+        expect(native.seekPositions, [
+          const Duration(seconds: 20),
+          const Duration(seconds: 30),
+        ]);
+      },
+    );
+
+    for (final change in [
+      'generation',
+      'track',
+      'queue index',
+      'replacement',
+      'remove',
+      'clear',
+    ]) {
+      test('$change discards a late correction', () async {
+        native
+          ..failSeek = true
+          ..snapshotGate = Completer()
+          ..snapshotStarted = Completer();
+        final failed = playback.seekSession(
+          session.id,
+          const Duration(seconds: 20),
+        );
+        await native.snapshotStarted!.future;
+        switch (change) {
+          case 'generation':
+            session.invalidatePreparation();
+          case 'track':
+            session.currentTrackPath = '/tracks/new.mp3';
+          case 'queue index':
+            session.currentQueueIndex = 1;
+          case 'replacement':
+            playback.registerSession(_session(session.id));
+          case 'remove':
+            await playback.removeSession(session.id);
+          case 'clear':
+            await playback.clearAllSessions();
+        }
+        native.snapshotGate!.complete(native.snapshotResponse!);
+        await failed;
+        expect(session.position, const Duration(seconds: 20));
+        if (change == 'replacement') {
+          expect(playback.sessions.values.single.position, Duration.zero);
+        }
+      });
+    }
+
+    for (final missing in ['failure', 'session', 'track', 'queue index']) {
+      test(
+        'unusable $missing snapshot leaves correction to the stream',
+        () async {
+          native.failSeek = true;
+          native.snapshotResponse = missing == 'failure'
+              ? const NativeFailure('snapshot failed')
+              : NativeSuccess(
+                  NativePlaybackBundleSnapshot(
+                    sessions: [
+                      _seekSnapshot(
+                        missing == 'session' ? 'other' : session.id,
+                        const Duration(seconds: 7),
+                        path: missing == 'track' ? '/tracks/other.mp3' : null,
+                        queueIndex: missing == 'queue index' ? 1 : 0,
+                      ),
+                    ],
+                  ),
+                );
+          await playback.seekSession(session.id, const Duration(seconds: 20));
+          expect(session.position, const Duration(seconds: 20));
+          expect(session.playbackError, isNull);
+        },
+      );
+    }
+
+    test(
+      'old seek cleanup preserves a replacement run with the same ID',
+      () async {
+        final oldGate = Completer<NativeResult<NativePlaybackSnapshot>>();
+        native.seekGate = oldGate;
+        final old = playback.seekSession(
+          session.id,
+          const Duration(seconds: 10),
+        );
+        final queuedOld = playback.seekSession(
+          session.id,
+          const Duration(seconds: 20),
+        );
+        await playback.removeSession(session.id);
+        await queuedOld;
+        final replacement = _session(session.id)
+          ..loadedPath = session.currentTrackPath;
+        playback.registerSession(replacement);
+        final newGate = Completer<NativeResult<NativePlaybackSnapshot>>();
+        native.seekGate = newGate;
+        final current = playback.seekSession(
+          session.id,
+          const Duration(seconds: 30),
+        );
+        oldGate.complete(const NativeFailure('old seek failed'));
+        await old;
+        final queued = playback.seekSession(
+          session.id,
+          const Duration(seconds: 40),
+        );
+        expect(native.seekPositions, [
+          const Duration(seconds: 10),
+          const Duration(seconds: 30),
+        ]);
+        native.seekGate = null;
+        newGate.complete(
+          NativeSuccess(_seekSnapshot(session.id, const Duration(seconds: 30))),
+        );
+        await Future.wait([current, queued]);
+        expect(native.seekPositions.last, const Duration(seconds: 40));
+        expect(replacement.position, const Duration(seconds: 40));
+        expect(native.snapshotCalls, 0);
+      },
+    );
+  });
+
   test('a track switch drops a queued seek for the previous track', () async {
     final library = _createLibraryFacade();
     final native = _RecordingNativePlaybackRepository();
@@ -2274,7 +2596,7 @@ final class _RecordingTestPersistenceRepository
   }
 
   @override
-  Future<void> upsertTracks(List<MusicTrack> tracks) async {
+  Future<void> updateTrackPlaybackHistory(List<MusicTrack> tracks) async {
     trackUpserts++;
     lastTrack = tracks.single;
   }
@@ -2369,6 +2691,12 @@ final class _RecordingNativePlaybackRepository
   Completer<NativeResult<NativePlaybackSnapshot>>? speedGate;
   Completer<NativeResult<NativePlaybackSnapshot>>? volumeGate;
   Completer<NativeResult<NativePlaybackSnapshot>>? seekGate;
+  bool failSeek = false;
+  Object? seekError;
+  int snapshotCalls = 0;
+  NativeResult<NativePlaybackBundleSnapshot>? snapshotResponse;
+  Completer<NativeResult<NativePlaybackBundleSnapshot>>? snapshotGate;
+  Completer<void>? snapshotStarted;
   int audioEffectsCalls = 0;
   bool failAudioEffects = false;
   int disposeCount = 0;
@@ -2404,7 +2732,23 @@ final class _RecordingNativePlaybackRepository
     seekPositions.add(position);
     final gate = seekGate;
     if (gate != null) return gate.future;
-    return const NativeFailure<NativePlaybackSnapshot>('not needed');
+    if (seekError != null) throw seekError!;
+    if (failSeek) {
+      return const NativeFailure(
+        'seek failed',
+        code: NativeErrorCode.playerError,
+      );
+    }
+    return NativeSuccess(_seekSnapshot(sessionId, position));
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() async {
+    snapshotCalls++;
+    if (snapshotStarted?.isCompleted == false) snapshotStarted!.complete();
+    return snapshotGate?.future ??
+        snapshotResponse ??
+        NativeSuccess(NativePlaybackBundleSnapshot(sessions: []));
   }
 
   @override
@@ -2453,3 +2797,22 @@ final class _RecordingNativePlaybackRepository
     disposeCount++;
   }
 }
+
+NativePlaybackSnapshot _seekSnapshot(
+  String sessionId,
+  Duration position, {
+  String? path,
+  int queueIndex = 0,
+}) => NativePlaybackSnapshot(
+  sessionId: sessionId,
+  path: path ?? '/tracks/$sessionId.mp3',
+  playing: true,
+  playWhenReady: true,
+  processingState: 'ready',
+  position: position,
+  bufferedPosition: position,
+  volume: 1,
+  boostGain: 1,
+  channelSwapEnabled: false,
+  queueIndex: queueIndex,
+);

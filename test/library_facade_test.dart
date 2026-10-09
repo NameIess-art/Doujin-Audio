@@ -18,6 +18,7 @@ import 'package:doujin_audio/features/library/application/library_scan_data_sour
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_scanner_service.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:path/path.dart' as path;
@@ -43,6 +44,541 @@ void main() {
   tearDown(() async {
     await fixture.dispose(currentGraph: runtimeGraph);
   });
+
+  test(
+    'cold startup duration writes preserve tags and raw remote JSON',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'startup_duration_write_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+      final database = AppDatabase.test(db);
+      final repository = TestPersistenceRepository(database: database);
+      final tracks =
+          [
+                _localDurationTrack(root.path, filename: 'backfill.mp3'),
+                _localDurationTrack(root.path, filename: 'native.mp3'),
+              ]
+              .map(
+                (track) => track.copyWith(
+                  tags: ['ordered', 'tags'],
+                  remoteMetadata: {'id': 7},
+                  remoteMetadataKind: 'asmr.one',
+                ),
+              )
+              .toList();
+      await repository.upsertTracks(tracks);
+      const rawJson = ' { "id" : 7 } ';
+      await db.update('track_remote_metadata', {
+        'remote_metadata_json': rawJson,
+      });
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
+      );
+      addTearDown(library.dispose);
+      await library.loadPersistedState();
+      library.addWatchedFolder(root.path, notify: false);
+      expect(
+        library.library.every(
+          (track) => track.tags.isEmpty && track.remoteMetadata == null,
+        ),
+        isTrue,
+      );
+      library.updateTrackDuration(
+        tracks.last.path,
+        const Duration(seconds: 15),
+      );
+      await library.backfillMissingLibraryDurations(
+        durationReader: (_) async => const Duration(seconds: 25),
+      );
+      final complete = await repository.loadAllTracks();
+      expect(complete.map((track) => track.duration), [
+        const Duration(seconds: 25),
+        const Duration(seconds: 15),
+      ]);
+      expect(
+        complete.every((track) => track.tags.join(',') == 'ordered,tags'),
+        isTrue,
+      );
+      expect(
+        (await db.query(
+          'track_remote_metadata',
+        )).map((row) => row['remote_metadata_json']),
+        [rawJson, rawJson],
+      );
+    },
+  );
+
+  test(
+    'duration commit retains edits and deletions while persistence is pending',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'duration_commit_race_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+      final repository = _BlockingDurationRepository(AppDatabase.test(db));
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
+      );
+      addTearDown(library.dispose);
+      addTearDown(() {
+        if (!repository.release.isCompleted) repository.release.complete();
+      });
+      final tracks = [
+        _localDurationTrack(root.path, filename: 'edited.mp3'),
+        _localDurationTrack(root.path, filename: 'deleted.mp3'),
+      ];
+      await repository.upsertTracks(tracks);
+      library.addWatchedFolder(root.path, notify: false);
+      library.addTracks(tracks, notify: false, persist: false);
+      final backfill = library.backfillMissingLibraryDurations(
+        durationReader: (_) async => const Duration(seconds: 25),
+      );
+      await repository.started.future;
+      library.addOrReplaceTracks(
+        [
+          tracks.first.copyWith(
+            isFavorite: true,
+            tags: ['new edit'],
+            manualCoverPath: '/covers/new.jpg',
+          ),
+        ],
+        persist: false,
+        mergeExistingState: false,
+      );
+      await library.removeTrack(tracks.last.path);
+      repository.release.complete();
+      await backfill;
+      final edited = library.trackByPath(tracks.first.path)!;
+      expect(edited.duration, const Duration(seconds: 25));
+      expect(edited.isFavorite, isTrue);
+      expect(edited.tags, ['new edit']);
+      expect(edited.manualCoverPath, '/covers/new.jpg');
+      expect(library.trackByPath(tracks.last.path), isNull);
+      expect(await repository.loadTrackDetail(tracks.last.path), isNull);
+    },
+  );
+
+  test('native duration snapshot keeps cold startup deferred data', () async {
+    await runtimeGraph.runtime.dispose();
+    final repository = TestPersistenceRepository(
+      database: AppDatabase.test(db),
+    );
+    final complete = _localDurationTrack(
+      '/library/native',
+    ).copyWith(tags: ['second', 'first'], remoteMetadata: {'id': 9});
+    await repository.upsertTracks([complete]);
+    const rawJson = ' { "id" : 9 } ';
+    await db.update('track_remote_metadata', {'remote_metadata_json': rawJson});
+    runtimeGraph = createTestRuntimeGraph(
+      notificationService: notificationService,
+      persistenceRepository: repository,
+      jsonDocumentStore: TestJsonDocumentStore(),
+      skipPersistence: false,
+    );
+    await runtimeGraph.library.loadPersistedState();
+    final track = runtimeGraph.library.library.single;
+    expect(track.tags, isEmpty);
+    final session = runtimeGraph.playback.createTrackSession(track);
+    runtimeGraph.playbackCommands.handleNativeSnapshot(
+      NativePlaybackSnapshot(
+        sessionId: session.id,
+        path: track.path,
+        playing: false,
+        playWhenReady: false,
+        processingState: 'ready',
+        position: Duration.zero,
+        bufferedPosition: Duration.zero,
+        volume: 1,
+        boostGain: 1,
+        channelSwapEnabled: false,
+        duration: const Duration(seconds: 31),
+      ),
+    );
+    // Serialize a read after the snapshot's field-scoped write.
+    final stored = (await repository.loadAllTracks()).single;
+    expect(stored.duration, const Duration(seconds: 31));
+    expect(
+      runtimeGraph.library.trackByPath(track.path)!.duration,
+      stored.duration,
+    );
+    expect(stored.tags, ['second', 'first']);
+    expect(
+      (await db.query('track_remote_metadata')).single['remote_metadata_json'],
+      rawJson,
+    );
+  });
+
+  for (final single in [false, true]) {
+    test(
+      'cold startup file rename preserves deferred data ($single)',
+      () async {
+        final directory = await Directory.systemTemp.createTemp(
+          'startup_rename_',
+        );
+        addTearDown(() => directory.delete(recursive: true));
+        final folder = await Directory(
+          path.join(directory.path, 'Old'),
+        ).create();
+        final audio = await File(
+          path.join(folder.path, 'old.mp3'),
+        ).writeAsBytes([1]);
+        final original = MusicTrack(
+          path: audio.path,
+          displayName: 'Old',
+          groupKey: folder.path,
+          groupTitle: 'Old',
+          groupSubtitle: folder.path,
+          isSingle: single,
+          tags: ['ordered', 'tags'],
+          remoteMetadata: {'id': 9},
+          duration: const Duration(seconds: 40),
+          isFavorite: true,
+        );
+        await runtimeGraph.runtime.dispose();
+        final repository = TestPersistenceRepository(
+          database: AppDatabase.test(db),
+        );
+        await repository.upsertTracks([original]);
+        const rawJson = ' { "id" : 9 } ';
+        await db.update('track_remote_metadata', {
+          'remote_metadata_json': rawJson,
+        });
+        runtimeGraph = createTestRuntimeGraph(
+          notificationService: notificationService,
+          persistenceRepository: repository,
+          jsonDocumentStore: TestJsonDocumentStore(),
+          skipPersistence: false,
+        );
+        await runtimeGraph.library.loadPersistedState();
+        if (!single) {
+          runtimeGraph.library.addWatchedFolder(folder.path, notify: false);
+        }
+        final light = runtimeGraph.library.library.single;
+        expect(light.tags, isEmpty);
+        final result =
+            await AudioPathCoordinator(
+              library: runtimeGraph.library,
+              playback: runtimeGraph.playback,
+            ).renameAudioDetailTargetToName(
+              AudioDetail.empty(
+                single
+                    ? AudioDetailTarget.singleAudioFile(audio.path)
+                    : AudioDetailTarget.libraryRootFolder(folder.path),
+              ),
+              'New',
+            );
+        expect(result.renamed, isTrue);
+        final stored = (await repository.loadAllTracks()).single;
+        expect(await File(stored.path).exists(), isTrue);
+        expect(stored.tags, ['ordered', 'tags']);
+        expect(stored.duration, const Duration(seconds: 40));
+        expect(stored.isFavorite, isTrue);
+        expect(
+          (await db.query(
+            'track_remote_metadata',
+          )).single['remote_metadata_json'],
+          rawJson,
+        );
+      },
+    );
+  }
+
+  for (final cancelled in [false, true]) {
+    test(
+      'refresh retains excluded entry batches and rolls them back on cancellation ($cancelled)',
+      () async {
+        const root = 'C:/library';
+        const excludedFolder = '$root/excluded';
+        const excludedPath = '$excludedFolder/new.mp3';
+        final repository = TestPersistenceRepository(
+          database: AppDatabase.test(db),
+        );
+        final library = LibraryFacade.create(
+          databaseRepository: repository,
+          jsonDocumentStore: TestJsonDocumentStore(),
+        );
+        addTearDown(library.dispose);
+        library.addWatchedLibrary(root, notify: false);
+        library.setLibraryFolderExcluded(root, excludedFolder, true);
+        library.recordLibraryEntriesForTracks(
+          root,
+          const [],
+          folderPaths: [excludedFolder],
+          persist: false,
+        );
+        await repository.upsertLibraryEntries(
+          library.libraryEntriesForLibrary(root),
+        );
+        final entriesBefore = library.libraryEntriesForLibrary(root).toList();
+        final source = _JsonPreservationScanDataSource()
+          ..configure(
+            selectedPath: root,
+            childFolders: [excludedFolder],
+            tracks: [_scannedTrackForPath(excludedPath)],
+            afterChunk: cancelled ? library.cancelScan : null,
+          );
+        await LibraryScannerService(dataSource: source).refreshWatchedFolders(
+          provider: library,
+          labels: const LibraryScanLabels(
+            chooseMusicFolder: 'folder',
+            chooseLibraryFolder: 'library',
+            chooseAudioFiles: 'files',
+            importedFiles: 'imported',
+            manuallySelectedFiles: 'selected',
+          ),
+        );
+        final entries = library.libraryEntriesForLibrary(root);
+        if (cancelled) {
+          expect(
+            entries.map((entry) => entry.path),
+            entriesBefore.map((entry) => entry.path),
+          );
+          expect(
+            (await repository.loadLibraryEntries(
+              root,
+            )).map((entry) => entry.path),
+            entriesBefore.map((entry) => entry.path),
+          );
+        } else {
+          final excluded = entries.singleWhere(
+            (entry) => PathMatcher.equalsNormalized(entry.path, excludedPath),
+          );
+          expect(excluded.isExcluded, isTrue);
+          expect(
+            (await repository.loadLibraryEntries(root)).any(
+              (entry) => PathMatcher.equalsNormalized(entry.path, excludedPath),
+            ),
+            isTrue,
+          );
+          expect(library.trackByPath(excludedPath), isNull);
+          library.beginLibraryBatch();
+          library.clearLibraryExclusions(root);
+          await library.endLibraryBatch();
+          expect(library.trackByPath(excludedPath), isNotNull);
+        }
+      },
+    );
+  }
+
+  test(
+    'cancelled refresh preserves a native duration and concurrent deletion',
+    () async {
+      await runtimeGraph.runtime.dispose();
+      const root = 'C:/library/cancel';
+      final repository = TestPersistenceRepository(
+        database: AppDatabase.test(db),
+      );
+      final tracks = [
+        _localDurationTrack(root, filename: 'existing.mp3'),
+        _localDurationTrack(root, filename: 'deleted.mp3'),
+      ];
+      await repository.upsertTracks(tracks);
+      runtimeGraph = createTestRuntimeGraph(
+        notificationService: notificationService,
+        persistenceRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
+        skipPersistence: false,
+      );
+      final library = runtimeGraph.library;
+      await library.loadPersistedState();
+      library.addWatchedFolder(root, notify: false);
+      final session = runtimeGraph.playback.createTrackSession(
+        library.library.first,
+      );
+      Future<Object?>? deletion;
+      final source = _JsonPreservationScanDataSource()
+        ..configure(
+          selectedPath: root,
+          tracks: tracks
+              .map((track) => _scannedTrackForPath(track.path))
+              .toList(),
+          afterChunk: () {
+            runtimeGraph.playbackCommands.handleNativeSnapshot(
+              NativePlaybackSnapshot(
+                sessionId: session.id,
+                path: tracks.first.path,
+                playing: false,
+                playWhenReady: false,
+                processingState: 'ready',
+                position: Duration.zero,
+                bufferedPosition: Duration.zero,
+                volume: 1,
+                boostGain: 1,
+                channelSwapEnabled: false,
+                duration: const Duration(seconds: 31),
+              ),
+            );
+            deletion = library.removeTrack(tracks.last.path);
+            library.cancelScan();
+          },
+        );
+      await LibraryScannerService(dataSource: source).refreshWatchedFolders(
+        provider: library,
+        labels: const LibraryScanLabels(
+          chooseMusicFolder: 'folder',
+          chooseLibraryFolder: 'library',
+          chooseAudioFiles: 'files',
+          importedFiles: 'imported',
+          manuallySelectedFiles: 'selected',
+        ),
+      );
+      await deletion;
+      final current = library.trackByPath(tracks.first.path)!;
+      expect(current.displayName, tracks.first.displayName);
+      expect(current.duration, const Duration(seconds: 31));
+      expect(
+        (await repository.loadTrackDetail(tracks.first.path))!.duration,
+        current.duration,
+      );
+      expect(library.trackByPath(tracks.last.path), isNull);
+      expect(await repository.loadTrackDetail(tracks.last.path), isNull);
+    },
+  );
+
+  test(
+    'failed refresh restores scan removals while retaining a duration write',
+    () async {
+      const root = 'C:/library/failure';
+      final repository = TestPersistenceRepository(
+        database: AppDatabase.test(db),
+      );
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
+      );
+      addTearDown(library.dispose);
+      final kept = _localDurationTrack(root, filename: 'kept.mp3');
+      final missing = _localDurationTrack(root, filename: 'missing.mp3');
+      await repository.upsertTracks([kept, missing]);
+      await library.loadPersistedState();
+      library.addWatchedFolder(root, notify: false);
+      library.recordLibraryEntriesForTracks(root, [
+        kept,
+        missing,
+      ], persist: false);
+      await repository.upsertLibraryEntries(
+        library.libraryEntriesForLibrary(root),
+      );
+      await repository.loadAppSetting('watched_folders_v1');
+      await db.execute('''
+      CREATE TRIGGER reject_refresh BEFORE INSERT ON app_kv_settings
+      WHEN NEW.key = 'group_order_v1'
+      BEGIN SELECT RAISE(ABORT, 'refresh commit failed'); END;
+    ''');
+      final source = _JsonPreservationScanDataSource()
+        ..configure(
+          selectedPath: root,
+          tracks: [_scannedTrackForPath(kept.path)],
+          afterChunk: () => library.updateTrackDuration(
+            kept.path,
+            const Duration(seconds: 31),
+          ),
+        );
+      await expectLater(
+        LibraryScannerService(dataSource: source).refreshWatchedFolders(
+          provider: library,
+          labels: const LibraryScanLabels(
+            chooseMusicFolder: 'folder',
+            chooseLibraryFolder: 'library',
+            chooseAudioFiles: 'files',
+            importedFiles: 'imported',
+            manuallySelectedFiles: 'selected',
+          ),
+        ),
+        throwsA(isA<DatabaseException>()),
+      );
+      expect(library.trackByPath(kept.path)!.displayName, kept.displayName);
+      expect(
+        library.trackByPath(kept.path)!.duration,
+        const Duration(seconds: 31),
+      );
+      expect(library.trackByPath(missing.path), isNotNull);
+      expect(
+        library.libraryEntriesForLibrary(root).where((entry) => entry.isTrack),
+        hasLength(2),
+      );
+      final durable = await repository.loadTrackDetail(kept.path);
+      expect(durable!.duration, const Duration(seconds: 31));
+      expect(await repository.loadTrackDetail(missing.path), isNotNull);
+    },
+  );
+
+  test(
+    'cross-source cancellation restores scan removals and watched folders',
+    () async {
+      const root = 'C:/library/cross_source';
+      const oldFolder = '$root/old';
+      const newFolder = '$root/new';
+      final repository = TestPersistenceRepository(
+        database: AppDatabase.test(db),
+      );
+      final kept = _localDurationTrack(oldFolder, filename: 'kept.mp3');
+      final missing = _localDurationTrack(oldFolder, filename: 'missing.mp3');
+      final added = _localDurationTrack(newFolder, filename: 'added.mp3');
+      await repository.upsertTracks([kept, missing]);
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
+      );
+      addTearDown(library.dispose);
+      await library.loadPersistedState();
+      library.addWatchedFolder(oldFolder, notify: false);
+      library.recordLibraryEntriesForTracks(root, [
+        kept,
+        missing,
+      ], persist: false);
+      await repository.upsertLibraryEntries(
+        library.libraryEntriesForLibrary(root),
+      );
+      library.beginStagedLibraryRefresh();
+      library.applyStagedLibraryRefreshChunk(
+        sourceFolderPath: oldFolder,
+        libraryRoot: root,
+        tracks: [kept],
+        removeTrackPaths: [missing.path],
+        removeEntryPaths: [missing.path],
+        removeWatchedFolders: [oldFolder],
+        addWatchedFolders: [newFolder],
+      );
+      library.updateTrackDuration(kept.path, const Duration(seconds: 31));
+      library.applyStagedLibraryRefreshChunk(
+        sourceFolderPath: newFolder,
+        libraryRoot: root,
+        tracks: [added],
+        entryTracks: [added],
+        folderPaths: [newFolder],
+      );
+      await library.finishStagedLibraryRefresh(commit: false);
+      expect(library.watchedFolders.map(PathMatcher.normalize), [
+        PathMatcher.normalize(oldFolder),
+      ]);
+      expect(
+        library.trackByPath(kept.path)!.duration,
+        const Duration(seconds: 31),
+      );
+      expect(library.trackByPath(missing.path), isNotNull);
+      expect(library.trackByPath(added.path), isNull);
+      expect(
+        library
+            .libraryEntriesForLibrary(root)
+            .where((entry) => entry.isTrack)
+            .map((entry) => PathMatcher.normalize(entry.path)),
+        unorderedEquals([
+          PathMatcher.normalize(kept.path),
+          PathMatcher.normalize(missing.path),
+        ]),
+      );
+      expect(
+        (await repository.loadTrackDetail(kept.path))!.duration,
+        const Duration(seconds: 31),
+      );
+      expect(await repository.loadTrackDetail(missing.path), isNotNull);
+      expect(await repository.loadTrackDetail(added.path), isNull);
+    },
+  );
 
   for (final retryUnreadable in [false, true]) {
     test(
@@ -753,8 +1289,11 @@ void main() {
 
       expect(probes, 30);
       expect(peak, 2);
-      expect(repository.upsertTracksCallCount, 1);
-      expect(repository.upsertedTrackPaths, tracks.map((track) => track.path));
+      expect(repository.updateDurationsCallCount, 1);
+      expect(
+        repository.updatedDurationTrackPaths,
+        tracks.map((track) => track.path),
+      );
       expect(library.structureRevision, beforeRevision + 1);
       expect(publications, 1);
       expect(library.state.detailRevision, library.detailCacheService.revision);
@@ -831,7 +1370,7 @@ void main() {
         const Duration(minutes: 9),
       );
       expect(library.trackByPath(tracks[1].path), isNull);
-      expect(repository.upsertedTrackPaths, [tracks[2].path]);
+      expect(repository.updatedDurationTrackPaths, [tracks[2].path]);
       expect(
         (await repository.load(
           library.audioDetailTargetForTrack(tracks.first),
@@ -897,7 +1436,7 @@ void main() {
       );
       await Future<void>.delayed(Duration.zero);
 
-      expect(repository.upsertTracksCallCount, 1);
+      expect(repository.updateDurationsCallCount, 1);
       expect(library.state.structureRevision, beforeRevision + 1);
       expect(library.state.detailRevision, 1);
       expect(publications, 1);
@@ -958,7 +1497,7 @@ void main() {
       await backfill;
 
       expect(requestedPaths, [firstTrack.path, laterTrack.path]);
-      expect(repository.upsertTracksCallCount, 2);
+      expect(repository.updateDurationsCallCount, 2);
       for (final track in [firstTrack, laterTrack]) {
         expect(
           (await repository.load(
@@ -2683,20 +3222,33 @@ MusicTrack _localDurationTrack(
   isSingle: false,
 );
 
+class _BlockingDurationRepository extends TestPersistenceRepository {
+  _BlockingDurationRepository(AppDatabase database) : super(database: database);
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<void> updateTrackDurations(Map<String, Duration> durations) async {
+    started.complete();
+    await release.future;
+    await super.updateTrackDurations(durations);
+  }
+}
+
 class _CountingTestPersistenceRepository extends TestPersistenceRepository {
   _CountingTestPersistenceRepository(AppDatabase database)
     : super(database: database);
 
   int upsertLibraryEntriesCallCount = 0;
-  int upsertTracksCallCount = 0;
-  final upsertedTrackPaths = <String>[];
+  int updateDurationsCallCount = 0;
+  final updatedDurationTrackPaths = <String>[];
   String? failingDetailPath;
 
   @override
-  Future<void> upsertTracks(List<MusicTrack> tracks) {
-    upsertTracksCallCount++;
-    upsertedTrackPaths.addAll(tracks.map((track) => track.path));
-    return super.upsertTracks(tracks);
+  Future<void> updateTrackDurations(Map<String, Duration> durations) {
+    updateDurationsCallCount++;
+    updatedDurationTrackPaths.addAll(durations.keys);
+    return super.updateTrackDurations(durations);
   }
 
   @override

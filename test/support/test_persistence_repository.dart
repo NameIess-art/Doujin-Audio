@@ -15,14 +15,23 @@ class TestPersistenceRepository extends SqliteLibraryRepository
     : this._(database ?? AppDatabase.instance);
 
   TestPersistenceRepository._(AppDatabase database)
-    : _playback = SqlitePlaybackRepository(database: database),
+    : _database = database,
+      _playback = SqlitePlaybackRepository(database: database),
       _asmr = SqliteAsmrRepository(database: database),
       super(database: database);
 
   final SqlitePlaybackRepository _playback;
+  final AppDatabase _database;
   final SqliteAsmrRepository _asmr;
   Future<void> Function()? beforeTimeSegmentLabelUpsert;
   Future<void> Function()? beforeTimeSegmentLabelLoad;
+
+  /// Test seeding supplies complete records, unlike production catalog writes.
+  Future<void> upsertTracks(List<MusicTrack> tracks) =>
+      _database.upsertTracks(tracks);
+  @override
+  Future<void> updateTrackPlaybackHistory(List<MusicTrack> tracks) =>
+      _playback.updateTrackPlaybackHistory(tracks);
 
   @override
   Future<List<PersistedPlaybackSession>> loadAllSessions() =>

@@ -6,8 +6,14 @@ abstract interface class LibraryPersistenceRepository {
   Future<List<MusicTrack>> loadTrackSummaries();
   Future<List<MusicTrack>> loadStartupTracks();
   Future<MusicTrack?> loadTrackDetail(String path);
+
+  /// Replaces the library from complete authoritative records.
   Future<void> saveAllTracks(List<MusicTrack> tracks);
-  Future<void> upsertTracks(List<MusicTrack> tracks);
+
+  /// Initializes new records and updates only catalog/scan fields on existing ones.
+  Future<void> upsertCatalogTracks(List<MusicTrack> tracks);
+  Future<void> updateTrackDurations(Map<String, Duration> durations);
+  Future<void> updateTrackManualCoverPaths(Map<String, String> paths);
   Future<void> commitLibraryBatch({
     required List<MusicTrack> tracks,
     required List<LibraryEntry> entries,
@@ -17,6 +23,8 @@ abstract interface class LibraryPersistenceRepository {
         const <String, List<String>>{},
   });
   Future<void> replaceTrackPaths(Map<String, MusicTrack> replacements);
+
+  /// Complete record replacement; omitted tags/metadata explicitly clear them.
   Future<void> insertTracks(List<MusicTrack> tracks);
   Future<void> deleteTracks(List<String> paths);
   Future<int> nextScanGeneration();

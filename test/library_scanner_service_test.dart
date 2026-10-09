@@ -687,6 +687,7 @@ class _RefreshCatalog implements LibraryCatalog {
   var stagedBatchDepth = 0;
   var stagedBatchBeginCount = 0;
   var stagedBatchFinishCount = 0;
+  List<MusicTrack>? _stagedBefore;
   var rollbackBatchDepth = 0;
   var rollbackBatchBeginCount = 0;
   var rollbackBatchEndCount = 0;
@@ -742,12 +743,19 @@ class _RefreshCatalog implements LibraryCatalog {
 
   @override
   void beginStagedLibraryRefresh() {
+    _stagedBefore = List<MusicTrack>.of(library);
     stagedBatchDepth++;
     stagedBatchBeginCount++;
   }
 
   @override
-  Future<void> finishStagedLibraryRefresh() async {
+  Future<void> finishStagedLibraryRefresh({bool commit = true}) async {
+    if (!commit) {
+      library
+        ..clear()
+        ..addAll(_stagedBefore!);
+    }
+    _stagedBefore = null;
     stagedBatchDepth--;
     stagedBatchFinishCount++;
   }
@@ -757,6 +765,9 @@ class _RefreshCatalog implements LibraryCatalog {
     required String sourceFolderPath,
     required String libraryRoot,
     List<MusicTrack> tracks = const <MusicTrack>[],
+    List<MusicTrack> entryTracks = const <MusicTrack>[],
+    LibraryExclusionMatcher? exclusionMatcher,
+    LibraryEntrySnapshot? entrySnapshot,
     Iterable<String> folderPaths = const <String>[],
     Iterable<String> removeWatchedFolders = const <String>[],
     Iterable<String> addWatchedFolders = const <String>[],

@@ -59,7 +59,7 @@ abstract interface class PlaybackPersistenceRepository {
     List<String> entryIds,
   );
   Future<void> upsertSessionPlaybackState(PersistedPlaybackSession session);
-  Future<void> upsertTracks(List<MusicTrack> tracks);
+  Future<void> updateTrackPlaybackHistory(List<MusicTrack> tracks);
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey);
   Future<void> upsertTimeSegmentLabel(TimeSegmentLabel label);
   Future<void> deleteTimeSegmentLabel(String id);

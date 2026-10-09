@@ -32,6 +32,27 @@ void main() {
       'https://example.com/high.m4a',
       'https://example.com/low.m4a',
     ]);
+    expect(track.remoteMetadata?['fullQualityPlaybackUrls'], <String>[
+      'https://example.com/high.m4a',
+    ]);
+
+    final preferredTrack = node.toMusicTrack(
+      preferredPlaybackUrls: <String>[
+        ' https://example.com/backup.m4a ',
+        'https://example.com/high.m4a',
+        'https://example.com/low.m4a',
+      ],
+    );
+    expect(preferredTrack.path, 'https://example.com/backup.m4a');
+    expect(preferredTrack.remoteMetadata?['fullQualityPlaybackUrls'], <String>[
+      'https://example.com/backup.m4a',
+      'https://example.com/high.m4a',
+    ]);
+    expect(preferredTrack.remoteMetadata?['playbackUrls'], <String>[
+      'https://example.com/backup.m4a',
+      'https://example.com/high.m4a',
+      'https://example.com/low.m4a',
+    ]);
   });
 
   test(

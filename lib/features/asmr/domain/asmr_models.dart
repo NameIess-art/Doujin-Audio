@@ -507,12 +507,9 @@ class AsmrTrackFile {
       isAudio || children.any((child) => child.hasBrowsableContent);
   String get stemKey => _asmrMatchingStem(relativePath);
   String get baseNameStem => _asmrMatchingStem(title);
-  late final String resolvedExtension = _resolvedExtensionForCandidates(<String?>[
-    title,
-    streamUrl,
-    downloadUrl,
-    lowQualityUrl,
-  ]);
+  late final String resolvedExtension = _resolvedExtensionForCandidates(
+    <String?>[title, streamUrl, downloadUrl, lowQualityUrl],
+  );
   String get displayTitle =>
       isAudio ? path.basenameWithoutExtension(title) : title;
 
@@ -539,10 +536,17 @@ class AsmrTrackFile {
     Map<String, Object?>? remoteMetadata,
     Iterable<String> preferredPlaybackUrls = const <String>[],
   }) {
+    final fullQualityPlaybackUrls =
+        <String>[
+              ...preferredPlaybackUrls.map((url) => url.trim()),
+              streamUrl?.trim() ?? '',
+              downloadUrl?.trim() ?? '',
+            ]
+            .where((url) => url.isNotEmpty && url != lowQualityUrl?.trim())
+            .toSet()
+            .toList(growable: false);
     final playbackUrls = <String>[
-      ...preferredPlaybackUrls.map((url) => url.trim()),
-      streamUrl?.trim() ?? '',
-      downloadUrl?.trim() ?? '',
+      ...fullQualityPlaybackUrls,
       lowQualityUrl?.trim() ?? '',
     ].where((url) => url.isNotEmpty).toSet().toList(growable: false);
     final playbackUrl = playbackUrls.isEmpty ? '' : playbackUrls.first;
@@ -550,6 +554,7 @@ class AsmrTrackFile {
       remoteMetadata ?? const <String, Object?>{},
     );
     metadata['playbackUrls'] = playbackUrls;
+    metadata['fullQualityPlaybackUrls'] = fullQualityPlaybackUrls;
     return MusicTrack(
       path: playbackUrl,
       displayName: displayTitle,
@@ -643,11 +648,7 @@ const Set<String> _asmrSubtitleExtensions = <String>{
   '.ssa',
 };
 
-const Set<String> _asmrTextExtensions = <String>{
-  '.txt',
-  '.md',
-  '.pdf',
-};
+const Set<String> _asmrTextExtensions = <String>{'.txt', '.md', '.pdf'};
 
 const Set<String> _asmrImageExtensions = <String>{
   '.jpg',

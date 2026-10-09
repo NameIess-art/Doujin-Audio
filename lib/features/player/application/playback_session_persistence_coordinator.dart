@@ -421,7 +421,9 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
             lastPlayedAt: entry.value.lastPlayedAt,
           ),
     ];
-    if (tracks.isNotEmpty) await databaseRepository.upsertTracks(tracks);
+    if (tracks.isNotEmpty) {
+      await databaseRepository.updateTrackPlaybackHistory(tracks);
+    }
     for (final entry in pending.entries) {
       if (identical(_pendingPlaybackHistoryTracks[entry.key], entry.value)) {
         _pendingPlaybackHistoryTracks.remove(entry.key);

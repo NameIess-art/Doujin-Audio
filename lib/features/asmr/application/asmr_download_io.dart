@@ -3,6 +3,13 @@ import '../../../core/logging/app_log_service.dart';
 import 'asmr_api_service.dart';
 
 const String _asmrMediaAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
+final RegExp _strongEntityTag = RegExp(r'^"[\x21\x23-\x7e\x80-\xff]*"$');
+
+String? strongDownloadEntityTag(Object? value) {
+  if (value is! String) return null;
+  final tag = value.trim();
+  return _strongEntityTag.hasMatch(tag) ? tag : null;
+}
 
 Map<String, String> asmrMediaRequestHeadersForUrl(String url) {
   return AsmrApiService.isOfficialMediaUrl(url)
@@ -27,8 +34,10 @@ bool isValidDownloadContentRange(
   final rangeLength = start == null || end == null ? -1 : end - start + 1;
   return start == expectedStart &&
       rangeLength > 0 &&
-      (responseLength <= 0 || responseLength == rangeLength) &&
-      (expectedTotal <= 0 || total == null || total == expectedTotal);
+      total != null &&
+      end == total - 1 &&
+      (responseLength < 0 || responseLength == rangeLength) &&
+      (expectedTotal <= 0 || total == expectedTotal);
 }
 
 typedef LocalFileRename =

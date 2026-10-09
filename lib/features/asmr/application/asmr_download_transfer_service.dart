@@ -216,6 +216,9 @@ class AsmrDownloadTransferService {
             await tempResult.file.exists()) {
           await tempResult.file.delete();
         }
+        if (!isPaused(workId) && !isDisposed()) {
+          _setFileEntityTag(workId, item.relativePath, null);
+        }
       } catch (_) {
         // Temporary download cleanup is best effort after the primary result.
       }
@@ -328,6 +331,9 @@ class AsmrDownloadTransferService {
             await tempResult.file.exists()) {
           await tempResult.file.delete();
         }
+        if (!isPaused(workId) && !isDisposed()) {
+          _setFileEntityTag(workId, item.relativePath, null);
+        }
       } catch (_) {
         // Temporary cover cleanup is best effort after the primary result.
       }
@@ -402,6 +408,9 @@ class AsmrDownloadTransferService {
           if (!isPaused(workId) && !isDisposed() && await tempFile.exists()) {
             await tempFile.delete();
           }
+          if (!isPaused(workId) && !isDisposed()) {
+            _setFileEntityTag(workId, item.relativePath, null);
+          }
         } catch (_) {
           // Incomplete staging file cleanup is best effort.
         } finally {
@@ -419,68 +428,60 @@ class AsmrDownloadTransferService {
     required bool allowResume,
   }) async {
     var received = 0;
+    HttpClientRequest? openedRequest;
+    HttpClientResponse? unconsumedResponse;
     try {
       try {
         received = await stagingFile.length();
       } on FileSystemException {
         if (await stagingFile.exists()) rethrow;
       }
-      if (!allowResume && received > 0) {
-        if (item.countsTowardByteProgress) {
-          _store.discardLivePartialProgress(
-            workId,
-            item.relativePath,
-            received,
-          );
-        }
-        await _outputs.deleteFileIfPresent(stagingFile);
+      final savedTag = strongDownloadEntityTag(
+        _store[workId]?.fileEntityTags[item.relativePath],
+      );
+      if (received > 0 &&
+          (!allowResume ||
+              savedTag == null ||
+              (item.size > 0 && received >= item.size))) {
+        await _resetStaging(workId, item, stagingFile);
         received = 0;
       }
-      if (item.size > 0 && received > item.size) {
-        if (item.countsTowardByteProgress) {
-          _store.discardLivePartialProgress(
-            workId,
-            item.relativePath,
-            received,
-          );
-        }
-        await _outputs.deleteFileIfPresent(stagingFile);
-        received = 0;
-      }
-      if (item.size > 0 && received == item.size) {
-        return _TemporaryDownloadAttempt.success(received);
+      if (item.countsTowardByteProgress) {
+        _store.reconcileLiveFileProgress(workId, item.relativePath, received);
       }
       const requestTimeout = Duration(seconds: 15);
       const downloadIdleTimeout = Duration(seconds: 30);
       throwIfCancelled(workId);
       final uri = Uri.parse(item.url);
       final request = await client.getUrl(uri).timeout(requestTimeout);
+      openedRequest = request;
       request.headers.set(
         HttpHeaders.userAgentHeader,
         'Doujin Audio downloader',
       );
+      request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
       for (final header in asmrMediaRequestHeadersForUrl(item.url).entries) {
         request.headers.set(header.key, header.value);
       }
       if (received > 0) {
         request.headers.set(HttpHeaders.rangeHeader, 'bytes=$received-');
+        request.headers.set(HttpHeaders.ifRangeHeader, savedTag!);
       }
       final response = await request.close().timeout(requestTimeout);
+      unconsumedResponse = response;
+
+      Future<void> discardResponse() async {
+        unconsumedResponse = null;
+        await response.listen(null).cancel();
+      }
 
       Future<_TemporaryDownloadAttempt> retryWithoutRange() async {
         try {
-          await response.listen((_) {}).cancel();
+          await discardResponse();
         } catch (_) {
           // The retry uses a new response even if cancellation already won.
         }
-        if (item.countsTowardByteProgress) {
-          _store.discardLivePartialProgress(
-            workId,
-            item.relativePath,
-            received,
-          );
-        }
-        await _outputs.deleteFileIfPresent(stagingFile);
+        await _resetStaging(workId, item, stagingFile);
         return _downloadToTemporaryFileAttempt(
           item,
           workId: workId,
@@ -495,9 +496,10 @@ class AsmrDownloadTransferService {
           allowResume) {
         return retryWithoutRange();
       }
-      if (response.statusCode < 200 || response.statusCode >= 300) {
+      if (response.statusCode != HttpStatus.ok &&
+          response.statusCode != HttpStatus.partialContent) {
         try {
-          await response.listen((_) {}).cancel();
+          await discardResponse();
         } catch (_) {
           // The status code is sufficient to classify this attempt.
         }
@@ -512,16 +514,66 @@ class AsmrDownloadTransferService {
         );
       }
 
+      final encoding = response.headers.value(
+        HttpHeaders.contentEncodingHeader,
+      );
+      if (encoding != null && encoding.trim().toLowerCase() != 'identity') {
+        try {
+          await discardResponse();
+        } catch (_) {
+          // Byte ranges and file lengths require the identity representation.
+        }
+        return _TemporaryDownloadAttempt.failure(
+          retryable: false,
+          error: HttpException(
+            'Download response used an unsupported content encoding.',
+            uri: uri,
+          ),
+          stackTrace: StackTrace.current,
+        );
+      }
+
+      var responseStart = 0;
+      int? rangeTotal;
+      final responseTag = strongDownloadEntityTag(
+        response.headers.value(HttpHeaders.etagHeader),
+      );
+      if (response.statusCode == HttpStatus.partialContent) {
+        final contentRange = response.headers.value(
+          HttpHeaders.contentRangeHeader,
+        );
+        if (received <= 0 ||
+            responseTag != savedTag ||
+            !isValidDownloadContentRange(
+              contentRange,
+              expectedStart: received,
+              responseLength: response.contentLength,
+              expectedTotal: item.size,
+            )) {
+          if (received > 0 && allowResume) return retryWithoutRange();
+          await discardResponse();
+          return _TemporaryDownloadAttempt.failure(
+            retryable: true,
+            error: HttpException(
+              'Download response did not match the requested entity and byte range.',
+              uri: uri,
+            ),
+            stackTrace: StackTrace.current,
+          );
+        }
+        responseStart = received;
+        rangeTotal = int.parse(contentRange!.split('/').last);
+      }
+      if (responseStart == 0 && received > 0) {
+        await _resetStaging(workId, item, stagingFile);
+        received = 0;
+      }
       final maxBytes = item.maxBytes;
       if (maxBytes != null &&
           (received > maxBytes ||
               (response.contentLength > 0 &&
                   received + response.contentLength > maxBytes))) {
-        try {
-          await response.listen((_) {}).cancel();
-        } catch (_) {
-          // The configured size limit is sufficient to reject the response.
-        }
+        await discardResponse();
         return _TemporaryDownloadAttempt.failure(
           retryable: false,
           error: FileSystemException(
@@ -531,42 +583,17 @@ class AsmrDownloadTransferService {
           stackTrace: StackTrace.current,
         );
       }
-
-      var responseStart = 0;
-      if (response.statusCode == HttpStatus.partialContent) {
-        if (!isValidDownloadContentRange(
-          response.headers.value(HttpHeaders.contentRangeHeader),
-          expectedStart: received,
-          responseLength: response.contentLength,
-          expectedTotal: item.size,
-        )) {
-          if (received > 0 && allowResume) return retryWithoutRange();
-          return _TemporaryDownloadAttempt.failure(
-            retryable: true,
-            error: HttpException(
-              'Download response contained an invalid byte range.',
-              uri: uri,
-            ),
-            stackTrace: StackTrace.current,
-          );
-        }
-        responseStart = received;
-      }
-      if (responseStart == 0 && received > 0) {
-        final discardedBytes = received;
-        received = 0;
-        if (item.countsTowardByteProgress) {
-          _store.discardLivePartialProgress(
-            workId,
-            item.relativePath,
-            discardedBytes,
-          );
-        }
-      }
+      throwIfCancelled(workId);
+      _setFileEntityTag(workId, item.relativePath, responseTag);
+      // A durable identity must precede its bytes; otherwise a restart could
+      // append a new entity's suffix to an older staging prefix.
+      await _store.flushPersistence();
+      throwIfCancelled(workId);
       final sink = stagingFile.openWrite(
         mode: responseStart > 0 ? FileMode.append : FileMode.write,
       );
       try {
+        unconsumedResponse = null;
         await sink.addStream(
           response.timeout(downloadIdleTimeout).map((chunk) {
             throwIfCancelled(workId);
@@ -592,8 +619,9 @@ class AsmrDownloadTransferService {
       } finally {
         await sink.close();
       }
-      if ((response.contentLength > 0 &&
+      if ((response.contentLength >= 0 &&
               received - responseStart != response.contentLength) ||
+          (rangeTotal != null && received != rangeTotal) ||
           (item.size > 0 && received != item.size)) {
         return _TemporaryDownloadAttempt.failure(
           retryable: true,
@@ -617,7 +645,43 @@ class AsmrDownloadTransferService {
         error: error,
         stackTrace: stackTrace,
       );
+    } finally {
+      // Header validation or persistence can fail before subscribing to the
+      // body. Retire that response as well as any interrupted stream.
+      await unconsumedResponse?.listen(null).cancel();
+      openedRequest?.abort();
     }
+  }
+
+  Future<void> _resetStaging(
+    int workId,
+    PlannedDownloadFile item,
+    File staging,
+  ) async {
+    throwIfCancelled(workId);
+    _setFileEntityTag(workId, item.relativePath, null);
+    // Clear the old identity before deleting/truncating its bytes, then persist
+    // the replacement identity before opening the next response's sink.
+    await _store.flushPersistence();
+    throwIfCancelled(workId);
+    await _outputs.deleteFileIfPresent(staging);
+    if (item.countsTowardByteProgress) {
+      _store.reconcileLiveFileProgress(workId, item.relativePath, 0);
+    }
+  }
+
+  void _setFileEntityTag(int workId, String relativePath, String? tag) {
+    final task = _store[workId];
+    if (task == null) return;
+    final tags = Map<String, String>.from(task.fileEntityTags);
+    if (tag == null) {
+      if (tags.remove(relativePath) == null) return;
+    } else {
+      if (tags[relativePath] == tag) return;
+      tags[relativePath] = tag;
+    }
+    _store[workId] = task.copyWith(fileEntityTags: tags);
+    _store.notifyProgressChanged(workId);
   }
 
   bool _isRetryableDownloadStatus(int statusCode) {

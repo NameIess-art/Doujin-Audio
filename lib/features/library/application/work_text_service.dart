@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:charset/charset.dart';
 import 'package:flutter/foundation.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
@@ -30,6 +31,58 @@ enum WorkDocType {
     if (lower.endsWith('.pdf')) return WorkDocType.pdf;
     return WorkDocType.text;
   }
+}
+
+@immutable
+class PreparedWorkText {
+  PreparedWorkText({
+    required this.encoding,
+    required List<String> textBlocks,
+    required List<md.Node> markdownNodes,
+  }) : textBlocks = List.unmodifiable(textBlocks),
+       markdownNodes = List.unmodifiable(markdownNodes);
+
+  final WorkTextEncoding encoding;
+  final List<String> textBlocks;
+  final List<md.Node> markdownNodes;
+  bool get isEmpty => textBlocks.isEmpty && markdownNodes.isEmpty;
+}
+
+PreparedWorkText _prepareWorkText(
+  (Uint8List, WorkDocType, WorkTextEncoding?) request,
+) {
+  final decoded = decodeWorkText(request.$1, overrideEncoding: request.$3);
+  final text = decoded.text;
+  if (request.$2 == WorkDocType.markdown) {
+    // Parse the complete document so references and block syntax cross display boundaries.
+    final nodes = md.Document(
+      extensionSet: md.ExtensionSet.gitHubFlavored,
+      encodeHtml: false,
+    ).parseLines(const LineSplitter().convert(text));
+    return PreparedWorkText(
+      encoding: decoded.encoding,
+      textBlocks: const [],
+      markdownNodes: nodes,
+    );
+  }
+  final blocks = <String>[];
+  var start = 0;
+  while (start < text.length) {
+    var end = start + 16 * 1024;
+    if (end >= text.length) {
+      end = text.length;
+    } else {
+      final newline = text.indexOf('\n', end);
+      end = newline < 0 ? text.length : newline + 1;
+    }
+    blocks.add(text.substring(start, end));
+    start = end;
+  }
+  return PreparedWorkText(
+    encoding: decoded.encoding,
+    textBlocks: blocks,
+    markdownNodes: const [],
+  );
 }
 
 @immutable
@@ -356,6 +409,34 @@ class WorkTextService {
       return (text: '', encoding: encodingOverride ?? WorkTextEncoding.utf8);
     }
     return decodeWorkText(bytes, overrideEncoding: encodingOverride);
+  }
+
+  Future<PreparedWorkText> readPreparedDocument(
+    WorkTextFile file, {
+    WorkTextEncoding? encodingOverride,
+  }) async {
+    if (file.isPdf) throw ArgumentError('PDF uses readDocumentBytes.');
+    final bytes = await readDocumentBytes(file);
+    return prepareDocument(
+      bytes ?? Uint8List(0),
+      type: file.docType,
+      encodingOverride: encodingOverride,
+    );
+  }
+
+  Future<PreparedWorkText> prepareDocument(
+    Uint8List bytes, {
+    required WorkDocType type,
+    WorkTextEncoding? encodingOverride,
+  }) {
+    final request = (bytes, type, encodingOverride);
+    return bytes.length >= 64 * 1024
+        ? compute(
+            _prepareWorkText,
+            request,
+            debugLabel: 'work_document_prepare',
+          )
+        : Future.value(_prepareWorkText(request));
   }
 
   Future<Uint8List?> readDocumentBytes(WorkTextFile file) async {

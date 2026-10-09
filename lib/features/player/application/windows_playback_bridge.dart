@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -15,10 +16,12 @@ part 'windows_playback_session.dart';
 class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   WindowsPlaybackBridge({
     Player Function()? createPlayer,
+    Future<String> Function(Player)? readNativePlaylist,
     Duration Function()? monotonicElapsed,
     VideoControllerConfiguration videoControllerConfiguration =
         const VideoControllerConfiguration(),
   }) : _createPlayer = createPlayer ?? _defaultPlayer,
+       _readNativePlaylist = readNativePlaylist,
        _monotonicElapsed = monotonicElapsed,
        _videoControllerConfiguration = videoControllerConfiguration;
 
@@ -44,6 +47,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   }
 
   final Player Function() _createPlayer;
+  final Future<String> Function(Player)? _readNativePlaylist;
   final VideoControllerConfiguration _videoControllerConfiguration;
   final _sessions = <String, _WindowsPlaybackSession>{};
   final _snapshots = StreamController<NativePlaybackSnapshot>.broadcast();
@@ -201,8 +205,9 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
 
   Future<NativeResult<NativePlaybackSnapshot>> _change(
     String id,
-    Future<void> Function(_WindowsPlaybackSession) action,
-  ) {
+    Future<void> Function(_WindowsPlaybackSession) action, {
+    bool markPlaybackError = true,
+  }) {
     final session = _sessions[id];
     if (session == null || _disposed) {
       return Future.value(
@@ -225,7 +230,9 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
           _emit(session);
           return session.snapshot(includeRetainedUris: false);
         } catch (error) {
-          if (_isCurrent(session) && error is! ArgumentError) {
+          if (markPlaybackError &&
+              _isCurrent(session) &&
+              error is! ArgumentError) {
             session.error = error.toString();
             _emit(session);
           }
@@ -279,7 +286,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
       _validateQueue(items);
       final session = _sessions.putIfAbsent(
         sessionId,
-        () => _WindowsPlaybackSession(sessionId),
+        () => _WindowsPlaybackSession(sessionId, _readNativePlaylist),
       );
       final generation = ++session.generation;
       session.wantsPlay = autoPlay;
@@ -678,13 +685,14 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     String sessionId,
     Duration position,
   ) => _change(sessionId, (session) async {
-    session.position = position < Duration.zero ? Duration.zero : position;
+    final target = position < Duration.zero ? Duration.zero : position;
     if (session.pendingStart != null) {
-      session.pendingStart = session.position;
+      session.pendingStart = target;
     } else {
-      await session.player?.seek(session.position);
+      await session.player?.seek(target);
     }
-  });
+    session.position = target;
+  }, markPlaybackError: false);
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setVolume(
     String sessionId,

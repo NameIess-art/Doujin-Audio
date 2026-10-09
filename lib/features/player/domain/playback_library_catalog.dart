@@ -6,7 +6,7 @@ abstract interface class PlaybackLibraryCatalog {
   int get coverGeneration;
   MusicTrack? trackByPath(String trackPath);
   List<MusicTrack> tracksInGroup(String groupKey, {int? limit});
-  void updateTrackSnapshot(MusicTrack track);
+  void updateTrackDuration(String trackPath, Duration duration);
   String? resolvedPlaybackCoverPathForTrack(
     MusicTrack? track, {
     String? trackPath,

@@ -120,20 +120,6 @@ class LibraryScannerService {
         source: 'refresh',
       );
     }
-    final initialTracksByPath = <String, MusicTrack>{
-      for (final track in provider.library)
-        PathMatcher.normalize(track.path): track,
-    };
-    final existingTrackPaths = initialTracksByPath.keys.toSet();
-    final overwrittenTracks = <String, MusicTrack>{};
-    final rollbackRoots = <String>{...watchedLibraries, ...watchedFolders};
-    final existingEntryPathsByRoot = <String, Set<String>>{
-      for (final root in rollbackRoots)
-        root: provider
-            .libraryEntriesForLibrary(root)
-            .map((entry) => PathMatcher.normalize(entry.path))
-            .toSet(),
-    };
     var totalAdded = 0;
     var chunkDuplicateCount = 0;
     var chunkFailureCount = 0;
@@ -161,16 +147,11 @@ class LibraryScannerService {
         sourceFolderPath: chunk.sourceFolderPath,
         libraryRoot: chunk.libraryRoot,
         tracks: chunk.tracks,
+        entryTracks: chunk.entryTracks,
+        exclusionMatcher: chunk.mergeContext?.exclusionMatcher,
+        entrySnapshot: chunk.mergeContext?.entrySnapshot,
         folderPaths: chunk.folderPaths,
       );
-      for (final track in chunk.tracks) {
-        final key = PathMatcher.normalize(track.path);
-        final initial = initialTracksByPath[key];
-        if (initial != null &&
-            !identical(provider.trackByPath(track.path), initial)) {
-          overwrittenTracks.putIfAbsent(key, () => initial);
-        }
-      }
       chunkDuplicateCount += chunk.duplicateCount;
       chunkFailureCount += chunk.failureCount;
       chunkIndex++;
@@ -266,15 +247,10 @@ class LibraryScannerService {
                 unawaited(_prefillRjDetailForFolder(provider, childFolder));
               }
             }
-          } else {
-            _rollbackScanAdditions(
-              provider: provider,
-              existingTrackPaths: existingTrackPaths,
-              overwrittenTracks: overwrittenTracks,
-              existingEntryPathsByRoot: existingEntryPathsByRoot,
-            );
           }
-          await provider.finishStagedLibraryRefresh();
+          await provider.finishStagedLibraryRefresh(
+            commit: provider.isScanGenerationActive(generation),
+          );
         }
       }
     } finally {

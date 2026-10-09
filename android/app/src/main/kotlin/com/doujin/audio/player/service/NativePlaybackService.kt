@@ -240,6 +240,7 @@ class NativePlaybackService : MediaSessionService() {
             },
             removeSession = { sessionId -> sessionManager.remove(sessionId) },
             focusSession = ::focusSession,
+            playbackCacheDirectory = java.io.File(cacheDir, "asmr_playback_cache"),
             isStoredSessionCurrent = { NativePlaybackStateStore.sessionRevision(it.sessionId) == it.definitionRevision },
             logRestoreFailure = { sessionId, error ->
                 logWarn("restore_session_failed sessionId=$sessionId", error = error)

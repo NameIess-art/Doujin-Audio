@@ -59,8 +59,8 @@ class SqlitePlaybackRepository implements PlaybackPersistenceRepository {
         _sessionToRecord(session, includeQueue: false, includeEffects: false),
       );
   @override
-  Future<void> upsertTracks(List<MusicTrack> tracks) =>
-      _database.upsertTracks(tracks);
+  Future<void> updateTrackPlaybackHistory(List<MusicTrack> tracks) =>
+      _database.updateTrackPlaybackHistory(tracks);
   @override
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async =>
       (await _database.loadTimeSegmentLabels(

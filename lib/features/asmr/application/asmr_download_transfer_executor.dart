@@ -97,6 +97,7 @@ class AsmrDownloadTransferExecutor {
     final conflictPolicy = taskSnapshot.conflictPolicy;
 
     final client = HttpClient()
+      ..autoUncompress = false
       ..maxConnectionsPerHost = _maxConcurrentFilesPerTask
       ..connectionTimeout = const Duration(seconds: 15);
     _activeHttpClients[workId] = client;

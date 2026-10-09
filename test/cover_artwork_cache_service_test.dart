@@ -323,19 +323,42 @@ void main() {
       ).copyWith(manualCoverPath: image.path);
       final library = LibraryService()
         ..addOrReplaceTracks([track], persist: false);
+      final persistenceStarted = Completer<void>();
+      final releasePersistence = Completer<void>();
+      addTearDown(() {
+        if (!releasePersistence.isCompleted) releasePersistence.complete();
+      });
       final cache = CoverArtworkCacheService(
         libraryService: library,
         persistentDirectory: () async => support,
         temporaryDirectory: () async => temporary,
-        persistRetargetedManualCovers: (tracks) => library.addOrReplaceTracks(
-          tracks,
-          persist: false,
-          mergeExistingState: false,
-        ),
+        persistRetargetedManualCovers: (tracks) async {
+          expect(tracks.single.original, same(track));
+          persistenceStarted.complete();
+          await releasePersistence.future;
+          library.addOrReplaceTracks(
+            tracks
+                .map(
+                  (selection) => selection.original.copyWith(
+                    manualCoverPath: selection.savedPath,
+                  ),
+                )
+                .toList(),
+            persist: false,
+            mergeExistingState: false,
+          );
+        },
       );
       addTearDown(cache.dispose);
       addTearDown(library.dispose);
-      await cache.prepareManualCoversForCacheClear();
+      var prepared = false;
+      final prepare = cache.prepareManualCoversForCacheClear().then(
+        (_) => prepared = true,
+      );
+      await persistenceStarted.future;
+      expect(prepared, isFalse);
+      releasePersistence.complete();
+      await prepare;
       await image.delete();
       await cache.clearPersistentCache();
       final selected = library.trackByPath(track.path)!.manualCoverPath!;

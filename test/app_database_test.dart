@@ -39,6 +39,257 @@ void main() {
     expect(AppDatabase.schemaVersion, 12);
   });
 
+  MusicTrack catalogTrack(
+    String trackPath, {
+    String name = 'Track',
+    DateTime? scannedAt,
+    int? fileSizeBytes,
+  }) => MusicTrack(
+    path: trackPath,
+    displayName: name,
+    groupKey: '/library',
+    groupTitle: 'Library',
+    groupSubtitle: '',
+    isSingle: false,
+    scannedAt: scannedAt,
+    fileSizeBytes: fileSizeBytes,
+  );
+
+  const originalJson = ' { "workId" : 7, "tree" : [2, 1] } ';
+  Future<MusicTrack> seedDeferredTrack(String trackPath) async {
+    await appDatabase.upsertTracks([
+      catalogTrack(trackPath).copyWith(
+        tags: ['second', 'first'],
+        remoteMetadataKind: 'asmr.one',
+        remoteMetadata: {'workId': 7},
+        isFavorite: true,
+        manualCoverPath: '/covers/original.jpg',
+        lastPlayedPosition: const Duration(seconds: 12),
+      ),
+    ], scanGeneration: 17);
+    await db.update(
+      'track_remote_metadata',
+      {'remote_metadata_json': originalJson},
+      where: 'path = ?',
+      whereArgs: [trackPath],
+    );
+    final startup = (await appDatabase.loadStartupTracks()).singleWhere(
+      (track) => track.path == trackPath,
+    );
+    expect(startup.tags, isEmpty);
+    expect(startup.remoteMetadata, isNull);
+    return startup;
+  }
+
+  Future<void> expectDeferredDetails(String trackPath) async {
+    expect(
+      await db.query(
+        'track_tags',
+        columns: ['tag', 'sort_order'],
+        where: 'path = ?',
+        whereArgs: [trackPath],
+        orderBy: 'sort_order',
+      ),
+      [
+        {'tag': 'second', 'sort_order': 0},
+        {'tag': 'first', 'sort_order': 1},
+      ],
+    );
+    expect(
+      (await db.query(
+        'track_remote_metadata',
+        where: 'path = ?',
+        whereArgs: [trackPath],
+      )).single['remote_metadata_json'],
+      originalJson,
+    );
+  }
+
+  test(
+    'startup partial writes preserve deferred rows without rewriting them',
+    () async {
+      const trackPath = '/library/startup.mp3';
+      final startup = await seedDeferredTrack(trackPath);
+      for (final table in ['track_tags', 'track_remote_metadata']) {
+        for (final operation in ['INSERT', 'UPDATE', 'DELETE']) {
+          await db.execute('''
+          CREATE TRIGGER reject_${table}_$operation BEFORE $operation ON $table
+          BEGIN SELECT RAISE(ABORT, 'deferred row was rewritten'); END;
+        ''');
+        }
+      }
+      await repository.updateTrackDurations({
+        trackPath: const Duration(seconds: 40),
+      });
+      await repository.upsertCatalogTracks([
+        catalogTrack(
+          trackPath,
+          name: 'Rescanned',
+          scannedAt: DateTime.fromMillisecondsSinceEpoch(500),
+          fileSizeBytes: 123,
+        ),
+      ]);
+      await repository.updateTrackManualCoverPaths({
+        trackPath: '/covers/portable.jpg',
+      });
+      await repository.updateTrackPlaybackHistory([
+        startup.copyWith(
+          lastPlayedPosition: const Duration(seconds: 30),
+          lastPlayedAt: DateTime.fromMillisecondsSinceEpoch(1000),
+        ),
+      ]);
+      await repository.commitLibraryBatch(
+        tracks: [catalogTrack(trackPath)],
+        entries: const [],
+        catalogSettings: const {},
+      );
+      await appDatabase.markTracksScanned([
+        catalogTrack(trackPath),
+      ], generation: 18);
+      await repository.updateTrackDurations({
+        trackPath: const Duration(seconds: 99),
+      });
+      await expectDeferredDetails(trackPath);
+      final complete = (await repository.loadAllTracks()).single;
+      expect(complete.duration, const Duration(seconds: 40));
+      expect(complete.isFavorite, isTrue);
+      expect(complete.manualCoverPath, '/covers/portable.jpg');
+      expect(complete.lastPlayedPosition, const Duration(seconds: 30));
+      expect(complete.lastPlayedAt, DateTime.fromMillisecondsSinceEpoch(1000));
+      expect((await db.query('track_scan_info')).single['scan_generation'], 18);
+    },
+  );
+
+  test(
+    'authoritative full replacement can explicitly clear deferred details',
+    () async {
+      const trackPath = '/library/full.mp3';
+      await seedDeferredTrack(trackPath);
+      await appDatabase.upsertTracks([catalogTrack(trackPath)]);
+      final complete = (await appDatabase.loadAllTracks()).single;
+      expect(complete.tags, isEmpty);
+      expect(complete.remoteMetadata, isNull);
+      expect(complete.remoteMetadataKind, isNull);
+      expect(
+        (await db.query(
+          'track_remote_metadata',
+        )).single['remote_metadata_json'],
+        isNull,
+      );
+    },
+  );
+
+  test('late partial updates cannot resurrect a deleted track', () async {
+    const trackPath = '/library/deleted.mp3';
+    final startup = await seedDeferredTrack(trackPath);
+    await repository.deleteTracks([trackPath]);
+    await repository.updateTrackDurations({
+      trackPath: const Duration(seconds: 40),
+    });
+    await repository.updateTrackManualCoverPaths({
+      trackPath: '/covers/late.jpg',
+    });
+    await repository.updateTrackPlaybackHistory([startup]);
+    for (final table in [
+      'tracks',
+      'track_assets',
+      'track_playback_state',
+      'track_tags',
+      'track_remote_metadata',
+    ]) {
+      expect(await db.query(table), isEmpty, reason: table);
+    }
+  });
+
+  test(
+    'lightweight rename moves raw deferred rows and durable duration',
+    () async {
+      const oldPath = '/library/old.mp3';
+      const newPath = '/library/new.mp3';
+      await seedDeferredTrack(oldPath);
+      await repository.updateTrackDurations({
+        oldPath: const Duration(seconds: 40),
+      });
+      await repository.replaceTrackPaths({
+        oldPath: catalogTrack(newPath, name: 'New'),
+      });
+      await expectDeferredDetails(newPath);
+      final renamed = (await repository.loadAllTracks()).single;
+      expect(renamed.path, newPath);
+      expect(renamed.displayName, 'New');
+      expect(renamed.duration, const Duration(seconds: 40));
+      expect(renamed.isFavorite, isTrue);
+      expect(renamed.lastPlayedPosition, const Duration(seconds: 12));
+      expect((await db.query('track_scan_info')).single['scan_generation'], 17);
+    },
+  );
+
+  test('rename failure rolls back sources and every deferred table', () async {
+    const firstPath = '/library/first.mp3';
+    const secondPath = '/library/second.mp3';
+    await seedDeferredTrack(firstPath);
+    await seedDeferredTrack(secondPath);
+    final tables = [
+      'tracks',
+      'track_scan_info',
+      'track_playback_state',
+      'track_assets',
+      'track_tags',
+      'track_remote_metadata',
+    ];
+    final before = {for (final table in tables) table: await db.query(table)};
+    await db.execute('''
+      CREATE TRIGGER reject_rename BEFORE INSERT ON tracks
+      WHEN NEW.path = '/library/rejected.mp3'
+      BEGIN SELECT RAISE(ABORT, 'rename failed'); END;
+    ''');
+    await expectLater(
+      repository.replaceTrackPaths({
+        firstPath: catalogTrack('/library/accepted.mp3'),
+        secondPath: catalogTrack('/library/rejected.mp3'),
+      }),
+      throwsA(isA<DatabaseException>()),
+    );
+    for (final table in tables) {
+      expect(await db.query(table), before[table], reason: table);
+    }
+  });
+
+  test(
+    'rename rejects missing sources and existing destination rows',
+    () async {
+      const firstPath = '/library/first.mp3';
+      const secondPath = '/library/second.mp3';
+      await seedDeferredTrack(firstPath);
+      await seedDeferredTrack(secondPath);
+      await expectLater(
+        repository.replaceTrackPaths({firstPath: catalogTrack(secondPath)}),
+        throwsStateError,
+      );
+      await expectLater(
+        repository.replaceTrackPaths({
+          '/library/missing.mp3': catalogTrack('/library/new.mp3'),
+        }),
+        throwsStateError,
+      );
+      expect((await repository.loadAllTracks()).map((track) => track.path), [
+        firstPath,
+        secondPath,
+      ]);
+    },
+  );
+
+  test('rename rejects equivalent Windows destinations', () async {
+    await expectLater(
+      repository.replaceTrackPaths({
+        '/a.mp3': catalogTrack('C:/Music/曲目.mp3'),
+        '/b.mp3': catalogTrack(r'c:\music\曲目.mp3'),
+      }),
+      throwsArgumentError,
+    );
+    expect(await db.query('tracks'), isEmpty);
+  });
+
   test(
     'catalog settings failure rolls back tracks, entries and removals',
     () async {

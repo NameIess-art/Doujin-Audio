@@ -237,17 +237,26 @@ final class AsmrDownloadTaskStore {
     notifyProgressChanged(workId);
   }
 
-  void discardLivePartialProgress(
+  void reconcileLiveFileProgress(
     int workId,
     String relativePath,
-    int discardedBytes,
+    int actualBytes,
   ) {
-    if (discardedBytes <= 0) return;
-    _liveDownloadedBytes.update(
+    final task = this[workId];
+    if (_shutdown || task == null) return;
+    final fileProgress = liveFileDownloadedBytes(
       workId,
-      (value) => value > discardedBytes ? value - discardedBytes : 0,
+      fallback: task.fileDownloadedBytes,
     );
-    _liveFileDownloadedBytes[workId]?[relativePath] = 0;
+    final previous = fileProgress[relativePath] ?? 0;
+    if (previous == actualBytes) return;
+    final next =
+        (liveDownloadedBytes(workId) ?? task.downloadedBytes) +
+        actualBytes -
+        previous;
+    setLiveDownloadedBytes(workId, next < 0 ? 0 : next);
+    fileProgress[relativePath] = actualBytes;
+    notifyProgressChanged(workId);
   }
 
   int? liveDownloadedBytes(int workId) => _liveDownloadedBytes[workId];

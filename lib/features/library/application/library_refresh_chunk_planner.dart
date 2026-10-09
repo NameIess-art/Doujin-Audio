@@ -21,6 +21,7 @@ class LibraryRefreshChunk {
     required this.sourceFolderPath,
     required this.libraryRoot,
     List<MusicTrack> tracks = const <MusicTrack>[],
+    List<MusicTrack> entryTracks = const <MusicTrack>[],
     List<String> folderPaths = const <String>[],
     List<String> removeWatchedFolders = const <String>[],
     List<String> addWatchedFolders = const <String>[],
@@ -29,7 +30,9 @@ class LibraryRefreshChunk {
     this.progressLabel = '',
     this.duplicateCount = 0,
     this.failureCount = 0,
+    this.mergeContext,
   }) : tracks = immutableList(tracks),
+       entryTracks = immutableList(entryTracks),
        folderPaths = immutableList(folderPaths),
        removeWatchedFolders = immutableList(removeWatchedFolders),
        addWatchedFolders = immutableList(addWatchedFolders),
@@ -39,6 +42,8 @@ class LibraryRefreshChunk {
   final String sourceFolderPath;
   final String libraryRoot;
   final List<MusicTrack> tracks;
+  final List<MusicTrack> entryTracks;
+  final LibraryScanMergeContext? mergeContext;
   final List<String> folderPaths;
   final List<String> removeWatchedFolders;
   final List<String> addWatchedFolders;
@@ -175,6 +180,8 @@ class LibraryRefreshChunkPlanner {
           sourceFolderPath: sourceFolderPath,
           libraryRoot: libraryRoot,
           tracks: result.trackBatch,
+          entryTracks: result.entryBatch,
+          mergeContext: mergeContext,
           progressLabel: [
             if (progressPrefix.isNotEmpty) progressPrefix,
             '[$processedTracks]',
@@ -263,6 +270,7 @@ class LibraryRefreshChunkPlanner {
         sourceFolderPath: sourceFolderPath,
         libraryRoot: libraryRoot,
         folderPaths: allFolderPaths.toList(growable: false),
+        mergeContext: mergeContext,
         removeWatchedFolders: allowRemoval
             ? removeWatchedFolders
             : const <String>[],

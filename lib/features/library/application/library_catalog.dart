@@ -39,11 +39,14 @@ abstract interface class LibraryCatalogWriter {
   void beginLibraryBatch();
   Future<void> endLibraryBatch({bool notify = true});
   void beginStagedLibraryRefresh();
-  Future<void> finishStagedLibraryRefresh();
+  Future<void> finishStagedLibraryRefresh({bool commit = true});
   int applyStagedLibraryRefreshChunk({
     required String sourceFolderPath,
     required String libraryRoot,
     List<MusicTrack> tracks = const <MusicTrack>[],
+    List<MusicTrack> entryTracks = const <MusicTrack>[],
+    LibraryExclusionMatcher? exclusionMatcher,
+    LibraryEntrySnapshot? entrySnapshot,
     Iterable<String> folderPaths = const <String>[],
     Iterable<String> removeWatchedFolders = const <String>[],
     Iterable<String> addWatchedFolders = const <String>[],

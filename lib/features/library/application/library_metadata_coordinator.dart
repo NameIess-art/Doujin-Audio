@@ -525,14 +525,25 @@ final class LibraryMetadataCoordinator {
             current.copyWith(duration: track.duration),
     ];
     if (updated.isEmpty) return true;
-    await _databaseRepository.upsertTracks(updated);
+    await _databaseRepository.updateTrackDurations({
+      for (final track in updated) track.path: track.duration,
+    });
     if (!_isCurrent(epoch)) return false;
+    var changed = false;
     for (final track in updated) {
+      final current = _service.libraryByPath[track.path];
       final index = _service.libraryIndexByPath[track.path];
-      if (index == null) continue;
-      _service.library[index] = track;
-      _service.libraryByPath[track.path] = track;
+      if (current == null ||
+          index == null ||
+          current.duration > Duration.zero) {
+        continue;
+      }
+      final next = current.copyWith(duration: track.duration);
+      _service.library[index] = next;
+      _service.libraryByPath[track.path] = next;
+      changed = true;
     }
+    if (!changed) return true;
     _service.rebuildLibraryIndexes();
     _snapshotCacheService.markStructureChanged();
     if (notify) _syncState();

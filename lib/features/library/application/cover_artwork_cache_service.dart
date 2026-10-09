@@ -62,7 +62,10 @@ class CoverArtworkCacheService {
     bool Function(String coverSearchKey)? isActiveCoverKey,
     VoidCallback? onActiveCoverChanged,
     bool Function()? preferEmbeddedCover,
-    void Function(List<MusicTrack> tracks)? persistRetargetedManualCovers,
+    Future<void> Function(
+      List<({MusicTrack original, String savedPath})> tracks,
+    )?
+    persistRetargetedManualCovers,
   }) : _libraryService = libraryService,
        _databaseRepository = databaseRepository,
        _audioDetailCacheService = audioDetailCacheService,
@@ -108,7 +111,10 @@ class CoverArtworkCacheService {
   final bool Function(String coverSearchKey)? _isActiveCoverKey;
   final VoidCallback? _onActiveCoverChanged;
   final bool Function()? _preferEmbeddedCover;
-  final void Function(List<MusicTrack> tracks)? _persistRetargetedManualCovers;
+  final Future<void> Function(
+    List<({MusicTrack original, String savedPath})> tracks,
+  )?
+  _persistRetargetedManualCovers;
 
   final Map<String, Future<String?>> _folderCoverFutures = _coverKeyMap();
   final Map<String, String?> _resolvedFolderCovers = _coverKeyMap();
@@ -630,7 +636,7 @@ class CoverArtworkCacheService {
       );
       _folderCoverSelections[folder] = saved;
     }
-    final tracks = <MusicTrack>[];
+    final tracks = <({MusicTrack original, String savedPath})>[];
     for (final track in _libraryService.library.where(
       (track) => track.isSingle,
     )) {
@@ -652,14 +658,14 @@ class CoverArtworkCacheService {
       final source = track.manualCoverPath;
       if (source == null) continue;
       final saved = await preserve(target, source);
-      if (saved != source) tracks.add(track.copyWith(manualCoverPath: saved));
+      if (saved != source) tracks.add((original: track, savedPath: saved));
     }
     if (tracks.isNotEmpty) {
       final persist = _persistRetargetedManualCovers;
       if (persist == null) {
         throw StateError('Manual cover retargeting is not attached.');
       }
-      persist(tracks);
+      await persist(tracks);
     }
     await _saveFolderCoverSelections();
   }

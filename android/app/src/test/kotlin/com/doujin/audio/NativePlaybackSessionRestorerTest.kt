@@ -10,8 +10,51 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.io.File
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE, sdk = [33])
 class NativePlaybackSessionRestorerTest {
+    @Test
+    fun `legacy managed cache restores remote URI for queue and single item`() {
+        val directory = File(System.getProperty("java.io.tmpdir"), "asmr_playback_cache")
+        val legacy = File(directory, "a".repeat(40) + ".mp3").toURI().toString()
+        val remote = "https://api.asmr.one/api/media/stream/hash"
+        val backup = "https://api.asmr-300.com/api/media/stream/hash"
+        val item = StoredNativePlaybackQueueItem(remote, legacy, "Title", null, null, listOf(remote, backup))
+        val stored = storedSession(listOf(item))
+        val restored = stored.restoredQueue(directory).single()
+        assertEquals(remote, restored.uri)
+        assertEquals(listOf(remote, backup), restored.candidateUris)
+        assertEquals(remote, stored.copy(queue = emptyList(), path = remote, uri = legacy).restoredQueue(directory).single().uri)
+
+        val manager = NativePlaybackSessionManager { id -> NativePlaybackSession(id,
+            createPlayer = { _, _ -> error("Restore must stay cold") },
+            logWarn = { _, _, _ -> }, elapsedRealtimeMs = { 1L }) }
+        val restorer = NativePlaybackSessionRestorer(manager::getOrCreate, { manager.remove(it) }, {},
+            { _, error -> throw error }, playbackCacheDirectory = directory)
+        restorer.prepareQueues(listOf(stored))
+        assertEquals(listOf(stored.sessionId), restorer.restore(listOf(stored), { false }))
+        assertEquals(remote, manager.get(stored.sessionId)?.snapshot()?.get("uri"))
+    }
+
+    @Test
+    fun `cache restore leaves v2 outside managed directory and local sources unchanged`() {
+        val directory = File(System.getProperty("java.io.tmpdir"), "asmr_playback_cache")
+        val remote = "https://example.com/source.mp3"
+        val name = "b".repeat(40) + ".mp3"
+        for ((original, cached) in listOf(
+            remote to File(directory, "v2-$name").toURI().toString(),
+            remote to File(directory.parentFile, name).toURI().toString(),
+            "/user/audio.mp3" to File(directory, name).toURI().toString(),
+            remote to File(directory, "user.mp3").toURI().toString())) {
+            assertEquals(cached, storedSession(emptyList()).copy(path = original, uri = cached).restoredQueue(directory).single().uri)
+        }
+    }
+
     @Test
     fun `timer write cannot interleave target deletion read update and overwrite the newest alarm`() {
         val initial = StoredPlaybackTimerRuntimeState(1, 60_000L, false, 100_000L, 5_000L,

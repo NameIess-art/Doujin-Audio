@@ -702,7 +702,7 @@ final class _RecordingPlaybackPersistenceRepository
   }
 
   @override
-  Future<void> upsertTracks(List<MusicTrack> tracks) async {
+  Future<void> updateTrackPlaybackHistory(List<MusicTrack> tracks) async {
     trackWrites.add(List<MusicTrack>.of(tracks));
     final started = trackWriteStarted;
     if (started != null && !started.isCompleted) started.complete();

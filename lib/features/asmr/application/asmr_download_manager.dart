@@ -243,6 +243,7 @@ class AsmrDownloadManager {
 
     if (_queue.contains(workId)) {
       _queue.remove(workId);
+      await _discardTaskStaging(task);
 
       _manualRetryOnlyPaths.remove(workId);
       _plannedFilesMap.remove(workId);
@@ -272,6 +273,7 @@ class AsmrDownloadManager {
         await _outputs.cleanupCancelledTask(workId);
       }
     }
+    await _discardTaskStaging(task);
     _outputs.createdOutputPaths.remove(workId);
     _outputs.createdJsonDocuments.remove(workId);
 
@@ -280,6 +282,19 @@ class AsmrDownloadManager {
     _store.remove(workId);
     _store.notifyTaskChanged();
     await flushPersistence();
+  }
+
+  Future<void> _discardTaskStaging(AsmrDownloadTaskSnapshot task) async {
+    final files = _planner.collectPlannedFiles(task.selectedRoots);
+    if (task.saveCover) {
+      final cover = _planner.plannedCoverFile(task.work);
+      if (cover != null) files.add(cover);
+    }
+    await _outputs.discardTaskStaging(
+      task,
+      files,
+      _outputs.createdOutputPaths[task.work.id] ?? const {},
+    );
   }
 
   Future<void> deleteTask(int workId) async {
@@ -700,6 +715,7 @@ class AsmrDownloadManager {
         downloadedBytes: finalDownloadedBytes,
         fileDownloadedBytes: fileDownloadedBytes,
         fileRetryAttempts: const <String, int>{},
+        fileEntityTags: const <String, String>{},
         failedFilePaths: failedFilePaths,
         manuallyRetryingFilePaths: const <String>{},
         message: failed > 0 ? 'completed_with_failures' : 'completed',

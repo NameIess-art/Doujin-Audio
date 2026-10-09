@@ -90,6 +90,8 @@ extension AppDatabaseTracks on AppDatabase {
     await upsertTracks(tracks);
   }
 
+  /// Replaces a complete, authoritative record, including empty tags/metadata.
+  /// A startup projection must use the field-scoped or catalog write methods.
   Future<void> upsertTracks(
     List<MusicTrack> tracks, {
     int? scanGeneration,
@@ -104,6 +106,83 @@ extension AppDatabaseTracks on AppDatabase {
     });
   }
 
+  Future<void> upsertCatalogTracks(
+    List<MusicTrack> tracks, {
+    int? scanGeneration,
+  }) async {
+    if (tracks.isEmpty) return;
+    await _runDatabaseWrite(
+      (db) => db.transaction((txn) async {
+        await _upsertCatalogTrackChunks(
+          txn,
+          tracks,
+          scanGeneration: scanGeneration,
+        );
+      }),
+    );
+  }
+
+  /// Duration probes and native snapshots only fill an unknown duration.
+  Future<void> updateTrackDurations(Map<String, Duration> durations) async {
+    if (durations.isEmpty) return;
+    await _runDatabaseWrite(
+      (db) => db.transaction((txn) async {
+        final batch = txn.batch();
+        for (final entry in durations.entries) {
+          batch.update(
+            'tracks',
+            {'duration_ms': entry.value.inMilliseconds},
+            where: 'path = ? AND duration_ms <= 0',
+            whereArgs: [entry.key],
+          );
+        }
+        await batch.commit(noResult: true);
+      }),
+    );
+  }
+
+  Future<void> updateTrackManualCoverPaths(Map<String, String> paths) async {
+    if (paths.isEmpty) return;
+    await _runDatabaseWrite(
+      (db) => db.transaction((txn) async {
+        final batch = txn.batch();
+        for (final entry in paths.entries) {
+          batch.update(
+            'track_assets',
+            {'manual_cover_path': entry.value},
+            where:
+                'path = ? AND EXISTS (SELECT 1 FROM tracks WHERE tracks.path = track_assets.path)',
+            whereArgs: [entry.key],
+          );
+        }
+        await batch.commit(noResult: true);
+      }),
+    );
+  }
+
+  Future<void> updateTrackPlaybackHistory(List<MusicTrack> tracks) async {
+    if (tracks.isEmpty) return;
+    await _runDatabaseWrite(
+      (db) => db.transaction((txn) async {
+        final batch = txn.batch();
+        for (final track in tracks) {
+          batch.update(
+            'track_playback_state',
+            {
+              'last_played_position_ms':
+                  track.lastPlayedPosition.inMilliseconds,
+              'last_played_at_ms': track.lastPlayedAt?.millisecondsSinceEpoch,
+            },
+            where:
+                'path = ? AND EXISTS (SELECT 1 FROM tracks WHERE tracks.path = track_playback_state.path)',
+            whereArgs: [track.path],
+          );
+        }
+        await batch.commit(noResult: true);
+      }),
+    );
+  }
+
   Future<void> replaceTrackPaths(Map<String, MusicTrack> replacements) async {
     if (replacements.isEmpty) return;
     final normalizedDestinations = <String>{};
@@ -112,7 +191,7 @@ extension AppDatabaseTracks on AppDatabase {
         throw ArgumentError('Track replacement paths must not be empty.');
       }
       if (!normalizedDestinations.add(
-        PathMatcher.normalize(entry.value.path),
+        PathMatcher.equivalenceKey(entry.value.path),
       )) {
         throw ArgumentError('Track replacement paths must be unique.');
       }
@@ -120,13 +199,56 @@ extension AppDatabaseTracks on AppDatabase {
 
     await _runDatabaseWrite((db) async {
       await db.transaction((txn) async {
-        await AppDatabaseTracks._deleteTrackPaths(
+        final sources = replacements.keys.toList(growable: false);
+        final sourceRows = await _queryTrackRowsForPaths(
           txn,
-          replacements.keys.toList(growable: false),
+          'tracks',
+          sources,
         );
+        final sourceByPath = {
+          for (final row in sourceRows) row['path'] as String: row,
+        };
+        final sourcePaths = sourceByPath.keys.toSet();
+        if (sources.any((path) => !sourcePaths.contains(path))) {
+          throw StateError('Track replacement source does not exist.');
+        }
+        final destinations = await _queryTrackRowsForPaths(
+          txn,
+          'tracks',
+          replacements.values.map((track) => track.path).toList(),
+        );
+        if (destinations.any((row) => !sourcePaths.contains(row['path']))) {
+          throw StateError('Track replacement destination already exists.');
+        }
+        // Startup tracks omit these fields. Move the raw rows so neither JSON
+        // decoding nor an empty in-memory projection can alter durable details.
+        final deferredRows = <String, List<Map<String, Object?>>>{
+          for (final table in [
+            'track_tags',
+            'track_remote_metadata',
+            'track_playback_state',
+            'track_scan_info',
+          ])
+            table: await _queryTrackRowsForPaths(txn, table, sources),
+        };
+        await AppDatabaseTracks._deleteTrackPaths(txn, sources);
         final batch = txn.batch();
-        for (final track in replacements.values) {
-          _writeTrackToBatch(batch, track);
+        for (final entry in replacements.entries) {
+          final track = entry.value.copyWith(
+            duration: Duration(
+              milliseconds: (sourceByPath[entry.key]!['duration_ms'] as num)
+                  .toInt(),
+            ),
+          );
+          _writeTrackToBatch(batch, track, writeDeferredDetails: false);
+        }
+        for (final entry in deferredRows.entries) {
+          for (final row in entry.value) {
+            batch.insert(entry.key, {
+              ...row,
+              'path': replacements[row['path']]!.path,
+            }, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
         }
         await batch.commit(noResult: true);
       });
@@ -147,7 +269,7 @@ extension AppDatabaseTracks on AppDatabase {
     List<MusicTrack> tracks, {
     required int generation,
   }) {
-    return upsertTracks(tracks, scanGeneration: generation);
+    return upsertCatalogTracks(tracks, scanGeneration: generation);
   }
 
   Future<void> deleteTracksMissingFromGeneration(int generation) async {
@@ -216,6 +338,74 @@ extension AppDatabaseTracks on AppDatabase {
       batch.delete('tracks');
       await batch.commit(noResult: true);
     });
+  }
+}
+
+Future<List<Map<String, Object?>>> _queryTrackRowsForPaths(
+  DatabaseExecutor database,
+  String table,
+  List<String> paths,
+) async {
+  final rows = <Map<String, Object?>>[];
+  for (var start = 0; start < paths.length; start += _sqliteInClauseBatchSize) {
+    final chunk = paths.sublist(
+      start,
+      (start + _sqliteInClauseBatchSize).clamp(0, paths.length),
+    );
+    rows.addAll(
+      await database.query(
+        table,
+        where: 'path IN (${List.filled(chunk.length, '?').join(',')})',
+        whereArgs: chunk,
+      ),
+    );
+  }
+  return rows;
+}
+
+Future<void> _upsertCatalogTrackChunks(
+  DatabaseExecutor database,
+  List<MusicTrack> tracks, {
+  int? scanGeneration,
+}) async {
+  const chunkSize = 120;
+  for (var start = 0; start < tracks.length; start += chunkSize) {
+    await Future<void>.delayed(Duration.zero);
+    final chunk = tracks.sublist(
+      start,
+      (start + chunkSize).clamp(0, tracks.length),
+    );
+    final existing = (await database.query(
+      'tracks',
+      columns: ['path'],
+      where: 'path IN (${List.filled(chunk.length, '?').join(',')})',
+      whereArgs: chunk.map((track) => track.path).toList(),
+    )).map((row) => row['path'] as String).toSet();
+    final batch = database.batch();
+    for (final track in chunk) {
+      if (existing.add(track.path)) {
+        _writeTrackToBatch(batch, track, scanGeneration: scanGeneration);
+        continue;
+      }
+      // Catalog scans own names and file metadata, not playback, artwork, or
+      // deferred details. In particular, omitted tags/JSON are not deletions.
+      final core = _trackCoreRow(track)..remove('duration_ms');
+      batch.update('tracks', core, where: 'path = ?', whereArgs: [track.path]);
+      batch.insert(
+        'track_scan_info',
+        _trackScanRow(track, scanGeneration: scanGeneration),
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      final scan = _trackScanRow(track, scanGeneration: scanGeneration);
+      if (scanGeneration == null) scan.remove('scan_generation');
+      batch.update(
+        'track_scan_info',
+        scan,
+        where: 'path = ?',
+        whereArgs: [track.path],
+      );
+    }
+    await batch.commit(noResult: true);
   }
 }
 

@@ -3,10 +3,134 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as path;
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 
 void main() {
+  for (final testCase
+      in <({int status, int length, int? expected, bool success})>[
+        (status: 200, length: 3, expected: 3, success: true),
+        (status: 200, length: 4, expected: null, success: false),
+        (status: 200, length: 2, expected: null, success: false),
+        (status: 206, length: 3, expected: 3, success: false),
+        (status: 200, length: -1, expected: null, success: true),
+        (status: 200, length: -1, expected: 4, success: false),
+      ]) {
+    test('cache verifies EOF and lengths $testCase', () async {
+      final directory = await Directory.systemTemp.createTemp('cache_length_');
+      final client = _StreamClient(
+        Stream.value([1, 2, 3]),
+        status: testCase.status,
+        length: testCase.length,
+      );
+      final service = AsmrPlaybackCacheService(
+        temporaryDirectory: () async => directory,
+        httpClientFactory: () => client,
+      );
+      addTearDown(() async {
+        await service.dispose();
+        await directory.delete(recursive: true);
+      });
+      const url = 'https://example.test/audio.mp3';
+      final result = await service.cacheTrack(
+        _track(
+          url,
+          fileSizeBytes: testCase.expected,
+          remoteMetadata: {
+            'fullQualityPlaybackUrls': [url],
+          },
+        ),
+      );
+      expect(result != null, testCase.success);
+      expect(client.autoUncompress, isFalse);
+      expect(
+        client.request.headers.value(HttpHeaders.acceptEncodingHeader),
+        'identity',
+      );
+      final files = await Directory(
+        '${directory.path}/${AsmrPlaybackCacheService.cacheDirectoryName}',
+      ).list().toList();
+      expect(files.where((file) => file.path.endsWith('.part')), isEmpty);
+      if (testCase.success) {
+        expect(result, contains('v2-'));
+        expect(await File(result!).readAsBytes(), [1, 2, 3]);
+      } else {
+        expect(files, isEmpty);
+      }
+    });
+  }
+
+  test(
+    'low quality and old metadata use response size, not original size',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('cache_quality_');
+      final service = AsmrPlaybackCacheService(
+        temporaryDirectory: () async => directory,
+        httpClientFactory: () =>
+            _StreamClient(Stream.value([1, 2, 3]), length: 3),
+      );
+      addTearDown(() async {
+        await service.dispose();
+        await directory.delete(recursive: true);
+      });
+      for (final metadata in [
+        <String, Object?>{},
+        <String, Object?>{
+          'fullQualityPlaybackUrls': ['https://example.test/full.mp3'],
+        },
+      ]) {
+        final result = await service.cacheTrack(
+          _track(
+            'https://example.test/low-${metadata.length}.mp3',
+            fileSizeBytes: 99,
+            remoteMetadata: metadata,
+          ),
+        );
+        expect(result, isNotNull);
+      }
+    },
+  );
+
+  test(
+    'legacy cache is retired and damaged v2 hit is downloaded again',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('cache_version_');
+      final root = await Directory(
+        '${directory.path}/${AsmrPlaybackCacheService.cacheDirectoryName}',
+      ).create();
+      const url = 'https://example.test/full.mp3';
+      final name = '${sha1.convert(utf8.encode(url))}.mp3';
+      final legacy = await File('${root.path}/$name').writeAsBytes([8]);
+      final current = await File('${root.path}/v2-$name').writeAsBytes([9]);
+      var requests = 0;
+      final service = AsmrPlaybackCacheService(
+        temporaryDirectory: () async => directory,
+        httpClientFactory: () {
+          requests++;
+          return _StreamClient(Stream.value([1, 2, 3]), length: 3);
+        },
+      );
+      addTearDown(() async {
+        await service.dispose();
+        await directory.delete(recursive: true);
+      });
+      final track = _track(
+        url,
+        fileSizeBytes: 3,
+        remoteMetadata: {
+          'fullQualityPlaybackUrls': [url],
+        },
+      );
+      expect(await service.cacheTrack(track), path.normalize(current.path));
+      expect(await legacy.exists(), isFalse);
+      expect(await current.readAsBytes(), [1, 2, 3]);
+      expect(await service.cacheTrack(track), path.normalize(current.path));
+      expect(requests, 1);
+    },
+  );
+
   test('a blocked file write pauses the download source', () async {
     final directory = await Directory.systemTemp.createTemp(
       'asmr_backpressure_',
@@ -284,7 +408,11 @@ AsmrPlaybackCacheService _service(
   downloadIdleTimeout: idleTimeout,
 );
 
-MusicTrack _track(String url) => MusicTrack(
+MusicTrack _track(
+  String url, {
+  int? fileSizeBytes,
+  Map<String, Object?>? remoteMetadata,
+}) => MusicTrack(
   path: url,
   displayName: 'track.mp3',
   groupKey: 'asmr-work',
@@ -292,9 +420,12 @@ MusicTrack _track(String url) => MusicTrack(
   groupSubtitle: 'ASMR',
   isSingle: false,
   remoteMetadataKind: 'asmr.one',
-  remoteMetadata: <String, Object?>{
-    'playbackUrls': <String>[url],
-  },
+  fileSizeBytes: fileSizeBytes,
+  remoteMetadata:
+      remoteMetadata ??
+      <String, Object?>{
+        'playbackUrls': <String>[url],
+      },
 );
 
 String _url(HttpServer server, String path) =>
@@ -358,10 +489,16 @@ class _WriteGateConsumer implements StreamConsumer<List<int>> {
 }
 
 class _StreamClient implements HttpClient {
-  _StreamClient(this.body);
+  _StreamClient(this.body, {this.status = 200, this.length = -1});
   final Stream<List<int>> body;
+  final int status;
+  final int length;
+  late _StreamRequest request;
   @override
-  Future<HttpClientRequest> getUrl(Uri url) async => _StreamRequest(body);
+  bool autoUncompress = true;
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async =>
+      request = _StreamRequest(body, status, length);
   @override
   void close({bool force = false}) {}
   @override
@@ -369,19 +506,28 @@ class _StreamClient implements HttpClient {
 }
 
 class _StreamRequest implements HttpClientRequest {
-  _StreamRequest(this.body);
+  _StreamRequest(this.body, this.status, this.length);
   final Stream<List<int>> body;
+  final int status;
+  final int length;
   @override
-  Future<HttpClientResponse> close() async => _StreamResponse(body);
+  final HttpHeaders headers = _Headers();
+  @override
+  Future<HttpClientResponse> close() async =>
+      _StreamResponse(body, status, length);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _StreamResponse extends Stream<List<int>> implements HttpClientResponse {
-  _StreamResponse(this.body);
+  _StreamResponse(this.body, this.statusCode, this.contentLength);
   final Stream<List<int>> body;
   @override
-  int get statusCode => HttpStatus.ok;
+  final int statusCode;
+  @override
+  final int contentLength;
+  @override
+  final HttpHeaders headers = _Headers();
   @override
   StreamSubscription<List<int>> listen(
     void Function(List<int>)? onData, {
@@ -394,6 +540,19 @@ class _StreamResponse extends Stream<List<int>> implements HttpClientResponse {
     onDone: onDone,
     cancelOnError: cancelOnError,
   );
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _Headers implements HttpHeaders {
+  final values = <String, String>{};
+  @override
+  String? value(String name) => values[name.toLowerCase()];
+  @override
+  void set(String name, Object value, {bool preserveHeaderCase = false}) {
+    values[name.toLowerCase()] = value.toString();
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -383,7 +383,7 @@ final class _IsolationPersistenceRepository extends TestPersistenceRepository {
   int orderWrites = 0;
 
   @override
-  Future<void> upsertTracks(List<MusicTrack> tracks) async {}
+  Future<void> updateTrackPlaybackHistory(List<MusicTrack> tracks) async {}
 
   @override
   Future<void> upsertSession(

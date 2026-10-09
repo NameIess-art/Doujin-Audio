@@ -39,6 +39,7 @@ class AsmrDownloadTaskSnapshot {
     Map<String, int> fileDownloadedBytes = const {},
     Map<String, int> fileTotalBytes = const {},
     Map<String, int> fileRetryAttempts = const {},
+    Map<String, String> fileEntityTags = const {},
     Set<String> completedFilePaths = const {},
     Set<String> failedFilePaths = const {},
     Set<String> manuallyRetryingFilePaths = const {},
@@ -46,6 +47,7 @@ class AsmrDownloadTaskSnapshot {
   }) : fileDownloadedBytes = immutableMap(fileDownloadedBytes),
        fileTotalBytes = immutableMap(fileTotalBytes),
        fileRetryAttempts = immutableMap(fileRetryAttempts),
+       fileEntityTags = immutableMap(fileEntityTags),
        completedFilePaths = immutableSet(completedFilePaths),
        failedFilePaths = immutableSet(failedFilePaths),
        manuallyRetryingFilePaths = immutableSet(manuallyRetryingFilePaths),
@@ -73,6 +75,7 @@ class AsmrDownloadTaskSnapshot {
   final Map<String, int> fileDownloadedBytes;
   final Map<String, int> fileTotalBytes;
   final Map<String, int> fileRetryAttempts;
+  final Map<String, String> fileEntityTags;
   final Set<String> completedFilePaths;
   final Set<String> failedFilePaths;
   final Set<String> manuallyRetryingFilePaths;
@@ -124,6 +127,7 @@ class AsmrDownloadTaskSnapshot {
     Map<String, int>? fileDownloadedBytes,
     Map<String, int>? fileTotalBytes,
     Map<String, int>? fileRetryAttempts,
+    Map<String, String>? fileEntityTags,
     Set<String>? completedFilePaths,
     Set<String>? failedFilePaths,
     Set<String>? manuallyRetryingFilePaths,
@@ -152,6 +156,7 @@ class AsmrDownloadTaskSnapshot {
       fileDownloadedBytes: fileDownloadedBytes ?? this.fileDownloadedBytes,
       fileTotalBytes: fileTotalBytes ?? this.fileTotalBytes,
       fileRetryAttempts: fileRetryAttempts ?? this.fileRetryAttempts,
+      fileEntityTags: fileEntityTags ?? this.fileEntityTags,
       completedFilePaths: completedFilePaths ?? this.completedFilePaths,
       failedFilePaths: failedFilePaths ?? this.failedFilePaths,
       manuallyRetryingFilePaths:

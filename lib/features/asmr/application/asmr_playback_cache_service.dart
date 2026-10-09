@@ -12,6 +12,7 @@ import '../../../core/cache/app_cache_service.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../player/domain/playback_track_cache.dart';
+import '../domain/asmr_media_sources.dart';
 
 class AsmrPlaybackCacheService implements PlaybackTrackCache {
   AsmrPlaybackCacheService({
@@ -50,8 +51,13 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
       if (existing != null) return existing;
 
       late final Future<String?> task;
-      task = _cacheTarget(root: root, target: target, source: source)
-          .whenComplete(() {
+      task =
+          _cacheTarget(
+            root: root,
+            target: target,
+            source: source,
+            expectedBytes: _expectedBytes(track, source),
+          ).whenComplete(() {
             if (identical(_inFlight[target.path], task)) {
               _inFlight.remove(target.path);
             }
@@ -68,24 +74,34 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
     required Directory root,
     required File target,
     required String source,
+    required int? expectedBytes,
   }) async {
     final temp = File('${target.path}.part');
     final lease = AppCacheService.protectPaths(<String>[temp.path]);
     try {
       if (_disposed) return null;
       await root.create(recursive: true);
-      if (await target.exists() && await target.length() > 0) {
-        await target.setLastModified(DateTime.now());
-        return target.path;
+      final legacy = File(
+        path.join(root.path, path.basename(target.path).substring(3)),
+      );
+      if (await legacy.exists()) await legacy.delete();
+      if (await target.exists()) {
+        final length = await target.length();
+        if (length > 0 && (expectedBytes == null || length == expectedBytes)) {
+          await target.setLastModified(DateTime.now());
+          return target.path;
+        }
+        await target.delete();
       }
 
       if (await temp.exists()) {
         await temp.delete();
       }
-      await _download(source, temp);
+      await _download(source, temp, expectedBytes: expectedBytes);
       if (_disposed) return null;
-      if (await temp.length() <= 0) {
-        return null;
+      final length = await temp.length();
+      if (length <= 0 || (expectedBytes != null && length != expectedBytes)) {
+        throw const HttpException('ASMR playback cache length mismatch.');
       }
       await temp.rename(target.path);
       AppCacheService.scheduleEnforce();
@@ -122,6 +138,27 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
     }
   }
 
+  static int? _expectedBytes(MusicTrack track, String source) {
+    final size = track.fileSizeBytes;
+    if (size == null || size <= 0) return null;
+    final raw = track.remoteMetadata?['fullQualityPlaybackUrls'];
+    if (raw is! List) return null;
+    final uri = Uri.tryParse(source);
+    for (final candidate in raw.whereType<String>()) {
+      if (candidate == source) return size;
+      final original = Uri.tryParse(candidate);
+      if (uri != null &&
+          original != null &&
+          isAsmrApiHost(uri.host) &&
+          isAsmrApiHost(original.host) &&
+          uri.path == original.path &&
+          uri.query == original.query) {
+        return size;
+      }
+    }
+    return null;
+  }
+
   Future<Directory> _cacheRoot() async {
     final temp = await _temporaryDirectory();
     return Directory(path.join(temp.path, cacheDirectoryName));
@@ -130,7 +167,7 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
   static String _fileNameFor(String source, MusicTrack track) {
     final hash = sha1.convert(utf8.encode(source)).toString();
     final extension = _extensionFor(source, track.displayName);
-    return extension.isEmpty ? hash : '$hash$extension';
+    return 'v2-$hash$extension';
   }
 
   static String _extensionFor(String source, String displayName) {
@@ -147,7 +184,11 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
         RegExp(r'^\.[A-Za-z0-9]+$').hasMatch(value);
   }
 
-  Future<void> _download(String source, File target) async {
+  Future<void> _download(
+    String source,
+    File target, {
+    required int? expectedBytes,
+  }) async {
     if (!await _acquireTransfer()) return;
     HttpClient? client;
     HttpClientRequest? request;
@@ -155,6 +196,7 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
     try {
       if (_disposed) return;
       client = _httpClientFactory();
+      client.autoUncompress = false;
       _activeClients.add(client);
       try {
         client.connectionTimeout = requestTimeout;
@@ -162,21 +204,49 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
         // Some injected clients do not expose socket options.
       }
       request = await client.getUrl(Uri.parse(source)).timeout(requestTimeout);
+      request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
       final response = await request.close().timeout(requestTimeout);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
+      if (response.statusCode != HttpStatus.ok) {
         throw HttpException(
           'Unexpected ASMR playback cache status ${response.statusCode}',
           uri: Uri.parse(source),
         );
       }
+      final encoding = response.headers.value(
+        HttpHeaders.contentEncodingHeader,
+      );
+      if (encoding != null && encoding.toLowerCase() != 'identity') {
+        throw const HttpException('Unsupported ASMR playback cache encoding.');
+      }
+      final responseBytes = response.contentLength;
+      if (expectedBytes != null &&
+          responseBytes >= 0 &&
+          responseBytes != expectedBytes) {
+        throw const HttpException(
+          'ASMR playback cache response length mismatch.',
+        );
+      }
+      var receivedBytes = 0;
       sink = target.openWrite();
       await sink.addStream(
         response.timeout(downloadIdleTimeout).map((chunk) {
           if (_disposed) throw StateError('ASMR playback cache was disposed.');
+          receivedBytes += chunk.length;
+          if ((responseBytes >= 0 && receivedBytes > responseBytes) ||
+              (expectedBytes != null && receivedBytes > expectedBytes)) {
+            throw const HttpException(
+              'ASMR playback cache exceeded expected length.',
+            );
+          }
           return chunk;
         }),
       );
       await sink.flush();
+      if (receivedBytes == 0 ||
+          (responseBytes >= 0 && receivedBytes != responseBytes) ||
+          (expectedBytes != null && receivedBytes != expectedBytes)) {
+        throw const HttpException('ASMR playback cache incomplete response.');
+      }
     } catch (error) {
       request?.abort(error);
       rethrow;

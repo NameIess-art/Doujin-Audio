@@ -714,7 +714,11 @@ final class LibraryMutationCoordinator {
     _coverArtwork().invalidateFolders([oldFolderPath, newFolderPath]);
     snapshotCacheService.markStructureChanged();
     _syncStateSlice();
-    await databaseRepository.replaceTrackPaths(retargetResult.retargetedTracks);
+    if (_persistenceCoordinator.enabled) {
+      await databaseRepository.replaceTrackPaths(
+        retargetResult.retargetedTracks,
+      );
+    }
     await databaseRepository.deleteLibraryEntriesForLibrary(libraryRootPath);
     if (retargetResult.retargetedEntries.isNotEmpty) {
       await databaseRepository.upsertLibraryEntries(
@@ -745,8 +749,11 @@ final class LibraryMutationCoordinator {
       _coverArtwork().invalidateAll();
       snapshotCacheService.markStructureChanged();
       _syncStateSlice();
-      await databaseRepository.deleteTracks([oldTrackPath]);
-      await databaseRepository.upsertTracks([updatedTrack]);
+      if (_persistenceCoordinator.enabled) {
+        await databaseRepository.replaceTrackPaths({
+          oldTrackPath: updatedTrack,
+        });
+      }
     }
   }
 

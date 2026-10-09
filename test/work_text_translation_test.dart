@@ -12,7 +12,6 @@ import 'package:doujin_audio/features/library/application/work_text_service.dart
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/presentation/work_text_viewer_page.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -185,12 +184,18 @@ void main() {
         await tester.tap(find.byIcon(Icons.chevron_right_rounded));
         await _batch(tester);
         expect(find.byKey(_button), findsOneWidget);
-        expect(tester.widget<IconButton>(find.byKey(_button)).onPressed, isNull);
+        expect(
+          tester.widget<IconButton>(find.byKey(_button)).onPressed,
+          isNull,
+        );
         expect(find.byIcon(Icons.translate), findsOneWidget);
         nextRead.complete(Uint8List(0));
         await tester.pumpAndSettle();
         expect(find.byKey(_button), findsOneWidget);
-        expect(tester.widget<IconButton>(find.byKey(_button)).onPressed, isNull);
+        expect(
+          tester.widget<IconButton>(find.byKey(_button)).onPressed,
+          isNull,
+        );
         expect(translations.calls, hasLength(1));
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -325,7 +330,7 @@ void main() {
     first.complete();
     await _batch(tester);
     final scroll = tester
-        .widget<SingleChildScrollView>(find.byType(SingleChildScrollView).first)
+        .widget<CustomScrollView>(find.byType(CustomScrollView).first)
         .controller!;
     scroll.jumpTo(scroll.position.maxScrollExtent);
     await _batch(tester);
@@ -353,10 +358,7 @@ void main() {
       files: const [_markdown],
       contents: {_markdown.path: content},
     );
-    expect(
-      tester.widget<MarkdownBody>(find.byType(MarkdownBody)).data,
-      content,
-    );
+    expect(find.text('Heading', findRichText: true), findsWidgets);
     await tester.tap(find.byKey(_button));
     await _batch(tester);
     final call = service.calls.single;
@@ -387,10 +389,7 @@ void main() {
     await tester.tap(find.byKey(_button));
     await tester.pump();
     expect(find.text('Heading', findRichText: true), findsWidgets);
-    expect(
-      tester.widget<MarkdownBody>(find.byType(MarkdownBody)).data,
-      content,
-    );
+    expect(find.text('Link label', findRichText: true), findsWidgets);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

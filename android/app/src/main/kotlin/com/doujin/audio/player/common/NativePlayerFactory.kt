@@ -66,23 +66,27 @@ internal fun nativePlaybackAudioAttributes(): androidx.media3.common.AudioAttrib
         .build()
 
 /**
- * Tailored LoadControl for long overnight screen-off playback.
- * Buffers ahead up to 120s of audio with 30s back-buffer to prevent
- * underruns during Doze mode network throttling and CPU sleep gaps.
+ * Network audio keeps its forward buffer through Doze/network throttling.
+ * Local playback uses the smaller byte-bounded policy, including video; retaining
+ * a back buffer for every player would multiply high-bitrate video memory.
  */
 internal fun nativePlaybackLoadControl(): DefaultLoadControl =
     DefaultLoadControl.Builder()
-        .setBufferDurationsMs(
+        .setBufferDurationsMsForStreaming(
             /* minBufferMs = */ 60_000,
             /* maxBufferMs = */ 120_000,
             /* bufferForPlaybackMs = */ 2_500,
             /* bufferForPlaybackAfterRebufferMs = */ 5_000
         )
-        .setBackBuffer(
-            /* backBufferDurationMs = */ 30_000,
-            /* retainBackBufferFromKeyframe = */ false
+        .setBufferDurationsMsForLocalPlayback(
+            DefaultLoadControl.DEFAULT_MIN_BUFFER_FOR_LOCAL_PLAYBACK_MS,
+            DefaultLoadControl.DEFAULT_MAX_BUFFER_FOR_LOCAL_PLAYBACK_MS,
+            DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_FOR_LOCAL_PLAYBACK_MS,
+            DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_FOR_LOCAL_PLAYBACK_MS
         )
-        .setPrioritizeTimeOverSizeThresholds(true)
+        .setPrioritizeTimeOverSizeThresholdsForStreaming(true)
+        .setPrioritizeTimeOverSizeThresholdsForLocalPlayback(false)
+        .setBackBuffer(0, false)
         .build()
 
 private const val ASMR_ACCEPT_LANGUAGE = "zh-CN,zh;q=0.9,en;q=0.8"

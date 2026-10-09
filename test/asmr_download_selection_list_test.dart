@@ -239,6 +239,140 @@ void main() {
       },
       variant: TargetPlatformVariant({platform}),
     );
+
+    testWidgets(
+      'download animation work stays constant for large folders on $platform',
+      (tester) async {
+        for (final count in [20, 2000]) {
+          final model = AsmrDownloadSelectionModel([
+            _node(
+              'root',
+              children: [
+                _node(
+                  'disc',
+                  children: [for (var i = 0; i < count; i++) _node('track$i')],
+                ),
+              ],
+            ),
+          ]);
+          await _pumpList(tester, model);
+          await tester.tap(find.text('disc'));
+          // Check before the first frame: AnimatedList used to start one
+          // ticker for every descendant despite only mounting viewport rows.
+          expect(tester.binding.transientCallbackCount, lessThan(10));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          final fades = find
+              .byType(FadeTransition)
+              .evaluate()
+              .map((element) => element.widget as FadeTransition)
+              .where((fade) => fade.opacity.value > 0 && fade.opacity.value < 1)
+              .toList();
+          expect(fades.length, greaterThan(1));
+          expect(fades.map((fade) => fade.opacity).toSet(), hasLength(1));
+          expect(
+            find.byType(AsmrDownloadNodeTile).evaluate().length,
+            lessThan(110),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('track0'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('disc'));
+          expect(tester.binding.transientCallbackCount, lessThan(10));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 60));
+          await tester.tap(find.text('disc'));
+          await tester.pumpAndSettle();
+          expect(model.stateForPath('track0'), isTrue);
+          expect(find.text('track0'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        }
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'download folder keeps its scroll anchor while changing on $platform',
+      (tester) async {
+        final model = AsmrDownloadSelectionModel([
+          _node(
+            'root',
+            children: [
+              for (var i = 0; i < 100; i++) _node('before$i'),
+              _node('disc', children: [_node('one'), _node('two')]),
+              for (var i = 0; i < 100; i++) _node('after$i'),
+            ],
+          ),
+        ]);
+        await _pumpList(tester, model);
+        await tester.scrollUntilVisible(find.text('disc'), 200);
+        await tester.ensureVisible(find.text('disc'));
+        await tester.pumpAndSettle();
+        final position = tester
+            .state<ScrollableState>(find.byType(Scrollable))
+            .position;
+        final offset = position.pixels;
+        final top = tester.getRect(find.text('disc')).top;
+        await tester.tap(find.text('disc'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(position.pixels, closeTo(offset, 0.01));
+        expect(tester.getRect(find.text('disc')).top, closeTo(top, 0.01));
+        await tester.tap(find.text('disc'));
+        await tester.pumpAndSettle();
+        expect(position.pixels, closeTo(offset, 0.01));
+        expect(tester.getRect(find.text('disc')).top, closeTo(top, 0.01));
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'download can change another folder during animation on $platform',
+      (tester) async {
+        final model = AsmrDownloadSelectionModel([
+          _node(
+            'root',
+            children: [
+              _node(
+                'disc',
+                children: [
+                  _node('nested', children: [_node('leaf')]),
+                  _node('one'),
+                ],
+              ),
+              _node('other', children: [_node('two')]),
+            ],
+          ),
+        ]);
+        await _pumpList(tester, model);
+        await tester.tap(find.text('disc'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.tap(find.text('nested'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.tap(find.text('other'));
+        await tester.pumpAndSettle();
+        expect(find.text('leaf'), findsOneWidget);
+        expect(find.text('two'), findsOneWidget);
+        await tester.tap(find.text('leaf'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('disc'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 60));
+        await tester.tap(find.text('other'));
+        await tester.pumpAndSettle();
+        expect(find.text('leaf'), findsNothing);
+        expect(find.text('two'), findsNothing);
+        await tester.tap(find.text('disc'));
+        await tester.pumpAndSettle();
+        expect(find.text('leaf'), findsOneWidget);
+        expect(model.stateForPath('leaf'), isTrue);
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
   }
 
   testWidgets('reduced motion completes folder changes immediately', (

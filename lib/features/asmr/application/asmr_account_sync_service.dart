@@ -170,8 +170,14 @@ class AsmrAccountSyncService {
   Future<AsmrAccountSnapshot> recordHistory(AsmrWork work) {
     return _serialize(() async {
       final current = _snapshot;
+      final favorite = current.favoriteWorks
+          .where((item) => item.id == work.id)
+          .firstOrNull;
+      final historyWork =
+          favorite ??
+          (work.isFavorite ? work.copyWith(isFavorite: false) : work);
       final history = <AsmrWork>[
-        work,
+        historyWork,
         ...current.historyWorks.where((item) => item.id != work.id),
       ].take(_historyLimit).toList(growable: false);
       final operation = AsmrSyncOperation(
@@ -184,18 +190,13 @@ class AsmrAccountSyncService {
         current.pendingOperations,
         operation,
       );
-      final normalized = _normalizeAccountWorks(
-        favoriteWorks: current.favoriteWorks,
-        historyWorks: history,
-      );
-      await _preferencesStore.saveAccountSyncState(
-        favoriteWorks: normalized.favoriteWorks,
-        historyWorks: normalized.historyWorks,
-        operations: operations,
+      await _preferencesStore.saveHistoryState(
+        work: historyWork,
+        historyWorkIds: history.map((item) => item.id).toList(growable: false),
+        operation: operation,
       );
       _snapshot = current.copyWith(
-        favoriteWorks: normalized.favoriteWorks,
-        historyWorks: normalized.historyWorks,
+        historyWorks: history,
         pendingOperations: operations,
       );
       return _snapshot;

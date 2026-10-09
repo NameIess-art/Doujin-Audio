@@ -42,6 +42,16 @@ class SqliteAsmrRepository implements AsmrPersistenceRepository {
         operations.map(_operationToRecord).toList(growable: false),
       );
   @override
+  Future<void> saveHistoryState({
+    required AsmrWork work,
+    required List<int> historyWorkIds,
+    required AsmrSyncOperation operation,
+  }) => _database.saveAsmrHistoryState(
+    _workToRecord(work),
+    historyWorkIds,
+    _operationToRecord(operation),
+  );
+  @override
   Future<void> saveAccountSyncState({
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,

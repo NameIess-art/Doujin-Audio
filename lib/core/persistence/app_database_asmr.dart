@@ -169,15 +169,69 @@ extension AppDatabaseAsmr on AppDatabase {
         _replaceAsmrWorkListMembershipInBatch(
           batch,
           'favorites',
-          favoriteById.values.toList(growable: false),
+          favoriteById.keys.toList(growable: false),
         );
         _replaceAsmrWorkListMembershipInBatch(
           batch,
           'history',
-          historyById.values.toList(growable: false),
+          historyById.keys.toList(growable: false),
         );
         _deleteUnreferencedAsmrWorksInBatch(batch);
         _replaceAsmrSyncOperationsInBatch(batch, operations);
+        await batch.commit(noResult: true);
+      });
+    });
+  }
+
+  Future<void> saveAsmrHistoryState(
+    AsmrWorkRecord work,
+    List<int> historyWorkIds,
+    AsmrSyncOperationRecord operation,
+  ) async {
+    await _runDatabaseWrite((db) async {
+      await db.transaction((txn) async {
+        final previousHistory = await txn.query(
+          'asmr_work_lists',
+          columns: ['work_id'],
+          where: 'list_type = ?',
+          whereArgs: ['history'],
+        );
+        final favorite = await txn.query(
+          'asmr_work_lists',
+          columns: ['work_id'],
+          where: 'list_type = ? AND work_id = ?',
+          whereArgs: ['favorites', work.id],
+          limit: 1,
+        );
+        final lastOperation = await txn.query(
+          'asmr_sync_operations',
+          columns: ['sort_order'],
+          orderBy: 'sort_order DESC',
+          limit: 1,
+        );
+        final nextOrder = lastOperation.isEmpty
+            ? 0
+            : (lastOperation.single['sort_order'] as int) + 1;
+        final batch = txn.batch();
+        // A favorite's saved metadata is authoritative for the shared work row.
+        if (favorite.isEmpty) {
+          _writeAsmrWorkToBatch(batch, work, isFavorite: false);
+        }
+        _replaceAsmrWorkListMembershipInBatch(batch, 'history', historyWorkIds);
+        final retainedIds = historyWorkIds.toSet();
+        _deleteUnreferencedAsmrWorksInBatch(
+          batch,
+          workIds: previousHistory
+              .map((row) => row['work_id'] as int)
+              .where((id) => !retainedIds.contains(id))
+              .toList(growable: false),
+        );
+        batch.delete(
+          'asmr_sync_operations',
+          where: 'type = ? AND work_id = ?',
+          whereArgs: [operation.type, operation.workId],
+        );
+        _writeAsmrSyncOperationToBatch(batch, operation, nextOrder);
         await batch.commit(noResult: true);
       });
     });

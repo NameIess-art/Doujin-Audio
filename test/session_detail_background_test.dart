@@ -2,10 +2,14 @@ import 'dart:async';
 
 import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
+import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/session_detail_scaffold.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -27,7 +31,107 @@ class _ResolvedCoverCache extends CoverArtworkCacheService {
   }) => SynchronousFuture<String?>('/covers/detail.png');
 }
 
+class _SubtitlePresenceService extends PlaybackSubtitleService {
+  _SubtitlePresenceService() : super(trackResolver: (_) => null);
+
+  final Set<String> _knownPaths = {};
+
+  @override
+  bool hasKnownSubtitle(String trackPath) => _knownPaths.contains(trackPath);
+
+  @override
+  bool hasResult(String trackPath) => true;
+
+  void publish(String trackPath, {bool present = true, bool notify = true}) {
+    if (present) {
+      _knownPaths.add(trackPath);
+    } else {
+      _knownPaths.remove(trackPath);
+    }
+    if (notify) notifyListeners();
+  }
+}
+
 void main() {
+  testWidgets(
+    'detail ignores unrelated subtitle notifications and defers presence changes',
+    (tester) async {
+      UiInteractionCoordinator.instance.resetForTest();
+      addTearDown(UiInteractionCoordinator.instance.resetForTest);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final subtitles = _SubtitlePresenceService();
+      addTearDown(subtitles.dispose);
+      final transitioning = ValueNotifier<bool>(true);
+      addTearDown(transitioning.dispose);
+      final expanded = ValueNotifier<bool>(false);
+      addTearDown(expanded.dispose);
+      final track = MusicTrack(
+        path: '/library/detail.mp3',
+        displayName: 'Detail',
+        groupKey: '__single_files__',
+        groupTitle: 'Imported files',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+      fixture.library.addTracks([track], notify: false, persist: false);
+      final session = fixture.playback.createTrackSession(track);
+      addTearDown(session.shutdown);
+      Widget buildDetail() => fixture.build(
+        SessionDetailScaffold(
+          transitionActive: transitioning,
+          session: fixture.playback.sessionSnapshotById(session.id)!,
+          coverPathFuture: SynchronousFuture<String?>(null),
+          dismissAnimation: const AlwaysStoppedAnimation<double>(0),
+          onClose: () {},
+          segmentPanelExpandedNotifier: expanded,
+        ),
+        overrides: [
+          playbackSubtitleServiceProvider.overrideWithValue(subtitles),
+        ],
+      );
+      await tester.pumpWidget(buildDetail());
+      await tester.pump();
+      SessionDetailContent content() => tester.widget<SessionDetailContent>(
+        find.byType(SessionDetailContent),
+      );
+      final initialContent = content();
+      expect(initialContent.hasSubtitle, isFalse);
+
+      for (var update = 0; update < 5; update++) {
+        subtitles.publish('/library/other.mp3');
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(identical(content(), initialContent), isTrue);
+      }
+      subtitles.publish(track.path);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(identical(content(), initialContent), isTrue);
+
+      transitioning.value = false;
+      await tester.pump();
+      await tester.pump();
+      expect(content().hasSubtitle, isTrue);
+      final updatedContent = content();
+      subtitles.publish(track.path);
+      await tester.pump();
+      expect(identical(content(), updatedContent), isTrue);
+
+      subtitles.publish(track.path, present: false);
+      await tester.pump();
+      await tester.pump();
+      expect(content().hasSubtitle, isFalse);
+      subtitles.publish(track.path, notify: false);
+      await tester.pumpWidget(buildDetail());
+      expect(content().hasSubtitle, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets(
     'detail has no filtered background and preserves original foreground size',
     (tester) async {

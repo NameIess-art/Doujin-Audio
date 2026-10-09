@@ -44,6 +44,7 @@ import 'package:doujin_audio/features/library/application/work_text_service.dart
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_store.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/library_state_models.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'support/app_runtime_test_fixture.dart';
@@ -260,6 +261,76 @@ void main() {
     });
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      testWidgets(
+        'initial library revision does not rebuild cached rows on $platform',
+        (tester) async {
+          final interaction = UiInteractionCoordinator.instance;
+          interaction.resetForTest();
+          addTearDown(interaction.resetForTest);
+          SharedPreferences.setMockInitialValues({});
+          final covers = _ControlledWorkDetailCoverService()
+            ..images.complete([])
+            ..cover.complete(null);
+          final fixture = AppRuntimeWidgetTestFixture(
+            coverArtworkCacheService: covers,
+          );
+          addTearDown(fixture.dispose);
+          const folder = 'C:/works/initial-revision';
+          final target = AudioDetailTarget.libraryRootFolder(folder);
+          await tester.runAsync(() async {
+            fixture.library.addWatchedFolder(folder, notify: false);
+            fixture.library.addTracks(
+              List.generate(
+                80,
+                (index) => testMusicTrack(
+                  name: 'Track $index',
+                  path: '$folder/$index.mp3',
+                  groupKey: folder,
+                  groupTitle: 'Initial revision',
+                ),
+              ),
+              persist: false,
+            );
+            await fixture.library.flushPendingPersistence();
+            await fixture.library.loadLibraryFolderTree(folder);
+            await _prewarmDirectory(fixture, folder);
+          });
+          final states = StreamController<LibraryState>();
+          addTearDown(states.close);
+          interaction.beginNavigation(Object());
+          addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
+          await tester.pumpWidget(
+            fixture.build(
+              WorkDetailPage.forLocal(
+                target: target,
+                initialDetail: AudioDetail.empty(target),
+              ),
+              overrides: [
+                libraryStateProvider.overrideWith((ref) => states.stream),
+              ],
+            ),
+          );
+          await tester.pump();
+          await tester.pump();
+          final list = tester.widget<SliverList>(find.byType(SliverList));
+          expect(find.byType(WorkDetailEntryTile), findsWidgets);
+
+          states.add(fixture.library.state);
+          await tester.pump();
+          await tester.pump();
+          expect(
+            tester.widget<SliverList>(find.byType(SliverList)),
+            same(list),
+            reason:
+                'The first stream value matches the cached content revision '
+                'and must not rebuild the page during navigation.',
+          );
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+
       testWidgets(
         'cold directory preparation waits until the detail route finishes on $platform',
         (tester) async {

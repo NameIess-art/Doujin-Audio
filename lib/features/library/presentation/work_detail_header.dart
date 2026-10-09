@@ -211,7 +211,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                         borderRadius: BorderRadius.circular(12),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 10),
-                          child: WorkPageTranslationText(
+                          child: Text(
                             circleName.isNotEmpty ? circleName : '--',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,

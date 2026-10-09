@@ -286,18 +286,16 @@ void main() {
         await _batch(tester);
         expect(
           service.calls.single.texts,
-          containsAll([
-            'Original title',
-            'Original circle',
-            'Original tag',
-            'Original directory',
-          ]),
+          containsAll(['Original title', 'Original tag', 'Original directory']),
         );
         expect(service.calls.single.texts, isNot(contains('Voice actor')));
+        expect(service.calls.single.texts, isNot(contains('Original circle')));
         service.calls.single.complete();
         await _batch(tester);
         expect(find.text('zh-CN:Original title'), findsOneWidget);
         expect(find.text('Voice actor'), findsOneWidget);
+        expect(find.text('Original circle'), findsOneWidget);
+        expect(find.text('zh-CN:Original circle'), findsNothing);
         await tester.tap(
           find.byKey(const ValueKey('work_detail_tag_#Original tag')),
         );
@@ -388,10 +386,15 @@ void main() {
         await tester.tap(find.byKey(_button));
         await _batch(tester);
         expect(service.calls.single.texts, isNot(contains('RJ123456')));
+        expect(service.calls.single.texts, isNot(contains('Online circle')));
+        expect(service.calls.single.texts, isNot(contains('Voice actor')));
         final longTitle = 'Translated title with a long description ' * 12;
         service.calls.single.complete(overrides: {'Online title': longTitle});
         await _batch(tester);
         expect(find.text(longTitle), findsOneWidget);
+        expect(find.text('Online circle'), findsOneWidget);
+        expect(find.text('Voice actor'), findsOneWidget);
+        expect(find.text('zh-CN:Online circle'), findsNothing);
         expect(work.title, 'Online title');
         await tester.tap(find.byKey(_button));
         await tester.pump();

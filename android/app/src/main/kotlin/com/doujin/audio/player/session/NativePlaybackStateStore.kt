@@ -1,6 +1,8 @@
 package com.doujin.audio.player.session
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.os.Looper
 import android.util.JsonReader
 import android.util.JsonToken
 import java.io.StringReader
@@ -18,8 +20,7 @@ data class StoredNativePlaybackProgress(
 )
 
 /**
- * Applies a progress record on top of a structural snapshot. The progress key is
- * always at least as fresh as the sessions key, so it wins when present.
+ * Applies progress only after the store has matched its structural generation.
  */
 internal fun StoredNativePlaybackSession.withProgressOverlay(
     progress: StoredNativePlaybackProgress?
@@ -176,8 +177,11 @@ object NativePlaybackStateStore {
         if (expectedRevision == null) invalidateSession(sessionId)
         removeTemporarySession(sessionId)
         val sessions = loadSessions(context)
-        if (sessions.any { it.sessionId == sessionId })
+        if (sessions.any { it.sessionId == sessionId }) {
             saveSessions(context, sessions.filterNot { it.sessionId == sessionId })
+        } else {
+            saveSessionProgress(context, loadSessionProgress(context).values.filterNot { it.sessionId == sessionId })
+        }
         withTimerState {
             storePausedSessionIds(context, loadPausedSessionIds(context).filterNot { it == sessionId })
             storeTimerCandidateSessionIds(context, loadTimerCandidateSessionIds(context).filterNot { it == sessionId })
@@ -188,16 +192,11 @@ object NativePlaybackStateStore {
     }
 
     private const val preferencesName = "audio_player_native_playback_state"
+    private const val progressPreferencesName = "audio_player_native_playback_progress"
     private const val keySessions = "sessions"
-
-    /**
-     * Position/playing flags live apart from [keySessions] because they change
-     * on every persistence tick while the rest of the snapshot - including the
-     * full queue - does not. Writing them together means re-serialising and
-     * rewriting the entire queue every 15s for the whole session; over a 12h
-     * playback that is ~2900 full-file rewrites of a payload that can reach
-     * hundreds of KB on large ASMR queues.
-     */
+    // Separate files avoid rewriting the queue XML on every progress tick. The
+    // generation prevents an old progress file overlaying a newer queue after a crash.
+    private const val keyProgressGeneration = "progress_generation"
     private const val keySessionProgress = "session_progress_v1"
     private const val keyPausedSessionIds = "paused_session_ids"
     private const val keyTimerCandidateSessionIds = "timer_candidate_session_ids"
@@ -304,13 +303,16 @@ object NativePlaybackStateStore {
                     .put("completed", session.completed)
             )
         }
-        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+        val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+        val generation = preferences.getLong(keyProgressGeneration, 0L) + 1
+        preferences
             .edit()
             .putString(keySessions, array.toString())
-            // The structural write already carries current positions, so drop
-            // any stale progress overlay.
+            .putLong(keyProgressGeneration, generation)
             .remove(keySessionProgress)
             .apply()
+        // All positions are already in the structural snapshot.
+        saveSessionProgress(context, emptyList())
     }
 
     /**
@@ -322,11 +324,12 @@ object NativePlaybackStateStore {
         context: Context,
         progress: List<StoredNativePlaybackProgress>
     ) {
+        val preferences = progressPreferences(context)
+        val generation = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .getLong(keyProgressGeneration, 0L)
+        val editor = preferences.edit().putLong(keyProgressGeneration, generation)
         if (progress.isEmpty()) {
-            context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-                .edit()
-                .remove(keySessionProgress)
-                .apply()
+            editor.remove(keySessionProgress).apply()
             return
         }
         val array = JSONArray()
@@ -339,16 +342,36 @@ object NativePlaybackStateStore {
                     .put("playWhenReady", item.playWhenReady)
             )
         }
-        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-            .edit()
-            .putString(keySessionProgress, array.toString())
-            .apply()
+        editor.putString(keySessionProgress, array.toString()).apply()
+    }
+
+    private fun progressPreferences(context: Context): SharedPreferences {
+        val progress = context.getSharedPreferences(progressPreferencesName, Context.MODE_PRIVATE)
+        val definitions = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+        val legacy = definitions.getString(keySessionProgress, null) ?: return progress
+        // Timer expiry can read the old overlay on main before background restore
+        // finishes. Defer the durable migration until a storage/restore executor reads it.
+        if (Looper.myLooper() == Looper.getMainLooper()) return progress
+        val editor = progress.edit()
+        if (!progress.contains(keyProgressGeneration)) editor.putString(keySessionProgress, legacy)
+        val generation = progress.getLong(keyProgressGeneration,
+            definitions.getLong(keyProgressGeneration, 0L))
+        // Preserve a cleared/newer progress file if migration was interrupted. A
+        // failed commit leaves the legacy key intact for the next background read.
+        if (editor.putLong(keyProgressGeneration, generation).commit()) {
+            definitions.edit().remove(keySessionProgress).apply()
+        }
+        return progress
     }
 
     private fun loadSessionProgress(context: Context): Map<String, StoredNativePlaybackProgress> {
-        val raw = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-            .getString(keySessionProgress, null)
-            ?: return emptyMap()
+        val progress = progressPreferences(context)
+        val definitions = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+        val overlay = if (progress.contains(keyProgressGeneration)) progress else definitions
+        if (overlay.getLong(keyProgressGeneration, 0L) != definitions.getLong(keyProgressGeneration, 0L)) {
+            return emptyMap()
+        }
+        val raw = overlay.getString(keySessionProgress, null) ?: return emptyMap()
         return try {
             val array = JSONArray(raw)
             buildMap {
@@ -381,11 +404,15 @@ object NativePlaybackStateStore {
             saveSessions(context, newer)
             return
         }
-        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+        val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+        val generation = preferences.getLong(keyProgressGeneration, 0L) + 1
+        preferences
             .edit()
             .remove(keySessions)
+            .putLong(keyProgressGeneration, generation)
             .remove(keySessionProgress)
             .apply()
+        saveSessionProgress(context, emptyList())
     }
 
     /** Called on the file executor; queue values are skipped without creating queue objects. */

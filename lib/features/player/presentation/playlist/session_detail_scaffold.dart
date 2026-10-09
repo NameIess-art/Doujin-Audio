@@ -12,9 +12,11 @@ import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/ui/permission_action_controller.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import '../../application/playback_session_snapshot.dart';
+import '../../application/playback_subtitle_service.dart';
 import '../../application/subtitle_overlay_controller.dart';
 import 'playlist_feature_icons.dart';
 import 'playlist_media_widgets.dart';
@@ -64,6 +66,10 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   int? _cachedQueueColorValue;
   ThemeData? _cachedQueueTheme;
   bool _isDismissGesture = false;
+  late final PlaybackSubtitleService _subtitles;
+  late bool _hasSubtitle;
+  late final String _subtitlePresenceCommitKey =
+      'detail_subtitle_presence_${identityHashCode(this)}';
 
   ThemeData _detailThemeForSession(
     BuildContext context,
@@ -101,11 +107,51 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _subtitles = ref.read(playbackSubtitleServiceProvider)
+      ..addListener(_handleSubtitlePresenceChanged);
+    _hasSubtitle = _subtitles.hasKnownSubtitle(widget.session.currentTrackPath);
+    widget.transitionActive.addListener(_handleSubtitlePresenceChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant SessionDetailScaffold oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.transitionActive != widget.transitionActive) {
+      oldWidget.transitionActive.removeListener(_handleSubtitlePresenceChanged);
+      widget.transitionActive.addListener(_handleSubtitlePresenceChanged);
+      _handleSubtitlePresenceChanged();
+    }
+    // Metadata can add a remote subtitle URL without changing the track path.
+    _hasSubtitle = _subtitles.hasKnownSubtitle(widget.session.currentTrackPath);
+  }
+
+  void _handleSubtitlePresenceChanged() {
+    // Generation progress and other tracks do not change this page's controls.
+    if (widget.transitionActive.value ||
+        _hasSubtitle ==
+            _subtitles.hasKnownSubtitle(widget.session.currentTrackPath)) {
+      return;
+    }
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _subtitlePresenceCommitKey,
+      commit: () {
+        if (!mounted || widget.transitionActive.value) return;
+        final hasSubtitle = _subtitles.hasKnownSubtitle(
+          widget.session.currentTrackPath,
+        );
+        if (_hasSubtitle != hasSubtitle) {
+          setState(() => _hasSubtitle = hasSubtitle);
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _subtitles.removeListener(_handleSubtitlePresenceChanged);
+    widget.transitionActive.removeListener(_handleSubtitlePresenceChanged);
+    UiInteractionCoordinator.instance.cancelCommit(_subtitlePresenceCommitKey);
     _permissionActionController.dispose();
     super.dispose();
   }
@@ -238,95 +284,79 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: Builder(
                               builder: (context) {
-                                final subtitles = ref.read(
-                                  playbackSubtitleServiceProvider,
+                                final settings = ref.watch(
+                                  subtitleSettingsProvider.select(
+                                    (state) => (
+                                      state.isShowEnabled(session.id),
+                                      state.isGlobalEnabled(session.id),
+                                    ),
+                                  ),
                                 );
-                                return ListenableBuilder(
-                                  listenable: subtitles,
-                                  builder: (context, _) {
-                                    final hasSubtitle = subtitles
-                                        .hasKnownSubtitle(
-                                          session.currentTrackPath,
-                                        );
-                                    final settings = ref.watch(
-                                      subtitleSettingsProvider.select(
-                                        (state) => (
-                                          state.isShowEnabled(session.id),
-                                          state.isGlobalEnabled(session.id),
-                                        ),
-                                      ),
-                                    );
 
-                                    return Row(
-                                      children: [
-                                        Expanded(
-                                          child: SizedBox(height: topBarHeight),
+                                return Row(
+                                  children: [
+                                    Expanded(
+                                      child: SizedBox(height: topBarHeight),
+                                    ),
+                                    if (_hasSubtitle &&
+                                        settings.$1 &&
+                                        settings.$2) ...[
+                                      Icon(
+                                        Icons.subtitles_rounded,
+                                        color: sessionDetailForeground(
+                                          cs,
+                                          SessionDetailForegroundLevel.muted,
                                         ),
-                                        if (hasSubtitle &&
-                                            settings.$1 &&
-                                            settings.$2) ...[
-                                          Icon(
-                                            Icons.subtitles_rounded,
-                                            color: sessionDetailForeground(
-                                              cs,
-                                              SessionDetailForegroundLevel
-                                                  .muted,
-                                            ),
-                                            size: isLandscape ? 20 : 18,
+                                        size: isLandscape ? 20 : 18,
+                                      ),
+                                      SizedBox(width: isLandscape ? 8 : 6),
+                                    ],
+                                    Consumer(
+                                      builder: (context, ref, child) {
+                                        final transport = ref.watch(
+                                          sessionDetailTransportProvider(
+                                            session.id,
                                           ),
-                                          SizedBox(width: isLandscape ? 8 : 6),
-                                        ],
-                                        Consumer(
-                                          builder: (context, ref, child) {
-                                            final transport = ref.watch(
-                                              sessionDetailTransportProvider(
-                                                session.id,
+                                        );
+                                        final featureIcons =
+                                            sessionFeatureBadgeIcons(
+                                              showSubtitles: false,
+                                              channelSwapEnabled:
+                                                  transport
+                                                      ?.channelSwapEnabled ??
+                                                  session.channelSwapEnabled,
+                                              audioEffects:
+                                                  transport?.audioEffects ??
+                                                  session.audioEffects,
+                                              speed:
+                                                  transport?.speed ??
+                                                  session.speed,
+                                            );
+                                        if (featureIcons.isEmpty) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        return Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            SessionFeatureIconRow(
+                                              featureIcons: featureIcons,
+                                              color: sessionDetailForeground(
+                                                cs,
+                                                SessionDetailForegroundLevel
+                                                    .muted,
                                               ),
-                                            );
-                                            final featureIcons =
-                                                sessionFeatureBadgeIcons(
-                                                  showSubtitles: false,
-                                                  channelSwapEnabled:
-                                                      transport
-                                                          ?.channelSwapEnabled ??
-                                                      session
-                                                          .channelSwapEnabled,
-                                                  audioEffects:
-                                                      transport?.audioEffects ??
-                                                      session.audioEffects,
-                                                  speed:
-                                                      transport?.speed ??
-                                                      session.speed,
-                                                );
-                                            if (featureIcons.isEmpty) {
-                                              return const SizedBox.shrink();
-                                            }
-                                            return Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                SessionFeatureIconRow(
-                                                  featureIcons: featureIcons,
-                                                  color: sessionDetailForeground(
-                                                    cs,
-                                                    SessionDetailForegroundLevel
-                                                        .muted,
-                                                  ),
-                                                  iconSize: isLandscape
-                                                      ? 20
-                                                      : 18,
-                                                  spacing: isLandscape ? 8 : 6,
-                                                  alignment: WrapAlignment.end,
-                                                ),
-                                                SizedBox(
-                                                  width: isLandscape ? 8 : 6,
-                                                ),
-                                              ],
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    );
-                                  },
+                                              iconSize: isLandscape ? 20 : 18,
+                                              spacing: isLandscape ? 8 : 6,
+                                              alignment: WrapAlignment.end,
+                                            ),
+                                            SizedBox(
+                                              width: isLandscape ? 8 : 6,
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                  ],
                                 );
                               },
                             ),
@@ -384,9 +414,6 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                 isLandscape ? 8 : 28,
                                 isLandscape ? 8 : 8,
                               );
-                              final subtitles = ref.read(
-                                playbackSubtitleServiceProvider,
-                              );
                               final subtitleSettings = ref.watch(
                                 subtitleSettingsProvider.select(
                                   (state) => (
@@ -395,50 +422,37 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                   ),
                                 ),
                               );
-                              return ListenableBuilder(
-                                listenable: subtitles,
-                                builder: (context, _) {
-                                  final hasSubtitle = subtitles
-                                      .hasKnownSubtitle(
-                                        session.currentTrackPath,
-                                      );
-
-                                  return SessionDetailContent(
-                                    transitionActive: widget.transitionActive,
-                                    key: _detailContentKey,
-                                    session: session,
-                                    segmentPanelExpandedNotifier:
-                                        widget.segmentPanelExpandedNotifier,
-                                    isLandscape: isLandscape,
-                                    artworkWidget: artwork,
-                                    detailPadding: detailPadding,
-                                    hasSubtitle: hasSubtitle,
-                                    subtitleEnabled: subtitleSettings.$1,
-                                    subtitleGlobalEnabled: subtitleSettings.$2,
-                                    onToggleSubtitle: hasSubtitle
-                                        ? () {
-                                            ref
-                                                .read(
-                                                  subtitleSettingsProvider
-                                                      .notifier,
-                                                )
-                                                .toggleShowSubtitles(
-                                                  session.id,
-                                                );
-                                          }
-                                        : null,
-                                    onToggleGlobalSubtitle: () {
-                                      final notifier = ref.read(
-                                        subtitleSettingsProvider.notifier,
-                                      );
-                                      unawaited(
-                                        _toggleGlobalSubtitleDisplay(
-                                          notifier,
-                                          ref.read(subtitleSettingsProvider),
-                                          session.id,
-                                        ),
-                                      );
-                                    },
+                              return SessionDetailContent(
+                                transitionActive: widget.transitionActive,
+                                key: _detailContentKey,
+                                session: session,
+                                segmentPanelExpandedNotifier:
+                                    widget.segmentPanelExpandedNotifier,
+                                isLandscape: isLandscape,
+                                artworkWidget: artwork,
+                                detailPadding: detailPadding,
+                                hasSubtitle: _hasSubtitle,
+                                subtitleEnabled: subtitleSettings.$1,
+                                subtitleGlobalEnabled: subtitleSettings.$2,
+                                onToggleSubtitle: _hasSubtitle
+                                    ? () {
+                                        ref
+                                            .read(
+                                              subtitleSettingsProvider.notifier,
+                                            )
+                                            .toggleShowSubtitles(session.id);
+                                      }
+                                    : null,
+                                onToggleGlobalSubtitle: () {
+                                  final notifier = ref.read(
+                                    subtitleSettingsProvider.notifier,
+                                  );
+                                  unawaited(
+                                    _toggleGlobalSubtitleDisplay(
+                                      notifier,
+                                      ref.read(subtitleSettingsProvider),
+                                      session.id,
+                                    ),
                                   );
                                 },
                               );

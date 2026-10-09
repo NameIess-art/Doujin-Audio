@@ -363,36 +363,52 @@ void _replaceAsmrWorkListInBatch(
   for (final work in works) {
     _writeAsmrWorkToBatch(batch, work);
   }
-  _replaceAsmrWorkListMembershipInBatch(batch, listType, works);
+  _replaceAsmrWorkListMembershipInBatch(
+    batch,
+    listType,
+    works.map((work) => work.id).toList(growable: false),
+  );
 }
 
 void _replaceAsmrWorkListMembershipInBatch(
   Batch batch,
   String listType,
-  List<AsmrWorkRecord> works,
+  List<int> workIds,
 ) {
   batch.delete(
     'asmr_work_lists',
     where: 'list_type = ?',
     whereArgs: [listType],
   );
-  for (var i = 0; i < works.length; i++) {
+  for (var i = 0; i < workIds.length; i++) {
     batch.insert('asmr_work_lists', {
       'list_type': listType,
-      'work_id': works[i].id,
+      'work_id': workIds[i],
       'sort_order': i,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 }
 
-void _deleteUnreferencedAsmrWorksInBatch(Batch batch) {
+void _deleteUnreferencedAsmrWorksInBatch(Batch batch, {List<int>? workIds}) {
+  if (workIds != null && workIds.isEmpty) return;
   const referencedWorkIds = 'SELECT work_id FROM asmr_work_lists';
+  final placeholders = workIds == null
+      ? null
+      : List.filled(workIds.length, '?').join(', ');
+  String unreferenced(String column) =>
+      '${placeholders == null ? '' : '$column IN ($placeholders) AND '}'
+      '$column NOT IN ($referencedWorkIds)';
   batch.delete(
     'asmr_work_voice_actors',
-    where: 'work_id NOT IN ($referencedWorkIds)',
+    where: unreferenced('work_id'),
+    whereArgs: workIds,
   );
-  batch.delete('asmr_work_tags', where: 'work_id NOT IN ($referencedWorkIds)');
-  batch.delete('asmr_works', where: 'id NOT IN ($referencedWorkIds)');
+  batch.delete(
+    'asmr_work_tags',
+    where: unreferenced('work_id'),
+    whereArgs: workIds,
+  );
+  batch.delete('asmr_works', where: unreferenced('id'), whereArgs: workIds);
 }
 
 void _replaceAsmrSyncOperationsInBatch(
@@ -401,16 +417,23 @@ void _replaceAsmrSyncOperationsInBatch(
 ) {
   batch.delete('asmr_sync_operations');
   for (var i = 0; i < operations.length; i++) {
-    final operation = operations[i];
-    batch.insert('asmr_sync_operations', {
-      'type': operation.type,
-      'work_id': operation.workId,
-      'source_id': operation.sourceId,
-      'created_at_ms': operation.createdAt.millisecondsSinceEpoch,
-      'retry_count': operation.retryCount,
-      'sort_order': i,
-    });
+    _writeAsmrSyncOperationToBatch(batch, operations[i], i);
   }
+}
+
+void _writeAsmrSyncOperationToBatch(
+  Batch batch,
+  AsmrSyncOperationRecord operation,
+  int sortOrder,
+) {
+  batch.insert('asmr_sync_operations', {
+    'type': operation.type,
+    'work_id': operation.workId,
+    'source_id': operation.sourceId,
+    'created_at_ms': operation.createdAt.millisecondsSinceEpoch,
+    'retry_count': operation.retryCount,
+    'sort_order': sortOrder,
+  });
 }
 
 AsmrWorkRecord _asmrWorkFromRow(

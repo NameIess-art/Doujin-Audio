@@ -405,19 +405,15 @@ class SingleAudioFileCardContent extends ConsumerWidget {
     return WorkPageTranslationBuilder(
       texts: [
         parts.source,
-        if (!detailLoading && detail != null) ...[
-          ...metadata.voiceActors,
-          metadata.circleName,
-          ...metadata.tags,
-        ],
+        if (!detailLoading && detail != null) ...metadata.tags,
       ],
       builder: (context, translate, _) {
         final lines = (detailLoading || detail == null)
             ? const <LibraryLikeInfoLineData>[]
             : buildLibraryLikeInfoLines(
                 metadata: LibraryLikeInfoMetadata(
-                  voiceActors: metadata.voiceActors.map(translate).toList(),
-                  circleName: translate(metadata.circleName),
+                  voiceActors: metadata.voiceActors,
+                  circleName: metadata.circleName,
                   tags: metadata.tags.map(translate).toList(),
                   releaseDate: metadata.releaseDate,
                   rating: metadata.rating,

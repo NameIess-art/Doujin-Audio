@@ -28,6 +28,13 @@ class _CountingCategoryEntry extends AudioLibraryCategoryEntry {
       );
 
   final reads = <AudioLibraryCategoryType, int>{};
+  int searchableTextReads = 0;
+
+  @override
+  String get searchableText {
+    searchableTextReads++;
+    return super.searchableText;
+  }
 
   @override
   Set<String> normalizedTermsForCategory(AudioLibraryCategoryType type) {
@@ -201,7 +208,7 @@ void main() {
             _createEntry(
               title: title,
               path: '/$title',
-              tags: ['ASMR'],
+              tags: [title == 'Alpha' ? 'ASMR' : 'Sleep'],
               voiceActors: ['Voice'],
               circleName: 'Circle',
             ),
@@ -209,7 +216,7 @@ void main() {
       ];
       AudioLibraryCategorySnapshot snapshot() => AudioLibraryCategorySnapshot(
         entries: entries,
-        tagTerms: ['ASMR'],
+        tagTerms: ['ASMR', 'Sleep'],
         voiceActorTerms: ['Voice'],
         circleTerms: ['Circle'],
         structureRevision: fixture.libraryService.structureRevision,
@@ -241,6 +248,8 @@ void main() {
       for (final type in AudioLibraryCategoryType.values.skip(1)) {
         await choose(type);
       }
+      expect(entries.every((entry) => entry.reads.isEmpty), isTrue);
+      expect(entries.every((entry) => entry.searchableTextReads == 0), isTrue);
       await choose(AudioLibraryCategoryType.all);
       final priorReads = Map<AudioLibraryCategoryType, int>.of(
         entries.first.reads,
@@ -259,17 +268,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(entries.first.reads, priorReads);
       await choose(AudioLibraryCategoryType.tags);
-      expect(
-        entries.first.reads[AudioLibraryCategoryType.tags],
-        greaterThan(priorReads[AudioLibraryCategoryType.tags]!),
-      );
+      expect(entries.first.reads, priorReads);
+      expect(entries.first.searchableTextReads, greaterThan(0));
       expect(
         entries.first.reads[AudioLibraryCategoryType.voiceActors],
         priorReads[AudioLibraryCategoryType.voiceActors],
       );
       expect(find.byKey(const ValueKey('category_/Beta')), findsOneWidget);
       expect(find.byKey(const ValueKey('category_/Alpha')), findsNothing);
-      final beforeSlide = entries.first.reads[AudioLibraryCategoryType.tags]!;
+      final beforeSlide = entries.first.reads[AudioLibraryCategoryType.tags];
       await tester.tap(
         find.byKey(
           const ValueKey(
@@ -286,6 +293,25 @@ void main() {
       expect(entries.first.reads[AudioLibraryCategoryType.tags], beforeSlide);
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('category_/Alpha')), findsOneWidget);
+      await choose(AudioLibraryCategoryType.tags);
+      await tester.tap(find.widgetWithText(ActionChip, '展开'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilterChip, 'Sleep'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('category_/Alpha')), findsNothing);
+      expect(find.byKey(const ValueKey('category_/Beta')), findsNothing);
+      expect(entries.last.reads, isEmpty);
+      final rejectedReads = Map.of(entries.first.reads);
+      await tester.enterText(
+        find.byKey(const ValueKey('app_search_field')),
+        'Beta',
+      );
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('category_/Beta')), findsOneWidget);
+      expect(find.byKey(const ValueKey('category_/Alpha')), findsNothing);
+      expect(entries.first.reads, rejectedReads);
+      expect(entries.last.reads[AudioLibraryCategoryType.tags], greaterThan(0));
       expect(tester.takeException(), isNull);
     },
   );
@@ -346,76 +372,6 @@ void main() {
       expect(terms2.contains('sleep'), isTrue);
     });
 
-    test('Simultaneous AND condition matching between text query and element search', () {
-      final entries = [entry1, entry2];
-
-      List<AudioLibraryCategoryEntry> filter({
-        required List<String> queryTerms,
-        required List<String> normalizedSelectedTerms,
-        required List<String> termKeywords,
-      }) {
-        final hasTextQuery = queryTerms.isNotEmpty;
-        final hasElementQuery =
-            normalizedSelectedTerms.isNotEmpty || termKeywords.isNotEmpty;
-
-        return entries.where((entry) {
-          final entryTerms = entry.normalizedTermsForCategory(
-            AudioLibraryCategoryType.tags,
-          );
-          final matchesSelected = normalizedSelectedTerms.every(
-            entryTerms.contains,
-          );
-          final matchesTermKeywords = termKeywords.every(
-            (keyword) => entryTerms.any((term) => term.contains(keyword)),
-          );
-          final matchesElement =
-              hasElementQuery && matchesSelected && matchesTermKeywords;
-          final matchesText =
-              hasTextQuery && queryTerms.every(entry.searchableText.contains);
-
-          if (hasTextQuery && hasElementQuery) {
-            return matchesText && matchesElement;
-          } else if (hasTextQuery) {
-            return matchesText;
-          } else if (hasElementQuery) {
-            return matchesElement;
-          }
-          return true;
-        }).toList();
-      }
-
-      // Only text search ('alpha') matches entry1
-      final textOnly = filter(
-        queryTerms: ['alpha'],
-        normalizedSelectedTerms: [],
-        termKeywords: [],
-      );
-      expect(textOnly.map((e) => e.title), ['Work Alpha']);
-
-      // Only element search ('asmr') matches both entry1 and entry2
-      final elementOnly = filter(
-        queryTerms: [],
-        normalizedSelectedTerms: ['asmr'],
-        termKeywords: [],
-      );
-      expect(elementOnly.map((e) => e.title), ['Work Alpha', 'Work Beta']);
-
-      // Both active: text search 'alpha' AND element search 'asmr' -> matches ONLY entry1!
-      final bothActiveMatch = filter(
-        queryTerms: ['alpha'],
-        normalizedSelectedTerms: ['asmr'],
-        termKeywords: [],
-      );
-      expect(bothActiveMatch.map((e) => e.title), ['Work Alpha']);
-
-      // Both active: text search 'beta' AND element search 'relaxation' -> matches NONE because entry2 has 'beta' but no 'relaxation', entry1 has 'relaxation' but no 'beta'
-      final bothActiveNoMatch = filter(
-        queryTerms: ['beta'],
-        normalizedSelectedTerms: ['relaxation'],
-        termKeywords: [],
-      );
-      expect(bothActiveNoMatch, isEmpty);
-    });
   });
 
   group('LibraryCategoryTermBox styling', () {

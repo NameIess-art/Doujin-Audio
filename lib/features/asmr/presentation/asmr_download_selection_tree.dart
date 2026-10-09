@@ -25,14 +25,32 @@ class AsmrDownloadSelectionList extends StatefulWidget {
       _AsmrDownloadSelectionListState();
 }
 
-class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList> {
+class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
+    with SingleTickerProviderStateMixin {
   final Set<String> _expandedPaths = <String>{};
-  GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
+  Key _listKey = UniqueKey();
   List<({AsmrDownloadSelectionNode node, int depth})> _rows = const [];
+  final Map<String, int> _rowIndices = {};
+  late final AnimationController _expansionController;
+  late final Animation<double> _opacity;
+  late final Animation<double> _sizeFactor;
+  String? _animatingPath;
+  int _animationStart = 0;
+  int _animationCount = 0;
 
   @override
   void initState() {
     super.initState();
+    _expansionController = AnimationController(
+      vsync: this,
+      duration: kAppMotionStandard,
+      value: 1,
+    )..addStatusListener(_onAnimationStatus);
+    _opacity = _expansionController.drive(
+      CurveTween(curve: Curves.easeInOutCubic),
+    );
+    // A non-zero extent keeps the animated rows lazy even in large folders.
+    _sizeFactor = _opacity.drive(Tween<double>(begin: 0.2, end: 1));
     _resetExpansion();
   }
 
@@ -43,7 +61,9 @@ class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList> {
   }
 
   void _resetExpansion() {
-    _listKey = GlobalKey<AnimatedListState>();
+    _expansionController.stop();
+    _animatingPath = null;
+    _listKey = UniqueKey();
     _expandedPaths
       ..clear()
       ..addAll(
@@ -67,71 +87,113 @@ class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList> {
       visit(root, 0);
     }
     _rows = rows;
+    _rowIndices.clear();
+    for (var index = 0; index < rows.length; index++) {
+      _rowIndices[rows[index].node.track.relativePath] = index;
+    }
+  }
+
+  void _finishAnimation() {
+    _expansionController.stop();
+    _animatingPath = null;
+    _projectRows();
+  }
+
+  void _onAnimationStatus(AnimationStatus status) {
+    if (_animatingPath != null &&
+        (status == AnimationStatus.completed ||
+            status == AnimationStatus.dismissed)) {
+      setState(_finishAnimation);
+    }
   }
 
   void _toggleExpansion(String path) {
-    final previousRows = _rows;
-    final folderIndex = _rows.indexWhere(
-      (row) => row.node.track.relativePath == path,
-    );
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : kAppMotionStandard;
     setState(() {
+      // Only the active subtree needs an animation range. Repeated clicks on
+      // it reverse the same controller without remounting its rows.
+      if (_animatingPath != null && _animatingPath != path) {
+        _finishAnimation();
+      }
       if (!_expandedPaths.remove(path)) _expandedPaths.add(path);
-      _projectRows();
-      final list = _listKey.currentState!;
-      final count = _rows.length - previousRows.length;
-      if (count > 0) {
-        list.insertAllItems(folderIndex + 1, count, duration: duration);
-      } else {
-        for (var offset = -count; offset > 0; offset--) {
-          final index = folderIndex + offset;
-          final row = previousRows[index];
-          list.removeItem(
-            index,
-            (context, animation) => IgnorePointer(
-              child: ExcludeSemantics(child: _buildRow(row, animation)),
-            ),
-            duration: duration,
-          );
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _finishAnimation();
+        return;
+      }
+      final expanding = _expandedPaths.contains(path);
+      if (_animatingPath != path) {
+        final folderIndex = _rowIndices[path]!;
+        final previousCount = _rows.length;
+        if (expanding) _projectRows();
+        _animationStart = folderIndex + 1;
+        if (expanding) {
+          _animationCount = _rows.length - previousCount;
+        } else {
+          final depth = _rows[folderIndex].depth;
+          var end = _animationStart;
+          while (end < _rows.length && _rows[end].depth > depth) {
+            end++;
+          }
+          _animationCount = end - _animationStart;
         }
+        if (_animationCount == 0) return;
+        _expansionController.value = expanding ? 0 : 1;
+        _animatingPath = path;
+      }
+      if (expanding) {
+        _expansionController.forward();
+      } else {
+        _expansionController.reverse();
       }
     });
   }
 
-  Widget _buildRow(
-    ({AsmrDownloadSelectionNode node, int depth}) row,
-    Animation<double> animation,
-  ) {
+  Widget _buildRow(int index) {
+    final row = _rows[index];
     final path = row.node.track.relativePath;
-    final opacity = animation.drive(CurveTween(curve: Curves.easeInOutCubic));
+    final animating =
+        _animatingPath != null &&
+        index >= _animationStart &&
+        index < _animationStart + _animationCount;
+    final collapsing = animating && !_expandedPaths.contains(_animatingPath);
     return SizeTransition(
-      // A non-zero extent keeps insertion lazy even for very large folders.
-      sizeFactor: opacity.drive(Tween<double>(begin: 0.2, end: 1)),
+      key: ValueKey<String>(path),
+      sizeFactor: animating ? _sizeFactor : const AlwaysStoppedAnimation(1),
       axisAlignment: -1,
       child: FadeTransition(
-        opacity: opacity,
-        child: AsmrDownloadNodeTile(
-          key: ValueKey<String>('asmr_download_node_$path'),
-          node: row.node,
-          depth: row.depth,
-          selection: widget.selection,
-          expanded: _expandedPaths.contains(path),
-          onToggleExpansion: () => _toggleExpansion(path),
-          onSelectionChanged: widget.onSelectionChanged,
+        opacity: animating ? _opacity : const AlwaysStoppedAnimation(1),
+        child: IgnorePointer(
+          ignoring: collapsing,
+          child: ExcludeSemantics(
+            excluding: collapsing,
+            child: AsmrDownloadNodeTile(
+              key: ValueKey<String>('asmr_download_node_$path'),
+              node: row.node,
+              depth: row.depth,
+              selection: widget.selection,
+              expanded: _expandedPaths.contains(path),
+              onToggleExpansion: () => _toggleExpansion(path),
+              onSelectionChanged: widget.onSelectionChanged,
+            ),
+          ),
         ),
       ),
     );
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedList(
+  void dispose() {
+    _expansionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ListView.builder(
     key: _listKey,
     padding: widget.padding,
-    initialItemCount: _rows.length,
-    itemBuilder: (context, index, animation) =>
-        _buildRow(_rows[index], animation),
+    itemCount: _rows.length,
+    findChildIndexCallback: (key) =>
+        _rowIndices[(key as ValueKey<String>).value],
+    itemBuilder: (context, index) => _buildRow(index),
   );
 }
 

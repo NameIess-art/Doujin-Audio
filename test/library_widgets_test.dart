@@ -14,6 +14,8 @@ import 'package:doujin_audio/features/library/presentation/library_tab_empty_sca
 import 'package:doujin_audio/features/library/presentation/library_view_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_tree_list.dart';
 import 'package:doujin_audio/app/application/browse_page_state_store.dart';
+import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
+import 'package:doujin_audio/app/presentation/browse_page_scroll.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_edit.dart';
@@ -25,6 +27,7 @@ import 'package:doujin_audio/features/player/application/native_playback_bridge.
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/library/presentation/library_card_artwork.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/animated_reorder.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree_projection.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree_tiles.dart';
@@ -37,6 +40,8 @@ import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
+import 'package:doujin_audio/features/library/presentation/library_removal_feedback.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
@@ -108,10 +113,12 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     // SQLite completions need real I/O and the widget test's microtask queue.
     var drained = false;
-    final drain = fixture.undoableRemovalService.commitPending()
+    final drain = fixture.undoableRemovalService
+        .commitPending()
         .then((failures) {
           expect(failures, 0);
-          return fixture.runtimeGraph.library.detailCacheService.suspendAndWait();
+          return fixture.runtimeGraph.library.detailCacheService
+              .suspendAndWait();
         })
         .then((_) => fixture.runtimeGraph.library.flushPendingPersistence())
         .then((_) => testDatabase.rawQuery('SELECT 1'))
@@ -136,6 +143,412 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  Widget libraryRows(
+    AppRuntimeWidgetTestFixture fixture,
+    List<LibraryNode> nodes,
+    ScrollController scroll, {
+    int revision = 1,
+    bool selecting = false,
+    Set<String> selected = const {},
+    ValueChanged<LibraryNode>? toggle,
+  }) => BrowsePageScroll(
+    pageKey: 'library',
+    controller: scroll,
+    child: LibraryTreeList(
+      tree: nodes,
+      structureRevision: revision,
+      selectedPaths: selected,
+      isSelectionMode: selecting,
+      scrollController: scroll,
+      i18n: fixture.languageProvider,
+      topPadding: 12,
+      bottomPadding: 20,
+      cacheExtent: 0,
+      physics: null,
+      loadFolder: (_) async => null,
+      currentStructureRevision: () => revision,
+      onLongPress: (_) {},
+      onToggleSelect: toggle ?? (_) {},
+    ),
+  );
+
+  Finder libraryRow(String path) => find.byWidgetPredicate(
+    (widget) =>
+        widget is AnimatedReorderItem &&
+        widget.id == PathMatcher.equivalenceKey(path),
+  );
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'library fixed rows match natural card heights at scaled responsive widths',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: _NoCoverArtworkCacheService(),
+        );
+        addTearDown(fixture.dispose);
+        final scroll = ScrollController();
+        addTearDown(scroll.dispose);
+        final plain = testMusicTrack(
+          name: 'Plain',
+          path: '/fixed/plain.mp3',
+          groupKey: '/fixed',
+          groupTitle: 'Fixed',
+          isSingle: true,
+        );
+        final featured = testMusicTrack(
+          name: 'Video',
+          path: '/fixed/video.mp4',
+          groupKey: '/fixed',
+          groupTitle: 'Fixed',
+          isSingle: true,
+        ).copyWith(isVideo: true);
+        final nodes = <LibraryNode>[
+          TrackNode(plain),
+          TrackNode(featured),
+          FolderNode('Root', '/fixed/root'),
+        ];
+        final browse = BrowsePageStateStore();
+        Future<void> show(double width, double scale, bool natural) async {
+          tester.view.physicalSize = Size(width, 650);
+          browse.update('library', {
+            'expanded': natural ? ['/fixed/root'] : [],
+          });
+          await tester.pumpWidget(
+            fixture.build(
+              MediaQuery(
+                data: MediaQueryData(
+                  size: Size(width, 650),
+                  textScaler: TextScaler.linear(scale),
+                ),
+                child: libraryRows(fixture, nodes, scroll),
+              ),
+              overrides: [
+                browsePageStateStoreProvider.overrideWithValue(browse),
+                libraryDetailForTargetProvider.overrideWith(
+                  (ref, target) async => AudioDetail.empty(target),
+                ),
+              ],
+            ),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 1));
+        }
+
+        for (final width in [450.0, 1280.0]) {
+          for (final scale in [1.0, 2.0]) {
+            await show(width, scale, false);
+            expect(
+              tester.widget<ListView>(find.byType(ListView)).itemExtent,
+              LibraryLikeCardMetrics.rootTileHeight,
+            );
+            final fixed = [
+              for (final node in nodes)
+                tester.getSize(libraryRow(node.path)).height,
+            ];
+            expect(fixed, everyElement(LibraryLikeCardMetrics.rootTileHeight));
+            await tester.pumpWidget(const SizedBox.shrink());
+            await show(width, scale, true);
+            expect(
+              tester.widget<ListView>(find.byType(ListView)).itemExtent,
+              isNull,
+            );
+            expect([
+              for (final node in nodes)
+                tester.getSize(libraryRow(node.path)).height,
+            ], fixed);
+            expect(tester.takeException(), isNull);
+            await tester.pumpWidget(const SizedBox.shrink());
+          }
+        }
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
+  testWidgets(
+    'library fixed rows skip intermediate cards on a distant jump',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(450, 650);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _NoCoverArtworkCacheService(),
+      );
+      addTearDown(fixture.dispose);
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      final nodes = List.generate(
+        1000,
+        (index) => TrackNode(
+          testMusicTrack(
+            name: 'Jump $index',
+            path: '/fixed/jump-$index.mp3',
+            groupKey: '/fixed',
+            groupTitle: 'Fixed',
+            isSingle: true,
+          ),
+        ),
+      );
+      final built = <String>{};
+      await tester.pumpWidget(
+        fixture.build(
+          libraryRows(fixture, nodes, scroll),
+          overrides: [
+            libraryDetailForTargetProvider.overrideWith((ref, target) async {
+              built.add(target.targetPath);
+              return AudioDetail.empty(target);
+            }),
+          ],
+        ),
+      );
+      await tester.pump();
+      expect(built.length, lessThan(15));
+      expect(
+        scroll.position.maxScrollExtent,
+        closeTo(1000 * LibraryLikeCardMetrics.rootTileHeight + 32 - 650, 0.01),
+      );
+      scroll.jumpTo(scroll.position.maxScrollExtent);
+      await tester.pump();
+      expect(built.length, lessThan(30));
+      expect(built, isNot(contains(nodes[500].path)));
+      expect(find.text('Jump 999', findRichText: true), findsOneWidget);
+      scroll.jumpTo(0);
+      await tester.pump();
+      expect(find.text('Jump 0', findRichText: true), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'library fixed rows preserve delete undo and committed row states',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(450, 650);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _NoCoverArtworkCacheService(),
+      );
+      addTearDown(fixture.dispose);
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      final nodes = List.generate(
+        3,
+        (index) => TrackNode(
+          testMusicTrack(
+            name: 'Motion $index',
+            path: '/fixed/motion-$index.mp3',
+            groupKey: '/fixed',
+            groupTitle: 'Fixed',
+            isSingle: true,
+          ),
+        ),
+      );
+      var tree = List<LibraryNode>.of(nodes);
+      var revision = 1;
+      var rowTickers = true;
+      Widget page() => fixture.build(
+        TickerMode(
+          enabled: rowTickers,
+          child: libraryRows(fixture, tree, scroll, revision: revision),
+        ),
+        overrides: [
+          libraryDetailForTargetProvider.overrideWith(
+            (ref, target) async => AudioDetail.empty(target),
+          ),
+        ],
+      );
+      await tester.pumpWidget(page());
+      await tester.pump();
+      Finder transition() => find.descendant(
+        of: libraryRow(nodes.first.path),
+        matching: find.byType(UndoableRemovalTransition),
+      );
+      final state = tester.state(transition());
+      final oldKey = tester
+          .widget<AnimatedReorderItem>(libraryRow(nodes.first.path))
+          .key;
+      final service = fixture.undoableRemovalService;
+      Future<void> remove() async {
+        expect(
+          await service.stage(
+            UndoableRemovalAction(
+              key: libraryRemovalKey(nodes.first.path),
+              commit: () {},
+              undo: () {},
+            ),
+          ),
+          isTrue,
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(tester.state(transition()), same(state));
+        expect(
+          tester.widget<ListView>(find.byType(ListView)).itemExtent,
+          isNull,
+        );
+      }
+
+      await remove();
+      await tester.pump(kAppMotionStandard ~/ 2);
+      final collapsing = tester.getSize(libraryRow(nodes.first.path)).height;
+      expect(collapsing, greaterThan(0));
+      expect(collapsing, lessThan(LibraryLikeCardMetrics.rootTileHeight));
+      rowTickers = false;
+      await tester.pumpWidget(page());
+      await service.undoPending();
+      await tester.pump();
+      await tester.pump(kAppMotionStandard + const Duration(milliseconds: 1));
+      expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
+      rowTickers = true;
+      await tester.pumpWidget(page());
+      await tester.pump();
+      expect(tester.state(transition()), same(state));
+      expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
+      await tester.pump(kAppMotionStandard ~/ 2);
+      expect(
+        tester.getSize(libraryRow(nodes.first.path)).height,
+        greaterThan(collapsing),
+      );
+      await tester.pump(kAppMotionStandard + const Duration(milliseconds: 1));
+      await tester.pump();
+      expect(tester.state(transition()), same(state));
+      expect(
+        tester.widget<ListView>(find.byType(ListView)).itemExtent,
+        LibraryLikeCardMetrics.rootTileHeight,
+      );
+      await remove();
+      await tester.pump(kAppMotionStandard + const Duration(milliseconds: 1));
+      await service.commitPending();
+      await tester.pump();
+      expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
+      expect(find.text('Motion 0', findRichText: true), findsNothing);
+      tree = nodes.skip(1).toList();
+      revision++;
+      await tester.pumpWidget(page());
+      expect(
+        tester.widget<ListView>(find.byType(ListView)).itemExtent,
+        LibraryLikeCardMetrics.rootTileHeight,
+      );
+      tree = nodes;
+      revision++;
+      await tester.pumpWidget(page());
+      expect(
+        tester.widget<AnimatedReorderItem>(libraryRow(nodes.first.path)).key,
+        isNot(same(oldKey)),
+      );
+      expect(
+        tester.getSize(libraryRow(nodes.first.path)).height,
+        LibraryLikeCardMetrics.rootTileHeight,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'library fixed rows retain selection reorder and scroll anchors',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(450, 650);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _NoCoverArtworkCacheService(),
+      );
+      addTearDown(fixture.dispose);
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      final nodes = List.generate(
+        30,
+        (index) => TrackNode(
+          testMusicTrack(
+            name: 'Anchor $index',
+            path: '/fixed/anchor-$index.mp3',
+            groupKey: '/fixed',
+            groupTitle: 'Fixed',
+            isSingle: true,
+          ),
+        ),
+      );
+      final store = BrowsePageStateStore();
+      final selected = {PathMatcher.normalize(nodes[8].path)};
+      final toggled = <LibraryNode>[];
+      var tree = List<LibraryNode>.of(nodes);
+      Widget page() => fixture.build(
+        libraryRows(
+          fixture,
+          tree,
+          scroll,
+          selecting: true,
+          selected: selected,
+          toggle: toggled.add,
+        ),
+        overrides: [
+          browsePageStateStoreProvider.overrideWithValue(store),
+          libraryDetailForTargetProvider.overrideWith(
+            (ref, target) async => AudioDetail.empty(target),
+          ),
+        ],
+      );
+      await tester.pumpWidget(page());
+      await tester.pump();
+      scroll.jumpTo(700);
+      await tester.pump();
+      final row = libraryRow(nodes[8].path);
+      final state = tester.state(
+        find.descendant(
+          of: row,
+          matching: find.byType(UndoableRemovalTransition),
+        ),
+      );
+      tree = [...nodes.take(8), nodes[9], nodes[8], ...nodes.skip(10)];
+      await tester.pumpWidget(page());
+      await tester.pump(kAppMotionSlow);
+      expect(
+        tester.state(
+          find.descendant(
+            of: libraryRow(nodes[8].path),
+            matching: find.byType(UndoableRemovalTransition),
+          ),
+        ),
+        same(state),
+      );
+      final selectedItem = tester.widget<LibraryTreeItem>(
+        find.descendant(
+          of: libraryRow(nodes[8].path),
+          matching: find.byType(LibraryTreeItem),
+        ),
+      );
+      expect(selectedItem.isSelected, isTrue);
+      selectedItem.onToggleSelect!();
+      expect(toggled, [nodes[8]]);
+      final anchor = store.stateFor('library');
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(page());
+      await tester.pump();
+      await tester.pump();
+      expect(
+        scroll.offset,
+        closeTo((anchor['offset'] as num).toDouble(), 0.01),
+      );
+      expect(find.text('Anchor 8', findRichText: true), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
@@ -260,10 +673,12 @@ void main() {
       await tester.pumpWidget(buildList());
       await tester.pump();
       expect(loads, 1);
+      expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
       expect(find.text('Batch track 0'), findsNothing);
       result.complete(loaded);
       await tester.pump();
       await tester.pump();
+      expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
       Finder rowFade() => find.descendant(
         of: find.byType(LibraryTreeList, skipOffstage: false),
         matching: find.ancestor(
@@ -853,12 +1268,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final first = find.byKey(
-      const ValueKey<String>('/library/first/track.mp3'),
-    );
-    final second = find.byKey(
-      const ValueKey<String>('/library/second/track.mp3'),
-    );
+    final first = libraryRow('/library/first/track.mp3');
+    final second = libraryRow('/library/second/track.mp3');
     expect(first, findsOneWidget);
     expect(second, findsOneWidget);
     expect(
@@ -4664,7 +5075,7 @@ void main() {
   }
 
   testWidgets(
-    'single track without cover stays unhighlighted without entry buttons',
+    'single track without cover stays unhighlighted with compact actions',
     (WidgetTester tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -4693,15 +5104,26 @@ void main() {
       await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
       await tester.pump(const Duration(milliseconds: 350));
 
-      expect(find.byIcon(Icons.add_circle_rounded), findsNothing);
-      expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
-
       final cardFinder = find.ancestor(
         of: find.text('single.mp3', findRichText: true),
         matching: find.byType(Card),
       );
       final card = tester.widget<Card>(cardFinder.first);
       expect(card.color, Colors.transparent);
+      expect(
+        find.descendant(
+          of: cardFinder.first,
+          matching: find.byIcon(Icons.add_circle_rounded),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: cardFinder.first,
+          matching: find.byIcon(Icons.play_arrow_rounded),
+        ),
+        findsOneWidget,
+      );
       expect(runtimeGraph.playback.activeSessions, isEmpty);
 
       await finishLibraryTest(tester, fixture);

@@ -306,6 +306,55 @@ void registerAsmrAccountSyncTests({
       expect(service.snapshot.favoriteWorks, isEmpty);
       expect(service.snapshot.historyWorks, isEmpty);
       expect(service.snapshot.pendingOperations, isEmpty);
+
+      await expectLater(
+        service.recordHistory(_work(id: 86, title: 'Rejected history')),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(service.snapshot.favoriteWorks, isEmpty);
+      expect(service.snapshot.historyWorks, isEmpty);
+      expect(service.snapshot.pendingOperations, isEmpty);
+    },
+  );
+
+  test(
+    'recording history retains favorite and unchanged work identities',
+    () async {
+      await resetPrefs();
+      await preferences.saveFavoriteWorks([
+        for (var id = 1; id <= 1000; id++) _work(id: id, title: 'Favorite $id'),
+      ]);
+      await preferences.saveHistoryWorks([
+        for (var id = 1001; id <= 1060; id++)
+          _work(id: id, title: 'History $id'),
+      ]);
+      final service = AsmrAccountSyncService(
+        authService: AsmrAuthService(
+          apiService: _FakeAsmrApiService(),
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+        apiService: _FakeAsmrApiService(),
+        preferencesStore: preferences,
+      );
+      final before = await service.initialize();
+      final after = await service.recordHistory(
+        _work(id: 1000, title: 'Stale title'),
+      );
+      expect(after.favoriteWorks, same(before.favoriteWorks));
+      expect(after.favoriteWorks.last, same(before.favoriteWorks.last));
+      expect(after.historyWorks.first, same(before.favoriteWorks.last));
+      expect(after.historyWorks[1], same(before.historyWorks.first));
+      expect(after.historyWorks, hasLength(60));
+      expect(after.historyWorks.map((item) => item.id), [
+        1000,
+        ...List.generate(59, (index) => 1001 + index),
+      ]);
+      final reloaded = await preferences.loadHistoryWorks();
+      expect(reloaded.first.title, 'Favorite 1000');
+      expect(
+        reloaded.map((item) => item.id),
+        after.historyWorks.map((item) => item.id),
+      );
     },
   );
 

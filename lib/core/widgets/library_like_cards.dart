@@ -598,11 +598,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
     return WorkPageTranslationBuilder(
       texts: [
         parts.source,
-        if (!loading) ...[
-          ...metadata.voiceActors,
-          metadata.circleName,
-          ...metadata.tags,
-        ],
+        if (!loading) ...metadata.tags,
       ],
       builder: (context, translate, _) => LibraryLikeWorkCardContent(
         title: '${translate(parts.source)}${parts.suffix}',
@@ -610,8 +606,8 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
             ? const <LibraryLikeInfoLineData>[]
             : buildLibraryLikeInfoLines(
                 metadata: LibraryLikeInfoMetadata(
-                  voiceActors: metadata.voiceActors.map(translate).toList(),
-                  circleName: translate(metadata.circleName),
+                  voiceActors: metadata.voiceActors,
+                  circleName: metadata.circleName,
                   tags: metadata.tags.map(translate).toList(),
                   releaseDate: metadata.releaseDate,
                   rating: metadata.rating,

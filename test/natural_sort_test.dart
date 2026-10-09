@@ -26,6 +26,44 @@ void main() {
     ]);
   });
 
+  test('numeric runs retain leading-zero and full-width tie ordering', () {
+    final values = <String>[
+      'Track ００b',
+      'Track 00b',
+      'Track 0b',
+      'Track ０a',
+      'Track 0a',
+      'Track 0001',
+      'Track １',
+      'Track 01',
+      'Track 1',
+    ]..sort(compareNatural);
+    expect(values, [
+      'Track 0a',
+      'Track ０a',
+      'Track 0b',
+      'Track 00b',
+      'Track ００b',
+      'Track 1',
+      'Track １',
+      'Track 01',
+      'Track 0001',
+    ]);
+  });
+
+  test('numeric runs compare beyond integer precision without parsing', () {
+    final lower = 'RJ${'9' * 80}';
+    final higher = 'RJ1${'0' * 80}';
+    expect(compareNatural(lower, higher), lessThan(0));
+    expect(compareNatural(higher, lower), greaterThan(0));
+    expect(compareNatural('part02-track10', 'part2-track99'), greaterThan(0));
+    expect(compareNatural('track2', 'TRACK2'), greaterThan(0));
+    expect(
+      compareNatural('Track2', 'track1', caseSensitive: true),
+      lessThan(0),
+    );
+  });
+
   test('tree entries group folders before files and sort each naturally', () {
     final entries =
         <({bool isFolder, String name, String path})>[

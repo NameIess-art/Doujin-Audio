@@ -895,7 +895,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
               ? Duration.zero
               : kThemeAnimationDuration,
           curve: Curves.easeInOut,
-          builder: (context, animatedSidebarWidth, _) => MediaQuery(
+          builder: (context, animatedSidebarWidth, child) => MediaQuery(
             data: effectiveMediaQuery,
             child: AnnotatedRegion<SystemUiOverlayStyle>(
               value: overlayStyle,
@@ -906,129 +906,121 @@ class _MainScreenState extends ConsumerState<MainScreen>
                   isLandscape: isLandscape,
                   sidebarWidth: animatedSidebarWidth,
                   geometry: widget.playbackDockGeometry,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _AmbientBackground(tinyMode: isTinyWindow),
-                      Column(
-                        children: [
-                          Expanded(
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    if (isDesktop)
-                                      Consumer(
-                                        builder: (context, ref, _) {
-                                          final overlaySessions = ref.watch(
-                                            mainOverlayUiProvider.select(
-                                              (state) => state.overlaySessions,
-                                            ),
-                                          );
-                                          return _buildDesktopNavigation(
-                                            context,
-                                            i18n,
-                                            overlaySessions,
-                                            isMenuCollapsed: menuCollapsed,
-                                          );
-                                        },
-                                      )
-                                    else
-                                      const SizedBox.shrink(),
-                                    Expanded(
-                                      child: Align(
-                                        alignment: Alignment.topLeft,
-                                        child: LayoutBuilder(
-                                          builder: (context, constraints) {
-                                            final contentWidth = splitContent
-                                                ? max(
-                                                        0.0,
-                                                        constraints.maxWidth -
-                                                            1,
-                                                      ) /
-                                                      2
-                                                : constraints.maxWidth;
-                                            return SizedBox(
-                                              key: const ValueKey(
-                                                'main_content_region',
-                                              ),
-                                              width: contentWidth,
-                                              height: constraints.maxHeight,
-                                              child: MediaQuery(
-                                                data: MediaQuery.of(context)
-                                                    .copyWith(
-                                                      size: Size(
-                                                        contentWidth,
-                                                        constraints.maxHeight,
-                                                      ),
-                                                    ),
-                                                child: Builder(
-                                                  builder: (context) =>
-                                                      MobileOverlayInset(
-                                                        bottomInset:
-                                                            mobileContentInset,
-                                                        menuOverlayKey:
-                                                            _mainMenuOverlayKey,
-                                                        menuDismiss:
-                                                            detailNavigation
-                                                                ?.menuDismiss,
-                                                        child: Stack(
-                                                          fit: StackFit.expand,
-                                                          children: [
-                                                            _buildBody(
-                                                              context,
-                                                              isDesktop:
-                                                                  isDesktop,
-                                                              isLandscapeLayout:
-                                                                  isLandscape,
-                                                            ),
-                                                            Overlay(
-                                                              key:
-                                                                  _mainMenuOverlayKey,
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-
-                                if (!isDesktop)
-                                  Consumer(
-                                    builder: (context, ref, _) {
-                                      final overlaySessions = ref.watch(
-                                        mainOverlayUiProvider.select(
-                                          (state) => state.overlaySessions,
-                                        ),
-                                      );
-                                      return _buildMobileBottomDock(
-                                        context,
-                                        i18n: i18n,
-                                        overlaySessions: overlaySessions,
-                                        tinyMode: isTinyWindow,
-                                      );
-                                    },
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const _GlobalUpdateOperationBanner(),
-                    ],
-                  ),
+                  child: child!,
                 ),
               ),
             ),
+          ),
+          // Only the detail pane needs the animated sidebar width. Retain the
+          // navigation and dock instead of rebuilding them on every frame.
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _AmbientBackground(tinyMode: isTinyWindow),
+              Column(
+                children: [
+                  Expanded(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (isDesktop)
+                              Consumer(
+                                builder: (context, ref, _) {
+                                  final overlaySessions = ref.watch(
+                                    mainOverlayUiProvider.select(
+                                      (state) => state.overlaySessions,
+                                    ),
+                                  );
+                                  return _buildDesktopNavigation(
+                                    context,
+                                    i18n,
+                                    overlaySessions,
+                                    isMenuCollapsed: menuCollapsed,
+                                  );
+                                },
+                              )
+                            else
+                              const SizedBox.shrink(),
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.topLeft,
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final contentWidth = splitContent
+                                        ? max(0.0, constraints.maxWidth - 1) / 2
+                                        : constraints.maxWidth;
+                                    return SizedBox(
+                                      key: const ValueKey(
+                                        'main_content_region',
+                                      ),
+                                      width: contentWidth,
+                                      height: constraints.maxHeight,
+                                      child: MediaQuery(
+                                        data: MediaQuery.of(context).copyWith(
+                                          size: Size(
+                                            contentWidth,
+                                            constraints.maxHeight,
+                                          ),
+                                        ),
+                                        child: Builder(
+                                          builder: (context) =>
+                                              MobileOverlayInset(
+                                                bottomInset: mobileContentInset,
+                                                menuOverlayKey:
+                                                    _mainMenuOverlayKey,
+                                                menuDismiss: detailNavigation
+                                                    ?.menuDismiss,
+                                                child: Stack(
+                                                  fit: StackFit.expand,
+                                                  children: [
+                                                    _buildBody(
+                                                      context,
+                                                      isDesktop: isDesktop,
+                                                      isLandscapeLayout:
+                                                          isLandscape,
+                                                    ),
+                                                    Overlay(
+                                                      key: _mainMenuOverlayKey,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        if (!isDesktop)
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final overlaySessions = ref.watch(
+                                mainOverlayUiProvider.select(
+                                  (state) => state.overlaySessions,
+                                ),
+                              );
+                              return _buildMobileBottomDock(
+                                context,
+                                i18n: i18n,
+                                overlaySessions: overlaySessions,
+                                tinyMode: isTinyWindow,
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const _GlobalUpdateOperationBanner(),
+            ],
           ),
         );
       },

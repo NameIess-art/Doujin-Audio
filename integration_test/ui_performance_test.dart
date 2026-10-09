@@ -109,10 +109,8 @@ int get _backupByteCount => _backupByteOverride > 0
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  if (_scenario == 'playback' || _scenario.startsWith('page-transitions')) {
-    binding.framePolicy =
-        LiveTestWidgetsFlutterBindingFramePolicy.benchmarkLive;
-  }
+  // Measure engine-driven animation frames instead of the explicit pump cadence.
+  binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.benchmarkLive;
 
   testWidgets('profile main interaction path', (tester) async {
     expect(
@@ -169,11 +167,18 @@ void main() {
       await _measureRealPlayback(tester, binding);
       return;
     }
+    debugPrint('PERF_STAGE fixture_start scenario=$_scenario');
+    sqfliteFfiInit();
+    final fixtureDatabase = await AppRuntimeTestFixture.installSharedDatabase();
+    addTearDown(
+      () => AppRuntimeTestFixture.disposeSharedDatabase(fixtureDatabase),
+    );
     final fixture = AppRuntimeWidgetTestFixture();
     if (_profileCovers.isNotEmpty) {
       await fixture.library.coverArtworkCacheService.initialize();
     }
     final sessions = _seedRuntime(fixture, trackCount: _libraryItemCount);
+    debugPrint('PERF_STAGE seed_ready libraryItems=$_libraryItemCount');
     final asmrController = _ProfileAsmrController(
       services: createTestAsmrServices(
         persistenceRepository: fixture.persistenceRepository,
@@ -195,6 +200,7 @@ void main() {
     });
 
     await fixture.library.loadLibraryTree();
+    debugPrint('PERF_STAGE tree_ready');
     await tester.pumpWidget(
       fixture.build(
         const ExcludeSemantics(
@@ -220,7 +226,9 @@ void main() {
         ],
       ),
     );
+    debugPrint('PERF_STAGE first_frame_ready');
     await tester.pumpAndSettle();
+    debugPrint('PERF_STAGE fixture_ready');
 
     if (_scenario == 'page-transitions') {
       final samples = await _measurePageTransitions(tester);

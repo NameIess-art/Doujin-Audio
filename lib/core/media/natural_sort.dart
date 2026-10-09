@@ -15,6 +15,22 @@ int compareNatural(String left, String right, {bool caseSensitive = false}) {
     final rightIsNumber = _isNumberStart(rightCode);
 
     if (leftIsNumber && rightIsNumber) {
+      if (_isDigit(leftCode) && _isDigit(rightCode)) {
+        final leftEnd = _consumeDigits(normalizedLeft, leftIndex);
+        final rightEnd = _consumeDigits(normalizedRight, rightIndex);
+        final numberResult = _compareDigitRuns(
+          normalizedLeft,
+          leftIndex,
+          leftEnd,
+          normalizedRight,
+          rightIndex,
+          rightEnd,
+        );
+        if (numberResult != 0) return numberResult;
+        leftIndex = leftEnd;
+        rightIndex = rightEnd;
+        continue;
+      }
       final leftToken = _consumeNumber(normalizedLeft, leftIndex);
       final rightToken = _consumeNumber(normalizedRight, rightIndex);
       final numberResult = _compareNumbers(leftToken, rightToken);
@@ -78,6 +94,44 @@ int _consumeDigits(String value, int start) {
   }
   return index;
 }
+
+// Numeric filenames are compared repeatedly during sorting. Compare their
+// digits in place so the common path does not allocate tokens or substrings.
+int _compareDigitRuns(
+  String left,
+  int leftStart,
+  int leftEnd,
+  String right,
+  int rightStart,
+  int rightEnd,
+) {
+  var leftSignificant = leftStart;
+  var rightSignificant = rightStart;
+  while (leftSignificant < leftEnd &&
+      _digitValue(left.codeUnitAt(leftSignificant)) == 0) {
+    leftSignificant++;
+  }
+  while (rightSignificant < rightEnd &&
+      _digitValue(right.codeUnitAt(rightSignificant)) == 0) {
+    rightSignificant++;
+  }
+  final magnitude = (leftEnd - leftSignificant).compareTo(
+    rightEnd - rightSignificant,
+  );
+  if (magnitude != 0) return magnitude;
+  while (leftSignificant < leftEnd) {
+    final digit = _digitValue(
+      left.codeUnitAt(leftSignificant),
+    ).compareTo(_digitValue(right.codeUnitAt(rightSignificant)));
+    if (digit != 0) return digit;
+    leftSignificant++;
+    rightSignificant++;
+  }
+  return (leftEnd - leftStart).compareTo(rightEnd - rightStart);
+}
+
+int _digitValue(int codeUnit) =>
+    codeUnit >= 0xff10 ? codeUnit - 0xff10 : codeUnit - 48;
 
 _NumberToken _consumeNumber(String value, int start) {
   final firstCode = value.codeUnitAt(start);

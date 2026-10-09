@@ -525,26 +525,16 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
 
     final filtered = snapshot.entries
         .where((entry) {
-          final entryTerms = entry.normalizedTermsForCategory(category);
-          final matchesSelected = normalizedSelectedTerms.every(
-            entryTerms.contains,
-          );
-          final matchesTermKeywords = termKeywords.every(
-            (keyword) => entryTerms.any((term) => term.contains(keyword)),
-          );
-          final matchesElement =
-              hasElementQuery && matchesSelected && matchesTermKeywords;
-          final matchesText =
-              hasTextQuery && queryTerms.every(entry.searchableText.contains);
-
-          if (hasTextQuery && hasElementQuery) {
-            return matchesText && matchesElement;
-          } else if (hasTextQuery) {
-            return matchesText;
-          } else if (hasElementQuery) {
-            return matchesElement;
+          if (hasTextQuery &&
+              !queryTerms.every(entry.searchableText.contains)) {
+            return false;
           }
-          return true;
+          if (!hasElementQuery) return true;
+          final entryTerms = entry.normalizedTermsForCategory(category);
+          return normalizedSelectedTerms.every(entryTerms.contains) &&
+              termKeywords.every(
+                (keyword) => entryTerms.any((term) => term.contains(keyword)),
+              );
         })
         .toList(growable: true);
     final normalizedPinned = pinnedPaths.isEmpty

@@ -87,6 +87,16 @@ class AsmrPreferencesStore {
     await _repository.saveSyncOperations(operations);
   }
 
+  Future<void> saveHistoryState({
+    required AsmrWork work,
+    required List<int> historyWorkIds,
+    required AsmrSyncOperation operation,
+  }) => _repository.saveHistoryState(
+    work: work,
+    historyWorkIds: historyWorkIds,
+    operation: operation,
+  );
+
   Future<void> saveAccountSyncState({
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,

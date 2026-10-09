@@ -8,6 +8,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../domain/library_node.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/logging/app_log_service.dart';
+import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/animated_reorder.dart';
 import '../../../core/widgets/library_like_cards.dart';
@@ -79,6 +80,11 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   int _visibleItemsVersion = 0;
   int _visibleItemsCacheVersion = -1;
   int _prunedFolderTreeRevision = -1;
+  final Map<String, GlobalKey> _itemKeys = {};
+  final Set<String> _removingItemIds = {};
+  final Set<UndoableRemovalKey> _removalKeys = {};
+  bool _removalMotionActive = false;
+  Timer? _removalMotionTimer;
 
   @override
   void initState() {
@@ -102,7 +108,16 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (TickerMode.valuesOf(context).enabled && _removalMotionActive) {
+      _scheduleRemovalMotionEnd();
+    }
+  }
+
+  @override
   void dispose() {
+    _removalMotionTimer?.cancel();
     for (final timer in _cardExpansionMotionTimers.values) {
       timer.cancel();
     }
@@ -110,6 +125,65 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
       animation.controller.dispose();
     }
     super.dispose();
+  }
+
+  void _handleRemovalChanged(
+    UndoableRemovalState? previous,
+    UndoableRemovalState next,
+  ) {
+    var changed = false;
+    for (final key in next.hiddenKeys) {
+      if (key.namespace == 'library') {
+        _removalKeys.add(key);
+        changed =
+            _removingItemIds.add(PathMatcher.equivalenceKey(key.id)) || changed;
+      }
+    }
+    for (final key in next.restoredKeys) {
+      if (key.namespace == 'library') {
+        _removalKeys.add(key);
+        changed =
+            _removingItemIds.remove(PathMatcher.equivalenceKey(key.id)) ||
+            changed;
+      }
+    }
+    if (!changed) return;
+    setState(() => _removalMotionActive = true);
+    _scheduleRemovalMotionEnd();
+  }
+
+  void _scheduleRemovalMotionEnd() {
+    _removalMotionTimer?.cancel();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !TickerMode.getValuesNotifier(context).value.enabled) {
+        return;
+      }
+      // Undo runs the existing row's size animation in reverse. Start the quiet
+      // window after its first ticker frame, retaining variable extents until
+      // the row has completed rather than constraining its unfinished motion.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !TickerMode.getValuesNotifier(context).value.enabled) {
+          return;
+        }
+        _removalMotionTimer?.cancel();
+        _removalMotionTimer = Timer(kAppMotionStandard, () {
+          _removalMotionTimer = null;
+          // A hidden page can receive undo before its ticker has ever started.
+          // Resume the quiet window when the page enables tickers again.
+          if (mounted && TickerMode.getValuesNotifier(context).value.enabled) {
+            setState(() {
+              _removalMotionActive = false;
+              _removalKeys.removeWhere(
+                (key) => !_removingItemIds.contains(
+                  PathMatcher.equivalenceKey(key.id),
+                ),
+              );
+            });
+          }
+        });
+      });
+      WidgetsBinding.instance.scheduleFrame();
+    });
   }
 
   void _handleCardExpansionChanged(FolderNode folder, bool expanded) {
@@ -401,18 +475,57 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(undoableRemovalStateProvider, _handleRemovalChanged);
     final visibleItems = _visibleLibraryItems(
       tree: widget.tree,
       structureRevision: widget.structureRevision,
     );
+    final itemIds = visibleItems
+        .where((item) => !item.isFolderError)
+        .map((item) => PathMatcher.equivalenceKey(item.node.path))
+        .toList(growable: false);
+    final currentIds = itemIds.toSet();
+    _itemKeys.removeWhere((id, _) => !currentIds.contains(id));
+    _removingItemIds.addAll(
+      ref
+          .read(undoableRemovalStateProvider)
+          .hiddenKeys
+          .where((key) => key.namespace == 'library')
+          .map((key) => PathMatcher.equivalenceKey(key.id)),
+    );
+    // Committed rows stay collapsed until the source snapshot removes them.
+    _removingItemIds.retainAll(currentIds);
+    _removalKeys.removeWhere(
+      (key) => !currentIds.contains(PathMatcher.equivalenceKey(key.id)),
+    );
+    // Riverpod pauses a hidden row's watch subscriptions with TickerMode. Keep
+    // removal streams live through undo so a stale reverse cannot finish first
+    // on resume, and retain committed state until the tree removes the row.
+    for (final key in _removalKeys) {
+      ref.listen(isUndoableRemovalHiddenProvider(key), (_, _) {});
+    }
+    final tilePadding =
+        ListTileTheme.of(context).minVerticalPadding ??
+        Theme.of(context).listTileTheme.minVerticalPadding ??
+        (Theme.of(context).useMaterial3 ? 8.0 : 4.0);
+    final useFixedExtent =
+        !_removalMotionActive &&
+        _removingItemIds.isEmpty &&
+        _expandedCardPaths.isEmpty &&
+        _cardExpansionMotions.isEmpty &&
+        tilePadding <= LibraryLikeCardMetrics.coverDistance &&
+        visibleItems.every(
+          (item) =>
+              item.depth == 0 &&
+              !item.isFolderError &&
+              isSelectableLibraryNode(item.node),
+        );
+    final itemIndices = <Key, int>{};
     BrowsePageScroll.setAnchorIds(
       context,
       visibleItems.map((item) => PathMatcher.equivalenceKey(item.node.path)),
     );
     Widget buildTopLevelLibraryItem(BuildContext context, int index) {
-      if (index == visibleItems.length) {
-        return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
-      }
       final item = visibleItems[index];
       final node = item.node;
       if (item.isFolderError) {
@@ -477,8 +590,12 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         treeItem = FadeTransition(opacity: opacity, child: treeItem);
       }
       final id = PathMatcher.equivalenceKey(node.path);
+      // The sliver changes when expanding/removing rows. Keep the card's State
+      // (including its undo size animation) when it moves between those slivers.
+      final itemKey = _itemKeys.putIfAbsent(id, GlobalKey.new);
+      itemIndices[itemKey] = index;
       return AnimatedReorderItem(
-        key: ValueKey(node.path),
+        key: itemKey,
         id: id,
         child: BrowseAnchor(
           id: id,
@@ -500,17 +617,20 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
           constraints.maxWidth,
         );
         final rowCount = (visibleItems.length / columnCount).ceil();
-        final itemIndices = <Key, int>{
-          if (columnCount == 1)
-            for (var i = 0; i < visibleItems.length; i++)
-              if (!visibleItems[i].isFolderError)
-                ValueKey(visibleItems[i].node.path): i,
-        };
+        itemIndices.clear();
+        if (columnCount == 1) {
+          for (var i = 0; i < visibleItems.length; i++) {
+            final key =
+                _itemKeys[PathMatcher.equivalenceKey(
+                  visibleItems[i].node.path,
+                )];
+            if (!visibleItems[i].isFolderError && key != null) {
+              itemIndices[key] = i;
+            }
+          }
+        }
         return AnimatedReorder(
-          order: visibleItems
-              .where((item) => !item.isFolderError)
-              .map((item) => PathMatcher.equivalenceKey(item.node.path))
-              .toList(),
+          order: itemIds,
           child: ListView.builder(
             key: const PageStorageKey<String>('library_list'),
             controller: widget.scrollController,
@@ -522,16 +642,16 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
               widget.bottomPadding,
             ),
             cacheExtent: widget.cacheExtent,
+            itemExtent: useFixedExtent
+                ? LibraryLikeCardMetrics.rootTileHeight
+                : null,
             physics: widget.physics,
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            itemCount: rowCount + 1,
+            itemCount: rowCount,
             findChildIndexCallback: columnCount == 1
                 ? (key) => itemIndices[key]
                 : null,
             itemBuilder: (context, rowIndex) {
-              if (rowIndex == rowCount) {
-                return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
-              }
               if (columnCount == 1) {
                 return buildTopLevelLibraryItem(context, rowIndex);
               }

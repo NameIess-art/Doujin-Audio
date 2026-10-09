@@ -7,6 +7,7 @@ import 'package:doujin_audio/core/translation/text_translation_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
+import 'package:doujin_audio/core/widgets/page_translation_scope.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -14,6 +15,7 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/features/library/presentation/library_card_artwork.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -324,22 +326,23 @@ void main() {
         await _batch(tester);
         expect(
           translations.calls.expand((call) => call.texts),
-          containsAll([
-            'Online title',
-            'Online circle',
-            'Online voice',
-            'Online tag',
-          ]),
+          containsAll(['Online title', 'Online tag']),
         );
-        for (final text in [
-          'Online title',
-          'Online circle',
-          'Online voice',
-          'Online tag',
-        ]) {
+        for (final text in ['Online title', 'Online tag']) {
           expect(
             find.textContaining('zh-CN:$text', findRichText: true),
             findsWidgets,
+          );
+        }
+        for (final name in ['Online circle', 'Online voice']) {
+          expect(
+            translations.calls.expand((call) => call.texts),
+            isNot(contains(name)),
+          );
+          expect(find.textContaining(name, findRichText: true), findsWidgets);
+          expect(
+            find.textContaining('zh-CN:$name', findRichText: true),
+            findsNothing,
           );
         }
         tester
@@ -385,15 +388,21 @@ void main() {
         );
         await tester.tap(find.byKey(const ValueKey('library_translation')));
         await _batch(tester);
-        for (final text in [
-          'Library title',
-          'Library circle',
-          'Library voice',
-          'Library tag',
-        ]) {
+        for (final text in ['Library title', 'Library tag']) {
           expect(
             find.textContaining('zh-CN:$text', findRichText: true),
             findsWidgets,
+          );
+        }
+        for (final name in ['Library circle', 'Library voice']) {
+          expect(
+            translations.calls.expand((call) => call.texts),
+            isNot(contains(name)),
+          );
+          expect(find.textContaining(name, findRichText: true), findsWidgets);
+          expect(
+            find.textContaining('zh-CN:$name', findRichText: true),
+            findsNothing,
           );
         }
         final actions = find.byType(LibraryLikeCardActions).first;
@@ -425,6 +434,74 @@ void main() {
           find.text('Recommendation title', findRichText: true),
           findsOneWidget,
         );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'single audio translation preserves voice actor and circle names on $platform',
+      (tester) async {
+        _screen(tester, platform);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final translations = _Translations();
+        const audioPath = 'C:/translation/single.mp3';
+        final detail =
+            AudioDetail.empty(
+              AudioDetailTarget.singleAudioFile(audioPath),
+            ).copyWith(
+              circleName: 'みみの庭',
+              voiceActors: ['日向こはね'],
+              tags: ['Single tag'],
+            );
+        await tester.pumpWidget(
+          fixture.build(
+            WorkPageTranslationHost(
+              child: Column(
+                children: [
+                  const WorkPageTranslationButton(
+                    buttonKey: 'single_translation',
+                  ),
+                  SizedBox(
+                    width: 300,
+                    child: SingleAudioFileCardContent(
+                      title: 'Original single.mp3',
+                      path: audioPath,
+                      detail: detail,
+                      detailLoading: false,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            overrides: [
+              textTranslationServiceProvider.overrideWithValue(translations),
+            ],
+          ),
+        );
+        await tester.tap(find.byKey(const ValueKey('single_translation')));
+        await _batch(tester);
+        expect(translations.calls.single.texts.toSet(), {
+          'Original single',
+          'Single tag',
+        });
+        expect(find.text('zh-CN:Original single.mp3'), findsOneWidget);
+        expect(
+          find.textContaining('zh-CN:Single tag', findRichText: true),
+          findsOneWidget,
+        );
+        for (final name in ['みみの庭', '日向こはね']) {
+          expect(find.textContaining(name, findRichText: true), findsOneWidget);
+          expect(
+            find.textContaining('zh-CN:$name', findRichText: true),
+            findsNothing,
+          );
+        }
+        await tester.tap(find.byKey(const ValueKey('single_translation')));
+        await tester.pump();
+        expect(find.text('Original single.mp3'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       },

@@ -1080,10 +1080,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   Widget _buildPage(BuildContext context) {
     final Object? visibilityKey;
     if (widget.isLocal) {
+      final library = ref.read(libraryFacadeProvider);
       visibilityKey = (
         ref.watch(undoableRemovalStateProvider).hiddenKeys,
         ref.watch(
-          libraryStateProvider.select((state) => state.value?.contentRevision),
+          libraryStateProvider.select(
+            (state) => state.value?.contentRevision ?? library.contentRevision,
+          ),
         ),
       );
     } else {
@@ -1424,22 +1427,21 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               !MediaQuery.disableAnimationsOf(context))
             AnimatedBuilder(
               animation: _directoryFade,
-              builder: (context, _) => _directoryFade.isCompleted
+              child: AppPageContentTransition(
+                child: IgnorePointer(
+                  child: ExcludeSemantics(
+                    child: FadeTransition(
+                      opacity: ReverseAnimation(_directoryOpacity),
+                      child: _directorySkeleton(_departingSkeletonRect!.height),
+                    ),
+                  ),
+                ),
+              ),
+              builder: (context, child) => _directoryFade.isCompleted
                   ? const SizedBox.shrink()
                   : Positioned.fromRect(
                       rect: _departingSkeletonRect!,
-                      child: AppPageContentTransition(
-                        child: IgnorePointer(
-                          child: ExcludeSemantics(
-                            child: FadeTransition(
-                              opacity: ReverseAnimation(_directoryOpacity),
-                              child: _directorySkeleton(
-                                _departingSkeletonRect!.height,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                      child: child!,
                     ),
             ),
           // Floating Back Button (top-left)

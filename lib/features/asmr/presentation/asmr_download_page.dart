@@ -425,17 +425,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         topInset: listTopPadding,
         child: Stack(
           children: [
-            AppPageContentTransition.deferred(
-              placeholder: OperationSkeletonList(
-                showHeader: false,
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  listTopPadding,
-                  16,
-                  listBottomPadding,
-                ),
-              ),
-              builder: (context) => Stack(
+            AppPageContentTransition(
+              child: Stack(
                 fit: StackFit.expand,
                 children: [
                   Positioned.fill(

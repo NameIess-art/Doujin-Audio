@@ -35,10 +35,15 @@ import 'package:doujin_audio/features/player/application/playback_session_launch
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
   for (final reduceMotion in [false, true]) {
     testWidgets(
       'ASMR appended page fades once from its data commit, reduce motion $reduceMotion',
@@ -1619,6 +1624,25 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
       favoriteWorks.removeWhere((w) => w.id == work.id);
     } else {
       favoriteWorks.add(work.copyWith(isFavorite: true));
+    }
+    _revision++;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> setFavorites(
+    List<AsmrWork> works, {
+    required bool favorite,
+  }) async {
+    final ids = works.map((w) => w.id).toSet();
+    if (favorite) {
+      for (final work in works) {
+        if (!favoriteWorks.any((w) => w.id == work.id)) {
+          favoriteWorks.add(work.copyWith(isFavorite: true));
+        }
+      }
+    } else {
+      favoriteWorks.removeWhere((w) => ids.contains(w.id));
     }
     _revision++;
     notifyListeners();

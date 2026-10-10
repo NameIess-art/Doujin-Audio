@@ -1,7 +1,6 @@
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as path;
 
 import '../../../core/media/path_matcher.dart';
 import '../domain/library_entry.dart';
@@ -166,8 +165,8 @@ class LibraryExclusionMatcher {
     var current = normalizedPath;
     while (!PathMatcher.equalsNormalized(current, libraryPath)) {
       yield current;
-      final parent = PathMatcher.normalize(path.dirname(current));
-      if (parent == current) {
+      final parent = PathMatcher.parentPath(current);
+      if (parent == null || parent == current) {
         break;
       }
       current = parent;

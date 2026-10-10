@@ -480,8 +480,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     try {
       await controller.initializeForVisiblePage();
       if (!mounted || ModalRoute.of(context)?.isActive == false) return;
-      // Initialization may finish during a later navigation or scroll.
-      if (UiInteractionCoordinator.instance.isVisualUpdateDeferred) {
+      if (UiInteractionCoordinator.instance.isInteracting ||
+          UiInteractionCoordinator.instance.isVisualUpdateDeferred) {
         UiInteractionCoordinator.instance.scheduleCommit(
           key: _filesCommitKey,
           allowDuringScroll: true,

@@ -66,9 +66,12 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
     if (notification is ScrollStartNotification ||
         notification is ScrollUpdateNotification ||
         notification is OverscrollNotification) {
+      _idleTimer?.cancel();
+      _idleTimer = null;
       _setScrolling(true);
-      _scheduleIdle();
     } else if (notification is ScrollEndNotification) {
+      // A held drag can pause between updates without ending the interaction.
+      // Arm one quiet-window timer at the end, rather than on every frame.
       _scheduleIdle();
     }
     return false;

@@ -98,7 +98,12 @@ void main() {
           final fade = find.byKey(ValueKey('work_detail_${prefix}_edge_fade'));
           expect(tester.widget(fade), isA<HorizontalEdgeFadeScroll>());
           expect(
-            find.descendant(of: fade, matching: find.byType(ShaderMask)),
+            find.descendant(
+              of: fade,
+              matching: find.byWidgetPredicate(
+                (widget) => widget is ShaderMask,
+              ),
+            ),
             findsOneWidget,
           );
           final list = find.byKey(ValueKey('work_detail_${prefix}_scroller'));

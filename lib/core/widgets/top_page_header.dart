@@ -152,7 +152,8 @@ class _TopPageHeaderState extends State<TopPageHeader> {
   static double _stableTopPadding = 0;
   static const double _titleSwipeDistance = 32;
   static const double _titleSwipeVelocity = 250;
-  final ValueNotifier<double> _floatingReveal = ValueNotifier<double>(0);
+  final ValueNotifier<double> _collapseProgress = ValueNotifier<double>(0);
+  double _floatingReveal = 0;
   double _titleDragDistance = 0;
   double _floatingRevealPendingDistance = 0;
   double? _lastOffset;
@@ -170,24 +171,46 @@ class _TopPageHeaderState extends State<TopPageHeader> {
       oldWidget.collapseController?.removeListener(_handleScrollChanged);
       widget.collapseController?.addListener(_handleScrollChanged);
       _lastOffset = null;
-      _floatingReveal.value = 0;
+      _floatingReveal = 0;
       _floatingRevealPendingDistance = 0;
     }
-    if (!widget.floatingReveal && _floatingReveal.value != 0) {
-      _floatingReveal.value = 0;
+    if (!widget.floatingReveal && _floatingReveal != 0) {
+      _floatingReveal = 0;
       _floatingRevealPendingDistance = 0;
       _lastOffset = null;
     }
+    _updateCollapseProgress();
   }
 
   @override
   void dispose() {
     widget.collapseController?.removeListener(_handleScrollChanged);
-    _floatingReveal.dispose();
+    _collapseProgress.dispose();
     super.dispose();
   }
 
   void _handleScrollChanged() {
+    _updateFloatingReveal();
+    _updateCollapseProgress();
+  }
+
+  void _updateCollapseProgress() {
+    final controller = widget.collapseController;
+    var progress = 0.0;
+    if (controller != null && controller.hasClients) {
+      final offset = controller.positions.length == 1
+          ? controller.positions.single.pixels
+          : 0.0;
+      final absoluteProgress = widget.collapseDistance <= 0
+          ? 1.0
+          : (offset / widget.collapseDistance).clamp(0.0, 1.0);
+      progress = absoluteProgress * (1 - _floatingReveal);
+    }
+    // Fully collapsed/expanded headers need no work for further scroll ticks.
+    _collapseProgress.value = progress;
+  }
+
+  void _updateFloatingReveal() {
     if (!widget.floatingReveal || widget.floatingRevealDistance <= 0) {
       _lastOffset = null;
       _floatingRevealPendingDistance = 0;
@@ -211,7 +234,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
     double nextReveal;
     if (delta < 0) {
       var revealDistance = -delta;
-      if (_floatingReveal.value == 0 &&
+      if (_floatingReveal == 0 &&
           _floatingRevealPendingDistance <
               widget.floatingRevealTriggerDistance) {
         final remainingTrigger =
@@ -225,23 +248,19 @@ class _TopPageHeaderState extends State<TopPageHeader> {
         revealDistance -= remainingTrigger;
       }
       nextReveal =
-          (_floatingReveal.value +
-                  revealDistance / widget.floatingRevealDistance)
+          (_floatingReveal + revealDistance / widget.floatingRevealDistance)
               .clamp(0.0, 1.0);
     } else {
       _floatingRevealPendingDistance = 0;
-      nextReveal =
-          (_floatingReveal.value - delta / widget.floatingRevealDistance).clamp(
-            0.0,
-            1.0,
-          );
+      nextReveal = (_floatingReveal - delta / widget.floatingRevealDistance)
+          .clamp(0.0, 1.0);
       if (nextReveal == 0) {
         _floatingRevealPendingDistance = 0;
       }
     }
 
-    if (nextReveal == _floatingReveal.value) return;
-    _floatingReveal.value = nextReveal;
+    if (nextReveal == _floatingReveal) return;
+    _floatingReveal = nextReveal;
   }
 
   void _handleTitleDragStart(DragStartDetails details) {
@@ -284,172 +303,174 @@ class _TopPageHeaderState extends State<TopPageHeader> {
     final topPadding = widget.useSafeAreaTop ? resolvedTop : 0.0;
     final resolvedTitle = widget.title;
 
-    Widget buildHeaderContent(double collapseT) {
-      final hasTopCapsule =
-          widget.topCapsuleTitle != null || widget.topCapsuleChild != null;
-      final hasSecondaryContent =
-          widget.title.isNotEmpty ||
-          widget.titleWidget != null ||
-          widget.leading != null ||
-          widget.trailing != null;
-      final hasSwipe =
-          widget.onTitleSwipeLeft != null || widget.onTitleSwipeRight != null;
+    final hasTopCapsule =
+        widget.topCapsuleTitle != null || widget.topCapsuleChild != null;
+    final hasSecondaryContent =
+        widget.title.isNotEmpty ||
+        widget.titleWidget != null ||
+        widget.leading != null ||
+        widget.trailing != null;
+    final hasSwipe =
+        widget.onTitleSwipeLeft != null || widget.onTitleSwipeRight != null;
 
-      Widget wrapButton(Widget button) {
-        if (button is IconButton || button is BackButton) {
-          return HeaderFloatingButton(child: button);
-        }
-        return button;
+    Widget wrapButton(Widget button) {
+      if (button is IconButton || button is BackButton) {
+        return HeaderFloatingButton(child: button);
       }
+      return button;
+    }
 
-      Widget buildTitleContent() {
-        if (widget.titleWidget != null) {
-          final content = Align(
-            alignment: Alignment.centerLeft,
-            child: widget.titleWidget!,
-          );
-          if (!hasSwipe) return content;
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onHorizontalDragStart: _handleTitleDragStart,
-            onHorizontalDragUpdate: _handleTitleDragUpdate,
-            onHorizontalDragEnd: _handleTitleDragEnd,
-            child: content,
-          );
-        }
-
-        final surface = HeaderFloatingSurface(
-          height: null,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 38),
-            child: Row(
-              children: [
-                if (widget.icon != null) ...[
-                  Icon(
-                    widget.icon,
-                    size: AppDesignTokens.fileTypeIcons.contains(widget.icon)
-                        ? AppDesignTokens.fileEntryIconSize
-                        : 18,
-                    color: widget.iconColor ?? cs.primary,
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        widget.marqueeTitle
-                            ? MarqueeText(
-                                text: resolvedTitle,
-                                style: Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      color: cs.onSurface,
-                                      fontSize: 13.5,
-                                      letterSpacing: 0.1,
-                                    ),
-                                scrollSpeed: 24,
-                                edgePadding: 2,
-                                forceMarquee: widget.forceMarqueeTitle,
-                              )
-                            : Text(
-                                resolvedTitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      color: cs.onSurface,
-                                      fontSize: 13.5,
-                                      letterSpacing: 0.1,
-                                    ),
-                              ),
-                        if (widget.subtitle != null &&
-                            widget.subtitle!.isNotEmpty)
-                          Text(
-                            widget.subtitle!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant.withValues(
-                                    alpha: 0.85,
-                                  ),
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (widget.titleSuffix != null) ...[
-                  const SizedBox(width: 6),
-                  widget.titleSuffix!,
-                ],
-              ],
-            ),
-          ),
+    Widget buildTitleContent() {
+      if (widget.titleWidget != null) {
+        final content = Align(
+          alignment: Alignment.centerLeft,
+          child: widget.titleWidget!,
         );
-
-        if (!hasSwipe) return surface;
+        if (!hasSwipe) return content;
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onHorizontalDragStart: _handleTitleDragStart,
           onHorizontalDragUpdate: _handleTitleDragUpdate,
           onHorizontalDragEnd: _handleTitleDragEnd,
-          child: surface,
+          child: content,
         );
       }
 
-      Widget buildSecondaryCapsuleRow({double trailingOpacity = 1.0}) {
-        return Row(
-          children: [
-            if (widget.leading != null) ...[
-              wrapButton(widget.leading!),
-              const SizedBox(width: 8),
-            ],
-            Expanded(child: buildTitleContent()),
-            if (widget.trailing != null) ...[
-              const SizedBox(width: 8),
-              Opacity(
-                opacity: trailingOpacity,
-                child: wrapButton(widget.trailing!),
-              ),
-            ],
-          ],
-        );
-      }
-
-      final topCapsuleWidget =
-          widget.topCapsuleChild ??
-          (widget.topCapsuleTitle != null
-              ? HeaderTopCapsule(
-                  title: widget.topCapsuleTitle!,
-                  data: widget.topCapsuleData,
-                  leading:
-                      widget.topCapsuleLeading ??
-                      (widget.icon != null
-                          ? Icon(
-                              widget.icon,
-                              size:
-                                  AppDesignTokens.fileTypeIcons.contains(
-                                    widget.icon,
-                                  )
-                                  ? AppDesignTokens.fileEntryIconSize
-                                  : 16,
-                              color: widget.iconColor ?? cs.primary,
+      final surface = HeaderFloatingSurface(
+        height: null,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 38),
+          child: Row(
+            children: [
+              if (widget.icon != null) ...[
+                Icon(
+                  widget.icon,
+                  size: AppDesignTokens.fileTypeIcons.contains(widget.icon)
+                      ? AppDesignTokens.fileEntryIconSize
+                      : 18,
+                  color: widget.iconColor ?? cs.primary,
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      widget.marqueeTitle
+                          ? MarqueeText(
+                              text: resolvedTitle,
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: cs.onSurface,
+                                    fontSize: 13.5,
+                                    letterSpacing: 0.1,
+                                  ),
+                              scrollSpeed: 24,
+                              edgePadding: 2,
+                              forceMarquee: widget.forceMarqueeTitle,
                             )
-                          : null),
-                  trailing: widget.topCapsuleTrailing,
-                )
-              : null);
+                          : Text(
+                              resolvedTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: cs.onSurface,
+                                    fontSize: 13.5,
+                                    letterSpacing: 0.1,
+                                  ),
+                            ),
+                      if (widget.subtitle != null &&
+                          widget.subtitle!.isNotEmpty)
+                        Text(
+                          widget.subtitle!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: cs.onSurfaceVariant.withValues(
+                                  alpha: 0.85,
+                                ),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              if (widget.titleSuffix != null) ...[
+                const SizedBox(width: 6),
+                widget.titleSuffix!,
+              ],
+            ],
+          ),
+        ),
+      );
 
+      if (!hasSwipe) return surface;
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: _handleTitleDragStart,
+        onHorizontalDragUpdate: _handleTitleDragUpdate,
+        onHorizontalDragEnd: _handleTitleDragEnd,
+        child: surface,
+      );
+    }
+
+    final titleContent = buildTitleContent();
+    final leading = widget.leading == null ? null : wrapButton(widget.leading!);
+    final trailing = widget.trailing == null
+        ? null
+        : wrapButton(widget.trailing!);
+
+    Widget buildSecondaryCapsuleRow({double trailingOpacity = 1.0}) {
+      return Row(
+        children: [
+          if (widget.leading != null) ...[leading!, const SizedBox(width: 8)],
+          Expanded(child: titleContent),
+          if (widget.trailing != null) ...[
+            const SizedBox(width: 8),
+            Opacity(opacity: trailingOpacity, child: trailing!),
+          ],
+        ],
+      );
+    }
+
+    final topCapsuleWidget =
+        widget.topCapsuleChild ??
+        (widget.topCapsuleTitle != null
+            ? HeaderTopCapsule(
+                title: widget.topCapsuleTitle!,
+                data: widget.topCapsuleData,
+                leading:
+                    widget.topCapsuleLeading ??
+                    (widget.icon != null
+                        ? Icon(
+                            widget.icon,
+                            size:
+                                AppDesignTokens.fileTypeIcons.contains(
+                                  widget.icon,
+                                )
+                                ? AppDesignTokens.fileEntryIconSize
+                                : 16,
+                            color: widget.iconColor ?? cs.primary,
+                          )
+                        : null),
+                trailing: widget.topCapsuleTrailing,
+              )
+            : null);
+
+    final secondaryCapsuleRow = buildSecondaryCapsuleRow();
+
+    Widget buildHeaderContent(double collapseT) {
       if (hasTopCapsule && !hasSecondaryContent) {
         final titleCollapseT = Curves.easeOutCubic.transform(collapseT);
         final resolvedPadding = EdgeInsetsGeometry.lerp(
@@ -529,7 +550,7 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                 left: 0,
                 right: 0,
                 height: secondRowHeight,
-                child: buildSecondaryCapsuleRow(),
+                child: secondaryCapsuleRow,
               ),
             ],
           ),
@@ -537,30 +558,15 @@ class _TopPageHeaderState extends State<TopPageHeader> {
       );
     }
 
-    double collapseProgress() {
-      final controller = widget.collapseController;
-      if (controller == null || !controller.hasClients) return 0;
-      if (widget.collapseDistance <= 0) return 1;
-      final offset = controller.positions.length == 1
-          ? controller.positions.single.pixels
-          : 0.0;
-      final absoluteProgress = (offset / widget.collapseDistance).clamp(
-        0.0,
-        1.0,
-      );
-      return absoluteProgress * (1 - _floatingReveal.value);
-    }
+    _updateCollapseProgress();
 
     final headerContent = Padding(
       padding: EdgeInsets.only(top: topPadding),
       child: AnimatedBuilder(
-        animation: Listenable.merge(<Listenable>[
-          widget.collapseController ?? kAlwaysDismissedAnimation,
-          _floatingReveal,
-        ]),
+        animation: _collapseProgress,
         child: widget.additionalChild,
         builder: (context, additionalChild) {
-          final collapseT = collapseProgress();
+          final collapseT = _collapseProgress.value;
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,

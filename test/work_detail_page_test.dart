@@ -271,6 +271,102 @@ void main() {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
 
+  testWidgets(
+    'work scrolling defers discovered files and reuses row menus',
+    (tester) async {
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.resetForTest();
+      addTearDown(interaction.resetForTest);
+      final covers = _ControlledWorkDetailCoverService()
+        ..images.complete([])
+        ..cover.complete(null);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: covers,
+      );
+      addTearDown(fixture.dispose);
+      const folder = 'C:/works/scroll-discovery';
+      final target = AudioDetailTarget.libraryRootFolder(folder);
+      fixture.library.addWatchedFolder(folder, notify: false);
+      fixture.library.addTracks(
+        List.generate(
+          80,
+          (index) => MusicTrack(
+            path: '$folder/track$index.mp3',
+            displayName: 'track$index.mp3',
+            groupKey: folder,
+            groupTitle: 'Scroll discovery',
+            groupSubtitle: '',
+            isSingle: false,
+          ),
+        ),
+        persist: false,
+      );
+      await tester.runAsync(() async {
+        await fixture.library.loadAudioDetail(target);
+        await fixture.library.loadLibraryFolderTree(folder);
+        await _prewarmDirectory(fixture, folder);
+      });
+      final images = Completer<List<CoverImageReference>>();
+      final textService = WorkTextService(
+        discoverImages: (_) => images.future,
+        platformGateway: _NestedWorkDetailFileGateway([]),
+      );
+      addTearDown(textService.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          WorkDetailPage.forLocal(target: target),
+          overrides: [workTextServiceProvider.overrideWithValue(textService)],
+        ),
+      );
+      await _settleDetail(tester);
+      final scroll = find.byType(CustomScrollView);
+      final controller = tester.widget<CustomScrollView>(scroll).controller!;
+      final gesture = await tester.startGesture(tester.getCenter(scroll));
+      await gesture.moveBy(const Offset(0, -160));
+      await tester.pump();
+      expect(interaction.isInteracting, isTrue);
+      var commits = 0;
+      interaction.scheduleCommit(
+        key: 'detail-scroll-regression',
+        commit: () => commits++,
+      );
+      images.complete([
+        const CoverImageReference(
+          displayPath: '$folder/000-new-cover.jpg',
+          sourcePath: '$folder/000-new-cover.jpg',
+        ),
+      ]);
+      await tester.pump(const Duration(seconds: 1));
+      expect(controller.position.isScrollingNotifier.value, isTrue);
+      expect(commits, 0);
+      expect(find.text('000-new-cover'), findsNothing);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      await _settleDetail(tester);
+      controller.jumpTo(0);
+      await _settleDetail(tester);
+      expect(interaction.isInteracting, isFalse);
+      expect(commits, 1);
+      expect(find.text('000-new-cover'), findsOneWidget);
+      final audioTiles = tester
+          .widgetList<WorkDetailEntryTile>(find.byType(WorkDetailEntryTile))
+          .where((tile) => tile.item.type == WorkEntryType.audio)
+          .toList();
+      expect(audioTiles.length, greaterThan(1));
+      for (final tile in audioTiles.skip(1)) {
+        expect(tile.menuEntries, same(audioTiles.first.menuEntries));
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await _settleDetail(tester);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   test('WorkDirectorySnapshot preserves file sizes and original suffixes', () {
     final track = MusicTrack(
       path: r'C:\作品\音频.WAV',
@@ -306,6 +402,7 @@ void main() {
     ).entriesAt([]);
     expect(local.map((item) => item.fileSizeBytes), [512, 0, 2048]);
     expect(local.map((item) => item.extension), ['.png', '.txt', '.WAV']);
+    expect(local.map((item) => item.displayName), ['封面', '说明', '音频']);
     expect(local.last.duration, track.duration);
 
     final remote = buildWorkDirectorySnapshot(
@@ -457,6 +554,10 @@ void main() {
               expect(find.byType(WorkDetailEntryTile), findsWidgets);
               expect(find.text('Deferred voice actor'), findsOneWidget);
               if (!local) {
+                // Cached content is already visible while refresh waits for
+                // the navigation interaction's quiet window to finish.
+                await tester.pump(const Duration(milliseconds: 200));
+                await _settleDetail(tester);
                 expect(remote.cacheReads, 1);
                 expect(remote.requests, 1);
               }
@@ -651,7 +752,7 @@ void main() {
           await tester.pump(const Duration(milliseconds: 100));
           expect(find.text('Cold directory'), findsOneWidget);
           expect(treeRequests, 0);
-          expect(find.text('audio.mp3'), findsNothing);
+          expect(find.text('audio'), findsNothing);
           final skeleton = tester.renderObject<RenderRepaintBoundary>(
             find.byKey(const ValueKey('work_detail_entries_skeleton')),
           );
@@ -715,9 +816,9 @@ void main() {
               () => Future<void>.delayed(const Duration(milliseconds: 10)),
             );
             await tester.pump();
-            if (find.text('audio.mp3').evaluate().isNotEmpty) break;
+            if (find.text('audio').evaluate().isNotEmpty) break;
           }
-          expect(find.text('audio.mp3'), findsOneWidget);
+          expect(find.text('audio'), findsOneWidget);
           final fade = find.byKey(const ValueKey('work_detail_entries_fade'));
           expect(tester.widget<SliverFadeTransition>(fade).opacity.value, 0);
           final skeletonFade = find
@@ -758,9 +859,9 @@ void main() {
           await tester.pump();
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 100));
-          expect(find.text('audio.mp3'), findsOneWidget);
+          expect(find.text('audio'), findsOneWidget);
           await _settleDetail(tester);
-          expect(find.text('audio.mp3'), findsOneWidget);
+          expect(find.text('audio'), findsOneWidget);
           expect(tester.widget<SliverFadeTransition>(fade).opacity.value, 1);
           expect(
             treeRequests,
@@ -859,9 +960,9 @@ void main() {
               () => Future<void>.delayed(const Duration(milliseconds: 10)),
             );
             await tester.pump();
-            if (find.text('notes.txt').evaluate().isNotEmpty) break;
+            if (find.text('notes').evaluate().isNotEmpty) break;
           }
-          expect(find.text('notes.txt'), findsOneWidget);
+          expect(find.text('notes'), findsOneWidget);
           expect(entryIndex('folder:Extras'), 0);
           expect(entryIndex('audio:$folder/audio.mp3'), 1);
           expect(entryIndex('text:notes.txt'), 2);
@@ -983,8 +1084,8 @@ void main() {
           covers.cover.complete('$folder/cover.jpg');
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 100));
-          expect(find.text('notes.txt', skipOffstage: false), findsNothing);
-          expect(find.text('picture.jpg', skipOffstage: false), findsNothing);
+          expect(find.text('notes', skipOffstage: false), findsNothing);
+          expect(find.text('picture', skipOffstage: false), findsNothing);
           expect(
             find.byType(AsyncLocalCoverImage, skipOffstage: false),
             findsOneWidget,
@@ -1008,8 +1109,8 @@ void main() {
           await _settleDetail(tester);
           await tester.pump(const Duration(milliseconds: 200));
           await _settleDetail(tester);
-          expect(find.text('notes.txt'), findsOneWidget);
-          expect(find.text('picture.jpg'), findsOneWidget);
+          expect(find.text('notes'), findsOneWidget);
+          expect(find.text('picture'), findsOneWidget);
           expect(
             tester.widget<LocalCoverImage>(find.byType(LocalCoverImage)).path,
             '$folder/cover.jpg',
@@ -1222,13 +1323,13 @@ void main() {
           await tester.pump(const Duration(milliseconds: 500));
           expect(repository.detailRequests, 0);
           expect(covers.imageRequests, 0);
-          expect(find.text('audio.mp3'), findsOneWidget);
+          expect(find.text('audio'), findsOneWidget);
 
           interaction.cancelNavigation(source);
           await _settleDetail(tester);
           expect(find.text('Card CV'), findsOneWidget);
           expect(find.text('#Card tag'), findsOneWidget);
-          expect(find.text('audio.mp3'), findsOneWidget);
+          expect(find.text('audio'), findsOneWidget);
           expect(covers.imageRequests, 1);
           expect(repository.detailRequests, 0);
           expect(tester.takeException(), isNull);
@@ -1306,9 +1407,9 @@ void main() {
           expect(covers.imageRequests, 0);
           expect(covers.coverRequests, 0);
           expect(treeRequests, 1);
-          expect(find.text('audio.mp3'), findsOneWidget);
+          expect(find.text('audio'), findsOneWidget);
           expect(find.text('Extras'), findsOneWidget);
-          expect(find.text('notes.txt'), findsNothing);
+          expect(find.text('notes'), findsNothing);
 
           interaction.cancelNavigation(source);
           await tester.pump();
@@ -1324,24 +1425,24 @@ void main() {
           }
           expect(treeRequests, 1, reason: 'Opening reuses the prepared tree.');
           expect(find.byType(CircularProgressIndicator), findsNothing);
-          expect(find.text('audio.mp3'), findsOneWidget);
+          expect(find.text('audio'), findsOneWidget);
           expect(covers.imageRequests, 1);
           expect(covers.coverRequests, 1);
-          expect(find.text('notes.txt'), findsOneWidget);
-          expect(find.text('cover.jpg'), findsNothing);
+          expect(find.text('notes'), findsOneWidget);
+          expect(find.text('cover'), findsNothing);
 
           covers.images.complete(['$folderPath/cover.jpg']);
           await tester.pump();
           await tester.pump();
           await _settleDetail(tester);
-          expect(find.text('cover.jpg'), findsOneWidget);
+          expect(find.text('cover'), findsOneWidget);
           expect(covers.cover.isCompleted, isFalse);
 
           covers.cachedCover = '$folderPath/cover.jpg';
           interaction.beginNavigation(source);
           await tester.pumpWidget(buildPage(const ValueKey('reopened')));
-          expect(find.text('notes.txt'), findsOneWidget);
-          expect(find.text('cover.jpg'), findsOneWidget);
+          expect(find.text('notes'), findsOneWidget);
+          expect(find.text('cover'), findsOneWidget);
           expect(covers.imageRequests, 1);
           textEntries
             ..clear()
@@ -1352,8 +1453,8 @@ void main() {
             });
           interaction.cancelNavigation(source);
           await _settleDetail(tester);
-          expect(find.text('notes.txt'), findsNothing);
-          expect(find.text('updated.txt'), findsOneWidget);
+          expect(find.text('notes'), findsNothing);
+          expect(find.text('updated'), findsOneWidget);
           expect(covers.imageRequests, 2);
           expect(covers.coverRequests, 1, reason: 'Reuse the resolved cover.');
           covers.cover.complete(null);
@@ -1640,7 +1741,7 @@ void main() {
 
         await tester.tap(find.text('Scripts'));
         await _settleDetail(tester);
-        expect(find.text('notes.txt'), findsOneWidget);
+        expect(find.text('notes'), findsOneWidget);
 
         await tester.tap(
           find.text(fixture.languageProvider.tr('root_directory')),
@@ -1648,7 +1749,7 @@ void main() {
         await _settleDetail(tester);
         await tester.tap(find.text('Gallery'));
         await _settleDetail(tester);
-        expect(find.text('cover.jpg'), findsOneWidget);
+        expect(find.text('cover'), findsOneWidget);
       },
     );
 
@@ -1697,7 +1798,7 @@ void main() {
       for (
         var i = 0;
         i < 40 &&
-            (find.text('notes.txt').evaluate().isEmpty ||
+            (find.text('notes').evaluate().isEmpty ||
                 find
                     .byKey(const ValueKey<String>('work_entry_more_cover.jpg'))
                     .evaluate()
@@ -3201,11 +3302,7 @@ void main() {
             ],
           ),
         );
-        for (
-          var i = 0;
-          i < 40 && find.text('notes.txt').evaluate().isEmpty;
-          i++
-        ) {
+        for (var i = 0; i < 40 && find.text('notes').evaluate().isEmpty; i++) {
           await tester.pump(const Duration(milliseconds: 50));
           await tester.runAsync(
             () => Future<void>.delayed(const Duration(milliseconds: 10)),
@@ -3236,6 +3333,110 @@ void main() {
         await tester.pump(const Duration(milliseconds: 500));
         expect(menuItem, findsNothing);
       },
+    );
+
+    testWidgets(
+      'WorkDetailEntryTile hides file suffixes in names and preserves folder names',
+      (tester) async {
+        const samples = [
+          (
+            name: 'Track.MP3',
+            path: 'Track.MP3',
+            type: WorkEntryType.audio,
+            display: 'Track',
+          ),
+          (
+            name: 'Track.part1',
+            path: 'Track.part1.mp3',
+            type: WorkEntryType.audio,
+            display: 'Track.part1',
+          ),
+          (
+            name: 'read.me.txt',
+            path: 'read.me.txt',
+            type: WorkEntryType.text,
+            display: 'read.me',
+          ),
+          (
+            name: 'cover.JPG',
+            path: 'cover.JPG',
+            type: WorkEntryType.image,
+            display: 'cover',
+          ),
+          (
+            name: 'LICENSE',
+            path: 'LICENSE',
+            type: WorkEntryType.text,
+            display: 'LICENSE',
+          ),
+          (
+            name: 'Archive.zip',
+            path: 'Archive.zip',
+            type: WorkEntryType.folder,
+            display: 'Archive.zip',
+          ),
+        ];
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  for (final sample in samples)
+                    WorkDetailEntryTile(
+                      item: WorkEntryItem(
+                        name: sample.name,
+                        relativePath: sample.path,
+                        type: sample.type,
+                        fileSizeBytes: 0,
+                      ),
+                      accentColor: Colors.deepPurple,
+                      menuEntries: const [],
+                      moreLabel: 'More',
+                      onAction: (_) {},
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+        final rows = find.byType(WorkDetailEntryTile);
+        for (var index = 0; index < samples.length; index++) {
+          final sample = samples[index];
+          final row = rows.at(index);
+          expect(
+            find.descendant(of: row, matching: find.text(sample.display)),
+            findsOneWidget,
+          );
+          if (sample.name != sample.display) {
+            expect(
+              find.descendant(of: row, matching: find.text(sample.name)),
+              findsNothing,
+            );
+          }
+          final item = tester.widget<WorkDetailEntryTile>(row).item;
+          if (item.type == WorkEntryType.folder) {
+            expect(
+              find.descendant(of: row, matching: find.byType(Text)),
+              findsOneWidget,
+            );
+          } else {
+            final info = item.extension.isEmpty
+                ? '0 B'
+                : '0 B · ${item.extension.substring(1)}';
+            expect(
+              find.descendant(of: row, matching: find.text(info)),
+              findsOneWidget,
+            );
+          }
+          expect(item.name, sample.name);
+          expect(item.relativePath, sample.path);
+        }
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
     );
 
     for (final textScale in [1.0, 2.0]) {
@@ -3295,8 +3496,8 @@ void main() {
             } else {
               final info = find.text(
                 type == WorkEntryType.audio
-                    ? '1.0 KB · 01:05 · .mp3'
-                    : '1.0 KB · .mp3',
+                    ? '1.0 KB · 01:05 · mp3'
+                    : '1.0 KB · mp3',
               );
               final infoInRow = find.descendant(of: row, matching: info);
               final infoRect = tester.getRect(infoInRow);
@@ -3415,7 +3616,7 @@ void main() {
               var contentHeight = nameRect.height;
               if (index == 1) {
                 final infoRect = tester.getRect(
-                  find.text('1.0 KB · 01:05 · .mp3'),
+                  find.text('1.0 KB · 01:05 · mp3'),
                 );
                 expect(infoRect.top - nameRect.bottom, closeTo(2, 0.01));
                 contentHeight += 2 + infoRect.height;

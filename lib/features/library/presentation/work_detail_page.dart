@@ -33,6 +33,7 @@ import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/shimmer_loading.dart';
+import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../asmr/application/asmr_library_controller.dart';
 import '../../asmr/domain/asmr_models.dart';
@@ -484,7 +485,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           UiInteractionCoordinator.instance.isVisualUpdateDeferred) {
         UiInteractionCoordinator.instance.scheduleCommit(
           key: _filesCommitKey,
-          allowDuringScroll: true,
           commit: () {
             if (mounted && ModalRoute.of(context)?.isActive != false) {
               unawaited(_loadAsmrData());
@@ -792,9 +792,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     }
   }
 
-  List<UnifiedMenuEntry<WorkEntryAction>> _entryMenuItems(WorkEntryItem item) {
+  List<UnifiedMenuEntry<WorkEntryAction>> _entryMenuItems(WorkEntryType type) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    return switch (item.type) {
+    return switch (type) {
       WorkEntryType.folder => [
         UnifiedMenuEntry<WorkEntryAction>.action(
           value: WorkEntryAction.open,
@@ -1236,6 +1236,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     }
 
     Widget buildBody(BuildContext context, WidgetRef ref) {
+      final entryMenus =
+          <WorkEntryType, List<UnifiedMenuEntry<WorkEntryAction>>>{};
+      final moreLabel = i18n.tr('more_actions');
       final currentEntries = _buildCurrentEntries(_directoryVisibilityKey(ref));
       final isLoading =
           ((widget.isLocal ? _loadingLocal : _loadingAsmr) ||
@@ -1392,8 +1395,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                                       accentColor: widget.isAsmr
                                           ? asmrBlue
                                           : cs.primary,
-                                      menuEntries: _entryMenuItems(item),
-                                      moreLabel: i18n.tr('more_actions'),
+                                      menuEntries: entryMenus.putIfAbsent(
+                                        item.type,
+                                        () => _entryMenuItems(item.type),
+                                      ),
+                                      moreLabel: moreLabel,
                                       onAction: (action) =>
                                           _handleEntryAction(item, action),
                                     ),
@@ -1446,8 +1452,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         children: [
           AppPageContentTransition(
             backgroundColor: cs.surface,
-            child: Consumer(
-              builder: (context, ref, _) => buildBody(context, ref),
+            child: ScrollActivityGate(
+              child: Consumer(
+                builder: (context, ref, _) => buildBody(context, ref),
+              ),
             ),
           ),
           // Floating Back Button (top-left)

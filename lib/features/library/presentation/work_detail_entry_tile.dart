@@ -92,14 +92,14 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     final infoStyle = Theme.of(context).textTheme.labelSmall!.copyWith(
       fontSize: 11,
       height: 1.2,
-      color: cs.onSurfaceVariant,
+      color: cs.onSurfaceVariant.withValues(alpha: 0.6),
     );
     final info = <String>[
       if (item.fileSizeBytes != null)
         formatAsmrDownloadSize(item.fileSizeBytes!),
       if (item.type == WorkEntryType.audio && item.duration != null)
         formatDurationCompact(item.duration!),
-      if (item.extension.isNotEmpty) item.extension,
+      if (item.extension.isNotEmpty) item.extension.substring(1),
     ].join(' · ');
     final icon = switch (item.type) {
       WorkEntryType.folder => AppDesignTokens.folderIcon,
@@ -151,6 +151,9 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
           minTileHeight: 44,
           minVerticalPadding: 4,
           titleAlignment: ListTileTitleAlignment.center,
+          horizontalTitleGap: 4,
+          // Preserve the name's leading offset while tightening the action gap.
+          minLeadingWidth: 36,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           splashColor: color.withValues(alpha: 0.16),
@@ -168,7 +171,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               WorkPageTranslationText(
-                item.name,
+                item.displayName,
                 fileName: !isFolder,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,

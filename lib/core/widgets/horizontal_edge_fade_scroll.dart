@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import 'windows_horizontal_wheel_scroll.dart';
 
@@ -87,7 +88,8 @@ class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
               _updateEdges(notification.metrics);
               return true;
             },
-            child: ShaderMask(
+            child: _HorizontalEdgeMask(
+              enabled: _fadeLeft || _fadeRight,
               blendMode: BlendMode.dstIn,
               shaderCallback: (bounds) => LinearGradient(
                 colors: [
@@ -137,6 +139,65 @@ class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
       },
       child: content,
     );
+  }
+}
+
+// Keep the scrollable's element and position when resizing removes overflow.
+// Fully visible rows can paint directly without an offscreen shader layer.
+class _HorizontalEdgeMask extends ShaderMask {
+  const _HorizontalEdgeMask({
+    required this.enabled,
+    required super.shaderCallback,
+    required super.blendMode,
+    required super.child,
+  });
+
+  final bool enabled;
+
+  @override
+  RenderShaderMask createRenderObject(BuildContext context) =>
+      _RenderHorizontalEdgeMask(
+        enabled: enabled,
+        shaderCallback: shaderCallback,
+        blendMode: blendMode,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderHorizontalEdgeMask renderObject,
+  ) {
+    super.updateRenderObject(context, renderObject);
+    renderObject.enabled = enabled;
+  }
+}
+
+class _RenderHorizontalEdgeMask extends RenderShaderMask {
+  _RenderHorizontalEdgeMask({
+    required bool enabled,
+    required super.shaderCallback,
+    required super.blendMode,
+  }) : _enabled = enabled;
+
+  bool _enabled;
+  set enabled(bool value) {
+    if (_enabled == value) return;
+    _enabled = value;
+    markNeedsCompositingBitsUpdate();
+    markNeedsPaint();
+  }
+
+  @override
+  bool get alwaysNeedsCompositing => _enabled && super.alwaysNeedsCompositing;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (_enabled) {
+      super.paint(context, offset);
+    } else {
+      layer = null;
+      if (child != null) context.paintChild(child!, offset);
+    }
   }
 }
 

@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
@@ -44,7 +45,10 @@ Future<(int, int, int)> _edgeMaskAlphas(
   Finder wrapper,
 ) async {
   final mask = tester.widget<ShaderMask>(
-    find.descendant(of: wrapper, matching: find.byType(ShaderMask)),
+    find.descendant(
+      of: wrapper,
+      matching: find.byWidgetPredicate((widget) => widget is ShaderMask),
+    ),
   );
   expect(mask.blendMode, BlendMode.dstIn);
   final width = tester.getSize(wrapper).width.round();
@@ -495,7 +499,18 @@ void main() {
       await tester.pump();
       await _pumpMarqueeFrames(tester, 2000);
       expect(position.pixels, 0);
-      await _pumpMarqueeFrames(tester, 4000);
+      ScrollEndNotification(
+        metrics: FixedScrollMetrics(
+          minScrollExtent: 0,
+          maxScrollExtent: 100,
+          pixels: 0,
+          viewportDimension: 100,
+          axisDirection: AxisDirection.down,
+          devicePixelRatio: 1,
+        ),
+        context: element,
+      ).dispatch(element);
+      await _pumpMarqueeFrames(tester, 6000);
       expect(position.pixels, greaterThan(0));
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 3));
@@ -612,6 +627,103 @@ void main() {
     expect(await _edgeMaskAlphas(tester, wrapper), (255, 255, 255));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'edge fade paints only overflowing edges and retains its scroll position',
+    (tester) async {
+      const boundaryKey = ValueKey('painted-edge-fade');
+      var contentWidth = 120.0;
+      late StateSetter update;
+      late ScrollController controller;
+      await tester.pumpWidget(
+        _buildApp(
+          StatefulBuilder(
+            builder: (context, setState) {
+              update = setState;
+              return RepaintBoundary(
+                key: boundaryKey,
+                child: SizedBox(
+                  width: 120,
+                  height: 20,
+                  child: HorizontalEdgeFadeScroll(
+                    builder: (value) {
+                      controller = value;
+                      return SingleChildScrollView(
+                        controller: value,
+                        scrollDirection: Axis.horizontal,
+                        child: ColoredBox(
+                          color: Colors.white,
+                          child: SizedBox(width: contentWidth, height: 20),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final position = controller.position;
+      final scrollable = tester.state<ScrollableState>(find.byType(Scrollable));
+      final mask = tester.renderObject<RenderShaderMask>(
+        find.byWidgetPredicate((widget) => widget is ShaderMask),
+      );
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(boundaryKey),
+      );
+      Future<(int, int, int)> paintedAlphas() async {
+        final result = await tester.runAsync(() async {
+          final image = await boundary.toImage();
+          final pixels = (await image.toByteData())!;
+          int alpha(int x) => pixels.getUint8((10 * image.width + x) * 4 + 3);
+          final result = (alpha(1), alpha(60), alpha(118));
+          image.dispose();
+          return result;
+        });
+        return result!;
+      }
+
+      expect(mask.layer, isNull);
+      expect(await paintedAlphas(), (255, 255, 255));
+      update(() => contentWidth = 600);
+      await tester.pumpAndSettle();
+      expect(mask.layer, isA<ShaderMaskLayer>());
+      final start = await paintedAlphas();
+      expect(start.$1, 255);
+      expect(start.$2, 255);
+      expect(start.$3, lessThan(100));
+      controller.jumpTo(240);
+      await tester.pumpAndSettle();
+      expect(controller.position, same(position));
+      expect(
+        tester.state<ScrollableState>(find.byType(Scrollable)),
+        same(scrollable),
+      );
+      expect(controller.offset, 240);
+      final middle = await paintedAlphas();
+      expect(middle.$1, lessThan(100));
+      expect(middle.$2, 255);
+      expect(middle.$3, lessThan(100));
+      controller.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      final end = await paintedAlphas();
+      expect(end.$1, lessThan(100));
+      expect(end.$3, 255);
+      update(() => contentWidth = 120);
+      await tester.pumpAndSettle();
+      expect(controller.position, same(position));
+      expect(controller.offset, 0);
+      expect(mask.layer, isNull);
+      expect(await paintedAlphas(), (255, 255, 255));
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('top page header can render marquee title', (tester) async {
     await tester.pumpWidget(

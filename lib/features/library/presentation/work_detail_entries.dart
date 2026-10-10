@@ -43,6 +43,16 @@ class WorkEntryItem {
   String get extension =>
       asmrNode?.resolvedExtension ??
       path.posix.extension(PathDisplay.fileName(track?.path ?? relativePath));
+
+  String get displayName {
+    final suffix = extension;
+    if (type == WorkEntryType.folder ||
+        suffix.isEmpty ||
+        !name.toLowerCase().endsWith(suffix.toLowerCase())) {
+      return name;
+    }
+    return name.substring(0, name.length - suffix.length);
+  }
 }
 
 // Derived presentation data, shared by reopened pages without retaining a page

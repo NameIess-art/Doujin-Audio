@@ -530,6 +530,7 @@ class _QueueTreeNodeTile extends StatelessWidget {
       expanded: expanded,
       child: FileTreeRow(
         title: node.title,
+        titleMaxLines: 2,
         depth: depth,
         isFolder: true,
         titleColor: cs.onSurface.withValues(alpha: 0.9),
@@ -571,6 +572,7 @@ class _QueueTrackLeaf extends StatelessWidget {
     return FileTreeRow(
       surfaceKey: ValueKey<String>('queue_switcher_track_${track.path}'),
       title: track.displayName,
+      titleMaxLines: 2,
       depth: depth,
       emphasized: selected,
       backgroundColor: selected

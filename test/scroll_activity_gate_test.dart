@@ -8,6 +8,53 @@ void main() {
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
 
+  testWidgets(
+    'held drag keeps background work paused until scrolling ends',
+    (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ScrollActivityGate(
+            child: ListView.builder(
+              controller: controller,
+              itemExtent: 80,
+              itemCount: 100,
+              itemBuilder: (_, index) => Text('item $index'),
+            ),
+          ),
+        ),
+      );
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(ListView)),
+      );
+      await gesture.moveBy(const Offset(0, -100));
+      await tester.pump();
+      var commits = 0;
+      interaction.scheduleCommit(key: 'held-drag', commit: () => commits++);
+      await tester.pump(const Duration(seconds: 1));
+      expect(controller.position.isScrollingNotifier.value, isTrue);
+      expect(interaction.isInteracting, isTrue);
+      expect(commits, 0);
+      await gesture.moveBy(const Offset(0, -100));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(commits, 0);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(interaction.isInteracting, isFalse);
+      expect(commits, 1);
+      await tester.pumpWidget(const SizedBox());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final unmount in [false, true]) {
     testWidgets(
       'scroll protection releases on ${unmount ? 'unmount' : 'hide'}',

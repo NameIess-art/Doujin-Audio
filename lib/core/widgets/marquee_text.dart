@@ -202,7 +202,8 @@ class _MarqueeTextState extends State<MarqueeText>
       builder: (context, constraints) {
         var needsMarquee = widget.forceMarquee || widget.allowManualScroll;
         var displayText = widget.text;
-        if (constraints.hasBoundedWidth) {
+        if (constraints.hasBoundedWidth &&
+            (!needsMarquee || widget.forceMarquee)) {
           final painter = TextPainter(
             text: TextSpan(text: widget.text, style: widget.style),
             textDirection: Directionality.of(context),

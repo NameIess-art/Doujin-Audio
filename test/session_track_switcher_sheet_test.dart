@@ -103,6 +103,57 @@ Future<void> _jumpToEnd(WidgetTester tester, ScrollPosition position) async {
 }
 
 void main() {
+  testWidgets(
+    'switcher keeps 44 pixel rows and centers one or two name lines',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      const longFolder = 'A long folder name that needs two lines';
+      const longTrack = 'A long audio filename that needs two lines.mp3';
+      const nestedTrack =
+          'Another long audio filename that needs two lines.mp3';
+      final tracks = [
+        _track('Short'),
+        _track(longTrack),
+        _track('Disc/Other'),
+        _track('$longFolder/$nestedTrack'),
+      ];
+      await _pumpSheet(tester, tracks);
+      for (final folder in ['Disc', longFolder]) {
+        await tester.tap(find.text(folder));
+        await tester.pumpAndSettle();
+      }
+      final rows = find.byType(FileTreeRow);
+      expect(rows, findsNWidgets(6));
+      for (var index = 0; index < 6; index++) {
+        final row = rows.at(index);
+        final title = tester.widget<FileTreeRow>(row).title;
+        final textFinder = find.descendant(of: row, matching: find.text(title));
+        final text = tester.widget<Text>(textFinder);
+        final nameRect = tester.getRect(textFinder);
+        final rowRect = tester.getRect(row);
+        expect(rowRect.height, 44);
+        expect(text.maxLines, 2);
+        expect(nameRect.center.dy, closeTo(rowRect.center.dy, 0.01));
+        final painter = TextPainter(
+          text: TextSpan(text: title, style: text.style),
+          textDirection: TextDirection.ltr,
+          maxLines: 2,
+          ellipsis: '…',
+        )..layout(maxWidth: nameRect.width);
+        expect(painter.computeLineMetrics().length, title.length > 20 ? 2 : 1);
+        painter.dispose();
+      }
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('switcher icons use local and ASMR work accents', (tester) async {
     final tracks = [
       _track('local.mp3'),

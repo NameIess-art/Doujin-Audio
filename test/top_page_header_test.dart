@@ -3,6 +3,92 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets(
+    'scrolling rebuilds only changing header geometry',
+    (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      const additionalChild = SizedBox(key: ValueKey('header-extra'));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                ListView.builder(
+                  controller: controller,
+                  itemExtent: 80,
+                  itemCount: 100,
+                  itemBuilder: (_, index) => Text('item $index'),
+                ),
+                TopPageHeader(
+                  topCapsuleTitle: 'Library',
+                  title: 'Actions',
+                  collapseController: controller,
+                  floatingReveal: true,
+                  additionalChild: additionalChild,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final expandedHeight = tester.getSize(find.byType(TopPageHeader)).height;
+      final geometryElement = tester.element(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is AnimatedBuilder && widget.child == additionalChild,
+        ),
+      );
+      var geometryBuilds = 0;
+      var capsuleBuilds = 0;
+      final previousCallback = debugOnRebuildDirtyWidget;
+      debugOnRebuildDirtyWidget = (element, builtOnce) {
+        previousCallback?.call(element, builtOnce);
+        if (element == geometryElement) geometryBuilds++;
+        if (element.widget is HeaderTopCapsule) capsuleBuilds++;
+      };
+      addTearDown(() => debugOnRebuildDirtyWidget = previousCallback);
+
+      for (var offset = 8.0; offset <= 80; offset += 8) {
+        controller.jumpTo(offset);
+        await tester.pump();
+      }
+      expect(geometryBuilds, greaterThan(0));
+      expect(capsuleBuilds, 0);
+      final collapsedHeight = tester.getSize(find.byType(TopPageHeader)).height;
+      expect(collapsedHeight, lessThan(expandedHeight));
+
+      geometryBuilds = 0;
+      for (var offset = 100.0; offset <= 500; offset += 20) {
+        controller.jumpTo(offset);
+        await tester.pump();
+      }
+      expect(geometryBuilds, 0);
+      expect(
+        tester.getSize(find.byType(TopPageHeader)).height,
+        collapsedHeight,
+      );
+
+      // Reversing first crosses the reveal threshold, then expands the header.
+      controller.jumpTo(380);
+      await tester.pump();
+      expect(geometryBuilds, 0);
+      controller.jumpTo(310);
+      await tester.pump();
+      expect(tester.getSize(find.byType(TopPageHeader)).height, expandedHeight);
+      expect(capsuleBuilds, 0);
+      controller.jumpTo(0);
+      await tester.pump();
+      expect(tester.getSize(find.byType(TopPageHeader)).height, expandedHeight);
+      await tester.pumpWidget(const SizedBox());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   Widget header({required int trailingButtons}) {
     return MaterialApp(
       home: Scaffold(

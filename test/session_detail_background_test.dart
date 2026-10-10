@@ -176,16 +176,25 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 230));
 
-      expect(find.byType(SessionDetailContent), findsNothing);
+      expect(find.byType(SessionDetailContent), findsOneWidget);
       expect(
         find.byKey(ValueKey<String>('artwork_${session.id}')),
-        findsNothing,
+        findsOneWidget,
       );
       expect(
         find.byKey(const ValueKey('session_detail_close_button')),
         findsOneWidget,
       );
+      final entryContentState = tester.state<SessionDetailContentState>(
+        find.byType(SessionDetailContent),
+      );
       await tester.pumpAndSettle();
+      expect(
+        tester.state<SessionDetailContentState>(
+          find.byType(SessionDetailContent),
+        ),
+        same(entryContentState),
+      );
 
       expect(find.byType(ImageFiltered), findsNothing);
       expect(find.byType(BackdropFilter), findsNothing);

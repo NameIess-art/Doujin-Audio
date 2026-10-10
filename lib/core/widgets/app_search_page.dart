@@ -26,13 +26,10 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
     required this.onChanged,
     required this.onSubmitted,
     required this.onCloseOrClear,
-    this.body,
-    this.bodyBuilder,
-    this.placeholder,
+    required this.body,
     this.accentColor,
     this.controlsOverlay,
-  }) : assert((body == null) != (bodyBuilder == null)),
-       assert((bodyBuilder == null) == (placeholder == null));
+  });
 
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -43,9 +40,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final ValueChanged<String> onSubmitted;
   final VoidCallback onCloseOrClear;
-  final Widget? body;
-  final WidgetBuilder? bodyBuilder;
-  final Widget? placeholder;
+  final Widget body;
   final Color? accentColor;
   final Widget? controlsOverlay;
 
@@ -80,12 +75,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
               ),
               child: PageHeaderInset(
                 topInset: controlsTopInset(context),
-                child: bodyBuilder == null
-                    ? AppPageContentTransition(child: body!)
-                    : AppPageContentTransition.deferred(
-                        builder: bodyBuilder!,
-                        placeholder: placeholder!,
-                      ),
+                child: AppPageContentTransition(child: body),
               ),
             ),
           ),

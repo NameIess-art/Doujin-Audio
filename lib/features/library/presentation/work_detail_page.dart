@@ -118,8 +118,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   WorkDirectorySnapshot? _directory;
   bool _preparingDirectory = false;
   int _directoryRequest = 0;
-  bool _cachedSourcesRestored = false;
-  bool _initialFilesStarted = false;
   late final String _directoryCommitKey =
       'work_detail_directory_${identityHashCode(this)}';
 
@@ -151,6 +149,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     _localTarget = widget.localTarget;
     if (widget.isLocal) {
       final library = ref.read(libraryFacadeProvider);
+      final folderPath = _localTarget!.targetPath;
+      final textService = ref.read(workTextServiceProvider);
+      _localFolderNode = library.resolvedLibraryFolderTree(folderPath);
+      _localTextFiles =
+          textService.resolvedWorkTextFiles(folderPath) ?? const [];
+      _localImageReferences =
+          textService.resolvedWorkImageFiles(folderPath) ?? const [];
       _localDetail =
           widget.initialDetail ??
           library.resolvedAudioDetail(_localTarget!) ??
@@ -159,56 +164,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           widget.initialCoverPath ??
           library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
           _localDetail?.cardCoverPath;
-    }
-  }
-
-  void _scheduleInitialFiles() {
-    if (_initialFilesStarted) return;
-    // The deferred body is the first effective page frame. Loading after that
-    // frame keeps cached directory work out of hidden routes and tab shells.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _initialFilesStarted) return;
-      UiInteractionCoordinator.instance.scheduleCommit(
-        key: _filesCommitKey,
-        allowDuringScroll: true,
-        commit: () {
-          if (!mounted ||
-              _initialFilesStarted ||
-              !TickerMode.valuesOf(context).enabled ||
-              ModalRoute.isCurrentOf(context) == false) {
-            return;
-          }
-          _initialFilesStarted = true;
-          unawaited(_prepareDirectory());
-          if (widget.isLocal) {
-            if (_localDetail == null) {
-              unawaited(_loadLocalData());
-            } else {
-              unawaited(
-                _loadLocalFiles(++_localLoadRequest, _localTarget!.targetPath),
-              );
-            }
-          } else {
-            unawaited(_loadAsmrData());
-          }
-        },
-      );
-    });
-  }
-
-  void _restoreCachedSources() {
-    if (_cachedSourcesRestored) return;
-    _cachedSourcesRestored = true;
-    if (widget.isLocal) {
-      final folderPath = _localTarget!.targetPath;
-      final textService = ref.read(workTextServiceProvider);
-      _localFolderNode = ref
-          .read(libraryFacadeProvider)
-          .resolvedLibraryFolderTree(folderPath);
-      _localTextFiles =
-          textService.resolvedWorkTextFiles(folderPath) ?? const [];
-      _localImageReferences =
-          textService.resolvedWorkImageFiles(folderPath) ?? const [];
     } else {
       _asmrTree = ref
           .read(asmrLibraryControllerProvider)
@@ -216,6 +171,27 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       _loadingAsmr = _asmrTree == null;
     }
     _directory = _directoryInput.resolved;
+    // Show cached details immediately; fresh directory I/O still waits for
+    // navigation so opening the page does not start competing background work.
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _filesCommitKey,
+      allowDuringScroll: true,
+      commit: () {
+        if (!mounted) return;
+        unawaited(_prepareDirectory());
+        if (widget.isLocal) {
+          if (_localDetail == null) {
+            unawaited(_loadLocalData());
+          } else {
+            unawaited(
+              _loadLocalFiles(++_localLoadRequest, _localTarget!.targetPath),
+            );
+          }
+        } else {
+          unawaited(_loadAsmrData());
+        }
+      },
+    );
   }
 
   Future<void> _loadLocalData() async {
@@ -1259,35 +1235,23 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       }
     }
 
-    Widget buildBody(
-      BuildContext context,
-      WidgetRef ref, {
-      required bool ready,
-    }) {
-      if (ready) {
-        _restoreCachedSources();
-        _scheduleInitialFiles();
-      }
-      final currentEntries = ready
-          ? _buildCurrentEntries(_directoryVisibilityKey(ref))
-          : const <WorkEntryItem>[];
+    Widget buildBody(BuildContext context, WidgetRef ref) {
+      final currentEntries = _buildCurrentEntries(_directoryVisibilityKey(ref));
       final isLoading =
-          !ready ||
-          (widget.isLocal
-              ? (_loadingLocal || _preparingDirectory || _directory == null) &&
-                    currentEntries.isEmpty
-              : (_loadingAsmr || _preparingDirectory || _directory == null) &&
-                    currentEntries.isEmpty);
-      if (ready) _updateDirectoryMotion(isLoading);
+          ((widget.isLocal ? _loadingLocal : _loadingAsmr) ||
+              _preparingDirectory ||
+              _directory == null) &&
+          currentEntries.isEmpty;
+      _updateDirectoryMotion(isLoading);
       return Stack(
-        key: ready ? _pageStackKey : null,
+        key: _pageStackKey,
         children: [
           ScrollConfiguration(
             behavior: ScrollConfiguration.of(
               context,
             ).copyWith(scrollbars: false),
             child: CustomScrollView(
-              controller: ready ? _scrollController : null,
+              controller: _scrollController,
               slivers: [
                 // 1. Collapsible Sticky Header
                 SliverPersistentHeader(
@@ -1300,9 +1264,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                     title: displayTitle,
                     rjCode: displayRj,
                     circleName: displayCircle,
-                    coverWidget: ready
-                        ? buildCover(context, ref)
-                        : const CoverFallbackArtwork(),
+                    coverWidget: buildCover(context, ref),
                     accentColor: widget.isAsmr ? asmrBlue : cs.primary,
                     surfaceColor: cs.surface,
                     onCopyMetadata: (value) => _copyText(context, value),
@@ -1310,58 +1272,55 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                 ),
 
                 // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
-                if (ready)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          WorkDetailMetadata(
-                            voiceActors: displayVoiceActors,
-                            tags: displayTags,
-                            onCopy: (value) => _copyText(context, value),
-                          ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        WorkDetailMetadata(
+                          voiceActors: displayVoiceActors,
+                          tags: displayTags,
+                          onCopy: (value) => _copyText(context, value),
+                        ),
 
-                          Consumer(
-                            builder: (context, ref, _) {
-                              final isFavorite = widget.isAsmr
-                                  ? ref
-                                            .watch(
-                                              asmrLibraryControllerProvider,
-                                            )
-                                            ?.isFavorite(widget.asmrWork!.id) ??
-                                        widget.asmrWork!.isFavorite
-                                  : false;
-                              return WorkDetailActions(
-                                i18n: i18n,
-                                isLocal: widget.isLocal,
-                                isFavorite: isFavorite,
-                                accentColor: asmrBlue,
-                                onFetchInfo: _handleLocalFetchInfo,
-                                onDownload: widget.isLocal
-                                    ? _handleLocalDownload
-                                    : _handleAsmrDownload,
-                                onToggleFavorite: _handleAsmrToggleFavorite,
-                              );
-                            },
-                          ),
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final isFavorite = widget.isAsmr
+                                ? ref
+                                          .watch(asmrLibraryControllerProvider)
+                                          ?.isFavorite(widget.asmrWork!.id) ??
+                                      widget.asmrWork!.isFavorite
+                                : false;
+                            return WorkDetailActions(
+                              i18n: i18n,
+                              isLocal: widget.isLocal,
+                              isFavorite: isFavorite,
+                              accentColor: asmrBlue,
+                              onFetchInfo: _handleLocalFetchInfo,
+                              onDownload: widget.isLocal
+                                  ? _handleLocalDownload
+                                  : _handleAsmrDownload,
+                              onToggleFavorite: _handleAsmrToggleFavorite,
+                            );
+                          },
+                        ),
 
-                          const SizedBox(height: 12),
-                          const Divider(height: 1),
-                          const SizedBox(height: 8),
+                        const SizedBox(height: 12),
+                        const Divider(height: 1),
+                        const SizedBox(height: 8),
 
-                          WorkDetailBreadcrumbs(
-                            segments: List.of(_currentPathSegments),
-                            entryCount: currentEntries.length,
-                            i18n: i18n,
-                            onNavigate: _navigateToBreadcrumbIndex,
-                          ),
-                        ],
-                      ),
+                        WorkDetailBreadcrumbs(
+                          segments: List.of(_currentPathSegments),
+                          entryCount: currentEntries.length,
+                          i18n: i18n,
+                          onNavigate: _navigateToBreadcrumbIndex,
+                        ),
+                      ],
                     ),
                   ),
+                ),
 
                 // 4. Directory File Tree List
                 if (isLoading)
@@ -1373,7 +1332,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                     sliver: SliverLayoutBuilder(
                       builder: (context, constraints) => SliverToBoxAdapter(
                         child: SizedBox(
-                          key: ready ? _loadingSkeletonKey : null,
+                          key: _loadingSkeletonKey,
                           child: _directorySkeleton(
                             constraints.remainingPaintExtent -
                                 bottomOverlayInset,
@@ -1485,12 +1444,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          AppPageContentTransition.deferred(
+          AppPageContentTransition(
             backgroundColor: cs.surface,
-            placeholder: buildBody(context, ref, ready: false),
-            builder: (_) => Consumer(
-              builder: (context, ref, _) =>
-                  buildBody(context, ref, ready: true),
+            child: Consumer(
+              builder: (context, ref, _) => buildBody(context, ref),
             ),
           ),
           // Floating Back Button (top-left)

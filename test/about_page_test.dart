@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,7 +20,7 @@ void main() {
 
   for (final cached in [false, true]) {
     testWidgets(
-      'about route defers cached=$cached content and retains scroll on return',
+      'about route displays cached=$cached content immediately and retains scroll',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(fixture.dispose);
@@ -48,12 +49,19 @@ void main() {
           ),
         );
         await tester.pump();
+        expect(
+          find.byType(AppBrandIcon, skipOffstage: false),
+          findsOneWidget,
+        );
         await tester.pump();
         expect(find.byType(TopPageHeader), findsOneWidget);
         expect(find.byType(BackButton), findsOneWidget);
-        expect(find.byType(AppBrandIcon), findsNothing);
+        expect(find.byType(AppBrandIcon), findsOneWidget);
+        expect(find.byType(OperationSkeletonList), findsNothing);
+        if (cached) expect(find.text('1.2.3'), findsOneWidget);
         await tester.pump(const Duration(milliseconds: 120));
-        expect(find.byType(AppBrandIcon), findsNothing);
+        expect(find.byType(AppBrandIcon), findsOneWidget);
+        expect(find.byType(OperationSkeletonList), findsNothing);
         if (!cached) version.complete(versionInfo);
         await tester.pumpAndSettle();
         expect(find.byType(AppBrandIcon), findsOneWidget);

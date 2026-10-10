@@ -35,7 +35,6 @@ import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_dropdown.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
-import '../../../core/widgets/operation_feedback.dart';
 import '../../data_support/presentation/data_support_settings_controls.dart';
 import '../../data_support/presentation/storage_usage_card.dart';
 import '../../asmr/domain/asmr_download.dart';
@@ -200,12 +199,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
         child: Stack(
           children: [
             Positioned.fill(
-              child: AppPageContentTransition.deferred(
-                placeholder: OperationSkeletonList(
-                  showHeader: false,
-                  padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 24),
-                ),
-                builder: (context) => ListView(
+              child: AppPageContentTransition(
+                child: ListView(
                   controller: _scrollController,
                   padding: EdgeInsets.fromLTRB(
                     16,
@@ -551,11 +546,8 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
         topInset: contentTopInset,
         child: Stack(
           children: [
-            AppPageContentTransition.deferred(
-              placeholder: OperationSkeletonList(
-                padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 24),
-              ),
-              builder: (context) => Consumer(builder: _buildContent),
+            AppPageContentTransition(
+              child: Consumer(builder: _buildContent),
             ),
             Positioned(
               top: 0,

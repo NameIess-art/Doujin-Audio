@@ -384,11 +384,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
             onChanged: _onChanged,
             onSubmitted: _onSubmitted,
             onCloseOrClear: _closeOrClear,
-            bodyBuilder: (_) => body!,
-            placeholder: LibraryLoadingSkeleton(
-              topInset: topInset,
-              bottomInset: MediaQuery.paddingOf(context).bottom + 16,
-            ),
+            body: body!,
             controlsOverlay: _isSelectionMode
                 ? Consumer(
                     builder: (context, ref, _) {

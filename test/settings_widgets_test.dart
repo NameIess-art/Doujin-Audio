@@ -9,6 +9,7 @@ import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/core/widgets/subtitle_window_visual.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
@@ -47,24 +48,32 @@ void main() {
   });
 
   testWidgets(
-    'settings shells defer rows and category scroll survives a covering route',
+    'settings display rows immediately without skeletons and retain category scroll',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       await tester.pumpWidget(fixture.build(const SettingsTab()));
       final i18n = fixture.languageProvider;
       expect(find.byType(TopPageHeader), findsOneWidget);
-      expect(find.text(i18n.tr('section_common')), findsNothing);
+      expect(find.text(i18n.tr('section_common')), findsOneWidget);
+      expect(find.byType(OperationSkeletonList), findsNothing);
       await tester.pumpAndSettle();
       final homeController = tester
           .widget<ListView>(find.byType(ListView))
           .controller!;
       await tester.tap(find.text(i18n.tr('section_common')));
       await tester.pump();
+      expect(
+        find.text(i18n.tr('interface_language'), skipOffstage: false),
+        findsOneWidget,
+      );
+      await tester.pump();
       expect(find.text(i18n.tr('section_common')), findsWidgets);
-      expect(find.text(i18n.tr('interface_language')), findsNothing);
+      expect(find.text(i18n.tr('interface_language')), findsOneWidget);
+      expect(find.byType(OperationSkeletonList), findsNothing);
       await tester.pump(const Duration(milliseconds: 120));
-      expect(find.text(i18n.tr('interface_language')), findsNothing);
+      expect(find.text(i18n.tr('interface_language')), findsOneWidget);
+      expect(find.byType(OperationSkeletonList), findsNothing);
       await tester.pumpAndSettle();
       expect(find.text(i18n.tr('interface_language')), findsOneWidget);
       final list = find.byType(ListView);

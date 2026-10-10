@@ -149,11 +149,25 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'library search shows controls before building result pages on $platform',
+      'library search opens cached results without a placeholder frame on $platform',
       (tester) async {
         SharedPreferences.setMockInitialValues({});
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(fixture.dispose);
+        fixture.library.addTracks(
+          [
+            testMusicTrack(
+              name: 'Instant search result',
+              path: '/instant-search.mp3',
+              groupKey: '/instant-search.mp3',
+              groupTitle: '',
+              isSingle: true,
+            ),
+          ],
+          notify: false,
+          persist: false,
+        );
+        await tester.runAsync(() => fixture.library.ensureCardSnapshot());
         var detailSubscriptions = 0;
         await tester.pumpWidget(
           fixture.build(
@@ -162,6 +176,7 @@ void main() {
                 onPressed: () => Navigator.of(context).push<void>(
                   buildAppPageRoute(
                     context: context,
+                    duration: Duration.zero,
                     child: const LibrarySearchPage(),
                   ),
                 ),
@@ -179,17 +194,24 @@ void main() {
         );
         await tester.tap(find.text('Open first search'));
         await tester.pump();
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
         expect(find.byType(TextField), findsOneWidget);
-        expect(find.byType(LibraryLoadingSkeleton), findsOneWidget);
-        expect(find.byType(LibrarySearchAllResults), findsNothing);
-        expect(detailSubscriptions, 0);
-        await tester.pump(const Duration(milliseconds: 500));
-        await tester.pump(const Duration(milliseconds: 180));
-        await tester.pump();
+        expect(find.byType(LibraryLoadingSkeleton), findsNothing);
         expect(find.byType(LibrarySearchAllResults), findsOneWidget);
         expect(detailSubscriptions, 1);
+        final row = find.byKey(const ValueKey('search_/instant-search.mp3'));
+        expect(row, findsOneWidget);
+        final entryElement = tester.element(row);
+        for (final duration in [
+          Duration.zero,
+          const Duration(milliseconds: 16),
+          const Duration(milliseconds: 80),
+          const Duration(milliseconds: 180),
+        ]) {
+          await tester.pump(duration);
+          expect(find.byType(LibraryLoadingSkeleton), findsNothing);
+          expect(tester.element(row), same(entryElement));
+          expect(find.text('Instant search result'), findsOneWidget);
+        }
         await finishLibraryTest(tester, fixture);
       },
       variant: TargetPlatformVariant({platform}),

@@ -344,7 +344,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
               AppPageHeaderMetrics.bottomSpacing
         : AppSearchPageScaffold.controlsTopInset(context);
     final bottomInset = MediaQuery.paddingOf(context).bottom + 16;
-    Widget buildBody(BuildContext context) => AppFadeThroughIndexedStack.lazy(
+    final body = AppFadeThroughIndexedStack.lazy(
       key: const ValueKey<String>('asmr_search_category_stack'),
       indexListenable: _activeCategoryIndex,
       duration: kAppMotionSlow,
@@ -379,7 +379,8 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     );
     return ValueListenableBuilder<int>(
       valueListenable: _activeCategoryIndex,
-      builder: (context, _, _) {
+      child: body,
+      builder: (context, _, body) {
         final selectedWorks = _isSelectionMode
             ? _selectedWorks()
             : <AsmrWork>[];
@@ -414,11 +415,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
                   ),
                 )
               : null,
-          bodyBuilder: buildBody,
-          placeholder: LibrarySkeletonListView(
-            topInset: topInset,
-            bottomInset: bottomInset,
-          ),
+          body: body!,
         );
       },
     );

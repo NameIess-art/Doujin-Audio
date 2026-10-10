@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -371,7 +373,7 @@ void main() {
     );
 
     testWidgets(
-      'ASMR empty search defers cached cards until entrance completes on $platform',
+      'ASMR empty search displays cached cards without an opening placeholder on $platform',
       (tester) async {
         final controller = _PresentationController(createTestAsmrServices());
         final fixture = AppRuntimeWidgetTestFixture();
@@ -395,6 +397,13 @@ void main() {
         final results = find.byKey(const ValueKey('asmr_search_collected'));
         expect(
           find.descendant(of: results, matching: find.text('Published work')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: results,
+            matching: find.byKey(const ValueKey('loading')),
+          ),
           findsNothing,
         );
         expect(controller.categoryReads, reads);
@@ -440,6 +449,62 @@ void main() {
         expect(controller.categoryLoads, greaterThan(loads));
         expect(
           find.descendant(of: results, matching: find.text('Reloaded work')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'ASMR cold search keeps one loading view until data arrives on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices());
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        final load = Completer<void>();
+        controller
+          ..cacheValid = false
+          ..pendingCategoryLoad = load
+          ..publish('Loaded after opening');
+        await tester.pump();
+        await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
+        await tester.pump();
+        final results = find.byKey(const ValueKey('asmr_search_collected'));
+        final loading = find.descendant(
+          of: results,
+          matching: find.byKey(const ValueKey('loading')),
+        );
+        expect(results, findsOneWidget);
+        expect(loading, findsOneWidget);
+        final loadingElement = tester.element(loading);
+        final categoryState = tester.state(results);
+        for (var frame = 0; frame < 3; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(tester.element(loading), same(loadingElement));
+          expect(find.text('Loaded after opening'), findsNothing);
+        }
+        load.complete();
+        await tester.pumpAndSettle();
+        expect(tester.state(results), same(categoryState));
+        expect(loading, findsNothing);
+        expect(
+          find.descendant(
+            of: results,
+            matching: find.text('Loaded after opening'),
+          ),
           findsOneWidget,
         );
         expect(tester.takeException(), isNull);
@@ -562,8 +627,7 @@ void main() {
           skipOffstage: false,
         );
         final columnCount = responsiveLibraryCardColumnCount(1280);
-        expect(searchCards, findsNothing);
-        await tester.pumpAndSettle();
+        expect(searchCards, findsWidgets);
         expect(
           searchCards.evaluate().length,
           lessThan(browseCardCount - columnCount),
@@ -573,6 +637,7 @@ void main() {
           find.descendant(of: results, matching: find.text('Published work')),
           findsOneWidget,
         );
+        await tester.pumpAndSettle();
         final originalCard = tester.widget(searchCards.first);
         final originalWidth = tester.getSize(searchCards.first).width;
         for (final bottom in [60.0, 120.0, 180.0, 240.0, 300.0]) {
@@ -864,6 +929,7 @@ class _PresentationController extends AsmrLibraryController {
   int accountRestores = 0;
   int favoriteToggles = 0;
   bool cacheValid = true;
+  Completer<void>? pendingCategoryLoad;
   AppLanguage _presentationLanguage = AppLanguage.zh;
 
   int historyCount = 0;
@@ -966,6 +1032,8 @@ class _PresentationController extends AsmrLibraryController {
     bool searchSession = false,
   }) async {
     categoryLoads++;
+    final pending = pendingCategoryLoad;
+    if (pending != null) await pending.future;
     if (!cacheValid) {
       cacheValid = true;
       notifyListeners();

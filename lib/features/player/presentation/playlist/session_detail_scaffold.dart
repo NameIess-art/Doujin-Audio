@@ -14,7 +14,6 @@ import '../../../../core/media/music_track.dart';
 import '../../../../core/ui/permission_action_controller.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_transitions.dart';
-import '../../../../core/widgets/operation_feedback.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_subtitle_service.dart';
@@ -266,12 +265,8 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
             children: [
               SafeArea(
                 top: false,
-                child: AppPageContentTransition.deferred(
-                  placeholder: const OperationSkeletonList(
-                    showHeader: false,
-                    padding: EdgeInsets.fromLTRB(28, 64, 28, 16),
-                  ),
-                  builder: (context) => LayoutBuilder(
+                child: AppPageContentTransition(
+                  child: LayoutBuilder(
                     builder: (context, constraints) {
                       final isWindows =
                           defaultTargetPlatform == TargetPlatform.windows;

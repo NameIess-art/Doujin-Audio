@@ -277,7 +277,7 @@ void main() {
       for (final cached in [false, true]) {
         for (final local in [false, true]) {
           testWidgets(
-            '${local ? 'local' : 'ASMR'} ${cached ? 'cached' : 'cold'} detail defers rows during real navigation on $platform',
+            '${local ? 'local' : 'ASMR'} ${cached ? 'cached' : 'cold'} detail displays content during real navigation on $platform',
             (tester) async {
               final interaction = UiInteractionCoordinator.instance;
               interaction.resetForTest();
@@ -379,14 +379,27 @@ void main() {
               await tester.tap(find.text('Open first detail'));
               await tester.pump();
               await tester.pump();
+              expect(find.text('Deferred voice actor'), findsOneWidget);
               await tester.pump(const Duration(milliseconds: 100));
               expect(find.text('First detail title'), findsOneWidget);
-              expect(find.byType(WorkDetailEntryTile), findsNothing);
-              expect(find.byType(AsyncLocalCoverImage), findsNothing);
-              expect(find.byType(AsyncRemoteCoverImage), findsNothing);
-              expect(find.text('Deferred voice actor'), findsNothing);
-              expect(find.byType(WorkDetailDirectorySkeleton), findsOneWidget);
-              expect(remote.cacheReads, 0);
+              expect(
+                find.byType(WorkDetailEntryTile),
+                cached ? findsWidgets : findsNothing,
+              );
+              expect(
+                find.byType(AsyncLocalCoverImage),
+                local ? findsOneWidget : findsNothing,
+              );
+              expect(
+                find.byType(AsyncRemoteCoverImage),
+                local ? findsNothing : findsOneWidget,
+              );
+              expect(find.text('Deferred voice actor'), findsOneWidget);
+              expect(
+                find.byType(WorkDetailDirectorySkeleton),
+                cached ? findsNothing : findsOneWidget,
+              );
+              expect(remote.cacheReads, local ? 0 : 1);
               expect(remote.requests, 0);
               await _settleDetail(tester);
               expect(find.byType(WorkDetailEntryTile), findsWidgets);
@@ -498,7 +511,7 @@ void main() {
           );
           await tester.pump();
           await tester.pump();
-          expect(find.byType(WorkDetailEntryTile), findsNothing);
+          expect(find.byType(WorkDetailEntryTile), findsWidgets);
           interaction.finishInteractionsForTest();
           await _settleDetail(tester);
           final list = tester.widget<SliverList>(find.byType(SliverList));
@@ -693,7 +706,7 @@ void main() {
           await tester.pump();
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 100));
-          expect(find.text('audio.mp3'), findsNothing);
+          expect(find.text('audio.mp3'), findsOneWidget);
           await _settleDetail(tester);
           expect(find.text('audio.mp3'), findsOneWidget);
           expect(tester.widget<SliverFadeTransition>(fade).opacity.value, 1);
@@ -1005,10 +1018,14 @@ void main() {
           for (final text in [detail.workTitle, detail.circleName]) {
             expect(find.text(text), findsOneWidget);
           }
-          expect(find.text(detail.voiceActors.single), findsNothing);
-          expect(find.text('#${detail.tags.single}'), findsNothing);
-          expect(find.byType(AsyncLocalCoverImage), findsNothing);
-          expect(find.byType(LocalCoverImage), findsNothing);
+          expect(find.text(detail.voiceActors.single), findsOneWidget);
+          expect(find.text('#${detail.tags.single}'), findsOneWidget);
+          expect(find.byType(AsyncLocalCoverImage), findsOneWidget);
+          expect(find.byType(LocalCoverImage), findsOneWidget);
+          expect(
+            tester.widget<LocalCoverImage>(find.byType(LocalCoverImage)).path,
+            'C:/works/card/cover.jpg',
+          );
           expect(find.byType(CoverFallbackArtwork), findsOneWidget);
           expect(repository.detailRequests, 0);
           expect(covers.imageRequests, 0);
@@ -1040,7 +1057,7 @@ void main() {
           });
           Widget page() => fixture.build(WorkDetailPage.forAsmr(work: work));
           await tester.pumpWidget(page());
-          expect(find.byType(AsyncRemoteCoverImage), findsNothing);
+          expect(find.byType(AsyncRemoteCoverImage), findsOneWidget);
           await tester.pump();
           await tester.pump(UiInteractionCoordinator.instance.idleDelay);
           await tester.pump();
@@ -1151,12 +1168,12 @@ void main() {
           ]) {
             expect(find.text(value), findsOneWidget);
           }
-          expect(find.text('Card CV'), findsNothing);
-          expect(find.text('#Card tag'), findsNothing);
+          expect(find.text('Card CV'), findsOneWidget);
+          expect(find.text('#Card tag'), findsOneWidget);
           await tester.pump(const Duration(milliseconds: 500));
           expect(repository.detailRequests, 0);
           expect(covers.imageRequests, 0);
-          expect(find.text('audio.mp3'), findsNothing);
+          expect(find.text('audio.mp3'), findsOneWidget);
 
           interaction.cancelNavigation(source);
           await _settleDetail(tester);
@@ -1171,7 +1188,7 @@ void main() {
       );
 
       testWidgets(
-        'shows cached indexed tree after the shell and reuses file snapshots on $platform',
+        'shows cached indexed tree immediately and reuses file snapshots on $platform',
         (tester) async {
           SharedPreferences.setMockInitialValues(const <String, Object>{});
           final covers = _ControlledWorkDetailCoverService();
@@ -1240,8 +1257,8 @@ void main() {
           expect(covers.imageRequests, 0);
           expect(covers.coverRequests, 0);
           expect(treeRequests, 1);
-          expect(find.text('audio.mp3'), findsNothing);
-          expect(find.text('Extras'), findsNothing);
+          expect(find.text('audio.mp3'), findsOneWidget);
+          expect(find.text('Extras'), findsOneWidget);
           expect(find.text('notes.txt'), findsNothing);
 
           interaction.cancelNavigation(source);
@@ -1274,8 +1291,8 @@ void main() {
           covers.cachedCover = '$folderPath/cover.jpg';
           interaction.beginNavigation(source);
           await tester.pumpWidget(buildPage(const ValueKey('reopened')));
-          expect(find.text('notes.txt'), findsNothing);
-          expect(find.text('cover.jpg'), findsNothing);
+          expect(find.text('notes.txt'), findsOneWidget);
+          expect(find.text('cover.jpg'), findsOneWidget);
           expect(covers.imageRequests, 1);
           textEntries
             ..clear()
@@ -1379,7 +1396,7 @@ void main() {
           addTearDown(() => interaction.cancelNavigation(source));
           await tester.pumpWidget(build(page('second')));
           await tester.pump();
-          expect(find.byType(WorkDetailEntryTile), findsNothing);
+          expect(find.byType(WorkDetailEntryTile), findsWidgets);
           expect(find.byType(CircularProgressIndicator), findsNothing);
           interaction.cancelNavigation(source);
           await _settleDetail(tester);
@@ -3416,7 +3433,7 @@ void main() {
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       testWidgets(
-        'cached file rows retain their identity without row animation after the shell on $platform',
+        'cached file rows retain their identity without row animation during entry on $platform',
         (tester) async {
           final interaction = UiInteractionCoordinator.instance;
           interaction.resetForTest();

@@ -502,21 +502,21 @@ void main() {
         await tester.pump();
         await tester.pump();
         final content = find.byType(SessionDetailContent, skipOffstage: false);
-        final shell = find.byKey(
-          const ValueKey('session_detail_content_cache'),
-          skipOffstage: false,
-        );
-        expect(content, findsNothing);
-        expect(shell, findsOneWidget);
-        expect(TickerMode.valuesOf(tester.element(shell)).enabled, isFalse);
-        await tester.pump(const Duration(milliseconds: 60));
-        final firstTop = tester.getTopLeft(shell).dy;
-        await tester.pump(const Duration(milliseconds: 60));
-        expect(tester.getTopLeft(shell).dy, lessThan(firstTop));
-        expect(content, findsNothing);
-        expect(TickerMode.valuesOf(tester.element(shell)).enabled, isFalse);
-        await tester.pumpAndSettle();
         expect(content, findsOneWidget);
+        final entryContentState = tester.state<SessionDetailContentState>(
+          content,
+        );
+        expect(TickerMode.valuesOf(tester.element(content)).enabled, isFalse);
+        await tester.pump(const Duration(milliseconds: 60));
+        final firstTop = tester.getTopLeft(content).dy;
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(tester.getTopLeft(content).dy, lessThan(firstTop));
+        expect(TickerMode.valuesOf(tester.element(content)).enabled, isFalse);
+        await tester.pumpAndSettle();
+        expect(
+          tester.state<SessionDetailContentState>(content),
+          same(entryContentState),
+        );
         expect(TickerMode.valuesOf(tester.element(content)).enabled, isTrue);
 
         final drag = tester.widget<GestureDetector>(
@@ -595,10 +595,10 @@ void main() {
         await tester.pump(const Duration(milliseconds: 80));
         expect(fixture.coverCache.requestedPaths, isEmpty);
         expect(subtitleLoads, cachedSubtitle ? 1 : 0);
-        expect(find.byType(SessionDetailContent), findsNothing);
+        expect(find.byType(SessionDetailContent), findsOneWidget);
         expect(
           find.text('Cached or deferred subtitle'),
-          findsNothing,
+          cachedSubtitle ? findsOneWidget : findsNothing,
         );
         if (closeDuringEntrance) navigator.pop();
         for (var frame = 0; frame < 8; frame++) {

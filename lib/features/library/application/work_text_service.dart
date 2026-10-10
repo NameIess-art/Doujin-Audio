@@ -92,12 +92,14 @@ class WorkTextFile {
     required this.relativePath,
     required this.path,
     this.fallbackUrls = const [],
+    this.fileSizeBytes,
   });
 
   final String name;
   final String relativePath;
   final String path;
   final List<String> fallbackUrls;
+  final int? fileSizeBytes;
 
   WorkDocType get docType {
     final namedType = WorkDocType.fromPath(name);
@@ -124,11 +126,17 @@ class WorkTextFile {
           name == other.name &&
           relativePath == other.relativePath &&
           path == other.path &&
+          fileSizeBytes == other.fileSizeBytes &&
           listEquals(fallbackUrls, other.fallbackUrls);
 
   @override
-  int get hashCode =>
-      Object.hash(name, relativePath, path, Object.hashAll(fallbackUrls));
+  int get hashCode => Object.hash(
+    name,
+    relativePath,
+    path,
+    fileSizeBytes,
+    Object.hashAll(fallbackUrls),
+  );
 }
 
 ({String text, WorkTextEncoding encoding}) decodeWorkText(
@@ -394,6 +402,7 @@ class WorkTextService {
             name: map['name'] ?? '',
             relativePath: map['relativePath'] ?? '',
             path: map['path'] ?? '',
+            fileSizeBytes: int.tryParse(map['fileSizeBytes'] ?? ''),
           );
         })
         .where((f) => f.name.isNotEmpty && f.path.isNotEmpty)

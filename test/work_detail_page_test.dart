@@ -22,7 +22,6 @@ import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
-import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
@@ -270,6 +269,59 @@ void main() {
 
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
+  });
+
+  test('WorkDirectorySnapshot preserves file sizes and original suffixes', () {
+    final track = MusicTrack(
+      path: r'C:\作品\音频.WAV',
+      displayName: '音频',
+      groupKey: 'work',
+      groupTitle: 'work',
+      groupSubtitle: '',
+      isSingle: false,
+      fileSizeBytes: 2048,
+      duration: const Duration(seconds: 65),
+    );
+    final root = FolderNode('作品', r'C:\作品')..addChild(TrackNode(track));
+    final local = buildWorkDirectorySnapshot(
+      WorkDirectoryInput.local(
+        root: root,
+        texts: const [
+          WorkTextFile(
+            name: '说明.txt',
+            relativePath: '说明.txt',
+            path: r'C:\作品\说明.txt',
+            fileSizeBytes: 0,
+          ),
+        ],
+        images: const [
+          CoverImageReference(
+            displayPath: '/cache/cover.jpg',
+            sourcePath: r'C:\作品\封面.png',
+            fileSizeBytes: 512,
+          ),
+        ],
+        folderPath: r'C:\作品',
+      ),
+    ).entriesAt([]);
+    expect(local.map((item) => item.fileSizeBytes), [512, 0, 2048]);
+    expect(local.map((item) => item.extension), ['.png', '.txt', '.WAV']);
+    expect(local.last.duration, track.duration);
+
+    final remote = buildWorkDirectorySnapshot(
+      WorkDirectoryInput.asmr([
+        AsmrTrackFile.fromJson(const {
+          'title': 'Remote audio',
+          'type': 'audio',
+          'mediaStreamUrl': 'https://example.test/audio.flac?token=1',
+          'size': 4096,
+          'duration': 65,
+        }),
+      ]),
+    ).entriesAt([]).single;
+    expect(remote.fileSizeBytes, 4096);
+    expect(remote.duration, track.duration);
+    expect(remote.extension, '.flac');
   });
 
   group('WorkDetailPage', () {
@@ -1162,10 +1214,7 @@ void main() {
             ),
           );
           await tester.pump();
-          for (final value in [
-            'Card title',
-            'Card circle',
-          ]) {
+          for (final value in ['Card title', 'Card circle']) {
             expect(find.text(value), findsOneWidget);
           }
           expect(find.text('Card CV'), findsOneWidget);
@@ -1402,9 +1451,11 @@ void main() {
           await _settleDetail(tester);
           expect(tester.widget<CustomScrollView>(scroll).controller!.offset, 0);
           expect(
-            tester.widgetList<WorkDetailEntryTile>(
-              find.byType(WorkDetailEntryTile),
-            ).every((tile) => tile.item.type == WorkEntryType.folder),
+            tester
+                .widgetList<WorkDetailEntryTile>(
+                  find.byType(WorkDetailEntryTile),
+                )
+                .every((tile) => tile.item.type == WorkEntryType.folder),
             isTrue,
           );
           await tester.pumpWidget(build(const SizedBox()));
@@ -3189,7 +3240,7 @@ void main() {
 
     for (final textScale in [1.0, 2.0]) {
       testWidgets(
-        'WorkDetailEntryTile uses bare icons and switcher row heights at $textScale scale',
+        'WorkDetailEntryTile fits two name lines and one file info line at $textScale scale',
         (tester) async {
           tester.view.devicePixelRatio = 1;
           tester.view.physicalSize = const Size(320, 800);
@@ -3206,16 +3257,14 @@ void main() {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const FileTreeRow(
-                        title: 'Switcher reference',
-                        leading: Icon(Icons.audio_file_rounded, size: 16),
-                      ),
                       for (final type in WorkEntryType.values)
                         WorkDetailEntryTile(
                           item: WorkEntryItem(
                             name: '${type.name} with a very long file name',
-                            relativePath: type.name,
+                            relativePath: '${type.name}.mp3',
                             type: type,
+                            fileSizeBytes: 1024,
+                            duration: const Duration(seconds: 65),
                           ),
                           accentColor: Colors.deepPurple,
                           menuEntries: const [],
@@ -3228,14 +3277,38 @@ void main() {
               ),
             ),
           );
-          final referenceHeight = tester
-              .getSize(find.byType(FileTreeRow))
-              .height;
-          expect(referenceHeight, textScale == 1 ? 44 : greaterThan(44));
           final tiles = find.byType(WorkDetailEntryTile);
           for (var index = 0; index < WorkEntryType.values.length; index++) {
             final row = tiles.at(index);
-            expect(tester.getSize(row).height, referenceHeight);
+            final type = WorkEntryType.values[index];
+            final name = find.text('${type.name} with a very long file name');
+            final nameRect = tester.getRect(name);
+            expect(nameRect.height, closeTo(32 * textScale, 0.01));
+            expect(tester.widget<Text>(name).maxLines, 2);
+            final rowRect = tester.getRect(row);
+            if (type == WorkEntryType.folder) {
+              expect(
+                find.descendant(of: row, matching: find.byType(Text)),
+                findsOneWidget,
+              );
+              expect(rowRect.height, closeTo(textScale == 1 ? 44 : 72, 0.01));
+            } else {
+              final info = find.text(
+                type == WorkEntryType.audio
+                    ? '1.0 KB · 01:05 · .mp3'
+                    : '1.0 KB · .mp3',
+              );
+              final infoInRow = find.descendant(of: row, matching: info);
+              final infoRect = tester.getRect(infoInRow);
+              expect(tester.widget<Text>(infoInRow).maxLines, 1);
+              expect(infoRect.top - nameRect.bottom, closeTo(2, 0.01));
+              expect(nameRect.top - rowRect.top, closeTo(4, 0.01));
+              expect(rowRect.bottom - infoRect.bottom, closeTo(4, 0.01));
+              expect(
+                rowRect.height,
+                greaterThan(tester.getSize(tiles.first).height),
+              );
+            }
             final tile = find.descendant(
               of: row,
               matching: find.byType(ListTile),
@@ -3264,12 +3337,96 @@ void main() {
             await tester.pump();
             expect(
               actions.last,
-              WorkEntryType.values[index] == WorkEntryType.audio
+              type == WorkEntryType.audio
                   ? WorkEntryAction.play
                   : WorkEntryAction.open,
             );
           }
           expect(tester.takeException(), isNull);
+        },
+        variant: const TargetPlatformVariant({
+          TargetPlatform.android,
+          TargetPlatform.windows,
+        }),
+      );
+      testWidgets(
+        'WorkDetailEntryTile adapts to name length and width at $textScale scale',
+        (tester) async {
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = const Size(1200, 800);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          addTearDown(tester.view.resetPhysicalSize);
+          for (final sample in [
+            (name: 'Short', width: 320.0, lines: 1),
+            (name: 'A reasonably long entry name', width: 320.0, lines: 2),
+            (name: 'A reasonably long entry name', width: 1200.0, lines: 1),
+          ]) {
+            await tester.pumpWidget(
+              MaterialApp(
+                home: Scaffold(
+                  body: MediaQuery(
+                    data: MediaQueryData(
+                      textScaler: TextScaler.linear(textScale),
+                    ),
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: SizedBox(
+                        width: sample.width,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (final type in [
+                              WorkEntryType.folder,
+                              WorkEntryType.audio,
+                            ])
+                              WorkDetailEntryTile(
+                                item: WorkEntryItem(
+                                  name: sample.name,
+                                  relativePath: '${type.name}.mp3',
+                                  type: type,
+                                  fileSizeBytes: 1024,
+                                  duration: const Duration(seconds: 65),
+                                ),
+                                accentColor: Colors.deepPurple,
+                                menuEntries: const [],
+                                moreLabel: 'More',
+                                onAction: (_) {},
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+            final rows = find.byType(WorkDetailEntryTile);
+            for (var index = 0; index < 2; index++) {
+              final row = rows.at(index);
+              final name = find.descendant(
+                of: row,
+                matching: find.text(sample.name),
+              );
+              final nameRect = tester.getRect(name);
+              expect(
+                nameRect.height,
+                closeTo(16 * textScale * sample.lines, 0.01),
+              );
+              var contentHeight = nameRect.height;
+              if (index == 1) {
+                final infoRect = tester.getRect(
+                  find.text('1.0 KB · 01:05 · .mp3'),
+                );
+                expect(infoRect.top - nameRect.bottom, closeTo(2, 0.01));
+                contentHeight += 2 + infoRect.height;
+              }
+              expect(
+                tester.getSize(row).height,
+                closeTo(contentHeight + 8 < 44 ? 44 : contentHeight + 8, 0.01),
+              );
+            }
+            expect(tester.takeException(), isNull);
+          }
         },
         variant: const TargetPlatformVariant({
           TargetPlatform.android,

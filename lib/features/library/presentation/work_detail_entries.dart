@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
 
 import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
@@ -21,6 +22,7 @@ class WorkEntryItem {
     required this.type,
     this.fullPathOrUrl = '',
     this.duration,
+    this.fileSizeBytes,
     this.track,
     this.asmrNode,
     this.textFile,
@@ -32,10 +34,15 @@ class WorkEntryItem {
   final WorkEntryType type;
   final String fullPathOrUrl;
   final Duration? duration;
+  final int? fileSizeBytes;
   final MusicTrack? track;
   final AsmrTrackFile? asmrNode;
   final WorkTextFile? textFile;
   final WorkImageItem? imageItem;
+
+  String get extension =>
+      asmrNode?.resolvedExtension ??
+      path.posix.extension(PathDisplay.fileName(track?.path ?? relativePath));
 }
 
 // Derived presentation data, shared by reopened pages without retaining a page
@@ -163,6 +170,7 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
             type: WorkEntryType.audio,
             fullPathOrUrl: track.path,
             duration: track.duration,
+            fileSizeBytes: track.fileSizeBytes,
             track: track,
           ),
         );
@@ -216,6 +224,7 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
             type: WorkEntryType.audio,
             fullPathOrUrl: node.streamUrl ?? '',
             duration: node.duration,
+            fileSizeBytes: node.size,
             asmrNode: node,
           ),
         );
@@ -225,6 +234,7 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
             name: node.title,
             relativePath: node.relativePath,
             type: WorkEntryType.text,
+            fileSizeBytes: node.size,
             asmrNode: node,
           ),
         );
@@ -240,6 +250,7 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
             name: image.name,
             relativePath: image.relativePath,
             type: WorkEntryType.image,
+            fileSizeBytes: node.size,
             fullPathOrUrl: image.path,
             asmrNode: node,
             imageItem: image,
@@ -260,6 +271,7 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
           relativePath: text.relativePath,
           type: WorkEntryType.text,
           fullPathOrUrl: text.path,
+          fileSizeBytes: text.fileSizeBytes,
           textFile: text,
         ),
       );
@@ -281,6 +293,7 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
           relativePath: image.relativePath,
           type: WorkEntryType.image,
           fullPathOrUrl: image.path,
+          fileSizeBytes: reference.fileSizeBytes,
           imageItem: image,
         ),
       );

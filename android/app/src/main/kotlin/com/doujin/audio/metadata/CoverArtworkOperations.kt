@@ -69,10 +69,11 @@ internal class CoverArtworkOperations(
                         candidate.file,
                         "$trackPath|${candidate.path}"
                     ) ?: throw IOException("Unable to cache image: ${candidate.file.uri}")
-                    mapOf(
-                        "path" to cachedPath,
-                        "sourcePath" to candidate.file.uri.toString()
-                    )
+                    buildMap {
+                        put("path", cachedPath)
+                        put("sourcePath", candidate.file.uri.toString())
+                        candidate.sizeBytes?.let { put("fileSizeBytes", it.toString()) }
+                    }
                 }
             }
             val localRoot = storage.contentUriToFilePath(documentRoot)
@@ -168,10 +169,11 @@ internal class CoverArtworkOperations(
             .sortedWith(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
             .map { file ->
                 val relative = file.relativeToOrNull(root)?.invariantSeparatorsPath ?: file.name
+                val fileSizeBytes = file.length()
                 val versionedKey = coverBridgeCacheKey(
                     "$cacheKey|$relative",
                     file.lastModified(),
-                    file.length()
+                    fileSizeBytes
                 )
                 val output = File(coverDirectory(), "cover_${kotlin.math.abs(versionedKey.hashCode())}.jpg")
                 try {
@@ -179,7 +181,8 @@ internal class CoverArtworkOperations(
                     cachePolicy.touch(output)
                     mapOf(
                         "path" to output.absolutePath,
-                        "sourcePath" to file.absolutePath
+                        "sourcePath" to file.absolutePath,
+                        "fileSizeBytes" to fileSizeBytes.toString()
                     )
                 } catch (error: Exception) {
                     output.delete()
@@ -207,7 +210,7 @@ internal class CoverArtworkOperations(
                         if (recursive && entry.mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                             pending += Node(child, childPath)
                         } else if (isImage(name, entry.mime)) {
-                            found += DocumentCandidate(child, childPath)
+                            found += DocumentCandidate(child, childPath, entry.sizeBytes)
                         }
                     }
                 } else node.folder.listFiles().forEach { child ->
@@ -246,5 +249,9 @@ internal class CoverArtworkOperations(
         if (!it.exists()) it.mkdirs()
     }
 
-    private data class DocumentCandidate(val file: DocumentFile, val path: String)
+    private data class DocumentCandidate(
+        val file: DocumentFile,
+        val path: String,
+        val sizeBytes: Long? = null
+    )
 }

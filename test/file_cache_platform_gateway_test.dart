@@ -218,6 +218,7 @@ void main() {
           <String, String>{
             'path': ' /cache/cover-a ',
             'sourcePath': ' content://cover-a ',
+            'fileSizeBytes': '2048',
           },
           '',
           'content://cover-b',
@@ -241,6 +242,7 @@ void main() {
         CoverImageReference(
           displayPath: '/cache/cover-a',
           sourcePath: 'content://cover-a',
+          fileSizeBytes: 2048,
         ),
         CoverImageReference(
           displayPath: 'content://cover-b',
@@ -255,6 +257,49 @@ void main() {
     expect(
       await gateway.resolveMediaDuration('content://track'),
       const Duration(milliseconds: 123456),
+    );
+  });
+
+  test('Windows discovery includes source image and document sizes', () async {
+    final folder = await Directory.systemTemp.createTemp('作品 文件大小 ');
+    addTearDown(() => folder.delete(recursive: true));
+    final document = await File(
+      '${folder.path}${Platform.pathSeparator}台本.txt',
+    ).writeAsBytes([1, 2, 3]);
+    final image = await File(
+      '${folder.path}${Platform.pathSeparator}封面.png',
+    ).writeAsBytes([4, 5, 6, 7]);
+    final windows = FileCachePlatformGateway(
+      isAndroid: () => false,
+      isWindows: () => true,
+    );
+
+    final documents = await windows.discoverWorkTexts(folder.path);
+    final images = await windows.discoverRootImages(
+      path: folder.path,
+      rootFolder: folder.path,
+    );
+
+    expect(documents.single['path'], document.path);
+    expect(documents.single['fileSizeBytes'], '3');
+    expect(images.single.sourcePath, image.path);
+    expect(images.single.fileSizeBytes, 4);
+  });
+
+  test('image discovery preserves empty and unknown file sizes', () {
+    expect(
+      CoverImageReference.fromPlatformValue({
+        'path': '/cache/empty.png',
+        'fileSizeBytes': 0,
+      })?.fileSizeBytes,
+      0,
+    );
+    expect(
+      CoverImageReference.fromPlatformValue({
+        'path': '/cache/unknown.png',
+        'fileSizeBytes': null,
+      })?.fileSizeBytes,
+      isNull,
     );
   });
 

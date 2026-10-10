@@ -42,5 +42,16 @@ class WorkTextDocumentReaderTest {
         val result = discoverLocalWorkTexts(root.absolutePath)
         assertEquals(listOf("Docs/01 台本.TXT", "readme.md"), result.map { it["relativePath"] })
         assertEquals(File(folder, "01 台本.TXT").absolutePath, result.first()["path"])
+        assertEquals(listOf("6", "6"), result.map { it["fileSizeBytes"] })
+    }
+
+    @Test
+    fun `empty document retains zero file size`() {
+        val root = temporary.newFolder("empty document")
+        File(root, "台本.txt").writeBytes(byteArrayOf())
+
+        val result = discoverLocalWorkTexts(root.absolutePath)
+
+        assertEquals("0", result.single()["fileSizeBytes"])
     }
 }

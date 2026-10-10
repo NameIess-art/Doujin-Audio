@@ -349,6 +349,7 @@ void main() {
             'name': '01_台本.txt',
             'relativePath': '台本/01_台本.txt',
             'path': '/works/RJ123/台本/01_台本.txt',
+            'fileSizeBytes': '2048',
           },
           {
             'name': 'readme.txt',
@@ -365,7 +366,32 @@ void main() {
       expect(files[0].name, '01_台本.txt');
       expect(files[0].relativePath, '台本/01_台本.txt');
       expect(files[0].path, '/works/RJ123/台本/01_台本.txt');
+      expect(files[0].fileSizeBytes, 2048);
       expect(files[1].name, 'readme.txt');
+      expect(files[1].fileSizeBytes, isNull);
+    });
+
+    test('text refresh detects size changes in the same file', () async {
+      var sizeBytes = '0';
+      final gateway = _FakeFileCacheGateway(
+        discover: (_) async => [
+          {
+            'name': 'script.txt',
+            'relativePath': 'script.txt',
+            'path': '/work/script.txt',
+            'fileSizeBytes': sizeBytes,
+          },
+        ],
+      );
+      final service = WorkTextService(platformGateway: gateway);
+      addTearDown(service.dispose);
+      final emptyFile = await service.refreshWorkTextFiles('/work');
+      expect(emptyFile.single.fileSizeBytes, 0);
+      sizeBytes = '12';
+
+      final updated = await service.refreshWorkTextFiles('/work');
+      expect(updated, isNot(same(emptyFile)));
+      expect(updated.single.fileSizeBytes, 12);
     });
 
     test('findWorkTextFiles returns empty list for blank folder', () async {

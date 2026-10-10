@@ -22,20 +22,23 @@ class CoverImageReference {
   const CoverImageReference({
     required this.displayPath,
     required this.sourcePath,
+    this.fileSizeBytes,
   });
 
   final String displayPath;
   final String sourcePath;
+  final int? fileSizeBytes;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is CoverImageReference &&
           displayPath == other.displayPath &&
-          sourcePath == other.sourcePath;
+          sourcePath == other.sourcePath &&
+          fileSizeBytes == other.fileSizeBytes;
 
   @override
-  int get hashCode => Object.hash(displayPath, sourcePath);
+  int get hashCode => Object.hash(displayPath, sourcePath, fileSizeBytes);
 
   static CoverImageReference? fromPlatformValue(Object? value) {
     if (value is String) {
@@ -51,6 +54,7 @@ class CoverImageReference {
     return CoverImageReference(
       displayPath: path,
       sourcePath: sourcePath.isEmpty ? path : sourcePath,
+      fileSizeBytes: int.tryParse(value['fileSizeBytes']?.toString() ?? ''),
     );
   }
 }
@@ -304,6 +308,7 @@ class FileCachePlatformGateway {
             CoverImageReference(
               displayPath: entity.path,
               sourcePath: entity.path,
+              fileSizeBytes: await entity.length(),
             ),
           );
         }
@@ -364,6 +369,7 @@ class FileCachePlatformGateway {
               'name': path.basename(entity.path),
               'relativePath': rel,
               'path': entity.path,
+              'fileSizeBytes': (await entity.length()).toString(),
             });
           }
         }

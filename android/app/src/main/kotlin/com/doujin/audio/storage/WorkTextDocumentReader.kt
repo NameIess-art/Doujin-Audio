@@ -37,11 +37,12 @@ internal class WorkTextDocumentReader(
                         if (child.mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                             pending += Node(child.uri, childRel)
                         } else if (isSupportedWorkDocName(name)) {
-                            results += mapOf(
-                                "name" to name,
-                                "relativePath" to childRel,
-                                "path" to child.uri.toString()
-                            )
+                            results += buildMap {
+                                put("name", name)
+                                put("relativePath", childRel)
+                                put("path", child.uri.toString())
+                                child.sizeBytes?.let { put("fileSizeBytes", it.toString()) }
+                            }
                         }
                     }
                 }
@@ -84,7 +85,8 @@ internal fun discoverLocalWorkTexts(folderPath: String): List<Map<String, String
             mapOf(
                 "name" to file.name,
                 "relativePath" to file.relativeTo(root).invariantSeparatorsPath,
-                "path" to file.absolutePath
+                "path" to file.absolutePath,
+                "fileSizeBytes" to file.length().toString()
             )
         }.toList()
 }

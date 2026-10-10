@@ -4,10 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/media/time_text_formatters.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
+import '../../asmr/presentation/asmr_download_format.dart';
 import 'work_detail_entries.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 
@@ -82,6 +83,24 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     final cs = Theme.of(context).colorScheme;
     final item = widget.item;
     final isFolder = item.type == WorkEntryType.folder;
+    final nameStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(
+      fontSize: 13.5,
+      height: 1.2,
+      fontWeight: isFolder ? FontWeight.w600 : FontWeight.w500,
+      color: cs.onSurface,
+    );
+    final infoStyle = Theme.of(context).textTheme.labelSmall!.copyWith(
+      fontSize: 11,
+      height: 1.2,
+      color: cs.onSurfaceVariant,
+    );
+    final info = <String>[
+      if (item.fileSizeBytes != null)
+        formatAsmrDownloadSize(item.fileSizeBytes!),
+      if (item.type == WorkEntryType.audio && item.duration != null)
+        formatDurationCompact(item.duration!),
+      if (item.extension.isNotEmpty) item.extension,
+    ].join(' · ');
     final icon = switch (item.type) {
       WorkEntryType.folder => AppDesignTokens.folderIcon,
       WorkEntryType.audio =>
@@ -129,8 +148,9 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
         clipBehavior: Clip.antiAlias,
         child: ListTile(
           dense: true,
-          minTileHeight: FileTreeRow.layoutHeight(context),
-          minVerticalPadding: 0,
+          minTileHeight: 44,
+          minVerticalPadding: 4,
+          titleAlignment: ListTileTitleAlignment.center,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           splashColor: color.withValues(alpha: 0.16),
@@ -143,16 +163,27 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
             color: color,
             size: AppDesignTokens.fileEntryIconSize,
           ),
-          title: WorkPageTranslationText(
-            item.name,
-            fileName: !isFolder,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: isFolder ? FontWeight.w600 : FontWeight.w500,
-              color: cs.onSurface,
-            ),
+          title: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              WorkPageTranslationText(
+                item.name,
+                fileName: !isFolder,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: nameStyle,
+              ),
+              if (!isFolder) ...[
+                const SizedBox(height: 2),
+                Text(
+                  info,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: infoStyle,
+                ),
+              ],
+            ],
           ),
           trailing: SizedBox.square(
             dimension: 44,

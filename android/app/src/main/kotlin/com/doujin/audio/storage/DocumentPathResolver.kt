@@ -9,7 +9,12 @@ import androidx.documentfile.provider.DocumentFile
 import java.util.Locale
 import java.io.IOException
 
-internal data class DirectoryDocument(val uri: Uri, val name: String, val mime: String)
+internal data class DirectoryDocument(
+    val uri: Uri,
+    val name: String,
+    val mime: String,
+    val sizeBytes: Long? = null
+)
 
 internal fun listReadableDirectoryDocuments(context: Context, folder: Uri): List<DirectoryDocument> {
     val children = DocumentsContract.buildChildDocumentsUriUsingTree(
@@ -20,18 +25,21 @@ internal fun listReadableDirectoryDocuments(context: Context, folder: Uri): List
     val cursor = context.contentResolver.query(children, arrayOf(
         DocumentsContract.Document.COLUMN_DOCUMENT_ID,
         DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-        DocumentsContract.Document.COLUMN_MIME_TYPE
+        DocumentsContract.Document.COLUMN_MIME_TYPE,
+        DocumentsContract.Document.COLUMN_SIZE
     ), null, null, null) ?: throw IOException("Document provider query failed: $children")
     return cursor.use {
         val idColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
         val nameColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
         val mimeColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+        val sizeColumn = it.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
         buildList {
             while (it.moveToNext()) {
                 val id = it.getString(idColumn) ?: throw IOException("Document ID is missing: $children")
                 val name = it.getString(nameColumn) ?: throw IOException("Document name is missing: $children")
                 val mime = it.getString(mimeColumn) ?: throw IOException("Document type is missing: $children")
-                add(DirectoryDocument(DocumentsContract.buildDocumentUriUsingTree(folder, id), name, mime))
+                val sizeBytes = if (sizeColumn >= 0 && !it.isNull(sizeColumn)) it.getLong(sizeColumn) else null
+                add(DirectoryDocument(DocumentsContract.buildDocumentUriUsingTree(folder, id), name, mime, sizeBytes))
             }
         }
     }

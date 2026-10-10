@@ -362,8 +362,8 @@ void main() {
       await settleIo(tester);
       expect(find.text('video'), findsNothing);
       expect(find.text('audio'), findsOneWidget);
-      expect(find.text('notes.txt'), findsOneWidget);
-      expect(find.text('cover.png'), findsOneWidget);
+      expect(find.text('notes'), findsOneWidget);
+      expect(find.text('cover'), findsOneWidget);
       await tester.runAsync(fixture.undoableRemovalService.undoPending);
       await settleIo(tester);
       expect(find.text('video'), findsOneWidget);
@@ -498,8 +498,8 @@ void main() {
       await settleIo(tester);
       expect(find.text('audio'), findsNothing);
       expect(find.text('video'), findsOneWidget);
-      expect(find.text('notes.txt'), findsOneWidget);
-      expect(find.text('cover.png'), findsOneWidget);
+      expect(find.text('notes'), findsOneWidget);
+      expect(find.text('cover'), findsOneWidget);
     },
   );
 

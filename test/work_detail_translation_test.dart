@@ -312,20 +312,20 @@ void main() {
         expect(service.calls.last.texts, contains('Original audio'));
         service.calls.last.complete();
         await _batch(tester);
-        expect(find.text('zh-CN:Original audio.mp3'), findsOneWidget);
+        expect(find.text('zh-CN:Original audio'), findsOneWidget);
         final tile = tester.widget<WorkDetailEntryTile>(
           find.byType(WorkDetailEntryTile),
         );
         expect(tile.item.track?.path, track.path);
         expect(tile.item.name, 'Original audio.mp3');
         expect(fixture.library.library.single.displayName, track.displayName);
-        await tester.tap(find.text('zh-CN:Original audio.mp3'));
+        await tester.tap(find.text('zh-CN:Original audio'));
         await tester.pump(const Duration(milliseconds: 300));
         expect(played, [track.path]);
         await tester.tap(find.byKey(_button));
         await tester.pump();
         expect(find.text('Original title'), findsOneWidget);
-        expect(find.text('Original audio.mp3'), findsOneWidget);
+        expect(find.text('Original audio'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       },

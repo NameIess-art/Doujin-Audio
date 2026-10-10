@@ -20,6 +20,7 @@ import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/library_like_cards.dart';
+import '../../../core/widgets/marquee_text.dart';
 import '../application/playback_session_snapshot.dart';
 import '../application/playback_subtitle_service.dart';
 import '../domain/audio_effects.dart';

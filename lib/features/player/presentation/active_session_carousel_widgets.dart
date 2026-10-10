@@ -217,7 +217,11 @@ class _ActiveSessionCard extends ConsumerWidget {
       child: ClipRRect(
         key: ValueKey<String>('active_session_card_${session.id}'),
         borderRadius: BorderRadius.circular(cardRadius),
-        child: cardBody,
+        child: MarqueePauseScope(
+          isPaused: false,
+          hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
+          child: cardBody,
+        ),
       ),
     );
   }

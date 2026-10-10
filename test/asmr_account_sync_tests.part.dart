@@ -318,6 +318,162 @@ void registerAsmrAccountSyncTests({
   );
 
   test(
+    'batch favorites persist and publish once while preserving history and outbox',
+    () async {
+      await resetPrefs();
+      final countingPreferences = _CountingFavoritePreferences(
+        repository: TestPersistenceRepository(),
+      );
+      final works = [
+        for (var id = 1; id <= 1000; id++) _work(id: id, title: 'Saved $id'),
+      ];
+      await countingPreferences.saveFavoriteWorks(works);
+      await countingPreferences.saveHistoryWorks([works.first]);
+      final controller = createTestAsmrController(
+        preferencesStore: countingPreferences,
+        persistenceRepository: _FakeTestPersistenceRepository(const []),
+        apiService: _FakeAsmrApiService(),
+      );
+      await controller.initializeForVisiblePage();
+      final before = controller.worksFor(AsmrCategoryType.favorites);
+      var publications = 0;
+      controller.addListener(() => publications++);
+      await controller.setFavorites([
+        works[0],
+        works[1],
+        works[1],
+        _work(id: 2000, title: 'Not a favorite'),
+      ], favorite: false);
+      expect(countingPreferences.favoriteBatches, [
+        [1, 2],
+      ]);
+      expect(countingPreferences.fullAccountWrites, 0);
+      expect(publications, 1);
+      expect(
+        controller.worksFor(AsmrCategoryType.favorites).first,
+        same(before[2]),
+      );
+      final history = controller.worksFor(AsmrCategoryType.history).single;
+      expect(history.title, 'Saved 1');
+      expect(history.isFavorite, isFalse);
+      final operations = await countingPreferences.loadSyncOperations();
+      expect(
+        operations.where((item) => item.workId == 1).map((item) => item.type),
+        [
+          AsmrSyncOperationType.historyListening,
+          AsmrSyncOperationType.favoriteRemove,
+        ],
+      );
+      expect(
+        operations.where((item) => item.workId == 2).single.type,
+        AsmrSyncOperationType.favoriteRemove,
+      );
+      await controller.setFavorites([works[0], works[1]], favorite: false);
+      expect(countingPreferences.favoriteBatches, hasLength(1));
+      expect(publications, 1);
+
+      await controller.setFavorites([works[0], works[1]], favorite: true);
+      expect(countingPreferences.favoriteBatches, [
+        [1, 2],
+        [1, 2],
+      ]);
+      expect(publications, 2);
+      expect(
+        controller
+            .worksFor(AsmrCategoryType.favorites)
+            .take(3)
+            .map((work) => work.id),
+        [2, 1, 3],
+      );
+      expect(
+        controller.worksFor(AsmrCategoryType.history).single.isFavorite,
+        isTrue,
+      );
+      expect(
+        (await countingPreferences.loadFavoriteWorks()).map((work) => work.id),
+        controller.worksFor(AsmrCategoryType.favorites).map((work) => work.id),
+      );
+
+      final restored = controller.worksFor(AsmrCategoryType.favorites);
+      final restoredHistory = controller.worksFor(AsmrCategoryType.history);
+      countingPreferences.rejectFavoriteWrite = true;
+      final additions = [
+        _work(id: 2001, title: 'First addition'),
+        _work(id: 2002, title: 'Second addition'),
+      ];
+      await expectLater(
+        controller.setFavorites(additions, favorite: true),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(controller.worksFor(AsmrCategoryType.favorites), same(restored));
+      expect(publications, 2);
+      countingPreferences.rejectFavoriteWrite = false;
+      await controller.setFavorites(additions, favorite: true);
+      expect(publications, 3);
+      expect(
+        controller.worksFor(AsmrCategoryType.history),
+        same(restoredHistory),
+      );
+      expect(
+        controller
+            .worksFor(AsmrCategoryType.favorites)
+            .take(2)
+            .map((work) => work.id),
+        [2002, 2001],
+      );
+      expect(countingPreferences.fullAccountWrites, 0);
+    },
+  );
+
+  test(
+    'single favorite toggle uses the account snapshot before its controller publication',
+    () async {
+      final work = _work(id: 2003, title: 'Account snapshot');
+      for (final controllerFavorite in [false, true]) {
+        await resetPrefs();
+        if (controllerFavorite) await preferences.saveFavoriteWorks([work]);
+        final services = createTestAsmrServices(
+          preferencesStore: preferences,
+          persistenceRepository: _FakeTestPersistenceRepository(const []),
+          apiService: _FakeAsmrApiService(),
+        );
+        final controller = AsmrLibraryController(
+          preferencesStore: services.preferencesStore,
+          remoteCatalogService: services.remoteCatalogService,
+          accountSyncService: services.accountSyncService,
+        );
+        addTearDown(controller.dispose);
+        await controller.initializeForVisiblePage();
+        // Sync can update the authoritative snapshot before publishing its result.
+        await services.accountSyncService.setFavorites([
+          work,
+        ], favorite: !controllerFavorite);
+        expect(controller.isFavorite(work.id), controllerFavorite);
+        expect(
+          services.accountSyncService.snapshot.favoriteIds.contains(work.id),
+          !controllerFavorite,
+        );
+        await controller.toggleFavorite(work);
+        expect(
+          services.accountSyncService.snapshot.favoriteIds.contains(work.id),
+          controllerFavorite,
+        );
+        expect(controller.isFavorite(work.id), controllerFavorite);
+        expect(
+          (await preferences.loadFavoriteWorks()).isNotEmpty,
+          controllerFavorite,
+        );
+        expect(
+          (await preferences.loadSyncOperations()).single.type,
+          controllerFavorite
+              ? AsmrSyncOperationType.favoriteAdd
+              : AsmrSyncOperationType.favoriteRemove,
+        );
+      }
+    },
+  );
+
+  test(
     'recording history retains favorite and unchanged work identities',
     () async {
       await resetPrefs();
@@ -1187,6 +1343,43 @@ void registerAsmrAccountSyncTests({
         expect(controller.syncViewState.phase, AsmrSyncPhase.succeeded);
         expect(controller.syncViewState.lastError, isNull);
       },
+    );
+  }
+}
+
+class _CountingFavoritePreferences extends AsmrPreferencesStore {
+  _CountingFavoritePreferences({required super.repository});
+  final favoriteBatches = <List<int>>[];
+  int fullAccountWrites = 0;
+  bool rejectFavoriteWrite = false;
+  @override
+  Future<void> saveFavoriteState({
+    required List<AsmrWork> works,
+    required bool favorite,
+    required List<AsmrSyncOperation> operations,
+  }) async {
+    favoriteBatches.add(works.map((work) => work.id).toList(growable: false));
+    if (rejectFavoriteWrite) {
+      throw const FileSystemException('batch favorite write failure');
+    }
+    await super.saveFavoriteState(
+      works: works,
+      favorite: favorite,
+      operations: operations,
+    );
+  }
+
+  @override
+  Future<void> saveAccountSyncState({
+    required List<AsmrWork> favoriteWorks,
+    required List<AsmrWork> historyWorks,
+    required List<AsmrSyncOperation> operations,
+  }) {
+    fullAccountWrites++;
+    return super.saveAccountSyncState(
+      favoriteWorks: favoriteWorks,
+      historyWorks: historyWorks,
+      operations: operations,
     );
   }
 }

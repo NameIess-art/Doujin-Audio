@@ -251,6 +251,7 @@ void main() {
             final result = await bridge.prepareSession(
               sessionId: id,
               uri: track.uri,
+              path: track.path,
               title: id,
               volume: id == 'one' ? 2.7 : 0,
               autoPlay: true,
@@ -298,16 +299,17 @@ void main() {
             ),
             closeTo(270, 0.01),
           );
+          final queue = [
+            for (var i = 0; i < 1000; i++)
+              <String, Object?>{
+                'uri': track.uri.toString(),
+                'path': i == 0 ? track.path : '${track.path}#$i',
+                'title': 'Queue $i',
+              },
+          ];
           final editing = bridge.updateQueue(
             'one',
-            queue: [
-              for (var i = 0; i < 1000; i++)
-                {
-                  'uri': track.uri.toString(),
-                  'path': track.path,
-                  'title': 'Queue $i',
-                },
-            ],
+            queue: queue,
             queueStartIndex: 0,
             queueRevision: 1,
             repeatOne: true,
@@ -322,6 +324,31 @@ void main() {
           expect((await editing).isOk, true);
           expect(bridge.playerForSession('one'), same(player));
           expect(players, hasLength(2));
+          final nativePlayer = player.platform! as NativePlayer;
+          final entryBefore = await nativePlayer.getProperty('playlist/0/id');
+          final positionBefore = player.state.position;
+          final moved = await bridge.updateQueue(
+            'one',
+            queue: [...queue.skip(1), queue.first],
+            queueStartIndex: 999,
+            queueRevision: 2,
+            repeatOne: true,
+          );
+          expect(moved.isOk, true, reason: moved.errorOrNull);
+          expect(bridge.playerForSession('one'), same(player));
+          expect(players, hasLength(2));
+          expect(
+            await nativePlayer.getProperty('playlist/999/id'),
+            entryBefore,
+          );
+          expect(await nativePlayer.getProperty('playlist-pos'), '999');
+          expect(
+            player.state.position.inMilliseconds,
+            inInclusiveRange(
+              positionBefore.inMilliseconds - 100,
+              positionBefore.inMilliseconds + 2000,
+            ),
+          );
           expect(idleStructureEvents, registeredEvents);
           expect(idleProgressEvents, 0);
           await bridge.setRepeatOne(

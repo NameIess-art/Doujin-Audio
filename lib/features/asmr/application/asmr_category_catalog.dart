@@ -87,6 +87,9 @@ final class AsmrCategoryCatalog {
   final Map<AsmrCategoryType, String> _pendingAuthRefreshes = {};
   final LinkedHashMap<_FilteredWorksKey, List<AsmrWork>> _filteredWorksCache =
       LinkedHashMap();
+  final Map<AsmrCategoryType, ({List<AsmrWork> works, List<String> text})>
+  _localSearchText = {};
+  static final _searchWhitespace = RegExp(r'\s+');
   _CategoryKey _key(
     AsmrCategoryType category,
     String query, [
@@ -201,6 +204,31 @@ final class AsmrCategoryCatalog {
     final works = _localWorks(category);
     final query = normalizeSearchQuery(searchQuery);
     if (query.isEmpty) return works;
+    var searchable = _localSearchText[category];
+    if (searchable == null || !identical(searchable.works, works)) {
+      searchable = (
+        works: works,
+        text: [
+          for (final work in works)
+            [
+                  work.title,
+                  work.circleName,
+                  work.rjCode,
+                  ...work.tags,
+                  ...work.voiceActors,
+                ]
+                .map(
+                  (value) => value
+                      .replaceAll(_searchWhitespace, ' ')
+                      .trim()
+                      .toLowerCase(),
+                )
+                .join('\n'),
+        ],
+      );
+      _localSearchText[category] = searchable;
+      _filteredWorksCache.removeWhere((key, _) => key.category == category);
+    }
     final key = (
       category: category,
       query: query,
@@ -212,21 +240,10 @@ final class AsmrCategoryCatalog {
       return cached;
     }
     final terms = normalizedSearchTerms(query);
-    final filtered = immutableList(
-      works.where(
-        (work) => matchesSearchTerms(
-          [
-            work.title,
-            work.circleName,
-            work.rjCode,
-            ...work.tags,
-            ...work.voiceActors,
-          ],
-          query,
-          normalizedTerms: terms,
-        ),
-      ),
-    );
+    final filtered = immutableList([
+      for (var i = 0; i < works.length; i++)
+        if (terms.every(searchable.text[i].contains)) works[i],
+    ]);
     _filteredWorksCache[key] = filtered;
     if (_filteredWorksCache.length > 24) {
       _filteredWorksCache.remove(_filteredWorksCache.keys.first);
@@ -256,14 +273,18 @@ final class AsmrCategoryCatalog {
     }
   }
 
-  void updateFavorite(int workId, bool favorite) {
+  void updateFavorites(Map<int, bool> favorites) {
     for (final entry in _categories.entries) {
       final works = entry.value.works;
-      if (works == null) continue;
+      if (works == null ||
+          !works.any((work) => favorites.containsKey(work.id))) {
+        continue;
+      }
       entry.value.works = immutableList(
         works.map(
-          (work) =>
-              work.id == workId ? work.copyWith(isFavorite: favorite) : work,
+          (work) => favorites.containsKey(work.id)
+              ? work.copyWith(isFavorite: favorites[work.id])
+              : work,
         ),
       );
       entry.value.revision++;
@@ -319,6 +340,7 @@ final class AsmrCategoryCatalog {
     _lastQueries.clear();
     _pendingAuthRefreshes.clear();
     _filteredWorksCache.clear();
+    _localSearchText.clear();
   }
 
   void clearSearchQueries() {
@@ -330,7 +352,6 @@ final class AsmrCategoryCatalog {
       state.invalidateRequest();
       return true;
     });
-    _filteredWorksCache.clear();
   }
 
   void setSearchQuery(String query, AsmrCategoryType category) {

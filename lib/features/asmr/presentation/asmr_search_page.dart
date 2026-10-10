@@ -19,6 +19,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   Timer? _debounceTimer;
   late final ValueNotifier<int> _activeCategoryIndex;
   String _query = '';
+  String _inputQuery = '';
   bool _showSearchPlaceholder = false;
   bool _isSelectionMode = false;
   final Set<int> _selectedWorkIds = <int>{};
@@ -70,20 +71,21 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
 
   void _onChanged(String value) {
     final query = normalizeSearchQuery(value);
-    if (_query == query) return;
+    if (_inputQuery == query) return;
     _debounceTimer?.cancel();
     _resetScroll();
     _searchController?.setSearchQuery(query, _category);
     UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
     _refreshPending = false;
     setState(() {
-      _query = query;
+      _inputQuery = query;
       _requestSerial++;
       _showSearchPlaceholder = query.isNotEmpty;
       _clearSelection();
     });
     _debounceTimer = Timer(const Duration(milliseconds: 240), () {
       if (!mounted) return;
+      setState(() => _query = query);
       _scheduleRefresh(showSearchPlaceholder: query.isNotEmpty);
     });
   }
@@ -91,6 +93,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   Future<void> _onSubmitted(String value) async {
     _debounceTimer?.cancel();
     final query = normalizeSearchQuery(value);
+    _inputQuery = query;
     _searchController?.setSearchQuery(query, _category);
     if (_query != query) {
       _resetScroll();
@@ -114,6 +117,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     _resetScroll();
     setState(() {
       _query = '';
+      _inputQuery = '';
       _showSearchPlaceholder = false;
       _requestSerial += 1;
       _clearSelection();
@@ -124,7 +128,8 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   void _selectCategory(AsmrCategoryType category) {
     if (_category == category) return;
     _debounceTimer?.cancel();
-    _searchController?.setSearchQuery(_query, category);
+    _searchController?.setSearchQuery(_inputQuery, category);
+    if (_query != _inputQuery) setState(() => _query = _inputQuery);
     final outgoingScroll = _scrollControllers[_category]!;
     if (outgoingScroll.hasClients) outgoingScroll.jumpTo(outgoingScroll.offset);
     if (_isSelectionMode) setState(_clearSelection);
@@ -198,6 +203,11 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   }
 
   void _scheduleRefresh({bool showSearchPlaceholder = false}) {
+    // A passive language or route refresh must not reactivate the old keyword.
+    if (_debounceTimer?.isActive ?? false) {
+      _refreshPending = true;
+      return;
+    }
     _requestSerial++;
     if (_query.isEmpty) {
       final controller = ref.read(asmrLibraryControllerProvider);

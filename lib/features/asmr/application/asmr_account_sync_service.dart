@@ -125,46 +125,74 @@ class AsmrAccountSyncService {
   }
 
   Future<AsmrAccountSnapshot> toggleFavorite(AsmrWork work) {
-    return _serialize(() async {
-      final current = _snapshot;
-      final shouldFavorite = !current.favoriteIds.contains(work.id);
-      final updated = work.copyWith(isFavorite: shouldFavorite);
-      final favorites = shouldFavorite
-          ? <AsmrWork>[
-              updated,
-              ...current.favoriteWorks.where((item) => item.id != work.id),
-            ]
-          : current.favoriteWorks
-                .where((item) => item.id != work.id)
-                .toList(growable: false);
-      final operation = AsmrSyncOperation(
-        type: shouldFavorite
-            ? AsmrSyncOperationType.favoriteAdd
-            : AsmrSyncOperationType.favoriteRemove,
-        workId: work.id,
-        sourceId: work.sourceId,
-        createdAt: DateTime.now(),
-      );
-      final operations = _operationsAfterEnqueue(
-        current.pendingOperations,
-        operation,
-      );
-      final normalized = _normalizeAccountWorks(
-        favoriteWorks: favorites,
-        historyWorks: current.historyWorks,
-      );
-      await _preferencesStore.saveAccountSyncState(
-        favoriteWorks: normalized.favoriteWorks,
-        historyWorks: normalized.historyWorks,
-        operations: operations,
-      );
-      _snapshot = current.copyWith(
-        favoriteWorks: normalized.favoriteWorks,
-        historyWorks: normalized.historyWorks,
-        pendingOperations: operations,
-      );
-      return _snapshot;
-    });
+    return _serialize(
+      () => _setFavoritesNow([work], !_snapshot.favoriteIds.contains(work.id)),
+    );
+  }
+
+  Future<AsmrAccountSnapshot> setFavorites(
+    List<AsmrWork> works, {
+    required bool favorite,
+  }) => _serialize(() => _setFavoritesNow(works, favorite));
+
+  Future<AsmrAccountSnapshot> _setFavoritesNow(
+    List<AsmrWork> works,
+    bool favorite,
+  ) async {
+    final current = _snapshot;
+    final favoriteIds = current.favoriteIds;
+    final changed = <int, AsmrWork>{};
+    for (final work in works) {
+      if (favoriteIds.contains(work.id) == favorite) continue;
+      changed.putIfAbsent(work.id, () => work.copyWith(isFavorite: favorite));
+    }
+    if (changed.isEmpty) return current;
+    final changedWorks = changed.values.toList(growable: false);
+    final newOperations = [
+      for (final work in changedWorks)
+        AsmrSyncOperation(
+          type: favorite
+              ? AsmrSyncOperationType.favoriteAdd
+              : AsmrSyncOperationType.favoriteRemove,
+          workId: work.id,
+          sourceId: work.sourceId,
+          createdAt: DateTime.now(),
+        ),
+    ];
+    final operations = [
+      ...current.pendingOperations.where(
+        (operation) =>
+            !changed.containsKey(operation.workId) ||
+            (operation.type != AsmrSyncOperationType.favoriteAdd &&
+                operation.type != AsmrSyncOperationType.favoriteRemove),
+      ),
+      ...newOperations,
+    ];
+    await _preferencesStore.saveFavoriteState(
+      works: changedWorks,
+      favorite: favorite,
+      operations: newOperations,
+    );
+    _snapshot = current.copyWith(
+      favoriteWorks: [
+        if (favorite) ...changedWorks.reversed,
+        ...current.favoriteWorks.where((work) => !changed.containsKey(work.id)),
+      ],
+      historyWorks:
+          current.historyWorks.any((work) => changed.containsKey(work.id))
+          ? current.historyWorks
+                .map((work) {
+                  if (!changed.containsKey(work.id)) return work;
+                  // Favorites own shared metadata; removal retains that saved history row.
+                  return favorite
+                      ? changed[work.id]!
+                      : work.copyWith(isFavorite: false);
+                })
+                .toList(growable: false)
+          : current.historyWorks,
+      pendingOperations: operations,
+    );
+    return _snapshot;
   }
 
   Future<AsmrAccountSnapshot> recordHistory(AsmrWork work) {

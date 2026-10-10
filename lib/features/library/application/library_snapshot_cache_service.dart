@@ -174,7 +174,7 @@ class LibrarySnapshotCacheService {
   int _categoryFutureStructureRevision = -1;
   int _categoryFutureDetailRevision = -1;
   int _categorySnapshotRevision = 0;
-  final _pendingCategoryDetails = <String, AudioDetail>{};
+  final _pendingCategoryDetails = <AudioDetailTarget, AudioDetail>{};
 
   List<LibraryNode> get cards => _cachedCards;
 
@@ -505,10 +505,7 @@ class LibrarySnapshotCacheService {
       _categorySnapshot = null;
       return;
     }
-    _pendingCategoryDetails[AudioLibraryCategorySnapshot.targetKey(
-          detail.target,
-        )] =
-        detail;
+    _pendingCategoryDetails[detail.target] = detail;
     if (!defer) flushDetailChanges();
   }
 
@@ -600,8 +597,8 @@ class LibrarySnapshotCacheService {
           tracks: requests[i].tracks,
         ),
     ];
-    return _categorySnapshotFromEntries(
-      entries,
+    return AudioLibraryCategorySnapshot(
+      entries: entries,
       structureRevision: structureRevision,
       detailRevision: detailRevision,
     );
@@ -639,86 +636,12 @@ class LibrarySnapshotCacheService {
       _pendingCategoryDetails.clear();
       return;
     }
-    final updatedEntries = cached.entries
-        .map((entry) {
-          final detail =
-              _pendingCategoryDetails[AudioLibraryCategorySnapshot.targetKey(
-                entry.target,
-              )];
-          if (detail == null) return entry;
-          return AudioLibraryCategoryEntry(
-            target: entry.target,
-            title: entry.title,
-            path: entry.path,
-            isFolder: entry.isFolder,
-            detail: detail,
-            tracks: entry.tracks,
-          );
-        })
-        .toList(growable: false);
-    _pendingCategoryDetails.clear();
-
-    _categorySnapshot = _categorySnapshotFromEntries(
-      updatedEntries,
-      structureRevision: _libraryService.structureRevision,
+    _categorySnapshot = cached.withDetailChanges(
+      _pendingCategoryDetails,
       detailRevision: _detailCacheService.revision,
     );
+    _pendingCategoryDetails.clear();
     _categorySnapshotRevision++;
-  }
-
-  AudioLibraryCategorySnapshot _categorySnapshotFromEntries(
-    List<AudioLibraryCategoryEntry> entries, {
-    required int structureRevision,
-    required int detailRevision,
-  }) {
-    final tagFrequencies = <String, int>{};
-    final voiceActorFrequencies = <String, int>{};
-    final circleFrequencies = <String, int>{};
-    for (final entry in entries) {
-      _countCategoryTerms(
-        entry,
-        tagFrequencies,
-        voiceActorFrequencies,
-        circleFrequencies,
-      );
-    }
-    return AudioLibraryCategorySnapshot(
-      entries: List<AudioLibraryCategoryEntry>.unmodifiable(entries),
-      tagTerms: AudioLibraryCategorySnapshot.sortTermsByFrequency(
-        tagFrequencies,
-      ),
-      voiceActorTerms: AudioLibraryCategorySnapshot.sortTermsByFrequency(
-        voiceActorFrequencies,
-      ),
-      circleTerms: AudioLibraryCategorySnapshot.sortTermsByFrequency(
-        circleFrequencies,
-      ),
-      structureRevision: structureRevision,
-      detailRevision: detailRevision,
-    );
-  }
-
-  void _countCategoryTerms(
-    AudioLibraryCategoryEntry entry,
-    Map<String, int> tagFrequencies,
-    Map<String, int> voiceActorFrequencies,
-    Map<String, int> circleFrequencies,
-  ) {
-    for (final term in AudioLibraryCategorySnapshot.splitTerms(
-      entry.detail.tags,
-    )) {
-      tagFrequencies[term] = (tagFrequencies[term] ?? 0) + 1;
-    }
-    for (final term in AudioLibraryCategorySnapshot.splitTerms(
-      entry.detail.voiceActors,
-    )) {
-      voiceActorFrequencies[term] = (voiceActorFrequencies[term] ?? 0) + 1;
-    }
-    for (final term in AudioLibraryCategorySnapshot.splitTerms([
-      entry.detail.circleName,
-    ])) {
-      circleFrequencies[term] = (circleFrequencies[term] ?? 0) + 1;
-    }
   }
 }
 

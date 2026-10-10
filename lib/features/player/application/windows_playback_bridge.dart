@@ -319,7 +319,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         session.completed = false;
         session.retryAttempt = 0;
         session.retryStartedAt = null;
-        session.hasRetainedCurrent = false;
+        session.retainedCurrentIndex = null;
         session.externalQueueRevision = 0;
         if (session.wantsPlay) {
           await _open(session);
@@ -410,30 +410,32 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
             session.position = Duration.zero;
             session.retryAttempt = 0;
             session.error = null;
-            if (session.hasRetainedCurrent && index != 0) {
+            if (session.retainedCurrentIndex != null &&
+                index != session.retainedCurrentIndex) {
               final cleanup = await _change(session.id, (current) async {
+                final retainedIndex = current.retainedCurrentIndex;
                 if (generation != current.generation ||
-                    !current.hasRetainedCurrent ||
-                    current.index == 0) {
+                    retainedIndex == null ||
+                    current.index == retainedIndex) {
                   return;
                 }
                 current.opening = true;
                 try {
                   if (identical(current.player, player)) {
                     final ids = await current.nativeEntryIds(player);
-                    final retainedIndex = ids.indexWhere(
-                      (id) => current.nativeQueueIndices[id] == 0,
+                    final physicalIndex = ids.indexWhere(
+                      (id) => current.nativeQueueIndices[id] == retainedIndex,
                     );
-                    await player.remove(retainedIndex);
-                    current.nativeQueueIndices.remove(ids[retainedIndex]);
+                    await player.remove(physicalIndex);
+                    current.nativeQueueIndices.remove(ids[physicalIndex]);
                     current.nativeQueueIndices.updateAll(
-                      (_, index) => index - 1,
+                      (_, index) => index > retainedIndex ? index - 1 : index,
                     );
                   }
-                  current.hasRetainedCurrent = false;
-                  current.queue.removeAt(0);
+                  current.retainedCurrentIndex = null;
+                  current.queue.removeAt(retainedIndex);
                   current.invalidateRetainedUris();
-                  current.index--;
+                  if (current.index > retainedIndex) current.index--;
                 } finally {
                   current.opening = false;
                 }

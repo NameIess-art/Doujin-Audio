@@ -294,7 +294,6 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
       );
     }
     final editTree = _cachedEditTree!;
-    final isEmpty = editTree.isEmpty;
     final snapshotError = _diskSnapshotError;
 
     final headerTopInset = MediaQuery.paddingOf(context).top + 98;
@@ -321,71 +320,52 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
                     ],
                   ),
                 ),
-                content: ListView.builder(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    MediaQuery.paddingOf(context).top + 98,
-                    16,
-                    24,
-                  ),
-                  itemCount: isEmpty
-                      ? 1
-                      : snapshotError
-                      ? editTree.length + 1
-                      : editTree.length,
-                  itemBuilder: (context, index) {
-                    if (snapshotError && index == 0) {
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 96),
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                i18n.tr('scan_failed_next_step'),
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context).textTheme.bodyLarge
-                                    ?.copyWith(
-                                      color: cs.onSurfaceVariant,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                              const SizedBox(height: 12),
-                              FilledButton.tonal(
-                                onPressed: _requestDiskSnapshotRefresh,
-                                child: Text(i18n.tr('retry')),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                    if (isEmpty) {
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 96),
-                        child: Center(
-                          child: Text(
-                            _searchQuery.isEmpty
-                                ? i18n.tr('library_edit_empty')
-                                : i18n.tr('no_search_results'),
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w700,
+                content: LibraryEditTreeList(
+                  libraryPath: widget.libraryPath,
+                  nodes: editTree,
+                  initiallyExpanded: _searchQuery.isNotEmpty,
+                  onRememberFolder: rememberFolderStructureSnapshot,
+                  padding: EdgeInsets.fromLTRB(16, headerTopInset, 16, 24),
+                  leading: snapshotError
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 96),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  i18n.tr('scan_failed_next_step'),
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context).textTheme.bodyLarge
+                                      ?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                        fontWeight: FontWeight.w700,
+                                      ),
                                 ),
+                                const SizedBox(height: 12),
+                                FilledButton.tonal(
+                                  onPressed: _requestDiskSnapshotRefresh,
+                                  child: Text(i18n.tr('retry')),
+                                ),
+                              ],
+                            ),
                           ),
+                        )
+                      : null,
+                  empty: Padding(
+                    padding: const EdgeInsets.only(top: 96),
+                    child: Center(
+                      child: Text(
+                        _searchQuery.isEmpty
+                            ? i18n.tr('library_edit_empty')
+                            : i18n.tr('no_search_results'),
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
                         ),
-                      );
-                    }
-                    final node = editTree[index - (snapshotError ? 1 : 0)];
-                    return LibraryEditTreeNodeWidget(
-                      key: ValueKey(node.pathValue),
-                      libraryPath: widget.libraryPath,
-                      node: node,
-                      initiallyExpanded: _searchQuery.isNotEmpty,
-                      onRememberFolder: rememberFolderStructureSnapshot,
-                    );
-                  },
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),

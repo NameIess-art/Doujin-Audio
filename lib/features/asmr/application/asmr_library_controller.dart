@@ -880,22 +880,38 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   Future<void> toggleFavorite(AsmrWork work) {
-    return _runStateMutation(() => _toggleFavoriteNow(work));
+    return _runStateMutation(() => _mutateFavoritesNow([work]));
   }
 
-  Future<void> _toggleFavoriteNow(AsmrWork work) async {
+  Future<void> setFavorites(List<AsmrWork> works, {required bool favorite}) =>
+      _runStateMutation(() => _mutateFavoritesNow(works, favorite: favorite));
+
+  Future<void> _mutateFavoritesNow(
+    List<AsmrWork> works, {
+    bool? favorite,
+  }) async {
     final mutationAuthEpoch = _authEpoch;
-    final snapshot = await _accountSyncService.toggleFavorite(work);
+    final previous = _accountSyncService.snapshot;
+    final snapshot = favorite == null
+        ? await _accountSyncService.toggleFavorite(works.single)
+        : await _accountSyncService.setFavorites(works, favorite: favorite);
     if (mutationAuthEpoch != _authEpoch) return;
+    if (identical(previous, snapshot)) return;
+    final previousIds = _favoriteIds;
     _applyAccountSnapshot(snapshot);
-    final shouldFavorite = _favoriteIds.contains(work.id);
-    _catalog.updateFavorite(work.id, shouldFavorite);
+    final changedIds = {
+      for (final work in works)
+        if (previousIds.contains(work.id) != _favoriteIds.contains(work.id))
+          work.id: _favoriteIds.contains(work.id),
+    };
+    _catalog.updateFavorites(changedIds);
     _bumpGlobalRevision();
     if (isAsmrAccountLoggedIn) {
       unawaited(syncAsmrAccount());
     }
     _catalog.updateLocalCounts();
     _catalog.bumpRevision(AsmrCategoryType.favorites);
+    _catalog.bumpRevision(AsmrCategoryType.history);
     notifyListeners();
   }
 

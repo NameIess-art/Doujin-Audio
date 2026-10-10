@@ -313,6 +313,61 @@ void registerAsmrControllerStateTests({
   }
 
   test(
+    'local search reuses normalized fields until its work snapshot changes',
+    () async {
+      await resetPrefs();
+      final first = _CountingSearchWork(1);
+      final second = _CountingSearchWork(2);
+      var works = <AsmrWork>[first, second];
+      final services = createTestAsmrServices(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+      );
+      const context = (
+        authEpoch: 0,
+        token: null,
+        contentEpoch: 0,
+        language: AsmrContentLanguage.en,
+        scope: 'local-search-test',
+      );
+      final catalog = AsmrCategoryCatalog(
+        remoteCatalogService: services.remoteCatalogService,
+        onChanged: () {},
+        isContextCurrent: (_) => true,
+        currentContext: () => context,
+        localWorks: (_) => works,
+        decorateWork: (work) => work,
+      );
+      List<AsmrWork> filter(String query) => catalog.filteredWorksFor(
+        AsmrCategoryType.favorites,
+        searchQuery: query,
+        searchSession: true,
+      );
+      final initial = filter('Sleep Induction');
+      expect(initial.map((work) => work.id), [1, 2]);
+      for (final query in ['CIRCLE demo', 'Gentle Sound', 'VOICE Actor']) {
+        catalog.setSearchQuery(query, AsmrCategoryType.favorites);
+        expect(filter(query).map((work) => work.id), [1, 2]);
+      }
+      expect(filter('RJ0001').map((work) => work.id), [1]);
+      expect(filter('sleep circle'), isEmpty);
+      expect([first.titleReads, second.titleReads], [1, 1]);
+      catalog.clearSearchQueries();
+      expect(filter('Sleep Induction'), same(initial));
+      expect([first.titleReads, second.titleReads], [1, 1]);
+
+      works = [second];
+      expect(filter('Sleep Induction').map((work) => work.id), [2]);
+      expect([first.titleReads, second.titleReads], [1, 2]);
+      works = [
+        _work(id: 2, title: 'Changed metadata', tags: ['New tag']),
+      ];
+      expect(filter('Sleep Induction'), isEmpty);
+      expect(filter('New tag').map((work) => work.id), [2]);
+    },
+  );
+
+  test(
     'category state preserves untouched and empty-query load semantics',
     () async {
       await resetPrefs();
@@ -2003,6 +2058,36 @@ void registerAsmrControllerStateTests({
       );
     },
   );
+}
+
+class _CountingSearchWork extends AsmrWork {
+  _CountingSearchWork(int id)
+    : super(
+        id: id,
+        title: ' Sleep\n Induction ',
+        circleName: ' Circle\tDemo ',
+        sourceId: 'RJ${id.toString().padLeft(4, '0')}',
+        sourceType: 'DLSITE',
+        sourceUrl: '',
+        coverUrl: '',
+        thumbnailUrl: '',
+        mainCoverUrl: '',
+        releaseDate: null,
+        createDate: null,
+        duration: Duration.zero,
+        dlCount: 0,
+        reviewCount: 0,
+        rating: 0,
+        voiceActors: [' VOICE\t Actor '],
+        tags: [' Gentle\n Sound '],
+      );
+  final _titleReads = <int>[0];
+  int get titleReads => _titleReads.single;
+  @override
+  String get title {
+    _titleReads[0]++;
+    return super.title;
+  }
 }
 
 class _FailingHiddenTrackPreferences extends AsmrPreferencesStore {

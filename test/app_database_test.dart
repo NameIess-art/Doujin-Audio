@@ -1078,6 +1078,228 @@ void main() {
     },
   );
 
+  test(
+    'ASMR favorite batches touch only changed works and favorite operations',
+    () async {
+      final favorites = [
+        for (var id = 1; id <= 1000; id++)
+          _asmrWork(
+            id,
+            'Favorite $id',
+            tags: ['Tag $id'],
+            voiceActors: ['Actor $id'],
+          ),
+      ];
+      AsmrSyncOperation operation(
+        int id,
+        AsmrSyncOperationType type,
+        int time,
+      ) => AsmrSyncOperation(
+        type: type,
+        workId: id,
+        sourceId: 'RJ$id',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(time),
+      );
+      const add = AsmrSyncOperationType.favoriteAdd;
+      const remove = AsmrSyncOperationType.favoriteRemove;
+      const listening = AsmrSyncOperationType.historyListening;
+      await repository.saveAccountSyncState(
+        favoriteWorks: favorites,
+        historyWorks: [favorites.first, _asmrWork(1001, 'History only')],
+        operations: [
+          operation(1, add, 1),
+          operation(1, listening, 2),
+          operation(1001, listening, 3),
+          operation(9000, add, 4),
+        ],
+      );
+      final untouchedOutbox = await db.query(
+        'asmr_sync_operations',
+        where: 'work_id NOT IN (1, 2, 2000, 2001)',
+        orderBy: 'sort_order',
+      );
+      for (final table in [
+        'asmr_works',
+        'asmr_work_voice_actors',
+        'asmr_work_tags',
+        'asmr_work_lists',
+        'asmr_sync_operations',
+      ]) {
+        for (final mutation in ['INSERT', 'UPDATE', 'DELETE']) {
+          final row = mutation == 'DELETE' ? 'OLD' : 'NEW';
+          final protected = switch (table) {
+            'asmr_works' => '$row.id NOT IN (1, 2, 2000, 2001)',
+            'asmr_work_lists' =>
+              "$row.list_type = 'history' OR $row.work_id NOT IN (1, 2, 2000, 2001)",
+            'asmr_sync_operations' =>
+              "$row.type = 'historyListening' OR $row.work_id NOT IN (1, 2, 2000, 2001)",
+            _ => '$row.work_id NOT IN (1, 2, 2000, 2001)',
+          };
+          await db.execute('''
+        CREATE TEMP TRIGGER guard_favorites_${table}_$mutation BEFORE $mutation ON $table
+        WHEN $protected
+        BEGIN SELECT RAISE(ABORT, 'unrelated favorite write'); END
+      ''');
+        }
+      }
+      await repository.saveFavoriteState(
+        works: favorites.take(2).toList(),
+        favorite: false,
+        operations: [operation(1, remove, 5), operation(2, remove, 6)],
+      );
+      expect(await repository.loadWorkList('favorites'), hasLength(998));
+      final history = await repository.loadWorkList('history');
+      expect(history.first.title, 'Favorite 1');
+      expect(history.first.tags, ['Tag 1']);
+      expect(history.first.isFavorite, isFalse);
+      expect(history.last.title, 'History only');
+      expect(await db.query('asmr_works', where: 'id = 2'), isEmpty);
+      expect(await db.query('asmr_work_tags', where: 'work_id = 2'), isEmpty);
+      await repository.saveFavoriteState(
+        works: [_asmrWork(2000, 'First'), _asmrWork(2001, 'Second')],
+        favorite: true,
+        operations: [operation(2000, add, 7), operation(2001, add, 8)],
+      );
+      expect(
+        (await repository.loadWorkList(
+          'favorites',
+        )).take(3).map((work) => work.id),
+        [2001, 2000, 3],
+      );
+      expect(
+        await db.query(
+          'asmr_sync_operations',
+          where: 'work_id NOT IN (1, 2, 2000, 2001)',
+          orderBy: 'sort_order',
+        ),
+        untouchedOutbox,
+      );
+      expect(
+        (await repository.loadSyncOperations()).map(
+          (item) => '${item.workId}:${item.type.name}',
+        ),
+        [
+          '1:historyListening',
+          '1001:historyListening',
+          '9000:favoriteAdd',
+          '1:favoriteRemove',
+          '2:favoriteRemove',
+          '2000:favoriteAdd',
+          '2001:favoriteAdd',
+        ],
+      );
+    },
+  );
+
+  for (final favorite in [false, true]) {
+    test(
+      'ASMR ${favorite ? 'adding' : 'removing'} favorite batch rolls back every row on late outbox failure',
+      () async {
+        final originals = [
+          _asmrWork(1, 'First', tags: ['Kept']),
+          _asmrWork(2, 'Second'),
+        ];
+        await repository.saveAccountSyncState(
+          favoriteWorks: originals,
+          historyWorks: [originals.first],
+          operations: [
+            AsmrSyncOperation(
+              type: AsmrSyncOperationType.favoriteAdd,
+              workId: 1,
+              sourceId: 'RJ1',
+              createdAt: DateTime.fromMillisecondsSinceEpoch(1),
+            ),
+          ],
+        );
+        final tables = [
+          'asmr_works',
+          'asmr_work_tags',
+          'asmr_work_voice_actors',
+          'asmr_work_lists',
+          'asmr_sync_operations',
+        ];
+        final before = {
+          for (final table in tables) table: await db.query(table),
+        };
+        final changed = favorite
+            ? [_asmrWork(3, 'Third'), _asmrWork(4, 'Fourth')]
+            : originals;
+        final operations = [
+          for (final work in changed)
+            AsmrSyncOperation(
+              type: favorite
+                  ? AsmrSyncOperationType.favoriteAdd
+                  : AsmrSyncOperationType.favoriteRemove,
+              workId: work.id,
+              sourceId: work.sourceId,
+              createdAt: DateTime.fromMillisecondsSinceEpoch(2),
+            ),
+        ];
+        await db.execute('''
+      CREATE TEMP TRIGGER reject_favorite_outbox BEFORE INSERT ON asmr_sync_operations
+      WHEN NEW.work_id = ${changed.last.id}
+      BEGIN SELECT RAISE(ABORT, 'late favorite outbox failure'); END
+    ''');
+        await expectLater(
+          repository.saveFavoriteState(
+            works: changed,
+            favorite: favorite,
+            operations: operations,
+          ),
+          throwsA(isA<DatabaseException>()),
+        );
+        expect({
+          for (final table in tables) table: await db.query(table),
+        }, before);
+        await db.execute('DROP TRIGGER reject_favorite_outbox');
+        await repository.saveFavoriteState(
+          works: changed,
+          favorite: favorite,
+          operations: operations,
+        );
+        expect(
+          (await repository.loadWorkList('favorites')).map((work) => work.id),
+          favorite ? [4, 3, 1, 2] : <int>[],
+        );
+        expect(
+          (await repository.loadWorkList('history')).single.isFavorite,
+          favorite,
+        );
+      },
+    );
+  }
+
+  test(
+    'ASMR favorite removal handles a batch above the SQLite variable limit',
+    () async {
+      final works = [
+        for (var id = 1; id <= 2000; id++) _asmrWork(id, 'Work $id'),
+      ];
+      await repository.saveAccountSyncState(
+        favoriteWorks: works,
+        historyWorks: [works.first],
+        operations: [],
+      );
+      await repository.saveFavoriteState(
+        works: works,
+        favorite: false,
+        operations: [
+          for (final work in works)
+            AsmrSyncOperation(
+              type: AsmrSyncOperationType.favoriteRemove,
+              workId: work.id,
+              sourceId: work.sourceId,
+              createdAt: DateTime.fromMillisecondsSinceEpoch(work.id),
+            ),
+        ],
+      );
+      expect(await repository.loadWorkList('favorites'), isEmpty);
+      expect(await db.query('asmr_works'), hasLength(1));
+      expect((await repository.loadWorkList('history')).single.id, 1);
+      expect(await repository.loadSyncOperations(), hasLength(2000));
+    },
+  );
+
   test('ASMR account state removes only unreferenced work metadata', () async {
     final initialHistory = List<AsmrWork>.generate(
       61,

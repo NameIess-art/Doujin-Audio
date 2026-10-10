@@ -258,13 +258,28 @@ void main() {
         expect(find.text('Track 0'), findsOneWidget);
         expect(find.text('Track 1999'), findsNothing);
         expect(_trackRows().evaluate().length, lessThan(30));
-        await tester.tap(find.text('disc'));
+        void toggleFolder() {
+          final ink = tester.widget<InkWell>(
+            find
+                .ancestor(of: find.text('disc'), matching: find.byType(InkWell))
+                .first,
+          );
+          final baseline = tester.binding.transientCallbackCount;
+          ink.onTap!();
+          // Isolate expansion from desktop hover and ink animations.
+          expect(
+            tester.binding.transientCallbackCount - baseline,
+            lessThanOrEqualTo(1),
+          );
+        }
+
+        toggleFolder();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 80));
         expect(_trackRows().evaluate().length, lessThan(100));
         await tester.pumpAndSettle();
         expect(_trackRows(), findsNothing);
-        await tester.tap(find.text('disc'));
+        toggleFolder();
         await tester.pump();
         expect(_trackRows().evaluate().length, lessThan(100));
         await tester.pumpAndSettle();

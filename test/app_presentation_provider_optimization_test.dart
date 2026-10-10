@@ -5,6 +5,7 @@ import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
@@ -384,6 +385,24 @@ void main() {
         if (!disposeWhileHidden) {
           active.value = 0;
           await tester.pump();
+          await pumpUntilLibraryTreeReady(
+            tester,
+            fixture.library,
+            waitForCategorySnapshot: true,
+          );
+          // Startup refresh on Windows waits for real file-system futures.
+          // Finish it before settling frames; fake time alone cannot do that.
+          await tester.pump(const Duration(seconds: 2));
+          bool refreshBusy() =>
+              fixture.uiOperationService.isBusy(UiOperationScope.libraryRefresh) ||
+              fixture.library.state.isScanning;
+          for (var i = 0; i < 100 && refreshBusy(); i++) {
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 10)),
+            );
+            await tester.pump(const Duration(milliseconds: 50));
+          }
+          expect(refreshBusy(), isFalse);
           await tester.pumpAndSettle();
           expect(repository.batchReads, 1);
           await tester.pump();

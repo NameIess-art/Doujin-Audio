@@ -16,6 +16,7 @@ import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_account_sync_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_auth_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_category_catalog.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -636,18 +637,18 @@ class _BlockingAsmrPreferencesStore extends AsmrPreferencesStore {
   final Completer<void> releaseSave = Completer<void>();
 
   @override
-  Future<void> saveAccountSyncState({
-    required List<AsmrWork> favoriteWorks,
-    required List<AsmrWork> historyWorks,
+  Future<void> saveFavoriteState({
+    required List<AsmrWork> works,
+    required bool favorite,
     required List<AsmrSyncOperation> operations,
   }) async {
-    if (favoriteWorks.isNotEmpty && !saveStarted.isCompleted) {
+    if (works.isNotEmpty && !saveStarted.isCompleted) {
       saveStarted.complete();
       await releaseSave.future;
     }
-    await super.saveAccountSyncState(
-      favoriteWorks: favoriteWorks,
-      historyWorks: historyWorks,
+    await super.saveFavoriteState(
+      works: works,
+      favorite: favorite,
       operations: operations,
     );
   }
@@ -666,9 +667,9 @@ class _FailingAsmrPreferencesStore extends AsmrPreferencesStore {
   }
 
   @override
-  Future<void> saveAccountSyncState({
-    required List<AsmrWork> favoriteWorks,
-    required List<AsmrWork> historyWorks,
+  Future<void> saveFavoriteState({
+    required List<AsmrWork> works,
+    required bool favorite,
     required List<AsmrSyncOperation> operations,
   }) {
     throw const FileSystemException('forced account state failure');

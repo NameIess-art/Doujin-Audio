@@ -236,4 +236,85 @@ extension AppDatabaseAsmr on AppDatabase {
       });
     });
   }
+
+  Future<void> saveAsmrFavoriteState(
+    List<AsmrWorkRecord> works,
+    bool favorite,
+    List<AsmrSyncOperationRecord> operations,
+  ) async {
+    if (works.isEmpty) return;
+    await _runDatabaseWrite((db) async {
+      await db.transaction((txn) async {
+        final firstFavorite = await txn.query(
+          'asmr_work_lists',
+          columns: ['sort_order'],
+          where: 'list_type = ?',
+          whereArgs: ['favorites'],
+          orderBy: 'sort_order ASC',
+          limit: 1,
+        );
+        var favoriteOrder = firstFavorite.isEmpty
+            ? 0
+            : firstFavorite.single['sort_order'] as int;
+        final lastOperation = await txn.query(
+          'asmr_sync_operations',
+          columns: ['sort_order'],
+          orderBy: 'sort_order DESC',
+          limit: 1,
+        );
+        var operationOrder = lastOperation.isEmpty
+            ? 0
+            : (lastOperation.single['sort_order'] as int) + 1;
+        final batch = txn.batch();
+        for (final work in works) {
+          if (favorite) {
+            _writeAsmrWorkToBatch(batch, work, isFavorite: true);
+            // Prepending does not require rewriting every existing membership.
+            batch.insert('asmr_work_lists', {
+              'list_type': 'favorites',
+              'work_id': work.id,
+              'sort_order': --favoriteOrder,
+            }, conflictAlgorithm: ConflictAlgorithm.replace);
+          } else {
+            batch.delete(
+              'asmr_work_lists',
+              where: 'list_type = ? AND work_id = ?',
+              whereArgs: ['favorites', work.id],
+            );
+            batch.update(
+              'asmr_works',
+              {'is_favorite': 0},
+              where: 'id = ?',
+              whereArgs: [work.id],
+            );
+          }
+        }
+        if (!favorite) {
+          final workIds = works.map((work) => work.id).toList(growable: false);
+          for (
+            var start = 0;
+            start < workIds.length;
+            start += _sqliteInClauseBatchSize
+          ) {
+            _deleteUnreferencedAsmrWorksInBatch(
+              batch,
+              workIds: workIds.sublist(
+                start,
+                (start + _sqliteInClauseBatchSize).clamp(0, workIds.length),
+              ),
+            );
+          }
+        }
+        for (final operation in operations) {
+          batch.delete(
+            'asmr_sync_operations',
+            where: 'work_id = ? AND type IN (?, ?)',
+            whereArgs: [operation.workId, 'favoriteAdd', 'favoriteRemove'],
+          );
+          _writeAsmrSyncOperationToBatch(batch, operation, operationOrder++);
+        }
+        await batch.commit(noResult: true);
+      });
+    });
+  }
 }

@@ -133,15 +133,19 @@ Future<void> _addAsmrWorksToPlaylist({
 
 Future<void> _toggleAsmrWorksFavorite(
   WidgetRef ref,
-  List<AsmrWork> works,
-) async {
+  List<AsmrWork> works, {
+  bool? favorite,
+}) async {
   final controller = ref.read(asmrLibraryControllerProvider);
   if (controller == null) return;
-  final shouldFavorite = works.any((work) => !work.isFavorite);
-  for (final work in works) {
-    if (work.isFavorite == shouldFavorite) continue;
-    await controller.toggleFavorite(work);
+  if (favorite == null && works.length == 1) {
+    await controller.toggleFavorite(works.single);
+    return;
   }
+  await controller.setFavorites(
+    works,
+    favorite: favorite ?? works.any((work) => !work.isFavorite),
+  );
 }
 
 Future<void> _toggleSelectedAsmrWorksFavorite({
@@ -161,7 +165,8 @@ Future<void> _toggleSelectedAsmrWorksFavorite({
       context,
       i18n.tr('asmr_favorite_removed'),
       actionLabel: i18n.tr('undo'),
-      onAction: () => unawaited(_toggleAsmrWorksFavorite(ref, works)),
+      onAction: () =>
+          unawaited(_toggleAsmrWorksFavorite(ref, works, favorite: true)),
       duration: const Duration(seconds: 5),
       showCountdown: true,
       showActionCountdown: true,

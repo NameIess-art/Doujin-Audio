@@ -61,7 +61,8 @@ class _WindowsPlaybackSession {
     channelSwapEnabled: false,
   );
   String? error;
-  bool hasRetainedCurrent = false;
+  // A partially applied native edit can leave the retained decoder off index 0.
+  int? retainedCurrentIndex;
   int commandId = 0, retryAttempt = 0, generation = 0, retryGeneration = 0;
   Timer? retryTimer;
   Duration? retryStartedAt;
@@ -201,7 +202,7 @@ class _WindowsPlaybackSession {
         _queueKey(items[queueStartIndex]) == previousKey) {
       index = queueStartIndex;
     }
-    hasRetainedCurrent = index < 0;
+    final retainCurrent = index < 0;
     if (index < 0) {
       // Finish the removed current item with its existing decoder.
       items.insert(0, Map<String, Object?>.from(previous));
@@ -252,6 +253,33 @@ class _WindowsPlaybackSession {
           }
         }
         final retained = desired.whereType<int>().toSet();
+        // Keep the longest subsequence already in physical order. A queue-head
+        // drag to the tail then moves that entry once instead of every successor.
+        final tails = <int>[];
+        final predecessors = <int, int?>{};
+        for (final token in desired.whereType<int>()) {
+          var low = 0, high = tails.length;
+          while (low < high) {
+            final middle = (low + high) ~/ 2;
+            if (tails[middle] < token) {
+              low = middle + 1;
+            } else {
+              high = middle;
+            }
+          }
+          predecessors[token] = low == 0 ? null : tails[low - 1];
+          if (low == tails.length) {
+            tails.add(token);
+          } else {
+            tails[low] = token;
+          }
+        }
+        final stationary = <int>{};
+        int? token = tails.lastOrNull;
+        while (token != null) {
+          stationary.add(token);
+          token = predecessors[token];
+        }
         for (var i = order.length - 1; i >= 0; i--) {
           if (!retained.contains(order[i])) {
             await player.remove(i);
@@ -262,27 +290,33 @@ class _WindowsPlaybackSession {
         }
         var newToken = -1;
         for (var i = 0; i < desired.length; i++) {
-          final token = desired[i];
-          // Unchanged prefixes are common when appending or trimming a queue.
-          // Searching them from the start makes those edits quadratic.
-          var from = token == null
-              ? -1
-              : i < order.length && order[i] == token
-              ? i
-              : order.indexOf(token);
-          if (from < 0) {
+          if (desired[i] == null) {
             await player.add(Media(items[i]['uri'] as String));
             if (!isCurrent()) return;
-            from = order.length;
+            desired[i] = newToken;
             order.add(newToken--);
             nativeItems.add(items[i]);
           }
-          if (from != i) {
-            await player.move(from, i);
-            order.insert(i, order.removeAt(from));
-            nativeItems.insert(i, nativeItems.removeAt(from));
+        }
+        int? nextToken;
+        for (var i = desired.length - 1; i >= 0; i--) {
+          final token = desired[i]!;
+          if (!stationary.contains(token)) {
+            final from = order.indexOf(token);
+            final to = nextToken == null
+                ? order.length
+                : order.indexOf(nextToken);
+            // media_kit/mpv inserts before the original target index, including
+            // when moving forward. Passing length places an entry at the tail.
+            final destination = from < to ? to - 1 : to;
+            if (from != destination) {
+              await player.move(from, to);
+              order.insert(destination, order.removeAt(from));
+              nativeItems.insert(destination, nativeItems.removeAt(from));
+            }
           }
           if (!isCurrent()) return;
+          nextToken = token;
         }
         // The edited physical order now matches the requested logical order.
         nativeQueueLimited = false;
@@ -292,6 +326,7 @@ class _WindowsPlaybackSession {
           // Earlier successful edits remain applied when a later command fails.
           this.queue = nativeItems;
           this.index = order.indexOf(currentToken);
+          retainedCurrentIndex = retainCurrent ? this.index : null;
           await mapNativeEntries(player);
         }
         rethrow;
@@ -301,6 +336,7 @@ class _WindowsPlaybackSession {
     }
     this.queue = items;
     this.index = index;
+    retainedCurrentIndex = retainCurrent ? index : null;
     if (restoreNativeQueue) nativeQueueLimited = false;
     if (player != null &&
         pendingStart != null &&

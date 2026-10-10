@@ -120,6 +120,16 @@ class TestPersistenceRepository extends SqliteLibraryRepository
     operation: operation,
   );
   @override
+  Future<void> saveFavoriteState({
+    required List<AsmrWork> works,
+    required bool favorite,
+    required List<AsmrSyncOperation> operations,
+  }) => _asmr.saveFavoriteState(
+    works: works,
+    favorite: favorite,
+    operations: operations,
+  );
+  @override
   Future<void> saveAccountSyncState({
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,

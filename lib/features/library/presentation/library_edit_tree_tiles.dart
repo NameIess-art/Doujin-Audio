@@ -112,94 +112,258 @@ int _includedEditTrackCount(
   return count;
 }
 
-class LibraryEditTreeNodeWidget extends ConsumerWidget {
-  const LibraryEditTreeNodeWidget({
+class LibraryEditTreeList extends StatefulWidget {
+  const LibraryEditTreeList({
     super.key,
     required this.libraryPath,
-    required this.node,
+    required this.nodes,
     required this.initiallyExpanded,
     required this.onRememberFolder,
-    this.depth = 0,
-  });
-
-  final int depth;
-  final String libraryPath;
-  final LibraryEditTreeNode node;
-  final bool initiallyExpanded;
-  final void Function(String, LibraryEditFolderTreeNode) onRememberFolder;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(
-      libraryStateProvider.select(
-        (value) => value.value?.structureRevision ?? 0,
-      ),
-    );
-    if (node is LibraryEditFolderTreeNode) {
-      return _LibraryEditFolderTreeTile(
-        libraryPath: libraryPath,
-        folder: node as LibraryEditFolderTreeNode,
-        initiallyExpanded: initiallyExpanded,
-        onRememberFolder: onRememberFolder,
-      );
-    }
-    if (node is LibraryEditTrackTreeNode) {
-      final track = node as LibraryEditTrackTreeNode;
-      return _LibraryEditTrackTile(
-        libraryPath: libraryPath,
-        trackPath: track.trackPath,
-        depth: depth,
-      );
-    }
-    return const SizedBox.shrink();
-  }
-}
-
-class _LibraryEditFolderTreeTile extends ConsumerStatefulWidget {
-  const _LibraryEditFolderTreeTile({
-    required this.libraryPath,
-    required this.folder,
-    required this.initiallyExpanded,
-    required this.onRememberFolder,
+    this.padding,
+    this.leading,
+    this.empty,
   });
 
   final String libraryPath;
-  final LibraryEditFolderTreeNode folder;
+  final List<LibraryEditTreeNode> nodes;
   final bool initiallyExpanded;
   final void Function(String, LibraryEditFolderTreeNode) onRememberFolder;
+  final EdgeInsetsGeometry? padding;
+  final Widget? leading;
+  final Widget? empty;
 
   @override
-  ConsumerState<_LibraryEditFolderTreeTile> createState() =>
-      _LibraryEditFolderTreeTileState();
+  State<LibraryEditTreeList> createState() => _LibraryEditTreeListState();
 }
 
-class _LibraryEditFolderTreeTileState
-    extends ConsumerState<_LibraryEditFolderTreeTile> {
-  final ExpansibleController _expansionController = ExpansibleController();
+class _LibraryEditTreeListState extends State<LibraryEditTreeList>
+    with SingleTickerProviderStateMixin {
+  final _expandedPaths = <String>{};
+  final _rowIndices = <String, int>{};
+  List<({LibraryEditTreeNode node, int depth})> _rows = [];
+  late final AnimationController _animationController;
+  late final Animation<double> _opacity;
+  late final Animation<double> _sizeFactor;
+  String? _animatingPath;
+  int _animationStart = 0;
+  int _animationCount = 0;
+
   @override
   void initState() {
     super.initState();
-    if (widget.initiallyExpanded) _expansionController.expand();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: kAppMotionStandard,
+      value: 1,
+    )..addStatusListener(_onAnimationStatus);
+    _opacity = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOutCubic,
+    );
+    // Nonzero incoming heights let the sliver stop at its cache extent.
+    _sizeFactor = Tween<double>(begin: 0.2, end: 1).animate(_opacity);
+    _restoreExpansion();
+    _updateNodes();
   }
 
   @override
-  void didUpdateWidget(covariant _LibraryEditFolderTreeTile oldWidget) {
+  void didUpdateWidget(covariant LibraryEditTreeList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.initiallyExpanded && !_expansionController.isExpanded) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _expansionController.expand();
-      });
+    if (oldWidget.libraryPath != widget.libraryPath) _restoreExpansion();
+    if (oldWidget.libraryPath != widget.libraryPath ||
+        !identical(oldWidget.nodes, widget.nodes) ||
+        oldWidget.initiallyExpanded != widget.initiallyExpanded) {
+      _updateNodes();
     }
+  }
+
+  String get _storageKey => 'library-edit-expanded:${widget.libraryPath}';
+
+  void _restoreExpansion() {
+    final stored = PageStorage.maybeOf(context)?.readState(
+      context,
+      identifier: _storageKey,
+    ) as Set<String>?;
+    _expandedPaths
+      ..clear()
+      ..addAll(stored ?? const <String>{});
+  }
+
+  void _storeExpansion() {
+    PageStorage.maybeOf(context)?.writeState(
+      context,
+      Set<String>.of(_expandedPaths),
+      identifier: _storageKey,
+    );
+  }
+
+  void _updateNodes() {
+    _animationController.stop();
+    _animatingPath = null;
+    if (widget.initiallyExpanded) {
+      void expand(Iterable<LibraryEditTreeNode> nodes) {
+        for (final folder in nodes.whereType<LibraryEditFolderTreeNode>()) {
+          _expandedPaths.add(folder.pathValue);
+          expand(folder.children);
+        }
+      }
+
+      expand(widget.nodes);
+      _storeExpansion();
+    }
+    _projectRows();
+  }
+
+  void _projectRows() {
+    final rows = <({LibraryEditTreeNode node, int depth})>[];
+    void visit(LibraryEditTreeNode node, int depth) {
+      _rowIndices[node.pathValue] = rows.length;
+      rows.add((node: node, depth: depth));
+      if (node is LibraryEditFolderTreeNode &&
+          _expandedPaths.contains(node.pathValue)) {
+        for (final child in node.children) {
+          visit(child, node.depth + 1);
+        }
+      }
+    }
+
+    _rowIndices.clear();
+    for (final node in widget.nodes) {
+      visit(node, node is LibraryEditFolderTreeNode ? node.depth : 0);
+    }
+    _rows = rows;
+  }
+
+  void _finishAnimation() {
+    _animationController.stop();
+    _animatingPath = null;
+    _projectRows();
+  }
+
+  void _onAnimationStatus(AnimationStatus status) {
+    if (_animatingPath != null &&
+        (status == AnimationStatus.completed ||
+            status == AnimationStatus.dismissed)) {
+      setState(_finishAnimation);
+    }
+  }
+
+  void _toggleFolder(LibraryEditFolderTreeNode folder) {
+    setState(() {
+      final key = folder.pathValue;
+      if (_animatingPath != null && _animatingPath != key) {
+        _finishAnimation();
+      }
+      final expanding = !_expandedPaths.remove(key);
+      if (expanding) _expandedPaths.add(key);
+      _storeExpansion();
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _finishAnimation();
+        return;
+      }
+      if (_animatingPath != key) {
+        _animationStart = _rowIndices[key]! + 1;
+        final previousCount = _rows.length;
+        if (expanding) {
+          _projectRows();
+          _animationCount = _rows.length - previousCount;
+        } else {
+          var end = _animationStart;
+          while (end < _rows.length && _rows[end].depth > folder.depth) {
+            end++;
+          }
+          _animationCount = end - _animationStart;
+        }
+        if (_animationCount == 0) return;
+        _animationController.value = expanding ? 0 : 1;
+        _animatingPath = key;
+      }
+      if (expanding) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
+    });
   }
 
   @override
   void dispose() {
-    _expansionController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final offset = widget.leading == null ? 0 : 1;
+    return ListView.builder(
+      padding: widget.padding,
+      itemCount: _rows.isEmpty ? 1 : offset + _rows.length,
+      findChildIndexCallback: (key) {
+        if (key is! ValueKey<String>) return null;
+        final index = _rowIndices[key.value];
+        return index == null ? null : index + offset;
+      },
+      itemBuilder: (context, index) {
+        if (index < offset) return widget.leading!;
+        if (_rows.isEmpty) return widget.empty ?? const SizedBox.shrink();
+        final rowIndex = index - offset;
+        final row = _rows[rowIndex];
+        final node = row.node;
+        final animating =
+            _animatingPath != null &&
+            rowIndex >= _animationStart &&
+            rowIndex < _animationStart + _animationCount;
+        final collapsing =
+            animating && !_expandedPaths.contains(_animatingPath);
+        return SizeTransition(
+          key: ValueKey(node.pathValue),
+          sizeFactor: animating ? _sizeFactor : const AlwaysStoppedAnimation(1),
+          axisAlignment: -1,
+          child: FadeTransition(
+            opacity: animating ? _opacity : const AlwaysStoppedAnimation(1),
+            child: IgnorePointer(
+              ignoring: collapsing,
+              child: ExcludeSemantics(
+                excluding: collapsing,
+                child: node is LibraryEditFolderTreeNode
+                    ? _LibraryEditFolderTreeTile(
+                        libraryPath: widget.libraryPath,
+                        folder: node,
+                        expanded: _expandedPaths.contains(node.pathValue),
+                        onToggle: () => _toggleFolder(node),
+                        onRememberFolder: widget.onRememberFolder,
+                      )
+                    : _LibraryEditTrackTile(
+                        libraryPath: widget.libraryPath,
+                        trackPath: node.pathValue,
+                        depth: row.depth,
+                      ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _LibraryEditFolderTreeTile extends ConsumerWidget {
+  const _LibraryEditFolderTreeTile({
+    required this.libraryPath,
+    required this.folder,
+    required this.expanded,
+    required this.onToggle,
+    required this.onRememberFolder,
+  });
+
+  final String libraryPath;
+  final LibraryEditFolderTreeNode folder;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final void Function(String, LibraryEditFolderTreeNode) onRememberFolder;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(
       libraryStateProvider.select((value) => value.value?.contentRevision ?? 0),
     );
@@ -208,146 +372,101 @@ class _LibraryEditFolderTreeTileState
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final libraryService = ref.read(libraryFacadeProvider);
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final folderPath = widget.folder.folderPath;
-    final isRoot = widget.folder.depth == 0;
+    final cs = Theme.of(context).colorScheme;
+    final folderPath = folder.folderPath;
+    final isRoot = folder.depth == 0;
     final explicitExcluded = libraryService.isLibraryFolderExplicitlyExcluded(
-      widget.libraryPath,
+      libraryPath,
       folderPath,
     );
     final inheritedExcluded = libraryService.isLibraryPathInheritedExcluded(
-      widget.libraryPath,
+      libraryPath,
       folderPath,
     );
-    final muted = libraryService.isLibraryPathExcluded(
-      widget.libraryPath,
-      folderPath,
-    );
+    final muted = libraryService.isLibraryPathExcluded(libraryPath, folderPath);
     final includedCount = _includedEditTrackCount(
-      widget.folder,
+      folder,
       libraryService,
-      widget.libraryPath,
+      libraryPath,
     );
-    return Expansible(
-      key: PageStorageKey<String>(
-        'library-edit-folder:${widget.libraryPath}:$folderPath',
-      ),
-      controller: _expansionController,
-      animationStyle: appExpansionAnimationStyle(context),
-      maintainState: false,
-      headerBuilder: (context, animation) {
-        final expanded = _expansionController.isExpanded;
-        return Semantics(
-          expanded: expanded,
-          child: FileTreeRow(
-            title: widget.folder.name,
-            subtitle: i18n.tr('audio_count', {'count': includedCount}),
-            depth: widget.folder.depth,
-            minHeight: isRoot ? _libraryEditRowMinHeight : 48,
-            titleMaxLines: isRoot ? 2 : 1,
-            reserveSubtitleSpace: true,
-            verticalPadding: isRoot ? 4 : 2,
-            isFolder: true,
-            titleColor: muted
-                ? cs.onSurfaceVariant
-                : (expanded ? cs.primary : cs.onSurface),
-            surfaceKey: ValueKey('library-edit-folder-surface:$folderPath'),
-            onTap: expanded
-                ? _expansionController.collapse
-                : _expansionController.expand,
-            leading: Icon(
-              muted
-                  ? Icons.folder_off_rounded
-                  : (expanded
-                        ? AppDesignTokens.openFolderIcon
-                        : AppDesignTokens.folderIcon),
-              size: AppDesignTokens.fileEntryIconSize,
-              color: muted
-                  ? cs.onSurfaceVariant
-                  : AppDesignTokens.folderIconColor,
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: TextButtonTheme(
-                    data: TextButtonThemeData(
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 4,
-                        ),
-                        minimumSize: _libraryEditActionMinimumSize,
-                        tapTargetSize: MaterialTapTargetSize.padded,
-                      ),
+    return Semantics(
+      expanded: expanded,
+      child: FileTreeRow(
+        title: folder.name,
+        subtitle: i18n.tr('audio_count', {'count': includedCount}),
+        depth: folder.depth,
+        minHeight: isRoot ? _libraryEditRowMinHeight : 48,
+        titleMaxLines: isRoot ? 2 : 1,
+        reserveSubtitleSpace: true,
+        verticalPadding: isRoot ? 4 : 2,
+        isFolder: true,
+        titleColor: muted
+            ? cs.onSurfaceVariant
+            : (expanded ? cs.primary : cs.onSurface),
+        surfaceKey: ValueKey('library-edit-folder-surface:$folderPath'),
+        onTap: onToggle,
+        leading: Icon(
+          muted
+              ? Icons.folder_off_rounded
+              : (expanded
+                    ? AppDesignTokens.openFolderIcon
+                    : AppDesignTokens.folderIcon),
+          size: AppDesignTokens.fileEntryIconSize,
+          color: muted ? cs.onSurfaceVariant : AppDesignTokens.folderIconColor,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: TextButtonTheme(
+                data: TextButtonThemeData(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
                     ),
-                    child: TextButton.icon(
-                      onPressed: inheritedExcluded
-                          ? null
-                          : () {
-                              if (widget.folder.children.isNotEmpty) {
-                                widget.onRememberFolder(
-                                  folderPath,
-                                  widget.folder,
-                                );
-                              }
-                              libraryService.setLibraryFolderExcluded(
-                                widget.libraryPath,
-                                folderPath,
-                                !explicitExcluded,
-                              );
-                            },
-                      style: explicitExcluded
-                          ? null
-                          : TextButton.styleFrom(foregroundColor: cs.error),
-                      icon: Icon(
-                        explicitExcluded
-                            ? Icons.restore_rounded
-                            : Icons.block_rounded,
-                        size: 16,
-                      ),
-                      label: Text(
-                        explicitExcluded
-                            ? i18n.tr('restore')
-                            : i18n.tr('exclude'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
+                    minimumSize: _libraryEditActionMinimumSize,
+                    tapTargetSize: MaterialTapTargetSize.padded,
                   ),
                 ),
-                const SizedBox(width: 2),
-                FileTreeExpansionArrow(
-                  expanded: expanded,
-                  color: muted
-                      ? cs.onSurfaceVariant
-                      : (expanded ? cs.primary : cs.onSurfaceVariant),
+                child: TextButton.icon(
+                  onPressed: inheritedExcluded
+                      ? null
+                      : () {
+                          if (folder.children.isNotEmpty) {
+                            onRememberFolder(folderPath, folder);
+                          }
+                          libraryService.setLibraryFolderExcluded(
+                            libraryPath,
+                            folderPath,
+                            !explicitExcluded,
+                          );
+                        },
+                  style: explicitExcluded
+                      ? null
+                      : TextButton.styleFrom(foregroundColor: cs.error),
+                  icon: Icon(
+                    explicitExcluded
+                        ? Icons.restore_rounded
+                        : Icons.block_rounded,
+                    size: 16,
+                  ),
+                  label: Text(
+                    explicitExcluded ? i18n.tr('restore') : i18n.tr('exclude'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ],
+              ),
             ),
-          ),
-        );
-      },
-      bodyBuilder: (context, animation) => IgnorePointer(
-        ignoring: !_expansionController.isExpanded,
-        child: FadeTransition(
-          opacity: animation,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final child in widget.folder.children)
-                LibraryEditTreeNodeWidget(
-                  key: ValueKey(child.pathValue),
-                  libraryPath: widget.libraryPath,
-                  node: child,
-                  depth: widget.folder.depth + 1,
-                  initiallyExpanded: widget.initiallyExpanded,
-                  onRememberFolder: widget.onRememberFolder,
-                ),
-            ],
-          ),
+            const SizedBox(width: 2),
+            FileTreeExpansionArrow(
+              expanded: expanded,
+              color: muted
+                  ? cs.onSurfaceVariant
+                  : (expanded ? cs.primary : cs.onSurfaceVariant),
+            ),
+          ],
         ),
       ),
     );

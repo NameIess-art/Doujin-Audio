@@ -1169,6 +1169,278 @@ void main() {
   );
 
   test(
+    'queue head and tail drags each move once while retaining the current decoder',
+    () async {
+      final original = [
+        for (var i = 0; i < 1000; i++)
+          {'uri': 'https://example.com/$i.wav', 'path': '/$i', 'title': '$i'},
+      ];
+      await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse(original.first['uri']!),
+        path: '/0',
+        title: '0',
+        queue: original,
+        autoPlay: true,
+      );
+      final player = players.single;
+      final decoder = player.state.playlist.medias.first;
+      player.loaded();
+      await bridge.seek('one', const Duration(seconds: 42));
+      final rotated = [...original.skip(1), original.first];
+      for (final (revision, queue, currentIndex) in [
+        (1, rotated, 999),
+        (2, original, 0),
+      ]) {
+        final result = await bridge.updateQueue(
+          'one',
+          queue: queue,
+          queueRevision: revision,
+        );
+        expect(result.isOk, true, reason: result.errorOrNull);
+        expect(player.moves, revision);
+        expect(
+          player.state.playlist.medias.map((media) => media.uri),
+          queue.map((item) => item['uri']),
+        );
+        expect(player.state.playlist.medias[currentIndex], same(decoder));
+        expect(player.state.playlist.index, currentIndex);
+        final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+        expect(snapshot.queueIndex, currentIndex);
+        expect(snapshot.path, '/0');
+        expect(snapshot.position, const Duration(seconds: 42));
+        expect(snapshot.playing, true);
+      }
+      expect(player.opens, 1);
+      expect(player.adds, 0);
+      expect(player.removes, 0);
+    },
+  );
+
+  test('reverse queue uses one move per displaced entry', () async {
+    final original = [
+      for (var i = 0; i < 8; i++) {'uri': 'https://example.com/$i.wav'},
+    ];
+    await bridge.prepareSession(
+      sessionId: 'one',
+      uri: Uri.parse(original[2]['uri']!),
+      title: '2',
+      queue: original,
+      queueStartIndex: 2,
+      autoPlay: true,
+    );
+    final player = players.single;
+    final decoder = player.state.playlist.medias[2];
+    final result = await bridge.updateQueue(
+      'one',
+      queue: original.reversed.toList(),
+      queueRevision: 1,
+    );
+    expect(result.isOk, true, reason: result.errorOrNull);
+    expect(player.moves, 7);
+    expect(
+      player.state.playlist.medias.map((media) => media.uri),
+      original.reversed.map((item) => item['uri']),
+    );
+    expect(player.state.playlist.medias[5], same(decoder));
+    expect(player.opens, 1);
+  });
+
+  test(
+    'mixed queue edits preserve the selected occurrence of duplicate media',
+    () async {
+      final original = [
+        for (final name in ['same', 'b', 'same', 'c', 'd'])
+          {'uri': 'https://example.com/shared.wav', 'path': '/$name'},
+      ];
+      await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse(original[2]['uri']!),
+        path: '/same',
+        title: 'same',
+        queue: original,
+        queueStartIndex: 2,
+        autoPlay: true,
+      );
+      final player = players.single;
+      final before = [...player.state.playlist.medias];
+      player.loaded();
+      await bridge.seek('one', const Duration(seconds: 12));
+      final added = {'uri': 'https://example.com/new.wav', 'path': '/new'};
+      final result = await bridge.updateQueue(
+        'one',
+        queue: [original[4], original[2], added, original[1], original[0]],
+        queueStartIndex: 1,
+        queueRevision: 1,
+      );
+      expect(result.isOk, true, reason: result.errorOrNull);
+      final after = player.state.playlist;
+      expect(after.medias[0], same(before[4]));
+      expect(after.medias[1], same(before[2]));
+      expect(after.medias[2].uri, added['uri']);
+      expect(after.medias[3], same(before[1]));
+      expect(after.medias[4], same(before[0]));
+      expect(after.index, 1);
+      expect(player.adds, 1);
+      expect(player.removes, 1);
+      expect(player.moves, 4);
+      expect(player.opens, 1);
+      final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(snapshot.queueIndex, 1);
+      expect(snapshot.path, '/same');
+      expect(snapshot.position, const Duration(seconds: 12));
+      player.advance(3);
+      await Future<void>.delayed(Duration.zero);
+      expect((await bridge.snapshot()).valueOrNull!.sessions.single.path, '/b');
+    },
+  );
+
+  test('queue move failure retains applied edits and can retry', () async {
+    final original = [
+      for (var i = 0; i < 4; i++)
+        {'uri': 'https://example.com/$i.wav', 'path': '/$i'},
+    ];
+    await bridge.prepareSession(
+      sessionId: 'one',
+      uri: Uri.parse(original[1]['uri']!),
+      path: '/1',
+      title: '1',
+      queue: original,
+      queueStartIndex: 1,
+      autoPlay: true,
+    );
+    final player = players.single;
+    final decoder = player.state.playlist.medias[1];
+    player.moveErrorAt = 2;
+    final target = original.reversed.toList();
+    final failed = await bridge.updateQueue(
+      'one',
+      queue: target,
+      queueRevision: 1,
+    );
+    expect(failed.errorCodeOrNull, NativeErrorCode.playerError);
+    final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+    expect(
+      snapshot.retainedUris,
+      [
+        original[1],
+        original[0],
+        original[2],
+        original[3],
+      ].map((item) => item['uri']),
+    );
+    expect(snapshot.queueIndex, 0);
+    expect(player.state.playlist.medias.first, same(decoder));
+    player.advance(1);
+    await Future<void>.delayed(Duration.zero);
+    final advanced = (await bridge.snapshot()).valueOrNull!.sessions.single;
+    expect(advanced.queueIndex, 1);
+    expect(advanced.path, '/0');
+    player.advance(0);
+    await Future<void>.delayed(Duration.zero);
+    final retried = await bridge.updateQueue(
+      'one',
+      queue: target,
+      queueRevision: 1,
+    );
+    expect(retried.isOk, true, reason: retried.errorOrNull);
+    expect(
+      player.state.playlist.medias.map((media) => media.uri),
+      target.map((item) => item['uri']),
+    );
+    expect(player.state.playlist.medias[2], same(decoder));
+    expect(player.opens, 1);
+    expect(
+      (await bridge.snapshot()).valueOrNull!.sessions.single.queueIndex,
+      2,
+    );
+  });
+
+  test(
+    'a partial queue edit cleans the removed current entry after advancing',
+    () async {
+      final original = [
+        for (final name in ['a', 'b', 'c', 'd'])
+          {'uri': 'https://example.com/$name.wav', 'path': '/$name'},
+      ];
+      await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse(original[2]['uri']!),
+        path: '/c',
+        title: 'c',
+        queue: original,
+        queueStartIndex: 2,
+        autoPlay: true,
+      );
+      final player = players.single;
+      final added = {'uri': 'https://example.com/e.wav', 'path': '/e'};
+      player.moveErrorAt = 2;
+      final failed = await bridge.updateQueue(
+        'one',
+        queue: [original[1], added, original[3]],
+        queueRevision: 1,
+      );
+      expect(failed.errorCodeOrNull, NativeErrorCode.playerError);
+      final partial = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(partial.queueIndex, 1);
+      expect(partial.path, '/c');
+      player.advance(2);
+      await Future<void>.delayed(Duration.zero);
+      final advanced = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(advanced.path, '/e');
+      expect(advanced.queueIndex, 1);
+      expect(
+        advanced.retainedUris,
+        [original[1], added, original[3]].map((item) => item['uri']),
+      );
+      expect(
+        player.state.playlist.medias.map((media) => media.uri),
+        advanced.retainedUris,
+      );
+      expect(player.opens, 1);
+    },
+  );
+
+  test('removing a session interrupts a blocked queue move', () async {
+    final original = [
+      for (var i = 0; i < 4; i++) {'uri': 'https://example.com/$i.wav'},
+    ];
+    await bridge.prepareSession(
+      sessionId: 'one',
+      uri: Uri.parse(original.first['uri']!),
+      title: '0',
+      queue: original,
+      autoPlay: true,
+    );
+    await prepare('two');
+    final player = players.first;
+    final gate = Completer<void>(), started = Completer<void>();
+    player.moveGate = gate;
+    player.moveStarted = started;
+    addTearDown(() {
+      if (!gate.isCompleted) gate.complete();
+    });
+    final updating = bridge.updateQueue(
+      'one',
+      queue: original.reversed.toList(),
+      queueRevision: 1,
+    );
+    await started.future;
+    final removing = bridge.removeSession('one');
+    expect((await bridge.pause('two')).isOk, true);
+    gate.complete();
+    expect((await updating).isFailure, true);
+    expect((await removing).isOk, true);
+    expect(player.moves, 1);
+    expect(player.disposed, true);
+    expect(bridge.playerForSession('one'), isNull);
+    expect(
+      (await bridge.snapshot()).valueOrNull!.sessions.single.sessionId,
+      'two',
+    );
+  });
+
+  test(
     'long queue tail edits retain the decoder and untouched prefix',
     () async {
       final original = [
@@ -1628,12 +1900,15 @@ class _Player extends PlatformPlayer {
   }
 
   int opens = 0, plays = 0, adds = 0, removes = 0, moves = 0;
+  int? moveErrorAt;
   Object? pauseError, addError, seekError;
   Completer<void>? pauseGate, pauseStarted;
   Completer<void>? openGate,
       openStarted,
       addGate,
       addStarted,
+      moveGate,
+      moveStarted,
       seekGate,
       seekStarted,
       disposeGate,
@@ -1673,17 +1948,14 @@ class _Player extends PlatformPlayer {
   @override
   Future<void> move(int from, int to) async {
     moves++;
+    if (moveStarted?.isCompleted == false) moveStarted!.complete();
+    await moveGate?.future;
+    if (moves == moveErrorAt) throw StateError('move failed');
     final items = [...state.playlist.medias];
+    final current = items[state.playlist.index];
     final item = items.removeAt(from);
-    items.insert(to, item);
-    final previous = state.playlist.index;
-    final next = previous == from
-        ? to
-        : from < previous && to >= previous
-        ? previous - 1
-        : from > previous && to <= previous
-        ? previous + 1
-        : previous;
+    items.insert(from < to ? to - 1 : to, item);
+    final next = items.indexWhere((media) => identical(media, current));
     state = state.copyWith(playlist: Playlist(items, index: next));
   }
 

@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 import 'support/asmr_controller_test_fixture.dart';
@@ -514,6 +515,102 @@ void main() {
     );
 
     testWidgets(
+      'ASMR search debounces projections and keeps submit clear and category actions immediate on $platform',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const {'app_language': 'zh'});
+        final controller = _PresentationController(createTestAsmrServices());
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
+        await tester.pumpAndSettle();
+        AppSearchPageScaffold<AsmrCategoryType> search() =>
+            tester.widget(find.byType(AppSearchPageScaffold<AsmrCategoryType>));
+        void type(String value) {
+          search().controller.text = value;
+          search().onChanged(value);
+        }
+
+        search().onSubmitted('Previous query');
+        await tester.pumpAndSettle();
+        expect(controller.lastSearchQuery, 'Previous query');
+        controller.searchQueries.clear();
+        controller.categoryRequestQueries.clear();
+        controller.categoryRequestLanguages.clear();
+        controller.cacheValid = false;
+        type('Sl');
+        await tester.pump(const Duration(milliseconds: 100));
+        type('Sleep');
+        await tester.pump(const Duration(milliseconds: 60));
+        await fixture.languageProvider.setLanguage(AppLanguage.en);
+        await tester.pump();
+        final navigator = Navigator.of(
+          tester.element(find.byType(AppSearchPageScaffold<AsmrCategoryType>)),
+        );
+        unawaited(
+          navigator.push(
+            PageRouteBuilder<void>(
+              pageBuilder: (_, _, _) => const SizedBox.shrink(),
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        navigator.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 79));
+        expect(controller.searchQueries, isNot(contains('Sl')));
+        expect(controller.searchQueries, isNot(contains('Sleep')));
+        expect(controller.searchQueries, isNot(contains('Previous query')));
+        expect(controller.categoryRequestQueries, isEmpty);
+        await tester.pump(const Duration(milliseconds: 1));
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
+        expect(controller.lastSearchQuery, 'Sleep');
+        expect(controller.categoryRequestQueries, isNotEmpty);
+        expect(controller.categoryRequestQueries, everyElement('Sleep'));
+        expect(
+          controller.categoryRequestLanguages,
+          everyElement(AppLanguage.en),
+        );
+
+        type('Other');
+        await tester.pump(const Duration(milliseconds: 100));
+        search().onSubmitted('Submitted');
+        await tester.pumpAndSettle();
+        expect(controller.lastSearchQuery, 'Submitted');
+        expect(controller.searchQueries, isNot(contains('Other')));
+        type('Clear pending');
+        search().onCloseOrClear();
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(controller.searchQueries, isNot(contains('Clear pending')));
+        type('Category pending');
+        search().onCategorySelected(AsmrCategoryType.favorites);
+        await tester.pumpAndSettle();
+        expect(controller.lastSearchQuery, 'Category pending');
+        type('Disposed pending');
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(controller.searchQueries, isNot(contains('Disposed pending')));
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
       'ASMR category switches retain widgets and publish hidden updates on $platform',
       (tester) async {
         final controller = _PresentationController(createTestAsmrServices());
@@ -924,8 +1021,11 @@ class _PresentationController extends AsmrLibraryController {
   int workCount = 1;
   int loadMoreCount = 0;
   String lastSearchQuery = '';
+  final searchQueries = <String>[];
   int initializations = 0;
   int categoryLoads = 0;
+  final categoryRequestQueries = <String>[];
+  final categoryRequestLanguages = <AppLanguage>[];
   int accountRestores = 0;
   int favoriteToggles = 0;
   bool cacheValid = true;
@@ -980,7 +1080,10 @@ class _PresentationController extends AsmrLibraryController {
     bool searchSession = false,
   }) {
     categoryReads++;
-    if (searchSession) lastSearchQuery = searchQuery;
+    if (searchSession) {
+      lastSearchQuery = searchQuery;
+      if (searchQuery.isNotEmpty) searchQueries.add(searchQuery);
+    }
     return AsmrCategoryViewState(
       category: category,
       works: [
@@ -1032,6 +1135,8 @@ class _PresentationController extends AsmrLibraryController {
     bool searchSession = false,
   }) async {
     categoryLoads++;
+    categoryRequestQueries.add(searchQuery);
+    categoryRequestLanguages.add(pageLanguage);
     final pending = pendingCategoryLoad;
     if (pending != null) await pending.future;
     if (!cacheValid) {
@@ -1062,6 +1167,14 @@ class _PresentationController extends AsmrLibraryController {
 
   @override
   Future<void> toggleFavorite(AsmrWork work) async {
+    favoriteToggles++;
+  }
+
+  @override
+  Future<void> setFavorites(
+    List<AsmrWork> works, {
+    required bool favorite,
+  }) async {
     favoriteToggles++;
   }
 }

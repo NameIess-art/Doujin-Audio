@@ -109,6 +109,16 @@ class AsmrPreferencesStore {
     );
   }
 
+  Future<void> saveFavoriteState({
+    required List<AsmrWork> works,
+    required bool favorite,
+    required List<AsmrSyncOperation> operations,
+  }) => _repository.saveFavoriteState(
+    works: works,
+    favorite: favorite,
+    operations: operations,
+  );
+
   Future<DateTime?> loadLastSyncAt() async {
     return DateTime.tryParse(
       await _repository.loadSetting(_lastSyncAtKey) ?? '',

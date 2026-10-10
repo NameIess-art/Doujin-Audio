@@ -3456,9 +3456,7 @@ void main() {
     );
 
     final rootFolderTile = find.byKey(
-      const PageStorageKey<String>(
-        'library-edit-folder:$libraryRoot:$syntheticChildFolder',
-      ),
+      const ValueKey(syntheticChildFolder),
     );
     final rootFolderHeader = find
         .descendant(of: rootFolderTile, matching: find.byType(FileTreeRow))
@@ -3508,10 +3506,6 @@ void main() {
 
     expect(find.text('WorkA', findRichText: true), findsOneWidget);
     expect(find.text('Disc1', findRichText: true), findsNothing);
-    expect(
-      tester.widget<Expansible>(rootFolderTile).controller.isExpanded,
-      isFalse,
-    );
     expect(find.text(languageProvider.tr('restore')), findsOneWidget);
     expect(
       tester.widget<Icon>(folderIcon).color,
@@ -3533,9 +3527,7 @@ void main() {
 
     expect(find.text('Disc1', findRichText: true), findsOneWidget);
     final childFolderTile = find.byKey(
-      const PageStorageKey<String>(
-        'library-edit-folder:$libraryRoot:$nestedFolder',
-      ),
+      const ValueKey(nestedFolder),
     );
     final childFolderHeader = find
         .descendant(of: childFolderTile, matching: find.byType(FileTreeRow))
@@ -4086,11 +4078,8 @@ void main() {
         const trackPath = '$folderPath/long.mp3';
         const title =
             'A long audio title that needs two lines at large text size';
-        fixture.runtimeGraph.library.addWatchedLibrary(
-          libraryRoot,
-          notify: false,
-        );
-        fixture.runtimeGraph.library.addTracks(
+        fixture.library.addWatchedLibrary(libraryRoot, notify: false);
+        fixture.library.addTracks(
           [
             testMusicTrack(
               name: title,
@@ -4119,40 +4108,41 @@ void main() {
                   textScaler: const TextScaler.linear(2),
                   disableAnimations: reduceMotion,
                 ),
-                child: ListView(
-                  children: [
-                    LibraryEditTreeNodeWidget(
-                      libraryPath: libraryRoot,
-                      node: folder,
-                      initiallyExpanded: false,
-                      onRememberFolder: (_, _) {},
-                    ),
-                    const SizedBox(height: 1600),
+                child: LibraryEditTreeList(
+                  libraryPath: libraryRoot,
+                  nodes: [
+                    folder,
+                    for (var i = 0; i < 30; i++)
+                      LibraryEditTrackTreeNode('$libraryRoot/extra$i.mp3'),
                   ],
+                  initiallyExpanded: false,
+                  onRememberFolder: (_, _) {},
                 ),
               ),
             ),
           ),
         );
-        final expansible = find.byKey(
-          const PageStorageKey<String>(
-            'library-edit-folder:$libraryRoot:$folderPath',
-          ),
+        final folderSurface = find.byKey(
+          const ValueKey('library-edit-folder-surface:$folderPath'),
         );
-        final collapsedHeight = tester.getSize(expansible).height;
+        final folderRow = find.ancestor(
+          of: folderSurface,
+          matching: find.byType(FileTreeRow),
+        );
+        final collapsedHeight = tester.getSize(folderRow).height;
         expect(collapsedHeight, greaterThanOrEqualTo(48));
         expect(find.text(title), findsNothing);
         await tester.tap(find.text('work'));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 55));
-        final partialHeight = tester.getSize(expansible).height;
+        final reveal = find.byKey(const ValueKey(trackPath));
+        final partialHeight = tester.getSize(reveal).height;
         await tester.pump(const Duration(milliseconds: 250));
-        final expandedHeight = tester.getSize(expansible).height;
-        expect(expandedHeight, greaterThan(collapsedHeight));
+        final expandedHeight = tester.getSize(reveal).height;
         if (reduceMotion) {
           expect(partialHeight, expandedHeight);
         } else {
-          expect(partialHeight, greaterThan(collapsedHeight));
+          expect(partialHeight, greaterThan(0));
           expect(partialHeight, lessThan(expandedHeight));
         }
         final row = find.ancestor(
@@ -4167,23 +4157,17 @@ void main() {
         expect(tester.widget<Text>(find.text(title)).maxLines, 2);
         expect(tester.getSize(row).height, greaterThan(48));
         expect(tester.getSize(row).height, lessThan(collapsedHeight));
-        final folderRow = find.byType(FileTreeRow).first;
         expect(tester.getRect(row).top, tester.getRect(folderRow).bottom);
         expect(surfaceRect.width, 240);
         expect(textRect.width, greaterThan(20));
         expect(find.byIcon(Icons.chevron_right_rounded), findsNothing);
         final parentButton = find.descendant(
-          of: find.byKey(
-            const ValueKey('library-edit-folder-surface:$folderPath'),
-          ),
+          of: folderSurface,
           matching: find.byType(TextButton),
         );
         await tester.tap(parentButton);
         await tester.pump();
-        expect(
-          tester.widget<Expansible>(expansible).controller.isExpanded,
-          isTrue,
-        );
+        expect(find.text(title), findsOneWidget);
         final trackButton = find.descendant(
           of: trackSurface,
           matching: find.byType(TextButton),
@@ -4196,13 +4180,12 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 55));
         if (!reduceMotion) {
-          final shrinkingHeight = tester.getSize(expansible).height;
-          expect(shrinkingHeight, greaterThan(collapsedHeight));
-          expect(shrinkingHeight, lessThan(expandedHeight));
+          expect(tester.getSize(reveal).height, greaterThan(0));
+          expect(tester.getSize(reveal).height, lessThan(expandedHeight));
         }
         await tester.pump(const Duration(milliseconds: 250));
         expect(find.text(title), findsNothing);
-        expect(tester.getSize(expansible).height, collapsedHeight);
+        expect(tester.getSize(folderRow).height, collapsedHeight);
         await tester.tap(find.text('work'));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 55));
@@ -4211,20 +4194,65 @@ void main() {
         await tester.pump(const Duration(milliseconds: 30));
         await tester.tap(find.text('work'));
         await tester.pumpAndSettle();
-        expect(
-          tester.widget<Expansible>(expansible).controller.isExpanded,
-          isTrue,
-        );
+        expect(find.text(title), findsOneWidget);
         await tester.drag(find.byType(ListView), const Offset(0, -700));
         await tester.pumpAndSettle();
         expect(find.text('work'), findsNothing);
         await tester.drag(find.byType(ListView), const Offset(0, 700));
         await tester.pumpAndSettle();
-        expect(
-          tester.widget<Expansible>(expansible).controller.isExpanded,
-          isTrue,
-        );
         expect(find.text(title), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  for (final initiallyExpanded in [false, true]) {
+    testWidgets(
+      'library edit builds large folder children lazily ($initiallyExpanded)',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(800, 600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final folder = LibraryEditFolderTreeNode(
+          folderPath: '/large-edit/work',
+          depth: 0,
+          children: List.generate(
+            2000,
+            (i) => LibraryEditTrackTreeNode('/large-edit/work/$i.mp3'),
+          ),
+        );
+        await tester.pumpWidget(
+          fixture.build(
+            LibraryEditTreeList(
+              libraryPath: '/large-edit',
+              nodes: [folder],
+              initiallyExpanded: initiallyExpanded,
+              onRememberFolder: (_, _) {},
+            ),
+          ),
+        );
+        if (!initiallyExpanded) {
+          expect(find.byType(FileTreeRow), findsOneWidget);
+          await tester.tap(find.text('work'));
+          expect(tester.binding.transientCallbackCount, lessThan(10));
+          await tester.pump();
+          expect(find.byType(FileTreeRow).evaluate().length, lessThan(100));
+          await tester.pumpAndSettle();
+        }
+        expect(find.byType(FileTreeRow).evaluate().length, lessThan(40));
+        await tester.drag(find.byType(ListView), const Offset(0, -600));
+        await tester.pumpAndSettle();
+        expect(find.byType(FileTreeRow).evaluate().length, lessThan(40));
+        await tester.drag(find.byType(ListView), const Offset(0, 600));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('work'));
+        await tester.pumpAndSettle();
+        expect(find.byType(FileTreeRow), findsOneWidget);
         expect(tester.takeException(), isNull);
       },
       variant: const TargetPlatformVariant({

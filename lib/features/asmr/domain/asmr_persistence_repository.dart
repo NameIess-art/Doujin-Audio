@@ -15,6 +15,11 @@ abstract interface class AsmrPersistenceRepository {
     required List<int> historyWorkIds,
     required AsmrSyncOperation operation,
   });
+  Future<void> saveFavoriteState({
+    required List<AsmrWork> works,
+    required bool favorite,
+    required List<AsmrSyncOperation> operations,
+  });
   Future<void> saveAccountSyncState({
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,

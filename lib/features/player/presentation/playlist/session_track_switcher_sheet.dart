@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -46,17 +44,33 @@ class SessionTrackSwitcherSheet extends StatefulWidget {
       _SessionTrackSwitcherSheetState();
 }
 
-class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet> {
+class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet>
+    with SingleTickerProviderStateMixin {
   final Set<String> _expandedFolders = <String>{};
-  GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
-  Timer? _removalTimer;
-  int _removingRowCount = 0;
+  Key _listKey = UniqueKey();
   List<_QueueTreeNode> _tree = const [];
   List<({_QueueTreeNode node, int depth, String key})> _rows = const [];
+  final Map<String, int> _rowIndices = {};
+  late final AnimationController _expansionController;
+  late final Animation<double> _opacity;
+  late final Animation<double> _sizeFactor;
+  String? _animatingKey;
+  int _animationStart = 0;
+  int _animationCount = 0;
 
   @override
   void initState() {
     super.initState();
+    _expansionController = AnimationController(
+      vsync: this,
+      duration: kAppMotionStandard,
+      value: 1,
+    )..addStatusListener(_handleAnimationStatus);
+    _opacity = _expansionController.drive(
+      CurveTween(curve: Curves.easeInOutCubic),
+    );
+    // Non-zero row extents keep the lazy viewport bounded during expansion.
+    _sizeFactor = _opacity.drive(Tween<double>(begin: 0.2, end: 1));
     _rebuildTree(expandSelected: true);
   }
 
@@ -79,9 +93,9 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet> {
   }
 
   void _rebuildTree({required bool expandSelected}) {
-    _removalTimer?.cancel();
-    _removingRowCount = 0;
-    _listKey = GlobalKey<AnimatedListState>();
+    _expansionController.stop();
+    _animatingKey = null;
+    _listKey = UniqueKey();
     _tree = _buildQueueTree(
       widget.tracks,
       session: widget.session,
@@ -123,74 +137,101 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet> {
       visit(node, 0);
     }
     _rows = rows;
+    _rowIndices.clear();
+    for (var index = 0; index < rows.length; index++) {
+      _rowIndices[rows[index].key] = index;
+    }
+  }
+
+  void _finishAnimation() {
+    _expansionController.stop();
+    _animatingKey = null;
+    _projectRows();
+  }
+
+  void _handleAnimationStatus(AnimationStatus status) {
+    if (_animatingKey != null &&
+        (status == AnimationStatus.completed ||
+            status == AnimationStatus.dismissed)) {
+      setState(_finishAnimation);
+    }
   }
 
   void _toggleFolder(String key) {
-    final previousRows = _rows;
-    final folderIndex = _rows.indexWhere((row) => row.key == key);
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : kAppMotionStandard;
     setState(() {
+      if (_animatingKey != null && _animatingKey != key) {
+        _finishAnimation();
+      }
       if (!_expandedFolders.remove(key)) _expandedFolders.add(key);
-      _projectRows();
-      final list = _listKey.currentState!;
-      final count = _rows.length - previousRows.length;
-      if (count > 0) {
-        list.insertAllItems(folderIndex + 2, count, duration: duration);
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _finishAnimation();
+        return;
+      }
+      final expanding = _expandedFolders.contains(key);
+      if (_animatingKey != key) {
+        final folderIndex = _rowIndices[key]!;
+        final previousCount = _rows.length;
+        if (expanding) _projectRows();
+        _animationStart = folderIndex + 1;
+        if (expanding) {
+          _animationCount = _rows.length - previousCount;
+        } else {
+          final depth = _rows[folderIndex].depth;
+          var end = _animationStart;
+          while (end < _rows.length && _rows[end].depth > depth) {
+            end++;
+          }
+          _animationCount = end - _animationStart;
+        }
+        if (_animationCount == 0) return;
+        _expansionController.value = expanding ? 0 : 1;
+        _animatingKey = key;
+      }
+      if (expanding) {
+        _expansionController.forward();
       } else {
-        if (duration != Duration.zero && count < 0) {
-          _removingRowCount -= count;
-          _removalTimer?.cancel();
-          _removalTimer = Timer(duration, () {
-            setState(() => _removingRowCount = 0);
-          });
-        }
-        for (var offset = -count; offset > 0; offset--) {
-          final rowIndex = folderIndex + offset;
-          final row = previousRows[rowIndex];
-          list.removeItem(
-            rowIndex + 1,
-            (context, animation) => IgnorePointer(
-              child: ExcludeSemantics(child: _buildRow(row, animation)),
-            ),
-            duration: duration,
-          );
-        }
+        _expansionController.reverse();
       }
     });
   }
 
   @override
   void dispose() {
-    _removalTimer?.cancel();
+    _expansionController.dispose();
     super.dispose();
   }
 
-  Widget _buildRow(
-    ({_QueueTreeNode node, int depth, String key}) row,
-    Animation<double> animation,
-  ) {
-    final opacity = animation.drive(CurveTween(curve: Curves.easeInOutCubic));
+  Widget _buildRow(int index) {
+    final row = _rows[index];
+    final animating =
+        _animatingKey != null &&
+        index >= _animationStart &&
+        index < _animationStart + _animationCount;
+    final collapsing = animating && !_expandedFolders.contains(_animatingKey);
     return SizeTransition(
-      // Keep a non-zero extent during lazy-list insertion, as zero-height rows
-      // would cause large folders to build every child in their first frame.
-      sizeFactor: opacity.drive(Tween<double>(begin: 0.2, end: 1)),
+      key: ValueKey<String>(row.key),
+      sizeFactor: animating ? _sizeFactor : const AlwaysStoppedAnimation(1),
       axisAlignment: -1,
       child: FadeTransition(
-        opacity: opacity,
-        child: KeyedSubtree(
-          key: ValueKey<String>('queue_switcher_row_${row.key}'),
-          child: _QueueTreeNodeTile(
-            node: row.node,
-            depth: row.depth,
-            expanded: _expandedFolders.contains(row.key),
-            isPlaying: widget.session.playbackRequested,
-            onToggleExpansion: () => _toggleFolder(row.key),
-            onTrackTap: (selected) => widget.onSelected(
-              SessionTrackSelection(
-                track: selected.track!,
-                queueIndex: selected.queueIndex,
+        opacity: animating ? _opacity : const AlwaysStoppedAnimation(1),
+        child: IgnorePointer(
+          ignoring: collapsing,
+          child: ExcludeSemantics(
+            excluding: collapsing,
+            child: KeyedSubtree(
+              key: ValueKey<String>('queue_switcher_row_${row.key}'),
+              child: _QueueTreeNodeTile(
+                node: row.node,
+                depth: row.depth,
+                expanded: _expandedFolders.contains(row.key),
+                isPlaying: widget.session.playbackRequested,
+                onToggleExpansion: () => _toggleFolder(row.key),
+                onTrackTap: (selected) => widget.onSelected(
+                  SessionTrackSelection(
+                    track: selected.track!,
+                    queueIndex: selected.queueIndex,
+                  ),
+                ),
               ),
             ),
           ),
@@ -203,21 +244,26 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet> {
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      child: AnimatedList(
+      child: ListView.builder(
         key: _listKey,
-        // Collapsing a large folder must retain the lazy viewport until its
-        // outgoing rows are gone, rather than laying them all out to shrink.
-        shrinkWrap: _rows.length + _removingRowCount <= 8,
+        // Keep outgoing rows until the shared reverse animation completes.
+        shrinkWrap: _rows.length <= 8,
         padding: AppBottomSheet.contentPadding,
-        initialItemCount: _rows.length + 1,
-        itemBuilder: (context, index, animation) {
+        itemCount: _rows.length + 1,
+        findChildIndexCallback: (key) {
+          if (key == const ValueKey<String>('queue_switcher_header')) return 0;
+          final index = _rowIndices[(key as ValueKey<String>).value];
+          return index == null ? null : index + 1;
+        },
+        itemBuilder: (context, index) {
           if (index == 0) {
             return Padding(
+              key: const ValueKey<String>('queue_switcher_header'),
               padding: const EdgeInsets.only(bottom: 6),
               child: _QueueSheetHeader(count: widget.tracks.length),
             );
           }
-          return _buildRow(_rows[index - 1], animation);
+          return _buildRow(index - 1);
         },
       ),
     );
@@ -536,9 +582,7 @@ class _QueueTrackLeaf extends StatelessWidget {
               width: AppDesignTokens.fileEntryIconSize,
               height: AppDesignTokens.fileEntryIconSize,
               child: Center(
-                child: PlayingSoundWaveIndicator(
-                  color: accentColor,
-                ),
+                child: PlayingSoundWaveIndicator(color: accentColor),
               ),
             )
           : Icon(

@@ -31,6 +31,7 @@ void main() {
   for (final root in <String>[
     '/library',
     r'C:\音声 Library',
+    r'\\server\音声 Library',
     'content://com.android.externalstorage.documents/tree/primary%3ALibrary',
   ]) {
     test('buildLibraryEntries reuses shared ancestors for $root', () {
@@ -85,6 +86,48 @@ void main() {
       for (final folderPath in folders.keys) {
         expect(matcher.visits[folderPath], 1);
       }
+    });
+
+    test('buildLibraryEntries derives ungrouped track folders for $root', () {
+      final isContent = PathMatcher.isContentUri(root);
+      String folder(String relative) => PathMatcher.normalize(
+        isContent ? '$root::$relative' : '$root/$relative',
+      );
+      final parent = folder('Work');
+      final disc = folder('Work/Disc');
+      final nestedTrack = track(
+        folder('Work/Disc/01.mp3'),
+        groupKey: '__single_files__',
+        isSingle: true,
+      );
+      final rootTrack = track(
+        folder('02.mp3'),
+        groupKey: '__single_files__',
+        isSingle: true,
+      );
+
+      final entries = organizer.buildLibraryEntries(root, [
+        nestedTrack,
+        rootTrack,
+      ], exclusionMatcher: LibraryExclusionMatcher(libraryPath: root));
+      final folders = {
+        for (final entry in entries.where((entry) => entry.isFolder))
+          entry.path: entry,
+      };
+
+      expect(folders.keys, unorderedEquals([parent, disc]));
+      expect(folders[parent]!.parentPath, PathMatcher.normalize(root));
+      expect(folders[disc]!.parentPath, parent);
+      expect(
+        entries
+            .singleWhere((entry) => entry.path == nestedTrack.path)
+            .parentPath,
+        disc,
+      );
+      expect(
+        entries.singleWhere((entry) => entry.path == rootTrack.path).parentPath,
+        isNull,
+      );
     });
   }
 

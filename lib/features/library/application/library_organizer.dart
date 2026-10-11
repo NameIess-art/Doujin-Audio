@@ -105,7 +105,7 @@ class LibraryOrganizer {
     if (PathMatcher.isContentUri(libraryPath)) {
       return '$libraryPath::$relativeFolder';
     }
-    return path.normalize(path.join(libraryPath, relativeFolder));
+    return PathMatcher.join(libraryPath, relativeFolder);
   }
 
   String canonicalLibraryFolderPath(String libraryPath, String folderPath) {
@@ -144,8 +144,9 @@ class LibraryOrganizer {
         return '$base::$parentRelative';
       }
     }
-    final parentPath = path.dirname(normalizedFolderPath);
-    return PathMatcher.equalsNormalized(parentPath, rootPath)
+    final parentPath = PathMatcher.parentPath(normalizedFolderPath);
+    return parentPath != null &&
+            PathMatcher.equalsNormalized(parentPath, rootPath)
         ? rootPath
         : parentPath;
   }

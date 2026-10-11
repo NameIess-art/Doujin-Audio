@@ -394,7 +394,10 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       expect(resumed, isEmpty);
     },
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    variant: const TargetPlatformVariant({
+      TargetPlatform.windows,
+      TargetPlatform.android,
+    }),
   );
 
   testWidgets(

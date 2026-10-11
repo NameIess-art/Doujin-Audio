@@ -171,9 +171,11 @@ void main() {
           await tester.pump();
           expect(find.byType(SessionListCard), findsNothing);
           expect(
-            find.byKey(const ValueKey('playlist_data_placeholder')),
+            find.byKey(const ValueKey('playlist_initial_placeholder')),
             findsOneWidget,
           );
+          expect(content, findsNothing);
+          expect(sorts, 0);
           syncPlayback(initialized: true);
         }
         await tester.pumpAndSettle();
@@ -455,11 +457,17 @@ void main() {
         addTearDown(fixture.dispose);
         addTearDown(active.dispose);
         fixture.settingsRepository.syncSlice(isInitialized: true);
+        fixture.playbackService.syncSlice(
+          activeSessions: const [],
+          playingSessionCount: 0,
+          focusedSessionId: null,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
         await tester.pumpWidget(
           fixture.build(_pageHost(_page(name, active), active)),
         );
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pumpAndSettle();
         active.value = 1;
         await tester.pump();
         final page = tester.element(

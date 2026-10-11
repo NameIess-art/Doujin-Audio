@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -31,6 +32,7 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
+              coreRuntimeReadyProvider.overrideWithValue(true),
               appLanguageProviderInstanceProvider.overrideWithValue(language),
               asmrDownloadTaskProvider(1).overrideWithValue(_downloadTree(500)),
             ],
@@ -92,6 +94,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          coreRuntimeReadyProvider.overrideWithValue(true),
           appLanguageProviderInstanceProvider.overrideWithValue(
             languageProvider,
           ),
@@ -137,7 +140,7 @@ void main() {
       selectedRoots: <AsmrTrackFile>[folder],
     );
     await tester.pumpWidget(_downloadDetailsApp(languageProvider, task));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     final expansionTile = tester.widget<ExpansionTile>(
       find.byType(ExpansionTile),
@@ -294,14 +297,26 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _downloadDetailsApp(languageProvider, failedTask, manager: manager),
+      _downloadDetailsApp(
+        languageProvider,
+        failedTask,
+        manager: manager,
+        coreReady: false,
+      ),
     );
     await tester.pump();
 
     final retryButton = find.byKey(
       const ValueKey<String>('asmr_download_manual_retry_Track.mp3'),
     );
+    expect(tester.widget<IconButton>(retryButton).onPressed, isNull);
+    expect(manager.retriedPaths, isEmpty);
+    await tester.pumpWidget(
+      _downloadDetailsApp(languageProvider, failedTask, manager: manager),
+    );
+    await tester.pumpAndSettle();
     expect(retryButton, findsOneWidget);
+    expect(tester.widget<IconButton>(retryButton).onPressed, isNotNull);
     expect(tester.getSize(retryButton), const Size.square(44));
     expect(find.byTooltip('Retry'), findsOneWidget);
     await tester.tap(retryButton);
@@ -528,9 +543,11 @@ Widget _downloadDetailsApp(
   AppLanguageProvider languageProvider,
   AsmrDownloadTaskSnapshot task, {
   AsmrDownloadManager? manager,
+  bool coreReady = true,
 }) {
   return ProviderScope(
     overrides: [
+      coreRuntimeReadyProvider.overrideWithValue(coreReady),
       appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
       asmrDownloadTaskProvider(1).overrideWithValue(task),
       if (manager != null)
@@ -545,6 +562,7 @@ Widget _downloadStreamApp(
   AsmrDownloadManager manager,
 ) => ProviderScope(
   overrides: [
+    coreRuntimeReadyProvider.overrideWithValue(true),
     appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
     asmrDownloadManagerProvider.overrideWithValue(manager),
   ],

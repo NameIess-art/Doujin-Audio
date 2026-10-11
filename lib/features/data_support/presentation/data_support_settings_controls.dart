@@ -162,7 +162,10 @@ class _DataSupportSettingsControlsState
       await _operationService.run<void>(
         scope: scope,
         labelKey: labelKey,
-        task: (_) => action(),
+        task: (_) async {
+          await ref.read(audioRuntimeCoordinatorProvider).start();
+          await action();
+        },
         cancelPrevious: false,
       );
     } catch (error, stackTrace) {

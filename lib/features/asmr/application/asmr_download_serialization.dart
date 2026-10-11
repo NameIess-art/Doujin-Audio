@@ -25,29 +25,33 @@ decodePersistedDownloadTasks(String payload) {
   final tasks = <PersistedDownloadTask>[];
   try {
     final decoded = jsonDecode(payload);
-    if (decoded is Map && decoded['tasks'] is List) {
-      for (final value in decoded['tasks'] as List) {
-        if (value is! Map) continue;
-        final taskJson = Map<String, dynamic>.from(value);
-        if (decoded['version'] != 2) taskJson.remove('fileEntityTags');
-        final restored = downloadTaskFromJson(taskJson);
-        tasks.add(
-          PersistedDownloadTask(
-            task: restored.task.copyWith(
-              status: AsmrDownloadTaskStatus.paused,
-              fileRetryAttempts: const {},
-              manuallyRetryingFilePaths: const {},
-              message: 'paused',
-            ),
-            createdOutputPaths: restored.createdOutputPaths,
-            createdJsonDocuments: restored.createdJsonDocuments,
-          ),
-        );
+    if (decoded is! Map || decoded['tasks'] is! List) {
+      throw const FormatException('Invalid download task record.');
+    }
+    for (final value in decoded['tasks'] as List) {
+      if (value is! Map) {
+        throw const FormatException('Invalid download task entry.');
       }
+      final taskJson = Map<String, dynamic>.from(value);
+      if (decoded['version'] != 2) taskJson.remove('fileEntityTags');
+      final restored = downloadTaskFromJson(taskJson);
+      tasks.add(
+        PersistedDownloadTask(
+          task: restored.task.copyWith(
+            status: AsmrDownloadTaskStatus.paused,
+            fileRetryAttempts: const {},
+            manuallyRetryingFilePaths: const {},
+            message: 'paused',
+          ),
+          createdOutputPaths: restored.createdOutputPaths,
+          createdJsonDocuments: restored.createdJsonDocuments,
+        ),
+      );
     }
     return (tasks: tasks, error: null, stackTrace: null);
   } catch (error, stackTrace) {
-    // Keep tasks decoded before a malformed entry, matching existing recovery.
+    // Retain the decoded prefix for diagnostics; a restore must reject the error
+    // before publishing or persisting a partial record.
     return (tasks: tasks, error: error, stackTrace: stackTrace);
   }
 }

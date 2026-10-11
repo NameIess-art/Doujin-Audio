@@ -46,6 +46,8 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
   bool _reloading = false;
   bool _needsResetBeforeLoad = false;
   bool _hasLoadedState = false;
+  bool _presentationInitialized = false;
+  Future<void>? _presentationInitialization;
 
   bool get hasLoadedState => _hasLoadedState;
 
@@ -53,21 +55,41 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
     _loadEpoch++;
   }
 
+  Future<void> initializePresentation() {
+    if (_disposed || _presentationInitialized) return Future<void>.value();
+    final active = _presentationInitialization;
+    if (active != null) return active;
+    late final Future<void> attempt;
+    attempt = _initializePresentation().whenComplete(() {
+      if (identical(_presentationInitialization, attempt)) {
+        _presentationInitialization = null;
+      }
+    });
+    return _presentationInitialization = attempt;
+  }
+
+  Future<void> _initializePresentation() async {
+    await _settings.loadPersistedState(enforceCacheLimit: false);
+    if (_disposed) return;
+    AppInteractionFeedbackSettings.hapticFeedbackEnabled =
+        _settings.hapticFeedbackEnabled;
+    applyCoverImageCachePolicy(_settings.coverImageResolution);
+    _presentationInitialized = true;
+  }
+
   Future<void> loadPersistedState() async {
     _hasLoadedState = false;
+    _syncSlices(isInitialized: false, syncSettings: false);
     final epoch = ++_loadEpoch;
     bool isCurrent() => !_disposed && epoch == _loadEpoch;
     try {
       if (_needsResetBeforeLoad) {
         _needsResetBeforeLoad = false;
-        await _resetRuntimeState();
+        await _resetRuntimeState(resetSettings: false);
         if (!isCurrent()) return;
       }
-      await _settings.loadPersistedState();
+      await initializePresentation();
       if (!isCurrent()) return;
-      AppInteractionFeedbackSettings.hapticFeedbackEnabled =
-          _settings.hapticFeedbackEnabled;
-      applyCoverImageCachePolicy(_settings.coverImageResolution);
       await _playback.nativeRepository.setPlaybackBehavior(
         pauseOnAudioDeviceDisconnect:
             _settings.audioDeviceDisconnectBehavior ==
@@ -127,7 +149,7 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
     _library.schedulePostStartupMaintenance();
   }
 
-  void _syncSlices({required bool isInitialized}) {
+  void _syncSlices({required bool isInitialized, bool syncSettings = true}) {
     _library.syncPresentationState(isInitialized: isInitialized);
     _playback.syncPresentationState(
       focusedSessionId: _notifications.focusedSessionId,
@@ -135,7 +157,7 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
       isInitialized: isInitialized,
     );
     _timer.syncPresentationState(isInitialized: isInitialized);
-    _settings.syncSlice(isInitialized: isInitialized);
+    if (syncSettings) _settings.syncSlice(isInitialized: isInitialized);
     _notifications.syncPresentationState(
       activeQueueLength: _playback.activeSessions.length,
     );
@@ -145,13 +167,23 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
   Future<void> reloadPersistedState() async {
     if (_disposed) return;
     _hasLoadedState = false;
+    _syncSlices(isInitialized: false, syncSettings: false);
     _loadEpoch++;
     await _resetRuntimeState();
     if (_disposed) return;
     await loadPersistedState();
   }
 
-  Future<void> _resetRuntimeState() async {
+  Future<void> _resetRuntimeState({bool resetSettings = true}) async {
+    final presentation = _presentationInitialization;
+    if (resetSettings && presentation != null) {
+      try {
+        await presentation;
+      } catch (_) {
+        // A failed settings read is reported by startup; reset must still
+        // replace its partial values before the next attempt.
+      }
+    }
     _reloading = true;
     _playback.cancelScheduledPersistence();
     _library.cancelPendingScanProgressNotification();
@@ -161,14 +193,26 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
     await _playback.resetPersistedState();
     await _library.resetPersistedState();
     await _timer.resetPersistedState();
-    await _settings.resetPersistedState();
+    if (resetSettings) {
+      _presentationInitialized = false;
+      await _settings.resetPersistedState();
+    }
     _subtitles.clear();
     await _notifications.resetPersistedState();
-    _syncSlices(isInitialized: false);
+    _syncSlices(isInitialized: false, syncSettings: resetSettings);
   }
 
-  void dispose() {
+  Future<void> dispose() async {
     _disposed = true;
     _loadEpoch++;
+    final presentation = _presentationInitialization;
+    if (presentation != null) {
+      try {
+        await presentation;
+      } catch (_) {
+        // The presentation bootstrap owns failure reporting; its settings read
+        // must finish before the settings owner is closed.
+      }
+    }
   }
 }

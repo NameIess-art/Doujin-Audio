@@ -173,6 +173,54 @@ void main() {
     await libraryStreamClosed.timeout(const Duration(seconds: 1));
   });
 
+  for (final startCore in [false, true]) {
+    test(
+      'exit drains presentation restoration without writing sessions (core: $startCore)',
+      () async {
+        final repository = _FailingPlaybackPersistenceRepository();
+        final settings = _DelayedSettingsRepository();
+        final playback = PlaybackFacade.create(databaseRepository: repository);
+        final cache = _RecordingPlaybackCacheService();
+        final graph = createAppRuntimeGraph(
+          library: LibraryFacade.create(databaseRepository: repository),
+          playback: playback,
+          timer: TimerFacade.create(),
+          notifications: NotificationFacade.create(
+            service: PlaybackNotificationService(),
+          ),
+          settings: settings,
+          asmrPlaybackCacheService: cache,
+        );
+        final start = startCore
+            ? graph.runtime.start()
+            : graph.persistence.initializePresentation();
+        final launch = startCore
+            ? playback.playDirect([
+                MusicTrack(
+                  path: '/audio/clicked.mp3',
+                  displayName: 'Clicked',
+                  groupKey: '/audio',
+                  groupTitle: 'Audio',
+                  groupSubtitle: '',
+                  isSingle: true,
+                ),
+              ])
+            : Future<bool>.value(false);
+        final shutdown = graph.runtime.dispose();
+        await Future<void>.delayed(Duration.zero);
+        expect(cache.disposeCount, 0);
+        settings.pendingLoad.complete();
+        await start;
+        await shutdown;
+        expect(await launch, isFalse);
+        expect(graph.persistence.hasLoadedState, isFalse);
+        expect(repository.sessionWrites, 0);
+        expect(playback.sessions, isEmpty);
+        expect(cache.disposeCount, 1);
+      },
+    );
+  }
+
   test(
     'production subtitles resolve ASMR tracks from session queues',
     () async {
@@ -575,6 +623,16 @@ final class _FailingPlaybackPersistenceRepository
   }) async {
     sessionWrites++;
     throw StateError('disk write failed');
+  }
+}
+
+final class _DelayedSettingsRepository extends SettingsRepository {
+  final pendingLoad = Completer<void>();
+
+  @override
+  Future<void> loadPersistedState({bool enforceCacheLimit = true}) async {
+    await pendingLoad.future;
+    syncSlice(isInitialized: true);
   }
 }
 

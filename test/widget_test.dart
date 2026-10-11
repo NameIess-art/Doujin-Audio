@@ -17,6 +17,7 @@ import 'package:doujin_audio/main.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
+import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -3813,57 +3814,156 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('startup shell waits for every required local data load', (
+  testWidgets('presentation preferences settle before mounting the framework', (
     tester,
   ) async {
-    final runtime = Completer<void>();
-    final downloads = Completer<void>();
-    final asmrLibrary = Completer<void>();
+    final presentation = Completer<void>();
     var settledCalls = 0;
-
     await _pumpAppShell(
       tester,
       waitForStartup: false,
-      runtimeInitializer: () => Future.wait<void>([
-        runtime.future,
-        downloads.future,
-        asmrLibrary.future,
-      ]),
+      presentationInitializer: () => presentation.future,
       onBootstrapSettled: () => settledCalls++,
     );
     await tester.pump();
-
+    expect(find.byType(MainScreen), findsNothing);
     expect(
       find.byKey(const ValueKey<String>('app_bootstrap_loading')),
       findsOneWidget,
     );
-    expect(find.byType(MainScreen), findsNothing);
     expect(settledCalls, 0);
-
-    runtime.complete();
-    downloads.complete();
-    await tester.pump();
-    expect(
-      find.byKey(const ValueKey<String>('app_bootstrap_loading')),
-      findsOneWidget,
-    );
-    expect(find.byType(MainScreen), findsNothing);
-    expect(settledCalls, 0);
-
-    asmrLibrary.complete();
+    presentation.complete();
     await tester.pump();
     await tester.pump();
-
-    expect(
-      find.byKey(const ValueKey<String>('app_bootstrap_loading')),
-      findsNothing,
-    );
     expect(find.byType(MainScreen), findsOneWidget);
     expect(settledCalls, 1);
     await tester.pump(const Duration(milliseconds: 750));
-    await tester.pump();
-    expect(settledCalls, 1);
   });
+
+  testWidgets(
+    'startup framework keeps its destination while core and secondary data load',
+    (tester) async {
+      final runtime = Completer<void>();
+      final downloads = Completer<void>();
+      final asmrLibrary = Completer<void>();
+      var settledCalls = 0;
+
+      await _pumpAppShell(
+        tester,
+        waitForStartup: false,
+        runtimeInitializer: () => runtime.future,
+        secondaryInitializer: () =>
+            Future.wait<void>([downloads.future, asmrLibrary.future]),
+        configureSettings: (settings) {
+          settings.showLocalLibrary = false;
+          settings.startupPage = StartupPage.playlist;
+        },
+        onBootstrapSettled: () => settledCalls++,
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey<String>('app_bootstrap_loading')),
+        findsNothing,
+      );
+      expect(find.byType(MainScreen), findsOneWidget);
+      final mainScreen = tester.element(find.byType(MainScreen));
+      final stackFinder = find.byKey(const ValueKey<String>('main_page_stack'));
+      final stack = tester.widget<AppFadeThroughIndexedStack>(stackFinder);
+      expect(stack.itemCount, 3);
+      expect(stack.index, 1);
+      expect(settledCalls, 1);
+
+      await _pumpMainScreenAnimations(tester, startup: true);
+      await _tapSettingsDestination(tester);
+      expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 2);
+
+      runtime.complete();
+      downloads.complete();
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('app_bootstrap_loading')),
+        findsNothing,
+      );
+      expect(tester.element(find.byType(MainScreen)), same(mainScreen));
+      expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 2);
+      expect(settledCalls, 1);
+
+      asmrLibrary.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey<String>('app_bootstrap_loading')),
+        findsNothing,
+      );
+      expect(find.byType(MainScreen), findsOneWidget);
+      expect(tester.element(find.byType(MainScreen)), same(mainScreen));
+      expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 2);
+      expect(settledCalls, 1);
+      await tester.pump(const Duration(milliseconds: 750));
+      await tester.pump();
+      expect(settledCalls, 1);
+    },
+  );
+
+  testWidgets('core startup retry preserves the mounted main screen', (
+    tester,
+  ) async {
+    var attempts = 0;
+    await _pumpAppShell(
+      tester,
+      waitForStartup: false,
+      runtimeInitializer: () async {
+        if (++attempts == 1) throw StateError('core unavailable');
+      },
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    final mainScreen = tester.element(find.byType(MainScreen));
+    expect(
+      find.byKey(const ValueKey<String>('app_error_view')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('startup_retry_button')),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey<String>('app_error_view')), findsNothing);
+    expect(tester.element(find.byType(MainScreen)), same(mainScreen));
+    expect(attempts, 2);
+    await tester.pump(const Duration(milliseconds: 750));
+  });
+
+  testWidgets(
+    'secondary startup waits for interaction idle after a generation change',
+    (tester) async {
+      final interaction = UiInteractionCoordinator.instance;
+      final scrolling = Object();
+      var secondaryStarts = 0;
+      interaction.beginInteraction(scrolling);
+      await _pumpAppShell(
+        tester,
+        waitForStartup: false,
+        secondaryInitializer: () async => secondaryStarts++,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byType(MainScreen), findsOneWidget);
+      expect(secondaryStarts, 0);
+      interaction.beginGeneration();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(secondaryStarts, 0);
+      interaction.finishInteractionsForTest();
+      await tester.pump();
+      expect(secondaryStarts, 1);
+      await tester.pump(const Duration(milliseconds: 750));
+      expect(secondaryStarts, 1);
+    },
+  );
 
   testWidgets('fresh install settles startup while onboarding is visible', (
     tester,
@@ -3880,7 +3980,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(settledCalls, 0);
+    expect(settledCalls, 1);
     expect(find.byType(MainScreen), findsNothing);
 
     initialization.complete();
@@ -6761,7 +6861,10 @@ Future<_AppShellHarness> _pumpAppShell(
   ThemeProvider? theme,
   bool waitForStartup = true,
   AsmrDownloadManager? downloads,
+  Future<void> Function()? presentationInitializer,
   Future<void> Function()? runtimeInitializer,
+  Future<void> Function()? secondaryInitializer,
+  void Function(SettingsRepository settings)? configureSettings,
   bool? shouldShowOnboarding,
   VoidCallback? onBootstrapSettled,
   List<Override> additionalOverrides = const [],
@@ -6793,6 +6896,8 @@ Future<_AppShellHarness> _pumpAppShell(
   settingsRepository.syncSlice(isInitialized: true);
   libraryService.syncSlice(isInitialized: true, detailRevision: 0);
   await tester.runAsync(runtimeGraph.runtime.start);
+  configureSettings?.call(settingsRepository);
+  settingsRepository.syncSlice(isInitialized: true);
   if (includePlaybackSession) {
     if (playbackTrack != null || extraPlaybackTracks.isNotEmpty) {
       runtimeGraph.library.addTracks(
@@ -6831,12 +6936,17 @@ Future<_AppShellHarness> _pumpAppShell(
         ..._testRuntimeOverrides(runtimeGraph),
         themeProviderInstanceProvider.overrideWith((ref) => themeProvider),
         appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
+        appOrientationControllerProvider.overrideWithValue(
+          AppOrientationController(setPreferredOrientations: (_) async {}),
+        ),
         appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
         ...additionalOverrides,
       ],
       child: MusicPlayerApp(
         shouldShowOnboarding: shouldShowOnboarding,
+        presentationInitializer: presentationInitializer,
         runtimeInitializer: runtimeInitializer,
+        secondaryInitializer: secondaryInitializer,
         onBootstrapSettled: onBootstrapSettled,
       ),
     ),

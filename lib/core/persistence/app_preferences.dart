@@ -37,11 +37,15 @@ class AppPreferences {
     return setBool(onboardingCompletedKey, true);
   }
 
-  static Future<String?> getString(String key) async {
+  static Future<String?> getString(
+    String key, {
+    bool throwOnError = false,
+  }) async {
     try {
       return (await _prefs).getString(key);
     } catch (error, stackTrace) {
       _logFailure('read_string', key, error, stackTrace);
+      if (throwOnError) rethrow;
       return null;
     }
   }

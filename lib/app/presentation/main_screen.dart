@@ -212,6 +212,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _subtitleOverlay.attachRuntime(
       enabled: () =>
           mounted &&
+          ref.read(coreRuntimeReadyProvider) &&
           shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground),
       session: () => ref.read(globalSubtitleOverlaySessionProvider)?.session,
       subtitles: () => ref.read(playbackSubtitleServiceProvider),
@@ -239,6 +240,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
       (_, hasPlayingSession) => _handlePlayingSessionChanged(hasPlayingSession),
       fireImmediately: true,
     );
+    ref.listenManual<bool>(coreRuntimeReadyProvider, (_, ready) {
+      if (!ready) return;
+      _handlePlayingSessionChanged(
+        ref.read(mainOverlayUiProvider).hasPlayingSession,
+      );
+      _evaluateSleepModeAutoTrigger();
+      _queueAutoUpdateCheckIfReady();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _subtitleOverlay.requestRuntimeSync();
+      });
+    }, fireImmediately: true);
     if (defaultTargetPlatform != TargetPlatform.windows) {
       ref.listenManual<bool>(
         mainOverlayUiProvider.select((state) => state.hasPlayingAudioSession),
@@ -289,7 +301,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (!mounted) return;
       _rememberCurrentViewMetrics();
       final warmup = ref.read(audioUiWarmupCoordinatorProvider);
-      _subtitleOverlay.requestRuntimeSync();
+      if (ref.read(coreRuntimeReadyProvider)) {
+        _subtitleOverlay.requestRuntimeSync();
+      }
       Future.delayed(const Duration(milliseconds: 750), () {
         if (!mounted) return;
         warmup.schedule(isPlaybackPage: _isPlaybackPage, immediate: true);
@@ -306,14 +320,16 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void _handleStartupReadyChanged(bool startupReady) {
     if (!mounted || !startupReady) return;
     if (!_isDataReady) {
-      final settings = ref.read(settingsStateProvider).value;
-      final showLocal = settings?.showLocalLibrary ?? true;
-      final showAsmr = settings?.showAsmrOne ?? true;
+      final settings =
+          ref.read(settingsStateProvider).value ??
+          ref.read(settingsRepositoryProvider).slice.state;
+      final showLocal = settings.showLocalLibrary;
+      final showAsmr = settings.showAsmrOne;
       final destinations = resolveMainDestinations(
         showLocalLibrary: showLocal,
         showAsmrOne: showAsmr,
       );
-      final startupPage = settings?.startupPage ?? StartupPage.library;
+      final startupPage = settings.startupPage;
       final targetType = switch (startupPage) {
         StartupPage.library =>
           showLocal
@@ -345,7 +361,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _handlePlayingSessionChanged(bool hasPlayingSession) {
-    if (!mounted) return;
+    if (!mounted || !ref.read(coreRuntimeReadyProvider)) return;
     if (Platform.isAndroid &&
         hasPlayingSession &&
         !_backgroundPlaybackPromptShownThisLaunch &&
@@ -358,7 +374,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _evaluateSleepModeAutoTrigger() {
-    if (!mounted || defaultTargetPlatform == TargetPlatform.windows) return;
+    if (!mounted ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        !ref.read(coreRuntimeReadyProvider)) {
+      return;
+    }
     final settings = ref.read(settingsStateProvider).value;
     final trigger =
         settings?.sleepModeAutoTrigger ?? SleepModeAutoTrigger.manual;
@@ -425,7 +445,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (!mounted || _autoUpdateCheckQueued) return;
     final autoCheckUpdates =
         ref.read(settingsStateProvider).value?.autoCheckUpdates ?? false;
-    if (!autoCheckUpdates || !ref.read(mainOverlayUiProvider).startupReady) {
+    if (!autoCheckUpdates || !ref.read(coreRuntimeReadyProvider)) {
       return;
     }
     _autoUpdateCheckQueued = true;
@@ -435,7 +455,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _openTimerFromPlaylist() {
-    if (!mounted) return;
+    if (!mounted || !ref.read(coreRuntimeReadyProvider)) return;
     final timer =
         ref.read(timerStateProvider).value ??
         ref.read(timerFacadeProvider).state;
@@ -702,9 +722,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   List<MainDestination> _currentDestinations() {
-    final settings = ref.read(settingsStateProvider).value;
-    final showLocal = settings?.showLocalLibrary ?? true;
-    final showAsmr = settings?.showAsmrOne ?? true;
+    final settings =
+        ref.read(settingsStateProvider).value ??
+        ref.read(settingsRepositoryProvider).slice.state;
+    final showLocal = settings.showLocalLibrary;
+    final showAsmr = settings.showAsmrOne;
     return resolveMainDestinations(
       showLocalLibrary: showLocal,
       showAsmrOne: showAsmr,
@@ -748,11 +770,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
         tabIndex: index,
         activeTabIndexListenable: _activePageIndex,
       ),
-      MainDestinationType.playlist => PlaylistTab(
-        tabIndex: index,
-        onTimerTap: _openTimerFromPlaylist,
-        onOpenLibrary: _openLocalLibrary,
-        activeTabIndexListenable: _activePageIndex,
+      MainDestinationType.playlist => Consumer(
+        builder: (context, ref, child) => IgnorePointer(
+          ignoring: !ref.watch(coreRuntimeReadyProvider),
+          child: child,
+        ),
+        child: PlaylistTab(
+          tabIndex: index,
+          onTimerTap: _openTimerFromPlaylist,
+          onOpenLibrary: _openLocalLibrary,
+          activeTabIndexListenable: _activePageIndex,
+        ),
       ),
       MainDestinationType.settings => SettingsTab(tabIndex: index),
     };

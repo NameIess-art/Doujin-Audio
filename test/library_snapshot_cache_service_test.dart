@@ -22,6 +22,119 @@ import 'support/test_persistence_repository.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test(
+    'computed path indexes retain equivalence and writable ownership',
+    () async {
+      const safRoot =
+          'content://com.android.externalstorage.documents/tree/primary%3A%E9%9F%B3%E9%A2%91';
+      final paths = <(String, String, String)>[
+        (
+          r'E:\音频 库\作品 A\Track.mp3',
+          'e:/音频 库/作品 a/./TRACK.mp3',
+          r'E:\音频 库\作品 A',
+        ),
+        (
+          r'\\Server\音频 库\作品 A\Track.mp3',
+          r'\\SERVER\音频 库\作品 a\TRACK.mp3',
+          r'\\Server\音频 库\作品 A',
+        ),
+        (
+          '/library/中文/Track.mp3',
+          '/library/中文/disc/../Track.mp3',
+          '/library/中文',
+        ),
+        (
+          '$safRoot/document/primary%3A%E9%9F%B3%E9%A2%91%2F%E4%BD%9C%E5%93%81%20A%2FTrack.mp3',
+          '$safRoot::作品 A/Track.mp3',
+          '$safRoot::作品 A',
+        ),
+      ];
+      final library = LibraryService()
+        ..library.addAll([
+          for (final pair in paths)
+            _track(path: pair.$1, groupKey: pair.$3),
+        ]);
+      addTearDown(library.dispose);
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+      );
+      // Exercise the real compute boundary, including the custom HashMap callbacks.
+      final snapshot = await service.buildDerivedSnapshot();
+      library
+        ..library = List<MusicTrack>.of(snapshot.library)
+        ..libraryByPath = snapshot.libraryByPath
+        ..libraryIndexByPath = snapshot.libraryIndexByPath
+        ..tracksByGroup = Map<String, List<MusicTrack>>.of(
+          snapshot.tracksByGroup,
+        );
+      for (var index = 0; index < paths.length; index++) {
+        final (original, equivalent, _) = paths[index];
+        expect(
+          PathMatcher.equivalenceKey(equivalent),
+          PathMatcher.equivalenceKey(original),
+        );
+        expect(library.trackByPath(equivalent)?.path, original);
+        expect(library.libraryIndexByPath[equivalent], index);
+        library.addOrReplaceTracks(
+          [
+            _track(
+              path: equivalent,
+              groupKey: library.trackByPath(original)!.groupKey,
+            ).copyWith(isFavorite: true),
+          ],
+          persist: false,
+          mergeExistingState: false,
+        );
+        expect(library.library[index].isFavorite, true);
+        expect(library.trackByPath(equivalent)?.isFavorite, true);
+      }
+      expect(library.library, hasLength(paths.length));
+      final added = _track(path: '/library/new.mp3', groupKey: '/library');
+      library.addTracks([added], persist: false);
+      expect(library.trackByPath(added.path), same(added));
+      expect(library.libraryIndexByPath[added.path], paths.length);
+      library.libraryByPath.remove(paths.first.$2);
+      expect(library.trackByPath(paths.first.$1), isNull);
+    },
+  );
+
+  test('disposed snapshots never restart a pending folder tree request', () async {
+    const root = '/library/work';
+    final library = LibraryService()
+      ..library.add(_track(path: '$root/01.mp3', groupKey: root))
+      ..watchedFolders.add(root);
+    addTearDown(library.dispose);
+    final result = Completer<LibraryTreeSnapshot>();
+    var builds = 0;
+    final service = LibrarySnapshotCacheService(
+      libraryService: library,
+      detailCacheService: AudioDetailCacheService(
+        repository: _FakeAudioDetailRepository(),
+      ),
+      treeSnapshotBuilder: (_) {
+        builds++;
+        return result.future;
+      },
+    );
+    final request = service.loadFolderTree(root);
+    await Future<void>.delayed(Duration.zero);
+    expect(builds, 1);
+    service.dispose();
+    result.complete(
+      const LibraryOrganizer().buildTree(
+        tracks: library.library,
+        watchedFolders: [root],
+      ),
+    );
+    expect(await request, isNull);
+    expect(await service.loadFolderTree(root), isNull);
+    expect(service.resolvedFolderTree(root), isNull);
+    expect(builds, 1);
+  });
+
   test('metadata roots refresh during batches and after reset', () {
     const parent = r'E:\音频 库';
     const work = r'E:\音频 库\作品 A';

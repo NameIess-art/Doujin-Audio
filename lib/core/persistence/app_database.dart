@@ -7,6 +7,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../media/music_track.dart';
 import '../media/path_matcher.dart';
+import '../logging/app_log_service.dart';
 import 'persistence_records.dart';
 
 part 'app_database_tracks.dart';

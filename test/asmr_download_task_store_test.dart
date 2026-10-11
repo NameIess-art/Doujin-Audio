@@ -9,10 +9,47 @@ import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   const safRoot =
       'content://com.android.externalstorage.documents/tree/primary%3AMusic';
+
+  for (final restoreSucceeded in [false, true]) {
+    test(
+      'store preserves records until restoration succeeds: $restoreSucceeded',
+      () async {
+        final writes = <String?>[];
+        final store = AsmrDownloadTaskStore(
+          persistTasks: true,
+          persistenceReady: false,
+          persistenceWriter: (payload) async => writes.add(payload),
+          persistenceSnapshot: (task) => PersistedDownloadTask(
+            task: task,
+            createdOutputPaths: const {},
+            createdJsonDocuments: const {},
+          ),
+        );
+        addTearDown(store.shutdown);
+        store[1] = _task(1);
+        store.notifyTaskChanged();
+        await store.runStructuralPersistenceForTesting();
+        await store.flushPersistence();
+        expect(writes, isEmpty);
+        if (restoreSucceeded) {
+          store.markPersistenceReady();
+          await store.flushPersistence();
+          expect(
+            decodePersistedDownloadTasks(writes.single!).tasks,
+            hasLength(1),
+          );
+        }
+        await store.shutdown();
+        expect(writes, hasLength(restoreSucceeded ? 2 : 0));
+      },
+    );
+  }
 
   test(
     'download worker round trip retains ownership and pauses recovered tasks',

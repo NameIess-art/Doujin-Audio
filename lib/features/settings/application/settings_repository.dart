@@ -60,7 +60,7 @@ class SettingsRepository {
     SettingsState(),
   );
 
-  Future<void> loadPersistedState() async {
+  Future<void> loadPersistedState({bool enforceCacheLimit = true}) async {
     _resetValues();
     final playback = await AppPreferences.readJson<Map<String, dynamic>>(
       _playbackSettingsKey,
@@ -184,7 +184,10 @@ class SettingsRepository {
           AppCacheService.defaultMaxCacheBytes;
     }
 
-    await AppCacheService.setMaxCacheBytes(maxCacheBytes);
+    await AppCacheService.setMaxCacheBytes(
+      maxCacheBytes,
+      enforceImmediately: enforceCacheLimit,
+    );
     syncSlice(isInitialized: true);
   }
 

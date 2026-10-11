@@ -45,14 +45,15 @@ class AppBootstrapController extends ChangeNotifier {
   Future<void> _runAttempt() {
     final activeAttempt = _activeAttempt;
     if (activeAttempt != null) return activeAttempt;
+    if (_disposed) return Future<void>.value();
 
-    final attempt = _performAttempt();
-    _activeAttempt = attempt;
-    return attempt.whenComplete(() {
+    late final Future<void> attempt;
+    attempt = _performAttempt().whenComplete(() {
       if (identical(_activeAttempt, attempt)) {
         _activeAttempt = null;
       }
     });
+    return _activeAttempt = attempt;
   }
 
   Future<void> _performAttempt() async {

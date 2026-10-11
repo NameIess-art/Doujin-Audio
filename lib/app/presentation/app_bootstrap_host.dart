@@ -105,6 +105,8 @@ class AppBootstrapGate extends StatefulWidget {
     required this.failureBuilder,
     this.disposeController = true,
     this.onBootstrapSettled,
+    this.showReadyWhileInitializing = false,
+    this.initializeAfterFirstFrame = false,
     super.key,
   });
 
@@ -114,6 +116,8 @@ class AppBootstrapGate extends StatefulWidget {
   final AppBootstrapFailureBuilder failureBuilder;
   final bool disposeController;
   final VoidCallback? onBootstrapSettled;
+  final bool showReadyWhileInitializing;
+  final bool initializeAfterFirstFrame;
 
   @override
   State<AppBootstrapGate> createState() => _AppBootstrapGateState();
@@ -144,7 +148,22 @@ class _AppBootstrapGateState extends State<AppBootstrapGate> {
 
   void _initializeIfNeeded() {
     if (widget.controller.state.phase == AppBootstrapPhase.initializing) {
-      unawaited(widget.controller.initialize());
+      if (widget.initializeAfterFirstFrame) {
+        final controller = widget.controller;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !identical(widget.controller, controller)) return;
+          // The presentation gate releases the native splash after this frame.
+          // Start hydration after the following rendered framework frame.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && identical(widget.controller, controller)) {
+              unawaited(controller.initialize());
+            }
+          });
+          WidgetsBinding.instance.scheduleFrame();
+        });
+      } else {
+        unawaited(widget.controller.initialize());
+      }
     }
   }
 
@@ -164,6 +183,16 @@ class _AppBootstrapGateState extends State<AppBootstrapGate> {
     final state = widget.controller.state;
     if (state.phase != AppBootstrapPhase.initializing) {
       _scheduleBootstrapSettled();
+    }
+    if (widget.showReadyWhileInitializing) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          _readyApp ??= widget.readyBuilder(context),
+          if (state.phase == AppBootstrapPhase.failure)
+            Positioned.fill(child: widget.failureBuilder(context, state)),
+        ],
+      );
     }
     return switch (state.phase) {
       AppBootstrapPhase.ready => _readyApp ??= widget.readyBuilder(context),

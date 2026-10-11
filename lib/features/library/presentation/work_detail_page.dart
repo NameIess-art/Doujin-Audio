@@ -305,6 +305,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     // Keep every field's result and publish them together after interaction.
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _dataCommitKey,
+      structural: true,
       commit: () {
         if (!mounted) return;
         final updates = _pendingDataUpdates
@@ -360,6 +361,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     if (!mounted || request != _directoryRequest) return;
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _directoryCommitKey,
+      structural: true,
       commit: () {
         if (!mounted || request != _directoryRequest) return;
         if (_directoryWasLoading == false &&

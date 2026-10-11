@@ -22,6 +22,8 @@ import '../presentation/global_shortcuts.dart';
 import '../presentation/main_screen.dart';
 import '../presentation/onboarding_page.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
+import '../../core/cache/app_cache_service.dart';
+import '../../core/logging/app_log_service.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../theme/theme_provider.dart';
@@ -48,7 +50,9 @@ Widget createAudioPlayerApp({
     :asmrLibraryController,
     :asmrPlaybackCoordinator,
     :asmrApiService,
+    :initializePresentation,
     :initializeRuntimeData,
+    :initializeSecondaryData,
   ) = createProductionAppRuntime(
     windowsRuntime: windowsRuntime,
   );
@@ -94,7 +98,9 @@ Widget createAudioPlayerApp({
       shouldShowOnboarding: shouldShowOnboarding,
       startupRestoreOutcome: startupRestoreOutcome,
       onBootstrapSettled: onBootstrapSettled,
+      presentationInitializer: initializePresentation,
       runtimeInitializer: initializeRuntimeData,
+      secondaryInitializer: initializeSecondaryData,
     ),
   );
 
@@ -106,20 +112,25 @@ class MusicPlayerApp extends ConsumerStatefulWidget {
     this.shouldShowOnboarding,
     this.startupRestoreOutcome,
     this.onBootstrapSettled,
+    this.presentationInitializer,
     this.runtimeInitializer,
+    this.secondaryInitializer,
     super.key,
   });
 
   final bool? shouldShowOnboarding;
   final StartupRestoreOutcome? startupRestoreOutcome;
   final VoidCallback? onBootstrapSettled;
+  final Future<void> Function()? presentationInitializer;
   final Future<void> Function()? runtimeInitializer;
+  final Future<void> Function()? secondaryInitializer;
 
   @override
   ConsumerState<MusicPlayerApp> createState() => _MusicPlayerAppState();
 }
 
 class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
+  late final AppBootstrapController _presentationBootstrapController;
   late final AppBootstrapController _runtimeBootstrapController;
   late final bool _shouldShowOnboarding;
   final _navigatorKey = GlobalKey<NavigatorState>();
@@ -127,21 +138,47 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
     rootNavigatorKey: _navigatorKey,
   );
   var _restoreOutcomeScheduled = false;
-  var _runtimeBootstrapSettledNotified = false;
+  var _presentationSettledNotified = false;
+  var _secondaryFrameReady = false;
+  Future<void>? _secondaryInitialization;
   double _stablePortraitTopPadding = 0;
   double _stableLandscapeTopPadding = 0;
 
   @override
   void initState() {
     super.initState();
+    UiInteractionCoordinator.instance.addListener(
+      _scheduleSecondaryInitialization,
+    );
     // Register root-owned disposal even when onboarding hides the ASMR page.
     ref.read(asmrLibraryControllerProvider);
+    _presentationBootstrapController = AppBootstrapController(
+      initializer: () async {
+        final initializer = widget.presentationInitializer;
+        if (initializer != null) {
+          await initializer();
+        } else {
+          await ref.read(appLanguageProviderInstanceProvider).initialized;
+          await ref
+              .read(appPersistenceCoordinatorProvider)
+              .initializePresentation();
+        }
+        if (!mounted) return;
+        await ref
+            .read(appOrientationControllerProvider)
+            .setPortraitLockEnabled(
+              ref.read(settingsRepositoryProvider).portraitLockEnabled,
+            );
+      },
+    );
+    _presentationBootstrapController.addListener(
+      _handlePresentationStateChanged,
+    );
     _runtimeBootstrapController = AppBootstrapController(
       initializer:
           widget.runtimeInitializer ??
           ref.read(audioRuntimeCoordinatorProvider).start,
     );
-    _runtimeBootstrapController.addListener(_handleRuntimeBootstrapState);
     _shouldShowOnboarding =
         widget.shouldShowOnboarding ??
         AppPreferences.shouldShowOnboardingSync();
@@ -149,20 +186,76 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
 
   @override
   void dispose() {
-    _runtimeBootstrapController.removeListener(_handleRuntimeBootstrapState);
+    UiInteractionCoordinator.instance.removeListener(
+      _scheduleSecondaryInitialization,
+    );
+    _presentationBootstrapController.removeListener(
+      _handlePresentationStateChanged,
+    );
+    _presentationBootstrapController.dispose();
     _runtimeBootstrapController.dispose();
     _workDetailNavigation.dispose();
     super.dispose();
   }
 
-  void _handleRuntimeBootstrapState() {
-    if (_runtimeBootstrapSettledNotified ||
-        _runtimeBootstrapController.state.phase ==
-            AppBootstrapPhase.initializing) {
+  void _handlePresentationStateChanged() {
+    if (_presentationBootstrapController.state.phase !=
+        AppBootstrapPhase.ready) {
       return;
     }
-    _runtimeBootstrapSettledNotified = true;
-    widget.onBootstrapSettled?.call();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _handlePresentationSettled();
+    });
+  }
+
+  void _handlePresentationSettled() {
+    if (!_presentationSettledNotified) {
+      _presentationSettledNotified = true;
+      widget.onBootstrapSettled?.call();
+    }
+    if (_presentationBootstrapController.state.phase !=
+            AppBootstrapPhase.ready ||
+        _secondaryFrameReady) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _secondaryFrameReady) return;
+      _secondaryFrameReady = true;
+      _scheduleSecondaryInitialization();
+    });
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
+  void _scheduleSecondaryInitialization() {
+    if (!mounted || !_secondaryFrameReady || _secondaryInitialization != null) {
+      return;
+    }
+    final interaction = UiInteractionCoordinator.instance;
+    // Navigation changes generations; reschedule pending startup work when its
+    // interaction ends so an immediate page switch cannot discard restoration.
+    interaction.scheduleAfterIdle(
+      key: 'app-secondary-initialization-${identityHashCode(this)}',
+      generation: interaction.generation,
+      priority: 200,
+      task: () async {
+        if (!mounted || _secondaryInitialization != null) return;
+        _secondaryInitialization = _initializeSecondaryData();
+        await _secondaryInitialization;
+      },
+    );
+  }
+
+  Future<void> _initializeSecondaryData() async {
+    AppCacheService.scheduleEnforce();
+    try {
+      await widget.secondaryInitializer?.call();
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'app_secondary_initialization_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   @override
@@ -197,6 +290,8 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
       },
     );
     final themeProvider = ref.watch(themeProviderInstanceProvider);
+    final coreRuntimeReady = ref.watch(coreRuntimeReadyProvider);
+    final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
     final languageProvider = ref.read(appLanguageProviderInstanceProvider);
     _scheduleRestoreOutcomeFeedback(languageProvider);
     final languageState =
@@ -204,7 +299,8 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
         AppLanguageState.from(languageProvider);
     final reduceAnimations = ref.watch(
       settingsStateProvider.select(
-        (state) => state.value?.reduceAnimations ?? false,
+        (state) =>
+            state.value?.reduceAnimations ?? fallbackSettings.reduceAnimations,
       ),
     );
     final disableAnimations =
@@ -304,54 +400,65 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                   data: effectiveMediaQuery,
                   child: wrapNavigator(context, child ?? const SizedBox()),
                 );
-                final content = defaultTargetPlatform == TargetPlatform.windows
-                    ? ListenableBuilder(
-                        listenable: _runtimeBootstrapController,
-                        child: navigatorContent,
-                        builder: (context, child) => GlobalShortcuts(
-                          enabled:
-                              _runtimeBootstrapController.state.phase ==
-                              AppBootstrapPhase.ready,
-                          navigatorKey: _navigatorKey,
-                          navigationAllowed: UiInteractionCoordinator
-                              .instance
-                              .navigationAllowed,
-                          child: child!,
-                        ),
-                      )
-                    : AppNavigationInputLock(
-                        navigationAllowed:
-                            UiInteractionCoordinator.instance.navigationAllowed,
-                        child: navigatorContent,
-                      );
+                final content = ListenableBuilder(
+                  listenable: _runtimeBootstrapController,
+                  child: navigatorContent,
+                  builder: (context, child) => GlobalShortcuts(
+                    enabled:
+                        coreRuntimeReady &&
+                        _runtimeBootstrapController.state.phase ==
+                            AppBootstrapPhase.ready,
+                    navigatorKey: _navigatorKey,
+                    navigationAllowed:
+                        UiInteractionCoordinator.instance.navigationAllowed,
+                    child: defaultTargetPlatform == TargetPlatform.windows
+                        ? child!
+                        : AppNavigationInputLock(
+                            navigationAllowed: UiInteractionCoordinator
+                                .instance
+                                .navigationAllowed,
+                            child: child!,
+                          ),
+                  ),
+                );
                 if (defaultTargetPlatform == TargetPlatform.windows) {
                   return TooltipVisibility(visible: false, child: content);
                 }
                 return content;
               },
-              home: OnboardingRuntimeGate(
-                showOnboarding: _shouldShowOnboarding,
-                runtimeController: _runtimeBootstrapController,
-                child: AppBootstrapGate(
-                  controller: _runtimeBootstrapController,
-                  disposeController: false,
-                  readyBuilder: (_) =>
-                      defaultTargetPlatform == TargetPlatform.windows
-                      ? MainScreen(playbackDockGeometry: playbackDockGeometry)
-                      : GlobalShortcuts(
-                          child: MainScreen(
-                            playbackDockGeometry: playbackDockGeometry,
-                          ),
-                        ),
-                  loadingBuilder: (_) => const AppBootstrapLoadingView(),
-                  failureBuilder: (_, state) => AppErrorView(
-                    error:
-                        state.error ??
-                        StateError('Unknown runtime startup failure'),
-                    stackTrace: state.stackTrace,
-                    onRetry: () =>
-                        unawaited(_runtimeBootstrapController.retry()),
+              home: AppBootstrapGate(
+                controller: _presentationBootstrapController,
+                disposeController: false,
+                onBootstrapSettled: _handlePresentationSettled,
+                readyBuilder: (_) => OnboardingRuntimeGate(
+                  showOnboarding: _shouldShowOnboarding,
+                  runtimeController: _runtimeBootstrapController,
+                  child: AppBootstrapGate(
+                    controller: _runtimeBootstrapController,
+                    disposeController: false,
+                    showReadyWhileInitializing: true,
+                    initializeAfterFirstFrame: true,
+                    readyBuilder: (_) =>
+                        MainScreen(playbackDockGeometry: playbackDockGeometry),
+                    loadingBuilder: (_) => const AppBootstrapLoadingView(),
+                    failureBuilder: (_, state) => AppErrorView(
+                      error:
+                          state.error ??
+                          StateError('Unknown runtime startup failure'),
+                      stackTrace: state.stackTrace,
+                      onRetry: () =>
+                          unawaited(_runtimeBootstrapController.retry()),
+                    ),
                   ),
+                ),
+                loadingBuilder: (_) => const AppBootstrapLoadingView(),
+                failureBuilder: (_, state) => AppErrorView(
+                  error:
+                      state.error ??
+                      StateError('Unknown presentation startup failure'),
+                  stackTrace: state.stackTrace,
+                  onRetry: () =>
+                      unawaited(_presentationBootstrapController.retry()),
                 ),
               ),
             ),

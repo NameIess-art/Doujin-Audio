@@ -19,8 +19,8 @@ class AsmrDownloadTaskCard extends StatelessWidget {
   final AsmrDownloadTaskSnapshot task;
   final AppLanguageProvider i18n;
   final VoidCallback onOpen;
-  final VoidCallback onTogglePause;
-  final VoidCallback onRemove;
+  final VoidCallback? onTogglePause;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {

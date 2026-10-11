@@ -16,10 +16,12 @@ final class SettingsCommandController {
     LibraryFacade? library,
     Future<int> Function()? clearApplicationCacheFiles,
     Future<void> Function()? clearBrowseCaches,
+    Future<void> Function()? waitForRuntime,
   }) : _settings = settings,
        _playback = playback,
        _library = library,
        _clearBrowseCaches = clearBrowseCaches,
+       _waitForRuntime = waitForRuntime,
        _clearApplicationCacheFiles =
            clearApplicationCacheFiles ?? AppCacheService.clearAllCaches;
 
@@ -28,6 +30,7 @@ final class SettingsCommandController {
   final LibraryFacade? _library;
   final Future<int> Function() _clearApplicationCacheFiles;
   final Future<void> Function()? _clearBrowseCaches;
+  final Future<void> Function()? _waitForRuntime;
 
   SettingsRepository get settings => _settings;
 
@@ -48,6 +51,7 @@ final class SettingsCommandController {
       );
 
   Future<void> setMaxCacheBytes(int bytes) async {
+    await _waitForRuntime?.call();
     final normalized = bytes <= 0
         ? AppCacheService.defaultMaxCacheBytes
         : bytes;
@@ -58,6 +62,7 @@ final class SettingsCommandController {
   }
 
   Future<int> clearApplicationCache() async {
+    await _waitForRuntime?.call();
     await _library?.coverArtworkCacheService.prepareManualCoversForCacheClear();
     await _clearBrowseCaches?.call();
     final deletedBytes = await _clearApplicationCacheFiles();
@@ -129,23 +134,25 @@ final class SettingsCommandController {
     );
   }
 
-  Future<void> deleteCustomEqPreset(String presetId) =>
-      _settings.deleteCustomEqPreset(
-        presetId,
-        resetSessions: () async {
-          final referencingSessionIds = _playback.sessions.values
-              .where((session) => session.audioEffects.eqPresetId == presetId)
-              .map((session) => session.id)
-              .toList(growable: false);
-          for (final sessionId in referencingSessionIds) {
-            await _playback.applySessionEqPreset(
-              sessionId,
-              builtInEqPresets.first,
-            );
-          }
-          return !_playback.sessions.values.any(
-            (session) => session.audioEffects.eqPresetId == presetId,
+  Future<void> deleteCustomEqPreset(String presetId) async {
+    await _waitForRuntime?.call();
+    await _settings.deleteCustomEqPreset(
+      presetId,
+      resetSessions: () async {
+        final referencingSessionIds = _playback.sessions.values
+            .where((session) => session.audioEffects.eqPresetId == presetId)
+            .map((session) => session.id)
+            .toList(growable: false);
+        for (final sessionId in referencingSessionIds) {
+          await _playback.applySessionEqPreset(
+            sessionId,
+            builtInEqPresets.first,
           );
-        },
-      );
+        }
+        return !_playback.sessions.values.any(
+          (session) => session.audioEffects.eqPresetId == presetId,
+        );
+      },
+    );
+  }
 }

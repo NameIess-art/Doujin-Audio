@@ -59,9 +59,13 @@ class AppCacheService {
     return '${mb.round()} MB';
   }
 
-  static Future<void> setMaxCacheBytes(int bytes) async {
+  static Future<void> setMaxCacheBytes(
+    int bytes, {
+    bool enforceImmediately = true,
+  }) async {
     _cancelScheduledEnforce();
     _maxCacheBytes = bytes <= 0 ? defaultMaxCacheBytes : bytes;
+    if (!enforceImmediately) return;
     if (_isAndroid && _protectedPaths.isEmpty) {
       try {
         await _fileCache.setApplicationCacheLimit(_maxCacheBytes);

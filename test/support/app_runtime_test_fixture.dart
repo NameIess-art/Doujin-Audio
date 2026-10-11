@@ -267,6 +267,10 @@ Widget buildAppRuntimeTestApp({
         (ref) => resolvedThemeProvider,
       ),
       appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
+      if (!overrides.any(
+        (item) => identical(item.origin, coreRuntimeReadyProvider),
+      ))
+        coreRuntimeReadyProvider.overrideWithValue(true),
       ...overrides,
     ],
     child: Consumer(
@@ -593,8 +597,10 @@ final class AppRuntimeTestFixture {
     );
   }
 
-  static Future<Database> installSharedDatabase() async {
-    final database = await databaseFactoryFfi.openDatabase(
+  static Future<Database> installSharedDatabase({
+    DatabaseFactory? factory,
+  }) async {
+    final database = await (factory ?? databaseFactoryFfi).openDatabase(
       inMemoryDatabasePath,
     );
     await AppDatabase.createSchemaForTest(database);

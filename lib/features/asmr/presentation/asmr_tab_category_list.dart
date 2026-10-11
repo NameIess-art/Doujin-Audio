@@ -232,6 +232,12 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     if (!snapshot.isLoading && snapshot.value != null) {
       _lastPresentedState = snapshot.value;
     }
+    if (_lastPresentedState == null &&
+        normalizedSearchQuery.isEmpty &&
+        !widget.searchSession &&
+        controller?.hasLoadedCategory(widget.category) == true) {
+      _lastPresentedState = controller!.categoryViewState(widget.category);
+    }
     final state =
         _lastPresentedState ??
         AsmrCategoryViewState(

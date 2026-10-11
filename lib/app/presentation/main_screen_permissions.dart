@@ -18,6 +18,7 @@ extension _MainScreenPermissions on _MainScreenState {
     try {
       if (!mounted ||
           !Platform.isAndroid ||
+          !ref.read(coreRuntimeReadyProvider) ||
           _backgroundPlaybackPromptShownThisLaunch) {
         return;
       }

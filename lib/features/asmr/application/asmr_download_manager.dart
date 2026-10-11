@@ -46,6 +46,7 @@ class AsmrDownloadManager {
     bool persistTasks = true,
     @visibleForTesting
     Future<void> Function(String? payload)? persistenceWriter,
+    @visibleForTesting Future<String?> Function()? persistenceReader,
     @visibleForTesting
     void Function(AsmrDownloadStoreOperation operation)? storeOperationObserver,
   }) : _fileCacheGateway =
@@ -53,6 +54,7 @@ class AsmrDownloadManager {
        _maxConcurrentDownloads = normalizeAsmrDownloadThreadCount(
          maxConcurrentDownloads,
        ),
+       _persistenceReader = persistenceReader,
        _persistTasks = persistTasks {
     _outputs = AsmrDownloadOutputStore(
       fileCacheGateway: _fileCacheGateway,
@@ -66,6 +68,7 @@ class AsmrDownloadManager {
     );
     _store = AsmrDownloadTaskStore(
       persistTasks: persistTasks,
+      persistenceReady: !persistTasks,
       persistenceWriter: persistenceWriter,
       persistenceSnapshot: _capturePersistenceSnapshot,
       operationObserver: storeOperationObserver,
@@ -81,6 +84,7 @@ class AsmrDownloadManager {
   static const AudioDetailJsonCodec _audioDetailJsonCodec =
       AudioDetailJsonCodec();
   final bool _persistTasks;
+  final Future<String?> Function()? _persistenceReader;
   late final AsmrDownloadTaskStore _store;
   final StreamController<AsmrDownloadTaskSnapshot> _completedTasksController =
       StreamController<AsmrDownloadTaskSnapshot>.broadcast();
@@ -101,6 +105,7 @@ class AsmrDownloadManager {
   bool _initialized = false;
   Future<void>? _initializationFuture;
   Future<void>? _shutdownFuture;
+  Object? _initializationError;
 
   List<AsmrDownloadTaskSnapshot> get tasks => _store.tasks;
   List<int> get taskIds => _store.taskIds;
@@ -122,6 +127,7 @@ class AsmrDownloadManager {
 
   bool get hasLiveTask => _activeTasks.isNotEmpty || _queue.isNotEmpty;
   bool get persistedUriReferencesReady => _initialized;
+  Object? get initializationError => _initializationError;
   int get persistedUriReferenceRevision => _store.persistedUriReferenceRevision;
   Stream<int> get persistedUriReferenceRevisions =>
       _store.persistedUriReferenceRevisions;
@@ -185,7 +191,17 @@ class AsmrDownloadManager {
 
   Future<void> initialize() {
     if (_disposed) return Future<void>.value();
-    return _initializationFuture ??= _initializeOnce();
+    final pending = _initializationFuture;
+    if (pending != null) return pending;
+    _initializationError = null;
+    return _initializationFuture = _initializeOnce().then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {
+        if (_shutdownFuture == null) _initializationFuture = null;
+        _initializationError = error;
+        Error.throwWithStackTrace(error, stackTrace);
+      },
+    );
   }
 
   Future<void> _initializeOnce() async {
@@ -194,6 +210,7 @@ class AsmrDownloadManager {
     }
     if (_disposed) return;
     _initialized = true;
+    _store.markPersistenceReady();
     _store.notifyTaskChanged(forcePersistedUriReferenceRevision: true);
   }
 
@@ -236,6 +253,9 @@ class AsmrDownloadManager {
   }
 
   Future<void> cancelTask(int workId, {bool deleteDownloaded = true}) async {
+    if (_disposed || _shutdownFuture != null) return;
+    await initialize();
+    if (_disposed || _shutdownFuture != null) return;
     final task = _store[workId];
     if (task == null) {
       return;
@@ -298,6 +318,9 @@ class AsmrDownloadManager {
   }
 
   Future<void> deleteTask(int workId) async {
+    if (_disposed || _shutdownFuture != null) return;
+    await initialize();
+    if (_disposed || _shutdownFuture != null) return;
     final task = _store[workId];
     if (task == null) return;
     final createdPaths = Set<String>.from(
@@ -327,6 +350,9 @@ class AsmrDownloadManager {
   }
 
   Future<void> pauseTask(int workId) async {
+    if (_disposed || _shutdownFuture != null) return;
+    await initialize();
+    if (_disposed || _shutdownFuture != null) return;
     final task = _store[workId];
     if (task == null) return;
 
@@ -348,9 +374,9 @@ class AsmrDownloadManager {
   }
 
   Future<void> pauseAllTasks() async {
-    if (_disposed) return;
+    if (_disposed || _shutdownFuture != null) return;
     await initialize();
-    if (_disposed) return;
+    if (_disposed || _shutdownFuture != null) return;
 
     final queuedWorkIds = List<int>.of(_queue);
     _queue.clear();
@@ -396,7 +422,7 @@ class AsmrDownloadManager {
         kDefaultAsmrDownloadFolderNameFields,
     String? customWorkFolderName,
   }) async {
-    if (_disposed) return;
+    if (_disposed || _shutdownFuture != null) return;
     if (work.id <= 0) {
       throw ArgumentError.value(work.id, 'work.id');
     }
@@ -412,7 +438,7 @@ class AsmrDownloadManager {
     );
 
     await initialize();
-    if (_disposed) return;
+    if (_disposed || _shutdownFuture != null) return;
 
     final workId = work.id;
     if (!_startingTasks.add(workId)) return;
@@ -482,7 +508,7 @@ class AsmrDownloadManager {
           ownedPaths ?? const <String>{},
         );
       }
-      if (_disposed) {
+      if (_disposed || _shutdownFuture != null) {
         return;
       }
       final backupBytes = saveMetadata
@@ -535,7 +561,7 @@ class AsmrDownloadManager {
   }
 
   void _processQueue() {
-    if (_disposed) return;
+    if (_disposed || _shutdownFuture != null) return;
     while (_activeTasks.length < _maxConcurrentDownloads && _queue.isNotEmpty) {
       final workId = _queue.removeAt(0);
       if (!_activeTasks.add(workId)) continue;
@@ -795,7 +821,10 @@ class AsmrDownloadManager {
     }
   }
 
-  Future<void> flushPersistence() => _store.flushPersistence();
+  Future<void> flushPersistence() {
+    if (_initialized || _disposed) return _store.flushPersistence();
+    return initialize().then((_) => _store.flushPersistence());
+  }
 
   @visibleForTesting
   void debugRemoveTaskForTesting(int workId) {
@@ -812,17 +841,31 @@ class AsmrDownloadManager {
   }
 
   @visibleForTesting
-  Future<void> debugRunStructuralPersistenceForTesting() =>
-      _store.runStructuralPersistenceForTesting();
+  Future<void> debugRunStructuralPersistenceForTesting() async {
+    await initialize();
+    await _store.runStructuralPersistenceForTesting();
+  }
 
   @visibleForTesting
-  Future<void> debugRunProgressCheckpointForTesting() =>
-      _store.runProgressCheckpointForTesting();
+  Future<void> debugRunProgressCheckpointForTesting() async {
+    await initialize();
+    await _store.runProgressCheckpointForTesting();
+  }
 
   Future<void> shutdown() => _shutdownFuture ??= _shutdownOnce();
 
   Future<void> _shutdownOnce() async {
     if (_disposed) return;
+    try {
+      await initialize();
+    } catch (error, stackTrace) {
+      // The store remains unable to persist until the complete record restores.
+      AppLogService.warning(
+        'asmr_download_shutdown_restore_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
     final runningWorkIds = <int>{..._queue, ..._activeTasks};
     final activeCompletions = _transfers.pendingTasks;
     _disposed = true;
@@ -840,7 +883,17 @@ class AsmrDownloadManager {
   }
 
   Future<void> _resumeTask(int workId) async {
-    if (_disposed || _startingTasks.contains(workId)) return;
+    if (_disposed ||
+        _shutdownFuture != null ||
+        _startingTasks.contains(workId)) {
+      return;
+    }
+    await initialize();
+    if (_disposed ||
+        _shutdownFuture != null ||
+        _startingTasks.contains(workId)) {
+      return;
+    }
     final task = _store[workId];
     if (task == null ||
         (task.status != AsmrDownloadTaskStatus.paused &&
@@ -851,9 +904,17 @@ class AsmrDownloadManager {
   }
 
   Future<bool> _retryFailedFile(int workId, String relativePath) async {
-    if (_disposed || _startingTasks.contains(workId)) return false;
+    if (_disposed ||
+        _shutdownFuture != null ||
+        _startingTasks.contains(workId)) {
+      return false;
+    }
     await initialize();
-    if (_disposed || _startingTasks.contains(workId)) return false;
+    if (_disposed ||
+        _shutdownFuture != null ||
+        _startingTasks.contains(workId)) {
+      return false;
+    }
     final task = _store[workId];
     final normalizedPath = relativePath.trim();
     if (task == null ||
@@ -923,13 +984,20 @@ class AsmrDownloadManager {
   );
 
   Future<void> _restorePersistedTasksFromPreferences() async {
-    final raw = await AppPreferences.getString(
-      AppPreferences.asmrDownloadTasksKey,
-    );
-    if (_disposed || raw == null || raw.isEmpty) return;
     try {
+      final reader = _persistenceReader;
+      final raw = reader != null
+          ? await reader()
+          : await AppPreferences.getString(
+              AppPreferences.asmrDownloadTasksKey,
+              throwOnError: true,
+            );
+      if (_disposed || raw == null || raw.isEmpty) return;
       final restored = await compute(decodePersistedDownloadTasks, raw);
       if (_disposed) return;
+      if (restored.error != null) {
+        Error.throwWithStackTrace(restored.error!, restored.stackTrace!);
+      }
       for (final snapshot in restored.tasks) {
         final task = snapshot.task;
         _store[task.work.id] = task;
@@ -937,19 +1005,13 @@ class AsmrDownloadManager {
         _outputs.createdJsonDocuments[task.work.id] =
             snapshot.createdJsonDocuments;
       }
-      if (restored.error != null) {
-        AppLogService.warning(
-          'asmr_download_restore_failed',
-          error: restored.error,
-          stackTrace: restored.stackTrace,
-        );
-      }
     } catch (error, stackTrace) {
       AppLogService.warning(
         'asmr_download_restore_failed',
         error: error,
         stackTrace: stackTrace,
       );
+      rethrow;
     }
   }
 

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/presentation/app_presentation_providers.dart';
 import '../application/asmr_download_models.dart';
 import '../../../core/ui/undoable_removal_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
@@ -19,14 +20,45 @@ import 'asmr_download_details_page.dart';
 
 import 'asmr_download_task_card.dart';
 
-class AsmrDownloadTaskPage extends ConsumerWidget {
+class AsmrDownloadTaskPage extends ConsumerStatefulWidget {
   const AsmrDownloadTaskPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AsmrDownloadTaskPage> createState() =>
+      _AsmrDownloadTaskPageState();
+}
+
+class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
+  Future<void>? _initialization;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  void _initialize() {
+    _initialization = ref.read(asmrDownloadManagerProvider)?.initialize();
+    // The deferred builder may subscribe after recovery fails; its FutureBuilder
+    // still receives that failure and presents retry without an unhandled error.
+    _initialization?.ignore();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
+    final listPadding = EdgeInsets.fromLTRB(
+      16,
+      headerHeight + 16,
+      16,
+      MediaQuery.paddingOf(context).bottom + 16,
+    );
+    final placeholder = OperationSkeletonList(
+      showHeader: false,
+      padding: listPadding,
+    );
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -35,54 +67,69 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
         child: Stack(
           children: [
             AppPageContentTransition.deferred(
-              placeholder: OperationSkeletonList(
-                showHeader: false,
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  headerHeight + 16,
-                  16,
-                  MediaQuery.paddingOf(context).bottom + 16,
-                ),
-              ),
-              builder: (context) => Consumer(
-                builder: (context, ref, _) {
-                  final state = ref.watch(asmrDownloadTaskIdsProvider).value;
-                  final removalState = ref.watch(undoableRemovalStateProvider);
-                  final taskIds =
-                      (state ??
-                              ref.read(asmrDownloadManagerProvider)?.taskIds ??
-                              const <int>[])
-                          .where(
-                            (workId) => !removalState.isHidden(
-                              _asmrDownloadTaskRemovalKey(workId),
-                            ),
-                          )
-                          .toList(growable: false);
-                  return taskIds.isEmpty
-                      ? Center(
-                          child: Text(
-                            i18n.tr('asmr_download_no_tasks'),
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
+              placeholder: placeholder,
+              builder: (context) => FutureBuilder<void>(
+                future: _initialization,
+                builder: (context, snapshot) {
+                  final manager = ref.read(asmrDownloadManagerProvider);
+                  if (manager != null && !manager.persistedUriReferencesReady) {
+                    if (snapshot.hasError) {
+                      return Padding(
+                        padding: listPadding,
+                        child: OperationStatusBanner(
+                          label: i18n.tr('asmr_detail_load_failed'),
+                          error: snapshot.error,
+                          retryTooltip: i18n.tr('retry'),
+                          onRetry: () => setState(_initialize),
+                        ),
+                      );
+                    }
+                    return placeholder;
+                  }
+                  return Consumer(
+                    builder: (context, ref, _) {
+                      final state = ref
+                          .watch(asmrDownloadTaskIdsProvider)
+                          .value;
+                      final removalState = ref.watch(
+                        undoableRemovalStateProvider,
+                      );
+                      final taskIds =
+                          (state ??
+                                  ref
+                                      .read(asmrDownloadManagerProvider)
+                                      ?.taskIds ??
+                                  const <int>[])
+                              .where(
+                                (workId) => !removalState.isHidden(
+                                  _asmrDownloadTaskRemovalKey(workId),
                                 ),
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            headerHeight + 16,
-                            16,
-                            MediaQuery.paddingOf(context).bottom + 16,
-                          ),
-                          physics: const ClampingScrollPhysics(),
-                          itemCount: taskIds.length,
-                          itemBuilder: (context, index) {
-                            return _DownloadTaskItem(workId: taskIds[index]);
-                          },
-                        );
+                              )
+                              .toList(growable: false);
+                      return taskIds.isEmpty
+                          ? Center(
+                              child: Text(
+                                i18n.tr('asmr_download_no_tasks'),
+                                style: Theme.of(context).textTheme.bodyLarge
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                              ),
+                            )
+                          : ListView.builder(
+                              padding: listPadding,
+                              physics: const ClampingScrollPhysics(),
+                              itemCount: taskIds.length,
+                              itemBuilder: (context, index) {
+                                return _DownloadTaskItem(
+                                  workId: taskIds[index],
+                                );
+                              },
+                            );
+                    },
+                  );
                 },
               ),
             ),
@@ -227,6 +274,7 @@ class _DownloadTaskItem extends ConsumerWidget {
     final task = ref.watch(asmrDownloadTaskProvider(workId));
     final manager = ref.read(asmrDownloadManagerProvider);
     if (task == null || manager == null) return const SizedBox.shrink();
+    final ready = ref.watch(coreRuntimeReadyProvider);
     ref.watch(appLanguageStateProvider);
     final language = ref.read(appLanguageProviderInstanceProvider);
     return AsmrDownloadTaskCard(
@@ -238,28 +286,34 @@ class _DownloadTaskItem extends ConsumerWidget {
           child: AsmrDownloadDetailsPage(workId: workId),
         ),
       ),
-      onTogglePause: () {
-        if (task.status == AsmrDownloadTaskStatus.paused) {
-          manager.resumeTask(workId);
-        } else {
-          manager.pauseTask(workId);
-        }
-      },
-      onRemove: () async {
-        final action = await _showTaskRemovalMenu(
-          context,
-          title: language.tr('asmr_download_remove_task'),
-          removeEntryLabel: language.tr('asmr_download_remove_entry'),
-          deleteDownloadedLabel: language.tr('asmr_download_remove_and_delete'),
-        );
-        if (!context.mounted || action == null) return;
-        await _stageAsmrDownloadTaskRemoval(
-          context,
-          ref,
-          task: task,
-          removalAction: action,
-        );
-      },
+      onTogglePause: !ready
+          ? null
+          : () {
+              if (task.status == AsmrDownloadTaskStatus.paused) {
+                manager.resumeTask(workId);
+              } else {
+                manager.pauseTask(workId);
+              }
+            },
+      onRemove: !ready
+          ? null
+          : () async {
+              final action = await _showTaskRemovalMenu(
+                context,
+                title: language.tr('asmr_download_remove_task'),
+                removeEntryLabel: language.tr('asmr_download_remove_entry'),
+                deleteDownloadedLabel: language.tr(
+                  'asmr_download_remove_and_delete',
+                ),
+              );
+              if (!context.mounted || action == null) return;
+              await _stageAsmrDownloadTaskRemoval(
+                context,
+                ref,
+                task: task,
+                removalAction: action,
+              );
+            },
     );
   }
 }

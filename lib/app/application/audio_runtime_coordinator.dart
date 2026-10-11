@@ -58,11 +58,11 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
     if (_started || _disposed) return Future<void>.value();
     final active = _startFuture;
     if (active != null) return active;
-    final attempt = _start();
-    _startFuture = attempt;
-    return attempt.whenComplete(() {
+    late final Future<void> attempt;
+    attempt = _start().whenComplete(() {
       if (identical(_startFuture, attempt)) _startFuture = null;
     });
+    return _startFuture = attempt;
   }
 
   Future<void> _start() async {
@@ -130,6 +130,15 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
     await _snapshotSubscription?.cancel();
     await _progressSubscription?.cancel();
     if (_listenersStarted) await _stopListening();
+    final start = _startFuture;
+    if (start != null) {
+      try {
+        await start;
+      } catch (_) {
+        // Startup reports the failure to its caller; partial owners still need
+        // cleanup after their pending restore work has stopped.
+      }
+    }
     await _onDispose();
   }
 }

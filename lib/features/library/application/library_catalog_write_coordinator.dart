@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/logging/app_log_service.dart';
 import 'cover_artwork_cache_service.dart';
 import 'library_snapshot_cache_service.dart';
 import 'library_persistence_coordinator.dart';
@@ -357,7 +358,7 @@ final class LibraryCatalogWriteCoordinator {
     _service.libraryBatchDepth = 0;
     _clearBatch();
     if (changed) {
-      await _rebuildDerivedSnapshot();
+      await rebuildDerivedSnapshot();
       _coverArtwork()?.invalidateCatalogTracks(affected);
     }
   }
@@ -543,7 +544,7 @@ final class LibraryCatalogWriteCoordinator {
         before.restore(_service);
       }
       _clearBatch();
-      await _rebuildDerivedSnapshot();
+      await rebuildDerivedSnapshot();
       _coverArtwork()?.invalidateCatalogTracks(affected);
       rethrow;
     }
@@ -554,7 +555,7 @@ final class LibraryCatalogWriteCoordinator {
           .where((track) => !_service.libraryByPath.containsKey(track.path))
           .map((track) => track.path)
           .toList(growable: false);
-      await _rebuildDerivedSnapshot();
+      await rebuildDerivedSnapshot();
       _coverArtwork()?.invalidateCatalogTracks(affected);
       if (removedPaths.isNotEmpty) _trackRemovalHandler?.call(removedPaths);
     }
@@ -587,22 +588,29 @@ final class LibraryCatalogWriteCoordinator {
     _stagedRefresh = false;
   }
 
-  Future<void> _rebuildDerivedSnapshot() async {
+  Future<bool> rebuildDerivedSnapshot() async {
     final derivedGeneration = ++_service.libraryDerivedGeneration;
     final snapshot = await snapshotCacheService.buildDerivedSnapshot();
-    if (derivedGeneration != _service.libraryDerivedGeneration) return;
-    _service
-      ..library = List<MusicTrack>.of(snapshot.library)
-      ..libraryByPath = LibraryService.createPathIndex(snapshot.libraryByPath)
-      ..libraryIndexByPath = LibraryService.createPathIndex(
-        snapshot.libraryIndexByPath,
-      )
-      ..tracksByGroup = Map<String, List<MusicTrack>>.of(snapshot.tracksByGroup)
-      ..markStructureChanged();
-    snapshotCacheService
-      ..markStructureChanged()
-      ..adoptCardSnapshot(snapshot.cardSnapshot);
-    _syncStateSlice();
+    if (derivedGeneration != _service.libraryDerivedGeneration) return false;
+    AppLogService.measureSync(
+      'library_derived_snapshot_commit',
+      () {
+        _service
+          ..library = List<MusicTrack>.of(snapshot.library)
+          ..libraryByPath = snapshot.libraryByPath
+          ..libraryIndexByPath = snapshot.libraryIndexByPath
+          ..tracksByGroup = Map<String, List<MusicTrack>>.of(
+            snapshot.tracksByGroup,
+          )
+          ..markStructureChanged();
+        snapshotCacheService
+          ..markStructureChanged()
+          ..adoptCardSnapshot(snapshot.cardSnapshot);
+        _syncStateSlice();
+      },
+      details: {'tracks': snapshot.library.length},
+    );
+    return true;
   }
 }
 

@@ -6,7 +6,11 @@ extension AppDatabaseLibraryEntries on AppDatabase {
   Future<List<LibraryEntryRecord>> loadAllLibraryEntries() async {
     return _runDatabaseRead((db) async {
       final rows = await db.query('library_entries');
-      return rows.map(_libraryEntryFromRow).toList();
+      return AppLogService.measureSync(
+        'library_entry_record_mapping',
+        () => rows.map(_libraryEntryFromRow).toList(),
+        details: {'entries': rows.length},
+      );
     });
   }
 

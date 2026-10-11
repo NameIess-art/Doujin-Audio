@@ -6,6 +6,9 @@ param(
     [ValidateRange(1, 2147483647)][int]$Openings = 3,
     [switch]$Playing,
     [switch]$ProductionStartup,
+    [ValidateRange(1, 2147483647)][int]$LibraryItems = 100,
+    [ValidateRange(1, 2147483647)][int]$AsmrItems = 100,
+    [ValidateRange(0, 2147483647)][int]$AsmrTracks = 0,
     [string]$ApkPath = '',
     [ValidatePattern('^[A-Za-z0-9_-]+$')][string]$Label = 'navigation',
     [string]$OutputDirectory = (Join-Path $env:TEMP 'audio-navigation-profile')
@@ -51,26 +54,29 @@ if (!$Device) {
 Push-Location $projectRoot
 try {
     if (!$ApkPath) {
-        & flutter build apk --profile --no-pub --target=integration_test/ui_performance_test.dart --target-platform=android-arm64 "--dart-define=PERF_SCENARIO=$scenario" "--dart-define=PERF_TRANSITION_CONDITION=$Condition" "--dart-define=PERF_IDLE_SECONDS=$IdleSeconds" "--dart-define=PERF_OPENINGS=$Openings" "--dart-define=PERF_COVER_MANIFEST=$manifest" "--dart-define=PERF_TRACE_READY_FILE=$traceReadyFile" *> "$OutputDirectory/$Label-build.txt"
+        & flutter build apk --profile --no-pub --target=integration_test/ui_performance_test.dart --target-platform=android-arm64 "--dart-define=PERF_SCENARIO=$scenario" "--dart-define=PERF_TRANSITION_CONDITION=$Condition" "--dart-define=PERF_IDLE_SECONDS=$IdleSeconds" "--dart-define=PERF_OPENINGS=$Openings" "--dart-define=PERF_LIBRARY_ITEMS=$LibraryItems" "--dart-define=PERF_ASMR_ITEMS=$AsmrItems" "--dart-define=PERF_ASMR_TRACKS=$AsmrTracks" "--dart-define=PERF_COVER_MANIFEST=$manifest" "--dart-define=PERF_TRACE_READY_FILE=$traceReadyFile" *> "$OutputDirectory/$Label-build.txt"
         if ($LASTEXITCODE -ne 0) { throw 'Profile build failed.' }
         $ApkPath = Join-Path $projectRoot 'build/app/outputs/flutter-apk/app-profile.apk'
-        @{ scenario = $scenario; condition = $Condition; idleSeconds = $IdleSeconds; openings = $Openings; coverManifest = $manifest; traceReadyFile = $traceReadyFile; sha256 = (Get-FileHash -LiteralPath $ApkPath -Algorithm SHA256).Hash } | ConvertTo-Json | Set-Content "$ApkPath.profile.json"
+        @{ scenario = $scenario; condition = $Condition; idleSeconds = $IdleSeconds; openings = $Openings; libraryItems = $LibraryItems; asmrItems = $AsmrItems; asmrTracks = $AsmrTracks; coverManifest = $manifest; traceReadyFile = $traceReadyFile; sha256 = (Get-FileHash -LiteralPath $ApkPath -Algorithm SHA256).Hash } | ConvertTo-Json | Set-Content "$ApkPath.profile.json"
     } else {
         $ApkPath = [IO.Path]::GetFullPath($ApkPath)
         $metadata = Get-Content -LiteralPath "$ApkPath.profile.json" -Raw | ConvertFrom-Json
         if ($metadata.scenario -ne $scenario -or $metadata.condition -ne $Condition -or $metadata.idleSeconds -ne $IdleSeconds -or $metadata.openings -ne $Openings -or $metadata.coverManifest -ne $manifest -or $metadata.traceReadyFile -ne $traceReadyFile -or $metadata.sha256 -ne (Get-FileHash -LiteralPath $ApkPath -Algorithm SHA256).Hash) {
             throw 'APK metadata/hash does not match the requested Profile configuration.'
         }
+        if ($metadata.libraryItems -ne $LibraryItems -or $metadata.asmrItems -ne $AsmrItems -or $metadata.asmrTracks -ne $AsmrTracks) {
+            throw 'APK datasets do not match the requested Profile configuration.'
+        }
     }
+    & adb -s $Device shell am force-stop $package | Out-Null
+    # Profile is a separate debuggable package; preserve its fixture on baseline downgrade.
+    & adb -s $Device install -r -d $ApkPath
+    if ($LASTEXITCODE -ne 0) { throw 'Profile APK installation failed.' }
     if (!$ProductionStartup) {
         & adb -s $Device shell run-as $package test -f cache/profile-covers/manifest.json
         if ($LASTEXITCODE -ne 0) { throw 'Install the cover fixture before profiling.' }
     }
-    & adb -s $Device shell am force-stop $package | Out-Null
     & adb -s $Device shell run-as $package rm -f cache/navigation-profile-trace-ready
-    # Profile is a separate debuggable package; preserve its fixture on baseline downgrade.
-    & adb -s $Device install -r -d $ApkPath
-    if ($LASTEXITCODE -ne 0) { throw 'Profile APK installation failed.' }
     if ([IO.Path]::GetFullPath($ApkPath) -ne [IO.Path]::GetFullPath("$OutputDirectory/$Label.apk")) {
         Copy-Item -LiteralPath $ApkPath -Destination "$OutputDirectory/$Label.apk"
         Copy-Item -LiteralPath "$ApkPath.profile.json" -Destination "$OutputDirectory/$Label.apk.profile.json"

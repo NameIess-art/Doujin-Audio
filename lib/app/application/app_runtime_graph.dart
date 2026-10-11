@@ -62,7 +62,9 @@ typedef ProductionAppRuntime = ({
   AsmrLibraryController asmrLibraryController,
   AsmrPlaybackCoordinator asmrPlaybackCoordinator,
   AsmrApiService asmrApiService,
+  Future<void> Function() initializePresentation,
   Future<void> Function() initializeRuntimeData,
+  Future<void> Function() initializeSecondaryData,
 });
 
 typedef AppRuntimeGraph = ({
@@ -252,6 +254,18 @@ AppRuntimeGraph createAppRuntimeGraph({
     disposeWorkTexts: workTexts.dispose,
     bindings: bindings,
   );
+  playback.configureUserLaunchInitialization(
+    persistenceEnabled
+        ? () async {
+            await runtime.start();
+            if (!persistence.hasLoadedState) {
+              throw StateError(
+                'Playback runtime initialization was invalidated',
+              );
+            }
+          }
+        : null,
+  );
   syncAllState();
   return (
     browsePageStates: browsePageStates,
@@ -345,10 +359,15 @@ ProductionAppRuntime createProductionAppRuntime({
     invalidateInitialization: runtimeGraph.persistence.invalidatePendingLoad,
   );
 
-  Future<void> initialize() async {
-    await appLanguageProvider.initialized;
+  Future<void> initializePresentation() async {
     await Future.wait<void>([
-      runtimeGraph.runtime.start(),
+      appLanguageProvider.initialized,
+      runtimeGraph.persistence.initializePresentation(),
+    ]);
+  }
+
+  Future<void> initializeSecondaryData() async {
+    await Future.wait<void>([
       asmrDownloadManager.initialize(),
       asmrLibraryController.initialize(
         defaultLanguage: AsmrContentLanguage.fromAppLanguage(
@@ -359,7 +378,8 @@ ProductionAppRuntime createProductionAppRuntime({
   }
 
   Future<void> initializeRuntimeData() =>
-      windowsRuntime?.initializeRuntime(initialize) ?? initialize();
+      windowsRuntime?.initializeRuntime(runtimeGraph.runtime.start) ??
+      runtimeGraph.runtime.start();
 
   return (
     runtimeGraph: runtimeGraph,
@@ -370,6 +390,8 @@ ProductionAppRuntime createProductionAppRuntime({
     asmrLibraryController: asmrLibraryController,
     asmrPlaybackCoordinator: asmrPlaybackCoordinator,
     asmrApiService: asmrApiService,
+    initializePresentation: initializePresentation,
     initializeRuntimeData: initializeRuntimeData,
+    initializeSecondaryData: initializeSecondaryData,
   );
 }

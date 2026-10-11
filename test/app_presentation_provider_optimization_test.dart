@@ -7,6 +7,7 @@ import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:flutter/widgets.dart';
@@ -49,6 +50,38 @@ class _WorkDetailRepository extends TestPersistenceRepository {
 void main() {
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+  test(
+    'library scan progress publishes during motion without structural work',
+    () async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final container = ProviderContainer(
+        overrides: [libraryFacadeProvider.overrideWithValue(fixture.library)],
+      );
+      addTearDown(fixture.dispose);
+      addTearDown(container.dispose);
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+      final subscription = container.listen(libraryStateProvider, (_, _) {});
+      await container.read(libraryStateProvider.future);
+      final interaction = UiInteractionCoordinator.instance;
+      final motion = Object();
+      interaction.beginInteraction(motion, deferVisualUpdates: true);
+      fixture.libraryService
+        ..isScanning = true
+        ..scanProcessed = 8
+        ..scanFoundCount = 6
+        ..syncSlice(isInitialized: true, detailRevision: 0);
+      await Future<void>.delayed(Duration.zero);
+      final state = container.read(libraryStateProvider).requireValue;
+      expect(state.scanProcessed, 8);
+      expect(state.scanFoundCount, 6);
+      expect(state.isScanning, isTrue);
+      expect(interaction.isVisualUpdateDeferred, isTrue);
+      expect(interaction.pendingCommitCount, 0);
+      interaction.cancelInteraction(motion);
+      subscription.close();
+    },
+  );
+
   testWidgets('global subtitles switch by target state and ignore parameters', (
     tester,
   ) async {

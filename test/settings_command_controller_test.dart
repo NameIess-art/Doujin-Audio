@@ -20,6 +20,32 @@ import 'package:doujin_audio/features/settings/application/settings_command_cont
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('cache maintenance waits for core recovery', () async {
+    final ready = Completer<void>();
+    final settings = SettingsRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository: TestPersistenceRepository(),
+    );
+    addTearDown(settings.dispose);
+    addTearDown(playback.dispose);
+    var clears = 0;
+    final controller = SettingsCommandController(
+      settings: settings,
+      playback: playback,
+      waitForRuntime: () => ready.future,
+      clearApplicationCacheFiles: () async {
+        clears++;
+        return 42;
+      },
+    );
+    final result = controller.clearApplicationCache();
+    await Future<void>.delayed(Duration.zero);
+    expect(clears, 0);
+    ready.complete();
+    expect(await result, 42);
+    expect(clears, 1);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(

@@ -6,6 +6,7 @@ import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/persistence/json_document_store.dart';
 import '../../../core/cache/app_cache_service.dart';
@@ -153,6 +154,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       );
   CoverArtworkCacheService? _coverArtworkCacheService;
   bool _disposed = false;
+  Future<void>? _loadFuture;
   int _scanOperationGeneration = 0;
   Completer<void>? _scanCompletion;
   bool _interactionPaused = false;
@@ -211,31 +213,57 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   AudioLibraryCategorySnapshot? get categorySnapshot =>
       snapshotCacheService.categorySnapshotSync;
 
-  Future<void> loadPersistedState() async {
+  Future<void> loadPersistedState() {
+    if (_disposed || state.isInitialized) return Future<void>.value();
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    late final Future<void> request;
+    request = _loadPersistedState().whenComplete(() {
+      if (identical(_loadFuture, request)) _loadFuture = null;
+    });
+    return _loadFuture = request;
+  }
+
+  Future<void> _loadPersistedState() async {
+    final generation = ++_service.libraryDerivedGeneration;
     final persisted = await _persistenceCoordinator.load();
+    if (_disposed || generation != _service.libraryDerivedGeneration) return;
 
     _service
+      ..library.clear()
       ..library.addAll(persisted.tracks)
+      ..groupOrder.clear()
       ..groupOrder.addAll(persisted.groupOrder)
+      ..groupOrderSet.clear()
       ..groupOrderSet.addAll(persisted.groupOrder)
+      ..watchedFolders.clear()
       ..watchedFolders.addAll(persisted.watchedFolders)
+      ..watchedLibraries.clear()
       ..watchedLibraries.addAll(persisted.watchedLibraries)
-      ..excludedLibraryFolders.addAll(persisted.folderExclusions)
-      ..excludedLibraryTracks.addAll(persisted.trackExclusions);
-    _service
-      ..replaceLibraryEntries(persisted.entries)
-      ..rebuildExclusionsFromEntries(persisted.entries);
-    for (final entry in persisted.legacyFolderExclusions.entries) {
-      _service.excludedLibraryFolders
-          .putIfAbsent(entry.key, () => <String>{})
-          .addAll(entry.value);
-    }
-    _applyExclusionsToLibrary();
+      ..libraryEntriesByLibrary.clear();
+    AppLogService.measureSync(
+      'library_restore_entry_mapping',
+      () {
+        _service.replaceLibraryEntries(persisted.entries);
+      },
+      details: {'entries': persisted.entries.length},
+    );
+    AppLogService.measureSync(
+      'library_restore_exclusion_index',
+      () {
+        _service.rebuildExclusionsFromEntries(persisted.entries);
+        for (final entry in persisted.legacyFolderExclusions.entries) {
+          _service.excludedLibraryFolders
+              .putIfAbsent(entry.key, () => <String>{})
+              .addAll(entry.value);
+        }
+        _applyExclusionsToLibrary();
+      },
+      details: {'tracks': persisted.tracks.length},
+    );
 
-    beginLibraryBatch();
-    _service.libraryBatchChanged = _service.library.isNotEmpty;
-    await endLibraryBatch();
     _service.syncGroupOrderFromLibrary();
+    if (!await _catalogWrites.rebuildDerivedSnapshot() || _disposed) return;
     // Startup caches shallow cards; nested trees stay lazy until requested.
     _syncStateSlice(isInitialized: true);
   }
@@ -254,6 +282,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   }
 
   Future<void> resetPersistedState() async {
+    _service.libraryDerivedGeneration++;
     await prepareForPersistedStateReset();
     cancelPendingScanProgressNotification();
     _service
@@ -282,6 +311,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     snapshotCacheService.clear();
     _coverArtworkCacheService?.invalidateAll();
     detailCacheService.resume();
+    _loadFuture = null;
     _syncStateSlice(isInitialized: false);
   }
 
@@ -295,7 +325,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     if (excludedTracks.isEmpty && excludedFolders.isEmpty) return;
     final trackIndex = PathMembershipIndex(excludedTracks);
     final folderIndex = PathMembershipIndex(excludedFolders);
-    removeTracksMatching(
+    _service.library.removeWhere(
       (track) =>
           trackIndex.containsEquivalent(track.path) ||
           folderIndex.containsAncestorOrEqual(track.path) ||
@@ -1036,11 +1066,15 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
 
   Future<void> dispose() async {
     _disposed = true;
+    _service.libraryDerivedGeneration++;
+    final pendingPersistence = _persistenceCoordinator.prepareForReset();
+    snapshotCacheService.dispose();
     _metadataCoordinator.dispose();
     await _startupMaintenanceCoordinator.dispose();
     await detailCacheService.suspendAndWait();
     cancelPendingScanProgressNotification();
     await _coverArtworkCacheService?.dispose();
+    await pendingPersistence;
     await _service.dispose();
   }
 }

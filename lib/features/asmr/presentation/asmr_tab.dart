@@ -97,6 +97,7 @@ Future<void> _addAsmrWorksToPlaylist({
   required List<AsmrWork> works,
   required VoidCallback exitSelectionMode,
 }) async {
+  if (!ref.read(coreRuntimeReadyProvider)) return;
   final playback = ref.read(asmrPlaybackCoordinatorProvider);
   var addedCount = 0;
   if (playback != null) {
@@ -312,6 +313,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   bool _accountHydrationCompleted = false;
   late final String _categoryLoadCommitKey =
       'asmr_category_load_${identityHashCode(this)}';
+  late final String _activationCommitKey =
+      'asmr_activation_${identityHashCode(this)}';
   late final String _languageCommitKey =
       'asmr_page_language_${identityHashCode(this)}';
   late final AppLanguageProvider _languageProvider;
@@ -378,11 +381,17 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     };
     _activeCategoryIndex = ValueNotifier<int>(0);
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller?.initialized == true &&
+        controller!.pageLanguage == _languageProvider.language) {
+      _activeCategoryIndex.value = _restoredCategoryIndex(controller);
+      _activationCompleted = controller.hasLoadedCategory(_selectedCategory);
+    }
     _languageProvider.addListener(_handleAppLanguageChanged);
     widget.activeTabIndexListenable?.addListener(_handleActiveStateChanged);
     widget.activeSectionListenable?.addListener(_handleActiveStateChanged);
-    final controller = ref.read(mainScreenControllerProvider);
-    initTabState(controller.scrollToTopTab, controller.stopScrollTab);
+    final mainController = ref.read(mainScreenControllerProvider);
+    initTabState(mainController.scrollToTopTab, mainController.stopScrollTab);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_isActive) return;
       _scheduleHeaderMeasurement(force: true);
@@ -397,6 +406,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     _wasSelected = selected;
     if (!_isActive) {
       UiInteractionCoordinator.instance.cancelCommit(_categoryLoadCommitKey);
+      UiInteractionCoordinator.instance.cancelCommit(_activationCommitKey);
       UiInteractionCoordinator.instance.cancelCommit(_languageCommitKey);
       _pendingPageLanguageSync = null;
       _activationScheduled = false;
@@ -443,6 +453,22 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         _activationTask = task;
         await task;
         if (identical(_activationTask, task)) _activationTask = null;
+        if (mounted && _isActive && generation != coordinator.generation) {
+          final currentGeneration = coordinator.generation;
+          // The idle scheduler releases this task's key after it returns.
+          coordinator.scheduleCommit(
+            key: _activationCommitKey,
+            generation: currentGeneration,
+            priority: 0,
+            commit: () {
+              if (mounted &&
+                  _isActive &&
+                  currentGeneration == coordinator.generation) {
+                _ensureActivated();
+              }
+            },
+          );
+        }
       },
     );
     if (!accepted) _activationScheduled = false;
@@ -457,34 +483,61 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       await controller.initializeForVisiblePage(
         defaultLanguage: defaultLanguage,
       );
-      if (!mounted || !_isActive) return;
-      final pageStore = ref.read(browsePageStateStoreProvider);
-      final savedCategory = pageStore.stateFor(
-        'asmr_root:${controller.browseCacheScope}',
-      )['category'];
-      if (savedCategory is String) {
-        final restored = AsmrCategoryType.values.where(
-          (value) => value.name == savedCategory,
-        );
-        if (restored.isNotEmpty && _headerCategories.contains(restored.first)) {
-          final restoredCategory = restored.first;
-          final restoredIndex = _headerCategories.indexOf(restoredCategory);
-          if (restoredIndex >= 0) {
-            _activeCategoryIndex.value = restoredIndex;
-          }
-        }
+      final scope = controller.browseCacheScope;
+      final coordinator = UiInteractionCoordinator.instance;
+      if (!mounted ||
+          !_isActive ||
+          generation != coordinator.generation ||
+          !identical(controller, ref.read(asmrLibraryControllerProvider))) {
+        return;
       }
-      if (!mounted || !_isActive) return;
-      setState(() => _activationCompleted = true);
-      _scheduleAccountHydration(controller, generation);
+      _activationScheduled = true;
+      coordinator.scheduleCommit(
+        key: _activationCommitKey,
+        generation: generation,
+        priority: 0,
+        structural: true,
+        commit: () {
+          _activationScheduled = false;
+          if (!mounted ||
+              !_isActive ||
+              !identical(controller, ref.read(asmrLibraryControllerProvider))) {
+            return;
+          }
+          if (scope != controller.browseCacheScope) {
+            _ensureActivated();
+            return;
+          }
+          setState(() {
+            _activeCategoryIndex.value = _restoredCategoryIndex(controller);
+            _activationCompleted = true;
+          });
+          _scheduleAccountHydration(controller, coordinator.generation);
+        },
+      );
     } catch (error, stackTrace) {
       AppLogService.warning(
         'asmr_visible_activation_failed',
         error: error,
         stackTrace: stackTrace,
       );
-      if (mounted) setState(() => _activationError = error);
+      if (mounted &&
+          _isActive &&
+          generation == UiInteractionCoordinator.instance.generation &&
+          identical(controller, ref.read(asmrLibraryControllerProvider))) {
+        setState(() => _activationError = error);
+      }
     }
+  }
+
+  int _restoredCategoryIndex(AsmrLibraryController controller) {
+    final savedCategory = ref
+        .read(browsePageStateStoreProvider)
+        .stateFor('asmr_root:${controller.browseCacheScope}')['category'];
+    final index = _headerCategories.indexWhere(
+      (category) => category.name == savedCategory,
+    );
+    return index < 0 ? 0 : index;
   }
 
   void _retryActivation() {
@@ -807,6 +860,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelCommit(_categoryLoadCommitKey);
+    UiInteractionCoordinator.instance.cancelCommit(_activationCommitKey);
     UiInteractionCoordinator.instance.cancelCommit(_languageCommitKey);
     _activeCategoryIndex.dispose();
     _languageProvider.removeListener(_handleAppLanguageChanged);
@@ -821,9 +875,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   @override
   Widget build(BuildContext context) {
+    final controller = ref.read(asmrLibraryControllerProvider);
     final globalInitialized = ref.watch(
       asmrLibraryGlobalStateProvider.select(
-        (state) => state.value?.initialized ?? false,
+        (state) => state.value?.initialized ?? controller?.initialized ?? false,
       ),
     );
     final hasDownloadManager = ref.watch(asmrDownloadManagerProvider) != null;
@@ -848,6 +903,12 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         clipBehavior: Clip.none,
         children: [
           AppPageContentTransition.deferred(
+            prepared:
+                _activationCompleted &&
+                (ref
+                        .read(asmrLibraryControllerProvider)
+                        ?.hasLoadedCategory(_selectedCategory) ??
+                    false),
             isReady:
                 _activationError != null ||
                 (globalInitialized && _activationCompleted),
@@ -937,15 +998,17 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               valueListenable: _activeCategoryIndex,
               builder: (context, _, _) => Consumer(
                 builder: (context, ref, _) {
-                  final categoryState = ref
-                      .watch(
-                        asmrCategoryStateProvider((
-                          category: _selectedCategory,
-                          searchQuery: '',
-                          searchSession: false,
-                        )),
-                      )
-                      .value;
+                  final categoryState = _activationCompleted
+                      ? ref
+                            .watch(
+                              asmrCategoryStateProvider((
+                                category: _selectedCategory,
+                                searchQuery: '',
+                                searchSession: false,
+                              )),
+                            )
+                            .value
+                      : null;
                   final totalWorks = (categoryState?.totalCount ?? 0) > 0
                       ? categoryState!.totalCount
                       : (categoryState?.works.length ?? 0);
@@ -962,7 +1025,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                             keyPrefix: 'asmr',
                             i18n: i18n,
                             selectedWorks: selectedWorks,
-                            onAddToPlaylist: selectedWorks.isEmpty
+                            onAddToPlaylist:
+                                selectedWorks.isEmpty ||
+                                    !ref.watch(coreRuntimeReadyProvider)
                                 ? null
                                 : _addSelectedWorksToPlaylist,
                             onDownload: selectedWorks.isEmpty

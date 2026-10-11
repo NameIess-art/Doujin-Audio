@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -15,12 +16,73 @@ import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_task_card.dart';
+import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   final interaction = UiInteractionCoordinator.instance;
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'download task restoration stays scoped and can retry on $platform',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final language = AppLanguageProvider();
+        await language.setLanguage(AppLanguage.en);
+        final read = Completer<String?>();
+        var reads = 0;
+        final manager = AsmrDownloadManager(
+          persistenceReader: () {
+            reads++;
+            return reads == 1 ? read.future : Future<String?>.value();
+          },
+          persistenceWriter: (_) async {},
+        );
+        final removals = UndoableRemovalService();
+        addTearDown(language.dispose);
+        addTearDown(manager.dispose);
+        addTearDown(removals.dispose);
+        var taskReads = 0;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              coreRuntimeReadyProvider.overrideWithValue(true),
+              appLanguageProviderInstanceProvider.overrideWithValue(language),
+              asmrDownloadManagerProvider.overrideWithValue(manager),
+              undoableRemovalServiceProvider.overrideWithValue(removals),
+              asmrDownloadTaskIdsProvider.overrideWith((ref) {
+                taskReads++;
+                return Stream.value(const <int>[]);
+              }),
+            ],
+            child: const MaterialApp(home: AsmrDownloadTaskPage()),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(find.byType(OperationSkeletonList), findsWidgets);
+        expect(find.text('No download tasks'), findsNothing);
+        expect(taskReads, 0);
+
+        read.completeError(StateError('read_failed'));
+        await tester.pumpAndSettle();
+        expect(find.byType(OperationStatusBanner), findsOneWidget);
+        expect(taskReads, 0);
+        await tester.tap(find.byTooltip('Retry'));
+        await tester.pumpAndSettle();
+        expect(reads, 2);
+        expect(taskReads, 1);
+        expect(find.text('No download tasks'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        final shutdown = manager.shutdown();
+        await tester.pump();
+        await shutdown;
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
@@ -40,6 +102,7 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
+              coreRuntimeReadyProvider.overrideWithValue(false),
               appLanguageProviderInstanceProvider.overrideWithValue(language),
               asmrDownloadManagerProvider.overrideWithValue(manager),
               undoableRemovalServiceProvider.overrideWithValue(removals),
@@ -73,6 +136,12 @@ void main() {
         expect(taskReads, 0);
         await tester.pumpAndSettle();
         expect(taskReads, 1);
+        final taskCard = tester.widget<AsmrDownloadTaskCard>(
+          find.byType(AsmrDownloadTaskCard),
+        );
+        expect(taskCard.onTogglePause, isNull);
+        expect(taskCard.onRemove, isNull);
+        expect(taskCard.onOpen, isNotNull);
         final card = tester.element(find.byType(AsmrDownloadTaskCard));
         unawaited(
           navigator.currentState!.push(
@@ -111,6 +180,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          coreRuntimeReadyProvider.overrideWithValue(true),
           appLanguageProviderInstanceProvider.overrideWithValue(
             languageProvider,
           ),
@@ -120,7 +190,7 @@ void main() {
         child: const MaterialApp(home: AsmrDownloadTaskPage()),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     await tester.tap(
       find.byKey(const ValueKey<String>('asmr_download_remove_task_1')),
@@ -172,6 +242,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          coreRuntimeReadyProvider.overrideWithValue(true),
           appLanguageProviderInstanceProvider.overrideWithValue(
             languageProvider,
           ),

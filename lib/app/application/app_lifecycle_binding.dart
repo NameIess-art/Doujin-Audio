@@ -119,6 +119,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   Future<void> dispose() => _disposeFuture ??= _dispose();
 
   Future<void> _dispose() async {
+    _persistence.invalidatePendingLoad();
     try {
       await _asmrDownloads?.pauseAllTasks();
     } finally {

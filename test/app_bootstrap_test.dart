@@ -28,6 +28,7 @@ void main() {
     final first = controller.initialize();
     final second = controller.retry();
 
+    expect(second, same(first));
     expect(attempts, 1);
     expect(controller.state.phase, AppBootstrapPhase.initializing);
     completer.complete();
@@ -182,6 +183,54 @@ void main() {
     expect(find.text('ready'), findsOneWidget);
     expect(attempts, 1);
   });
+
+  testWidgets(
+    'framework renders before hydration and remains mounted during retry',
+    (tester) async {
+      final firstAttempt = Completer<void>();
+      var attempts = 0;
+      var frameworkBuilds = 0;
+      final controller = AppBootstrapController(
+        initializer: () {
+          attempts++;
+          return attempts == 1 ? firstAttempt.future : Future<void>.value();
+        },
+      );
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppBootstrapGate(
+            controller: controller,
+            disposeController: false,
+            initializeAfterFirstFrame: true,
+            showReadyWhileInitializing: true,
+            readyBuilder: (_) {
+              frameworkBuilds++;
+              return const Text('framework');
+            },
+            loadingBuilder: (_) => const Text('loading'),
+            failureBuilder: (_, _) => const Text('retry overlay'),
+          ),
+        ),
+      );
+      final framework = tester.element(find.text('framework'));
+      expect(attempts, 0);
+      expect(find.text('loading'), findsNothing);
+      await tester.pump();
+      expect(attempts, 1);
+      firstAttempt.completeError(StateError('core unavailable'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('retry overlay'), findsOneWidget);
+      expect(tester.element(find.text('framework')), same(framework));
+      await controller.retry();
+      await tester.pump();
+      expect(find.text('retry overlay'), findsNothing);
+      expect(tester.element(find.text('framework')), same(framework));
+      expect(frameworkBuilds, 1);
+      expect(attempts, 2);
+    },
+  );
 
   testWidgets(
     'fresh-install snapshot releases onboarding before pending runtime',

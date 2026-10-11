@@ -12,6 +12,7 @@ Stream<T> interactionDeferredListenableStream<T>({
   required T Function() read,
   UiInteractionCoordinator? coordinator,
   bool deferInitialRead = false,
+  bool structural = false,
 }) {
   final interaction = coordinator ?? UiInteractionCoordinator.instance;
   return Stream<T>.multi((events) {
@@ -32,7 +33,7 @@ Stream<T> interactionDeferredListenableStream<T>({
         dirty = true;
         return;
       }
-      if (!interaction.isInteracting) {
+      if (!structural && !interaction.isInteracting) {
         interaction.cancelCommit(commitKey);
         dirty = false;
         events.addSync(read());
@@ -44,6 +45,7 @@ Stream<T> interactionDeferredListenableStream<T>({
       interaction.scheduleCommit(
         key: commitKey,
         priority: 10,
+        structural: structural,
         commit: flushPending,
       );
     }
@@ -73,6 +75,8 @@ Stream<T> interactionDeferredListenableStream<T>({
 Stream<T> interactionDeferredValueStream<T>(
   Stream<T> source, {
   UiInteractionCoordinator? coordinator,
+  bool structural = false,
+  bool Function(T previous, T next)? isStructuralUpdate,
 }) {
   late StreamController<T> controller;
   StreamSubscription<T>? subscription;
@@ -80,23 +84,36 @@ Stream<T> interactionDeferredValueStream<T>(
   final commitKey =
       'interaction_deferred_value_${_interactionDeferredStreamSeed++}';
   Object? pendingValue = _noPendingValue;
+  Object? publishedValue = _noPendingValue;
   var hasEmitted = false;
   var sourceDone = false;
+
+  bool isStructural(T value) =>
+      structural ||
+      (hasEmitted &&
+          (isStructuralUpdate?.call(publishedValue as T, value) ?? false));
 
   void flushPending() {
     final value = pendingValue;
     pendingValue = _noPendingValue;
     if (!controller.isClosed && !identical(value, _noPendingValue)) {
+      publishedValue = value;
       controller.add(value as T);
     }
     if (sourceDone) unawaited(controller.close());
   }
 
   void emit(T value) {
-    if (!hasEmitted || !interaction.isInteracting) {
+    // Progress for a queued catalog must not publish its new structure early.
+    final structuralUpdate = isStructural(value);
+    final shouldDefer =
+        structuralUpdate ||
+        (isStructuralUpdate == null && interaction.isInteracting);
+    if (!hasEmitted || !shouldDefer) {
       hasEmitted = true;
       interaction.cancelCommit(commitKey);
       pendingValue = _noPendingValue;
+      publishedValue = value;
       controller.add(value);
       return;
     }
@@ -104,6 +121,7 @@ Stream<T> interactionDeferredValueStream<T>(
     interaction.scheduleCommit(
       key: commitKey,
       priority: 10,
+      structural: structuralUpdate,
       commit: flushPending,
     );
   }
@@ -112,6 +130,7 @@ Stream<T> interactionDeferredValueStream<T>(
     sync: true,
     onListen: () {
       hasEmitted = false;
+      publishedValue = _noPendingValue;
       sourceDone = false;
       subscription = source.listen(
         emit,
@@ -120,7 +139,8 @@ Stream<T> interactionDeferredValueStream<T>(
           sourceDone = true;
           if (identical(pendingValue, _noPendingValue)) {
             unawaited(controller.close());
-          } else if (!interaction.isInteracting) {
+          } else if (!isStructural(pendingValue as T) &&
+              !interaction.isInteracting) {
             interaction.cancelCommit(commitKey);
             flushPending();
           }

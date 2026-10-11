@@ -422,6 +422,36 @@ final isTrackActiveProvider = Provider.autoDispose.family<bool, String>((
   return ref.watch(activeTrackPathsProvider).contains(trackPath);
 });
 
+final coreRuntimeReadyProvider = Provider<bool>((ref) {
+  final library = ref.watch(libraryFacadeProvider);
+  final playback = ref.watch(playbackFacadeProvider);
+  final timer = ref.watch(timerFacadeProvider);
+  final settings = ref.watch(settingsRepositoryProvider);
+  final libraryReady = ref.watch(
+    libraryStateProvider.select(
+      (state) => state.value?.isInitialized ?? library.state.isInitialized,
+    ),
+  );
+  final playbackReady = ref.watch(
+    playbackStateProvider.select(
+      (state) =>
+          state.value?.isInitialized ?? playback.aggregateState.isInitialized,
+    ),
+  );
+  final timerReady = ref.watch(
+    timerStateProvider.select(
+      (state) => state.value?.isInitialized ?? timer.state.isInitialized,
+    ),
+  );
+  final settingsReady = ref.watch(
+    settingsStateProvider.select(
+      (state) =>
+          state.value?.isInitialized ?? settings.slice.state.isInitialized,
+    ),
+  );
+  return libraryReady && playbackReady && timerReady && settingsReady;
+});
+
 final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   final playback = ref.watch(playbackFacadeProvider);
   final playbackState =

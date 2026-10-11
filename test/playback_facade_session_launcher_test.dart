@@ -24,6 +24,62 @@ void main() {
   );
 
   test(
+    'user launches wait for runtime hydration while restore creation stays usable',
+    () async {
+      final facade = PlaybackFacade.create(
+        databaseRepository: _RecordingRepository(),
+      )..configurePersistence(enabled: false);
+      addTearDown(facade.dispose);
+      final hydration = Completer<void>();
+      facade.configureUserLaunchInitialization(() => hydration.future);
+      final launcher = PlaybackFacadeSessionLauncher(facade);
+      final pendingLaunch = launcher.addTrackToPlaylist(track('clicked'));
+      await Future<void>.value();
+      expect(facade.sessions, isEmpty);
+      final restored = facade.createTrackSession(track('restored'));
+      expect(facade.sessions.values, contains(restored));
+      hydration.complete();
+      expect(await pendingLaunch, isTrue);
+      expect(facade.sessions, hasLength(2));
+    },
+  );
+
+  test(
+    'failed hydration rejects the user launch and a later retry can launch',
+    () async {
+      final facade = PlaybackFacade.create(
+        databaseRepository: _RecordingRepository(),
+      )..configurePersistence(enabled: false);
+      addTearDown(facade.dispose);
+      var fail = true;
+      facade.configureUserLaunchInitialization(() async {
+        if (fail) throw StateError('runtime unavailable');
+      });
+      expect(await facade.playDirect([track('clicked')]), isFalse);
+      expect(facade.sessions, isEmpty);
+      fail = false;
+      expect(await facade.playDirect([track('clicked')]), isTrue);
+      expect(facade.sessions, hasLength(1));
+    },
+  );
+
+  test(
+    'a user launch completing after disposal cannot create a session',
+    () async {
+      final facade = PlaybackFacade.create(
+        databaseRepository: _RecordingRepository(),
+      )..configurePersistence(enabled: false);
+      final hydration = Completer<void>();
+      facade.configureUserLaunchInitialization(() => hydration.future);
+      final launch = facade.playDirect([track('clicked')]);
+      await facade.dispose();
+      hydration.complete();
+      expect(await launch, isFalse);
+      expect(facade.sessions, isEmpty);
+    },
+  );
+
+  test(
     'direct playback reuses one temporary session and persists its latest track',
     () async {
       final repository = _RecordingRepository();

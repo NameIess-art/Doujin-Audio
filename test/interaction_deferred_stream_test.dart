@@ -8,6 +8,121 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  for (final cancelPending in [false, true]) {
+    test(
+      'classified progress stays immediate and cannot bypass queued structure ($cancelPending)',
+      () async {
+        final interaction = UiInteractionCoordinator(
+          idleDelay: Duration.zero,
+          frameBudget: const Duration(seconds: 1),
+        );
+        final source =
+            StreamController<({int revision, int progress})>.broadcast(
+              sync: true,
+            );
+        final values = <({int revision, int progress})>[];
+        final subscription = interactionDeferredValueStream(
+          source.stream,
+          coordinator: interaction,
+          isStructuralUpdate: (previous, next) =>
+              previous.revision != next.revision,
+        ).listen(values.add);
+        source.add((revision: 0, progress: 0));
+        final motion = Object();
+        interaction.beginInteraction(motion, deferVisualUpdates: true);
+        source.add((revision: 0, progress: 1));
+        expect(values.last, (revision: 0, progress: 1));
+        expect(interaction.pendingCommitCount, 0);
+
+        var earlierStructureCommitted = false;
+        interaction.scheduleCommit(
+          key: 'other-catalog',
+          priority: 0,
+          structural: true,
+          commit: () => earlierStructureCommitted = true,
+        );
+        source.add((revision: 1, progress: 2));
+        source.add((revision: 1, progress: 3));
+        expect(values.last, (revision: 0, progress: 1));
+        interaction.cancelInteraction(motion);
+        interaction.flushPendingCommitsForTest();
+        expect(earlierStructureCommitted, isTrue);
+        expect(values.last, (revision: 0, progress: 1));
+        source.add((revision: 1, progress: 4));
+        expect(values.last, (revision: 0, progress: 1));
+        if (cancelPending) await subscription.cancel();
+        interaction.flushPendingCommitsForTest();
+        expect(values, [
+          (revision: 0, progress: 0),
+          (revision: 0, progress: 1),
+          if (!cancelPending) (revision: 1, progress: 4),
+        ]);
+        expect(interaction.pendingCommitCount, 0);
+
+        if (!cancelPending) await subscription.cancel();
+        await source.close();
+        interaction.dispose();
+      },
+    );
+  }
+
+  for (final cancelPending in [false, true]) {
+    test(
+      'structural streams reuse initial data and spread idle updates across frames ($cancelPending)',
+      () async {
+        final interaction = UiInteractionCoordinator(
+          idleDelay: Duration.zero,
+          frameBudget: const Duration(seconds: 1),
+        );
+        final listenable = ValueNotifier<int>(0);
+        final source = StreamController<int>.broadcast(sync: true);
+        final listValues = <int>[];
+        final streamValues = <int>[];
+        var reads = 0;
+        final listSubscription = interactionDeferredListenableStream(
+          source: listenable,
+          read: () {
+            reads++;
+            return listenable.value;
+          },
+          structural: true,
+          coordinator: interaction,
+        ).listen(listValues.add);
+        final streamSubscription = interactionDeferredValueStream(
+          source.stream,
+          structural: true,
+          coordinator: interaction,
+        ).listen(streamValues.add);
+        source.add(0);
+        await Future<void>.delayed(Duration.zero);
+        expect(listValues, [0]);
+        expect(streamValues, [0]);
+
+        listenable.value = 1;
+        listenable.value = 2;
+        source.add(1);
+        source.add(2);
+        expect(reads, 1);
+        expect(listValues, [0]);
+        expect(streamValues, [0]);
+        interaction.flushPendingCommitsForTest();
+        expect(reads, 2);
+        expect(listValues, [0, 2]);
+        expect(streamValues, [0]);
+        if (cancelPending) await streamSubscription.cancel();
+        interaction.flushPendingCommitsForTest();
+        expect(streamValues, cancelPending ? [0] : [0, 2]);
+        expect(interaction.pendingCommitCount, 0);
+
+        await listSubscription.cancel();
+        if (!cancelPending) await streamSubscription.cancel();
+        await source.close();
+        listenable.dispose();
+        interaction.dispose();
+      },
+    );
+  }
+
   test('initial listenable read waits until every interaction ends', () async {
     final interaction = UiInteractionCoordinator(idleDelay: Duration.zero);
     final source = ValueNotifier<int>(0);

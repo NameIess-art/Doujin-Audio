@@ -10,12 +10,194 @@ import 'package:doujin_audio/core/persistence/json_document_store.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_internal_models.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_serialization.dart';
 import 'package:doujin_audio/features/library/data/audio_detail_json_codec.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('initialization shares one read and retries after failure', () async {
+    final firstRead = Completer<String?>();
+    var reads = 0;
+    final manager = AsmrDownloadManager(
+      persistenceReader: () {
+        reads++;
+        return reads == 1 ? firstRead.future : Future<String?>.value();
+      },
+    );
+    addTearDown(manager.shutdown);
+    final first = manager.initialize();
+    expect(identical(first, manager.initialize()), isTrue);
+    expect(manager.persistedUriReferencesReady, isFalse);
+    final failure = expectLater(first, throwsStateError);
+    firstRead.completeError(StateError('read_failed'));
+    await failure;
+    expect(manager.initializationError, isA<StateError>());
+
+    final retry = manager.initialize();
+    expect(identical(retry, manager.initialize()), isTrue);
+    await retry;
+    expect(reads, 2);
+    expect(manager.persistedUriReferencesReady, isTrue);
+    expect(manager.initializationError, isNull);
+  });
+
+  test('flush waits for restoration before capturing tasks', () async {
+    final read = Completer<String?>();
+    final writes = <String?>[];
+    final manager = AsmrDownloadManager(
+      persistenceReader: () => read.future,
+      persistenceWriter: (payload) async => writes.add(payload),
+    );
+    addTearDown(manager.shutdown);
+    final flush = manager.flushPersistence();
+    await Future<void>.delayed(Duration.zero);
+    expect(writes, isEmpty);
+    expect(manager.taskIds, isEmpty);
+
+    read.complete(_restorableTaskPayload());
+    await flush;
+    expect(writes, hasLength(1));
+    expect(
+      decodePersistedDownloadTasks(writes.single!).tasks.single.task.work.id,
+      1,
+    );
+  });
+
+  test('cancel waits for the restored task before removing it', () async {
+    final read = Completer<String?>();
+    final writes = <String?>[];
+    final manager = AsmrDownloadManager(
+      persistenceReader: () => read.future,
+      persistenceWriter: (payload) async => writes.add(payload),
+    );
+    addTearDown(manager.shutdown);
+    final cancel = manager.cancelTask(1, deleteDownloaded: false);
+    await Future<void>.delayed(Duration.zero);
+    expect(writes, isEmpty);
+    read.complete(_restorableTaskPayload());
+    await cancel;
+    expect(manager.tasks, isEmpty);
+    expect(writes, <String?>[null]);
+  });
+
+  for (final initializeFirst in [false, true]) {
+    test(
+      'shutdown waits for restoration (started: $initializeFirst)',
+      () async {
+        final read = Completer<String?>();
+        final writes = <String?>[];
+        var reads = 0;
+        final manager = AsmrDownloadManager(
+          persistenceReader: () {
+            reads++;
+            return read.future;
+          },
+          persistenceWriter: (payload) async => writes.add(payload),
+        );
+        addTearDown(manager.shutdown);
+        if (initializeFirst) unawaited(manager.initialize());
+        final shutdown = manager.shutdown();
+        expect(identical(shutdown, manager.shutdown()), isTrue);
+        await Future<void>.delayed(Duration.zero);
+        expect(writes, isEmpty);
+        expect(manager.persistedUriReferencesReady, isFalse);
+        read.complete(_restorableTaskPayload());
+        await shutdown;
+        expect(reads, 1);
+        expect(writes, hasLength(1));
+        expect(
+          decodePersistedDownloadTasks(
+            writes.single!,
+          ).tasks.single.task.work.id,
+          1,
+        );
+      },
+    );
+  }
+
+  test('shutdown keeps a failed in-flight restore from retrying', () async {
+    final read = Completer<String?>();
+    var reads = 0;
+    final writes = <String?>[];
+    final manager = AsmrDownloadManager(
+      persistenceReader: () {
+        reads++;
+        return read.future;
+      },
+      persistenceWriter: (payload) async => writes.add(payload),
+    );
+    addTearDown(manager.shutdown);
+    final initialization = manager.initialize();
+    Future<void>? retry;
+    final failure = initialization.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {
+        retry = manager.initialize();
+        retry!.ignore();
+      },
+    );
+    final shutdown = manager.shutdown();
+    read.completeError(StateError('read_failed'));
+    await Future.wait([failure, shutdown]);
+    expect(identical(retry, initialization), isTrue);
+    expect(reads, 1);
+    expect(writes, isEmpty);
+  });
+
+  final validPayload =
+      jsonDecode(_restorableTaskPayload()) as Map<String, dynamic>;
+  (validPayload['tasks'] as List).add({'work': null});
+  final corruptRecords = {
+    'invalid JSON': '{broken',
+    'invalid root': '[]',
+    'missing task list': '{}',
+    'invalid entry': '{"tasks":[null]}',
+    'partially decoded tasks': jsonEncode(validPayload),
+  };
+  for (final entry in corruptRecords.entries) {
+    test(
+      'failed restoration preserves the original record (${entry.key})',
+      () async {
+        final payload = entry.value;
+        SharedPreferences.setMockInitialValues({
+          AppPreferences.asmrDownloadTasksKey: payload,
+        });
+        final manager = AsmrDownloadManager();
+        addTearDown(manager.shutdown);
+        await expectLater(manager.initialize(), throwsFormatException);
+        expect(manager.tasks, isEmpty);
+        expect(manager.persistedUriReferencesReady, isFalse);
+        await expectLater(manager.flushPersistence(), throwsFormatException);
+        await manager.shutdown();
+        expect(
+          await AppPreferences.getString(AppPreferences.asmrDownloadTasksKey),
+          payload,
+        );
+      },
+    );
+  }
+
+  test('failed preference reads do not become an empty task record', () async {
+    SharedPreferences.setMockInitialValues({
+      AppPreferences.asmrDownloadTasksKey: 42,
+    });
+    final manager = AsmrDownloadManager();
+    addTearDown(manager.shutdown);
+    await expectLater(manager.initialize(), throwsA(isA<TypeError>()));
+    await manager.shutdown();
+    expect(
+      (await SharedPreferences.getInstance()).get(
+        AppPreferences.asmrDownloadTasksKey,
+      ),
+      42,
+    );
+  });
+
   test(
     'resubmitting a failed download honors new files and destination',
     () async {
@@ -4914,6 +5096,16 @@ AsmrDownloadManager _manager() {
     persistTasks: false,
   );
 }
+
+String _restorableTaskPayload() => encodePersistedDownloadTasks([
+  PersistedDownloadTask(
+    task: _failedTaskSnapshot(Directory.systemTemp.path).copyWith(
+      selectedRoots: [_file(downloadUrl: 'https://example.invalid/track.mp3')],
+    ),
+    createdOutputPaths: const {},
+    createdJsonDocuments: const {},
+  ),
+]);
 
 AsmrDownloadTaskSnapshot _failedTaskSnapshot(
   String destinationRoot, {

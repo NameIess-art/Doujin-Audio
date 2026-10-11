@@ -333,17 +333,20 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
           .run<void>(
             scope: UiOperationScope.asmrDownloadStart,
             labelKey: 'asmr_download_starting',
-            task: (_) => downloadManager.startDownload(
-              work: work,
-              selectedRoots: selectedRoots,
-              destinationRoot: destination!,
-              conflictPolicy: settings.asmrDownloadConflictPolicy,
-              saveMetadata: settings.asmrDownloadSaveMetadata,
-              saveCover: settings.asmrDownloadSaveCover,
-              automaticFileRetryCount: settings.asmrDownloadRetryCount,
-              folderNameFields: settings.asmrDownloadFolderNameFields,
-              customWorkFolderName: widget.customWorkFolderName,
-            ),
+            task: (_) async {
+              await ref.read(audioRuntimeCoordinatorProvider).start();
+              await downloadManager.startDownload(
+                work: work,
+                selectedRoots: selectedRoots,
+                destinationRoot: destination!,
+                conflictPolicy: settings.asmrDownloadConflictPolicy,
+                saveMetadata: settings.asmrDownloadSaveMetadata,
+                saveCover: settings.asmrDownloadSaveCover,
+                automaticFileRetryCount: settings.asmrDownloadRetryCount,
+                folderNameFields: settings.asmrDownloadFolderNameFields,
+                customWorkFolderName: widget.customWorkFolderName,
+              );
+            },
           );
       if (!mounted || route?.isCurrent != true) return;
       showAppSnackBar(

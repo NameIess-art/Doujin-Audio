@@ -168,8 +168,10 @@ void main() {
       return;
     }
     debugPrint('PERF_STAGE fixture_start scenario=$_scenario');
-    sqfliteFfiInit();
-    final fixtureDatabase = await AppRuntimeTestFixture.installSharedDatabase();
+    if (!Platform.isAndroid) sqfliteFfiInit();
+    final fixtureDatabase = await AppRuntimeTestFixture.installSharedDatabase(
+      factory: Platform.isAndroid ? databaseFactory : databaseFactoryFfi,
+    );
     addTearDown(
       () => AppRuntimeTestFixture.disposeSharedDatabase(fixtureDatabase),
     );
@@ -333,13 +335,16 @@ Future<void> _measureProductionStartup(
   }
   expect(stackFinder, findsOneWidget);
   expect(UiInteractionCoordinator.instance.navigationAllowed.value, true);
-  preparation.stop();
+  final preparationUs = preparation.elapsedMicroseconds;
 
   final container = ProviderScope.containerOf(
     tester.element(find.byType(MainScreen)),
     listen: false,
   );
   final runtime = container.read(audioRuntimeCoordinatorProvider);
+  final coreReady = runtime.start().then(
+    (_) => preparation.elapsedMicroseconds,
+  );
   addTearDown(() async {
     // Normal production shutdown; never clear sessions, DB, preferences or
     // cover caches. Call before removing the production ProviderScope.
@@ -379,7 +384,6 @@ Future<void> _measureProductionStartup(
         .onTap!;
   }
 
-  final preparationUs = preparation.elapsedMicroseconds;
   final firstAction = selectDestination(firstDestination);
   final slideVisible = _observeTransitionSlide(tester, 'main_page_stack');
   final rounds = <Map<String, Object>>[];
@@ -392,6 +396,7 @@ Future<void> _measureProductionStartup(
       slideVisible,
     ),
   );
+  final coreReadyUs = await coreReady;
   if (firstDestination != MainDestinationType.settings) {
     selectDestination(MainDestinationType.settings)();
     for (var frame = 0; frame < 40; frame++) {
@@ -460,6 +465,9 @@ Future<void> _measureProductionStartup(
       {'opening': 1, 'condition': 'baseline', 'conditionElapsedMs': 0},
     ],
     'startupPreparationUs': preparationUs,
+    'frameworkReadyUs': preparationUs,
+    'coreReadyUs': coreReadyUs,
+    'contentAfterFrameworkUs': coreReadyUs - preparationUs,
     'initialDestination': initialDestination.name,
     'firstDestination': firstDestination.name,
     'libraryItems': library.library.length,

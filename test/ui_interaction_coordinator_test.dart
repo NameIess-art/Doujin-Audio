@@ -241,6 +241,48 @@ void main() {
 
   for (final cancelled in [false, true]) {
     testWidgets(
+      'structural commits span frames without delaying light feedback ($cancelled)',
+      (tester) async {
+        final coordinator = UiInteractionCoordinator(
+          frameBudget: const Duration(seconds: 1),
+          idleDelay: Duration.zero,
+        );
+        addTearDown(coordinator.dispose);
+        final commits = <String>[];
+        coordinator.scheduleCommit(
+          key: 'catalog-a',
+          structural: true,
+          priority: 0,
+          commit: () => commits.add('a'),
+        );
+        coordinator.scheduleCommit(
+          key: 'catalog-b',
+          structural: true,
+          priority: 1,
+          commit: () => commits.add('old'),
+        );
+        coordinator.scheduleCommit(
+          key: 'catalog-b',
+          structural: true,
+          priority: 1,
+          commit: () => commits.add('b'),
+        );
+        coordinator.scheduleCommit(
+          key: 'feedback',
+          priority: 2,
+          commit: () => commits.add('feedback'),
+        );
+        await tester.pump();
+        expect(commits, ['a', 'feedback']);
+        expect(coordinator.pendingCommitCount, 1);
+        if (cancelled) coordinator.cancelCommit('catalog-b');
+        await tester.pump();
+        expect(commits, cancelled ? ['a', 'feedback'] : ['a', 'feedback', 'b']);
+        expect(coordinator.pendingCommitCount, 0);
+      },
+    );
+
+    testWidgets(
       'first-frame protection ${cancelled ? 'cancels' : 'ends'} while a scroll remains active',
       (tester) async {
         final coordinator = UiInteractionCoordinator();

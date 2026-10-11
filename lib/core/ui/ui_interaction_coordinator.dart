@@ -115,6 +115,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     int priority = 100,
     bool allowDuringInteraction = false,
     bool allowDuringScroll = false,
+    bool structural = false,
     required VoidCallback commit,
   }) {
     _pendingCommits[key] = _PendingCommit(
@@ -123,6 +124,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
       priority: priority,
       allowDuringInteraction: allowDuringInteraction,
       allowDuringScroll: allowDuringScroll,
+      structural: structural,
       commit: commit,
     );
     _scheduleCommitFrame();
@@ -194,13 +196,18 @@ class UiInteractionCoordinator extends ChangeNotifier {
     final stopwatch = Stopwatch()..start();
     final budget = isInteracting ? interactionFrameBudget : frameBudget;
     var committedAny = false;
+    var committedStructure = false;
     for (final pending in commits) {
       if (committedAny && stopwatch.elapsed >= budget) break;
       if (!_canRunCommit(pending)) continue;
+      // A short notification can schedule an expensive build/layout later in
+      // this frame, outside the callback stopwatch's measured budget.
+      if (pending.structural && committedStructure) continue;
       if (!identical(_pendingCommits[pending.key], pending)) continue;
       _pendingCommits.remove(pending.key);
       pending.commit();
       committedAny = true;
+      committedStructure = committedStructure || pending.structural;
     }
     if (_hasRunnableCommits) _scheduleCommitFrame();
   }
@@ -283,6 +290,7 @@ class _PendingCommit {
     required this.priority,
     required this.allowDuringInteraction,
     required this.allowDuringScroll,
+    required this.structural,
     required this.commit,
   });
 
@@ -291,6 +299,7 @@ class _PendingCommit {
   final int priority;
   final bool allowDuringInteraction;
   final bool allowDuringScroll;
+  final bool structural;
   final VoidCallback commit;
 }
 

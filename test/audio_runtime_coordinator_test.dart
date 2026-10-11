@@ -5,6 +5,54 @@ import 'package:doujin_audio/app/application/audio_runtime_coordinator.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 
 void main() {
+  for (final fail in [false, true]) {
+    test(
+      'startup shares its Future and shutdown drains it (failure: $fail)',
+      () async {
+        final pending = Completer<void>();
+        var starts = 0;
+        var disposals = 0;
+        var transitions = 0;
+        final coordinator = AudioRuntimeCoordinator(
+          snapshots: const Stream<NativePlaybackSnapshot>.empty(),
+          progressUpdates: const Stream<NativePlaybackProgressUpdate>.empty(),
+          startListening: () {},
+          stopListening: () async {},
+          onSnapshot: (_) {},
+          onProgress: (_) {},
+          onStart: () {
+            starts++;
+            return pending.future;
+          },
+          onEnterBackground: () => transitions++,
+          onResumeForeground: () => transitions++,
+          onDispose: () => disposals++,
+        );
+        final start = coordinator.start();
+        expect(coordinator.start(), same(start));
+        final startupResult = fail
+            ? expectLater(start, throwsStateError)
+            : start;
+        final shutdown = coordinator.dispose();
+        expect(coordinator.dispose(), same(shutdown));
+        await Future<void>.delayed(Duration.zero);
+        expect(starts, 1);
+        expect(disposals, 0);
+        if (fail) {
+          pending.completeError(StateError('restore failed'));
+        } else {
+          pending.complete();
+        }
+        await startupResult;
+        await shutdown;
+        await coordinator.enterBackground();
+        await coordinator.resumeForeground();
+        expect(disposals, 1);
+        expect(transitions, 0);
+      },
+    );
+  }
+
   test('owns runtime subscriptions and lifecycle exactly once', () async {
     final snapshots = StreamController<NativePlaybackSnapshot>.broadcast(
       sync: true,

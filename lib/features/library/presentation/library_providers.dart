@@ -14,6 +14,13 @@ final libraryFacadeProvider = Provider<LibraryFacade>((ref) {
 final libraryStateProvider = StreamProvider<LibraryState>((ref) {
   return interactionDeferredValueStream(
     ref.watch(libraryFacadeProvider).states,
+    isStructuralUpdate: (previous, next) =>
+        previous.isInitialized != next.isInitialized ||
+        previous.structureRevision != next.structureRevision ||
+        previous.treeSnapshotRevision != next.treeSnapshotRevision ||
+        previous.contentRevision != next.contentRevision ||
+        previous.detailRevision != next.detailRevision ||
+        previous.categorySnapshotRevision != next.categorySnapshotRevision,
   );
 });
 

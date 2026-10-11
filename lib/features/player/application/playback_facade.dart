@@ -102,6 +102,8 @@ final class PlaybackFacade {
   void Function()? _onSessionSettingsChanged;
   PlaybackQueueSessionSynchronizer? _synchronizePlaybackQueueSession;
   PlaybackCommandPort? _commandPort;
+  Future<void> Function()? _initializeForUserLaunch;
+  bool _disposed = false;
   PlaybackLoopModeSynchronizer? _synchronizeLoopMode;
   bool _sessionObserversAttached = false;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
@@ -262,6 +264,25 @@ final class PlaybackFacade {
     _commandPort ??= port;
   }
 
+  void configureUserLaunchInitialization(Future<void> Function()? initialize) {
+    _initializeForUserLaunch = initialize;
+  }
+
+  Future<bool> _ensureUserLaunchReady() async {
+    if (_disposed) return false;
+    try {
+      await _initializeForUserLaunch?.call();
+      return !_disposed;
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'playback_launch_initialization_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return false;
+    }
+  }
+
   void detachCommandPort() {
     _commandPort = null;
   }
@@ -287,6 +308,7 @@ final class PlaybackFacade {
     _onSessionDurationChanged = null;
     _onSessionSettingsChanged = null;
     _synchronizePlaybackQueueSession = null;
+    _initializeForUserLaunch = null;
     detachCommandPort();
     _synchronizeLoopMode = null;
   }
@@ -974,41 +996,59 @@ final class PlaybackFacade {
     FutureOr<List<MusicTrack>> tracks, {
     int startIndex = 0,
     SessionLoopMode loopMode = SessionLoopMode.folderSequential,
-  }) => PlaybackQueuePathCoordinator(
-    this,
-  ).playDirect(tracks, startIndex: startIndex, loopMode: loopMode);
+  }) async {
+    if (!await _ensureUserLaunchReady()) return false;
+    return PlaybackQueuePathCoordinator(
+      this,
+    ).playDirect(tracks, startIndex: startIndex, loopMode: loopMode);
+  }
 
   Future<bool> addTrackToPlaylist(
     MusicTrack track, {
     List<MusicTrack>? workTracks,
-  }) => PlaybackQueuePathCoordinator(
-    this,
-  ).addTrackToPlaylist(track, workTracks: workTracks);
+  }) async {
+    if (!await _ensureUserLaunchReady()) return false;
+    return PlaybackQueuePathCoordinator(
+      this,
+    ).addTrackToPlaylist(track, workTracks: workTracks);
+  }
 
   Future<bool> launchQueue(
     List<MusicTrack> tracks, {
     bool? autoPlay,
     required SessionLoopMode loopMode,
-  }) => PlaybackQueuePathCoordinator(
-    this,
-  ).launchQueue(tracks, autoPlay: autoPlay, loopMode: loopMode);
-  Future<bool> spawnSession(MusicTrack track, {bool? autoPlay}) =>
-      PlaybackQueuePathCoordinator(
-        this,
-      ).spawnSession(track, autoPlay: autoPlay);
+  }) async {
+    if (!await _ensureUserLaunchReady()) return false;
+    return PlaybackQueuePathCoordinator(
+      this,
+    ).launchQueue(tracks, autoPlay: autoPlay, loopMode: loopMode);
+  }
+
+  Future<bool> spawnSession(MusicTrack track, {bool? autoPlay}) async {
+    if (!await _ensureUserLaunchReady()) return false;
+    return PlaybackQueuePathCoordinator(
+      this,
+    ).spawnSession(track, autoPlay: autoPlay);
+  }
+
   Future<bool> spawnSessionWithQueue(
     List<MusicTrack> tracks, {
     int startIndex = 0,
     bool? autoPlay,
     SessionLoopMode loopMode = SessionLoopMode.folderSequential,
-  }) => PlaybackQueuePathCoordinator(this).spawnSessionWithQueue(
-    tracks,
-    startIndex: startIndex,
-    autoPlay: autoPlay,
-    loopMode: loopMode,
-  );
+  }) async {
+    if (!await _ensureUserLaunchReady()) return false;
+    return PlaybackQueuePathCoordinator(this).spawnSessionWithQueue(
+      tracks,
+      startIndex: startIndex,
+      autoPlay: autoPlay,
+      loopMode: loopMode,
+    );
+  }
 
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     Object? firstError;
     StackTrace? firstStackTrace;
     Future<void> attempt(Future<void> Function() action) async {

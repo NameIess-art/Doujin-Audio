@@ -16,6 +16,11 @@ import 'package:doujin_audio/features/library/domain/library_persistence_reposit
 import 'package:doujin_audio/features/library/application/library_scan_coordinator.dart';
 import 'package:doujin_audio/features/library/application/library_scan_data_source.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/library_organizer.dart';
+import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
 import 'package:doujin_audio/features/library/application/library_scanner_service.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
@@ -44,6 +49,264 @@ void main() {
   tearDown(() async {
     await fixture.dispose(currentGraph: runtimeGraph);
   });
+
+  test(
+    'reset rejects a pending restore without cancelling its replacement',
+    () async {
+      final repository = _BlockingStartupRepository(AppDatabase.test(db));
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
+      );
+      addTearDown(library.dispose);
+      final oldTrack = _localDurationTrack('/library/old');
+      final newTrack = _localDurationTrack('/library/new');
+      final oldRestore = library.loadPersistedState();
+      expect(repository.requests, hasLength(1));
+      await library.resetPersistedState();
+      final newRestore = library.loadPersistedState();
+      expect(newRestore, isNot(same(oldRestore)));
+      expect(repository.requests, hasLength(2));
+      expect(library.loadPersistedState(), same(newRestore));
+
+      repository.requests[0].complete([oldTrack]);
+      await oldRestore;
+      expect(library.library, isEmpty);
+      expect(library.state.isInitialized, false);
+      expect(library.loadPersistedState(), same(newRestore));
+      expect(repository.requests, hasLength(2));
+      repository.requests[1].complete([newTrack]);
+      await newRestore;
+      final revision = library.structureRevision;
+
+      expect(library.state.isInitialized, true);
+      expect(library.library.single.path, newTrack.path);
+      expect(library.trackByPath(oldTrack.path), isNull);
+      expect(library.structureRevision, revision);
+      expect(library.snapshotCacheService.cardSnapshotRevision, revision);
+    },
+  );
+
+  test(
+    'reset skips a late catalog migration from the replaced persisted load',
+    () async {
+      final repository = _BlockingMigrationRepository(AppDatabase.test(db));
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
+      );
+      addTearDown(library.dispose);
+      final oldRestore = library.loadPersistedState();
+      expect(repository.oldCatalogReads, hasLength(3));
+      await library.resetPersistedState();
+      final newTrack = _localDurationTrack('/library/new');
+      await repository.upsertTracks([newTrack]);
+      await repository.saveAppSetting(
+        'group_order_v1',
+        jsonEncode([newTrack.groupKey]),
+      );
+      await repository.saveAppSetting('watched_folders_v1', '[]');
+      final newLibraries = jsonEncode(['/library/new']);
+      await repository.saveAppSetting('watched_libraries_v1', newLibraries);
+      repository.blockOldRead = false;
+      await library.loadPersistedState();
+
+      for (final read in repository.oldCatalogReads.values) {
+        read.complete(null);
+      }
+      repository.oldTracks.complete([_localDurationTrack('/library/old')]);
+      await oldRestore;
+
+      expect(repository.catalogCommitCount, 0);
+      expect(
+        await repository.loadAppSetting('watched_libraries_v1'),
+        newLibraries,
+      );
+      expect(library.watchedLibraries, ['/library/new']);
+      expect(library.library.single.path, newTrack.path);
+    },
+  );
+
+  test(
+    'disposed library never publishes a pending persisted restore',
+    () async {
+      final repository = _BlockingStartupRepository(AppDatabase.test(db));
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
+      );
+      final published = <bool>[];
+      final subscription = library.states.listen(
+        (state) => published.add(state.isInitialized),
+      );
+      addTearDown(subscription.cancel);
+      final restore = library.loadPersistedState();
+      await library.dispose();
+      repository.requests.single.complete([
+        _localDurationTrack('/library/old'),
+      ]);
+      await restore;
+
+      expect(library.state.isInitialized, false);
+      expect(library.library, isEmpty);
+      expect(published, isNot(contains(true)));
+    },
+  );
+
+  test('disposed library never commits a late catalog migration', () async {
+    final repository = _BlockingMigrationRepository(AppDatabase.test(db));
+    final library = LibraryFacade.create(
+      databaseRepository: repository,
+      jsonDocumentStore: TestJsonDocumentStore(),
+    );
+    final restore = library.loadPersistedState();
+    await library.dispose();
+    const currentLibraries = '["/library/current"]';
+    await repository.saveAppSetting('watched_libraries_v1', currentLibraries);
+    for (final read in repository.oldCatalogReads.values) {
+      read.complete(null);
+    }
+    repository.oldTracks.complete([_localDurationTrack('/library/old')]);
+    await restore;
+    repository.blockOldRead = false;
+
+    expect(repository.catalogCommitCount, 0);
+    expect(
+      await repository.loadAppSetting('watched_libraries_v1'),
+      currentLibraries,
+    );
+    expect(library.library, isEmpty);
+    expect(library.state.isInitialized, false);
+  });
+
+  test(
+    'disposed library invalidates a pending card snapshot publication',
+    () async {
+      final repository = TestPersistenceRepository(
+        database: AppDatabase.test(db),
+      );
+      final track = _localDurationTrack('/library/old');
+      final service = LibraryService()
+        ..library.add(track)
+        ..watchedFolders.add(track.groupKey);
+      final details = AudioDetailCacheService(
+        repository: AudioDetailRepository(databaseRepository: repository),
+      );
+      final result = Completer<LibraryTreeSnapshot>();
+      final snapshots = LibrarySnapshotCacheService(
+        libraryService: service,
+        detailCacheService: details,
+        cardSnapshotBuilder: (_) => result.future,
+      );
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        service: service,
+        detailCacheService: details,
+        snapshotCacheService: snapshots,
+        jsonDocumentStore: TestJsonDocumentStore(),
+      );
+      var commits = 0;
+      final snapshot = snapshots.cardSnapshot(onCommitted: () => commits++);
+      await library.dispose();
+      result.complete(
+        const LibraryOrganizer().buildCardTree(
+          tracks: [track],
+          watchedFolders: [track.groupKey],
+        ),
+      );
+      await snapshot;
+
+      expect(snapshots.cards, isEmpty);
+      expect(snapshots.cardSnapshotRevision, -1);
+      expect(commits, 0);
+    },
+  );
+
+  test(
+    'startup restores the catalog without writing directory settings',
+    () async {
+      final repository = _CountingTestPersistenceRepository(
+        AppDatabase.test(db),
+      );
+      final track = _localDurationTrack('/library/作品 A');
+      await repository.upsertTracks([track]);
+      await repository.commitLibraryBatch(
+        tracks: const [],
+        entries: [
+          LibraryEntry.track(
+            libraryPath: '/library',
+            track: track,
+            state: LibraryEntryState.active,
+          ),
+        ],
+        catalogSettings: {
+          'group_order_v1': jsonEncode([track.groupKey]),
+          'watched_folders_v1': '[]',
+          'watched_libraries_v1': jsonEncode(['/library']),
+        },
+      );
+      repository.catalogCommitCount = 0;
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
+      );
+      addTearDown(library.dispose);
+      final first = library.loadPersistedState();
+      expect(identical(first, library.loadPersistedState()), true);
+      await first;
+      expect(library.state.isInitialized, true);
+      expect(library.trackByPath(track.path), isNotNull);
+      expect(library.libraryEntriesForLibrary('/library'), hasLength(1));
+      expect(
+        library.snapshotCacheService.cardSnapshotRevision,
+        library.structureRevision,
+      );
+      expect(repository.catalogCommitCount, 0);
+      await library.loadPersistedState();
+      expect(library.library, hasLength(1));
+      expect(repository.catalogCommitCount, 0);
+    },
+  );
+
+  test(
+    'startup exclusions filter memory without deleting persisted tracks',
+    () async {
+      final repository = _CountingTestPersistenceRepository(
+        AppDatabase.test(db),
+      );
+      final track = _localDurationTrack('/library/作品 A');
+      await repository.upsertTracks([track]);
+      await repository.commitLibraryBatch(
+        tracks: const [],
+        entries: [
+          LibraryEntry.track(
+            libraryPath: '/library',
+            track: track,
+            state: LibraryEntryState.excluded,
+          ),
+        ],
+        catalogSettings: {
+          'group_order_v1': '[]',
+          'watched_folders_v1': '[]',
+          'watched_libraries_v1': jsonEncode(['/library']),
+        },
+      );
+      repository.catalogCommitCount = 0;
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
+      );
+      addTearDown(library.dispose);
+      await library.loadPersistedState();
+      expect(library.library, isEmpty);
+      expect(
+        library.isLibraryTrackExplicitlyExcluded('/library', track.path),
+        true,
+      );
+      expect(await repository.loadTrackDetail(track.path), isNotNull);
+      expect(repository.catalogCommitCount, 0);
+    },
+  );
 
   test(
     'cold startup duration writes preserve tags and raw remote JSON',
@@ -3204,6 +3467,42 @@ MusicTrack _localDurationTrack(
   isSingle: false,
 );
 
+class _BlockingMigrationRepository extends _CountingTestPersistenceRepository {
+  _BlockingMigrationRepository(super.database);
+
+  bool blockOldRead = true;
+  final oldTracks = Completer<List<MusicTrack>>();
+  final oldCatalogReads = <String, Completer<String?>>{};
+
+  @override
+  Future<List<MusicTrack>> loadStartupTracks() =>
+      blockOldRead ? oldTracks.future : super.loadStartupTracks();
+
+  @override
+  Future<String?> loadAppSetting(String key) {
+    if (!blockOldRead) return super.loadAppSetting(key);
+    final request = Completer<String?>();
+    oldCatalogReads[key] = request;
+    return request.future;
+  }
+}
+
+class _BlockingStartupRepository extends TestPersistenceRepository {
+  _BlockingStartupRepository(AppDatabase database) : super(database: database);
+
+  final requests = <Completer<List<MusicTrack>>>[];
+
+  @override
+  Future<List<MusicTrack>> loadStartupTracks() {
+    final request = Completer<List<MusicTrack>>();
+    requests.add(request);
+    return request.future;
+  }
+
+  @override
+  Future<String?> loadAppSetting(String key) async => '[]';
+}
+
 class _BlockingDurationRepository extends TestPersistenceRepository {
   _BlockingDurationRepository(AppDatabase database) : super(database: database);
   final started = Completer<void>();
@@ -3222,6 +3521,7 @@ class _CountingTestPersistenceRepository extends TestPersistenceRepository {
     : super(database: database);
 
   int upsertLibraryEntriesCallCount = 0;
+  int catalogCommitCount = 0;
   int updateDurationsCallCount = 0;
   final updatedDurationTrackPaths = <String>[];
   String? failingDetailPath;
@@ -3259,6 +3559,7 @@ class _CountingTestPersistenceRepository extends TestPersistenceRepository {
     List<String> removedTrackPaths = const [],
     Map<String, List<String>> removedEntryPaths = const {},
   }) {
+    catalogCommitCount++;
     if (entries.isNotEmpty) upsertLibraryEntriesCallCount++;
     return super.commitLibraryBatch(
       tracks: tracks,

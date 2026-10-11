@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/presentation/app_presentation_providers.dart';
 import '../domain/asmr_models.dart';
 import '../application/asmr_download_models.dart';
 import '../../../app/theme/app_design_tokens.dart';
@@ -90,6 +91,7 @@ class _AsmrDownloadDetailsPageState
       ),
     );
     final downloadManager = ref.read(asmrDownloadManagerProvider);
+    final coreReady = ref.watch(coreRuntimeReadyProvider);
     final cs = Theme.of(context).colorScheme;
 
     if (structure == null) {
@@ -268,7 +270,8 @@ class _AsmrDownloadDetailsPageState
                                 depth: row.depth,
                                 workId: widget.workId,
                                 i18n: i18n,
-                                onRetryFile: downloadManager == null
+                                onRetryFile:
+                                    downloadManager == null || !coreReady
                                     ? null
                                     : (relativePath) =>
                                           downloadManager.retryFailedFile(

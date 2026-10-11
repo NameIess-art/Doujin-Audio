@@ -48,7 +48,11 @@ final asmrCategoryStateProvider = StreamProvider.autoDispose
       if (controller == null) return Stream.value(null);
       return interactionDeferredListenableStream(
         source: controller,
-        deferInitialRead: true,
+        deferInitialRead:
+            request.searchQuery.isNotEmpty ||
+            request.searchSession ||
+            !controller.hasLoadedCategory(request.category),
+        structural: true,
         read: () => controller.categoryViewState(
           request.category,
           searchQuery: request.searchQuery,
@@ -73,6 +77,7 @@ final asmrTrackTreeStateProvider = StreamProvider.autoDispose
       return interactionDeferredListenableStream(
         source: controller,
         deferInitialRead: true,
+        structural: true,
         read: () => controller.trackTreeViewState(workId),
       );
     });

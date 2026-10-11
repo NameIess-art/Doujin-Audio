@@ -57,6 +57,7 @@ class GlobalShortcuts extends ConsumerWidget {
         actions: <Type, Action<Intent>>{
           TogglePlayPauseIntent: CallbackAction<TogglePlayPauseIntent>(
             onInvoke: (TogglePlayPauseIntent intent) {
+              if (!enabled) return null;
               final playback = ref.read(playbackFacadeProvider);
               final state = ref.read(playbackCatalogProvider).value;
               if (state != null && state.sessions.isNotEmpty) {

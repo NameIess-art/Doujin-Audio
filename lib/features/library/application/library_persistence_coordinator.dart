@@ -51,8 +51,9 @@ final class LibraryPersistenceCoordinator {
 
   final LibraryPersistenceRepository _repository;
   final LibraryService _service;
-  Future<void> _writeTail = Future<void>.value();
+  Future<void>? _writeTail;
   bool _enabled = true;
+  int _loadGeneration = 0;
 
   bool get enabled => _enabled;
 
@@ -61,6 +62,7 @@ final class LibraryPersistenceCoordinator {
   }
 
   Future<LibraryPersistedState> load() async {
+    final generation = ++_loadGeneration;
     final tracksFuture = _repository.loadStartupTracks();
     final entriesFuture = _repository.loadAllLibraryEntries();
     final catalogValues = await Future.wait([
@@ -113,29 +115,33 @@ final class LibraryPersistenceCoordinator {
             .putIfAbsent(entry.key, () => <String>{})
             .addAll(entry.value);
       }
-      await saveExclusionSnapshot(
-        folderExclusions: migratedFolderExclusions,
-        trackExclusions: trackExclusions,
+      final value = _encodeExclusionSnapshot(
+        migratedFolderExclusions,
+        trackExclusions,
+      );
+      await _queueWrite(
+        () async => AppPreferences.setString(_exclusionsKey, value),
+        loadGeneration: generation,
       );
     }
-    await AppPreferences.remove(_legacyRemovedFoldersKey);
+    await _queueWrite(
+      () async => AppPreferences.remove(_legacyRemovedFoldersKey),
+      loadGeneration: generation,
+    );
     final legacyLists = preferences
         .take(3)
         .map((value) => value as List<String>?)
         .toList();
-    final catalogLists = await Isolate.run(
-      () => <List<String>>[
-        for (var index = 0; index < catalogValues.length; index++)
-          catalogValues[index] == null
-              ? legacyLists[index] ?? <String>[]
-              : _decodeStringList(json.decode(catalogValues[index]!)),
-      ],
-    );
+    final catalogLists = await _decodeCatalogLists(catalogValues, legacyLists);
     if (enabled && catalogValues.any((value) => value == null)) {
-      await _repository.commitLibraryBatch(
-        tracks: const [],
-        entries: const [],
-        catalogSettings: await _encodeCatalogLists(catalogLists),
+      final settings = await _encodeCatalogLists(catalogLists);
+      await _queueWrite(
+        () => _repository.commitLibraryBatch(
+          tracks: const [],
+          entries: const [],
+          catalogSettings: settings,
+        ),
+        loadGeneration: generation,
       );
     }
     return LibraryPersistedState(
@@ -150,9 +156,12 @@ final class LibraryPersistenceCoordinator {
     );
   }
 
-  Future<void> prepareForReset() => flush();
+  Future<void> prepareForReset() {
+    _loadGeneration++;
+    return flush();
+  }
 
-  Future<void> flush() => _writeTail;
+  Future<void> flush() => _writeTail ?? Future<void>.value();
 
   Future<void> saveWatchedFolders() => _saveCatalogLists();
   Future<void> saveWatchedLibraries() => _saveCatalogLists();
@@ -184,6 +193,18 @@ final class LibraryPersistenceCoordinator {
     );
   }
 
+  static Future<List<List<String>>> _decodeCatalogLists(
+    List<String?> values,
+    List<List<String>?> legacyLists,
+  ) => Isolate.run(
+    () => <List<String>>[
+      for (var index = 0; index < values.length; index++)
+        values[index] == null
+            ? legacyLists[index] ?? <String>[]
+            : _decodeStringList(json.decode(values[index]!)),
+    ],
+  );
+
   static Future<Map<String, String>> _encodeCatalogLists(
     List<List<String>> lists,
   ) => Isolate.run(
@@ -203,15 +224,26 @@ final class LibraryPersistenceCoordinator {
     required Map<String, Set<String>> folderExclusions,
     required Map<String, Set<String>> trackExclusions,
   }) {
-    final value = json.encode(<String, Object?>{
-      'folders': _encodePathSetMap(folderExclusions),
-      'tracks': _encodePathSetMap(trackExclusions),
-    });
+    final value = _encodeExclusionSnapshot(folderExclusions, trackExclusions);
     return _queueWrite(() => AppPreferences.setString(_exclusionsKey, value));
   }
 
-  Future<void> _queueWrite(Future<void> Function() write) {
-    final task = _writeTail.then((_) => write());
+  static String _encodeExclusionSnapshot(
+    Map<String, Set<String>> folderExclusions,
+    Map<String, Set<String>> trackExclusions,
+  ) => json.encode(<String, Object?>{
+    'folders': _encodePathSetMap(folderExclusions),
+    'tracks': _encodePathSetMap(trackExclusions),
+  });
+
+  Future<void> _queueWrite(
+    Future<void> Function() write, {
+    int? loadGeneration,
+  }) {
+    final task = (_writeTail ?? Future<void>.value()).then<void>((_) async {
+      if (loadGeneration != null && loadGeneration != _loadGeneration) return;
+      await write();
+    });
     _writeTail = task.catchError((Object error, StackTrace stackTrace) {
       AppLogService.error(
         'library_preference_write_failed',

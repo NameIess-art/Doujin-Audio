@@ -122,6 +122,7 @@ class AppPageContentTransition extends StatelessWidget {
     this.backgroundColor,
   }) : _builder = null,
        _placeholder = null,
+       prepared = false,
        isReady = true;
 
   const AppPageContentTransition.deferred({
@@ -130,6 +131,7 @@ class AppPageContentTransition extends StatelessWidget {
     required Widget placeholder,
     this.backgroundColor,
     this.isReady = true,
+    this.prepared = false,
   }) : child = const SizedBox.shrink(),
        _builder = builder,
        _placeholder = placeholder;
@@ -139,6 +141,9 @@ class AppPageContentTransition extends StatelessWidget {
 
   /// Gates the first content mount; later visits retain the loaded subtree.
   final bool isReady;
+
+  /// A valid cached snapshot may mount in the existing route preparation frame.
+  final bool prepared;
   final WidgetBuilder? _builder;
   final Widget? _placeholder;
 
@@ -152,6 +157,7 @@ class AppPageContentTransition extends StatelessWidget {
             builder: _builder,
             placeholder: _placeholder!,
             isReady: isReady,
+            prepared: prepared,
           );
     final content = backgroundColor == null
         ? body
@@ -166,11 +172,13 @@ class _DeferredPageContent extends StatefulWidget {
     required this.builder,
     required this.placeholder,
     required this.isReady,
+    required this.prepared,
   });
 
   final WidgetBuilder builder;
   final Widget placeholder;
   final bool isReady;
+  final bool prepared;
 
   @override
   State<_DeferredPageContent> createState() => _DeferredPageContentState();
@@ -194,6 +202,13 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
     super.initState();
     _fade = AnimationController(vsync: this, duration: kAppMotionFast)
       ..addStatusListener(_handleFadeStatus);
+    if (widget.prepared && widget.isReady) {
+      _ready = true;
+      _contentLaidOut = true;
+      _revealScheduled = true;
+      _fade.value = 1;
+      return;
+    }
     _coordinator.addListener(_scheduleContent);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -279,6 +294,7 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
     _coordinator.scheduleCommit(
       key: _commitKey,
       allowDuringScroll: true,
+      structural: true,
       commit: () {
         _commitScheduled = false;
         if (!mounted ||
@@ -698,6 +714,8 @@ class _PlaceholderContentTransitionState
   late final Animation<double> _placeholderOpacity;
   late final Animation<double> _contentOpacity;
   bool _fadingPlaceholder = false;
+  int _fadeGeneration = 0;
+  final _interaction = UiInteractionCoordinator.instance;
 
   bool get _skipMotion =>
       MediaQuery.disableAnimationsOf(context) ||
@@ -725,15 +743,40 @@ class _PlaceholderContentTransitionState
         !mounted) {
       return;
     }
+    _interaction.endInteraction(_controller);
     setState(() => _fadingPlaceholder = false);
+  }
+
+  void _cancelFade() {
+    _fadeGeneration++;
+    _fadingPlaceholder = false;
+    _controller.value = 1;
+    _interaction.cancelInteraction(_controller);
+  }
+
+  void _prepareFade() {
+    final generation = ++_fadeGeneration;
+    _fadingPlaceholder = true;
+    _controller.reset();
+    // Lay out the new list behind the static placeholder before its first tick.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || generation != _fadeGeneration || widget.showPlaceholder) {
+        return;
+      }
+      if (_skipMotion) {
+        setState(_cancelFade);
+        return;
+      }
+      _interaction.beginInteraction(_controller, deferVisualUpdates: true);
+      _controller.forward();
+    });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_skipMotion) {
-      _fadingPlaceholder = false;
-      _controller.value = 1;
+      _cancelFade();
     }
   }
 
@@ -745,20 +788,28 @@ class _PlaceholderContentTransitionState
     }
     if (oldWidget.showPlaceholder && !widget.showPlaceholder) {
       if (_skipMotion) {
-        _fadingPlaceholder = false;
-        _controller.value = 1;
+        _cancelFade();
       } else {
-        _fadingPlaceholder = true;
-        _controller.forward(from: 0);
+        _prepareFade();
       }
     } else if (!oldWidget.showPlaceholder && widget.showPlaceholder) {
+      _fadeGeneration++;
       _fadingPlaceholder = false;
       _controller.reset();
+      _interaction.cancelInteraction(_controller);
     }
   }
 
   @override
+  void deactivate() {
+    _cancelFade();
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
+    _fadeGeneration++;
+    _interaction.cancelInteraction(_controller);
     _controller.dispose();
     super.dispose();
   }

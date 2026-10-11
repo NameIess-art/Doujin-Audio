@@ -30,17 +30,177 @@ void main() {
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
 
-  Widget pageStack(ValueNotifier<int> activeTab) => AppFadeThroughIndexedStack.lazy(
-    indexListenable: activeTab,
-    duration: Duration.zero,
-    itemCount: 2,
-    itemBuilder: (_, i) => [
-      AsmrTab(activeTabIndexListenable: activeTab),
-      const SizedBox.shrink(),
-    ][i],
-  );
+  Widget pageStack(ValueNotifier<int> activeTab) =>
+      AppFadeThroughIndexedStack.lazy(
+        indexListenable: activeTab,
+        duration: Duration.zero,
+        itemCount: 2,
+        itemBuilder: (_, i) => [
+          AsmrTab(activeTabIndexListenable: activeTab),
+          const SizedBox.shrink(),
+        ][i],
+      );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'ASMR cached category opens in its preparation frame on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices());
+        final fixture = AppRuntimeWidgetTestFixture();
+        controller.setPageLanguage(fixture.languageProvider.language);
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        final navigation = Object();
+        interaction.beginNavigation(navigation);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        expect(find.text('Published work'), findsOneWidget);
+        expect(controller.initializations, 0);
+        expect(controller.categoryLoads, 0);
+        interaction.cancelNavigation(navigation);
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'ASMR activation completion waits for a subsequent navigation on $platform',
+      (tester) async {
+        final activation = Completer<void>();
+        final controller = _PresentationController(createTestAsmrServices())
+          ..cacheValid = false
+          ..pendingInitialization = activation;
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pump();
+        expect(controller.initializations, 1);
+        final navigation = Object();
+        interaction.beginNavigation(navigation);
+        activation.complete();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(controller.categoryLoads, 0);
+        expect(find.text('Published work'), findsNothing);
+        interaction.cancelNavigation(navigation);
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        expect(controller.initializations, 1);
+        expect(controller.categoryLoads, 1);
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    for (final hidden in [true, false]) {
+      testWidgets(
+        'ASMR stale activation failure can recover (${hidden ? 'hidden' : 'new navigation'}) on $platform',
+        (tester) async {
+          final activation = Completer<void>();
+          final controller = _PresentationController(createTestAsmrServices())
+            ..cacheValid = false
+            ..pendingInitialization = activation;
+          final fixture = AppRuntimeWidgetTestFixture();
+          final active = ValueNotifier<int>(0);
+          addTearDown(controller.dispose);
+          addTearDown(fixture.dispose);
+          addTearDown(active.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              pageStack(active),
+              overrides: [
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+              ],
+            ),
+          );
+          await tester.pump();
+          expect(controller.initializations, 1);
+          final navigation = Object();
+          if (hidden) {
+            active.value = 1;
+          } else {
+            interaction.beginGeneration();
+            interaction.beginNavigation(navigation);
+          }
+          await tester.pump();
+          controller.pendingInitialization = null;
+          activation.completeError(StateError('obsolete activation failed'));
+          await tester.pump();
+          expect(
+            find.byTooltip(fixture.languageProvider.tr('retry')),
+            findsNothing,
+          );
+          if (hidden) {
+            active.value = 0;
+          } else {
+            interaction.cancelNavigation(navigation);
+          }
+          await pumpUntilFound(tester, find.text('Published work'));
+          await tester.pumpAndSettle();
+          expect(controller.initializations, 2);
+          expect(controller.categoryLoads, 1);
+          expect(
+            find.byTooltip(fixture.languageProvider.tr('retry')),
+            findsNothing,
+          );
+          await tester.pumpWidget(const SizedBox.shrink());
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
+    testWidgets(
+      'ASMR visible initialization failure offers a scoped retry on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices())
+          ..cacheValid = false
+          ..initializationError = StateError('preferences unavailable');
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
+        final retry = find.byTooltip(fixture.languageProvider.tr('retry'));
+        expect(retry, findsOneWidget);
+        expect(controller.categoryLoads, 0);
+        controller.initializationError = null;
+        await tester.tap(retry);
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        expect(controller.initializations, 2);
+        expect(controller.categoryLoads, 1);
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     testWidgets(
       'ASMR card play uses a temporary session and add creates a playlist on $platform',
       (tester) async {
@@ -979,7 +1139,8 @@ void main() {
   testWidgets('ASMR category and tree providers defer initial projections', (
     tester,
   ) async {
-    final controller = _PresentationController(createTestAsmrServices());
+    final controller = _PresentationController(createTestAsmrServices())
+      ..cacheValid = false;
     final container = ProviderContainer(
       overrides: [asmrLibraryControllerProvider.overrideWithValue(controller)],
     );
@@ -1002,9 +1163,11 @@ void main() {
     expect(container.read(category).isLoading, isTrue);
     expect(container.read(tree).isLoading, isTrue);
 
+    controller.cacheValid = true;
     interaction.cancelInteraction(motion);
     await tester.pump();
     final state = await container.read(category.future);
+    await tester.pump();
     await container.read(tree.future);
     expect(state!.works.single.title, 'Latest work');
     expect(controller.categoryReads, 1);
@@ -1040,6 +1203,8 @@ class _PresentationController extends AsmrLibraryController {
   int accountRestores = 0;
   int favoriteToggles = 0;
   bool cacheValid = true;
+  Completer<void>? pendingInitialization;
+  Object? initializationError;
   Completer<void>? pendingCategoryLoad;
   AppLanguage _presentationLanguage = AppLanguage.zh;
 
@@ -1128,6 +1293,8 @@ class _PresentationController extends AsmrLibraryController {
   @override
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
     initializations++;
+    if (pendingInitialization case final pending?) await pending.future;
+    if (initializationError case final error?) throw error;
   }
 
   @override

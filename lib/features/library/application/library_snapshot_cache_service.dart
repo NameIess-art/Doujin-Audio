@@ -31,18 +31,18 @@ class LibraryDerivedSnapshotPayload {
 class LibraryDerivedSnapshot {
   LibraryDerivedSnapshot({
     required List<MusicTrack> library,
-    required Map<String, MusicTrack> libraryByPath,
-    required Map<String, int> libraryIndexByPath,
+    required this.libraryByPath,
+    required this.libraryIndexByPath,
     required Map<String, List<MusicTrack>> tracksByGroup,
     required this.cardSnapshot,
   }) : library = immutableList(library),
-       libraryByPath = immutableMap(libraryByPath),
-       libraryIndexByPath = immutableMap(libraryIndexByPath),
        tracksByGroup = immutableMap(
          tracksByGroup.map((key, value) => MapEntry(key, immutableList(value))),
        );
 
   final List<MusicTrack> library;
+  // These indexes transfer ownership from the worker to LibraryService.
+  // Copying them on the UI isolate repeats path normalization for every track.
   final Map<String, MusicTrack> libraryByPath;
   final Map<String, int> libraryIndexByPath;
   final Map<String, List<MusicTrack>> tracksByGroup;
@@ -54,13 +54,20 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
 ) {
   const organizer = LibraryOrganizer();
   final library = List<MusicTrack>.of(payload.tracks);
-  final libraryByPath = <String, MusicTrack>{};
-  final libraryIndexByPath = <String, int>{};
-  for (var index = 0; index < library.length; index++) {
-    final track = library[index];
-    libraryByPath[track.path] = track;
-    libraryIndexByPath[track.path] = index;
-  }
+  final (libraryByPath, libraryIndexByPath) = AppLogService.measureSync(
+    'library_path_index_build',
+    () {
+      final byPath = LibraryService.createPathIndex<MusicTrack>();
+      final indexes = LibraryService.createPathIndex<int>();
+      for (var index = 0; index < library.length; index++) {
+        final track = library[index];
+        byPath[track.path] = track;
+        indexes[track.path] = index;
+      }
+      return (byPath, indexes);
+    },
+    details: {'tracks': library.length},
+  );
   final sortedTracks = List<MusicTrack>.of(library)
     ..sort(organizer.compareTracks);
   final tracksByGroup = <String, List<MusicTrack>>{};
@@ -141,6 +148,7 @@ class LibrarySnapshotCacheService {
   final AudioDetailCacheService _detailCacheService;
   final LibraryCardSnapshotBuilder _cardSnapshotBuilder;
   final LibraryTreeSnapshotBuilder _treeSnapshotBuilder;
+  bool _disposed = false;
 
   List<LibraryNode> _cachedCards = const <LibraryNode>[];
   int _cachedCardRevision = -1;
@@ -195,6 +203,7 @@ class LibrarySnapshotCacheService {
   }
 
   Future<FolderNode?> loadFolderTree(String folderPath) {
+    if (_disposed) return Future<FolderNode?>.value();
     final cached = resolvedFolderTree(folderPath);
     if (cached != null) return Future<FolderNode?>.value(cached);
     final key = PathMatcher.equivalenceKey(folderPath);
@@ -218,7 +227,7 @@ class LibrarySnapshotCacheService {
     String key,
     Future<FolderNode?> request,
   ) async {
-    while (true) {
+    while (!_disposed) {
       final cached = resolvedFolderTree(folderPath);
       if (cached != null) return cached;
       final current = _folderTreeFutures[key];
@@ -256,6 +265,7 @@ class LibrarySnapshotCacheService {
       if (folder != null) _cacheFolderTree(key, folder);
       return folder;
     }
+    return null;
   }
 
   FolderNode? _findFolderTree(Iterable<LibraryNode> nodes, String folderKey) {
@@ -497,6 +507,11 @@ class LibrarySnapshotCacheService {
     }
     _pendingCategoryDetails[detail.target] = detail;
     if (!defer) flushDetailChanges();
+  }
+
+  void dispose() {
+    _disposed = true;
+    clear();
   }
 
   void clear() {

@@ -110,6 +110,123 @@ class _ListenerCountingController extends AnimationController {
 void main() {
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+  testWidgets(
+    'prepared cached content mounts during the route preparation frame',
+    (tester) async {
+      final coordinator = UiInteractionCoordinator.instance;
+      final navigation = Object();
+      coordinator.beginNavigation(navigation);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppPageContentTransition.deferred(
+            prepared: true,
+            placeholder: const Text('waiting'),
+            builder: (_) => const _StateProbe(label: 'cached content'),
+          ),
+        ),
+      );
+      expect(find.text('cached content'), findsOneWidget);
+      expect(find.text('waiting'), findsNothing);
+      expect(
+        tester
+            .widget<FadeTransition>(
+              find.byKey(const ValueKey('deferred_content')),
+            )
+            .opacity
+            .value,
+        1,
+      );
+      coordinator.cancelNavigation(navigation);
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final leave in ['complete', 'hidden', 'dispose', 'reduced']) {
+    testWidgets(
+      'placeholder fade prepares before motion and releases on $leave',
+      (tester) async {
+        final coordinator = UiInteractionCoordinator.instance;
+        var loading = true;
+        var active = true;
+        var reduced = false;
+        double? initialLayoutOpacity;
+        late StateSetter update;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: StatefulBuilder(
+              builder: (context, setState) {
+                update = setState;
+                return MediaQuery(
+                  data: MediaQueryData(disableAnimations: reduced),
+                  child: TickerMode(
+                    enabled: active,
+                    child: PlaceholderContentTransition(
+                      showPlaceholder: loading,
+                      placeholder: const Text('waiting'),
+                      content: LayoutBuilder(
+                        builder: (context, _) {
+                          initialLayoutOpacity ??= context
+                              .findAncestorWidgetOfExactType<FadeTransition>()
+                              ?.opacity
+                              .value;
+                          return const Text('loaded');
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+        expect(find.text('loaded'), findsNothing);
+        update(() => loading = false);
+        await tester.pump();
+        expect(initialLayoutOpacity, 0);
+        expect(coordinator.isVisualUpdateDeferred, isTrue);
+        expect(coordinator.navigationAllowed.value, isTrue);
+        var published = false;
+        var feedback = false;
+        coordinator.scheduleCommit(
+          key: 'catalog',
+          structural: true,
+          commit: () => published = true,
+        );
+        coordinator.scheduleCommit(
+          key: 'feedback',
+          allowDuringInteraction: true,
+          commit: () => feedback = true,
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(published, isFalse);
+        expect(feedback, isTrue);
+        switch (leave) {
+          case 'hidden':
+            update(() => active = false);
+            await tester.pump();
+          case 'dispose':
+            await tester.pumpWidget(const SizedBox.shrink());
+          case 'reduced':
+            update(() => reduced = true);
+            await tester.pump();
+          default:
+            await tester.pump(
+              kPlaceholderContentTransitionDuration +
+                  const Duration(milliseconds: 16),
+            );
+            await tester.pump(coordinator.idleDelay);
+        }
+        await tester.pump();
+        expect(coordinator.isVisualUpdateDeferred, isFalse);
+        expect(published, isTrue);
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(coordinator.isInteracting, isFalse);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   for (final reduced in [false, true]) {
     testWidgets(
       'deferred content waits for data and lays out behind its skeleton, reduced=$reduced',

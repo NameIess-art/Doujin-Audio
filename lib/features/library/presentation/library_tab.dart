@@ -107,6 +107,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       }
     } else {
       _cancelSortingSnapshotPreparation();
+      UiInteractionCoordinator.instance.cancelCommit(_cardSnapshotCommitKey);
+      _cardSnapshotRequestRevision = null;
       _startupRefreshIdleTimer?.cancel();
       _startupRefreshIdleTimer = null;
     }
@@ -125,6 +127,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   (int, int)? _sortingSnapshotRequest;
   String get _sortingSnapshotCommitKey =>
       'library_sorting_snapshot_${identityHashCode(this)}';
+  String get _cardSnapshotCommitKey =>
+      'library_card_snapshot_${identityHashCode(this)}';
 
   @override
   int get tabIndex => widget.tabIndex;
@@ -259,6 +263,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     bool forceShowResult = false,
     bool importAudioDetails = true,
   }) async {
+    if (!ref.read(coreRuntimeReadyProvider)) return;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -329,6 +334,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     action,
     required Future<void> Function() retry,
   }) async {
+    if (!ref.read(coreRuntimeReadyProvider)) return;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -433,20 +439,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   void _ensureStartupRefreshStarted() {
-    if (!_isActive || _startupRefreshStarted) return;
-    _startupRefreshStarted = true;
-    unawaited(_refreshAfterStartupIdle());
-  }
-
-  Future<void> _refreshAfterStartupIdle() async {
-    while (mounted && !ref.read(libraryFacadeProvider).state.isInitialized) {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
-    if (!mounted) return;
-    if (!_isActive) {
-      _startupRefreshStarted = false;
+    if (!_isActive ||
+        _startupRefreshStarted ||
+        !ref.read(coreRuntimeReadyProvider)) {
       return;
     }
+    _startupRefreshStarted = true;
     _startupRefreshWaiting = true;
     UiInteractionCoordinator.instance.addListener(
       _handleStartupRefreshInteractionChanged,
@@ -499,29 +497,40 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       return;
     }
     _cardSnapshotRequestRevision = structureRevision;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _cardSnapshotRequestRevision != structureRevision) {
-        return;
-      }
-      unawaited(
-        libraryFacade
-            .ensureCardSnapshot()
-            .catchError((Object error, StackTrace stackTrace) {
-              AppLogService.error(
-                'library_card_snapshot_failed',
-                error: error,
-                stackTrace: stackTrace,
-              );
-              return LibraryTreeSnapshot(tree: const [], leafFolderCount: 0);
-            })
-            .whenComplete(() {
-              if (mounted &&
-                  _cardSnapshotRequestRevision == structureRevision) {
-                _cardSnapshotRequestRevision = null;
-              }
-            }),
-      );
-    });
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _cardSnapshotCommitKey,
+      priority: 20,
+      structural: true,
+      commit: () {
+        if (!mounted ||
+            !_isActive ||
+            _cardSnapshotRequestRevision != structureRevision ||
+            libraryFacade.structureRevision != structureRevision) {
+          if (_cardSnapshotRequestRevision == structureRevision) {
+            _cardSnapshotRequestRevision = null;
+          }
+          return;
+        }
+        unawaited(
+          libraryFacade
+              .ensureCardSnapshot()
+              .catchError((Object error, StackTrace stackTrace) {
+                AppLogService.error(
+                  'library_card_snapshot_failed',
+                  error: error,
+                  stackTrace: stackTrace,
+                );
+                return LibraryTreeSnapshot(tree: const [], leafFolderCount: 0);
+              })
+              .whenComplete(() {
+                if (mounted &&
+                    _cardSnapshotRequestRevision == structureRevision) {
+                  _cardSnapshotRequestRevision = null;
+                }
+              }),
+        );
+      },
+    );
   }
 
   void _ensureSortingSnapshot(LibraryFacade library) {
@@ -554,6 +563,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _sortingSnapshotCommitKey,
       priority: 30,
+      structural: true,
       commit: () {
         if (!mounted || !_isActive || _sortingSnapshotRequest != revision) {
           if (_sortingSnapshotRequest == revision) {
@@ -594,6 +604,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   void deactivate() {
     _cancelSortingSnapshotPreparation();
+    UiInteractionCoordinator.instance.cancelCommit(_cardSnapshotCommitKey);
+    _cardSnapshotRequestRevision = null;
     // Sibling disposal can release an interaction before this tab is unmounted.
     UiInteractionCoordinator.instance.removeListener(
       _handleStartupRefreshInteractionChanged,
@@ -617,6 +629,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   void dispose() {
     _cancelSortingSnapshotPreparation();
+    UiInteractionCoordinator.instance.cancelCommit(_cardSnapshotCommitKey);
     widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
     widget.activeSectionListenable?.removeListener(_handleActiveTabChanged);
     UiInteractionCoordinator.instance.removeListener(
@@ -631,6 +644,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(coreRuntimeReadyProvider, (_, ready) {
+      if (ready) _ensureStartupRefreshStarted();
+    });
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -677,7 +693,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           ),
         );
     final libraryRefreshBusy =
-        libraryRefreshOperationBusy || libraryImportBusy || listStateIsScanning;
+        !ref.watch(coreRuntimeReadyProvider) ||
+        libraryRefreshOperationBusy ||
+        libraryImportBusy ||
+        listStateIsScanning;
     if (_isActive && listStateIsInitialized) {
       _ensureCardSnapshot(
         libraryFacade: libraryFacade,
@@ -749,6 +768,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           clipBehavior: Clip.none,
           children: [
             AppPageContentTransition.deferred(
+              prepared:
+                  listStateIsInitialized &&
+                  listStateStructureRevision == libraryFacade.structureRevision,
               isReady:
                   listStateIsInitialized &&
                   listStateStructureRevision == libraryFacade.structureRevision,
@@ -855,7 +877,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           keyPrefix: 'library',
                           i18n: i18n,
                           selectedCount: selectedSelections.length,
-                          onAddToPlaylist: selectedSelections.isEmpty
+                          onAddToPlaylist:
+                              selectedSelections.isEmpty ||
+                                  !ref.watch(coreRuntimeReadyProvider)
                               ? null
                               : () => addLibraryBatchSelectionsToPlaylist(
                                   context: context,

@@ -27,9 +27,11 @@ final class AsmrDownloadTaskStore {
   AsmrDownloadTaskStore({
     required bool persistTasks,
     required AsmrDownloadPersistenceSnapshot persistenceSnapshot,
+    bool persistenceReady = true,
     Future<void> Function(String? payload)? persistenceWriter,
     void Function(AsmrDownloadStoreOperation operation)? operationObserver,
   }) : _persistTasks = persistTasks,
+       _persistenceReady = persistenceReady,
        _persistenceSnapshot = persistenceSnapshot,
        _persistenceWriter = persistenceWriter,
        _operationObserver = operationObserver;
@@ -74,6 +76,7 @@ final class AsmrDownloadTaskStore {
   Timer? _deferredProgressNotifyTimer;
   DateTime? _lastProgressNotifyAt;
   bool _persistenceDirty = false;
+  bool _persistenceReady;
   bool _shutdown = false;
 
   List<AsmrDownloadTaskSnapshot> get tasks =>
@@ -84,6 +87,10 @@ final class AsmrDownloadTaskStore {
   Iterable<AsmrDownloadTaskSnapshot> get values => _tasks.values;
   bool get isShutdown => _shutdown;
   Future<void> get pendingPersistenceWrites => _persistenceTail;
+
+  void markPersistenceReady() {
+    _persistenceReady = true;
+  }
 
   AsmrDownloadTaskSnapshot? operator [](int workId) => _tasks[workId];
 
@@ -509,7 +516,7 @@ final class AsmrDownloadTaskStore {
   }
 
   Future<void>? _persistCurrentTasks() {
-    if (!_persistTasks || !_persistenceDirty) return null;
+    if (!_persistTasks || !_persistenceReady || !_persistenceDirty) return null;
     _persistenceDirty = false;
     _operationObserver?.call(AsmrDownloadStoreOperation.persistenceSnapshot);
     final tasks = _tasks.values

@@ -196,6 +196,7 @@ final settingsCommandControllerProvider = Provider<SettingsCommandController>((
     settings: ref.watch(settingsRepositoryProvider),
     playback: ref.watch(playbackFacadeProvider),
     library: ref.watch(libraryFacadeProvider),
+    waitForRuntime: ref.watch(audioRuntimeCoordinatorProvider).start,
     clearBrowseCaches: () async {
       ref.read(browsePageStateStoreProvider).clear();
       ref.read(asmrLibraryControllerProvider)?.clearRuntimeCaches();

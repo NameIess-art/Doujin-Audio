@@ -6,6 +6,7 @@ extension _MainScreenLayout on _MainScreenState {
     required bool isDesktop,
     required bool isLandscapeLayout,
   }) {
+    final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
     final layoutSize = MediaQuery.sizeOf(context);
     final width = layoutSize.width;
     final isLargeScreen = width >= 980;
@@ -27,8 +28,9 @@ extension _MainScreenLayout on _MainScreenState {
     final (:showLocal, :showAsmr) = ref.watch(
       settingsStateProvider.select(
         (s) => (
-          showLocal: s.value?.showLocalLibrary ?? true,
-          showAsmr: s.value?.showAsmrOne ?? true,
+          showLocal:
+              s.value?.showLocalLibrary ?? fallbackSettings.showLocalLibrary,
+          showAsmr: s.value?.showAsmrOne ?? fallbackSettings.showAsmrOne,
         ),
       ),
     );
@@ -137,11 +139,13 @@ extension _MainScreenLayout on _MainScreenState {
     required double expandedWidth,
     required VoidCallback onCurrentTap,
   }) {
+    final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
     final (:showLocal, :showAsmr) = ref.watch(
       settingsStateProvider.select(
         (s) => (
-          showLocal: s.value?.showLocalLibrary ?? true,
-          showAsmr: s.value?.showAsmrOne ?? true,
+          showLocal:
+              s.value?.showLocalLibrary ?? fallbackSettings.showLocalLibrary,
+          showAsmr: s.value?.showAsmrOne ?? fallbackSettings.showAsmrOne,
         ),
       ),
     );
@@ -408,11 +412,13 @@ extension _MainScreenLayout on _MainScreenState {
     List<PlaybackSessionSnapshot> overlaySessions, {
     required bool isMenuCollapsed,
   }) {
+    final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
     final (:showLocal, :showAsmr) = ref.watch(
       settingsStateProvider.select(
         (s) => (
-          showLocal: s.value?.showLocalLibrary ?? true,
-          showAsmr: s.value?.showAsmrOne ?? true,
+          showLocal:
+              s.value?.showLocalLibrary ?? fallbackSettings.showLocalLibrary,
+          showAsmr: s.value?.showAsmrOne ?? fallbackSettings.showAsmrOne,
         ),
       ),
     );

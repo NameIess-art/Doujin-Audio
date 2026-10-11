@@ -88,6 +88,24 @@ abstract final class AppLogService {
     _writeWithError('ERROR', message, error: error, stackTrace: stackTrace);
   }
 
+  static T measureSync<T>(
+    String event,
+    T Function() action, {
+    Map<String, Object?> details = const <String, Object?>{},
+  }) {
+    if (!_performanceLoggingEnabled) return action();
+    final stopwatch = Stopwatch()..start();
+    try {
+      return developer.Timeline.timeSync(event, action, arguments: details);
+    } finally {
+      stopwatch.stop();
+      _write(
+        'PERF',
+        '$event elapsedUs=${stopwatch.elapsedMicroseconds}${_formatDetails(details)}',
+      );
+    }
+  }
+
   static Future<T> measureAsync<T>(
     String event,
     Future<T> Function() action, {

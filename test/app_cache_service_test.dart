@@ -58,6 +58,20 @@ void main() {
       },
     );
 
+    test(
+      'startup configuration waits for scheduled cache maintenance',
+      () async {
+        await AppCacheService.setMaxCacheBytes(100, enforceImmediately: false);
+        expect(AppCacheService.maxCacheBytes, 100);
+        expect(calls, isEmpty);
+        AppCacheService.scheduleEnforce(
+          idleDelay: const Duration(milliseconds: 10),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        expect(calls, [FileCacheMethod.enforceApplicationCacheLimit]);
+      },
+    );
+
     test('failed native setter retains the enforcement retry', () async {
       failSetter = true;
       await AppCacheService.setMaxCacheBytes(100);

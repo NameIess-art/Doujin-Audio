@@ -125,7 +125,7 @@ void main() {
       subtitles: subtitles,
     );
     addTearDown(() async {
-      coordinator.dispose();
+      await coordinator.dispose();
       await warmup.shutdown();
       await playback.dispose();
       await commands.dispose();
@@ -136,7 +136,25 @@ void main() {
       await database.close();
     });
 
+    settings.pendingLoad = Completer<void>();
+    final presentation = coordinator.initializePresentation();
+    expect(coordinator.initializePresentation(), same(presentation));
+    expect(settings.enforceCacheLimitValues, [false]);
+    settings.pendingLoad!.complete();
+    await presentation;
+    expect(settings.slice.state.isInitialized, isTrue);
+    expect(coordinator.hasLoadedState, isFalse);
+    expect(library.state.isInitialized, isFalse);
+    expect(playback.state.isInitialized, isFalse);
+    expect(settings.enforceCacheLimitValues, [false]);
+
+    native.failNextPlaybackBehavior = true;
+    await expectLater(coordinator.loadPersistedState(), throwsStateError);
+    expect(settings.slice.state.isInitialized, isTrue);
+    expect(coordinator.hasLoadedState, isFalse);
+
     await coordinator.loadPersistedState();
+    expect(settings.enforceCacheLimitValues, [false]);
 
     expect(coordinator.hasLoadedState, isTrue);
     expect(settings.slice.state.isInitialized, isTrue);
@@ -145,7 +163,11 @@ void main() {
     expect(timer.state.isInitialized, isTrue);
 
     settings.failNextLoad = true;
-    await expectLater(coordinator.reloadPersistedState(), throwsStateError);
+    final reload = coordinator.reloadPersistedState();
+    expect(library.state.isInitialized, isFalse);
+    expect(playback.state.isInitialized, isFalse);
+    expect(timer.state.isInitialized, isFalse);
+    await expectLater(reload, throwsStateError);
 
     expect(coordinator.hasLoadedState, isFalse);
     expect(settings.slice.state.isInitialized, isFalse);
@@ -154,7 +176,8 @@ void main() {
 
     await coordinator.loadPersistedState();
 
-    expect(native.clearAllCount, 2);
+    expect(native.clearAllCount, 3);
+    expect(settings.enforceCacheLimitValues, [false, false, false]);
     expect(settings.slice.state.isInitialized, isTrue);
     expect(library.state.isInitialized, isTrue);
     expect(playback.state.isInitialized, isTrue);
@@ -168,7 +191,7 @@ void main() {
         inMemoryDatabasePath,
       );
       await AppDatabase.createSchemaForTest(database);
-      final repository = TestPersistenceRepository(
+      final repository = _ChangingCatalogPersistenceRepository(
         database: AppDatabase.test(database),
       );
       final libraryService = LibraryService()..watchedFolders.add('/library');
@@ -185,6 +208,11 @@ void main() {
           return buildResult.future;
         },
       );
+      repository.onSessionsLoaded = () {
+        // A catalog revision can arrive between restore and final preparation.
+        libraryService.markStructureChanged();
+        snapshotService.markStructureChanged();
+      };
       final library = LibraryFacade.create(
         databaseRepository: repository,
         detailCacheService: detailCache,
@@ -269,7 +297,7 @@ void main() {
         subtitles: subtitles,
       );
       addTearDown(() async {
-        coordinator.dispose();
+        await coordinator.dispose();
         await warmup.shutdown();
         await playback.dispose();
         await commands.dispose();
@@ -291,7 +319,7 @@ void main() {
       timer.syncPresentationState(isInitialized: false);
       settings.syncSlice();
 
-      coordinator.dispose();
+      await coordinator.dispose();
       buildResult.complete(
         LibraryTreeSnapshot(tree: const <LibraryNode>[], leafFolderCount: 0),
       );
@@ -715,19 +743,52 @@ final class _RecordingPlaybackPersistenceRepository
 
 final class _FailOnceSettingsRepository extends SettingsRepository {
   bool failNextLoad = false;
+  Completer<void>? pendingLoad;
+  final List<bool> enforceCacheLimitValues = [];
 
   @override
-  Future<void> loadPersistedState() async {
+  Future<void> loadPersistedState({bool enforceCacheLimit = true}) async {
+    enforceCacheLimitValues.add(enforceCacheLimit);
+    await pendingLoad?.future;
     if (failNextLoad) {
       failNextLoad = false;
       throw StateError('settings unavailable');
     }
-    await super.loadPersistedState();
+    await super.loadPersistedState(enforceCacheLimit: enforceCacheLimit);
+  }
+}
+
+final class _ChangingCatalogPersistenceRepository
+    extends TestPersistenceRepository {
+  _ChangingCatalogPersistenceRepository({required super.database});
+
+  void Function()? onSessionsLoaded;
+
+  @override
+  Future<List<PersistedPlaybackSession>> loadAllSessions() async {
+    final sessions = await super.loadAllSessions();
+    onSessionsLoaded?.call();
+    return sessions;
   }
 }
 
 final class _FakeNativePlaybackRepository extends NativePlaybackRepository {
   int clearAllCount = 0;
+  bool failNextPlaybackBehavior = false;
+
+  @override
+  Future<NativeResult<void>> setPlaybackBehavior({
+    required bool pauseOnAudioDeviceDisconnect,
+    required bool requestAudioFocus,
+    required bool pauseOnTransientAudioFocusLoss,
+    required bool resumeAfterTransientAudioFocusGain,
+  }) async {
+    if (failNextPlaybackBehavior) {
+      failNextPlaybackBehavior = false;
+      throw StateError('native behavior unavailable');
+    }
+    return const NativeSuccess<void>();
+  }
 
   @override
   Future<NativeResult<void>> clearAll() async {

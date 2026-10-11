@@ -60,16 +60,12 @@ class AsmrTab extends ConsumerStatefulWidget {
     this.activeTabIndexListenable,
     this.activeSectionListenable,
     this.sectionIndex = 0,
-    this.onTitleSwipeLeft,
-    this.onTitleSwipeRight,
   });
 
   final int tabIndex;
   final ValueListenable<int>? activeTabIndexListenable;
   final ValueListenable<int>? activeSectionListenable;
   final int sectionIndex;
-  final VoidCallback? onTitleSwipeLeft;
-  final VoidCallback? onTitleSwipeRight;
 
   @override
   ConsumerState<AsmrTab> createState() => _AsmrTabState();
@@ -288,7 +284,7 @@ class _AsmrBatchSelectionHeader extends StatelessWidget {
 }
 
 class _AsmrTabState extends ConsumerState<AsmrTab>
-    with AutomaticKeepAliveClientMixin, MainTabStateMixin<AsmrTab> {
+    with MainTabStateMixin<AsmrTab> {
   static const _headerCategories = <AsmrCategoryType>[
     AsmrCategoryType.collected,
     AsmrCategoryType.recommendation,
@@ -308,6 +304,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   bool _forceHeaderMeasurement = false;
   AppLanguage? _pendingPageLanguageSync;
   Future<void>? _activationTask;
+  Object? _activationError;
   bool _activationCompleted = false;
   bool _activationScheduled = false;
   bool _accountHydrationScheduled = false;
@@ -319,9 +316,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   late final AppLanguageProvider _languageProvider;
   bool _isSelectionMode = false;
   final Set<int> _selectedWorkIds = <int>{};
-
-  @override
-  bool get wantKeepAlive => true;
 
   AsmrCategoryType get _selectedCategory =>
       _headerCategories[_activeCategoryIndex.value];
@@ -413,7 +407,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   void _ensureActivated() {
-    if (!_isActive) return;
+    if (!_isActive || _activationError != null) return;
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) return;
     final coordinator = UiInteractionCoordinator.instance;
@@ -448,9 +442,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         _activationTask = task;
         await task;
         if (identical(_activationTask, task)) _activationTask = null;
-        if (mounted && _isActive && !_activationCompleted) {
-          _ensureActivated();
-        }
       },
     );
     if (!accepted) _activationScheduled = false;
@@ -492,7 +483,13 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         error: error,
         stackTrace: stackTrace,
       );
+      if (mounted) setState(() => _activationError = error);
     }
+  }
+
+  void _retryActivation() {
+    setState(() => _activationError = null);
+    _ensureActivated();
   }
 
   void _scheduleAccountHydration(
@@ -570,6 +567,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     if (metricsChanged) {
       _scheduleHeaderMeasurement(force: true);
     }
+    // A covered route can finish initialization before this page is current.
+    // Resume its activation on return without restarting an in-flight task.
+    if (!_activationCompleted) _ensureActivated();
   }
 
   void _scheduleHeaderMeasurement({bool force = false}) {
@@ -820,7 +820,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final globalInitialized = ref.watch(
       asmrLibraryGlobalStateProvider.select(
         (state) => state.value?.initialized ?? false,
@@ -855,12 +854,29 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
             ),
             builder: (context) => RepaintBoundary(
               child: PlaceholderContentTransition(
-                showPlaceholder: !globalInitialized,
-                placeholder: LibrarySkeletonListView(
-                  key: const ValueKey('asmr_initial_placeholder'),
-                  topInset: headerContentHeight,
-                  bottomInset: bottomInset + 24,
-                ),
+                showPlaceholder: !globalInitialized || _activationError != null,
+                placeholder: _activationError == null
+                    ? LibrarySkeletonListView(
+                        key: const ValueKey('asmr_initial_placeholder'),
+                        topInset: headerContentHeight,
+                        bottomInset: bottomInset + 24,
+                      )
+                    : ListView(
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          headerContentHeight,
+                          16,
+                          bottomInset + 24,
+                        ),
+                        children: [
+                          OperationStatusBanner(
+                            label: i18n.tr('operation_failed_retry'),
+                            error: _activationError,
+                            onRetry: _retryActivation,
+                            retryTooltip: i18n.tr('retry'),
+                          ),
+                        ],
+                      ),
                 content: AppFadeThroughIndexedStack.lazy(
                   key: const ValueKey<String>('asmr_category_stack'),
                   indexListenable: _activeCategoryIndex,
@@ -951,8 +967,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                             topCapsuleData: asmrStatsText,
                             title: 'ASMR.ONE',
                             titleWidget: _buildCategorySwitcher(i18n),
-                            onTitleSwipeLeft: widget.onTitleSwipeLeft,
-                            onTitleSwipeRight: widget.onTitleSwipeRight,
                             trailing: SizedBox(
                               height: 38,
                               child: Row(

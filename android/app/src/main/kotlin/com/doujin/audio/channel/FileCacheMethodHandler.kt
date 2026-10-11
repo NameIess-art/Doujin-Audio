@@ -94,7 +94,6 @@ internal class FileCacheMethodHandler(
         String,
         MethodChannel.Result
     ) -> Unit,
-    private val launchPickAudioSource: (MethodChannel.Result) -> Unit,
     private val launchPickAudioFiles: (MethodChannel.Result) -> Unit,
     private val launchPickAudioFolder: (MethodChannel.Result) -> Unit
 ) : MethodChannel.MethodCallHandler {
@@ -370,7 +369,6 @@ internal class FileCacheMethodHandler(
                     if (it is SubtitleExistsException) "subtitle_exists" else "subtitle_write_failed"
                 }, block = write)
             }
-            FileCacheMethods.PICK_AUDIO_SOURCE -> launchPickAudioSource(result)
             FileCacheMethods.PICK_AUDIO_FILES -> launchPickAudioFiles(result)
             FileCacheMethods.PICK_AUDIO_FOLDER -> launchPickAudioFolder(result)
             FileCacheMethods.DISCOVER_WORK_TEXTS -> {

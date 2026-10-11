@@ -57,21 +57,16 @@ class SettingsTab extends ConsumerStatefulWidget {
   const SettingsTab({
     super.key,
     this.tabIndex = 3,
-    this.activeTabIndexListenable,
   });
 
   final int tabIndex;
-  final ValueListenable<int>? activeTabIndexListenable;
 
   @override
   ConsumerState<SettingsTab> createState() => _SettingsTabState();
 }
 
 class _SettingsTabState extends ConsumerState<SettingsTab>
-    with
-        WidgetsBindingObserver,
-        AutomaticKeepAliveClientMixin,
-        MainTabStateMixin<SettingsTab> {
+    with WidgetsBindingObserver, MainTabStateMixin<SettingsTab> {
   final ValueNotifier<AppUpdateInfo?> _updateInfoNotifier =
       ValueNotifier<AppUpdateInfo?>(null);
   Future<AppVersionInfo>? _appVersionFuture;
@@ -90,9 +85,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
 
   @override
   ScrollController get mainScrollController => _scrollController;
-
-  @override
-  bool get wantKeepAlive => true;
 
   Future<T> _runSettingsOperation<T>({
     required UiOperationScope scope,
@@ -179,7 +171,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,

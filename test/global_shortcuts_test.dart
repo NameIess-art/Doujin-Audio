@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/test_persistence_repository.dart';
+import 'support/test_playback_commands.dart';
 
 void main() {
   late PlaybackFacade playback;
@@ -77,6 +78,7 @@ void main() {
     GlobalKey<NavigatorState>? navigatorKey,
     String? focusedCardSessionId,
     String? focusedDetailSessionId,
+    ValueNotifier<bool>? navigationAllowed,
   }) => ProviderScope(
     key: ValueKey<String>(
       'scope_${focusedCardSessionId}_$focusedDetailSessionId',
@@ -98,10 +100,156 @@ void main() {
       builder: (context, child) => GlobalShortcuts(
         enabled: enabled,
         navigatorKey: navigatorKey,
+        navigationAllowed: navigationAllowed,
         child: child!,
       ),
       home: Scaffold(body: child),
     ),
+  );
+
+  testWidgets(
+    'Windows playback shortcuts remain available while navigation is locked',
+    (tester) async {
+      final allowed = ValueNotifier(true);
+      addTearDown(allowed.dispose);
+      final advances = <(String, bool)>[];
+      playback.attachPlaybackCommands(
+        prepareSession:
+            (
+              _, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async => true,
+        pauseSession: (_) async {},
+        startSession: (_, {required shouldStartTriggerCountdown}) async => true,
+        resolveAdvance: (session, {required forward}) {
+          advances.add((session.id, forward));
+          return null;
+        },
+        hasAdjacent: (_, {required forward}) => true,
+      );
+      notifications.registerSessionFocus('primary');
+      playback.sessionById('primary')!
+        ..duration = const Duration(seconds: 10)
+        ..loadedPath = '/primary.mp3'
+        ..volume = 0.5;
+      await tester.pumpWidget(
+        app(
+          const SizedBox(),
+          focusedCardSessionId: 'primary',
+          navigationAllowed: allowed,
+        ),
+      );
+      await tester.pump();
+      allowed.value = false;
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(resumed, ['primary']);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.seeks, [('primary', const Duration(seconds: 5))]);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.volumes, [('primary', 0.45)]);
+      playback.sessionById('primary')!.setOptimisticPosition(Duration.zero);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(advances, [('primary', true), ('primary', false)]);
+      expect(allowed.value, isFalse);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'locked shortcuts preserve editing and startup exclusions',
+    (tester) async {
+      final allowed = ValueNotifier(false);
+      addTearDown(allowed.dispose);
+      for (final editing in [true, false]) {
+        await tester.pumpWidget(
+          app(
+            editing ? const TextField(autofocus: true) : const SizedBox(),
+            enabled: editing,
+            focusedCardSessionId: 'primary',
+            navigationAllowed: allowed,
+          ),
+        );
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(resumed, isEmpty);
+        expect(native.seeks, isEmpty);
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'locked shortcuts block button activation, help and route dismissal',
+    (tester) async {
+      final allowed = ValueNotifier(true);
+      addTearDown(allowed.dispose);
+      final navigator = GlobalKey<NavigatorState>();
+      var activated = 0;
+      await tester.pumpWidget(
+        app(
+          const Text('home'),
+          navigatorKey: navigator,
+          focusedCardSessionId: 'primary',
+          navigationAllowed: allowed,
+        ),
+      );
+      unawaited(
+        navigator.currentState!.push(
+          MaterialPageRoute<void>(
+            builder: (_) => Scaffold(
+              body: TextButton(
+                autofocus: true,
+                onPressed: () => activated++,
+                child: const Text('details'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      allowed.value = false;
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.tap(find.text('details'), warnIfMissed: false);
+      await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(activated, 0);
+      expect(resumed, isEmpty);
+      expect(find.text('details'), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(resumed, ['primary']);
+      allowed.value = true;
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.text('details'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 
   testWidgets(

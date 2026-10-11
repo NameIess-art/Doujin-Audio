@@ -301,7 +301,6 @@ open class MainActivity : FlutterFragmentActivity() {
             scanStreamHandler = fileCacheScanStreamHandler,
             taskExecutor = fileCacheTaskExecutor,
             launchExportFile = fileExportCoordinator::launch,
-            launchPickAudioSource = audioPickerCoordinator::launchPickAudioSource,
             launchPickAudioFiles = audioPickerCoordinator::launchPickAudioFiles,
             launchPickAudioFolder = audioPickerCoordinator::launchPickAudioFolder
         )

@@ -135,7 +135,6 @@ abstract final class FileCacheMethod {
   static const String enforceApplicationCacheLimit =
       'enforceApplicationCacheLimit';
   static const String getStorageUsage = 'getStorageUsage';
-  static const String pickAudioSource = 'pickAudioSource';
   static const String pickAudioFiles = 'pickAudioFiles';
   static const String pickAudioFolder = 'pickAudioFolder';
   static const String discoverWorkTexts = 'discoverWorkTexts';

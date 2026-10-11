@@ -93,7 +93,6 @@ internal object FileCacheMethods {
     const val LIST_CHILD_FOLDERS = "listChildFolders"
     const val PICK_AUDIO_FILES = "pickAudioFiles"
     const val PICK_AUDIO_FOLDER = "pickAudioFolder"
-    const val PICK_AUDIO_SOURCE = "pickAudioSource"
     const val READ_JSON_DOCUMENT = "readJsonDocument"
     const val RECONCILE_PERSISTED_URI_PERMISSIONS = "reconcilePersistedUriPermissions"
     const val RENAME_DOCUMENT = "renameDocument"

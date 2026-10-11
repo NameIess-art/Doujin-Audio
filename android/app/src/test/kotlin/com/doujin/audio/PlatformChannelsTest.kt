@@ -38,7 +38,6 @@ class PlatformChannelsTest {
             FileCacheMethods.LIST_CHILD_FOLDERS,
             FileCacheMethods.PICK_AUDIO_FILES,
             FileCacheMethods.PICK_AUDIO_FOLDER,
-            FileCacheMethods.PICK_AUDIO_SOURCE,
             FileCacheMethods.READ_JSON_DOCUMENT,
             FileCacheMethods.RENAME_DOCUMENT,
             FileCacheMethods.RESOLVE_DOCUMENT_FILE_SYSTEM_PATH,

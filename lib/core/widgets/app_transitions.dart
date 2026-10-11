@@ -19,10 +19,12 @@ class AppNavigationInputLock extends StatefulWidget {
     super.key,
     required this.navigationAllowed,
     required this.child,
+    this.onLockedKeyEvent,
   });
 
   final ValueListenable<bool> navigationAllowed;
   final Widget child;
+  final ValueChanged<KeyEvent>? onLockedKeyEvent;
 
   @override
   State<AppNavigationInputLock> createState() => _AppNavigationInputLockState();
@@ -56,10 +58,11 @@ class _AppNavigationInputLockState extends State<AppNavigationInputLock> {
     }
   }
 
-  KeyEventResult _handleKeyEvent(KeyEvent event) =>
-      widget.navigationAllowed.value
-      ? KeyEventResult.ignored
-      : KeyEventResult.handled;
+  KeyEventResult _handleKeyEvent(KeyEvent event) {
+    if (widget.navigationAllowed.value) return KeyEventResult.ignored;
+    widget.onLockedKeyEvent?.call(event);
+    return KeyEventResult.handled;
+  }
 
   @override
   void deactivate() {
@@ -1037,33 +1040,21 @@ class _AppFadeTransitionState extends State<_AppFadeTransition> {
 }
 
 class AppFadeThroughIndexedStack extends StatefulWidget {
-  const AppFadeThroughIndexedStack({
-    super.key,
-    required this.indexListenable,
-    required this.children,
-    this.separateHeader = false,
-    this.duration = const Duration(milliseconds: 350),
-    this.onTransitionCompleted,
-  }) : itemCount = children.length,
-       itemBuilder = null,
-       contentRevision = null;
-
-  AppFadeThroughIndexedStack.lazy({
+  const AppFadeThroughIndexedStack.lazy({
     super.key,
     required this.indexListenable,
     required this.itemCount,
-    required IndexedWidgetBuilder this.itemBuilder,
+    required this.itemBuilder,
     this.contentRevision,
     this.separateHeader = false,
     this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
-  }) : children = List<Widget>.filled(itemCount, const SizedBox.shrink());
+  });
 
   final ValueListenable<int> indexListenable;
   int get index => indexListenable.value;
-  final List<Widget> children;
   final int itemCount;
-  final IndexedWidgetBuilder? itemBuilder;
+  final IndexedWidgetBuilder itemBuilder;
 
   /// Changed builder inputs are applied when retained pages become visible.
   /// Leave null to keep the initial widgets across parent rebuilds.
@@ -1097,7 +1088,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   BoxConstraints? _preparedConstraints;
   int? _pendingIndex;
 
-  bool get _isLazy => widget.itemBuilder != null;
   int get _itemCount => widget.itemCount;
 
   @override
@@ -1129,20 +1119,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   @override
   void didUpdateWidget(covariant AppFadeThroughIndexedStack oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_isLazy && oldWidget.itemBuilder == null) {
-      for (
-        var index = 0;
-        index < math.min(_itemCount, oldWidget.itemCount);
-        index++
-      ) {
-        if (!Widget.canUpdate(
-          oldWidget.children[index],
-          widget.children[index],
-        )) {
-          _preparedPages.remove(index);
-        }
-      }
-    }
     if (oldWidget.duration != widget.duration) {
       _controller.duration = widget.duration;
       _controller.reverseDuration = widget.duration;
@@ -1152,14 +1128,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       widget.indexListenable.addListener(_handleIndexChanged);
       _handleIndexChanged();
     }
-    if (_isLazy != (oldWidget.itemBuilder != null) ||
-        _itemCount != oldWidget.itemCount) {
-      if (_isLazy != (oldWidget.itemBuilder != null)) {
-        _preparedPages.clear();
-      }
+    if (_itemCount != oldWidget.itemCount) {
       _resetLazyChildren();
       _handleIndexChanged();
-    } else if (_isLazy && widget.contentRevision != oldWidget.contentRevision) {
+    } else if (widget.contentRevision != oldWidget.contentRevision) {
       for (var index = 0; index < _itemCount; index++) {
         if (_lazyChildren[index] != null) {
           _dirtyChildren.add(index);
@@ -1175,10 +1147,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _lazyChildren = List<Widget?>.generate(
       _itemCount,
       (index) =>
-          _isLazy &&
-              index < previousChildren.length &&
+          index < previousChildren.length &&
               previousChildren[index] != null
-          ? widget.itemBuilder!(context, index)
+          ? widget.itemBuilder(context, index)
           : null,
     );
     _pageKeys = List<GlobalKey>.generate(
@@ -1310,7 +1281,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   }
 
   Widget _childAt(int index) {
-    if (!_isLazy) return widget.children[index];
     final visible =
         index == _currentIndex ||
         index == _targetIndex ||
@@ -1321,9 +1291,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     // Retain hidden elements, but apply changed query/selection inputs only
     // when they become visible, before their preparation layout.
     if (_dirtyChildren.remove(index)) {
-      _lazyChildren[index] = widget.itemBuilder!(context, index);
+      _lazyChildren[index] = widget.itemBuilder(context, index);
     }
-    return _lazyChildren[index] ??= widget.itemBuilder!(context, index);
+    return _lazyChildren[index] ??= widget.itemBuilder(context, index);
   }
 
   @override
@@ -1460,7 +1430,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         if (index != _currentIndex &&
             index != _targetIndex &&
             index != _pendingIndex &&
-            (!_isLazy || _lazyChildren[index] != null))
+            _lazyChildren[index] != null)
           index,
       _currentIndex,
       if (_isAnimating && _targetIndex != _currentIndex) _targetIndex,

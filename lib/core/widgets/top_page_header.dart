@@ -89,8 +89,6 @@ class TopPageHeader extends StatefulWidget {
     this.additionalChild,
     this.marqueeTitle = false,
     this.forceMarqueeTitle = false,
-    this.onTitleSwipeLeft,
-    this.onTitleSwipeRight,
     this.collapseController,
     this.collapseDistance = 56,
     this.floatingReveal = false,
@@ -128,8 +126,6 @@ class TopPageHeader extends StatefulWidget {
   final Widget? additionalChild;
   final bool marqueeTitle;
   final bool forceMarqueeTitle;
-  final VoidCallback? onTitleSwipeLeft;
-  final VoidCallback? onTitleSwipeRight;
   final ScrollController? collapseController;
   final double collapseDistance;
   final bool floatingReveal;
@@ -150,11 +146,8 @@ class TopPageHeader extends StatefulWidget {
 
 class _TopPageHeaderState extends State<TopPageHeader> {
   static double _stableTopPadding = 0;
-  static const double _titleSwipeDistance = 32;
-  static const double _titleSwipeVelocity = 250;
   final ValueNotifier<double> _collapseProgress = ValueNotifier<double>(0);
   double _floatingReveal = 0;
-  double _titleDragDistance = 0;
   double _floatingRevealPendingDistance = 0;
   double? _lastOffset;
 
@@ -263,30 +256,6 @@ class _TopPageHeaderState extends State<TopPageHeader> {
     _floatingReveal = nextReveal;
   }
 
-  void _handleTitleDragStart(DragStartDetails details) {
-    _titleDragDistance = 0;
-  }
-
-  void _handleTitleDragUpdate(DragUpdateDetails details) {
-    _titleDragDistance += details.primaryDelta ?? 0;
-  }
-
-  void _handleTitleDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    final isLeft =
-        _titleDragDistance <= -_titleSwipeDistance ||
-        velocity <= -_titleSwipeVelocity;
-    final isRight =
-        _titleDragDistance >= _titleSwipeDistance ||
-        velocity >= _titleSwipeVelocity;
-    _titleDragDistance = 0;
-    if (isLeft) {
-      widget.onTitleSwipeLeft?.call();
-    } else if (isRight) {
-      widget.onTitleSwipeRight?.call();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -310,8 +279,6 @@ class _TopPageHeaderState extends State<TopPageHeader> {
         widget.titleWidget != null ||
         widget.leading != null ||
         widget.trailing != null;
-    final hasSwipe =
-        widget.onTitleSwipeLeft != null || widget.onTitleSwipeRight != null;
 
     Widget wrapButton(Widget button) {
       if (button is IconButton || button is BackButton) {
@@ -322,21 +289,13 @@ class _TopPageHeaderState extends State<TopPageHeader> {
 
     Widget buildTitleContent() {
       if (widget.titleWidget != null) {
-        final content = Align(
+        return Align(
           alignment: Alignment.centerLeft,
           child: widget.titleWidget!,
         );
-        if (!hasSwipe) return content;
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragStart: _handleTitleDragStart,
-          onHorizontalDragUpdate: _handleTitleDragUpdate,
-          onHorizontalDragEnd: _handleTitleDragEnd,
-          child: content,
-        );
       }
 
-      final surface = HeaderFloatingSurface(
+      return HeaderFloatingSurface(
         height: null,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: ConstrainedBox(
@@ -413,15 +372,6 @@ class _TopPageHeaderState extends State<TopPageHeader> {
             ],
           ),
         ),
-      );
-
-      if (!hasSwipe) return surface;
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onHorizontalDragStart: _handleTitleDragStart,
-        onHorizontalDragUpdate: _handleTitleDragUpdate,
-        onHorizontalDragEnd: _handleTitleDragEnd,
-        child: surface,
       );
     }
 

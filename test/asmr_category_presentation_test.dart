@@ -30,13 +30,14 @@ void main() {
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
 
-  Widget pageStack(ValueNotifier<int> activeTab) => AppFadeThroughIndexedStack(
+  Widget pageStack(ValueNotifier<int> activeTab) => AppFadeThroughIndexedStack.lazy(
     indexListenable: activeTab,
     duration: Duration.zero,
-    children: [
+    itemCount: 2,
+    itemBuilder: (_, i) => [
       AsmrTab(activeTabIndexListenable: activeTab),
       const SizedBox.shrink(),
-    ],
+    ][i],
   );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {

@@ -672,54 +672,44 @@ void main() {
     });
   }
 
-  for (final lazy in [false, true]) {
-    testWidgets('first page frame prepares once (lazy: $lazy)', (tester) async {
-      final index = ValueNotifier<int>(0);
-      addTearDown(index.dispose);
-      final completed = <int>[];
-      Widget page(int i) => Text('prepared-$i');
-      await tester.pumpWidget(
-        MaterialApp(
-          home: lazy
-              ? AppFadeThroughIndexedStack.lazy(
-                  indexListenable: index,
-                  itemCount: 2,
-                  itemBuilder: (_, i) => page(i),
-                  duration: kAppMotionSlow,
-                  onTransitionCompleted: completed.add,
-                )
-              : AppFadeThroughIndexedStack(
-                  indexListenable: index,
-                  duration: kAppMotionSlow,
-                  onTransitionCompleted: completed.add,
-                  children: [page(0), page(1)],
-                ),
+  testWidgets('first page frame prepares once', (tester) async {
+    final index = ValueNotifier<int>(0);
+    addTearDown(index.dispose);
+    final completed = <int>[];
+    Widget page(int i) => Text('prepared-$i');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppFadeThroughIndexedStack.lazy(
+          indexListenable: index,
+          itemCount: 2,
+          itemBuilder: (_, i) => page(i),
+          duration: kAppMotionSlow,
+          onTransitionCompleted: completed.add,
         ),
-      );
-      index.value = 1;
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(find.text('prepared-1'), findsOneWidget);
-      expect(completed, isEmpty);
-      expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(completed, isEmpty);
-      await tester.pump(const Duration(milliseconds: 299));
-      expect(completed, isEmpty);
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(completed, [1]);
-      await tester.pumpAndSettle();
-      index.value = 0;
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 150));
-      expect(_translationFor(tester, 'prepared-0'), isNot(Offset.zero));
-      await tester.pump(const Duration(milliseconds: 151));
-      expect(completed, [1, 0]);
-      await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-      await tester.pumpAndSettle();
-      expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
-    });
-  }
-
+      ),
+    );
+    index.value = 1;
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('prepared-1'), findsOneWidget);
+    expect(completed, isEmpty);
+    expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(completed, isEmpty);
+    await tester.pump(const Duration(milliseconds: 299));
+    expect(completed, isEmpty);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(completed, [1]);
+    await tester.pumpAndSettle();
+    index.value = 0;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(_translationFor(tester, 'prepared-0'), isNot(Offset.zero));
+    await tester.pump(const Duration(milliseconds: 151));
+    expect(completed, [1, 0]);
+    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+    await tester.pumpAndSettle();
+    expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
+  });
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
       'cached pages prepare at the resized viewport ($platform)',
@@ -1716,10 +1706,11 @@ void main() {
           await tester.pumpWidget(
             MaterialApp(
               theme: ThemeData(platform: platform),
-              home: AppFadeThroughIndexedStack(
+              home: AppFadeThroughIndexedStack.lazy(
                 indexListenable: index,
                 separateHeader: true,
-                children: [page('first'), page('second')],
+                itemCount: 2,
+                itemBuilder: (_, i) => page(i == 0 ? 'first' : 'second'),
               ),
             ),
           );
@@ -1764,10 +1755,11 @@ void main() {
     addTearDown(index.dispose);
     await tester.pumpWidget(
       MaterialApp(
-        home: AppFadeThroughIndexedStack(
+        home: AppFadeThroughIndexedStack.lazy(
           indexListenable: index,
           separateHeader: true,
-          children: [regions('first'), regions('second')],
+          itemCount: 2,
+          itemBuilder: (_, i) => regions(i == 0 ? 'first' : 'second'),
         ),
       ),
     );
@@ -1807,14 +1799,15 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: AppFadeThroughIndexedStack(
+          body: AppFadeThroughIndexedStack.lazy(
             indexListenable: index,
             duration: Duration.zero,
             onTransitionCompleted: (value) => completedIndex = value,
-            children: const [
+            itemCount: 2,
+            itemBuilder: (_, i) => const [
               _StateProbe(label: 'first'),
               _StateProbe(label: 'second'),
-            ],
+            ][i],
           ),
         ),
       ),
@@ -2250,14 +2243,15 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: AppFadeThroughIndexedStack(
+            body: AppFadeThroughIndexedStack.lazy(
               indexListenable: index,
               onTransitionCompleted: (value) => completedIndex = value,
-              children: [
+              itemCount: 3,
+              itemBuilder: (_, i) => [
                 _StateProbe(key: firstKey, label: 'first'),
                 const _StateProbe(label: 'second'),
                 const _StateProbe(label: 'third'),
-              ],
+              ][i],
             ),
           ),
         ),
@@ -2798,13 +2792,14 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: AppFadeThroughIndexedStack(
+          body: AppFadeThroughIndexedStack.lazy(
             indexListenable: index,
-            children: const [
+            itemCount: 3,
+            itemBuilder: (_, i) => const [
               _StateProbe(label: 'first'),
               _StateProbe(label: 'second'),
               _StateProbe(label: 'third'),
-            ],
+            ][i],
           ),
         ),
       ),
@@ -2893,12 +2888,13 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: AppFadeThroughIndexedStack(
+          body: AppFadeThroughIndexedStack.lazy(
             indexListenable: index,
-            children: const [
+            itemCount: 2,
+            itemBuilder: (_, i) => const [
               _StateProbe(label: 'first'),
               _StateProbe(label: 'second'),
-            ],
+            ][i],
           ),
         ),
       ),
@@ -2987,13 +2983,14 @@ void main() {
                 AnimationStyle.noAnimation,
               );
               return Scaffold(
-                body: AppFadeThroughIndexedStack(
+                body: AppFadeThroughIndexedStack.lazy(
                   indexListenable: index,
                   onTransitionCompleted: (_) => completed = true,
-                  children: const [
+                  itemCount: 2,
+                  itemBuilder: (_, i) => const [
                     _StateProbe(label: 'first'),
                     _StateProbe(label: 'second'),
-                  ],
+                  ][i],
                 ),
               );
             },

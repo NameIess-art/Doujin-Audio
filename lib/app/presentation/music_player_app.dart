@@ -300,28 +300,30 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                       disableAnimations || mediaQuery.disableAnimations,
                 );
 
-                final navigatorChild =
-                    defaultTargetPlatform == TargetPlatform.windows
+                final navigatorContent = MediaQuery(
+                  data: effectiveMediaQuery,
+                  child: wrapNavigator(context, child ?? const SizedBox()),
+                );
+                final content = defaultTargetPlatform == TargetPlatform.windows
                     ? ListenableBuilder(
                         listenable: _runtimeBootstrapController,
-                        child: child ?? const SizedBox(),
+                        child: navigatorContent,
                         builder: (context, child) => GlobalShortcuts(
                           enabled:
                               _runtimeBootstrapController.state.phase ==
                               AppBootstrapPhase.ready,
                           navigatorKey: _navigatorKey,
+                          navigationAllowed: UiInteractionCoordinator
+                              .instance
+                              .navigationAllowed,
                           child: child!,
                         ),
                       )
-                    : child ?? const SizedBox();
-                final content = AppNavigationInputLock(
-                  navigationAllowed:
-                      UiInteractionCoordinator.instance.navigationAllowed,
-                  child: MediaQuery(
-                    data: effectiveMediaQuery,
-                    child: wrapNavigator(context, navigatorChild),
-                  ),
-                );
+                    : AppNavigationInputLock(
+                        navigationAllowed:
+                            UiInteractionCoordinator.instance.navigationAllowed,
+                        child: navigatorContent,
+                      );
                 if (defaultTargetPlatform == TargetPlatform.windows) {
                   return TooltipVisibility(visible: false, child: content);
                 }

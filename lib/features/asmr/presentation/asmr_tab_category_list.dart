@@ -67,7 +67,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
 }
 
 class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
-    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey();
   bool _loadMoreTriggeredInCurrentScroll = false;
@@ -211,11 +211,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   }
 
   @override
-  bool get wantKeepAlive => true;
-
-  @override
   Widget build(BuildContext context) {
-    super.build(context);
     final normalizedSearchQuery = normalizeSearchQuery(widget.searchQuery);
     final request = (
       category: widget.category,

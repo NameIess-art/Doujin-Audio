@@ -754,10 +754,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         onOpenLibrary: _openLocalLibrary,
         activeTabIndexListenable: _activePageIndex,
       ),
-      MainDestinationType.settings => SettingsTab(
-        tabIndex: index,
-        activeTabIndexListenable: _activePageIndex,
-      ),
+      MainDestinationType.settings => SettingsTab(tabIndex: index),
     };
   }
 

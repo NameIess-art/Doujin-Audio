@@ -50,7 +50,6 @@ void main() {
       FileCacheMethod.setApplicationCacheLimit,
       FileCacheMethod.enforceApplicationCacheLimit,
       FileCacheMethod.getStorageUsage,
-      FileCacheMethod.pickAudioSource,
       FileCacheMethod.pickAudioFiles,
       FileCacheMethod.pickAudioFolder,
       FileCacheMethod.discoverWorkTexts,

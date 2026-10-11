@@ -52,27 +52,20 @@ class LibraryTab extends ConsumerStatefulWidget {
     this.activeTabIndexListenable,
     this.activeSectionListenable,
     this.sectionIndex = 0,
-    this.onTitleSwipeLeft,
-    this.onTitleSwipeRight,
   });
 
   final int tabIndex;
   final ValueListenable<int>? activeTabIndexListenable;
   final ValueListenable<int>? activeSectionListenable;
   final int sectionIndex;
-  final VoidCallback? onTitleSwipeLeft;
-  final VoidCallback? onTitleSwipeRight;
 
   @override
   ConsumerState<LibraryTab> createState() => _LibraryTabState();
 }
 
 class _LibraryTabState extends ConsumerState<LibraryTab>
-    with AutomaticKeepAliveClientMixin, MainTabStateMixin<LibraryTab> {
+    with MainTabStateMixin<LibraryTab> {
   final _scanCoordinator = LibraryScanCoordinator();
-
-  @override
-  bool get wantKeepAlive => true;
 
   @override
   double get defaultHeaderHeight => AppPageHeaderMetrics.expandedToolbarHeight;
@@ -639,7 +632,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -940,8 +932,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         i18n,
                         libraryRefreshBusy,
                       ),
-                      onTitleSwipeLeft: widget.onTitleSwipeLeft,
-                      onTitleSwipeRight: widget.onTitleSwipeRight,
                       trailing: SizedBox(
                         height: 38,
                         child: Row(

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/app_transitions.dart';
 import '../../features/player/presentation/playback_providers.dart';
 import '../state/app_runtime_providers.dart';
 import 'work_detail_navigation.dart';
@@ -19,20 +20,34 @@ class GlobalShortcuts extends ConsumerWidget {
     required this.child,
     this.enabled = true,
     this.navigatorKey,
+    this.navigationAllowed,
   });
 
   final Widget child;
   final bool enabled;
   final GlobalKey<NavigatorState>? navigatorKey;
+  final ValueListenable<bool>? navigationAllowed;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (defaultTargetPlatform == TargetPlatform.windows) {
-      return Focus(
+      final shortcuts = Focus(
         autofocus: true,
         onKeyEvent: (_, event) => _handleWindowsKey(context, ref, event),
         child: child,
       );
+      return navigationAllowed == null
+          ? shortcuts
+          : AppNavigationInputLock(
+              navigationAllowed: navigationAllowed!,
+              onLockedKeyEvent: (event) => _handleWindowsKey(
+                context,
+                ref,
+                event,
+                allowNavigation: false,
+              ),
+              child: shortcuts,
+            );
     }
     return Shortcuts(
       shortcuts: <LogicalKeySet, Intent>{
@@ -59,8 +74,9 @@ class GlobalShortcuts extends ConsumerWidget {
   KeyEventResult _handleWindowsKey(
     BuildContext context,
     WidgetRef ref,
-    KeyEvent event,
-  ) {
+    KeyEvent event, {
+    bool allowNavigation = true,
+  }) {
     if (!enabled || event is! KeyDownEvent) return KeyEventResult.ignored;
     final keyboard = HardwareKeyboard.instance;
     if (keyboard.isShiftPressed || keyboard.isMetaPressed) {
@@ -72,13 +88,16 @@ class GlobalShortcuts extends ConsumerWidget {
     final key = event.logicalKey;
     final control = keyboard.isControlPressed;
     final alt = keyboard.isAltPressed;
-    if (!control && !alt && key == LogicalKeyboardKey.f1) {
+    if (allowNavigation && !control && !alt && key == LogicalKeyboardKey.f1) {
       if (!_isHelpOpen) {
         unawaited(_showHelp(routeContext, ref));
       }
       return KeyEventResult.handled;
     }
-    if (!control && !alt && key == LogicalKeyboardKey.escape) {
+    if (allowNavigation &&
+        !control &&
+        !alt &&
+        key == LogicalKeyboardKey.escape) {
       final navigator =
           navigatorKey?.currentState ?? Navigator.maybeOf(routeContext);
       if (navigator != null && navigator.canPop()) {

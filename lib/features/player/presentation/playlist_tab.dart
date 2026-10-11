@@ -75,7 +75,7 @@ class PlaylistTab extends ConsumerStatefulWidget {
 }
 
 class _PlaylistTabState extends ConsumerState<PlaylistTab>
-    with AutomaticKeepAliveClientMixin, MainTabStateMixin<PlaylistTab> {
+    with MainTabStateMixin<PlaylistTab> {
   final ScrollController _scrollController = ScrollController();
   bool _isSelectionMode = false;
   final Set<String> _selectedSessionIds = <String>{};
@@ -234,9 +234,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     }
   }
 
-  @override
-  bool get wantKeepAlive => true;
-
   bool get _isSelected =>
       widget.activeTabIndexListenable == null ||
       widget.activeTabIndexListenable!.value == tabIndex;
@@ -345,7 +342,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,

@@ -16,7 +16,6 @@ internal class AudioPickerCoordinator(
     private val activity: Activity,
     private val taskExecutor: FileCacheTaskExecutor
 ) {
-    private val pickAudioSourceRequestCode = 7001
     private val pickAudioFilesRequestCode = 7002
     private val pickAudioFolderRequestCode = 7003
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
@@ -49,44 +48,13 @@ internal class AudioPickerCoordinator(
 
     fun handleActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
         if (
-            requestCode != pickAudioSourceRequestCode &&
             requestCode != pickAudioFilesRequestCode &&
             requestCode != pickAudioFolderRequestCode
         ) {
             return false
         }
-        handlePickAudioSourceResult(requestCode, resultCode, data)
+        handleAudioPickerResult(requestCode, resultCode, data)
         return true
-    }
-
-    fun launchPickAudioSource(result: MethodChannel.Result) {
-        if (disposed) {
-            result.error("picker_failed", "audio picker is unavailable", null)
-            return
-        }
-        if (pendingRequest != null) {
-            result.error("picker_busy", "Audio picker is already active", null)
-            return
-        }
-        try {
-            val pickFilesIntent = buildPickAudioFilesIntent()
-            val pickFolderIntent = buildPickAudioFolderIntent()
-            val chooserIntent = Intent(Intent.ACTION_CHOOSER).apply {
-                putExtra(Intent.EXTRA_INTENT, pickFilesIntent)
-                putExtra(Intent.EXTRA_TITLE, "Select audio")
-                putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(pickFolderIntent))
-            }
-
-            pendingRequest = PendingPickAudioRequest(
-                result = result,
-                mode = PickAudioMode.any,
-                generation = ++generation
-            )
-            activity.startActivityForResult(chooserIntent, pickAudioSourceRequestCode)
-        } catch (e: Exception) {
-            pendingRequest = null
-            result.error("picker_failed", e.message ?: "cannot launch picker", null)
-        }
     }
 
     fun launchPickAudioFiles(result: MethodChannel.Result) {
@@ -155,7 +123,7 @@ internal class AudioPickerCoordinator(
         }
     }
 
-    private fun handlePickAudioSourceResult(
+    private fun handleAudioPickerResult(
         requestCode: Int,
         resultCode: Int,
         data: Intent?
@@ -342,7 +310,6 @@ internal class AudioPickerCoordinator(
     )
 
     private enum class PickAudioMode {
-        any,
         files,
         folder
     }

@@ -2414,16 +2414,17 @@ void main() {
 
     await tester.pumpWidget(
       fixture.build(
-        AppFadeThroughIndexedStack(
+        AppFadeThroughIndexedStack.lazy(
           indexListenable: activePageIndex,
           duration: kAppMotionSlow,
-          children: [
+          itemCount: 2,
+          itemBuilder: (_, i) => [
             AsmrTab(
               key: const ValueKey<String>('audio_library_asmr_page'),
               activeTabIndexListenable: activePageIndex,
             ),
             const SizedBox.shrink(),
-          ],
+          ][i],
         ),
         overrides: [
           asmrLibraryControllerProvider.overrideWithValue(controller),

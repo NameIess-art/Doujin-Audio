@@ -96,19 +96,6 @@ class NativePlaybackSessionManagerTest {
     }
 
     @Test
-    fun `ensureFallbackFocus recovers focus when null or invalid`() {
-        val manager = NativePlaybackSessionManager(::createTestSession)
-        assertNull(manager.ensureFallbackFocus())
-
-        manager.getOrCreate("session-1")
-        manager.getOrCreate("session-2")
-        assertEquals("session-1", manager.ensureFallbackFocus())
-
-        manager.focusedSessionId = "invalid"
-        assertEquals("session-1", manager.ensureFallbackFocus())
-    }
-
-    @Test
     fun `clear resets sessions and focus state`() {
         val manager = NativePlaybackSessionManager(::createTestSession)
         manager.getOrCreate("session-1")

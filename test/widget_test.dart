@@ -38,6 +38,7 @@ import 'package:doujin_audio/features/player/application/native_playback_reposit
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/core/platform/app_lifecycle_platform_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/ui/warmup_scheduler.dart';
@@ -6081,6 +6082,110 @@ void main() {
     );
   }
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final scenario in ['success', 'rollback', 'superseded failure']) {
+      testWidgets(
+        'app theme sync $scenario on ${platform.name}',
+        (tester) async {
+          final calls = <Object?>[];
+          final writes = <Completer<bool>>[];
+          const channel = MethodChannel(AppLifecycleChannel.name);
+          final messenger =
+              TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+          messenger.setMockMethodCallHandler(channel, (call) async {
+            if (call.method == AppLifecycleMethod.syncAppTheme) {
+              calls.add(call.arguments);
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+          addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+          await AppPreferences.init();
+          final theme = ThemeProvider(
+            preferenceWriter: scenario == 'superseded failure'
+                ? (_, _) {
+                    final write = Completer<bool>();
+                    writes.add(write);
+                    return write.future;
+                  }
+                : scenario == 'rollback'
+                ? (_, _) async => false
+                : null,
+          );
+          await _pumpAppShell(
+            tester,
+            includePlaybackSession: false,
+            theme: theme,
+            additionalOverrides: [
+              appLifecyclePlatformServiceProvider.overrideWithValue(
+                AppLifecyclePlatformService(
+                  isAndroidOverride: platform == TargetPlatform.android
+                      ? true
+                      : null,
+                ),
+              ),
+            ],
+          );
+          expect(calls, isEmpty);
+          if (scenario == 'superseded failure') {
+            final older = theme.setThemeMode(ThemeMode.dark);
+            final newer = theme.setThemeMode(ThemeMode.light);
+            await tester.pump();
+            expect(writes, hasLength(1));
+            writes.first.complete(false);
+            expect(await older, isFalse);
+            await tester.pump();
+            expect(theme.themeMode, ThemeMode.light);
+            expect(writes, hasLength(2));
+            writes.last.complete(true);
+            expect(await newer, isTrue);
+            await tester.pump();
+            expect(calls, [
+              {'preset': 'rose', 'themeMode': 'dark'},
+              {'preset': 'rose', 'themeMode': 'light'},
+            ]);
+          } else if (scenario == 'rollback') {
+            expect(await theme.setThemeMode(ThemeMode.dark), isFalse);
+            await tester.pump();
+            expect(
+              await theme.setAppThemeColor(ThemeAccentPreset.mint),
+              isFalse,
+            );
+            await tester.pump();
+            expect(calls, [
+              {'preset': 'rose', 'themeMode': 'dark'},
+              {'preset': 'rose', 'themeMode': 'system'},
+              {'preset': 'mint', 'themeMode': 'system'},
+              {'preset': 'rose', 'themeMode': 'system'},
+            ]);
+            expect(theme.themeMode, ThemeMode.system);
+            expect(theme.appThemeColor, ThemeAccentPreset.rose);
+          } else {
+            expect(await theme.setThemeMode(ThemeMode.dark), isTrue);
+            await tester.pump();
+            expect(await theme.setThemeMode(ThemeMode.dark), isTrue);
+            expect(
+              await theme.setAppThemeColor(ThemeAccentPreset.mint),
+              isTrue,
+            );
+            await tester.pump();
+            expect(
+              await theme.setAppThemeColor(ThemeAccentPreset.mint),
+              isTrue,
+            );
+            await tester.pump();
+            expect(calls, [
+              {'preset': 'rose', 'themeMode': 'dark'},
+              {'preset': 'mint', 'themeMode': 'dark'},
+            ]);
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pumpAndSettle();
+        },
+        variant: TargetPlatformVariant.only(platform),
+      );
+    }
+  }
+
   testWidgets('main screen background follows the active theme surface', (
     tester,
   ) async {
@@ -6622,6 +6727,7 @@ Future<_AppShellHarness> _pumpAppShell(
   MusicTrack? playbackTrack,
   List<MusicTrack> extraPlaybackTracks = const [],
   List<PlaybackSession> additionalPlaybackSessions = const [],
+  ThemeProvider? theme,
   bool waitForStartup = true,
   AsmrDownloadManager? downloads,
   Future<void> Function()? runtimeInitializer,
@@ -6631,7 +6737,7 @@ Future<_AppShellHarness> _pumpAppShell(
 }) async {
   AppCacheService.scheduledEnforceEnabled = false;
   addTearDown(AppCacheService.resetForTest);
-  final themeProvider = ThemeProvider();
+  final themeProvider = theme ?? ThemeProvider();
   final languageProvider = AppLanguageProvider();
   final notificationService = PlaybackNotificationService();
   final persistenceRepository = _AppShellTestPersistenceRepository();

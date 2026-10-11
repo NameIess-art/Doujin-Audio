@@ -125,7 +125,9 @@ class NativePlaybackRecoveryControllerTest {
         val host = FakeRecoveryHost(session).apply { deferPreparation = true }
         val controller = NativePlaybackRecoveryController(host, environment)
         startCandidateRetry(controller)
-        session.skipQueue(forward = true)
+        session.configure(item, listOf(item, item), 1, 0L, 1f, 1f,
+            repeatOne = false, repeatAll = false, shuffleModeEnabled = false,
+            autoPlay = false, deferPlayerCreation = true)
 
         host.completePreparation()
 

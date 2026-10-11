@@ -9,12 +9,7 @@ class AppSpacing {
   static const double md = 16.0;
   static const double lg = 20.0;
   static const double xl = 24.0;
-  static const double xxl = 32.0;
-  static const double xxxl = 48.0;
 
-  static const EdgeInsets edgeInsetsHorizontalMd = EdgeInsets.symmetric(
-    horizontal: md,
-  );
   static const EdgeInsets edgeInsetsAllMd = EdgeInsets.all(md);
 }
 
@@ -28,14 +23,8 @@ class AppRadius {
   static const double dialog = 20.0;
   static const double pill = 999.0;
 
-  static const BorderRadius borderSmall = BorderRadius.all(
-    Radius.circular(small),
-  );
   static const BorderRadius borderMedium = BorderRadius.all(
     Radius.circular(medium),
-  );
-  static const BorderRadius borderCard = BorderRadius.all(
-    Radius.circular(card),
   );
   static const BorderRadius borderDialog = BorderRadius.all(
     Radius.circular(dialog),

@@ -1,23 +1,6 @@
 part of 'notification_facade.dart';
 
 extension NotificationFacadeCovers on NotificationFacade {
-  Future<void> _resumeNotificationSession(PlaybackSession session) async {
-    if (session.isLoading || session.state.playing) return;
-    _notificationFocusSessionId = session.id;
-    if (session.state.processingState == ProcessingState.completed) {
-      await _playbackCommands.prepareAndPlay(
-        session,
-        nextPath: session.currentTrackPath,
-        forceStartAtZero: true,
-      );
-      return;
-    }
-    await _playbackCommands.startSession(
-      session,
-      shouldStartTriggerCountdown: true,
-    );
-  }
-
   String? coverPathForTrack(MusicTrack? track, {String? trackPath}) {
     return resolvedPlaybackCoverPathForTrack(track, trackPath: trackPath);
   }

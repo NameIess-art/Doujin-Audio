@@ -508,19 +508,6 @@ Map<String, dynamic> _sessionAudioEffectsRow(PlaybackSessionRecord session) => {
   'panning': session.audioEffects.panning,
 };
 
-void _writeSessionToBatch(
-  Batch batch,
-  PlaybackSessionRecord session,
-  int sortOrder,
-) {
-  batch.insert(
-    'sessions',
-    _sessionCoreRow(session, sortOrder),
-    conflictAlgorithm: ConflictAlgorithm.replace,
-  );
-  _writeSessionDetailsToBatch(batch, session);
-}
-
 void _writeSessionDetailsToBatch(
   Batch batch,
   PlaybackSessionRecord session, {

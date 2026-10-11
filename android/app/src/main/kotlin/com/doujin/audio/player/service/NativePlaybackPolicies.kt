@@ -49,11 +49,6 @@ internal val playbackRecoveryOffsetsMs = longArrayOf(
 )
 internal const val PLAYBACK_RECOVERY_LOW_FREQUENCY_INTERVAL_MS = 5 * 60 * 1000L
 
-internal fun shouldAutoPlayWithAudioFocus(
-    autoPlayRequested: Boolean,
-    requestAudioFocus: () -> Boolean
-): Boolean = autoPlayRequested && requestAudioFocus()
-
 internal data class NativeTimerResumeResult(
     val resumedSessionIds: List<String>,
     val audioFocusDenied: Boolean
@@ -169,20 +164,6 @@ internal fun shouldClearPlaybackIntentForPlayWhenReadyChange(
 internal fun shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
     transientAudioFocusLossActive: Boolean
 ): Boolean = transientAudioFocusLossActive
-
-internal fun requestAudioFocusForPlayback(
-    requestAudioFocus: Boolean,
-    request: () -> Boolean
-): Boolean = !requestAudioFocus || request()
-
-internal fun shouldTriggerPlaybackRecoveryOnKeepAlive(
-    hasPlaybackToKeepAlive: Boolean,
-    transientAudioFocusLossActive: Boolean,
-    focusDuckActive: Boolean
-): Boolean = hasPlaybackToKeepAlive &&
-    !shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
-        transientAudioFocusLossActive || focusDuckActive
-    )
 
 internal fun shouldPreservePendingAudioFocusResume(
     playWhenReady: Boolean,

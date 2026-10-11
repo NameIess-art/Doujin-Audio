@@ -37,21 +37,10 @@ internal class NativePlaybackSessionManager(
         return removed
     }
 
-    fun focusedSession(): NativePlaybackSession? {
-        return focusedSessionId?.let { sessions[it] } ?: sessions.values.firstOrNull()
-    }
-
     fun focus(sessionId: String?): Boolean {
         if (sessionId != null && !sessions.containsKey(sessionId)) return false
         focusedSessionId = sessionId
         return true
-    }
-
-    fun ensureFallbackFocus(): String? {
-        if (focusedSessionId == null || !sessions.containsKey(focusedSessionId)) {
-            focusedSessionId = sessions.keys.firstOrNull()
-        }
-        return focusedSessionId
     }
 
     fun activePlaybackSessionIds(): List<String> = sessions.values

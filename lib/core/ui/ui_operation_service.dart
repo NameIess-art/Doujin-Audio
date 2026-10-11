@@ -118,19 +118,17 @@ class UiOperationState {
     Object? error,
     DateTime? startedAt,
     DateTime? completedAt,
-    bool clearProgress = false,
     bool clearError = false,
-    bool clearCompletedAt = false,
   }) {
     return UiOperationState(
       operationId: operationId ?? this.operationId,
       scope: scope ?? this.scope,
       labelKey: labelKey ?? this.labelKey,
       phase: phase ?? this.phase,
-      progress: clearProgress ? null : progress ?? this.progress,
+      progress: progress ?? this.progress,
       error: clearError ? null : error ?? this.error,
       startedAt: startedAt ?? this.startedAt,
-      completedAt: clearCompletedAt ? null : completedAt ?? this.completedAt,
+      completedAt: completedAt ?? this.completedAt,
     );
   }
 
@@ -260,24 +258,6 @@ class UiOperationService {
 
   void clear(UiOperationScope scope) {
     if (_operations.remove(scope) != null) _emit(scope);
-  }
-
-  void clearCompleted({
-    Duration olderThan = const Duration(seconds: 2),
-    DateTime? now,
-  }) {
-    final cutoff = (now ?? DateTime.now()).subtract(olderThan);
-    final removedScopes = <UiOperationScope>[];
-    _operations.removeWhere((_, operation) {
-      final completedAt = operation.completedAt;
-      final remove =
-          completedAt != null &&
-          completedAt.isBefore(cutoff) &&
-          !operation.isBusy;
-      if (remove) removedScopes.add(operation.scope);
-      return remove;
-    });
-    _emitAll(removedScopes);
   }
 
   bool _isCurrent(UiOperationScope scope, int operationId) {

@@ -10,11 +10,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/platform/app_lifecycle_platform_service.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/main.dart' as app;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/app_startup_test_helper.dart';
 
@@ -45,6 +47,32 @@ void main() {
         'x64',
         'universal',
       }, contains(version.androidAssetVariant));
+
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.reload();
+      final savedPreset = preferences.getString('appThemeColor');
+      final savedMode = preferences.getString('themeMode');
+      final lifecycle = AppLifecyclePlatformService();
+      try {
+        expect(
+          await lifecycle.syncAppTheme(
+            preset: savedPreset == 'mint' ? 'rose' : 'mint',
+            themeMode: savedMode == 'dark' ? 'light' : 'dark',
+          ),
+          isTrue,
+        );
+        await preferences.reload();
+        expect(preferences.getString('appThemeColor'), savedPreset);
+        expect(preferences.getString('themeMode'), savedMode);
+      } finally {
+        expect(
+          await lifecycle.syncAppTheme(
+            preset: savedPreset ?? 'rose',
+            themeMode: savedMode ?? 'system',
+          ),
+          isTrue,
+        );
+      }
 
       final playback = container.read(playbackFacadeProvider);
       final wav = File(

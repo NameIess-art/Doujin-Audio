@@ -1,41 +1,13 @@
 package com.doujin.audio
 
-import com.doujin.audio.player.service.shouldAutoPlayWithAudioFocus
 import com.doujin.audio.player.session.handleMediaSessionPlayerCommandRequest
 
 import androidx.media3.common.Player
 import androidx.media3.session.SessionResult
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeMediaSessionCommandPolicyTest {
-    @Test
-    fun `auto play requests focus before allowing playback`() {
-        var focusRequests = 0
-
-        val granted = shouldAutoPlayWithAudioFocus(autoPlayRequested = true) {
-            focusRequests += 1
-            true
-        }
-        val paused = shouldAutoPlayWithAudioFocus(autoPlayRequested = false) {
-            focusRequests += 1
-            true
-        }
-
-        assertTrue(granted)
-        assertFalse(paused)
-        assertEquals(1, focusRequests)
-    }
-
-    @Test
-    fun `auto play remains paused when focus is denied`() {
-        val shouldAutoPlay = shouldAutoPlayWithAudioFocus(autoPlayRequested = true) { false }
-
-        assertFalse(shouldAutoPlay)
-    }
-
     @Test
     fun `external play obtains focus and records playback intent`() {
         var marked = 0

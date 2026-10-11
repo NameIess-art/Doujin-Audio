@@ -344,19 +344,6 @@ extension NotificationFacadeSync on NotificationFacade {
     }
     return payload;
   }
-
-  void refreshNotificationState() {
-    _syncNotificationState();
-    _notifyNotificationChanged();
-  }
-
-  Future<void> selectNotificationSessionFromQueue(int index) async {
-    final sessions = _notificationQueueSessions;
-    if (index < 0 || index >= sessions.length) return;
-    _notificationFocusSessionId = sessions[index].id;
-    _syncNotificationState();
-    _notifyNotificationChanged();
-  }
 }
 
 final class _NotificationSessionPresentation {

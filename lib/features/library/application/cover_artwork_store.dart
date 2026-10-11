@@ -293,12 +293,6 @@ final class CoverArtworkStore {
     return changed ? _enqueue<void>(_persistIndex) : Future<void>.value();
   }
 
-  Future<void> invalidateAllBindings() {
-    if (!_initialized || _bindings.isEmpty) return Future<void>.value();
-    _bindings.clear();
-    return _enqueue<void>(_persistIndex);
-  }
-
   Future<int> migrateLegacyCaches({bool Function()? shouldCancel}) {
     return _enqueue<int>(() async {
       await initialize();

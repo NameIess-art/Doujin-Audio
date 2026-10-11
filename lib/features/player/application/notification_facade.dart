@@ -25,20 +25,6 @@ typedef NotificationSessionResolver =
 typedef NotificationTrackResolver = MusicTrack? Function(String trackPath);
 
 abstract interface class NotificationPlaybackCommands {
-  Future<bool> prepareAndPlay(
-    PlaybackSession session, {
-    required String nextPath,
-    bool autoPlay,
-    bool forceStartAtZero,
-    bool showLoading,
-    int? targetQueueIndex,
-  });
-
-  Future<bool> startSession(
-    PlaybackSession session, {
-    required bool shouldStartTriggerCountdown,
-  });
-
   bool hasAdjacent(PlaybackSession session, {required bool forward});
 }
 
@@ -107,9 +93,6 @@ final class NotificationFacade {
 
   String? get _notificationFocusSessionId =>
       _stateService.notificationFocusSessionId;
-  set _notificationFocusSessionId(String? value) {
-    _stateService.notificationFocusSessionId = value;
-  }
 
   String? get _unifiedNotificationSyncKey =>
       _stateService.unifiedNotificationSyncKey;
@@ -254,13 +237,9 @@ final class NotificationFacade {
   PlaybackSession? resolveNotificationSession([String? sessionId]) =>
       _resolveNotificationSession(sessionId);
   PlaybackSession? get notificationActionSession => _notificationActionSession;
-  Future<void> resumeNotificationSession(PlaybackSession session) =>
-      _resumeNotificationSession(session);
   Future<void> clearUnifiedNotificationsOnPlatform() =>
       _clearUnifiedPlaybackNotificationsOnPlatform();
   bool isActiveCoverKey(String key) => _isActiveCoverKey(key);
-  void ensureSubtitleTrackLoaded(String trackPath) =>
-      _ensureSubtitleTrackLoaded(trackPath);
 
   void prepareForPersistenceReset() {
     _stateService.notificationProgressRefreshTimer?.cancel();
@@ -294,11 +273,6 @@ final class NotificationFacade {
 
   NotificationState get state => _stateService.slice.state;
   Stream<NotificationState> get states => _stateService.slice.stream;
-
-  void refreshState() {
-    _syncNotificationState();
-    _notifyNotificationChanged();
-  }
 
   void attachRuntime({required void Function() onNotificationsRestored}) {
     _onNotificationsRestored = onNotificationsRestored;
@@ -373,14 +347,6 @@ final class NotificationFacade {
     });
   }
 
-  Future<void> playSessionById(String sessionId) {
-    return _guardAction(() async {
-      final session = _resolveSession(sessionId);
-      if (session == null) return;
-      await _resumeSession(session);
-    });
-  }
-
   Future<void> pausePrimarySession() {
     return _guardAction(() async {
       final session = _resolveActionSession();
@@ -403,17 +369,6 @@ final class NotificationFacade {
         return;
       }
       await _resumeSession(session);
-    });
-  }
-
-  Future<void> stopPrimarySession() {
-    return _guardAction(() async {
-      final session = _resolveActionSession();
-      final playback = _playback;
-      if (session == null || playback == null) return;
-      _setFocusSessionId(session.id);
-      if (!await _pauseNativeSession(playback, session)) return;
-      session.setOptimisticState(playing: false);
     });
   }
 
@@ -489,16 +444,6 @@ final class NotificationFacade {
       if (session == null || playback == null) return;
       _setFocusSessionId(session.id);
       await playback.seekSessionByOffset(session.id, offset);
-    });
-  }
-
-  Future<void> seekPrimarySession(Duration position) {
-    return _guardAction(() async {
-      final session = _resolveActionSession();
-      final playback = _playback;
-      if (session == null || playback == null) return;
-      _setFocusSessionId(session.id);
-      await playback.seekSession(session.id, position);
     });
   }
 

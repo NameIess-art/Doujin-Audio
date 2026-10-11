@@ -159,14 +159,6 @@ class GlobalShortcuts extends ConsumerWidget {
 
   static bool _isHelpOpen = false;
 
-  @visibleForTesting
-  static bool get isHelpOpen => _isHelpOpen;
-
-  @visibleForTesting
-  static void resetHelpOpenForTesting() {
-    _isHelpOpen = false;
-  }
-
   Future<void> _showHelp(BuildContext context, WidgetRef ref) async {
     if (_isHelpOpen) return;
     _isHelpOpen = true;

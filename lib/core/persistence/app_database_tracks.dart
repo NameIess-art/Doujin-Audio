@@ -326,19 +326,6 @@ extension AppDatabaseTracks on AppDatabase {
       });
     });
   }
-
-  Future<void> deleteAllTracks() async {
-    await _runDatabaseWrite((db) async {
-      final batch = db.batch();
-      batch.delete('track_tags');
-      batch.delete('track_remote_metadata');
-      batch.delete('track_assets');
-      batch.delete('track_playback_state');
-      batch.delete('track_scan_info');
-      batch.delete('tracks');
-      await batch.commit(noResult: true);
-    });
-  }
 }
 
 Future<List<Map<String, Object?>>> _queryTrackRowsForPaths(

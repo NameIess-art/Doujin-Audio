@@ -946,64 +946,6 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(snapshot)
     }
 
-    fun skipToNext(sessionId: String): Map<String, Any?> {
-        clearTrackStopForManualCommand(sessionId)
-        val session = sessionManager.get(sessionId) ?: return errorResult("Session not found")
-        focusSession(sessionId)
-        playbackRecovery.resetHealth(sessionId, "skip_next", cancelRecovery = true)
-        session.skipQueue(forward = true)
-        evictPlayersIfNeeded()
-        publishSessionState(sessionId)
-        statePersistence.persistNow()
-        syncForegroundState()
-        return okResult(session.snapshot())
-    }
-
-    fun skipToPrevious(sessionId: String): Map<String, Any?> {
-        clearTrackStopForManualCommand(sessionId)
-        val session = sessionManager.get(sessionId) ?: return errorResult("Session not found")
-        focusSession(sessionId)
-        playbackRecovery.resetHealth(sessionId, "skip_previous", cancelRecovery = true)
-        session.skipQueue(forward = false)
-        evictPlayersIfNeeded()
-        publishSessionState(sessionId)
-        statePersistence.persistNow()
-        syncForegroundState()
-        return okResult(session.snapshot())
-    }
-
-    fun togglePlayPause(sessionId: String): Map<String, Any?> {
-        val session = sessionManager.get(sessionId) ?: return errorResult("Session not found")
-        focusRecovery.removePending(sessionId)
-        playbackSuspended = false
-        focusSession(sessionId)
-        val player = ensureFocusedPlayer(session)
-        clearTrackStopForManualCommand(sessionId)
-        if (player.playWhenReady) {
-            clearPlaybackIntent(sessionId)
-            player.pause()
-        } else {
-            markPlaybackIntended(sessionId)
-            session.applyFadeMultiplier(1f)
-            session.applyFocusDuckMultiplier(1f)
-            if (!establishForegroundPlaybackOrRollback(listOf(sessionId))) {
-                return errorResult(FOREGROUND_PLAYBACK_UNAVAILABLE_ERROR)
-            }
-            if (!focusRecovery.requestIfNeeded()) {
-                rollbackPlaybackStart(listOf(sessionId), "audio_focus_denied")
-                return errorResult("Audio focus was denied.")
-            }
-            player.play()
-        }
-        evictPlayersIfNeeded()
-        publishSessionState(sessionId)
-        progressHeartbeat.ensure()
-        statePersistence.persistNow()
-        statePersistence.ensureTicker()
-        syncForegroundState()
-        return okResult(session.snapshot())
-    }
-
     fun seek(sessionId: String, positionMs: Long): Map<String, Any?> {
         val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         playbackRecovery.resetHealth(sessionId, "seek", cancelRecovery = true)

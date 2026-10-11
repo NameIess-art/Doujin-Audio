@@ -138,31 +138,6 @@ class FolderNode extends LibraryNode {
     _invalidateMetrics();
   }
 
-  void replaceChildren(Iterable<LibraryNode> children) {
-    for (final child in _children.whereType<FolderNode>()) {
-      if (identical(child._parent, this)) child._parent = null;
-    }
-    _children.clear();
-    for (final child in children) {
-      _attachChild(child);
-      _children.add(child);
-    }
-    _invalidateMetrics();
-  }
-
-  void removeChildrenWhere(bool Function(LibraryNode child) test) {
-    var changed = false;
-    _children.removeWhere((child) {
-      if (!test(child)) return false;
-      if (child is FolderNode && identical(child._parent, this)) {
-        child._parent = null;
-      }
-      changed = true;
-      return true;
-    });
-    if (changed) _invalidateMetrics();
-  }
-
   void sortChildren(int Function(LibraryNode a, LibraryNode b) compare) {
     _children.sort(compare);
     _invalidateMetrics();

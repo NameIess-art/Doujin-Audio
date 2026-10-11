@@ -247,22 +247,6 @@ class SettingsRepository {
         asmrDownloadDestinationRoot = _optionalString(destinationRoot);
       });
 
-  Future<void> setLibrarySortCriterion(LibrarySortCriterion criterion) =>
-      _setValue(
-        unchanged: () => librarySortCriterion == criterion,
-        update: () => librarySortCriterion = criterion,
-      );
-
-  Future<void> setLibrarySortAscending(bool ascending) => _setValue(
-    unchanged: () => librarySortAscending == ascending,
-    update: () => librarySortAscending = ascending,
-  );
-
-  Future<void> setLibraryGroupByLibrary(bool enabled) => _setValue(
-    unchanged: () => libraryGroupByLibrary == enabled,
-    update: () => libraryGroupByLibrary = enabled,
-  );
-
   Future<void> setLibrarySortOptions({
     required LibrarySortCriterion criterion,
     required bool ascending,
@@ -277,22 +261,6 @@ class SettingsRepository {
       librarySortAscending = ascending;
       libraryGroupByLibrary = groupByLibrary;
     },
-  );
-
-  Future<void> setPlaylistSortCriterion(PlaylistSortCriterion criterion) =>
-      _setValue(
-        unchanged: () => playlistSortCriterion == criterion,
-        update: () => playlistSortCriterion = criterion,
-      );
-
-  Future<void> setPlaylistSortAscending(bool ascending) => _setValue(
-    unchanged: () => playlistSortAscending == ascending,
-    update: () => playlistSortAscending = ascending,
-  );
-
-  Future<void> setPlaylistGroupByLibrary(bool enabled) => _setValue(
-    unchanged: () => playlistGroupByLibrary == enabled,
-    update: () => playlistGroupByLibrary = enabled,
   );
 
   Future<void> setPlaylistSortOptions({
@@ -311,25 +279,6 @@ class SettingsRepository {
     },
   );
 
-  Future<void> pinLibraryPaths(Iterable<String> paths) {
-    final normalized = paths.map(PathMatcher.normalize).toList(growable: false);
-    return _change(() async {
-      pinnedLibraryPaths = <String>{
-        ...pinnedLibraryPaths,
-        ...normalized,
-      }.toList();
-    });
-  }
-
-  Future<void> unpinLibraryPaths(Iterable<String> paths) {
-    final targets = paths.map(PathMatcher.normalize).toSet();
-    return _change(() async {
-      pinnedLibraryPaths = pinnedLibraryPaths
-          .where((p) => !targets.contains(p))
-          .toList();
-    });
-  }
-
   Future<void> toggleLibraryPathsPinned(Iterable<String> paths) {
     final normalized = paths.map(PathMatcher.normalize).toList(growable: false);
     return _change(() async {
@@ -343,7 +292,6 @@ class SettingsRepository {
 
   Future<void> toggleLibraryPathPinned(String path) =>
       toggleLibraryPathsPinned([path]);
-  Future<void> unpinLibraryPath(String path) => unpinLibraryPaths([path]);
 
   Future<void> pinPlaylistSessions(Iterable<String> sessionIds) {
     final ids = sessionIds.toList(growable: false);

@@ -196,7 +196,6 @@ final class PlaybackCommandCoordinator
     targetQueueIndex: targetQueueIndex,
   );
 
-  @override
   Future<bool> prepareAndPlay(
     PlaybackSession session, {
     required String nextPath,

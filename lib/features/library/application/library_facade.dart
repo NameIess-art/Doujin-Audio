@@ -369,11 +369,6 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   Future<void> deleteAudioDetail(AudioDetailTarget target) =>
       _metadataCoordinator.deleteAudioDetail(target);
 
-  Future<AudioDetailSaveResult?> prefillAudioDetailRjCode(
-    AudioDetailTarget target,
-    String text,
-  ) => _metadataCoordinator.prefillRjCode(target, text);
-
   @override
   Future<AudioDetailBackupImportResult> importAudioDetailBackups({
     bool onlyMissing = false,

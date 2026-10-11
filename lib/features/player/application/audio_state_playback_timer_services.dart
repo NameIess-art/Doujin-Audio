@@ -196,8 +196,6 @@ class PlaybackSessionService {
 
   void markSessionStateDirty() => sessionStateVersion++;
   PlaybackSession? sessionById(String sessionId) => sessions[sessionId];
-  bool isTrackActive(String path) =>
-      sessions.values.any((s) => s.currentTrackPath == path);
 
   void registerSession(PlaybackSession session) {
     sessions[session.id] = session;

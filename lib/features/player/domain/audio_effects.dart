@@ -84,8 +84,6 @@ class AudioEffectsState {
     };
   }
 
-  String toDatabaseJson() => json.encode(toJson());
-
   factory AudioEffectsState.fromJson(Object? raw) {
     if (raw is String) {
       if (raw.isEmpty) return AudioEffectsState.flat;

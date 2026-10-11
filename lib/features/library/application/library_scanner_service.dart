@@ -349,19 +349,6 @@ class LibraryScannerService {
     return tracks;
   }
 
-  List<String> _distinctSourcePaths(Iterable<String> values) {
-    final paths = <String>[];
-    final seen = <String>{};
-    for (final raw in values) {
-      final value = raw.trim();
-      if (value.isEmpty || !seen.add(PathMatcher.equivalenceKey(value))) {
-        continue;
-      }
-      paths.add(value);
-    }
-    return List<String>.unmodifiable(paths);
-  }
-
   Future<LibraryScanOutcome?> addFolder({
     required LibraryCatalog provider,
     required LibraryScanLabels labels,
@@ -744,22 +731,6 @@ class LibraryScannerService {
       dialogTitle: labels.chooseAudioFiles,
     );
     if (pickedFiles == null || pickedFiles.isEmpty) return null;
-    return _addPickedFiles(pickedFiles, provider, labels);
-  }
-
-  Future<LibraryScanOutcome> addFilePaths(
-    Iterable<String> paths, {
-    required LibraryCatalog provider,
-    required LibraryScanLabels labels,
-  }) {
-    final pickedFiles = _distinctSourcePaths(paths)
-        .map(
-          (filePath) => PickedAudioFile(
-            uri: filePath,
-            name: PathDisplay.fileName(filePath),
-          ),
-        )
-        .toList(growable: false);
     return _addPickedFiles(pickedFiles, provider, labels);
   }
 

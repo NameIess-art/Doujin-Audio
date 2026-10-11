@@ -127,15 +127,6 @@ open class MainActivity : FlutterFragmentActivity() {
         val surfaceColor = StartupWindowTheme.surfaceColor(preset, dark)
         syncWindowSurface(surfaceColor, dark)
 
-        try {
-            val preferences = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
-            preferences.edit()
-                .putString("flutter.appThemeColor", preset)
-                .putString("flutter.themeMode", themeMode)
-                .commit()
-        } catch (_: Exception) {
-        }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 splashScreen.setSplashScreenTheme(

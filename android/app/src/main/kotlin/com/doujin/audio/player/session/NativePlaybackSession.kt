@@ -294,23 +294,6 @@ internal class NativePlaybackSession(
         lastBufferedPositionMs = maxOf(lastBufferedPositionMs, targetPositionMs)
     }
 
-    fun skipQueue(forward: Boolean) {
-        playerOrNull()?.let { player ->
-            if (forward) player.seekToNextMediaItem() else player.seekToPreviousMediaItem()
-            return
-        }
-        if (queue.isEmpty()) return
-        val index = currentQueueIndexFor(queue)
-        val next = if (!forward && lastPositionMs > 3_000L) index else index + if (forward) 1 else -1
-        val target = if (repeatAll) (next + queue.size) % queue.size else next.coerceIn(0, queue.lastIndex)
-        configure(
-            descriptor = queue[target], queue = queue, queueStartIndex = target,
-            startPositionMs = 0L, volume = volume, speed = speed,
-            repeatOne = repeatOne, repeatAll = repeatAll, shuffleModeEnabled = shuffleModeEnabled,
-            autoPlay = false, deferPlayerCreation = true, preparedQueue = queueStructure
-        )
-    }
-
     fun releasePlayer() {
         _player?.let { p ->
             lastPositionMs = p.currentPosition.coerceAtLeast(0L)

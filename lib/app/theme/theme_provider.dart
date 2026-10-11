@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/persistence/persisted_state_reloader.dart';
-import '../../core/platform/app_lifecycle_platform_service.dart';
 import '../../core/persistence/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
 import 'app_design_tokens.dart';
@@ -421,12 +420,6 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     final mutation = ++_themeModeMutation;
     _themeMode = value;
     notifyListeners();
-    unawaited(
-      AppLifecyclePlatformService().syncAppTheme(
-        preset: _appThemeColor.name,
-        themeMode: value.name,
-      ),
-    );
     final persisted = await _writePreferenceInOrder(_themeModeKey, value.name);
     if (persisted) {
       _persistedThemeMode = value;
@@ -435,12 +428,6 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     if (mutation != _themeModeMutation) return false;
     _themeMode = _persistedThemeMode;
     notifyListeners();
-    unawaited(
-      AppLifecyclePlatformService().syncAppTheme(
-        preset: _appThemeColor.name,
-        themeMode: _persistedThemeMode.name,
-      ),
-    );
     return false;
   }
 
@@ -492,12 +479,6 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _appThemeColor = value;
     _rebuildThemes();
     notifyListeners();
-    unawaited(
-      AppLifecyclePlatformService().syncAppTheme(
-        preset: value.name,
-        themeMode: _themeMode.name,
-      ),
-    );
     final persisted = await _writePreferenceInOrder(
       _appThemeColorKey,
       value.name,
@@ -510,12 +491,6 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _appThemeColor = _persistedAppThemeColor;
     _rebuildThemes();
     notifyListeners();
-    unawaited(
-      AppLifecyclePlatformService().syncAppTheme(
-        preset: _persistedAppThemeColor.name,
-        themeMode: _themeMode.name,
-      ),
-    );
     return false;
   }
 

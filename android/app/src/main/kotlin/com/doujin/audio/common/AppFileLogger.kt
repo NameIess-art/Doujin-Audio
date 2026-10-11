@@ -13,9 +13,7 @@ import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 internal class AppFileLogWriter(
     private val logDirectory: File,
@@ -150,18 +148,5 @@ internal object AppFileLogger {
                 writer = null
             }
         }
-    }
-
-    internal fun flushAndCloseForTest(timeoutSeconds: Long = 5): Boolean {
-        val finished = CountDownLatch(1)
-        executor.execute {
-            try {
-                writer?.close()
-                writer = null
-            } finally {
-                finished.countDown()
-            }
-        }
-        return finished.await(timeoutSeconds, TimeUnit.SECONDS)
     }
 }

@@ -71,23 +71,6 @@ extension AppDatabaseSessions on AppDatabase {
     });
   }
 
-  Future<void> saveAllSessions(List<PlaybackSessionRecord> sessions) async {
-    await _runDatabaseWrite((db) async {
-      final batch = db.batch();
-      batch.delete('playback_queue_entry_tracks');
-      batch.delete('playback_queue_entries');
-      batch.delete('playback_queues');
-      batch.delete('session_eq_bands');
-      batch.delete('session_audio_effects');
-      batch.delete('session_playback_state');
-      batch.delete('sessions');
-      for (var i = 0; i < sessions.length; i++) {
-        _writeSessionToBatch(batch, sessions[i], i);
-      }
-      await batch.commit(noResult: true);
-    });
-  }
-
   Future<void> updateSessionOrder(List<String> sessionIds) async {
     await _runDatabaseWrite((db) async {
       final batch = db.batch();
@@ -178,20 +161,6 @@ extension AppDatabaseSessions on AppDatabase {
         _sessionPlaybackStateRow(session),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-      await batch.commit(noResult: true);
-    });
-  }
-
-  Future<void> deleteAllSessions() async {
-    await _runDatabaseWrite((db) async {
-      final batch = db.batch();
-      batch.delete('playback_queue_entry_tracks');
-      batch.delete('playback_queue_entries');
-      batch.delete('playback_queues');
-      batch.delete('session_eq_bands');
-      batch.delete('session_audio_effects');
-      batch.delete('session_playback_state');
-      batch.delete('sessions');
       await batch.commit(noResult: true);
     });
   }

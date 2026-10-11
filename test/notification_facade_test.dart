@@ -654,22 +654,6 @@ final class _NoopNotificationPlaybackCommands
     adjacentSessionIds.add(session.id);
     return false;
   }
-
-  @override
-  Future<bool> prepareAndPlay(
-    PlaybackSession session, {
-    required String nextPath,
-    bool autoPlay = true,
-    bool forceStartAtZero = false,
-    bool showLoading = true,
-    int? targetQueueIndex,
-  }) async => false;
-
-  @override
-  Future<bool> startSession(
-    PlaybackSession session, {
-    required bool shouldStartTriggerCountdown,
-  }) async => false;
 }
 
 final class _RecordingNativePlaybackRepository

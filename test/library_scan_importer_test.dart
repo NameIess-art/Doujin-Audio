@@ -224,7 +224,6 @@ class _Catalog implements LibraryCatalog {
   @override
   void addOrReplaceTracks(
     List<MusicTrack> tracks, {
-    bool notify = true,
     bool persist = true,
     bool mergeExistingState = true,
   }) {

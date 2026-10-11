@@ -172,7 +172,6 @@ _pumpSubtitleDetail({
   configureFixture?.call(fixture);
   fixture.runtimeGraph.library.addTracks(
     queueTracks ?? <MusicTrack>[track],
-    notify: false,
     persist: false,
   );
   final session = PlaybackSession(
@@ -654,7 +653,7 @@ void main() {
         ),
     ];
     fixture.library.addWatchedFolder('/library/work', notify: false);
-    fixture.library.addTracks(tracks, notify: false, persist: false);
+    fixture.library.addTracks(tracks, persist: false);
     final session = fixture.playback.createTrackSession(tracks.first);
     final snapshot = fixture.playback.sessionSnapshotById(session.id)!;
     final singleTrack = MusicTrack(
@@ -665,7 +664,7 @@ void main() {
       groupSubtitle: '',
       isSingle: true,
     );
-    fixture.library.addTracks([singleTrack], notify: false, persist: false);
+    fixture.library.addTracks([singleTrack], persist: false);
     final singleSession = fixture.playback.createTrackSession(singleTrack);
     final selectedSession = ValueNotifier<PlaybackSessionSnapshot>(snapshot);
     addTearDown(selectedSession.dispose);
@@ -1737,7 +1736,6 @@ void main() {
       );
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       final session = PlaybackSession(
@@ -2083,7 +2081,6 @@ void main() {
             manualCoverPath: '/covers/track2.jpg',
           ),
         ],
-        notify: false,
         persist: false,
       );
       final first = PlaybackSession(
@@ -2231,7 +2228,6 @@ void main() {
         );
         fixture.runtimeGraph.library.addTracks(
           [track],
-          notify: false,
           persist: false,
         );
         final session = PlaybackSession(
@@ -2615,7 +2611,6 @@ void main() {
     ];
     fixture.runtimeGraph.library.addTracks(
       tracks,
-      notify: false,
       persist: false,
     );
     final sessions = <PlaybackSession>[
@@ -2928,7 +2923,6 @@ void main() {
       addTearDown(session.shutdown);
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       fixture.playbackService.registerSession(session);
@@ -3228,6 +3222,124 @@ void main() {
     );
   }
 
+  testWidgets(
+    'equalizer displays and saves bands before playback and while paused',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = Size(
+        defaultTargetPlatform == TargetPlatform.windows ? 1280 : 430,
+        900,
+      );
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      const channel = MethodChannel(NativePlaybackChannel.name);
+      final nativeCalls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        nativeCalls.add(call);
+        return <String, Object?>{'ok': true, 'value': null};
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final session = PlaybackSession(
+        id: 'idle-equalizer',
+        currentTrackPath: '/library/eq/track.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.idle),
+      );
+      addTearDown(session.shutdown);
+      fixture.playbackService.registerSession(session);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          EqualizerPage(
+            session: PlaybackSessionSnapshot.fromRuntime(session),
+            playback: fixture.playback,
+            topInset: 0,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(EqBandSlider), findsNWidgets(8));
+      expect(
+        tester.widgetList<Slider>(find.byType(Slider)).map((s) => s.onChanged),
+        everyElement(isNull),
+      );
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      final band = find.byType(EqBandSlider).first;
+      expect(tester.widget<EqBandSlider>(band).onChanged, isNotNull);
+      tester.widget<EqBandSlider>(band).onChangeEnd!(3);
+      await tester.pumpAndSettle();
+      expect(session.audioEffects.eqEnabled, isTrue);
+      expect(session.audioEffects.eqBandLevels[60], 3);
+      expect(tester.widget<EqBandSlider>(band).value, 3);
+      expect(nativeCalls, isEmpty);
+      expect(session.loadedPath, isNull);
+      expect(session.effectivePlaying, isFalse);
+
+      session.applyNativeSnapshot(
+        NativePlaybackSnapshot(
+          sessionId: session.id,
+          path: session.currentTrackPath,
+          playing: false,
+          playWhenReady: false,
+          processingState: 'ready',
+          position: Duration.zero,
+          bufferedPosition: Duration.zero,
+          volume: 1,
+          boostGain: 1,
+          channelSwapEnabled: false,
+          audioEffects: session.audioEffects.copyWith(
+            eqBandLevels: {60: 3, 400: -2},
+          ),
+          eqCapabilities: EqCapabilities(
+            supported: true,
+            minGainDb: -6,
+            maxGainDb: 6,
+            bands: const [EqBandInfo(frequencyHz: 100)],
+          ),
+        ),
+      );
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(EqBandSlider), findsNWidgets(9));
+      expect(tester.widget<EqBandSlider>(band).value, 3);
+      expect(tester.widget<EqBandSlider>(band).min, -6);
+      expect(tester.widget<EqBandSlider>(band).max, 6);
+      expect(
+        tester
+            .widgetList<EqBandSlider>(find.byType(EqBandSlider))
+            .singleWhere((slider) => slider.label == '400Hz')
+            .value,
+        -2,
+      );
+      expect(session.effectivePlaying, isFalse);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('session reset actions share style and disable at defaults', (
     WidgetTester tester,
   ) async {
@@ -3278,7 +3390,6 @@ void main() {
     addTearDown(session.shutdown);
     runtimeGraph.library.addTracks(
       <MusicTrack>[track],
-      notify: false,
       persist: false,
     );
     playbackService.registerSession(session);
@@ -3467,6 +3578,15 @@ void main() {
     final saveEqualizerPresetButton = find.byKey(
       const ValueKey<String>('save_equalizer_preset'),
     );
+    await tester.scrollUntilVisible(
+      equalizerResetButton,
+      150,
+      scrollable: find.descendant(
+        of: equalizerList,
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.pumpAndSettle();
     _expectThemeSessionResetButtonStyle(tester, equalizerResetButton);
     _expectThemeSessionResetButtonStyle(tester, saveEqualizerPresetButton);
     final resetRect = tester.getRect(equalizerResetButton);
@@ -3644,7 +3764,6 @@ void main() {
       addTearDown(session.shutdown);
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       final trackKey = TimeSegmentLabel.trackKeyFor(track);
@@ -3849,7 +3968,6 @@ void main() {
       addTearDown(session.shutdown);
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       final trackKey = TimeSegmentLabel.trackKeyFor(track);
@@ -4758,7 +4876,6 @@ void main() {
     );
     runtimeGraph.library.addTracks(
       <MusicTrack>[queueTrack, secondQueueTrack],
-      notify: false,
       persist: false,
     );
     queueSession
@@ -5268,7 +5385,6 @@ void main() {
       );
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       final sourceSession = PlaybackSession(
@@ -5397,7 +5513,6 @@ void main() {
       );
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[track1, track2],
-        notify: false,
         persist: false,
       );
       final sourceSession1 = PlaybackSession(
@@ -5515,7 +5630,6 @@ void main() {
       );
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       final sourceSession = PlaybackSession(
@@ -5689,7 +5803,6 @@ void main() {
     fixture.runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
     fixture.runtimeGraph.library.addTracks(
       <MusicTrack>[track],
-      notify: false,
       persist: false,
     );
     final session = fixture.runtimeGraph.playback.createTrackSession(
@@ -5807,7 +5920,6 @@ void main() {
     );
     fixture.runtimeGraph.library.addTracks(
       <MusicTrack>[trackA, trackB],
-      notify: false,
       persist: false,
     );
     final sessionA = fixture.runtimeGraph.playback.createTrackSession(
@@ -6328,7 +6440,6 @@ void main() {
     );
     fixture.runtimeGraph.library.addTracks(
       <MusicTrack>[track],
-      notify: false,
       persist: false,
     );
     final trackSession = fixture.runtimeGraph.playback.createTrackSession(track)
@@ -6398,7 +6509,7 @@ void main() {
       groupSubtitle: '',
       isSingle: false,
     );
-    fixture.library.addTracks([track], notify: false, persist: false);
+    fixture.library.addTracks([track], persist: false);
     final session = fixture.playback.createTrackSession(track)
       ..finishPreparation(
         0,
@@ -6447,7 +6558,6 @@ void main() {
     );
     fixture.runtimeGraph.library.addTracks(
       [track],
-      notify: false,
       persist: false,
     );
     final session = fixture.runtimeGraph.playback.createTrackSession(
@@ -6525,7 +6635,6 @@ void main() {
     ];
     fixture.runtimeGraph.library.addTracks(
       tracks,
-      notify: false,
       persist: false,
     );
     final session = fixture.runtimeGraph.playback.createTrackSession(tracks[0])
@@ -6763,7 +6872,6 @@ void main() {
       );
       runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
@@ -7575,7 +7683,6 @@ void main() {
       );
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[track, queueTrack, queueWorkTrack, secondQueueWorkTrack],
-        notify: false,
         persist: false,
       );
       final trackSession = fixture.runtimeGraph.playback.createTrackSession(
@@ -7978,7 +8085,6 @@ void main() {
       ];
       fixture.runtimeGraph.library.addTracks(
         tracks,
-        notify: false,
         persist: false,
       );
       final saved = fixture.runtimeGraph.playback.createTrackSession(tracks[0]);
@@ -8110,7 +8216,6 @@ void main() {
     );
     fixture.runtimeGraph.library.addTracks(
       <MusicTrack>[track1, track2],
-      notify: false,
       persist: false,
     );
     final session1 = fixture.runtimeGraph.playback.createTrackSession(track1);
@@ -8214,7 +8319,6 @@ void main() {
       );
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       final trackSession = PlaybackSession(
@@ -8972,7 +9076,6 @@ void main() {
       );
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       final session = fixture.runtimeGraph.playback.createTrackSession(

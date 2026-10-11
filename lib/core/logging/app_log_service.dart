@@ -106,24 +106,6 @@ abstract final class AppLogService {
     }
   }
 
-  static T measureSync<T>(
-    String event,
-    T Function() action, {
-    Map<String, Object?> details = const <String, Object?>{},
-  }) {
-    if (!_performanceLoggingEnabled) return action();
-    final task = developer.TimelineTask()..start(event, arguments: details);
-    final stopwatch = Stopwatch()..start();
-    try {
-      return action();
-    } finally {
-      stopwatch.stop();
-      final elapsedMs = stopwatch.elapsedMilliseconds;
-      task.finish(arguments: <String, Object?>{'elapsedMs': elapsedMs});
-      _write('PERF', '$event elapsedMs=$elapsedMs${_formatDetails(details)}');
-    }
-  }
-
   static void logZoneError(Object error, StackTrace stackTrace) {
     AppLogService.error(
       'zone_uncaught_error',

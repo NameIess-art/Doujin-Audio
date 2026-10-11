@@ -34,24 +34,18 @@ class LibraryDerivedSnapshot {
     required Map<String, MusicTrack> libraryByPath,
     required Map<String, int> libraryIndexByPath,
     required Map<String, List<MusicTrack>> tracksByGroup,
-    required List<MusicTrack> sortedLibraryTracks,
-    required List<String> sortedLibraryTrackPaths,
     required this.cardSnapshot,
   }) : library = immutableList(library),
        libraryByPath = immutableMap(libraryByPath),
        libraryIndexByPath = immutableMap(libraryIndexByPath),
        tracksByGroup = immutableMap(
          tracksByGroup.map((key, value) => MapEntry(key, immutableList(value))),
-       ),
-       sortedLibraryTracks = immutableList(sortedLibraryTracks),
-       sortedLibraryTrackPaths = immutableList(sortedLibraryTrackPaths);
+       );
 
   final List<MusicTrack> library;
   final Map<String, MusicTrack> libraryByPath;
   final Map<String, int> libraryIndexByPath;
   final Map<String, List<MusicTrack>> tracksByGroup;
-  final List<MusicTrack> sortedLibraryTracks;
-  final List<String> sortedLibraryTrackPaths;
   final LibraryTreeSnapshot cardSnapshot;
 }
 
@@ -88,10 +82,6 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
     libraryByPath: libraryByPath,
     libraryIndexByPath: libraryIndexByPath,
     tracksByGroup: immutableTracksByGroup,
-    sortedLibraryTracks: List<MusicTrack>.unmodifiable(sortedTracks),
-    sortedLibraryTrackPaths: List<String>.unmodifiable(
-      sortedTracks.map((track) => track.path),
-    ),
     cardSnapshot: cardSnapshot,
   );
 }

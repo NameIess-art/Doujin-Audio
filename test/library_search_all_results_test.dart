@@ -113,7 +113,7 @@ void main() {
       groupKey: '/work',
       groupTitle: 'Cached work',
     );
-    fixture.library.addTracks([track], notify: false, persist: false);
+    fixture.library.addTracks([track], persist: false);
     final card = FolderNode('Cached work', '/work');
     fixture.library.snapshotCacheService.adoptCardSnapshot(
       LibraryTreeSnapshot(tree: [card], leafFolderCount: 1),
@@ -179,7 +179,7 @@ void main() {
       groupTitle: 'Original audio',
       isSingle: true,
     );
-    fixture.library.addTracks([original], notify: false, persist: false);
+    fixture.library.addTracks([original], persist: false);
     final cachedNode = TrackNode(original);
     fixture.library.snapshotCacheService.adoptCardSnapshot(
       LibraryTreeSnapshot(tree: [cachedNode], leafFolderCount: 0),
@@ -222,7 +222,6 @@ void main() {
           isSingle: true,
         ),
       ],
-      notify: false,
       persist: false,
     );
     await tester.runAsync(
@@ -268,7 +267,7 @@ void main() {
         },
       );
       addTearDown(fixture.dispose);
-      fixture.library.addTracks(tracks, notify: false, persist: false);
+      fixture.library.addTracks(tracks, persist: false);
       await tester.runAsync(
         () => fixture.library.detailCacheService.loadMany(
           tracks.map((track) => AudioDetailTarget.singleAudioFile(track.path)),
@@ -365,7 +364,7 @@ void main() {
       groupTitle: 'latest',
       isSingle: true,
     );
-    fixture.library.addTracks([earlier], notify: false, persist: false);
+    fixture.library.addTracks([earlier], persist: false);
     await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
     final published = <List<LibraryNode>>[];
     await tester.pumpWidget(
@@ -385,7 +384,7 @@ void main() {
     await tester.pump();
     expect(requests, 1);
 
-    fixture.library.addTracks([latest], notify: false, persist: false);
+    fixture.library.addTracks([latest], persist: false);
     await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
     query.value = (query: 'Latest', revision: 1);
     await tester.pump();
@@ -434,7 +433,7 @@ void main() {
     addTearDown(scrollController.dispose);
     final queryRevision = ValueNotifier(0);
     addTearDown(queryRevision.dispose);
-    fixture.library.addTracks([track], notify: false, persist: false);
+    fixture.library.addTracks([track], persist: false);
     await tester.runAsync(fixture.library.coverArtworkCacheService.initialize);
     await tester.pumpWidget(
       fixture.build(
@@ -479,7 +478,7 @@ void main() {
       groupTitle: 'pending',
       isSingle: true,
     );
-    fixture.library.addTracks([track], notify: false, persist: false);
+    fixture.library.addTracks([track], persist: false);
     await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
     final published = <List<LibraryNode>>[];
     await tester.pumpWidget(
@@ -522,7 +521,7 @@ void main() {
       groupTitle: 'First audio',
       isSingle: true,
     );
-    fixture.library.addTracks([track], notify: false, persist: false);
+    fixture.library.addTracks([track], persist: false);
     await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
     final published = <List<LibraryNode>>[];
     await tester.pumpWidget(
@@ -582,7 +581,7 @@ void main() {
       addTearDown(scrollController.dispose);
       final active = ValueNotifier(true);
       addTearDown(active.dispose);
-      fixture.library.addTracks([track], notify: false, persist: false);
+      fixture.library.addTracks([track], persist: false);
       await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
       await fixture.library.loadLibraryTree();
       await tester.pumpWidget(

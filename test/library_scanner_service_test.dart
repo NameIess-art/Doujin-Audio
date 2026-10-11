@@ -833,7 +833,7 @@ class _RefreshCatalog implements LibraryCatalog {
   }
 
   @override
-  Future<void> endLibraryBatch({bool notify = true}) async {
+  Future<void> endLibraryBatch() async {
     rollbackBatchDepth--;
     rollbackBatchEndCount++;
   }
@@ -841,7 +841,6 @@ class _RefreshCatalog implements LibraryCatalog {
   @override
   void addOrReplaceTracks(
     List<MusicTrack> tracks, {
-    bool notify = true,
     bool persist = true,
     bool mergeExistingState = true,
   }) {
@@ -1021,16 +1020,12 @@ class _FailingBatchCatalog implements LibraryCatalog {
   void beginLibraryBatch() {}
 
   @override
-  void addTracks(
-    List<MusicTrack> tracks, {
-    bool notify = true,
-    bool persist = true,
-  }) {
+  void addTracks(List<MusicTrack> tracks, {bool persist = true}) {
     library.addAll(tracks);
   }
 
   @override
-  Future<void> endLibraryBatch({bool notify = true}) {
+  Future<void> endLibraryBatch() {
     return Future<void>.error(StateError('persistence failed'));
   }
 

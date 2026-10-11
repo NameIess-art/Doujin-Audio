@@ -86,7 +86,7 @@ final class LibraryMutationCoordinator {
     final result = _service.clearLibraryExclusions(normalizedLibraryPath);
     if (!result.changed) return;
     if (result.restoredTracks.isNotEmpty) {
-      _catalogWrites.addOrReplaceTracks(result.restoredTracks, notify: false);
+      _catalogWrites.addOrReplaceTracks(result.restoredTracks);
     } else {
       _syncStateSlice();
     }
@@ -560,7 +560,7 @@ final class LibraryMutationCoordinator {
   Future<void> _addRestoredTracks(List<MusicTrack> tracks) async {
     if (tracks.isEmpty) return;
     _catalogWrites.beginLibraryBatch();
-    _catalogWrites.addOrReplaceTracks(tracks, notify: false);
+    _catalogWrites.addOrReplaceTracks(tracks);
     await _catalogWrites.endLibraryBatch();
   }
 

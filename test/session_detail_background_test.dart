@@ -75,7 +75,7 @@ void main() {
         groupSubtitle: '',
         isSingle: true,
       );
-      fixture.library.addTracks([track], notify: false, persist: false);
+      fixture.library.addTracks([track], persist: false);
       final session = fixture.playback.createTrackSession(track);
       addTearDown(session.shutdown);
       Widget buildDetail() => fixture.build(
@@ -154,7 +154,6 @@ void main() {
       );
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       final session = fixture.runtimeGraph.playback.createTrackSession(track);

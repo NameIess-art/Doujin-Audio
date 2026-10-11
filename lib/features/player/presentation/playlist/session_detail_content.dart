@@ -308,7 +308,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       key: '${_siblingTaskKey}_$generation',
       generation: coordinatorGeneration,
       priority: 20,
-      group: 'session_detail_siblings',
       task: () async {
         await Future<void>.delayed(Duration.zero);
         if (!mounted ||

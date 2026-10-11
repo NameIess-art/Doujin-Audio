@@ -84,7 +84,6 @@ void main() {
         runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
         runtimeGraph.library.addTracks(
           <MusicTrack>[track],
-          notify: false,
           persist: false,
         );
         expect(
@@ -179,7 +178,6 @@ void main() {
             isSingle: false,
           ),
         ],
-        notify: false,
         persist: false,
       );
 
@@ -263,7 +261,6 @@ void main() {
               isSingle: false,
             ),
           ],
-          notify: false,
           persist: false,
         );
 
@@ -323,7 +320,6 @@ void main() {
               isSingle: false,
             ),
           ],
-          notify: false,
           persist: false,
         );
 
@@ -384,7 +380,6 @@ void main() {
             manualCoverPath: cover.path,
           ),
         ],
-        notify: false,
         persist: false,
       );
 
@@ -429,7 +424,6 @@ void main() {
               isSingle: false,
             ),
           ],
-          notify: false,
           persist: false,
         );
 
@@ -522,7 +516,6 @@ void main() {
         runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
         runtimeGraph.library.addTracks(
           <MusicTrack>[track],
-          notify: false,
           persist: false,
         );
         await runtimeGraph.library.setFolderManualCover(
@@ -558,7 +551,6 @@ void main() {
         runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
         runtimeGraph.library.addTracks(
           <MusicTrack>[track],
-          notify: false,
           persist: false,
         );
         await runtimeGraph.library.importAudioDetailBackups();
@@ -610,7 +602,7 @@ void main() {
           isSingle: false,
         );
         runtimeGraph.library.addWatchedFolder(source.path, notify: false);
-        runtimeGraph.library.addTracks([track], notify: false, persist: false);
+        runtimeGraph.library.addTracks([track], persist: false);
         final ordinary = runtimeGraph.playback.createTrackSession(
           track,
           customQueueTracks: [track],
@@ -750,7 +742,7 @@ void main() {
             groupSubtitle: source.path,
             isSingle: false,
           ),
-        ], notify: false);
+        ]);
         runtimeGraph.library.setLibraryTrackExcluded(
           source.path,
           trackFile.path,
@@ -823,7 +815,6 @@ void main() {
         runtimeGraph.library.addWatchedFolder(source.path, notify: false);
         runtimeGraph.library.addTracks(
           <MusicTrack>[track],
-          notify: false,
           persist: false,
         );
 
@@ -1100,7 +1091,6 @@ void main() {
             '${directory.path}${Platform.pathSeparator}second.mp3';
         runtimeGraph.library.addTracks(
           <MusicTrack>[track(firstPath, 'first')],
-          notify: false,
           persist: false,
         );
         await runtimeGraph.library.saveAudioDetail(
@@ -1114,7 +1104,6 @@ void main() {
 
         runtimeGraph.library.addTracks(
           <MusicTrack>[track(secondPath, 'second')],
-          notify: false,
           persist: false,
         );
         await runtimeGraph.library.saveAudioDetail(
@@ -1165,7 +1154,6 @@ void main() {
               isSingle: true,
             ),
           ],
-          notify: false,
           persist: false,
         );
         await runtimeGraph.library.saveAudioDetail(
@@ -1210,7 +1198,6 @@ void main() {
               isSingle: true,
             ),
           ],
-          notify: false,
           persist: false,
         );
 

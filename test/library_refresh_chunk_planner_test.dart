@@ -25,11 +25,10 @@ void main() {
 
       expect(snapshot.libraryByPath.keys, contains('/music/10.mp3'));
       expect(snapshot.libraryIndexByPath['/music/2.mp3'], 1);
-      expect(snapshot.sortedLibraryTrackPaths, const <String>[
-        '/music/1.mp3',
-        '/music/2.mp3',
-        '/music/10.mp3',
-      ]);
+      expect(
+        snapshot.tracksByGroup['/music']!.map((track) => track.path),
+        const <String>['/music/1.mp3', '/music/2.mp3', '/music/10.mp3'],
+      );
       expect(snapshot.tracksByGroup['/music'], hasLength(3));
       expect(snapshot.cardSnapshot.tree, hasLength(1));
       expect(snapshot.cardSnapshot.tree.single.path, '/music');
@@ -67,10 +66,12 @@ void main() {
       snapshot.tracksByGroup['/music']!.map((item) => item.displayName),
       const <String>['1', '2', '10'],
     );
-    expect(
-      folder.allTracks.map((item) => item.path),
-      snapshot.sortedLibraryTracks.map((item) => item.path),
-    );
+    expect(folder.allTracks.map((item) => item.path), const <String>[
+      '/music/1.mp3',
+      '/music/2.mp3',
+      '/music/10.mp3',
+      '/music/other/11.mp3',
+    ]);
   });
 
   test('watched library snapshot keeps nested groups under the work root', () {

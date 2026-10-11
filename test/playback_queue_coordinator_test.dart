@@ -86,7 +86,6 @@ void main() {
         );
         runtimeGraph.library.addTracks(
           [repeated, other],
-          notify: false,
           persist: false,
         );
         final session = runtimeGraph.playback.createPlaybackQueue('Duplicates');
@@ -144,7 +143,7 @@ void main() {
         groupKey: '/works/focus',
         groupTitle: 'Focus',
       );
-      runtimeGraph.library.addTracks([track], notify: false, persist: false);
+      runtimeGraph.library.addTracks([track], persist: false);
       final session = runtimeGraph.playback.createTrackSession(track);
 
       await runtimeGraph.playback.toggleSessionPlayPause(session.id);
@@ -204,7 +203,6 @@ void main() {
       );
       runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
@@ -262,7 +260,6 @@ void main() {
         );
         runtimeGraph.library.addTracks(
           <MusicTrack>[track],
-          notify: false,
           persist: false,
         );
         final queueSession = runtimeGraph.playback.createPlaybackQueue(
@@ -329,7 +326,7 @@ void main() {
             groupTitle: 'おまけループ',
           ),
         ];
-        runtimeGraph.library.addTracks(tracks, notify: false, persist: false);
+        runtimeGraph.library.addTracks(tracks, persist: false);
 
         await runtimeGraph.playback.playDirect(tracks, startIndex: 2);
         expect(preparations.last['queueStartIndex'], 0);
@@ -402,7 +399,6 @@ void main() {
         ];
         runtimeGraph.library.addTracks(
           nestedOnlyTracks,
-          notify: false,
           persist: false,
         );
         await runtimeGraph.playback.playDirect(nestedOnlyTracks, startIndex: 2);
@@ -427,7 +423,6 @@ void main() {
       );
       runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
 
@@ -503,7 +498,6 @@ void main() {
         );
         runtimeGraph.library.addTracks(
           <MusicTrack>[trackA, trackB, trackC],
-          notify: false,
           persist: false,
         );
 
@@ -583,7 +577,7 @@ void main() {
             isSingle: false,
           ),
         );
-        runtimeGraph.library.addTracks(tracks, notify: false, persist: false);
+        runtimeGraph.library.addTracks(tracks, persist: false);
 
         final queueSession = runtimeGraph.playback.createPlaybackQueue(
           'Queue 1',
@@ -669,7 +663,6 @@ void main() {
         );
         runtimeGraph.library.addTracks(
           <MusicTrack>[selected, other],
-          notify: false,
           persist: false,
         );
         final queueSession = runtimeGraph.playback.createPlaybackQueue(
@@ -708,7 +701,6 @@ void main() {
       );
       runtimeGraph.library.addTracks(
         <MusicTrack>[first, second],
-        notify: false,
         persist: false,
       );
       final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
@@ -908,7 +900,6 @@ void main() {
           if (mixed) {
             runtimeGraph.library.addTracks(
               [first],
-              notify: false,
               persist: false,
             );
           }

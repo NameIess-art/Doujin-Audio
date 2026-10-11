@@ -434,7 +434,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       key: 'asmr_tab_activation_${identityHashCode(this)}',
       generation: generation,
       priority: 0,
-      group: 'asmr_page_activation',
       task: () async {
         _activationScheduled = false;
         if (!mounted || !_isActive || generation != coordinator.generation) {
@@ -512,7 +511,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       key: 'asmr_account_hydration_${identityHashCode(this)}',
       generation: generation,
       priority: 90,
-      group: 'asmr_account_hydration',
       task: () async {
         _accountHydrationScheduled = false;
         if (!mounted || !_isActive || generation != coordinator.generation) {

@@ -462,10 +462,10 @@ const Map<String, String> appLanguageEn = {
   'audio_features': 'Features',
   'equalizer': 'Equalizer',
   'time_segments': 'Segments',
-  'equalizer_supported': 'Adjust using this device’s available bands.',
-  'equalizer_enable_hint': 'Turn on EQ to load supported device bands.',
-  'equalizer_unavailable':
-      'This device has not returned EQ bands yet. Turn EQ on and wait briefly.',
+  'equalizer_supported':
+      'Settings apply to supported device bands during playback.',
+  'equalizer_enable_hint':
+      'Adjust before playback; enable EQ to apply settings.',
   'eq_preset': 'Preset',
   'eq_reset': 'Reset',
   'eq_save_preset': 'Save preset',

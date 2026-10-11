@@ -52,7 +52,7 @@ void main() {
                 tracks,
                 persist: false,
               )
-              ..addTracks(tracks, notify: false, persist: false);
+              ..addTracks(tracks, persist: false);
             fixture.libraryService.syncSlice(
               isInitialized: true,
               detailRevision: 0,

@@ -1154,6 +1154,37 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     const coverMinHeight = 120.0; // Collapses by half!
     const rjBarHeight = 44.0;
 
+    final subtitleStatus = hasSubtitle == null
+        ? null
+        : Row(
+            key: const ValueKey<String>('work_detail_subtitle_status'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                hasSubtitle
+                    ? Icons.subtitles_rounded
+                    : Icons.subtitles_off_rounded,
+                size: 16,
+                color: hasSubtitle ? asmrBlue : cs.onSurfaceVariant,
+              ),
+              const SizedBox(width: 5),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 100),
+                child: Text(
+                  i18n.tr(
+                    hasSubtitle ? 'asmr_has_subtitle' : 'asmr_no_subtitle',
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: hasSubtitle ? asmrBlue : cs.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          );
+
     Widget buildCover(BuildContext context, WidgetRef ref) {
       final String? trimmedCover = coverPath?.trim();
       final bool hasValidCover =
@@ -1267,6 +1298,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                     title: displayTitle,
                     rjCode: displayRj,
                     circleName: displayCircle,
+                    subtitleStatus: subtitleStatus,
                     coverWidget: buildCover(context, ref),
                     accentColor: widget.isAsmr ? asmrBlue : cs.primary,
                     surfaceColor: cs.surface,
@@ -1481,48 +1513,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (hasSubtitle != null) ...[
-                    HeaderFloatingSurface(
-                      backgroundOpacity: 0.5,
-                      key: const ValueKey<String>(
-                        'work_detail_subtitle_status',
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            hasSubtitle
-                                ? Icons.subtitles_rounded
-                                : Icons.subtitles_off_rounded,
-                            size: 16,
-                            color: hasSubtitle ? asmrBlue : cs.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 5),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 100),
-                            child: Text(
-                              i18n.tr(
-                                hasSubtitle
-                                    ? 'asmr_has_subtitle'
-                                    : 'asmr_no_subtitle',
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.labelMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: hasSubtitle
-                                        ? asmrBlue
-                                        : cs.onSurfaceVariant,
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                  ],
                   if (widget.isLocal) ...[
                     HeaderFloatingButton(
                       backgroundOpacity: 0.5,

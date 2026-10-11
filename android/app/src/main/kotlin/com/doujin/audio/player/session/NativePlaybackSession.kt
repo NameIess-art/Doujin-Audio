@@ -425,12 +425,12 @@ internal class NativePlaybackSession(
 
     fun applyFadeMultiplier(multiplier: Float) {
         this.fadeMultiplier = multiplier.coerceIn(0f, 1f)
-        playerOrNull()?.let(::applyVolumeToPlayer)
+        playerOrNull()?.let(::applyEffectiveVolumeToPlayer)
     }
 
     fun applyFocusDuckMultiplier(multiplier: Float) {
         focusDuckMultiplier = multiplier.coerceIn(0f, 1f)
-        playerOrNull()?.let(::applyVolumeToPlayer)
+        playerOrNull()?.let(::applyEffectiveVolumeToPlayer)
     }
 
     fun applySpeed(speed: Float) {
@@ -444,24 +444,27 @@ internal class NativePlaybackSession(
     }
 
     fun applyAudioEffects(effects: NativeAudioEffects) {
-        val change = audioEffects.apply(effects)
+        val requiresReprepare = audioEffects.apply(effects)
         playerOrNull()?.let { player ->
             applyAudioEffectsToPlayer(player)
-            if (change.panningActiveChanged) {
+            if (requiresReprepare) {
                 reprepareCurrentMediaItem()
             }
         }
     }
 
     private fun applyVolumeToPlayer(player: ExoPlayer) {
-        val normalizedVolume = PlaybackVolumeMapper.normalize(volume)
-        this.volume = normalizedVolume
+        volume = PlaybackVolumeMapper.normalize(volume)
+        applyEffectiveVolumeToPlayer(player)
+        audioEffects.syncLoudnessEnhancer(player.audioSessionId, volume)
+    }
+
+    private fun applyEffectiveVolumeToPlayer(player: ExoPlayer) {
         player.volume = effectiveNativePlaybackVolume(
-            playerVolume = PlaybackVolumeMapper.playerVolume(normalizedVolume),
+            playerVolume = PlaybackVolumeMapper.playerVolume(volume),
             fadeMultiplier = fadeMultiplier,
             focusDuckMultiplier = focusDuckMultiplier
         )
-        audioEffects.syncLoudnessEnhancer(player.audioSessionId, volume)
     }
 
     private fun applySpeedToPlayer(player: ExoPlayer) {

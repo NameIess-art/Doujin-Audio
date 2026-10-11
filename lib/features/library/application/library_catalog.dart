@@ -37,7 +37,7 @@ abstract interface class LibraryCatalogWriter {
     int? total,
   });
   void beginLibraryBatch();
-  Future<void> endLibraryBatch({bool notify = true});
+  Future<void> endLibraryBatch();
   void beginStagedLibraryRefresh();
   Future<void> finishStagedLibraryRefresh({bool commit = true});
   int applyStagedLibraryRefreshChunk({
@@ -54,14 +54,9 @@ abstract interface class LibraryCatalogWriter {
     Iterable<String> removeEntryPaths = const <String>[],
     bool persist = true,
   });
-  void addTracks(
-    List<MusicTrack> tracks, {
-    bool notify = true,
-    bool persist = true,
-  });
+  void addTracks(List<MusicTrack> tracks, {bool persist = true});
   void addOrReplaceTracks(
     List<MusicTrack> tracks, {
-    bool notify = true,
     bool persist = true,
     bool mergeExistingState = true,
   });

@@ -56,7 +56,7 @@ void main() {
         lastPlayedPosition: const Duration(seconds: 12),
       );
       graph.library.addWatchedFolder(r'C:\Music', notify: false);
-      graph.library.addTracks([existing], notify: false, persist: false);
+      graph.library.addTracks([existing], persist: false);
       await LibraryScannerService(
         dataSource: _CaseChangedScan(),
       ).refreshWatchedFolders(

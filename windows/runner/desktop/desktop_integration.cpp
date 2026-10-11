@@ -268,7 +268,9 @@ void DesktopIntegration::Show() {
 void DesktopIntegration::ShowInitial() { ShowWindow(window_,initial_show_command_); }
 void DesktopIntegration::RefreshPower() {
   const auto flags = ES_CONTINUOUS | (playback_active_ ? ES_SYSTEM_REQUIRED : 0) | (screen_on_ ? ES_DISPLAY_REQUIRED : 0);
+  if (power_flags_ == flags) return;
   if (SetThreadExecutionState(flags) == 0) winrt::throw_last_error();
+  power_flags_ = flags;
 }
 void DesktopIntegration::SavePlacement() {
   if (fullscreen_) return;

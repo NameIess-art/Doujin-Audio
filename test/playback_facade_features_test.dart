@@ -57,7 +57,6 @@ void main() {
     );
     runtimeGraph.library.addTracks(
       <MusicTrack>[track],
-      notify: false,
       persist: false,
     );
     await runtimeGraph.playback.spawnSession(track, autoPlay: false);
@@ -93,7 +92,6 @@ void main() {
           });
       runtimeGraph.library.addTracks(
         <MusicTrack>[first, second],
-        notify: false,
         persist: false,
       );
     });
@@ -185,7 +183,6 @@ void main() {
 
       runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       await runtimeGraph.playback.spawnSession(track, autoPlay: false);
@@ -260,7 +257,6 @@ void main() {
 
       runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       await runtimeGraph.playback.spawnSession(track, autoPlay: false);
@@ -313,6 +309,7 @@ void main() {
       expect(lastEffects?['eqEnabled'], isTrue);
       expect(setAudioEffectsCalls, greaterThanOrEqualTo(4));
       expect(session.audioEffects.eqPresetId, 'voice_clear');
+      expect(session.audioEffects.eqBandLevels, voicePreset.bandLevels);
 
       await runtimeGraph.playback.applySessionEqPreset(
         session.id,
@@ -532,7 +529,6 @@ void main() {
           });
       runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       await runtimeGraph.playback.spawnSession(track, autoPlay: false);
@@ -567,7 +563,6 @@ void main() {
       );
       runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       await runtimeGraph.playback.spawnSession(track, autoPlay: false);
@@ -628,7 +623,6 @@ void main() {
 
         runtimeGraph.library.addTracks(
           <MusicTrack>[track],
-          notify: false,
           persist: false,
         );
         await runtimeGraph.playback.spawnSession(track, autoPlay: false);
@@ -782,7 +776,6 @@ void main() {
 
         runtimeGraph.library.addTracks(
           <MusicTrack>[track, secondTrack],
-          notify: false,
           persist: false,
         );
         await runtimeGraph.playback.spawnSession(track, autoPlay: false);
@@ -859,7 +852,6 @@ void main() {
         );
         restartGraph.library.addTracks(
           <MusicTrack>[track],
-          notify: false,
           persist: false,
         );
         await restartGraph.playback.spawnSession(track, autoPlay: false);
@@ -927,7 +919,6 @@ void main() {
 
         runtimeGraph.library.addTracks(
           <MusicTrack>[track],
-          notify: false,
           persist: false,
         );
         await runtimeGraph.playback.spawnSession(track, autoPlay: false);
@@ -1233,7 +1224,6 @@ void main() {
 
         runtimeGraph.library.addTracks(
           <MusicTrack>[oldTrack],
-          notify: false,
           persist: false,
         );
         await runtimeGraph.playback.spawnSession(oldTrack, autoPlay: false);
@@ -1328,7 +1318,6 @@ void main() {
         );
         runtimeGraph.library.addTracks(
           <MusicTrack>[first, second],
-          notify: false,
           persist: false,
         );
 
@@ -1387,7 +1376,6 @@ void main() {
       );
       runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       await runtimeGraph.playback.spawnSession(track, autoPlay: true);

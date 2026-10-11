@@ -105,7 +105,7 @@ class LibraryScanImporter {
       }
       if (result.trackBatch.isNotEmpty) {
         final beforeCount = provider.library.length;
-        provider.addOrReplaceTracks(result.trackBatch, notify: false);
+        provider.addOrReplaceTracks(result.trackBatch);
         added += provider.library.length - beforeCount;
       }
       duplicates += result.duplicatesCount;

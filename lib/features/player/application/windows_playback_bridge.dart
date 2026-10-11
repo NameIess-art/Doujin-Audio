@@ -365,7 +365,12 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         throw ArgumentError('Playback preparation was superseded');
       }
       await session.mapNativeEntries(player);
-      await _applyMode(session);
+      await _applyMode(session, force: true);
+      final platform = player.platform;
+      if (platform is NativePlayer) {
+        await platform.setProperty('volume-max', '300');
+        await platform.setProperty('audio-pitch-correction', 'yes');
+      }
       await _applyEffects(session);
       await player.setVolume(session.volume * session.fade * 100);
       await player.setRate(session.temporarySpeed ?? session.speed);
@@ -573,17 +578,24 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     );
   }
 
-  Future<void> _applyMode(_WindowsPlaybackSession session) async {
-    await session.player?.setPlaylistMode(
-      session.stopAfterCurrentTrack
-          ? PlaylistMode.none
-          : session.repeatOne
-          ? PlaylistMode.single
-          : session.repeatAll
-          ? PlaylistMode.loop
-          : PlaylistMode.none,
-    );
-    await session.player?.setShuffle(
+  Future<void> _applyMode(
+    _WindowsPlaybackSession session, {
+    bool force = false,
+  }) async {
+    final player = session.player;
+    if (player == null) return;
+    final mode = session.stopAfterCurrentTrack
+        ? PlaylistMode.none
+        : session.repeatOne
+        ? PlaylistMode.single
+        : session.repeatAll
+        ? PlaylistMode.loop
+        : PlaylistMode.none;
+    // A failed mode change may have applied only one mpv loop property.
+    if (force || session.error != null || player.state.playlistMode != mode) {
+      await player.setPlaylistMode(mode);
+    }
+    await player.setShuffle(
       !session.stopAfterCurrentTrack &&
           session.shuffle &&
           session.queue.length > 1,
@@ -593,9 +605,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   Future<void> _applyEffects(_WindowsPlaybackSession session) async {
     final platform = session.player?.platform;
     if (platform is NativePlayer) {
-      await platform.setProperty('volume-max', '300');
       await platform.setProperty('af', windowsAudioFilter(session.effects));
-      await platform.setProperty('audio-pitch-correction', 'yes');
     }
   }
 

@@ -263,6 +263,8 @@ class EqPreset {
   }
 }
 
+const eqBandFrequencies = <int>[60, 170, 310, 600, 1000, 3000, 6000, 12000];
+
 final List<EqPreset> builtInEqPresets = immutableList(<EqPreset>[
   EqPreset(id: 'flat', labelKey: 'eq_preset_flat', bandLevels: <int, double>{}),
   EqPreset(

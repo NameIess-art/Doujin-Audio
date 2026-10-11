@@ -262,10 +262,15 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
   Future<void> applySessionEqPreset(String sessionId, EqPreset preset) {
     return _updateSessionAudioEffects(sessionId, (state) {
       final isFlatPreset = preset.bandLevels.isEmpty;
+      // Native effects map frequencies to device bands; preserve the editor's
+      // frequency keys regardless of whether playback has been prepared.
       return state.copyWith(
         eqEnabled: isFlatPreset ? state.eqEnabled : true,
         eqPresetId: preset.id,
-        eqBandLevels: _mapPresetToSessionBands(sessionId, preset),
+        eqBandLevels: {
+          for (final entry in preset.bandLevels.entries)
+            entry.key: _clampEqGainForSession(sessionId, entry.value),
+        },
       );
     }, errorLabel: 'applySessionEqPreset');
   }
@@ -446,28 +451,6 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
         fallbackAudioEffects != AudioEffectsState.flat &&
         snapshot.audioEffects == AudioEffectsState.flat;
     return shouldKeepFallback ? fallbackAudioEffects : snapshot.audioEffects;
-  }
-
-  Map<int, double> _mapPresetToSessionBands(String sessionId, EqPreset preset) {
-    final session = _service.sessions[sessionId];
-    final bands = session?.eqCapabilities.bands ?? const <EqBandInfo>[];
-    if (bands.isEmpty) {
-      return Map<int, double>.unmodifiable(preset.bandLevels);
-    }
-    final mapped = <int, double>{};
-    for (final presetEntry in preset.bandLevels.entries) {
-      final targetBand = bands.reduce((best, candidate) {
-        final bestDistance = (best.frequencyHz - presetEntry.key).abs();
-        final candidateDistance = (candidate.frequencyHz - presetEntry.key)
-            .abs();
-        return candidateDistance < bestDistance ? candidate : best;
-      });
-      mapped[targetBand.frequencyHz] = _clampEqGainForSession(
-        sessionId,
-        (mapped[targetBand.frequencyHz] ?? 0) + presetEntry.value,
-      );
-    }
-    return Map<int, double>.unmodifiable(mapped);
   }
 
   double _clampEqGainForSession(String sessionId, double gainDb) {

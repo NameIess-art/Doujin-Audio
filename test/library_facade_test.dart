@@ -132,7 +132,7 @@ void main() {
       ];
       await repository.upsertTracks(tracks);
       library.addWatchedFolder(root.path, notify: false);
-      library.addTracks(tracks, notify: false, persist: false);
+      library.addTracks(tracks, persist: false);
       final backfill = library.backfillMissingLibraryDurations(
         durationReader: (_) async => const Duration(seconds: 25),
       );
@@ -641,7 +641,6 @@ void main() {
               duration: const Duration(seconds: 45),
             ),
           ],
-          notify: false,
           persist: false,
         );
         await fixture.library.loadAudioDetail(target); // Seed the stale cache.
@@ -890,7 +889,7 @@ void main() {
       ),
     ];
     runtimeGraph.library.addWatchedFolder(folder.path, notify: false);
-    runtimeGraph.library.addTracks(tracks, notify: false, persist: false);
+    runtimeGraph.library.addTracks(tracks, persist: false);
 
     final requestedPaths = <String>[];
     var activeDurationReads = 0;
@@ -935,7 +934,6 @@ void main() {
           isSingle: false,
         ),
       ],
-      notify: false,
       persist: false,
     );
     final retryPaths = <String>[];
@@ -967,7 +965,6 @@ void main() {
           isSingle: false,
         ),
       ],
-      notify: false,
       persist: false,
     );
     final contentDuration = await runtimeGraph.library
@@ -1004,7 +1001,6 @@ void main() {
             isSingle: false,
           ),
         ],
-        notify: false,
         persist: false,
       );
 
@@ -1070,7 +1066,6 @@ void main() {
           isVideo: true,
         ),
       ],
-      notify: false,
       persist: false,
     );
 
@@ -1155,7 +1150,6 @@ void main() {
             isSingle: true,
           ),
         ],
-        notify: false,
         persist: false,
       );
 
@@ -1264,7 +1258,7 @@ void main() {
         library.addWatchedFolder(work.path, notify: false);
         tracks.add(_localDurationTrack(work.path));
       }
-      library.addTracks(tracks, notify: false, persist: false);
+      library.addTracks(tracks, persist: false);
       final beforeRevision = library.structureRevision;
       var publications = 0;
       final subscription = library.states.listen((_) => publications++);
@@ -1332,7 +1326,6 @@ void main() {
             filename: 'known.mp3',
           ).copyWith(duration: const Duration(minutes: 1)),
         ],
-        notify: false,
         persist: false,
       );
       final started = Completer<void>();
@@ -1356,7 +1349,6 @@ void main() {
             duration: const Duration(minutes: 9),
           ),
         ],
-        notify: false,
         persist: false,
         mergeExistingState: false,
       );
@@ -1419,7 +1411,7 @@ void main() {
         library.addWatchedFolder(work.path, notify: false);
         tracks.add(_localDurationTrack(work.path));
       }
-      library.addTracks(tracks, notify: false, persist: false);
+      library.addTracks(tracks, persist: false);
       repository.failingDetailPath = tracks.last.groupKey;
       final beforeRevision = library.structureRevision;
       var publications = 0;
@@ -1472,7 +1464,7 @@ void main() {
       library.addWatchedFolder(later.path, notify: false);
       final firstTrack = _localDurationTrack(first.path);
       final laterTrack = _localDurationTrack(later.path);
-      library.addTracks([firstTrack], notify: false, persist: false);
+      library.addTracks([firstTrack], persist: false);
       final started = Completer<void>();
       final release = Completer<void>();
       final requestedPaths = <String>[];
@@ -1487,7 +1479,7 @@ void main() {
         },
       );
       await started.future;
-      library.addTracks([laterTrack], notify: false, persist: false);
+      library.addTracks([laterTrack], persist: false);
       final repeated = library.backfillMissingLibraryDurations(
         durationReader: (_) async =>
             throw StateError('must use in-flight reader'),
@@ -1531,7 +1523,6 @@ void main() {
             isSingle: false,
           ),
         ],
-        notify: false,
         persist: false,
       );
       final target = AudioDetailTarget.libraryRootFolder(workDir.path);
@@ -1582,7 +1573,6 @@ void main() {
             duration: const Duration(minutes: 2),
           ),
         ],
-        notify: false,
         persist: false,
       );
       await (runtimeGraph.library.databaseRepository as AudioDetailStore)
@@ -1650,7 +1640,6 @@ void main() {
             isSingle: false,
           ),
         ],
-        notify: false,
         persist: false,
       );
       await runtimeGraph.library.saveAudioDetail(
@@ -1697,7 +1686,6 @@ void main() {
             isSingle: false,
           ),
         ],
-        notify: false,
         persist: false,
       );
       await runtimeGraph.library.saveAudioDetail(
@@ -1769,7 +1757,6 @@ void main() {
           isSingle: false,
         ),
       ),
-      notify: false,
       persist: false,
     );
     await runtimeGraph.library.saveAudioDetail(
@@ -1936,7 +1923,6 @@ void main() {
               isSingle: false,
             ),
           ],
-          notify: false,
           persist: false,
         );
         runtimeGraph.library.setScanProgress(
@@ -1980,7 +1966,7 @@ void main() {
         ]);
         runtimeGraph.library.addOrReplaceTracks(<MusicTrack>[
           track,
-        ], notify: false);
+        ]);
         runtimeGraph.library.removeTracksByPath(<String>[track.path]);
         runtimeGraph.library.removeLibraryEntriesByPaths(root, <String>[
           track.path,
@@ -2090,7 +2076,7 @@ void main() {
           runtimeGraph.library.addWatchedFolder(root, notify: false);
           runtimeGraph.library.addOrReplaceTracks(<MusicTrack>[
             original,
-          ], notify: false);
+          ]);
           await runtimeGraph.library.endLibraryBatch();
 
           final dataSource = _JsonPreservationScanDataSource()
@@ -2182,7 +2168,6 @@ void main() {
         );
         runtimeGraph.library.addTracks(
           <MusicTrack>[track],
-          notify: false,
           persist: false,
         );
         runtimeGraph.library.recordLibraryEntriesForTracks(
@@ -2242,7 +2227,6 @@ void main() {
             modifiedAt: initialModifiedAt,
           ),
         ],
-        notify: false,
         persist: false,
       );
 
@@ -2336,7 +2320,7 @@ void main() {
           groupSubtitle: libraryRoot.path,
           isSingle: false,
         ),
-      ], notify: false);
+      ]);
 
       runtimeGraph.library.removeTracksDeletedFromFolder(libraryRoot.path, {
         keptPath,
@@ -2390,7 +2374,7 @@ void main() {
             groupSubtitle: syntheticChildFolder,
             isSingle: false,
           ),
-        ], notify: false);
+        ]);
 
         final result = await runtimeGraph.library.removeFolder(childFolder);
 
@@ -2440,7 +2424,6 @@ void main() {
         );
         runtimeGraph.library.addTracks(
           <MusicTrack>[audio],
-          notify: false,
           persist: false,
         );
 
@@ -2459,7 +2442,7 @@ void main() {
         final audio = track(path: '$folderPath/01.mp3', groupKey: folderPath);
         runtimeGraph.library
           ..addWatchedFolder(folderPath, notify: false)
-          ..addTracks(<MusicTrack>[audio], notify: false, persist: false);
+          ..addTracks(<MusicTrack>[audio], persist: false);
 
         final result = await runtimeGraph.library.removeFolder(folderPath);
 
@@ -2473,7 +2456,7 @@ void main() {
         final audio = track(path: '$folderPath/01.mp3', groupKey: folderPath);
         runtimeGraph.library
           ..addWatchedFolder(folderPath, notify: false)
-          ..addTracks(<MusicTrack>[audio], notify: false, persist: false);
+          ..addTracks(<MusicTrack>[audio], persist: false);
 
         final result = await runtimeGraph.library.removeTrack(audio.path);
         await pumpEventQueue();
@@ -2497,7 +2480,7 @@ void main() {
         runtimeGraph.library
           ..addWatchedLibrary(libraryPath, notify: false)
           ..addWatchedFolder(folderPath, notify: false)
-          ..addTracks(<MusicTrack>[audio], notify: false, persist: false);
+          ..addTracks(<MusicTrack>[audio], persist: false);
 
         final result = await runtimeGraph.library.removeFolder(libraryPath);
 
@@ -2520,7 +2503,7 @@ void main() {
             folderPaths: const <String>[folderPath],
             persist: false,
           )
-          ..addTracks(<MusicTrack>[audio], notify: false, persist: false);
+          ..addTracks(<MusicTrack>[audio], persist: false);
 
         final result = await runtimeGraph.library.removeFolder(folderPath);
         await pumpEventQueue();
@@ -2553,7 +2536,7 @@ void main() {
             folderPaths: const <String>[folderPath],
             persist: false,
           )
-          ..addTracks(<MusicTrack>[audio], notify: false, persist: false);
+          ..addTracks(<MusicTrack>[audio], persist: false);
 
         final result = await runtimeGraph.library.removeTrack(audio.path);
         await pumpEventQueue();
@@ -2642,7 +2625,6 @@ void main() {
       );
       runtimeGraph.library.addTracks(
         <MusicTrack>[track],
-        notify: false,
         persist: false,
       );
       await repository.upsertTracks(<MusicTrack>[track]);
@@ -2694,7 +2676,7 @@ void main() {
         ..recordLibraryEntriesForTracks(folderPath, <MusicTrack>[
           track,
         ], persist: false)
-        ..addTracks(<MusicTrack>[track], notify: false, persist: false);
+        ..addTracks(<MusicTrack>[track], persist: false);
       await repository.upsertTracks(<MusicTrack>[track]);
       await repository.upsertLibraryEntries(
         runtimeGraph.library.libraryEntriesForLibrary(folderPath),
@@ -2762,7 +2744,7 @@ void main() {
           folderPaths: const <String>[workPath],
           persist: false,
         )
-        ..addTracks(<MusicTrack>[track], notify: false, persist: false);
+        ..addTracks(<MusicTrack>[track], persist: false);
       await repository.upsertTracks(<MusicTrack>[track]);
       await repository.upsertLibraryEntries(
         runtimeGraph.library.libraryEntriesForLibrary(libraryPath),
@@ -2845,7 +2827,7 @@ void main() {
           groupSubtitle: outsideFolder,
           isSingle: false,
         ),
-      ], notify: false);
+      ]);
 
       final paths = AudioPathCoordinator(
         library: runtimeGraph.library,
@@ -2909,7 +2891,7 @@ void main() {
           groupSubtitle: '$libraryRoot\\Work B',
           isSingle: false,
         ),
-      ], notify: false);
+      ]);
 
       await runtimeGraph.playback.spawnSession(
         runtimeGraph.library.trackByPath(secondPath)!,
@@ -2965,7 +2947,7 @@ void main() {
             groupSubtitle: folder,
             isSingle: false,
           ),
-        ], notify: false);
+        ]);
 
         runtimeGraph.library.setLibraryFolderExcluded(
           libraryRoot.path,
@@ -3076,7 +3058,7 @@ void main() {
           groupSubtitle: folder.path,
           isSingle: false,
         ),
-      ], notify: false);
+      ]);
 
       runtimeGraph.library.setLibraryTrackExcluded(
         folder.path,
@@ -3102,7 +3084,7 @@ void main() {
             groupSubtitle: folder.path,
             isSingle: false,
           ),
-        ], notify: false);
+        ]);
       }
 
       expect(runtimeGraph.library.trackByPath(trackPath), isNull);

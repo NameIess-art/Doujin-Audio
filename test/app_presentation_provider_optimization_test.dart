@@ -144,7 +144,6 @@ void main() {
             isSingle: true,
           ),
         ],
-        notify: false,
         persist: false,
       );
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -235,7 +234,6 @@ void main() {
               groupTitle: folder,
             ),
           ],
-          notify: false,
           persist: false,
         );
       }
@@ -347,7 +345,6 @@ void main() {
                 groupTitle: folder,
               ),
             ],
-            notify: false,
             persist: false,
           );
         }
@@ -438,7 +435,7 @@ void main() {
         groupTitle: 'Alpha',
       ),
     ];
-    fixture.library.addTracks(tracks, notify: false, persist: false);
+    fixture.library.addTracks(tracks, persist: false);
     final sessions = [
       for (final track in tracks) fixture.playback.createTrackSession(track),
     ];

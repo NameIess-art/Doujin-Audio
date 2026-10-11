@@ -6,13 +6,6 @@ import com.doujin.audio.player.session.*
 
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
-import kotlin.math.abs
-
-internal data class NativeAudioEffectsChange(
-    val panningActiveChanged: Boolean,
-    val skipSilenceChanged: Boolean
-)
 
 internal class NativeAudioEffectsController {
     private val volumeBalanceAudioProcessor = VolumeBalanceAudioProcessor()
@@ -35,9 +28,8 @@ internal class NativeAudioEffectsController {
         volumeBalanceAudioProcessor.channelSwapEnabled = channelSwapEnabled
     }
 
-    fun apply(effects: NativeAudioEffects): NativeAudioEffectsChange {
-        val previousPanningActive = isPanningActive()
-        val previousSkipSilenceEnabled = skipSilenceEnabled
+    fun apply(effects: NativeAudioEffects): Boolean {
+        val previouslyProcessingStereo = shouldProcessVolumeBalance(panning) || channelSwapEnabled
         channelSwapEnabled = effects.channelSwapEnabled
         skipSilenceEnabled = effects.skipSilenceEnabled
         noiseReductionEnabled = effects.noiseReductionEnabled
@@ -47,10 +39,9 @@ internal class NativeAudioEffectsController {
         volumeNormalizationEnabled = effects.volumeNormalizationEnabled
         panning = effects.panning
         syncProcessors()
-        return NativeAudioEffectsChange(
-            panningActiveChanged = previousPanningActive != isPanningActive(),
-            skipSilenceChanged = previousSkipSilenceEnabled != skipSilenceEnabled
-        )
+        // Live parameters are read per buffer; only changing pipeline membership
+        // requires the player to configure its audio processors again.
+        return previouslyProcessingStereo != (shouldProcessVolumeBalance(panning) || channelSwapEnabled)
     }
 
     fun applyToPlayer(
@@ -82,6 +73,4 @@ internal class NativeAudioEffectsController {
         volumeBalanceAudioProcessor.panning = panning
         applyChannelMap()
     }
-
-    private fun isPanningActive(): Boolean = abs(panning) >= 0.001f
 }

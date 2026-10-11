@@ -1092,7 +1092,7 @@ List<PlaybackSession> _seedRuntime(
       ),
     ]);
   }
-  fixture.library.addTracks(tracks, notify: false, persist: false);
+  fixture.library.addTracks(tracks, persist: false);
   fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
   final sessions = List.generate(12, (index) {

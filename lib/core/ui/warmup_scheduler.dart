@@ -66,7 +66,6 @@ class WarmupScheduler {
     required int priority,
     int Function()? priorityResolver,
     required int generation,
-    String? group,
     void Function()? onDiscard,
     required Future<void> Function() task,
   }) {
@@ -79,7 +78,6 @@ class WarmupScheduler {
       priority: priority,
       priorityResolver: priorityResolver,
       generation: generation,
-      group: group,
       onDiscard: onDiscard,
       task: task,
     );
@@ -122,15 +120,6 @@ class WarmupScheduler {
     _isShutDown = true;
     clear();
     return idle;
-  }
-
-  void clearGroup(String group) {
-    _pending.removeWhere((task) {
-      if (task.group != group) return false;
-      _queuedKeys.remove(task.key);
-      return true;
-    });
-    _completeCapacityIfAvailable();
   }
 
   void _dropStalePending() {
@@ -203,7 +192,6 @@ class _QueuedWarmupTask {
     required this.priority,
     this.priorityResolver,
     required this.generation,
-    this.group,
     this.onDiscard,
     required this.task,
   });
@@ -212,7 +200,6 @@ class _QueuedWarmupTask {
   final int priority;
   final int Function()? priorityResolver;
   final int generation;
-  final String? group;
   final void Function()? onDiscard;
   final Future<void> Function() task;
 

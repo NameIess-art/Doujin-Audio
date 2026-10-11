@@ -164,7 +164,6 @@ void main() {
               isSingle: true,
             ),
           ],
-          notify: false,
           persist: false,
         );
         await tester.runAsync(() => fixture.library.ensureCardSnapshot());
@@ -235,7 +234,6 @@ void main() {
               isSingle: true,
             ),
           ],
-          notify: false,
           persist: false,
         );
         await tester.runAsync(fixture.library.ensureCardSnapshot);
@@ -1272,7 +1270,6 @@ void main() {
           isSingle: true,
         ),
       ],
-      notify: false,
       persist: false,
     );
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -1402,7 +1399,6 @@ void main() {
           isSingle: true,
         ),
       ],
-      notify: false,
       persist: false,
     );
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -1451,7 +1447,6 @@ void main() {
           isSingle: true,
         ),
       ],
-      notify: false,
       persist: false,
     );
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -1671,7 +1666,6 @@ void main() {
         );
         fixture.runtimeGraph.library.addTracks(
           [track],
-          notify: false,
           persist: false,
         );
         await fixture.runtimeGraph.library.setFolderManualCover(
@@ -1812,7 +1806,6 @@ void main() {
             groupTitle: 'Windows cover',
           ),
         ],
-        notify: false,
         persist: false,
       );
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -1845,7 +1838,6 @@ void main() {
           groupTitle: 'Root',
         ),
       ],
-      notify: false,
       persist: false,
     );
     libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -1883,7 +1875,6 @@ void main() {
             groupTitle: 'Deep work',
           ),
         ],
-        notify: false,
         persist: false,
       );
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -1928,7 +1919,6 @@ void main() {
           groupTitle: 'Content work',
         ),
       ],
-      notify: false,
       persist: false,
     );
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -1966,7 +1956,7 @@ void main() {
       growable: false,
     );
     runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
-    runtimeGraph.library.addTracks(tracks, notify: false, persist: false);
+    runtimeGraph.library.addTracks(tracks, persist: false);
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
     await tester.pumpWidget(fixture.build(const LibraryTab()));
@@ -2028,7 +2018,7 @@ void main() {
       groupKey: '/library/track.mp3',
       groupTitle: 'Search track',
     );
-    fixture.library.addTracks([track], notify: false, persist: false);
+    fixture.library.addTracks([track], persist: false);
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
     // Finish category I/O first so the search waits specifically on the tree.
     await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
@@ -2067,7 +2057,7 @@ void main() {
         isSingle: true,
       ),
     );
-    fixture.library.addTracks(tracks, notify: false, persist: false);
+    fixture.library.addTracks(tracks, persist: false);
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
     await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
     await tester.pumpWidget(fixture.build(const LibraryTab()));
@@ -2122,7 +2112,6 @@ void main() {
       fixture.runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
       fixture.runtimeGraph.library.addTracks(
         tracks,
-        notify: false,
         persist: false,
       );
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -2208,7 +2197,6 @@ void main() {
           groupTitle: 'Retry folder',
         ),
       ],
-      notify: false,
       persist: false,
     );
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -2268,7 +2256,6 @@ void main() {
           groupTitle: 'Selectable search work',
         ),
       ],
-      notify: false,
       persist: false,
     );
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -2388,7 +2375,6 @@ void main() {
     runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
     runtimeGraph.library.addTracks(
       <MusicTrack>[removedTrack, retainedTrack],
-      notify: false,
       persist: false,
     );
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -2476,7 +2462,6 @@ void main() {
         ], persist: false)
         ..addTracks(
           <MusicTrack>[removedTrack, retainedTrack],
-          notify: false,
           persist: false,
         );
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -2583,7 +2568,6 @@ void main() {
             isSingle: true,
           ),
       ],
-      notify: false,
       persist: false,
     );
     libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -2755,7 +2739,7 @@ void main() {
       ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
         taggedTrack,
       ], persist: false)
-      ..addTracks(<MusicTrack>[taggedTrack], notify: false, persist: false);
+      ..addTracks(<MusicTrack>[taggedTrack], persist: false);
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
     await tester.runAsync(
       () => runtimeGraph.library.saveAudioDetail(
@@ -2869,7 +2853,6 @@ void main() {
           groupTitle: 'Folder Work',
         ),
       ],
-      notify: false,
       persist: false,
     );
     libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -3113,7 +3096,6 @@ void main() {
             groupTitle: 'Rain Pack',
           ),
         ],
-        notify: false,
         persist: false,
       );
       libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -3420,7 +3402,6 @@ void main() {
           groupTitle: 'Disc1',
         ),
       ],
-      notify: false,
       persist: false,
     );
     libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -3573,7 +3554,6 @@ void main() {
       fixture.runtimeGraph.library.addWatchedFolder(root, notify: false);
       fixture.runtimeGraph.library.addTracks(
         [track],
-        notify: false,
         persist: false,
       );
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -3732,7 +3712,6 @@ void main() {
       fixture.runtimeGraph.library.addWatchedFolder(libraryRoot, notify: false);
       fixture.runtimeGraph.library.addTracks(
         [track],
-        notify: false,
         persist: false,
       );
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -3823,7 +3802,6 @@ void main() {
       fixture.runtimeGraph.library.addWatchedFolder(libraryRoot, notify: false);
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[oldTrack],
-        notify: false,
         persist: false,
       );
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -3953,7 +3931,6 @@ void main() {
           groupTitle: 'ASMR',
         ),
       ],
-      notify: false,
       persist: false,
     );
     libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -4088,7 +4065,6 @@ void main() {
               groupTitle: 'work',
             ),
           ],
-          notify: false,
           persist: false,
         );
         fixture.libraryService.syncSlice(
@@ -4280,7 +4256,6 @@ void main() {
       fixture.runtimeGraph.library.addWatchedLibrary(root, notify: false);
       fixture.runtimeGraph.library.addTracks(
         tracks,
-        notify: false,
         persist: false,
       );
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -4338,7 +4313,6 @@ void main() {
       runtimeGraph.library.addWatchedFolder(libraryRoot, notify: false);
       runtimeGraph.library.addTracks(
         <MusicTrack>[firstTrack, secondTrack],
-        notify: false,
         persist: false,
       );
       libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -4442,7 +4416,6 @@ void main() {
             groupTitle: 'Rain Work',
           ),
         ],
-        notify: false,
         persist: false,
       );
       libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -4517,7 +4490,6 @@ void main() {
           groupTitle: 'Whisper work',
         ),
       ],
-      notify: false,
       persist: false,
     );
     libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -4616,7 +4588,7 @@ void main() {
         ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
           rootTrack,
         ], persist: false)
-        ..addTracks(<MusicTrack>[rootTrack], notify: false, persist: false);
+        ..addTracks(<MusicTrack>[rootTrack], persist: false);
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
       final childFolder = FolderNode(
@@ -4723,7 +4695,7 @@ void main() {
         ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
           rootTrack,
         ], persist: false)
-        ..addTracks(<MusicTrack>[rootTrack], notify: false, persist: false);
+        ..addTracks(<MusicTrack>[rootTrack], persist: false);
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
       await tester.pumpWidget(fixture.build(const LibraryTab()));
@@ -4842,7 +4814,7 @@ void main() {
         ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
           rootTrack,
         ], persist: false)
-        ..addTracks(<MusicTrack>[rootTrack], notify: false, persist: false);
+        ..addTracks(<MusicTrack>[rootTrack], persist: false);
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
       final testWork = AsmrWork(
@@ -4994,7 +4966,7 @@ void main() {
           duration: const Duration(seconds: 30),
         );
         final target = AudioDetailTarget.singleAudioFile(track.path);
-        fixture.library.addTracks([track], notify: false, persist: false);
+        fixture.library.addTracks([track], persist: false);
         String? cover;
         if (kind == 'covered audio') {
           cover = '${directory.path}/cover.png';
@@ -5162,7 +5134,6 @@ void main() {
             ], persist: false)
             ..addTracks(
               <MusicTrack>[singleTrack],
-              notify: false,
               persist: false,
             );
           fixture.libraryService.syncSlice(
@@ -5271,7 +5242,7 @@ void main() {
         ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
           singleTrack,
         ], persist: false)
-        ..addTracks(<MusicTrack>[singleTrack], notify: false, persist: false);
+        ..addTracks(<MusicTrack>[singleTrack], persist: false);
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
       await tester.pumpWidget(fixture.build(const LibraryTab()));
@@ -5329,7 +5300,7 @@ void main() {
             ),
         ];
         fixture.library.addWatchedFolder(root, notify: false);
-        fixture.library.addTracks(tracks, notify: false, persist: false);
+        fixture.library.addTracks(tracks, persist: false);
         fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
         final target = isFolder
             ? AudioDetailTarget.libraryRootFolder(root)
@@ -5428,7 +5399,7 @@ void main() {
         ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
           track1,
         ], persist: false)
-        ..addTracks(<MusicTrack>[track1], notify: false, persist: false);
+        ..addTracks(<MusicTrack>[track1], persist: false);
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
       await tester.pumpWidget(fixture.build(const LibraryTab()));

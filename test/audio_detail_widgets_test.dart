@@ -1452,7 +1452,6 @@ void main() {
             duration: const Duration(minutes: 4),
           ),
         ],
-        notify: false,
         persist: false,
       );
       await tester.runAsync(

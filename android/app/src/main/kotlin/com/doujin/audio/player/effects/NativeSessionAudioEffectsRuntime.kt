@@ -57,7 +57,7 @@ internal class NativeSessionAudioEffectsRuntime(
 
     fun applyChannelMap() = controller.applyChannelMap()
 
-    fun apply(effects: NativeAudioEffects): NativeAudioEffectsChange = controller.apply(effects)
+    fun apply(effects: NativeAudioEffects): Boolean = controller.apply(effects)
 
     fun applyToPlayer(player: ExoPlayer) {
         controller.applyToPlayer(

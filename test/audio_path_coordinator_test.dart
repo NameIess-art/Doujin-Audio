@@ -85,7 +85,6 @@ void main() {
         graph.library.addWatchedFolder(root.path, notify: false);
         graph.library.addTracks(
           [original, descendant],
-          notify: false,
           persist: false,
         );
         final first = graph.playback.createTrackSession(
@@ -198,7 +197,7 @@ void main() {
         ),
     ];
     graph.library.addWatchedFolder('/library/work', notify: false);
-    graph.library.addTracks(tracks, notify: false, persist: false);
+    graph.library.addTracks(tracks, persist: false);
 
     expect(await graph.playback.addTrackToPlaylist(tracks[1]), isTrue);
     final session = graph.playback.ordinarySessions.single;
@@ -259,7 +258,7 @@ void main() {
             isSingle: false,
           ),
         );
-        graph.library.addTracks(tracks, notify: false, persist: false);
+        graph.library.addTracks(tracks, persist: false);
         final counted = _CountingTracks(service.library);
         service.library = counted;
         final ordered = graph.audioPaths.tracksInSameWork(tracks.first.path);
@@ -303,7 +302,7 @@ void main() {
         ),
     ];
     graph.library.addWatchedFolder('/library/work', notify: false);
-    graph.library.addTracks(tracks, notify: false, persist: false);
+    graph.library.addTracks(tracks, persist: false);
     final counted = _CountingTracks(service.library);
     service.library = counted;
     final path = tracks[5000].path;
@@ -340,13 +339,13 @@ void main() {
       final first = track('/library/work/one/1.mp3');
       final second = track('/library/work/two/2.mp3');
       graph.library.addWatchedFolder('/library/work', notify: false);
-      graph.library.addTracks([first], notify: false, persist: false);
+      graph.library.addTracks([first], persist: false);
       expect(graph.audioPaths.hasOtherTracksInSameWork(first.path), isFalse);
       expect(
         graph.audioPaths.cachedHasOtherTracksInSameWork(first.path),
         isFalse,
       );
-      graph.library.addTracks([second], notify: false, persist: false);
+      graph.library.addTracks([second], persist: false);
       expect(
         graph.audioPaths.cachedHasOtherTracksInSameWork(first.path),
         isNull,
@@ -376,7 +375,7 @@ void main() {
       isSingle: false,
     );
     graph.library.addWatchedFolder(r'C:\Music\Work', notify: false);
-    graph.library.addTracks([first, second], notify: false, persist: false);
+    graph.library.addTracks([first, second], persist: false);
     expect(graph.audioPaths.hasOtherTracksInSameWork(first.path), isTrue);
     expect(graph.audioPaths.tracksInSameWork(first.path), [first, second]);
   });
@@ -397,7 +396,7 @@ void main() {
     final first = track('disc1', 'first');
     final second = track('disc2', 'second');
     graph.library.addWatchedFolder(root, notify: false);
-    graph.library.addTracks([first, second], notify: false, persist: false);
+    graph.library.addTracks([first, second], persist: false);
     expect(graph.audioPaths.hasOtherTracksInSameWork(first.path), isTrue);
     expect(graph.audioPaths.tracksInSameWork(first.path), [first, second]);
   });
@@ -456,7 +455,7 @@ void main() {
       second,
       customQueueTracks: [second],
     );
-    graph.library.addTracks([local], notify: false, persist: false);
+    graph.library.addTracks([local], persist: false);
     for (final lookup in [
       graph.audioPaths.trackByPath,
       (String value) =>
@@ -477,7 +476,7 @@ void main() {
     final graph = createTestRuntimeGraph(libraryService: service);
     addTearDown(graph.runtime.dispose);
     final local = track(r'C:\Audio\Track.mp3', 'local');
-    graph.library.addTracks([local], notify: false, persist: false);
+    graph.library.addTracks([local], persist: false);
     expect(graph.audioPaths.trackByPath(r'c:\audio\track.mp3'), same(local));
     expect(
       graph.audioPaths.trackByPath(

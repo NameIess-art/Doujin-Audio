@@ -129,7 +129,6 @@ final class LibraryCoverUiController {
           priority: -1,
           priorityResolver: () => _priorityForRequest(request),
           generation: _scheduler.currentGeneration,
-          group: 'visible_library_cover',
           onDiscard: () => request.submitted = false,
           task: () => _runLookup(entry.key, request),
         );

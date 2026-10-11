@@ -134,11 +134,7 @@ final class LibraryCatalogWriteCoordinator {
     _persistenceCoordinator.queueOrPersistEntries(entries, persist: persist);
   }
 
-  void addTracks(
-    List<MusicTrack> tracks, {
-    bool notify = true,
-    bool persist = true,
-  }) {
+  void addTracks(List<MusicTrack> tracks, {bool persist = true}) {
     if (tracks.isEmpty) return;
     final mutation = _service.addTracks(tracks, persist: persist);
     if (mutation.tracks.isEmpty) return;
@@ -156,7 +152,6 @@ final class LibraryCatalogWriteCoordinator {
 
   void addOrReplaceTracks(
     List<MusicTrack> tracks, {
-    bool notify = true,
     bool persist = true,
     bool mergeExistingState = true,
     bool recordEntries = true,
@@ -324,12 +319,7 @@ final class LibraryCatalogWriteCoordinator {
     }
     final beforeCount = _service.library.length;
     if (tracks.isNotEmpty) {
-      addOrReplaceTracks(
-        tracks,
-        notify: false,
-        persist: persist,
-        recordEntries: false,
-      );
+      addOrReplaceTracks(tracks, persist: persist, recordEntries: false);
       for (final track in tracks) {
         final current = _service.libraryByPath[track.path];
         if (current != null) _refreshTrackWrites[current.path] = current;
@@ -493,7 +483,7 @@ final class LibraryCatalogWriteCoordinator {
     remoteMetadata: current.remoteMetadata,
   );
 
-  Future<void> endLibraryBatch({bool notify = true}) async {
+  Future<void> endLibraryBatch() async {
     if (_service.libraryBatchDepth <= 0) return;
     _service.libraryBatchDepth--;
     if (_service.libraryBatchDepth > 0) return;
@@ -608,8 +598,6 @@ final class LibraryCatalogWriteCoordinator {
         snapshot.libraryIndexByPath,
       )
       ..tracksByGroup = Map<String, List<MusicTrack>>.of(snapshot.tracksByGroup)
-      ..sortedLibraryTracks = snapshot.sortedLibraryTracks
-      ..sortedLibraryTrackPaths = snapshot.sortedLibraryTrackPaths
       ..markStructureChanged();
     snapshotCacheService
       ..markStructureChanged()

@@ -293,10 +293,28 @@ void main() {
                 .join(', '),
           );
           final player = bridge.playerForSession('one');
+          final nativePlayer = player!.platform! as NativePlayer;
+          expect(double.parse(await nativePlayer.getProperty('volume-max')), 300);
           expect(
-            double.parse(
-              await (player!.platform! as NativePlayer).getProperty('volume'),
-            ),
+            await nativePlayer.getProperty('audio-pitch-correction'),
+            'yes',
+          );
+          final runtimeEffects = NativeAudioEffects(
+            channelSwapEnabled: true,
+            state: AudioEffectsState(eqEnabled: true, eqBandLevels: {1000: -3}),
+          );
+          expect(
+            (await bridge.setAudioEffects('one', runtimeEffects)).isOk,
+            true,
+          );
+          expect(await nativePlayer.getProperty('af'), contains('equalizer'));
+          expect(double.parse(await nativePlayer.getProperty('volume-max')), 300);
+          expect(
+            await nativePlayer.getProperty('audio-pitch-correction'),
+            'yes',
+          );
+          expect(
+            double.parse(await nativePlayer.getProperty('volume')),
             closeTo(270, 0.01),
           );
           final queue = [
@@ -324,7 +342,6 @@ void main() {
           expect((await editing).isOk, true);
           expect(bridge.playerForSession('one'), same(player));
           expect(players, hasLength(2));
-          final nativePlayer = player.platform! as NativePlayer;
           final entryBefore = await nativePlayer.getProperty('playlist/0/id');
           final positionBefore = player.state.position;
           final moved = await bridge.updateQueue(

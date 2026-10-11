@@ -346,12 +346,17 @@ class EqualizerPage extends ConsumerWidget {
     );
     final effects = detail.$1 ?? session.audioEffects;
     final eqCapabilities = detail.$2 ?? session.eqCapabilities;
+    // Keep the editor's frequencies stable before and after native preparation.
+    // Android maps these gains to its supported bands when applying the effects.
+    final frequencies = {
+      ...eqBandFrequencies,
+      ...effects.eqBandLevels.keys,
+    }.toList()..sort();
 
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final cs = Theme.of(context).colorScheme;
     final removalState = ref.watch(undoableRemovalStateProvider);
     final customPresets =
         (ref.watch(
@@ -429,57 +434,44 @@ class EqualizerPage extends ConsumerWidget {
           },
         ),
         const SizedBox(height: 12),
-        if (!eqCapabilities.supported)
-          Text(
-            i18n.tr('equalizer_unavailable'),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: cs.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
+        ...frequencies.map((frequencyHz) {
+          final value = effects.eqBandLevels[frequencyHz] ?? 0.0;
+          return EqBandSlider(
+            label: _formatFrequency(frequencyHz),
+            value: value.clamp(
+              eqCapabilities.minGainDb,
+              eqCapabilities.maxGainDb,
             ),
-          )
-        else
-          ...eqCapabilities.bands.map((band) {
-            final value = effects.eqBandLevels[band.frequencyHz] ?? 0.0;
-            return EqBandSlider(
-              label: _formatFrequency(band.frequencyHz),
-              value: value.clamp(
-                eqCapabilities.minGainDb,
-                eqCapabilities.maxGainDb,
-              ),
-              min: eqCapabilities.minGainDb,
-              max: eqCapabilities.maxGainDb,
-              onChanged: effects.eqEnabled
-                  ? (nextValue) {
-                      AppInteractionFeedback.continuous(
-                        '${band.frequencyHz}:${(nextValue * 2).round()}',
-                      );
-                      UiInteractionCoordinator.instance.scheduleThrottledCommit(
-                        key: 'session_eq:${session.id}:${band.frequencyHz}',
-                        commit: () => unawaited(
-                          playback.setSessionEqBandLevel(
-                            session.id,
-                            band.frequencyHz,
-                            nextValue,
-                          ),
+            min: eqCapabilities.minGainDb,
+            max: eqCapabilities.maxGainDb,
+            onChanged: effects.eqEnabled
+                ? (nextValue) {
+                    AppInteractionFeedback.continuous(
+                      '$frequencyHz:${(nextValue * 2).round()}',
+                    );
+                    UiInteractionCoordinator.instance.scheduleThrottledCommit(
+                      key: 'session_eq:${session.id}:$frequencyHz',
+                      commit: () => unawaited(
+                        playback.setSessionEqBandLevel(
+                          session.id,
+                          frequencyHz,
+                          nextValue,
                         ),
-                      );
-                    }
-                  : null,
-              onChangeEnd: (value) {
-                AppInteractionFeedback.resetContinuous();
-                UiInteractionCoordinator.instance.cancelThrottledCommit(
-                  'session_eq:${session.id}:${band.frequencyHz}',
-                );
-                unawaited(
-                  playback.setSessionEqBandLevel(
-                    session.id,
-                    band.frequencyHz,
-                    value,
-                  ),
-                );
-              },
-            );
-          }),
+                      ),
+                    );
+                  }
+                : null,
+            onChangeEnd: (value) {
+              AppInteractionFeedback.resetContinuous();
+              UiInteractionCoordinator.instance.cancelThrottledCommit(
+                'session_eq:${session.id}:$frequencyHz',
+              );
+              unawaited(
+                playback.setSessionEqBandLevel(session.id, frequencyHz, value),
+              );
+            },
+          );
+        }),
         const SizedBox(height: 12),
         Row(
           children: [

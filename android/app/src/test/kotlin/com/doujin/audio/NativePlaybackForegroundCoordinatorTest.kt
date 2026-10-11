@@ -49,6 +49,8 @@ class NativePlaybackForegroundCoordinatorTest {
 
         assertEquals(2, host.playbackStarts)
         assertTrue(coordinator.isStarted)
+        assertEquals(2, host.infoMessages.size)
+        assertTrue(host.infoMessages.all { it.startsWith("start_foreground_success") })
     }
 
     @Test
@@ -435,6 +437,7 @@ private class FakeForegroundHost(
     var playbackStarts = 0
     var bootstrapStarts = 0
     var foregroundStops = 0
+    val infoMessages = mutableListOf<String>()
 
     override fun playbackSignature(): String? = signature
 
@@ -469,7 +472,7 @@ private class FakeForegroundHost(
         foregroundStops += 1
     }
 
-    override fun logInfo(message: String) = Unit
+    override fun logInfo(message: String) { infoMessages += message }
 
     override fun logWarn(message: String, error: Throwable) = Unit
 }

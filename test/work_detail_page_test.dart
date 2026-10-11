@@ -481,7 +481,6 @@ void main() {
                       groupTitle: 'First detail title',
                     ),
                   ],
-                  notify: false,
                   persist: false,
                 );
                 if (cached) {
@@ -2296,7 +2295,7 @@ void main() {
       final subtitleStatus = find.text(
         fixture.languageProvider.tr('asmr_has_subtitle'),
       );
-      final statusCapsule = find.byKey(
+      final statusIndicator = find.byKey(
         const ValueKey<String>('work_detail_subtitle_status'),
       );
       expect(
@@ -2304,35 +2303,39 @@ void main() {
           of: subtitleStatus,
           matching: find.byType(HeaderFloatingSurface),
         ),
-        findsOneWidget,
+        findsNothing,
       );
       expect(
         find.descendant(
-          of: statusCapsule,
+          of: statusIndicator,
           matching: find.byIcon(Icons.subtitles_rounded),
         ),
         findsOneWidget,
       );
       expect(
-        tester.getRect(statusCapsule).top,
-        tester
-            .getRect(
-              find.ancestor(
-                of: find.byKey(
-                  const ValueKey<String>('work_detail_back_button'),
-                ),
-                matching: find.byType(HeaderFloatingButton),
-              ),
-            )
-            .top,
+        tester.getRect(statusIndicator).center.dy,
+        tester.getRect(find.text('RJ9999')).center.dy,
+      );
+      expect(
+        tester.getRect(statusIndicator).center.dy,
+        tester.getRect(find.text('Remote Circle')).center.dy,
+      );
+      expect(tester.getRect(statusIndicator).right, 304);
+      expect(
+        tester.getRect(statusIndicator).left,
+        greaterThanOrEqualTo(
+          tester
+              .getRect(find.byKey(const ValueKey('work_detail_circle_copy')))
+              .right,
+        ),
       );
       final translationButton = find.ancestor(
         of: find.byKey(const ValueKey<String>('work_detail_translation')),
         matching: find.byType(HeaderFloatingButton),
       );
       expect(
-        tester.getRect(statusCapsule).right,
-        lessThan(tester.getRect(translationButton).left),
+        tester.getRect(statusIndicator).top,
+        greaterThan(tester.getRect(translationButton).bottom),
       );
       expect(tester.getRect(translationButton).right, 304);
       expect(
@@ -2444,7 +2447,7 @@ void main() {
           of: noSubtitleStatus,
           matching: find.byType(HeaderFloatingSurface),
         ),
-        findsOneWidget,
+        findsNothing,
       );
       expect(
         find.descendant(
@@ -2456,6 +2459,10 @@ void main() {
       expect(
         tester.widget<Text>(noSubtitleStatus).style?.color,
         Theme.of(tester.element(noSubtitleStatus)).colorScheme.onSurfaceVariant,
+      );
+      expect(
+        tester.getRect(noSubtitleStatus).center.dy,
+        tester.getRect(find.text('RJ8888')).center.dy,
       );
 
       expect(

@@ -508,8 +508,8 @@ final class AsmrDownloadTaskStore {
     });
   }
 
-  Future<void>? _persistCurrentTasks({bool force = false}) {
-    if (!_persistTasks || (!_persistenceDirty && !force)) return null;
+  Future<void>? _persistCurrentTasks() {
+    if (!_persistTasks || !_persistenceDirty) return null;
     _persistenceDirty = false;
     _operationObserver?.call(AsmrDownloadStoreOperation.persistenceSnapshot);
     final tasks = _tasks.values

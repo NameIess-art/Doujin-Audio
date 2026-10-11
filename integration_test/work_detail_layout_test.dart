@@ -210,7 +210,7 @@ void main() {
           isSingle: true,
           duration: const Duration(minutes: 1),
         );
-        fixture.library.addTracks([track], notify: false, persist: false);
+        fixture.library.addTracks([track], persist: false);
         final session = fixture.playback.createTrackSession(track);
         unawaited(
           root.currentState!.push(

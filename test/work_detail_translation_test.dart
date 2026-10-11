@@ -381,7 +381,12 @@ void main() {
         final subtitle = tester.getRect(
           find.byKey(const ValueKey('work_detail_subtitle_status')),
         );
-        expect(button.left, greaterThanOrEqualTo(subtitle.right));
+        expect(subtitle.top, greaterThan(button.bottom));
+        expect(
+          subtitle.center.dy,
+          tester.getRect(find.text('RJ123456')).center.dy,
+        );
+        expect(subtitle.right, tester.view.physicalSize.width - 16);
         expect(button.top, lessThan(80));
         await tester.tap(find.byKey(_button));
         await _batch(tester);

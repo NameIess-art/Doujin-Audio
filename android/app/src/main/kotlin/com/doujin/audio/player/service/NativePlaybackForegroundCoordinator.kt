@@ -160,7 +160,6 @@ internal class NativePlaybackForegroundCoordinator(
             return NativePlaybackForegroundStartResult.SKIPPED
         }
         if (!forceRefresh && isStarted && signature == nextSignature) {
-            host.logInfo("start_foreground_skip unchanged signature=$nextSignature")
             return NativePlaybackForegroundStartResult.ALREADY_STARTED
         }
         return try {

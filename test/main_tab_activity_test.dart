@@ -88,7 +88,7 @@ void main() {
           groupSubtitle: '',
           isSingle: true,
         );
-        fixture.library.addTracks([track], notify: false, persist: false);
+        fixture.library.addTracks([track], persist: false);
         final session = PlaybackSession(
           id: 'prepared-session',
           currentTrackPath: track.path,

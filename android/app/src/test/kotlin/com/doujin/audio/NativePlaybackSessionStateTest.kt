@@ -396,25 +396,24 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
-    fun `audio effects controller reports reprepare-sensitive changes`() {
+    fun `audio effects reprepare only when stereo processing enters or leaves the pipeline`() {
         val controller = NativeAudioEffectsController()
-        val firstChange = controller.apply(
-            NativeAudioEffects(
-                skipSilenceEnabled = true,
-                panning = 0.5f
-            )
-        )
-        val repeatedChange = controller.apply(
-            NativeAudioEffects(
-                skipSilenceEnabled = true,
-                panning = 0.5f
-            )
-        )
+        assertEquals(false, controller.apply(NativeAudioEffects(skipSilenceEnabled = true)))
+        assertEquals(true, controller.apply(NativeAudioEffects(panning = 0.5f)))
+        assertEquals(false, controller.apply(NativeAudioEffects(channelSwapEnabled = true)))
+        assertEquals(false, controller.apply(NativeAudioEffects(panning = -0.5f, channelSwapEnabled = true)))
+        assertEquals(false, controller.apply(NativeAudioEffects(panning = -0.5f)))
+        assertEquals(true, controller.apply(NativeAudioEffects()))
+        assertEquals(true, controller.apply(NativeAudioEffects(panning = 0.5f, channelSwapEnabled = true)))
+        assertEquals(true, controller.apply(NativeAudioEffects()))
+    }
 
-        assertEquals(true, firstChange.skipSilenceChanged)
-        assertEquals(true, firstChange.panningActiveChanged)
-        assertEquals(false, repeatedChange.skipSilenceChanged)
-        assertEquals(false, repeatedChange.panningActiveChanged)
+    @Test
+    fun `subthreshold balance and unchanged effects never reprepare`() {
+        val controller = NativeAudioEffectsController()
+        val effects = NativeAudioEffects(panning = 0.0009f, skipSilenceEnabled = true)
+        assertEquals(false, controller.apply(effects))
+        assertEquals(false, controller.apply(effects))
     }
 
     @Test

@@ -15,6 +15,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.accentColor,
     required this.surfaceColor,
     required this.onCopyMetadata,
+    this.subtitleStatus,
   });
 
   final double topSafeArea;
@@ -28,6 +29,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Color accentColor;
   final Color surfaceColor;
   final ValueChanged<String> onCopyMetadata;
+  final Widget? subtitleStatus;
 
   // Reuse text and metadata while the sliver only changes cover geometry.
   late final Widget _expandedTitle = RepaintBoundary(child: _buildTitle(17));
@@ -170,6 +172,10 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
             ),
           ),
         ),
+        if (subtitleStatus != null) ...[
+          const SizedBox(width: 8),
+          subtitleStatus!,
+        ],
       ],
     ),
   );
@@ -247,6 +253,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
         oldDelegate.title != title ||
         oldDelegate.rjCode != rjCode ||
         oldDelegate.circleName != circleName ||
+        oldDelegate.subtitleStatus != subtitleStatus ||
         oldDelegate.coverWidget != coverWidget ||
         oldDelegate.accentColor != accentColor ||
         oldDelegate.surfaceColor != surfaceColor;

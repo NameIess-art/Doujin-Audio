@@ -127,9 +127,9 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
   ) {
     final next = retainedUris.where(PathMatcher.isContentUri).toSet();
     final previous = _nativeRetainedContentUrisBySession[sessionId];
-    if (previous != null &&
-        previous.length == next.length &&
-        previous.containsAll(next)) {
+    if (previous == null
+        ? next.isEmpty
+        : previous.length == next.length && previous.containsAll(next)) {
       return;
     }
     if (next.isEmpty) {

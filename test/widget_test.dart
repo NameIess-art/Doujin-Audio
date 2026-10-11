@@ -2695,7 +2695,6 @@ void main() {
           isSingle: true,
         ),
       ],
-      notify: false,
       persist: false,
     );
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
@@ -4676,7 +4675,7 @@ void main() {
         );
     addTearDown(() => unawaited(runtimeGraph.runtime.dispose()));
     addTearDown(session.shutdown);
-    runtimeGraph.library.addTracks([track], notify: false, persist: false);
+    runtimeGraph.library.addTracks([track], persist: false);
     playbackService.registerSession(session);
     playbackService.syncSlice(
       activeSessions: [session],
@@ -4933,7 +4932,6 @@ void main() {
     addTearDown(secondSession.shutdown);
     runtimeGraph.library.addTracks(
       [firstTrack, secondTrack],
-      notify: false,
       persist: false,
     );
     playbackService
@@ -6766,7 +6764,6 @@ Future<_AppShellHarness> _pumpAppShell(
     if (playbackTrack != null || extraPlaybackTracks.isNotEmpty) {
       runtimeGraph.library.addTracks(
         [?playbackTrack, ...extraPlaybackTracks],
-        notify: false,
         persist: false,
       );
     }

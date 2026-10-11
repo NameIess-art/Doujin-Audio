@@ -68,6 +68,52 @@ void main() {
     expect(players.single.state.playing, true);
   });
 
+  test(
+    'unchanged loop mode avoids native writes but every open applies it',
+    () async {
+      await prepare('one');
+      final player = players.single;
+      expect(player.playlistModeWrites, 1);
+      expect((await bridge.setRepeatOne('one', false)).isOk, true);
+      expect(
+        (await bridge.updateQueue(
+          'one',
+          queue: [
+            {'uri': 'https://example.com/one.wav', 'title': 'updated'},
+          ],
+        )).isOk,
+        true,
+      );
+      expect(player.playlistModeWrites, 1);
+      expect((await bridge.setRepeatOne('one', true)).isOk, true);
+      expect(player.state.playlistMode, PlaylistMode.single);
+      expect(player.playlistModeWrites, 2);
+      expect((await bridge.setRepeatOne('one', true)).isOk, true);
+      expect(player.playlistModeWrites, 2);
+      await prepare('one');
+      expect(players, hasLength(1));
+      expect(player.playlistModeWrites, 3);
+      expect(player.state.playlistMode, PlaylistMode.none);
+      await prepare('one');
+      expect(player.playlistModeWrites, 4);
+    },
+  );
+
+  test(
+    'failed loop change reasserts the previous mode even when state matches',
+    () async {
+      await prepare('one');
+      final player = players.single;
+      player.playlistModeError = StateError('second loop property failed');
+      expect((await bridge.setRepeatOne('one', true)).isFailure, true);
+      expect(player.state.playlistMode, PlaylistMode.none);
+      expect(player.playlistModeWrites, 2);
+      expect((await bridge.setRepeatOne('one', false)).isOk, true);
+      expect(player.playlistModeWrites, 3);
+      expect(player.state.playlistMode, PlaylistMode.none);
+    },
+  );
+
   for (final raw in [
     'not JSON',
     '{}',
@@ -927,7 +973,7 @@ void main() {
               isSingle: false,
             ),
         ];
-        graph.library.addTracks(tracks, notify: false, persist: false);
+        graph.library.addTracks(tracks, persist: false);
         final session = graph.playback.createTrackSession(
           tracks.first,
           customQueueTracks: tracks,
@@ -1900,6 +1946,8 @@ class _Player extends PlatformPlayer {
   }
 
   int opens = 0, plays = 0, adds = 0, removes = 0, moves = 0;
+  int playlistModeWrites = 0;
+  Object? playlistModeError;
   int? moveErrorAt;
   Object? pauseError, addError, seekError;
   Completer<void>? pauseGate, pauseStarted;
@@ -2019,8 +2067,14 @@ class _Player extends PlatformPlayer {
   @override
   Future<void> setRate(double rate) async => state = state.copyWith(rate: rate);
   @override
-  Future<void> setPlaylistMode(PlaylistMode mode) async =>
-      state = state.copyWith(playlistMode: mode);
+  Future<void> setPlaylistMode(PlaylistMode mode) async {
+    playlistModeWrites++;
+    final error = playlistModeError;
+    playlistModeError = null;
+    if (error != null) throw error;
+    state = state.copyWith(playlistMode: mode);
+  }
+
   @override
   Future<void> setShuffle(bool shuffle) async {
     if (reorderOnShuffle && shuffle != state.shuffle) {

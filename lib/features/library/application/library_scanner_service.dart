@@ -58,7 +58,6 @@ class LibraryScannerService {
     if (tracksToRestore.isNotEmpty) {
       provider.addOrReplaceTracks(
         tracksToRestore,
-        notify: false,
         mergeExistingState: false,
       );
     }
@@ -761,7 +760,7 @@ class LibraryScannerService {
         fileExists = true;
       } else {
         final beforeCount = provider.library.length;
-        provider.addTracks(candidates, notify: false);
+        provider.addTracks(candidates);
         added = provider.library.length - beforeCount;
       }
     } finally {

@@ -276,7 +276,7 @@ void main() {
           groupTitle: 'Library title',
         );
         fixture.library.addWatchedFolder(folder, notify: false);
-        fixture.library.addTracks([track], notify: false, persist: false);
+        fixture.library.addTracks([track], persist: false);
         await tester.runAsync(
           () => fixture.library.saveAudioDetail(
             AudioDetail.empty(
@@ -529,7 +529,7 @@ void main() {
         );
         addTearDown(fixture.dispose);
         final translations = _Translations();
-        fixture.library.addTracks([track], notify: false, persist: false);
+        fixture.library.addTracks([track], persist: false);
         fixture.libraryService.syncSlice(
           isInitialized: true,
           detailRevision: 0,

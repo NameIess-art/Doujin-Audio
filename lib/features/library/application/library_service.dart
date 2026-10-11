@@ -32,8 +32,6 @@ class LibraryService {
   /// existing entries in O(1) instead of O(n).
   Map<String, int> libraryIndexByPath = createPathIndex<int>();
   Map<String, List<MusicTrack>> tracksByGroup = <String, List<MusicTrack>>{};
-  List<MusicTrack> sortedLibraryTracks = const <MusicTrack>[];
-  List<String> sortedLibraryTrackPaths = const <String>[];
   final List<String> groupOrder = <String>[];
   final Set<String> groupOrderSet = <String>{};
   final List<String> watchedFolders = <String>[];
@@ -801,12 +799,6 @@ class LibraryService {
               MapEntry(groupKey, List<MusicTrack>.unmodifiable(tracks)),
         ),
       );
-    sortedLibraryTracks = List<MusicTrack>.unmodifiable(
-      library.toList()..sort(compareTracks),
-    );
-    sortedLibraryTrackPaths = List<String>.unmodifiable(
-      sortedLibraryTracks.map((track) => track.path),
-    );
     groupOrderSet
       ..clear()
       ..addAll(groupOrder);
@@ -1011,12 +1003,6 @@ class LibraryService {
 
   String? parentLibraryFolderPath(String folderPath, String rootPath) =>
       organizer.parentLibraryFolderPath(folderPath, rootPath);
-
-  bool trackNeedsRefresh(MusicTrack nextTrack) {
-    final existing = libraryByPath[nextTrack.path];
-    return existing == null ||
-        mergedLibraryTrackHasChanges(existing, nextTrack);
-  }
 
   ({bool changed, List<String> removedFolderPaths}) removeLibrary(
     String libraryPath, {

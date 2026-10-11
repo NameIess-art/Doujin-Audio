@@ -276,7 +276,6 @@ final class _PlaybackIsolationHarness {
           isSingle: true,
         ),
       ],
-      notify: false,
       persist: false,
     );
     graph.playback.registerSession(session);

@@ -938,7 +938,6 @@ void main() {
       );
       fixture.library.addTracks(
         <MusicTrack>[video],
-        notify: false,
         persist: false,
       );
       final session = PlaybackSession(
@@ -1068,7 +1067,6 @@ void main() {
           isSingle: true,
         ),
       ],
-      notify: false,
       persist: false,
     );
     session.currentTrackPath = audioPath;

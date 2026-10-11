@@ -134,7 +134,6 @@ final class AudioUiWarmupCoordinator {
           'track_cover:$trackPath:${_library.coverArtworkCacheService.generation}',
       priority: priority,
       generation: generation,
-      group: 'session_cover',
       task: () => _library.coverPathFutureForTrack(track),
     );
   }
@@ -154,7 +153,6 @@ final class AudioUiWarmupCoordinator {
       key: 'subtitle:$trackPath',
       priority: subtitlePriority,
       generation: generation,
-      group: 'subtitle',
       task: () => _subtitles.load(trackPath),
     );
   }

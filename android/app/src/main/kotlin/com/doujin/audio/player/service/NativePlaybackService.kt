@@ -950,9 +950,9 @@ class NativePlaybackService : MediaSessionService() {
         val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         playbackRecovery.resetHealth(sessionId, "seek", cancelRecovery = true)
         session.seekTo(positionMs)
-        publishSessionState(sessionId)
+        val snapshot = publishSessionState(sessionId)
         statePersistence.schedulePersist()
-        return okResult(session.snapshot())
+        return okResult(snapshot)
     }
 
     internal fun restoreSessionsForTimer(sessionIds: List<String>, complete: (Result<Boolean>) -> Unit) {
@@ -965,9 +965,9 @@ class NativePlaybackService : MediaSessionService() {
     fun setVolume(sessionId: String, volume: Float): Map<String, Any?> {
         val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.applyVolume(volume)
-        publishSessionState(sessionId)
+        val snapshot = publishSessionState(sessionId)
         statePersistence.schedulePersist()
-        return okResult(session.snapshot())
+        return okResult(snapshot)
     }
 
     fun setFadeMultiplier(sessionId: String, multiplier: Float): Map<String, Any?> {
@@ -999,16 +999,15 @@ class NativePlaybackService : MediaSessionService() {
     fun setSpeed(sessionId: String, speed: Float): Map<String, Any?> {
         val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.applySpeed(speed)
-        publishSessionState(sessionId)
+        val snapshot = publishSessionState(sessionId)
         statePersistence.schedulePersist()
-        return okResult(session.snapshot())
+        return okResult(snapshot)
     }
 
     fun setTemporarySpeed(sessionId: String, speed: Float?): Map<String, Any?> {
         val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.applyTemporarySpeed(speed)
-        publishSessionState(sessionId)
-        return okResult(session.snapshot())
+        return okResult(publishSessionState(sessionId))
     }
 
     fun clearTemporarySpeeds() {
@@ -1020,15 +1019,11 @@ class NativePlaybackService : MediaSessionService() {
 
     internal fun setAudioEffects(sessionId: String, effects: NativeAudioEffects): Map<String, Any?> {
         val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
-        val previousChannelSwap = session.channelSwapEnabled
         session.applyAudioEffects(effects)
-        if (session.hasPlayer() && previousChannelSwap != session.channelSwapEnabled) {
-            session.reprepareCurrentMediaItem()
-        }
-        publishSessionState(sessionId)
+        val snapshot = publishSessionState(sessionId)
         statePersistence.schedulePersist()
         syncForegroundState()
-        return okResult(session.snapshot())
+        return okResult(snapshot)
     }
 
     internal fun setRepeatOne(args: NativeRepeatOneArguments): Map<String, Any?> {
@@ -1514,7 +1509,6 @@ class NativePlaybackService : MediaSessionService() {
     private fun playbackLogState(session: NativePlaybackSession? = null): String {
         return sessionManager.playbackLogState(session) +
             "foregroundStarted=${foregroundCoordinator.isStarted} " +
-            "notificationPosted=${isPlaybackNotificationPosted()} " +
             "wakeLockHeld=${playbackWakeLock.isHeld()} " +
             "wifiLockHeld=${playbackWakeLock.isWifiLockHeld()} " +
             "audioFocusHeld=${audioFocusController.isHeld} " +

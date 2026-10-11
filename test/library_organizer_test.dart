@@ -3,6 +3,7 @@ import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/library_state_models.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
@@ -25,6 +26,66 @@ void main() {
       isSingle: isSingle,
       duration: duration,
     );
+  }
+
+  for (final root in <String>[
+    '/library',
+    r'C:\音声 Library',
+    'content://com.android.externalstorage.documents/tree/primary%3ALibrary',
+  ]) {
+    test('buildLibraryEntries reuses shared ancestors for $root', () {
+      final isContent = PathMatcher.isContentUri(root);
+      String folder(String relative) => PathMatcher.normalize(
+        isContent ? '$root::$relative' : '$root/$relative',
+      );
+      final parent = folder('Work');
+      final disc = folder('Work/Disc');
+      final nested = folder('Work/Disc/Nested');
+      final sibling = folder('Work/Other');
+      final excludedTrack = folder('Work/Other/only.mp3');
+      final matcher = _CountingExclusionMatcher(
+        libraryPath: root,
+        excludedFolderPaths: [disc],
+        excludedTrackPaths: [excludedTrack],
+      );
+      final tracks = <MusicTrack>[
+        for (var index = 0; index < 20; index++)
+          track(folder('Work/Disc/Nested/$index.mp3'), groupKey: nested),
+        track(excludedTrack, groupKey: sibling),
+      ];
+
+      final entries = organizer.buildLibraryEntries(
+        root,
+        tracks,
+        folderPaths: [nested, disc, sibling, nested],
+        exclusionMatcher: matcher,
+      );
+      final folders = {
+        for (final entry in entries.where((entry) => entry.isFolder))
+          entry.path: entry,
+      };
+
+      expect(folders.keys, unorderedEquals([parent, disc, nested, sibling]));
+      expect(folders[parent]!.parentPath, PathMatcher.normalize(root));
+      expect(folders[disc]!.parentPath, parent);
+      expect(folders[nested]!.parentPath, disc);
+      expect(folders[sibling]!.parentPath, parent);
+      expect(folders[nested]!.displayName, 'Nested');
+      expect(folders[parent]!.isActive, isTrue);
+      expect(folders[sibling]!.isActive, isTrue);
+      expect(folders[disc]!.isExcluded, isTrue);
+      expect(folders[nested]!.isExcluded, isTrue);
+      expect(entries.where((entry) => entry.isTrack), hasLength(21));
+      expect(
+        entries
+            .where((entry) => entry.isTrack)
+            .every((entry) => entry.isExcluded),
+        isTrue,
+      );
+      for (final folderPath in folders.keys) {
+        expect(matcher.visits[folderPath], 1);
+      }
+    });
   }
 
   test(
@@ -327,4 +388,20 @@ void main() {
     // ignore: avoid_print
     print('library_organizer_10k_ms=${stopwatch.elapsedMilliseconds}');
   });
+}
+
+class _CountingExclusionMatcher extends LibraryExclusionMatcher {
+  _CountingExclusionMatcher({
+    required super.libraryPath,
+    super.excludedTrackPaths,
+    super.excludedFolderPaths,
+  });
+
+  final visits = <String, int>{};
+
+  @override
+  bool isExcluded(String entityPath) {
+    visits.update(entityPath, (value) => value + 1, ifAbsent: () => 1);
+    return super.isExcluded(entityPath);
+  }
 }

@@ -193,15 +193,6 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
         .map((track) => track.path)
         .where(PathMatcher.isContentUri),
   };
-  List<String> get sortedLibraryTrackPaths =>
-      UnmodifiableListView<String>(_service.sortedLibraryTrackPaths);
-  Map<String, List<MusicTrack>> get tracksByGroup =>
-      UnmodifiableMapView<String, List<MusicTrack>>(
-        _service.tracksByGroup.map(
-          (key, value) =>
-              MapEntry(key, UnmodifiableListView<MusicTrack>(value)),
-        ),
-      );
   @override
   List<String> get watchedFolders =>
       UnmodifiableListView<String>(_service.watchedFolders);
@@ -243,7 +234,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
 
     beginLibraryBatch();
     _service.libraryBatchChanged = _service.library.isNotEmpty;
-    await endLibraryBatch(notify: false);
+    await endLibraryBatch();
     _service.syncGroupOrderFromLibrary();
     // Startup caches shallow cards; nested trees stay lazy until requested.
     _syncStateSlice(isInitialized: true);
@@ -270,8 +261,6 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       ..libraryByPath.clear()
       ..libraryIndexByPath.clear()
       ..tracksByGroup.clear()
-      ..sortedLibraryTracks = const <MusicTrack>[]
-      ..sortedLibraryTrackPaths = const <String>[]
       ..groupOrder.clear()
       ..groupOrderSet.clear()
       ..watchedFolders.clear()
@@ -666,21 +655,16 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       _catalogWrites.recordEntriesForTracks(tracks, persist: persist);
 
   @override
-  void addTracks(
-    List<MusicTrack> tracks, {
-    bool notify = true,
-    bool persist = true,
-  }) => _catalogWrites.addTracks(tracks, notify: notify, persist: persist);
+  void addTracks(List<MusicTrack> tracks, {bool persist = true}) =>
+      _catalogWrites.addTracks(tracks, persist: persist);
 
   @override
   void addOrReplaceTracks(
     List<MusicTrack> tracks, {
-    bool notify = true,
     bool persist = true,
     bool mergeExistingState = true,
   }) => _catalogWrites.addOrReplaceTracks(
     tracks,
-    notify: notify,
     persist: persist,
     mergeExistingState: mergeExistingState,
   );
@@ -813,8 +797,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       _catalogWrites.finishStagedLibraryRefresh(commit: commit);
 
   @override
-  Future<void> endLibraryBatch({bool notify = true}) =>
-      _catalogWrites.endLibraryBatch(notify: notify);
+  Future<void> endLibraryBatch() => _catalogWrites.endLibraryBatch();
 
   @override
   int tryBeginScan({required String source, bool background = false}) {

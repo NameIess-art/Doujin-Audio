@@ -37,6 +37,7 @@ class DesktopIntegration {
   bool fullscreen_ = false;
   bool screen_on_ = false;
   bool playback_active_ = false;
+  EXECUTION_STATE power_flags_ = 0;
   int initial_show_command_ = SW_SHOWNORMAL;
   WINDOWPLACEMENT placement_{sizeof(WINDOWPLACEMENT)};
   std::vector<std::string> pending_;

@@ -212,7 +212,7 @@ void main() {
         groupSubtitle: '',
         isSingle: false,
       );
-      fixture.runtimeGraph.library.addTracks([track], notify: false, persist: false);
+      fixture.runtimeGraph.library.addTracks([track], persist: false);
 
       final session = fixture.runtimeGraph.playback.createTrackSession(
         track,
@@ -310,7 +310,6 @@ void main() {
             );
             fixture.runtimeGraph.library.addTracks(
               [track],
-              notify: false,
               persist: false,
             );
             final session = isQueue

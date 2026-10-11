@@ -263,7 +263,6 @@ void main() {
           isSingle: false,
         ),
       ),
-      notify: false,
       persist: false,
     );
     final countedLibrary = _ElementReadCountingList<MusicTrack>(
@@ -318,7 +317,7 @@ void main() {
       groupSubtitle: r'C:\Audio\Library',
       isSingle: false,
     );
-    library.addTracks(<MusicTrack>[localTrack], notify: false, persist: false);
+    library.addTracks(<MusicTrack>[localTrack], persist: false);
     final playback = PlaybackFacade.create(
       databaseRepository:
           library.databaseRepository as PlaybackPersistenceRepository,
@@ -365,6 +364,63 @@ void main() {
     playback.forgetNativeSessionRetainedContentUris('native-only-session');
     expect(playback.persistedContentUris, isEmpty);
   });
+
+  test(
+    'native retained URI revisions only change with owned references',
+    () async {
+      final library = _createLibraryFacade();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+      );
+      addTearDown(playback.dispose);
+      addTearDown(library.dispose);
+      final revisions = <int>[];
+      final subscription = playback.persistedUriReferenceRevisions.listen(
+        revisions.add,
+      );
+      addTearDown(subscription.cancel);
+      final initialRevision = playback.persistedUriReferenceRevision;
+
+      playback.updateNativeSessionRetainedContentUris(
+        'local-session',
+        const [],
+      );
+      playback.updateNativeSessionRetainedContentUris('local-session', const [
+        'https://example.com/audio.mp3',
+        '/music/local.mp3',
+      ]);
+      await Future<void>.delayed(Duration.zero);
+      expect(playback.persistedUriReferenceRevision, initialRevision);
+      expect(revisions, isEmpty);
+
+      const retained = 'content://provider/document/native-audio';
+      playback.updateNativeSessionRetainedContentUris('native-session', const [
+        retained,
+      ]);
+      await Future<void>.delayed(Duration.zero);
+      expect(revisions, hasLength(1));
+      expect(playback.persistedContentUris, {retained});
+      playback.updateNativeSessionRetainedContentUris('native-session', const [
+        retained,
+        retained,
+      ]);
+      await Future<void>.delayed(Duration.zero);
+      expect(revisions, hasLength(1));
+
+      playback.updateNativeSessionRetainedContentUris(
+        'native-session',
+        const [],
+      );
+      playback.updateNativeSessionRetainedContentUris(
+        'native-session',
+        const [],
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(revisions, hasLength(2));
+      expect(playback.persistedContentUris, isEmpty);
+    },
+  );
 
   test('saved ASMR download folder retains its SAF grant', () async {
     const destinationA =

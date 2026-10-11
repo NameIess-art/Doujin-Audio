@@ -97,7 +97,6 @@ class UiInteractionCoordinator extends ChangeNotifier {
     required String key,
     required int generation,
     required int priority,
-    String? group,
     required Future<void> Function() task,
   }) {
     if (generation != _generation) return false;
@@ -106,7 +105,6 @@ class UiInteractionCoordinator extends ChangeNotifier {
       key: key,
       priority: priority,
       generation: generation,
-      group: group,
       task: task,
     );
   }

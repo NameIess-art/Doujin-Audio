@@ -52,7 +52,7 @@ void main() {
         groupTitle: 'Second',
       ),
     ];
-    fixture.library.addTracks(tracks, notify: false, persist: false);
+    fixture.library.addTracks(tracks, persist: false);
     final sessions = [
       for (final track in tracks) fixture.playback.createTrackSession(track),
     ];

@@ -40,6 +40,11 @@ class LibraryOrganizer {
           )) {
         return;
       }
+      if (entriesByKey.containsKey(
+        '${LibraryEntryKind.folder.dbValue}:$normalizedFolderPath',
+      )) {
+        return;
+      }
       final parentPath = parentLibraryFolderPath(
         normalizedFolderPath,
         normalizedLibraryPath,

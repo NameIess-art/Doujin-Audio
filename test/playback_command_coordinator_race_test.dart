@@ -1179,7 +1179,6 @@ void main() {
 
         runtimeGraph.library.addTracks(
           <MusicTrack>[first, second],
-          notify: false,
           persist: false,
         );
         await runtimeGraph.playback.spawnSessionWithQueue(<MusicTrack>[
@@ -1266,7 +1265,6 @@ void main() {
           });
       runtimeGraph.library.addTracks(
         <MusicTrack>[first, second],
-        notify: false,
         persist: false,
       );
       await runtimeGraph.playback.spawnSession(first, autoPlay: false);
@@ -1361,7 +1359,6 @@ void main() {
             });
         runtimeGraph.library.addTracks(
           <MusicTrack>[first, second],
-          notify: false,
           persist: false,
         );
         await runtimeGraph.playback.spawnSession(first, autoPlay: false);
@@ -1482,7 +1479,6 @@ void main() {
             });
         runtimeGraph.library.addTracks(
           <MusicTrack>[track],
-          notify: false,
           persist: false,
         );
         await runtimeGraph.playback.spawnSession(track, autoPlay: false);

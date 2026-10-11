@@ -2806,6 +2806,55 @@ void main() {
     ]);
   });
 
+  testWidgets(
+    'library keeps its skeleton and postpones sorting until restoration finishes',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      fixture.library.addTracks(
+        [
+          testMusicTrack(
+            name: 'Restored library track',
+            path: '/restored-library.mp3',
+            groupKey: '/restored-library.mp3',
+            groupTitle: '',
+            isSingle: true,
+          ),
+        ],
+        persist: false,
+      );
+      var sorts = 0;
+      await tester.pumpWidget(
+        fixture.build(
+          const LibraryTab(),
+          overrides: [
+            librarySortedTreeUiProvider.overrideWith((ref) {
+              sorts++;
+              return fixture.library.libraryCards;
+            }),
+          ],
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(LibraryLoadingSkeleton), findsOneWidget);
+      expect(find.byType(LibraryTreeList), findsNothing);
+      expect(sorts, 0);
+
+      await tester.runAsync(fixture.library.ensureCardSnapshot);
+      fixture.library.syncPresentationState(isInitialized: true);
+      await pumpUntilFound(tester, find.byType(LibraryTreeList));
+      await tester.pumpAndSettle();
+      expect(sorts, 1);
+      expect(find.byType(LibraryLoadingSkeleton), findsNothing);
+      expect(find.text('Restored library track'), findsWidgets);
+      await finishLibraryTest(tester, fixture);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('library search filters asynchronously and clears to content', (
     WidgetTester tester,
   ) async {

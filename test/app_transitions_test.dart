@@ -110,6 +110,66 @@ class _ListenerCountingController extends AnimationController {
 void main() {
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+  for (final reduced in [false, true]) {
+    testWidgets(
+      'deferred content waits for data and lays out behind its skeleton, reduced=$reduced',
+      (tester) async {
+        var ready = false;
+        var builds = 0;
+        double? firstLayoutOpacity;
+        late StateSetter update;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: MediaQueryData(disableAnimations: reduced),
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  update = setState;
+                  return AppPageContentTransition.deferred(
+                    isReady: ready,
+                    placeholder: const Text('skeleton'),
+                    builder: (_) {
+                      builds++;
+                      return LayoutBuilder(
+                        builder: (context, constraints) {
+                          firstLayoutOpacity ??= context
+                              .findAncestorWidgetOfExactType<FadeTransition>()!
+                              .opacity
+                              .value;
+                          return const _StateProbe(label: 'loaded');
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(find.text('skeleton'), findsOneWidget);
+        expect(builds, 0);
+        update(() => ready = true);
+        await tester.pumpAndSettle();
+        expect(firstLayoutOpacity, 0);
+        expect(find.text('loaded'), findsOneWidget);
+        expect(find.text('skeleton'), findsNothing);
+        final state = tester.state(find.byType(_StateProbe));
+
+        update(() => ready = false);
+        await tester.pumpAndSettle();
+        update(() => ready = true);
+        await tester.pumpAndSettle();
+        expect(tester.state(find.byType(_StateProbe)), same(state));
+        expect(find.text('skeleton'), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
   testWidgets(
     'deferred route paints a static shell before mounting its content',
     (tester) async {
@@ -222,6 +282,52 @@ void main() {
       TargetPlatform.windows,
     }),
   );
+
+  for (final dispose in [false, true]) {
+    testWidgets(
+      'deferred fade releases visual protection when leaving, dispose=$dispose',
+      (tester) async {
+        final active = ValueNotifier(true);
+        addTearDown(active.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ValueListenableBuilder<bool>(
+              valueListenable: active,
+              builder: (_, enabled, _) => Offstage(
+                offstage: !enabled,
+                child: TickerMode(
+                  enabled: enabled,
+                  child: AppPageContentTransition.deferred(
+                    placeholder: const Text('skeleton'),
+                    builder: (_) => const Text('loaded'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        final coordinator = UiInteractionCoordinator.instance;
+        expect(coordinator.isVisualUpdateDeferred, isTrue);
+        if (dispose) {
+          await tester.pumpWidget(const SizedBox.shrink());
+        } else {
+          active.value = false;
+          await tester.pump();
+        }
+        expect(coordinator.isVisualUpdateDeferred, isFalse);
+        expect(coordinator.isInteracting, isFalse);
+        if (!dispose) {
+          active.value = true;
+          await tester.pumpAndSettle();
+          expect(find.text('loaded'), findsOneWidget);
+          expect(find.text('skeleton'), findsNothing);
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('deferred content cancels pending work on disposal', (
     tester,

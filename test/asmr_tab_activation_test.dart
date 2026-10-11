@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -23,17 +24,18 @@ class _ActivationController extends AsmrLibraryController {
       );
 
   bool fail = false;
+  bool hasCachedWork = false;
   bool _initialized = false;
   int attempts = 0;
   int categoryLoads = 0;
   Completer<void>? barrier;
 
   @override
-  bool get initialized => _initialized;
+  bool get initialized => _initialized || hasCachedWork;
 
   @override
   AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
-    initialized: _initialized,
+    initialized: initialized,
     visibleCategories: kDefaultVisibleAsmrCategories,
     contentLanguage: AsmrContentLanguage.zh,
     contentLanguagePreference: ContentLanguagePreference.followPage,
@@ -73,15 +75,19 @@ class _ActivationController extends AsmrLibraryController {
     bool searchSession = false,
   }) => AsmrCategoryViewState(
     category: category,
-    works: const [],
+    works: hasCachedWork
+        ? [
+            AsmrWork.fromJson(const {'id': 1, 'title': 'Cached work'}),
+          ]
+        : const [],
     isLoading: false,
     isLoadingMore: false,
     isRefreshing: false,
     isStale: false,
-    hasAttemptedLoad: categoryLoads != 0,
+    hasAttemptedLoad: hasCachedWork || categoryLoads != 0,
     hasMore: false,
     needsLoadMoreRetry: false,
-    totalCount: 0,
+    totalCount: hasCachedWork ? 1 : 0,
     activeQuery: searchQuery,
     lastError: null,
     operationError: null,
@@ -120,6 +126,78 @@ void main() {
     TargetPlatform.android,
     TargetPlatform.windows,
   });
+
+  testWidgets('cached works wait for visible page activation', (tester) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    final barrier = Completer<void>();
+    final controller = _ActivationController(createTestAsmrServices())
+      ..hasCachedWork = true
+      ..barrier = barrier;
+    addTearDown(fixture.dispose);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        const AsmrTab(),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await _pumpFrames(tester);
+    expect(controller.initialized, isTrue);
+    expect(controller.attempts, 1);
+    expect(controller.categoryLoads, 0);
+    expect(find.byType(LibrarySkeletonListView), findsOneWidget);
+    expect(find.text('Cached work', skipOffstage: false), findsNothing);
+
+    barrier.complete();
+    await _pumpFrames(tester);
+    expect(controller.categoryLoads, 1);
+    expect(find.text('Cached work'), findsOneWidget);
+    expect(find.byType(LibrarySkeletonListView), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: platforms);
+
+  testWidgets('cached works stay hidden while retrying activation', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    final controller = _ActivationController(createTestAsmrServices())
+      ..hasCachedWork = true
+      ..fail = true;
+    addTearDown(fixture.dispose);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        const AsmrTab(),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await _pumpFrames(tester);
+    expect(find.byType(OperationStatusBanner), findsOneWidget);
+    expect(find.text('Cached work', skipOffstage: false), findsNothing);
+
+    final barrier = Completer<void>();
+    controller
+      ..fail = false
+      ..barrier = barrier;
+    await tester.tap(find.byTooltip(fixture.languageProvider.tr('retry')));
+    await _pumpFrames(tester);
+    expect(controller.attempts, 2);
+    expect(find.byType(OperationStatusBanner), findsNothing);
+    expect(find.byType(LibrarySkeletonListView), findsOneWidget);
+    expect(find.text('Cached work', skipOffstage: false), findsNothing);
+
+    barrier.complete();
+    await _pumpFrames(tester);
+    expect(find.text('Cached work'), findsOneWidget);
+    expect(find.byType(LibrarySkeletonListView), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: platforms);
 
   testWidgets('initialization failure waits for an explicit retry', (
     tester,

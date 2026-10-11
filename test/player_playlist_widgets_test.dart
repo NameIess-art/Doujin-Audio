@@ -2727,6 +2727,50 @@ void main() {
     },
   );
 
+  testWidgets(
+    'playlist keeps its skeleton until session restoration confirms an empty list',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      var sorts = 0;
+      await tester.pumpWidget(
+        fixture.build(
+          const PlaylistTab(),
+          overrides: [
+            playlistSortedEntriesUiProvider.overrideWith((ref) {
+              sorts++;
+              return [];
+            }),
+          ],
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(
+        find.byKey(const ValueKey('playlist_initial_placeholder')),
+        findsOneWidget,
+      );
+      expect(find.byType(SessionsEmptyState), findsNothing);
+      expect(sorts, 0);
+
+      fixture.playbackService.syncSlice(
+        activeSessions: const <PlaybackSession>[],
+        playingSessionCount: 0,
+        focusedSessionId: null,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionsEmptyState), findsOneWidget);
+      expect(find.byType(PlaylistLoadingSkeleton), findsNothing);
+      expect(sorts, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('playlist first open fades its card skeleton out over 180ms', (
     WidgetTester tester,
   ) async {
@@ -2835,6 +2879,8 @@ void main() {
     expect(find.byKey(placeholderKey), findsOneWidget);
     expect(find.byKey(contentKey), findsOneWidget);
 
+    // Start the fade clock after the loaded list's first layout frame.
+    await tester.pump();
     await tester.pump(
       kAppMotionFast - const Duration(milliseconds: 1),
     );

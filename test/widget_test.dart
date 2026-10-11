@@ -2189,7 +2189,22 @@ void main() {
       );
       expect(loadingList.physics, isA<NeverScrollableScrollPhysics>());
 
-      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(controller.collectedRefreshCount, 0);
+      expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
+      final openingPlaceholder = find.byKey(
+        const ValueKey<String>('deferred_placeholder'),
+      );
+      for (
+        var frame = 0;
+        frame < 12 && openingPlaceholder.evaluate().isNotEmpty;
+        frame++
+      ) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(openingPlaceholder, findsNothing);
+      await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+      await tester.pump();
       expect(controller.collectedRefreshCount, 1);
       expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
 
@@ -2564,6 +2579,21 @@ void main() {
         initialization.complete();
         await tester.pump();
         await tester.pump();
+        final categoryStack = find.byKey(
+          const ValueKey<String>('asmr_category_stack'),
+        );
+        // Activation now keeps the real category tree unmounted behind the
+        // skeleton until its preferences are ready. Wait only for that first
+        // layout frame, without advancing the opening animation's clock.
+        for (
+          var frame = 0;
+          frame < 4 && categoryStack.evaluate().isEmpty;
+          frame++
+        ) {
+          expect(controller.categoryLoadRequests, isEmpty);
+          await tester.pump();
+        }
+        expect(categoryStack, findsOneWidget);
         final interaction = UiInteractionCoordinator.instance;
         expect(controller.categoryLoadRequests, isEmpty);
         expect(interaction.isInteracting, isTrue);
@@ -2603,6 +2633,8 @@ void main() {
               ],
             ),
           );
+          await tester.pumpAndSettle();
+          await tester.pump(interaction.idleDelay);
           await tester.pumpAndSettle();
           expect(controller.categoryLoadRequests, [AsmrCategoryType.collected]);
           activePageIndex.value = 1;

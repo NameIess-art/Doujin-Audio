@@ -72,6 +72,9 @@ void main() {
           ),
         );
         await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
         fixture.playback.detachCommandPort();
         fixture.playback.attachPlaybackCommands(
           prepareSession:
@@ -159,6 +162,9 @@ void main() {
           ),
         );
         await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
 
         final contentFinder = find.byType(LibraryLikeMetadataWorkCardContent);
         final contentRect = tester.getRect(contentFinder.first);
@@ -475,6 +481,8 @@ void main() {
           ),
         );
         await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
         await tester.pumpAndSettle();
         final load = Completer<void>();
         controller
@@ -938,6 +946,8 @@ void main() {
           ),
         );
         await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
         await tester.pumpAndSettle();
         controller.workCount = 2;
         controller.publish('Published work');

@@ -121,19 +121,24 @@ class AppPageContentTransition extends StatelessWidget {
     required this.child,
     this.backgroundColor,
   }) : _builder = null,
-       _placeholder = null;
+       _placeholder = null,
+       isReady = true;
 
   const AppPageContentTransition.deferred({
     super.key,
     required WidgetBuilder builder,
     required Widget placeholder,
     this.backgroundColor,
+    this.isReady = true,
   }) : child = const SizedBox.shrink(),
        _builder = builder,
        _placeholder = placeholder;
 
   final Widget child;
   final Color? backgroundColor;
+
+  /// Gates the first content mount; later visits retain the loaded subtree.
+  final bool isReady;
   final WidgetBuilder? _builder;
   final Widget? _placeholder;
 
@@ -143,7 +148,11 @@ class AppPageContentTransition extends StatelessWidget {
         .dependOnInheritedWidgetOfExactType<_AppPageMotionScope>();
     final body = _builder == null
         ? child
-        : _DeferredPageContent(builder: _builder, placeholder: _placeholder!);
+        : _DeferredPageContent(
+            builder: _builder,
+            placeholder: _placeholder!,
+            isReady: isReady,
+          );
     final content = backgroundColor == null
         ? body
         : ColoredBox(color: backgroundColor!, child: body);
@@ -156,10 +165,12 @@ class _DeferredPageContent extends StatefulWidget {
   const _DeferredPageContent({
     required this.builder,
     required this.placeholder,
+    required this.isReady,
   });
 
   final WidgetBuilder builder;
   final Widget placeholder;
+  final bool isReady;
 
   @override
   State<_DeferredPageContent> createState() => _DeferredPageContentState();
@@ -173,6 +184,8 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
   bool _firstFrameBuilt = false;
   bool _active = false;
   bool _ready = false;
+  bool _contentLaidOut = false;
+  bool _revealScheduled = false;
   bool _commitScheduled = false;
   late final AnimationController _fade;
 
@@ -192,8 +205,16 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_ready && MediaQuery.disableAnimationsOf(context)) _fade.value = 1;
-    if (_ready) return;
+    if (_contentLaidOut && MediaQuery.disableAnimationsOf(context)) {
+      _fade.value = 1;
+    }
+    if (_ready) {
+      if (!TickerMode.valuesOf(context).enabled ||
+          ModalRoute.isCurrentOf(context) == false) {
+        _coordinator.cancelInteraction(_fade);
+      }
+      return;
+    }
     final route = ModalRoute.of(context);
     _active =
         TickerMode.valuesOf(context).enabled &&
@@ -209,14 +230,23 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
 
   void _handleRouteStatus(AnimationStatus _) => _scheduleContent();
 
+  @override
+  void didUpdateWidget(_DeferredPageContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isReady != widget.isReady) _scheduleContent();
+  }
+
   void _handleFadeStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed && mounted) setState(() {});
+    if (status != AnimationStatus.completed) return;
+    _coordinator.endInteraction(_fade);
+    if (mounted) setState(() {});
   }
 
   @override
   void deactivate() {
     _active = false;
     _coordinator.cancelCommit(_commitKey);
+    _coordinator.cancelInteraction(_fade);
     _commitScheduled = false;
     _coordinator.removeListener(_scheduleContent);
     _routeAnimation?.removeStatusListener(_handleRouteStatus);
@@ -238,6 +268,7 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
 
   void _scheduleContent() {
     if (!_firstFrameBuilt ||
+        !widget.isReady ||
         !_active ||
         !_routeReady ||
         _ready ||
@@ -251,6 +282,7 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
       commit: () {
         _commitScheduled = false;
         if (!mounted ||
+            !widget.isReady ||
             !_active ||
             !_routeReady ||
             _coordinator.isVisualUpdateDeferred) {
@@ -259,10 +291,8 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
         // Preparing only the shell lets entrance motion start without laying
         // out cached lists. Later visits keep the mounted content and its state.
         setState(() => _ready = true);
-        if (MediaQuery.disableAnimationsOf(context)) {
-          _fade.value = 1;
-        } else {
-          _fade.forward();
+        if (!MediaQuery.disableAnimationsOf(context)) {
+          _coordinator.beginInteraction(_fade, deferVisualUpdates: true);
         }
         _coordinator.removeListener(_scheduleContent);
         _routeAnimation?.removeStatusListener(_handleRouteStatus);
@@ -270,9 +300,26 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
     );
   }
 
+  void _revealAfterLayout() {
+    if (!_ready || _revealScheduled) return;
+    _revealScheduled = true;
+    // The first list build/layout runs behind the static skeleton, before any
+    // fade tick. This also applies when animations are disabled.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _contentLaidOut = true;
+      if (MediaQuery.disableAnimationsOf(context)) {
+        setState(() => _fade.value = 1);
+      } else {
+        _fade.forward();
+      }
+    });
+  }
+
   @override
   void dispose() {
     _coordinator.cancelCommit(_commitKey);
+    _coordinator.cancelInteraction(_fade);
     _coordinator.removeListener(_scheduleContent);
     _routeAnimation?.removeStatusListener(_handleRouteStatus);
     _fade.dispose();
@@ -280,21 +327,27 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
   }
 
   @override
-  Widget build(BuildContext context) => Stack(
-    fit: StackFit.expand,
-    children: [
-      if (!_ready || !_fade.isCompleted)
-        IgnorePointer(
-          key: const ValueKey('deferred_placeholder'),
-          child: TickerMode(enabled: false, child: widget.placeholder),
+  Widget build(BuildContext context) {
+    _revealAfterLayout();
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (!_ready || !_fade.isCompleted)
+          IgnorePointer(
+            key: const ValueKey('deferred_placeholder'),
+            child: TickerMode(enabled: false, child: widget.placeholder),
+          ),
+        FadeTransition(
+          key: const ValueKey('deferred_content'),
+          opacity: _fade,
+          child: IgnorePointer(
+            ignoring: !_fade.isCompleted,
+            child: _ready ? widget.builder(context) : const SizedBox.shrink(),
+          ),
         ),
-      FadeTransition(
-        key: const ValueKey('deferred_content'),
-        opacity: _fade,
-        child: _ready ? widget.builder(context) : const SizedBox.shrink(),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 }
 
 class AppPageHeaderTransition extends StatelessWidget {

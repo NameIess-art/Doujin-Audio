@@ -360,6 +360,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     );
     final topPadding = effectiveHeaderHeight + 4.0;
     final bottomPadding = listBottomInset + 16.0;
+    final sessionsInitialized = ref.watch(
+      playbackCatalogProvider.select((s) => s.value?.isInitialized),
+    ) ?? ref.read(playbackFacadeProvider).catalogState.isInitialized;
 
     final page = ScrollActivityGate(
       child: PageHeaderInset(
@@ -368,6 +371,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           clipBehavior: Clip.none,
           children: [
             AppPageContentTransition.deferred(
+              isReady: sessionsInitialized,
               placeholder: PlaylistLoadingSkeleton(
                 key: const ValueKey('playlist_initial_placeholder'),
                 topPadding: topPadding,

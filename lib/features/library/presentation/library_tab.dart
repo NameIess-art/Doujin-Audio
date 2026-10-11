@@ -115,7 +115,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Timer? _startupRefreshIdleTimer;
   bool _startupRefreshStarted = false;
   bool _startupRefreshWaiting = false;
-  bool _initialLibraryContentReady = false;
   bool _isSelectionMode = false;
   final Set<String> _selectedLibraryPaths = <String>{};
 
@@ -640,9 +639,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final libraryHeaderAudioCount = ref.watch(
       libraryHeaderUiProvider.select((s) => s.audioCount),
     );
-    final libraryHeaderHasWatchedSources = ref.watch(
-      libraryHeaderUiProvider.select((s) => s.hasWatchedSources),
-    );
     final listStateStructureRevision = ref.watch(
       libraryListUiProvider.select((s) => s.structureRevision),
     );
@@ -654,9 +650,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
     final listStateIsInitialized = ref.watch(
       libraryListUiProvider.select((s) => s.isInitialized),
-    );
-    final listStateHasLibrary = ref.watch(
-      libraryListUiProvider.select((s) => s.hasLibrary),
     );
     final listStateCanPullRefresh = ref.watch(
       libraryListUiProvider.select((s) => s.canPullRefresh),
@@ -707,27 +700,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     // Reduced cacheExtent to significantly lower memory footprint and improve
     // scroll/swipe performance.
     const listCacheExtent = 320.0;
-    final hasLibrary = listStateHasLibrary || libraryHeaderAudioCount > 0;
-    if (!_initialLibraryContentReady &&
-        listStateIsInitialized &&
-        listStateStructureRevision == libraryFacade.structureRevision) {
-      _initialLibraryContentReady = true;
-    }
-    final showLibrarySkeleton =
-        (libraryHeaderHasWatchedSources || hasLibrary) &&
-        !_initialLibraryContentReady;
     final canPullRefresh = listStateCanPullRefresh;
 
     Widget emptyListBody() {
       final relativeTop = listTopPadding;
       final relativeBottom = listBottomPadding;
 
-      if (showLibrarySkeleton) {
-        return LibraryLoadingSkeleton(
-          bottomInset: relativeBottom,
-          topInset: relativeTop,
-        );
-      }
       return LibraryEmptyState(
         onImportLibrary: _addLibrary,
         onImportFolder: _addFolder,
@@ -771,6 +749,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           clipBehavior: Clip.none,
           children: [
             AppPageContentTransition.deferred(
+              isReady:
+                  listStateIsInitialized &&
+                  listStateStructureRevision == libraryFacade.structureRevision,
               placeholder: LibraryLoadingSkeleton(
                 bottomInset: listBottomPadding,
                 topInset: listTopPadding,
@@ -782,8 +763,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                   }
                   final tree = ref.watch(librarySortedTreeUiProvider);
                   return PlaceholderContentTransition(
-                    showPlaceholder:
-                        !listStateIsInitialized || showLibrarySkeleton,
+                    showPlaceholder: !listStateIsInitialized,
                     placeholder: LibraryLoadingSkeleton(
                       bottomInset: listBottomPadding,
                       topInset: listTopPadding,

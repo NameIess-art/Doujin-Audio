@@ -816,7 +816,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                 ),
               );
               Navigator.of(ctx).pop();
-              await route.completed;
               if (!mounted) return;
               final current = _playback.sessionSnapshotById(session.id);
               if (current == null ||
@@ -839,6 +838,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                   selectedNode.track.path,
                 );
               }
+              // Prepare playback while the sheet exits; show feedback only
+              // after its overlay has been removed.
+              await route.completed;
               if (mounted) {
                 showAppSnackBar(
                   this.context,

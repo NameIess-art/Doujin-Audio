@@ -148,7 +148,6 @@ class _LibrarySearchAllResultsState
                 structureRevision ||
             libraryFacade.snapshotCacheService.cardSnapshotRevision ==
                 structureRevision)) {
-      widget.onTreeChanged(_visibleSearchResult?.tree ?? const []);
       return;
     }
 
@@ -185,7 +184,6 @@ class _LibrarySearchAllResultsState
         _visibleSearchDetailRevision = categoryRevision;
         _expandedSearchFolderPaths.clear();
         _visibleSearchItemsVersion++;
-        widget.onTreeChanged(currentTree);
         return;
       }
 
@@ -203,7 +201,6 @@ class _LibrarySearchAllResultsState
                   commit: () {
                     if (!isCurrentRequest()) return;
                     setState(() {
-                      widget.onTreeChanged(tree);
                       _visibleSearchResult = FilteredLibraryTreeResult(
                         tree: tree,
                         matchCount: libraryTreeTrackCount(tree),
@@ -267,7 +264,6 @@ class _LibrarySearchAllResultsState
             commit: () {
               if (!isCurrentRequest()) return;
               setState(() {
-                widget.onTreeChanged(result.tree);
                 _visibleSearchResult = result;
                 _visibleSearchQuery = query;
                 _visibleSearchRevision = structureRevision;
@@ -366,19 +362,17 @@ class _LibrarySearchAllResultsState
         detailRevision: detailRevision,
       );
     }
-    final hasCurrentResult =
-        _visibleSearchQuery == widget.query &&
-        _visibleSearchRevision == structureRevision &&
-        _visibleSearchDetailRevision == detailRevision;
     final hasCurrentError =
         _visibleSearchErrorKey ==
         '$structureRevision|$detailRevision|${widget.query}';
-    final result = !_isActive || hasCurrentResult
-        ? _visibleSearchResult
-        : hasCurrentError && _visibleSearchQuery == widget.query
-        ? _visibleSearchResult
-        : null;
+    // Keep mounted rows while the next query is filtered; the first load still
+    // uses a skeleton, and a failed new query keeps the existing error behavior.
+    final result =
+        _isActive && hasCurrentError && _visibleSearchQuery != widget.query
+        ? null
+        : _visibleSearchResult;
     final tree = result?.tree;
+    if (tree != null) widget.onTreeChanged(tree);
     final Widget content;
     if (tree == null && hasCurrentError) {
       content = AppErrorState(
@@ -393,14 +387,14 @@ class _LibrarySearchAllResultsState
     } else if (tree.isEmpty) {
       content = AppEmptyState(
         key: const ValueKey<String>('library_search_empty'),
-        icon: widget.query.isEmpty
+        icon: _visibleSearchQuery.isEmpty
             ? Icons.library_music_outlined
             : Icons.search_off_rounded,
         title: i18n.tr(
-          widget.query.isEmpty ? 'no_audio_files' : 'no_search_results',
+          _visibleSearchQuery.isEmpty ? 'no_audio_files' : 'no_search_results',
         ),
         message: i18n.tr(
-          widget.query.isEmpty
+          _visibleSearchQuery.isEmpty
               ? 'import_audio_hint'
               : 'search_try_another_term',
         ),
@@ -409,7 +403,7 @@ class _LibrarySearchAllResultsState
       final visibleItems = _flattenVisibleSearchTree(tree);
       final errorItemCount = hasCurrentError ? 1 : 0;
       content = SearchHighlightScope(
-        query: widget.query,
+        query: _visibleSearchQuery,
         child: ListView.builder(
           key: const ValueKey<String>('library_search_results_all'),
           controller: widget.scrollController,
@@ -451,7 +445,7 @@ class _LibrarySearchAllResultsState
                       ),
                   onFolderExpansionChanged: _handleSearchFolderExpansionChanged,
                   renderChildrenInline: false,
-                  searchQuery: widget.query,
+                  searchQuery: _visibleSearchQuery,
                   isSelectionMode: item.depth == 0 && widget.isSelectionMode,
                   isSelected: widget.selectedPaths.contains(
                     selectionKeyForLibraryNode(node),

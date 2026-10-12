@@ -1,10 +1,13 @@
 import 'dart:async';
 
+import 'package:doujin_audio/app/application/app_runtime_lifecycle.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_selection_tree.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
@@ -20,6 +23,112 @@ void main() {
   tearDown(interaction.resetForTest);
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'download responds immediately and checks the destination once on $platform',
+      (tester) async {
+        final manager = await _openReadyDownload(tester);
+        final button = _downloadStartButton();
+        await tester.tap(button);
+        await tester.tap(button);
+        await tester.pump();
+        expect(manager.destinationChecks, 1);
+        expect(_downloadStartProgress(), findsOneWidget);
+        expect(tester.widget<InkWell>(button).onTap, isNull);
+        await tester.tap(button);
+        await tester.pump();
+        expect(manager.destinationChecks, 1);
+        manager.destinationCheck.complete(true);
+        await tester.pumpAndSettle();
+        expect(manager.starts, 1);
+        expect(find.byType(AsmrDownloadPage), findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        interaction.resetForTest();
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    for (final outcome in [
+      'cancelled picker',
+      'failed check',
+      'failed start',
+    ]) {
+      testWidgets(
+        'download button recovers after $outcome on $platform',
+        (tester) async {
+          final manager = await _openReadyDownload(tester);
+          final button = _downloadStartButton();
+          if (outcome == 'failed start') manager.failStart = true;
+          if (outcome == 'cancelled picker') {
+            manager.destinationPicker = Completer<String?>();
+          }
+          await tester.tap(button);
+          await tester.pump();
+          expect(_downloadStartProgress(), findsOneWidget);
+          if (outcome == 'failed check') {
+            manager.destinationCheck.completeError(StateError('unavailable'));
+          } else {
+            manager.destinationCheck.complete(outcome == 'failed start');
+          }
+          if (outcome == 'cancelled picker') {
+            await tester.pump();
+            expect(manager.pickerCalls, 1);
+            expect(_downloadStartProgress(), findsOneWidget);
+            await tester.tap(button);
+            await tester.pump();
+            expect(manager.pickerCalls, 1);
+            manager.destinationPicker!.complete(null);
+          }
+          await tester.pumpAndSettle();
+          expect(tester.widget<InkWell>(button).onTap, isNotNull);
+          expect(_downloadStartProgress(), findsNothing);
+          expect(manager.pickerCalls, outcome == 'cancelled picker' ? 1 : 0);
+          expect(manager.starts, outcome == 'failed start' ? 1 : 0);
+          expect(tester.takeException(), isNull);
+          // Another attempt must acquire the guard after cancellation or failure.
+          manager.destinationCheck = Completer<bool>();
+          manager.failStart = false;
+          if (outcome == 'cancelled picker') {
+            manager.destinationPicker = Completer<String?>();
+          }
+          await tester.tap(button);
+          await tester.pump();
+          if (outcome == 'cancelled picker') {
+            expect(manager.pickerCalls, 2);
+            manager.destinationPicker!.complete(null);
+            await tester.pumpAndSettle();
+          } else {
+            expect(manager.destinationChecks, 2);
+            expect(_downloadStartProgress(), findsOneWidget);
+            manager.destinationCheck.complete(true);
+            await tester.pumpAndSettle();
+            expect(manager.starts, outcome == 'failed start' ? 2 : 1);
+          }
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+          interaction.resetForTest();
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
+    testWidgets(
+      'download preparation stops safely after disposal on $platform',
+      (tester) async {
+        final manager = await _openReadyDownload(tester);
+        await tester.tap(_downloadStartButton());
+        await tester.pump();
+        expect(manager.destinationChecks, 1);
+        await tester.pumpWidget(const SizedBox.shrink());
+        manager.destinationCheck.complete(true);
+        await tester.pumpAndSettle();
+        expect(manager.starts, 0);
+        expect(tester.takeException(), isNull);
+        interaction.resetForTest();
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     testWidgets(
       'download preparation completed while hidden survives return on $platform',
       (tester) async {
@@ -116,6 +225,125 @@ void main() {
       },
       variant: TargetPlatformVariant({platform}),
     );
+  }
+}
+
+Finder _downloadStartButton() => find.descendant(
+  of: find.byKey(const ValueKey('asmr_download_start_button')),
+  matching: find.byType(InkWell),
+);
+
+Finder _downloadStartProgress() => find.descendant(
+  of: find.byKey(const ValueKey('asmr_download_start_button')),
+  matching: find.byType(CircularProgressIndicator),
+);
+
+Future<_StartDownloadManager> _openReadyDownload(WidgetTester tester) async {
+  final fixture = AppRuntimeWidgetTestFixture(
+    configureSettingsRepository: (settings) =>
+        settings.asmrDownloadDestinationRoot = 'destination',
+  );
+  final controller = _DelayedTreeController(createTestAsmrServices());
+  final manager = _StartDownloadManager();
+  addTearDown(fixture.dispose);
+  addTearDown(controller.dispose);
+  addTearDown(manager.dispose);
+  final work = AsmrWork.fromJson(const {'id': 1, 'title': 'Download work'});
+  controller.tree.complete([
+    AsmrTrackFile(
+      hash: 'track',
+      title: 'Track.mp3',
+      type: 'audio',
+      streamUrl: null,
+      downloadUrl: 'https://example.invalid/Track.mp3',
+      lowQualityUrl: null,
+      duration: Duration.zero,
+      size: 1024,
+      children: const [],
+      workId: work.id,
+      workTitle: work.title,
+      sourceId: work.sourceId,
+      relativePath: 'Track.mp3',
+    ),
+  ]);
+  await tester.pumpWidget(
+    fixture.build(
+      Builder(
+        builder: (context) => Scaffold(
+          body: TextButton(
+            onPressed: () => Navigator.of(context).push(
+              buildAppPageRoute<void>(
+                context: context,
+                child: AsmrDownloadPage(work: work),
+              ),
+            ),
+            child: const Text('Open download'),
+          ),
+        ),
+      ),
+      navigatorObservers: [UiInteractionNavigatorObserver()],
+      overrides: [
+        asmrLibraryControllerProvider.overrideWithValue(controller),
+        asmrDownloadManagerProvider.overrideWithValue(manager),
+        audioRuntimeCoordinatorProvider.overrideWithValue(_DownloadRuntime()),
+      ],
+    ),
+  );
+  await tester.tap(find.text('Open download'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Track.mp3'));
+  await tester.pumpAndSettle();
+  manager.holdDestinationCheck = true;
+  return manager;
+}
+
+class _DownloadRuntime extends Fake implements AppRuntimeLifecycle {
+  @override
+  Future<void> start() async {}
+}
+
+class _StartDownloadManager extends AsmrDownloadManager {
+  _StartDownloadManager() : super(persistTasks: false);
+
+  bool holdDestinationCheck = false;
+  bool failStart = false;
+  Completer<bool> destinationCheck = Completer<bool>();
+  Completer<String?>? destinationPicker;
+  int destinationChecks = 0;
+  int pickerCalls = 0;
+  int starts = 0;
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  Future<bool> destinationExists(String folderPath) async {
+    if (!holdDestinationCheck) return true;
+    destinationChecks++;
+    return destinationCheck.future;
+  }
+
+  @override
+  Future<String?> pickDestinationFolder({String? dialogTitle}) async {
+    pickerCalls++;
+    return destinationPicker?.future;
+  }
+
+  @override
+  Future<void> startDownload({
+    required AsmrWork work,
+    required List<AsmrTrackFile> selectedRoots,
+    required String destinationRoot,
+    required AsmrDownloadConflictPolicy conflictPolicy,
+    bool saveMetadata = true,
+    bool saveCover = true,
+    int automaticFileRetryCount = kDefaultAsmrDownloadRetryCount,
+    Iterable<AsmrDownloadFolderNameField> folderNameFields =
+        kDefaultAsmrDownloadFolderNameFields,
+    String? customWorkFolderName,
+  }) async {
+    starts++;
+    if (failStart) throw StateError('start failed');
   }
 }
 

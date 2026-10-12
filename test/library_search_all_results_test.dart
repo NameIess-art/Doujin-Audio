@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/search_highlight.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_all_results.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_empty_scan.dart';
@@ -334,6 +335,168 @@ void main() {
       TargetPlatform.windows,
     }),
   );
+
+  testWidgets(
+    'pending searches retain mounted results and their committed highlights',
+    (tester) async {
+      final pending = Completer<LibraryTreeSnapshot>();
+      final tracks = [
+        for (final name in ['Ocean', 'Rain'])
+          testMusicTrack(
+            name: '$name audio',
+            path: '/library/$name.mp3',
+            groupKey: '/library/$name.mp3',
+            groupTitle: '$name audio',
+            isSingle: true,
+          ),
+      ];
+      final nodes = tracks.map(TrackNode.new).toList();
+      final fixture = AppRuntimeWidgetTestFixture(
+        libraryTreeSnapshotBuilder: (_) => pending.future,
+      );
+      addTearDown(fixture.dispose);
+      fixture.library.addTracks(tracks, persist: false);
+      fixture.library.snapshotCacheService.adoptCardSnapshot(
+        LibraryTreeSnapshot(tree: nodes, leafFolderCount: 0),
+      );
+      await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
+      await tester.runAsync(
+        fixture.library.coverArtworkCacheService.initialize,
+      );
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      final query = ValueNotifier((query: '', revision: 0));
+      addTearDown(query.dispose);
+      List<LibraryNode> selectionTree = const [];
+      await tester.pumpWidget(
+        fixture.build(
+          ValueListenableBuilder<({String query, int revision})>(
+            valueListenable: query,
+            builder: (_, value, _) => results(
+              fixture: fixture,
+              scrollController: controller,
+              query: value.query,
+              queryRevision: value.revision,
+              onTreeChanged: (tree) => selectionTree = tree,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final listFinder = find.byKey(
+        const ValueKey('library_search_results_all'),
+      );
+      final initialList = tester.element(listFinder);
+      final initialRow = tester.element(
+        find.byKey(const ValueKey('search_/library/Ocean.mp3')),
+      );
+      query.value = (query: 'Ocean', revision: 1);
+      selectionTree = const [];
+      await tester.pump();
+      expect(find.byType(LibraryLoadingSkeleton), findsNothing);
+      expect(tester.element(listFinder), same(initialList));
+      expect(
+        tester.element(find.byKey(const ValueKey('search_/library/Ocean.mp3'))),
+        same(initialRow),
+      );
+      expect(SearchHighlightScope.termsOf(tester.element(listFinder)), isEmpty);
+      expect(selectionTree, nodes);
+
+      pending.complete(LibraryTreeSnapshot(tree: nodes, leafFolderCount: 0));
+      await tester.pumpAndSettle();
+      expect(find.text('Ocean audio', findRichText: true), findsWidgets);
+      expect(find.text('Rain audio', findRichText: true), findsNothing);
+      expect(selectionTree.single.path, tracks.first.path);
+      expect(tester.element(listFinder), same(initialList));
+      expect(SearchHighlightScope.termsOf(tester.element(listFinder)), [
+        'Ocean',
+      ]);
+
+      final interaction = Object();
+      UiInteractionCoordinator.instance.beginInteraction(interaction);
+      query.value = (query: 'Rain', revision: 2);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(LibraryLoadingSkeleton), findsNothing);
+      expect(find.text('Ocean audio', findRichText: true), findsWidgets);
+      expect(SearchHighlightScope.termsOf(tester.element(listFinder)), [
+        'Ocean',
+      ]);
+      query.value = (query: 'Missing', revision: 3);
+      await tester.pump();
+      await tester.pump();
+      query.value = (query: '', revision: 4);
+      await tester.pump();
+      UiInteractionCoordinator.instance.cancelInteraction(interaction);
+      await tester.pumpAndSettle();
+      expect(find.byType(LibraryLoadingSkeleton), findsNothing);
+      expect(find.text('Ocean audio', findRichText: true), findsWidgets);
+      expect(find.text('Rain audio', findRichText: true), findsWidgets);
+      expect(selectionTree, nodes);
+      expect(tester.element(listFinder), same(initialList));
+      expect(SearchHighlightScope.termsOf(tester.element(listFinder)), isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets('empty-state labels change only when search results commit', (
+    tester,
+  ) async {
+    final pending = Completer<LibraryTreeSnapshot>();
+    final fixture = AppRuntimeWidgetTestFixture(
+      libraryTreeSnapshotBuilder: (_) => pending.future,
+    );
+    addTearDown(fixture.dispose);
+    final track = testMusicTrack(
+      name: 'Ocean audio',
+      path: '/library/Ocean.mp3',
+      groupKey: '/library/Ocean.mp3',
+      groupTitle: 'Ocean audio',
+      isSingle: true,
+    );
+    fixture.library.addTracks([track], persist: false);
+    fixture.library.snapshotCacheService.adoptCardSnapshot(
+      LibraryTreeSnapshot(tree: const [], leafFolderCount: 0),
+    );
+    await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    final query = ValueNotifier('');
+    addTearDown(query.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        ValueListenableBuilder<String>(
+          valueListenable: query,
+          builder: (_, value, _) => results(
+            fixture: fixture,
+            scrollController: controller,
+            query: value,
+            onTreeChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final noFiles = fixture.languageProvider.tr('no_audio_files');
+    final noMatches = fixture.languageProvider.tr('no_search_results');
+    expect(find.text(noFiles), findsOneWidget);
+    query.value = 'Missing';
+    await tester.pump();
+    expect(find.byType(LibraryLoadingSkeleton), findsNothing);
+    expect(find.text(noFiles), findsOneWidget);
+    expect(find.text(noMatches), findsNothing);
+    pending.complete(
+      LibraryTreeSnapshot(tree: [TrackNode(track)], leafFolderCount: 0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(noFiles), findsNothing);
+    expect(find.text(noMatches), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('late earlier query cannot replace the latest result', (
     tester,

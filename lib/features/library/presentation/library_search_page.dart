@@ -53,10 +53,10 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     for (final category in _categories)
       category: ScrollController(keepScrollOffset: false),
   };
-  final Set<String> _selectedTagTerms = <String>{};
-  final Set<String> _selectedVoiceActorTerms = <String>{};
-  final Set<String> _selectedCircleTerms = <String>{};
-  final Set<String> _selectedLibraryPaths = <String>{};
+  // Retained pages keep these references in their content revision. Replace
+  // collections on selection changes so hidden pages receive the latest inputs.
+  Map<AudioLibraryCategoryType, Set<String>> _selectedCategoryTerms = const {};
+  Set<String> _selectedLibraryPaths = const {};
   final Map<AudioLibraryCategoryType, String> _termSearchQueries = {};
 
   final ValueNotifier<int> _activeCategoryIndex = ValueNotifier<int>(0);
@@ -147,7 +147,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
 
   void _clearSelection() {
     _isSelectionMode = false;
-    _selectedLibraryPaths.clear();
+    _selectedLibraryPaths = const {};
   }
 
   void _enterSelectionMode(LibraryNode node) {
@@ -155,9 +155,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
       _isSelectionMode = true;
-      _selectedLibraryPaths
-        ..clear()
-        ..add(selectionKeyForLibraryNode(node));
+      _selectedLibraryPaths = {selectionKeyForLibraryNode(node)};
     });
   }
 
@@ -165,9 +163,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
       _isSelectionMode = true;
-      _selectedLibraryPaths
-        ..clear()
-        ..add(PathMatcher.normalize(entry.path));
+      _selectedLibraryPaths = {PathMatcher.normalize(entry.path)};
     });
   }
 
@@ -188,10 +184,10 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   void _toggleSelectionKey(String key) {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
-      if (!_selectedLibraryPaths.add(key)) {
-        _selectedLibraryPaths.remove(key);
-        if (_selectedLibraryPaths.isEmpty) _isSelectionMode = false;
-      }
+      final paths = Set<String>.of(_selectedLibraryPaths);
+      if (!paths.remove(key)) paths.add(key);
+      _selectedLibraryPaths = paths;
+      if (paths.isEmpty) _isSelectionMode = false;
     });
   }
 
@@ -307,6 +303,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
               MediaQuery.paddingOf(context).top +
               AppPageHeaderMetrics.bottomSpacing
         : AppSearchPageScaffold.controlsTopInset(context);
+    final bottomInset = MediaQuery.paddingOf(context).bottom + 16;
 
     final body = Consumer(
       builder: (context, ref, _) {
@@ -317,18 +314,33 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
         ref.watch(libraryDetailRevisionProvider);
         final structureRevision = libraryFacade.structureRevision;
         final detailRevision = libraryFacade.detailCacheService.revision;
-        final pinnedLibraryPaths = ref
-            .watch(
-              settingsStateProvider.select(
-                (s) => s.value?.pinnedLibraryPaths ?? const <String>[],
-              ),
-            )
-            .toSet();
+        final pinnedLibraryPaths = ref.watch(
+          settingsStateProvider.select(
+            (s) => s.value?.pinnedLibraryPaths ?? const <String>[],
+          ),
+        );
+        final pinnedPaths = pinnedLibraryPaths.toSet();
         return AppFadeThroughIndexedStack.lazy(
           key: const ValueKey<String>('library_search_category_stack'),
           indexListenable: _activeCategoryIndex,
           duration: kAppMotionSlow,
-          contentRevision: Object(),
+          contentRevision: (
+            libraryFacade,
+            structureRevision,
+            detailRevision,
+            i18n.language,
+            _query,
+            _queryRevision,
+            _isSelectionMode,
+            _selectedLibraryPaths,
+            _selectedCategoryTerms,
+            _termSearchQueries[AudioLibraryCategoryType.tags],
+            _termSearchQueries[AudioLibraryCategoryType.voiceActors],
+            _termSearchQueries[AudioLibraryCategoryType.circles],
+            pinnedLibraryPaths,
+            topInset,
+            bottomInset,
+          ),
           itemCount: _categories.length,
           itemBuilder: (context, index) {
             final category = _categories[index];
@@ -355,11 +367,11 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
               libraryFacade: libraryFacade,
               i18n: i18n,
               topPadding: topInset,
-              bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
+              bottomPadding: bottomInset,
               cacheExtent: 120,
               structureRevision: structureRevision,
               detailRevision: detailRevision,
-              pinnedPaths: pinnedLibraryPaths,
+              pinnedPaths: pinnedPaths,
             );
           },
         );
@@ -434,12 +446,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   Set<String> _selectedTermsForCategory(AudioLibraryCategoryType category) {
-    return switch (category) {
-      AudioLibraryCategoryType.tags => _selectedTagTerms,
-      AudioLibraryCategoryType.voiceActors => _selectedVoiceActorTerms,
-      AudioLibraryCategoryType.circles => _selectedCircleTerms,
-      AudioLibraryCategoryType.all => const <String>{},
-    };
+    return _selectedCategoryTerms[category] ?? const <String>{};
   }
 
   List<String> _termSearchKeywordsForCategory(
@@ -715,11 +722,22 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                   },
                   onToggle: (term) {
                     setState(() {
-                      if (!selectedTerms.remove(term)) selectedTerms.add(term);
+                      final terms = Set<String>.of(
+                        _selectedTermsForCategory(categoryType),
+                      );
+                      if (!terms.remove(term)) terms.add(term);
+                      _selectedCategoryTerms = {
+                        ..._selectedCategoryTerms,
+                        categoryType: terms,
+                      };
                     });
                   },
                   onClear: () {
-                    setState(() => selectedTerms.clear());
+                    if (_selectedTermsForCategory(categoryType).isEmpty) return;
+                    setState(() {
+                      _selectedCategoryTerms = Map.of(_selectedCategoryTerms)
+                        ..remove(categoryType);
+                    });
                   },
                 );
               }

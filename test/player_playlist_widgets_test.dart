@@ -27,6 +27,7 @@ import 'package:doujin_audio/features/player/application/playback_session_snapsh
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_layout.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/session_track_switcher_sheet.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_panel.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playback_queue_cover.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
@@ -813,10 +814,15 @@ void main() {
     },
   );
 
-  for (final replaceQueue in [false, true]) {
+  for (final (platform, replaceQueue) in [
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows])
+      for (final replaceQueue in [false, true]) (platform, replaceQueue),
+  ]) {
     testWidgets(
-      'switcher waits for actual exit and validates queue, replaced=$replaceQueue',
+      'switcher starts during exit and validates queue on $platform, replaced=$replaceQueue',
       (tester) async {
+        debugDefaultTargetPlatformOverride = platform;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
         final tracks = List.generate(
           2,
           (i) => MusicTrack(
@@ -833,6 +839,9 @@ void main() {
           queueTracks: tracks,
           subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
           initialPosition: Duration.zero,
+          physicalSize: platform == TargetPlatform.windows
+              ? const Size(3840, 2400)
+              : const Size(1080, 2400),
         );
         final commands = <(String, String, int?)>[];
         harness.fixture.runtimeGraph.playback.detachCommandPort();
@@ -862,17 +871,32 @@ void main() {
         final row = find.byKey(
           ValueKey('queue_switcher_track_${tracks[1].path}'),
         );
-        await tester.tap(row);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 210));
-        expect(commands, isEmpty);
-        expect(harness.session.currentTrackPath, tracks.first.path);
+        final sheet = tester.widget<SessionTrackSwitcherSheet>(
+          find.byType(SessionTrackSwitcherSheet),
+        );
+        final route = ModalRoute.of(tester.element(row))!;
+        var exited = false;
+        unawaited(route.completed.then((_) => exited = true));
         if (replaceQueue) {
           harness.session.playbackQueue = harness.session.playbackQueue!
               .copyWith(entries: []);
         }
+        await tester.tap(row);
+        // A stale second tap must neither pop the detail page nor prepare twice.
+        sheet.onSelected(SessionTrackSelection(track: tracks[1], queueIndex: 1));
+        await tester.pump();
+        expect(exited, isFalse);
+        expect(
+          commands,
+          replaceQueue ? isEmpty : [(harness.session.id, tracks[1].path, 1)],
+        );
+        await tester.pump(const Duration(milliseconds: 210));
+        expect(exited, isFalse);
+        expect(harness.session.currentTrackPath, tracks.first.path);
         await tester.pump(const Duration(milliseconds: 100));
         await tester.pumpAndSettle();
+        expect(exited, isTrue);
+        expect(find.byType(SessionDetailPage), findsOneWidget);
         if (replaceQueue) {
           expect(harness.session.currentTrackPath, tracks.first.path);
           expect(commands, isEmpty);
@@ -882,6 +906,7 @@ void main() {
         await tester.pump(PlaybackSession.loadingIndicatorThreshold);
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+        debugDefaultTargetPlatformOverride = null;
       },
     );
   }

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/widgets/search_highlight.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_category_widgets.dart';
@@ -78,6 +79,8 @@ void main() {
         addTearDown(fixture.dispose);
         final darkTheme = ValueNotifier(false);
         addTearDown(darkTheme.dispose);
+        final unrelatedRevision = ValueNotifier(0);
+        addTearDown(unrelatedRevision.dispose);
         final entries = List.generate(
           30,
           (index) => _CountingCategoryEntry(
@@ -112,7 +115,10 @@ void main() {
           fixture.build(
             ValueListenableBuilder<bool>(
               valueListenable: darkTheme,
-              child: const LibrarySearchPage(),
+              child: ValueListenableBuilder<int>(
+                valueListenable: unrelatedRevision,
+                builder: (_, _, _) => LibrarySearchPage(key: ValueKey(fixture)),
+              ),
               builder: (_, dark, child) => Theme(
                 data: dark ? ThemeData.dark() : ThemeData.light(),
                 child: child!,
@@ -156,6 +162,44 @@ void main() {
             reads[AudioLibraryCategoryType.tags],
           );
         }
+        final categoryStackFinder = find.byKey(
+          const ValueKey('library_search_category_stack'),
+        );
+        final priorRevision = tester
+            .widget<AppFadeThroughIndexedStack>(categoryStackFinder)
+            .contentRevision;
+        unrelatedRevision.value++;
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<AppFadeThroughIndexedStack>(categoryStackFinder)
+              .contentRevision,
+          priorRevision,
+        );
+        expect(tester.widget<ListView>(tagListFinder), same(tagList));
+        expect(entries.first.reads, reads);
+        tester
+            .widget<AppSearchPageScaffold<AudioLibraryCategoryType>>(
+              find.byType(AppSearchPageScaffold<AudioLibraryCategoryType>),
+            )
+            .onCategorySelected(AudioLibraryCategoryType.voiceActors);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 16));
+        final incoming = tester.widget<SlideTransition>(
+          find
+              .descendant(
+                of: find.byKey(const ValueKey('app_indexed_page_2')),
+                matching: find.byType(SlideTransition),
+              )
+              .first,
+        );
+        expect(
+          incoming.position.value.dx.abs(),
+          lessThan(1),
+          reason: 'Unrelated parent rebuilds must keep visited pages prepared',
+        );
+        await tester.pumpAndSettle();
+        await choose(AudioLibraryCategoryType.tags);
         tagList.controller!.jumpTo(0);
         await tester.pumpAndSettle();
         expect(
@@ -180,6 +224,32 @@ void main() {
         firstCard().onLongPress!();
         await tester.pumpAndSettle();
         expect(firstCard().isSelectionMode, isTrue);
+        expect(firstCard().isSelected, isTrue);
+        final firstSelectionRevision = tester
+            .widget<AppFadeThroughIndexedStack>(categoryStackFinder)
+            .contentRevision;
+        tester
+            .widgetList<AudioLibraryCategoryEntryCard>(
+              find.byType(AudioLibraryCategoryEntryCard),
+            )
+            .elementAt(1)
+            .onToggleSelect!();
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widgetList<AudioLibraryCategoryEntryCard>(
+                find.byType(AudioLibraryCategoryEntryCard),
+              )
+              .take(2)
+              .every((card) => card.isSelected),
+          isTrue,
+        );
+        expect(
+          tester
+              .widget<AppFadeThroughIndexedStack>(categoryStackFinder)
+              .contentRevision,
+          isNot(firstSelectionRevision),
+        );
         tester
             .widget<AppSearchPageScaffold<AudioLibraryCategoryType>>(
               find.byType(AppSearchPageScaffold<AudioLibraryCategoryType>),
@@ -296,6 +366,37 @@ void main() {
       await choose(AudioLibraryCategoryType.tags);
       await tester.tap(find.widgetWithText(ActionChip, '展开'));
       await tester.pumpAndSettle();
+      final selector = tester.widget<LibraryCategoryTermBox>(
+        find.byType(LibraryCategoryTermBox),
+      );
+      selector.onToggle('ASMR');
+      selector.onToggle('Sleep');
+      await tester.pumpAndSettle();
+      final selected = tester.widget<LibraryCategoryTermBox>(
+        find.byType(LibraryCategoryTermBox),
+      );
+      expect(selected.selectedTerms, {'ASMR', 'Sleep'});
+      selected.onClear();
+      selected.onToggle('ASMR');
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<LibraryCategoryTermBox>(find.byType(LibraryCategoryTermBox))
+            .selectedTerms,
+        {'ASMR'},
+      );
+      selected.onClear();
+      await tester.pumpAndSettle();
+      final cleared = tester.widget<LibraryCategoryTermBox>(
+        find.byType(LibraryCategoryTermBox),
+      );
+      cleared.onToggle('ASMR');
+      cleared.onClear();
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<LibraryCategoryTermBox>(find.byType(LibraryCategoryTermBox))
+            .selectedTerms,
+        isEmpty,
+      );
       await tester.tap(find.widgetWithText(FilterChip, 'Sleep'));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('category_/Alpha')), findsNothing);

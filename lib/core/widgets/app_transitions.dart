@@ -400,6 +400,8 @@ class _CoveringPageTransition extends StatefulWidget {
 }
 
 class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
+  CurvedAnimation? _motion;
+  late final ValueNotifier<Widget> _pageChild;
   late Animation<Offset> _position;
   late Listenable _headerAnimation;
   late bool _interactive;
@@ -412,6 +414,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   @override
   void initState() {
     super.initState();
+    _pageChild = ValueNotifier(widget.child);
     _updateAnimations();
     _interactive = _isInteractive;
     _listenToStatus(widget);
@@ -428,14 +431,16 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   }
 
   void _updateAnimations() {
-    _position = widget.animation.drive(
-      Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).chain(
-        CurveTween(
-          curve: widget.workDetailTransition
-              ? const Cubic(0.215, 0.61, 0.355, 1)
-              : Curves.easeOutCubic,
-        ),
-      ),
+    _motion?.dispose();
+    // Both directions settle with deceleration. CurvedAnimation retains the
+    // entrance curve when an unfinished push reverses, avoiding a position jump.
+    _motion = CurvedAnimation(
+      parent: widget.animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeOutCubic.flipped,
+    );
+    _position = _motion!.drive(
+      Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero),
     );
     _headerAnimation = Listenable.merge([
       widget.animation,
@@ -446,6 +451,9 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   @override
   void didUpdateWidget(_CoveringPageTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Flutter refreshes its gesture-listening child wrapper on each route tick.
+    // Update that leaf without invalidating the retained motion/activity tree.
+    _pageChild.value = widget.child;
     final animationsChanged =
         oldWidget.animation != widget.animation ||
         oldWidget.secondaryAnimation != widget.secondaryAnimation;
@@ -453,14 +461,11 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
       _stopListeningToStatus(oldWidget);
       _listenToStatus(widget);
       _interactive = _isInteractive;
-    }
-    if (animationsChanged ||
-        oldWidget.workDetailTransition != widget.workDetailTransition) {
       _updateAnimations();
       _transition = null;
     }
-    if (oldWidget.contentKey != widget.contentKey ||
-        oldWidget.child != widget.child) {
+    if (oldWidget.workDetailTransition != widget.workDetailTransition ||
+        oldWidget.contentKey != widget.contentKey) {
       _transition = null;
     }
   }
@@ -468,7 +473,10 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   void _handleStatusChanged(AnimationStatus _) {
     final interactive = _isInteractive;
     if (_interactive == interactive) return;
-    setState(() => _interactive = interactive);
+    setState(() {
+      _interactive = interactive;
+      _transition = null;
+    });
   }
 
   @override
@@ -480,11 +488,15 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   @override
   void dispose() {
     _stopListeningToStatus(widget);
+    _motion?.dispose();
+    _pageChild.dispose();
     super.dispose();
   }
 
-  Widget _buildTransition() =>
-      ClipRect(child: LayoutBuilder(builder: _buildPage));
+  Widget _buildTransition() => _buildPageActivity(
+    ClipRect(child: LayoutBuilder(builder: _buildPage)),
+    interactive: _interactive,
+  );
 
   Widget _buildPage(BuildContext context, BoxConstraints constraints) {
     final page = _AppPageMotionScope(
@@ -530,7 +542,10 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
           );
         },
       ),
-      child: widget.child,
+      child: ValueListenableBuilder<Widget>(
+        valueListenable: _pageChild,
+        builder: (_, child, _) => child,
+      ),
     );
     // Keep header fades out of the moving content's recording/cache layer.
     // Every detail region moves in route coordinates, including overlays.
@@ -547,10 +562,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     if (MediaQuery.disableAnimationsOf(context)) return widget.child;
     // Route builders run on every tick. Reuse the region tree and animations;
     // only its transform/fade render objects need to observe animation values.
-    return _buildPageActivity(
-      _transition ??= _buildTransition(),
-      interactive: _interactive,
-    );
+    return _transition ??= _buildTransition();
   }
 }
 

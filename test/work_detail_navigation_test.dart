@@ -273,7 +273,7 @@ void main() {
       await _settle(tester);
       navigation.navigatorKey.currentState!.pop();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 225));
+      await tester.pump(const Duration(milliseconds: 150));
       await expectMainBehindSlide();
       await _settle(tester);
       expect(navigation.isOpen, isFalse);

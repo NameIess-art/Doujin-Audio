@@ -288,46 +288,46 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
       return;
     }
 
-    var destination = _destinationRoot?.trim();
-    if (destination == null || destination.isEmpty) {
-      await _chooseDestination();
-      destination = _destinationRoot?.trim();
-      if (!mounted ||
-          route?.isCurrent != true ||
-          destination == null ||
-          destination.isEmpty) {
-        return;
-      }
-    }
-    final destinationExists = await downloadManager.destinationExists(
-      destination,
-    );
-    if (!mounted || route?.isCurrent != true) return;
-    if (!destinationExists) {
-      setState(() {
-        _destinationRoot = null;
-      });
-      showAppSnackBar(
-        context,
-        i18n.tr('asmr_download_path_missing'),
-        tone: AppFeedbackTone.warning,
-        icon: Icons.folder_off_rounded,
-        iconColor: asmrBlue,
-      );
-      await _chooseDestination();
-      destination = _destinationRoot?.trim();
-      if (!mounted ||
-          route?.isCurrent != true ||
-          destination == null ||
-          destination.isEmpty) {
-        return;
-      }
-    }
-
     setState(() {
       _starting = true;
     });
     try {
+      var destination = _destinationRoot?.trim();
+      if (destination == null || destination.isEmpty) {
+        await _chooseDestination();
+        destination = _destinationRoot?.trim();
+        if (!mounted ||
+            route?.isCurrent != true ||
+            destination == null ||
+            destination.isEmpty) {
+          return;
+        }
+      }
+      final destinationExists = await downloadManager.destinationExists(
+        destination,
+      );
+      if (!mounted || route?.isCurrent != true) return;
+      if (!destinationExists) {
+        setState(() {
+          _destinationRoot = null;
+        });
+        showAppSnackBar(
+          context,
+          i18n.tr('asmr_download_path_missing'),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.folder_off_rounded,
+          iconColor: asmrBlue,
+        );
+        await _chooseDestination();
+        destination = _destinationRoot?.trim();
+        if (!mounted ||
+            route?.isCurrent != true ||
+            destination == null ||
+            destination.isEmpty) {
+          return;
+        }
+      }
+
       await ref
           .read(uiOperationServiceProvider)
           .run<void>(

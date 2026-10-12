@@ -707,6 +707,7 @@ void registerAsmrRemoteCatalogTests({
         ),
       );
       await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+      addTearDown(controller.dispose);
       final container = ProviderContainer(
         overrides: [
           asmrLibraryControllerProvider.overrideWithValue(controller),
@@ -727,6 +728,7 @@ void registerAsmrRemoteCatalogTests({
           asmrCategoryStateProvider(request),
           (_, _) {},
         );
+        UiInteractionCoordinator.instance.flushPendingCommitsForTest();
         final state = await container.read(
           asmrCategoryStateProvider(request).future,
         );

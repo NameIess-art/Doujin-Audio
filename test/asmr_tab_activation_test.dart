@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -96,8 +97,18 @@ class _ActivationController extends AsmrLibraryController {
 }
 
 Future<void> _pumpFrames(WidgetTester tester) async {
-  for (var frame = 0; frame < 30; frame++) {
-    await tester.pump(const Duration(milliseconds: 20));
+  // Retry and category snapshots each fade before deferred work resumes at idle.
+  final duration =
+      kAppMotionFast +
+      kPlaceholderContentTransitionDuration * 2 +
+      UiInteractionCoordinator.instance.idleDelay;
+  const frameDuration = Duration(milliseconds: 20);
+  for (
+    var elapsed = Duration.zero;
+    elapsed <= duration;
+    elapsed += frameDuration
+  ) {
+    await tester.pump(frameDuration);
   }
 }
 

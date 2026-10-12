@@ -16,16 +16,18 @@ class AsmrDownloadPlanner {
     return result;
   }
 
+  List<PlannedDownloadFile> collectTaskFiles(AsmrDownloadTaskSnapshot task) {
+    final files = collectPlannedFiles(task.selectedRoots);
+    final cover = task.saveCover ? plannedCoverFile(task.work) : null;
+    if (cover != null) files.add(cover);
+    return files;
+  }
+
   PlannedDownloadFile? findPlannedFile(
     AsmrDownloadTaskSnapshot task,
     String relativePath,
   ) {
-    final files = collectPlannedFiles(task.selectedRoots);
-    if (task.saveCover) {
-      final coverFile = plannedCoverFile(task.work);
-      if (coverFile != null) files.add(coverFile);
-    }
-    for (final file in files) {
+    for (final file in collectTaskFiles(task)) {
       if (file.relativePath == relativePath) return file;
     }
     return null;

@@ -308,6 +308,8 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
                 showPlaceholder: localSnapshotPending,
                 placeholder: LayoutBuilder(
                   builder: (context, constraints) => ListView(
+                    // Both lists mount during the fade; content owns primary.
+                    primary: false,
                     padding: EdgeInsets.fromLTRB(16, headerTopInset, 16, 24),
                     children: [
                       LibraryEditTreeSkeleton(

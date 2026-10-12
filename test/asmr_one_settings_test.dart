@@ -27,6 +27,10 @@ part 'asmr_controller_state_tests.part.dart';
 part 'asmr_remote_catalog_tests.part.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(UiInteractionCoordinator.instance.resetForTest);
+  tearDown(UiInteractionCoordinator.instance.resetForTest);
+
   late Database db;
   late AsmrPreferencesStore preferences;
   late TestPersistenceRepository persistenceRepository;
@@ -205,6 +209,9 @@ void main() {
       expect(container.read(asmrLibraryControllerProvider), same(controller));
       final alphaSubscription = container.listen(alphaProvider, (_, _) {});
       final betaSubscription = container.listen(betaProvider, (_, _) {});
+      // Each structural projection is published in a separate frame.
+      UiInteractionCoordinator.instance.flushPendingCommitsForTest();
+      UiInteractionCoordinator.instance.flushPendingCommitsForTest();
       await container.pump();
       expect(
         container.read(alphaProvider).value!.works.map((work) => work.id),
@@ -216,6 +223,8 @@ void main() {
       expect(controller.hasActiveListeners, isTrue);
 
       await controller.toggleFavorite(alpha);
+      UiInteractionCoordinator.instance.flushPendingCommitsForTest();
+      UiInteractionCoordinator.instance.flushPendingCommitsForTest();
       await container.pump();
       expect(container.read(alphaProvider).value!.works, isEmpty);
       expect(container.read(betaProvider).value!.works.map((work) => work.id), [
@@ -229,6 +238,7 @@ void main() {
       expect(controller.hasActiveListeners, isFalse);
 
       final resumed = container.listen(alphaProvider, (_, _) {});
+      UiInteractionCoordinator.instance.flushPendingCommitsForTest();
       await container.pump();
       expect(controller.hasActiveListeners, isTrue);
       expect(container.read(alphaProvider).value!.works, isEmpty);

@@ -198,6 +198,23 @@ Future<void> pumpUntilFound(
   fail('Timed out waiting for $finder to appear');
 }
 
+Future<void> pumpUntilUiIdle(
+  WidgetTester tester, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final coordinator = UiInteractionCoordinator.instance;
+  final ticks = timeout.inMilliseconds ~/ 16;
+  await tester.pump();
+  for (var i = 0; i < ticks; i++) {
+    if (!coordinator.isInteracting && coordinator.pendingCommitCount == 0) {
+      return;
+    }
+    // pumpAndSettle can finish before the interaction's idle timer fires.
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  fail('Timed out waiting for UI interactions and commits to become idle');
+}
+
 Future<void> pumpUntilLibraryTreeReady(
   WidgetTester tester,
   LibraryFacade library, {

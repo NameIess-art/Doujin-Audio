@@ -1995,8 +1995,7 @@ void main() {
         ],
       ),
     );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await _waitForAsmrContent(tester);
 
     final collectedList = tester.widget<ListView>(
       find.descendant(
@@ -2184,7 +2183,7 @@ void main() {
       );
       final loadingList = tester.widget<ListView>(
         find.descendant(
-          of: find.byKey(const ValueKey<String>('loading')),
+          of: find.byType(LibrarySkeletonListView),
           matching: find.byType(ListView),
         ),
       );
@@ -3008,8 +3007,7 @@ void main() {
         ],
       ),
     );
-    await tester.pump();
-    await tester.pump();
+    await _waitForAsmrContent(tester);
 
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
     await tester.pump();
@@ -3049,8 +3047,7 @@ void main() {
     );
 
     controller.completeCollectedSearchRefresh();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 800));
+    await _waitForAsmrContent(tester);
     expect(scrollController.offset, 0);
     final refreshIndicator = tester.widget<GlassRefreshIndicator>(
       find.descendant(
@@ -3317,8 +3314,7 @@ void main() {
         ],
       ),
     );
-    await tester.pump();
-    await tester.pump();
+    await _waitForAsmrContent(tester);
 
     await tester.tap(find.text('Loaded work', findRichText: true));
     for (var i = 0; i < 30 && find.text('Disc 1').evaluate().isEmpty; i++) {
@@ -3375,8 +3371,7 @@ void main() {
         ],
       ),
     );
-    await tester.pump();
-    await tester.pump();
+    await _waitForAsmrContent(tester);
     await tester.tap(find.text('Loaded work', findRichText: true));
     for (
       var i = 0;
@@ -3686,8 +3681,7 @@ void main() {
           if (leaveBeforeIdle) await tester.pumpWidget(const SizedBox.shrink());
           interaction.endInteraction(source);
           await tester.pump(interaction.idleDelay);
-          await tester.pump();
-          await tester.pump();
+          if (!leaveBeforeIdle) await _waitForAsmrContent(tester);
           expect(controller.loadMoreCount, leaveBeforeIdle ? 0 : 1);
           expect(tester.takeException(), isNull);
         },
@@ -3715,8 +3709,7 @@ void main() {
         ],
       ),
     );
-    await tester.pump();
-    await tester.pump();
+    await _waitForAsmrContent(tester);
 
     final collectedList = find.byKey(
       const ValueKey(AsmrCategoryType.collected),
@@ -3763,8 +3756,7 @@ void main() {
         ],
       ),
     );
-    await tester.pump();
-    await tester.pump();
+    await _waitForAsmrContent(tester);
 
     final collectedList = find.byKey(
       const ValueKey(AsmrCategoryType.collected),
@@ -6990,6 +6982,20 @@ Future<void> _pumpMainScreenAnimations(
     await tester.pump(kAppMotionSlow);
   }
   await tester.pump();
+}
+
+Future<void> _waitForAsmrContent(WidgetTester tester) async {
+  final placeholder = find.byKey(const ValueKey('deferred_placeholder'));
+  final coordinator = UiInteractionCoordinator.instance;
+  for (var frame = 0; frame < 100; frame++) {
+    await tester.pump(const Duration(milliseconds: 20));
+    if (placeholder.evaluate().isEmpty &&
+        !coordinator.isInteracting &&
+        coordinator.pendingCommitCount == 0) {
+      return;
+    }
+  }
+  fail('ASMR opening content did not finish its fade and idle commits');
 }
 
 Future<void> _settleSessionDetailAsyncWork(WidgetTester tester) async {

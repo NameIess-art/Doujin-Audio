@@ -13,6 +13,7 @@ import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 import 'support/test_persistence_repository.dart';
@@ -48,7 +49,10 @@ class _WorkDetailRepository extends TestPersistenceRepository {
 }
 
 void main() {
-  setUp(UiInteractionCoordinator.instance.resetForTest);
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    UiInteractionCoordinator.instance.resetForTest();
+  });
   tearDown(UiInteractionCoordinator.instance.resetForTest);
   test(
     'library scan progress publishes during motion without structural work',

@@ -12,6 +12,7 @@ import 'package:doujin_audio/features/library/application/audio_detail_repositor
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/presentation/library_download_actions.dart';
+import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -150,6 +151,14 @@ class _SubmittedDownloads extends AsmrDownloadManager {
   }) async {
     submitted.add(work.id);
   }
+}
+
+class _SubmissionNativePlayback extends NativePlaybackRepository {
+  @override
+  void startListening() {}
+
+  @override
+  Future<void> stopListening() async {}
 }
 
 class _SubmittedDetails extends AudioDetailRepository {
@@ -330,9 +339,12 @@ void main() {
   testWidgets('submitted download completion cannot close a replacement work', (
     tester,
   ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture(
+      providedNativePlaybackRepository: _SubmissionNativePlayback(),
+    );
     addTearDown(fixture.dispose);
     final work = AsmrWork.fromJson(const {'id': 1, 'title': 'Work A'});
+    await tester.runAsync(fixture.runtimeGraph.runtime.start);
     final operations = _PendingSubmissionOperations(work: work);
     final downloads = _SubmittedDownloads();
     addTearDown(downloads.dispose);

@@ -236,7 +236,6 @@ void main() {
           ],
           persist: false,
         );
-        await tester.runAsync(fixture.library.ensureCardSnapshot);
         fixture.library.syncPresentationState(isInitialized: true);
         var sorts = 0;
         await tester.pumpWidget(
@@ -271,6 +270,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 180));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 180));
+        await pumpUntilFound(tester, find.byType(LibraryTreeList));
         expect(sorts, 1);
         expect(find.byType(LibraryTreeList), findsOneWidget);
         final retained = tester.element(find.byType(LibraryTreeList));
@@ -1167,7 +1167,7 @@ void main() {
       tester.getSize(skeletonCards.first).height,
       LibraryLikeCardMetrics.rootTileHeight,
     );
-    expect(find.byType(PlaceholderContentTransition), findsOneWidget);
+    expect(find.byType(AppPageContentTransition), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 100));
@@ -1220,12 +1220,16 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+    fixture.library.syncPresentationState(isInitialized: true);
 
     await tester.pumpWidget(fixture.build(const LibraryTab()));
     await tester.pump();
     await tester.pump();
 
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('library_empty_state_card')),
+    );
     final headerBottom = tester.getBottomLeft(find.byType(TopPageHeader)).dy;
     final emptyCardRect = tester.getRect(
       find.byKey(const ValueKey('library_empty_state_card')),
@@ -1332,6 +1336,7 @@ void main() {
     );
 
     await tester.pump(const Duration(milliseconds: 450));
+    await pumpUntilUiIdle(tester);
     final cardTop = tester.getTopLeft(libraryCards.at(0)).dy;
     // The scan progress overlay covers the middle of these compact cards.
     final pull = await tester.startGesture(
@@ -1812,6 +1817,7 @@ void main() {
 
       await tester.pumpWidget(fixture.build(const LibraryTab()));
       await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+      await pumpUntilFound(tester, find.byType(AsyncLocalCoverImage));
       final cover = tester.widget<AsyncLocalCoverImage>(
         find.byType(AsyncLocalCoverImage).first,
       );
@@ -3788,6 +3794,7 @@ void main() {
       );
       expect(retryButton, findsOneWidget);
       expect(fixture.runtimeGraph.library.trackByPath(track.path), same(track));
+      await tester.pumpAndSettle();
       await tester.tap(retryButton);
       retry.complete(
         LibraryEntryDiskSnapshot(
@@ -3796,7 +3803,7 @@ void main() {
           authoritative: true,
         ),
       );
-      await tester.pump();
+      await pumpUntilNotFound(tester, retryButton);
       expect(retryButton, findsNothing);
       expect(find.text('Retained track', findRichText: true), findsOneWidget);
       expect(service.responses, hasLength(1));
@@ -3821,6 +3828,7 @@ void main() {
       await tester.pump();
       expect(fixture.runtimeGraph.library.trackByPath(track.path), same(track));
       expect(tester.takeException(), isNull);
+      await finishLibraryTest(tester, fixture);
     },
   );
 
@@ -3872,6 +3880,7 @@ void main() {
       );
       await tester.pump();
       expect(find.text('Old track', findRichText: true), findsOneWidget);
+      await pumpUntilUiIdle(tester);
 
       WidgetsBinding.instance.handleAppLifecycleStateChanged(
         AppLifecycleState.resumed,
@@ -3896,7 +3905,7 @@ void main() {
           authoritative: true,
         ),
       );
-      await tester.pump();
+      await pumpUntilFound(tester, find.text('new', findRichText: true));
       expect(find.text('new', findRichText: true), findsOneWidget);
 
       final retainedTrack = testMusicTrack(
@@ -3933,6 +3942,7 @@ void main() {
         findsWidgets,
       );
       expect(tester.takeException(), isNull);
+      await finishLibraryTest(tester, fixture);
     },
   );
 
@@ -4002,6 +4012,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
+    await pumpUntilFound(
+      tester,
+      find.widgetWithText(TextButton, languageProvider.tr('exclude')).first
+          .hitTestable(),
+    );
+    await tester.pumpAndSettle();
+
     final surfacePaths = <String>[firstTrackPath, secondTrackPath];
     final initialSurfaceHeights = <String, double>{
       for (final path in surfacePaths)
@@ -4023,12 +4040,12 @@ void main() {
     await tester.tap(
       find.widgetWithText(TextButton, languageProvider.tr('exclude')).first,
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     await tester.tap(
       find.widgetWithText(TextButton, languageProvider.tr('exclude')).first,
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text(firstTitle), findsOneWidget);
     expect(find.text(secondTitle), findsOneWidget);
@@ -4089,6 +4106,7 @@ void main() {
     tileRects.sort((first, second) => first.top.compareTo(second.top));
     expect(tileRects.first.bottom, lessThanOrEqualTo(tileRects.last.top));
     expect(tester.takeException(), isNull);
+    await finishLibraryTest(tester, fixture);
   });
 
   for (final reduceMotion in [false, true]) {

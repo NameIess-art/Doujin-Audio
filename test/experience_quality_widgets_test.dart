@@ -233,6 +233,8 @@ void main() {
 
     update(() => showPlaceholder = false);
     await tester.pump();
+    // The fade starts after the content has laid out; establish its first tick.
+    await tester.pump();
     final fadeFinder = find.descendant(
       of: find.byType(PlaceholderContentTransition),
       matching: find.byType(FadeTransition),

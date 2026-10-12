@@ -287,11 +287,10 @@ class AsmrDownloadManager {
       return;
     }
 
-    if (task.status == AsmrDownloadTaskStatus.failed ||
-        task.status == AsmrDownloadTaskStatus.paused) {
-      if (deleteDownloaded) {
-        await _outputs.cleanupCancelledTask(workId);
-      }
+    if (deleteDownloaded &&
+        (task.status == AsmrDownloadTaskStatus.failed ||
+            task.status == AsmrDownloadTaskStatus.paused)) {
+      await _outputs.cleanupCancelledTask(workId);
     }
     await _discardTaskStaging(task);
     _outputs.createdOutputPaths.remove(workId);
@@ -305,14 +304,9 @@ class AsmrDownloadManager {
   }
 
   Future<void> _discardTaskStaging(AsmrDownloadTaskSnapshot task) async {
-    final files = _planner.collectPlannedFiles(task.selectedRoots);
-    if (task.saveCover) {
-      final cover = _planner.plannedCoverFile(task.work);
-      if (cover != null) files.add(cover);
-    }
     await _outputs.discardTaskStaging(
       task,
-      files,
+      _planner.collectTaskFiles(task),
       _outputs.createdOutputPaths[task.work.id] ?? const {},
     );
   }
@@ -405,11 +399,6 @@ class AsmrDownloadManager {
     await flushPersistence();
   }
 
-  Future<void> resumeTask(int workId) => _resumeTask(workId);
-
-  Future<bool> retryFailedFile(int workId, String relativePath) =>
-      _retryFailedFile(workId, relativePath);
-
   Future<void> startDownload({
     required AsmrWork work,
     required List<AsmrTrackFile> selectedRoots,
@@ -461,13 +450,7 @@ class AsmrDownloadManager {
       );
       final existingTask = _store[workId];
       if (existingTask != null) {
-        final existingFiles = _planner.collectPlannedFiles(
-          existingTask.selectedRoots,
-        );
-        if (existingTask.saveCover) {
-          final existingCover = _planner.plannedCoverFile(existingTask.work);
-          if (existingCover != null) existingFiles.add(existingCover);
-        }
+        final existingFiles = _planner.collectTaskFiles(existingTask);
         final sameConfiguration =
             PathMatcher.equalsNormalized(
               existingTask.workRootPath,
@@ -508,19 +491,12 @@ class AsmrDownloadManager {
           ownedPaths ?? const <String>{},
         );
       }
-      if (_disposed || _shutdownFuture != null) {
-        return;
-      }
+      if (_disposed || _shutdownFuture != null) return;
       final backupBytes = saveMetadata
           ? _audioDetailJsonCodec
                 .encodeNew(_planner.buildBackupDetail(work, workRootPath))
                 .length
           : 0;
-      final totalFiles = plannedFiles.length + (saveMetadata ? 1 : 0);
-      final totalBytes = plannedFiles.fold<int>(backupBytes, (sum, item) {
-        return sum + item.size;
-      });
-
       final fileTotalBytes = <String, int>{};
       for (final file in plannedFiles) {
         if (!file.isCover) fileTotalBytes[file.relativePath] = file.size;
@@ -536,11 +512,14 @@ class AsmrDownloadManager {
         saveCover: coverFile != null,
         automaticFileRetryCount: normalizedRetryCount,
         status: AsmrDownloadTaskStatus.idle,
-        totalFiles: totalFiles,
+        totalFiles: plannedFiles.length + (saveMetadata ? 1 : 0),
         completedFiles: 0,
         skippedFiles: 0,
         failedFiles: 0,
-        totalBytes: totalBytes,
+        totalBytes: plannedFiles.fold<int>(
+          backupBytes,
+          (sum, item) => sum + item.size,
+        ),
         downloadedBytes: 0,
         startedAt: DateTime.now(),
         message: 'queued',
@@ -591,12 +570,10 @@ class AsmrDownloadManager {
     );
     _store.notifyTaskChanged();
 
-    final work = taskSnapshot.work;
     final workRootPath = taskSnapshot.workRootPath;
-    final conflictPolicy = taskSnapshot.conflictPolicy;
 
     final backup = taskSnapshot.saveMetadata
-        ? _planner.buildBackupDetail(work, workRootPath)
+        ? _planner.buildBackupDetail(taskSnapshot.work, workRootPath)
         : null;
     final backupBytes = backup == null
         ? 0
@@ -688,21 +665,16 @@ class AsmrDownloadManager {
         await _outputs.ensureFolderPath(
           basePath: workRootPath,
           relativePath: relativePath,
-          overwrite: conflictPolicy == AsmrDownloadConflictPolicy.overwrite,
+          overwrite:
+              taskSnapshot.conflictPolicy ==
+              AsmrDownloadConflictPolicy.overwrite,
         );
       }
 
-      var plannedFiles = _plannedFilesMap[workId];
-      if (plannedFiles == null) {
-        plannedFiles = _planner.collectPlannedFiles(
-          _store[workId]!.selectedRoots,
-        );
-        if (taskSnapshot.saveCover) {
-          final coverFile = _planner.plannedCoverFile(work);
-          if (coverFile != null) plannedFiles.add(coverFile);
-        }
-        _plannedFilesMap[workId] = plannedFiles;
-      }
+      final plannedFiles = _plannedFilesMap.putIfAbsent(
+        workId,
+        () => _planner.collectTaskFiles(_store[workId]!),
+      );
       if (plannedFiles.isNotEmpty) {
         final progress = AsmrDownloadFileProgress(
           completed: completed,
@@ -760,21 +732,15 @@ class AsmrDownloadManager {
     } on DownloadCancelled {
       final currentTask = _store[workId];
       if (!_disposed && currentTask != null) {
-        if (_transfers.isPaused(workId)) {
-          _store[workId] = currentTask.copyWith(
-            status: AsmrDownloadTaskStatus.paused,
-            fileRetryAttempts: const <String, int>{},
-            manuallyRetryingFilePaths: const <String>{},
-            message: 'paused',
-          );
-        } else {
-          _store[workId] = currentTask.copyWith(
-            status: AsmrDownloadTaskStatus.failed,
-            fileRetryAttempts: const <String, int>{},
-            manuallyRetryingFilePaths: const <String>{},
-            message: 'cancelled',
-          );
-        }
+        final paused = _transfers.isPaused(workId);
+        _store[workId] = currentTask.copyWith(
+          status: paused
+              ? AsmrDownloadTaskStatus.paused
+              : AsmrDownloadTaskStatus.failed,
+          fileRetryAttempts: const <String, int>{},
+          manuallyRetryingFilePaths: const <String>{},
+          message: paused ? 'paused' : 'cancelled',
+        );
         _store.notifyTaskChanged();
       }
     } catch (error, stackTrace) {
@@ -882,18 +848,13 @@ class AsmrDownloadManager {
     unawaited(shutdown());
   }
 
-  Future<void> _resumeTask(int workId) async {
-    if (_disposed ||
-        _shutdownFuture != null ||
-        _startingTasks.contains(workId)) {
-      return;
-    }
+  bool _canScheduleTask(int workId) =>
+      !_disposed && _shutdownFuture == null && !_startingTasks.contains(workId);
+
+  Future<void> resumeTask(int workId) async {
+    if (!_canScheduleTask(workId)) return;
     await initialize();
-    if (_disposed ||
-        _shutdownFuture != null ||
-        _startingTasks.contains(workId)) {
-      return;
-    }
+    if (!_canScheduleTask(workId)) return;
     final task = _store[workId];
     if (task == null ||
         (task.status != AsmrDownloadTaskStatus.paused &&
@@ -903,18 +864,10 @@ class AsmrDownloadManager {
     _enqueueExistingTask(task);
   }
 
-  Future<bool> _retryFailedFile(int workId, String relativePath) async {
-    if (_disposed ||
-        _shutdownFuture != null ||
-        _startingTasks.contains(workId)) {
-      return false;
-    }
+  Future<bool> retryFailedFile(int workId, String relativePath) async {
+    if (!_canScheduleTask(workId)) return false;
     await initialize();
-    if (_disposed ||
-        _shutdownFuture != null ||
-        _startingTasks.contains(workId)) {
-      return false;
-    }
+    if (!_canScheduleTask(workId)) return false;
     final task = _store[workId];
     final normalizedPath = relativePath.trim();
     if (task == null ||

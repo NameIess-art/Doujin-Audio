@@ -1,5 +1,6 @@
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/animated_reorder.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
@@ -12,6 +13,8 @@ import 'support/runtime_test_models.dart';
 
 void main() {
   AppRuntimeTestFixture.initialize();
+  setUp(UiInteractionCoordinator.instance.resetForTest);
+  tearDown(UiInteractionCoordinator.instance.resetForTest);
   late Database database;
   setUpAll(() async {
     database = await AppRuntimeTestFixture.installSharedDatabase();
@@ -99,6 +102,7 @@ void main() {
             );
             if (libraryPage) await pumpUntilLibraryTreeReady(tester, library);
             await tester.pumpAndSettle();
+            await pumpUntilUiIdle(tester);
             final first = find.text('Audio 0', findRichText: true);
             final moved = find.text('Audio 2', findRichText: true);
             final firstY = tester.getTopLeft(first).dy;
@@ -153,7 +157,7 @@ void main() {
             final during = tester.getTopLeft(moved).dy;
             expect(during, lessThan(before));
             expect(during, greaterThan(firstY));
-            await tester.pumpAndSettle();
+            await tester.pump(kAppMotionSlow);
             expect(tester.getTopLeft(moved).dy, closeTo(firstY, 0.01));
             expect(tester.takeException(), isNull);
             await tester.pumpWidget(const SizedBox.shrink());

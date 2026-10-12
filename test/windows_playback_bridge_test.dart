@@ -2119,5 +2119,5 @@ class _Player extends PlatformPlayer {
 
 String _playlistJson(Player player) => jsonEncode([
   for (final media in player.state.playlist.medias)
-    {'id': identityHashCode(media), 'filename': media.uri},
+    {'id': mockMediaId(media), 'filename': media.uri},
 ]);

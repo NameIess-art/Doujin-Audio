@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'package:meta/meta.dart';
+
 import '../../../core/errors/native_result.dart';
 import '../../../core/immutable_collections.dart';
 import '../domain/audio_effects.dart';
@@ -997,3 +999,9 @@ String windowsAudioFilter(NativeAudioEffects effects) {
   }
   return filters.isEmpty ? '' : 'lavfi=[${filters.join(',')}]';
 }
+
+final _mockMediaIds = Expando<int>();
+var _nextMockMediaId = 1;
+
+@visibleForTesting
+int mockMediaId(Media media) => _mockMediaIds[media] ??= _nextMockMediaId++;

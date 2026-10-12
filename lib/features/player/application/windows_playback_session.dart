@@ -123,7 +123,7 @@ class _WindowsPlaybackSession {
   Future<List<int>> nativeEntryIds(Player player) async {
     final platform = player.platform;
     if (readNativePlaylist == null && platform is! NativePlayer) {
-      return player.state.playlist.medias.map(identityHashCode).toList();
+      return player.state.playlist.medias.map(mockMediaId).toList();
     }
     // mpv FORMAT_STRING prints NODE properties as JSON. The physical order and
     // stable entry IDs remain distinct even when multiple entries share a URI.
@@ -157,7 +157,7 @@ class _WindowsPlaybackSession {
     final playlist = player.state.playlist;
     return playlist.index < 0 || playlist.index >= playlist.medias.length
         ? null
-        : identityHashCode(playlist.medias[playlist.index]);
+        : mockMediaId(playlist.medias[playlist.index]);
   }
 
   Future<void> mapNativeEntries(Player player) async {

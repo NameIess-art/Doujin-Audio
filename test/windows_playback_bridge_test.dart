@@ -5,6 +5,7 @@ import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
+import 'package:doujin_audio/features/player/application/playback_command_coordinator.dart';
 import 'package:doujin_audio/features/player/application/windows_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
@@ -66,6 +67,49 @@ void main() {
     await prepare('one');
     expect(playlistReads, 1);
     expect(players.single.state.playing, true);
+  });
+
+  test('edited queue restores its scope after loop mode round trip', () async {
+    final graph = createTestRuntimeGraph(
+      nativePlaybackRepository: NativePlaybackRepository(bridge: bridge),
+    );
+    addTearDown(graph.runtime.dispose);
+    final tracks = [
+      for (final name in ['a1', 'a2', 'b1'])
+        MusicTrack(
+          path: 'https://example.com/$name.wav',
+          displayName: name,
+          groupKey: name[0],
+          groupTitle: name[0],
+          groupSubtitle: '',
+          isSingle: false,
+        ),
+    ];
+    graph.library.addTracks(tracks, persist: false);
+    final session = graph.playback.createTrackSession(
+      tracks.first,
+      customQueueTracks: tracks,
+    );
+    session.customQueueTracks = List<MusicTrack>.from(tracks);
+    await graph.playback.toggleSessionPlayPause(session.id);
+    expect(
+      (await bridge.snapshot()).valueOrNull!.sessions.single.retainedUris,
+      tracks.take(2).map((track) => track.path),
+    );
+    for (final mode in [
+      playback.SessionLoopMode.crossSequential,
+      playback.SessionLoopMode.folderSequential,
+      playback.SessionLoopMode.crossSequential,
+    ]) {
+      session.loopMode = mode;
+      await graph.playbackCommands.synchronizeLoopMode(session, mode);
+      expect(
+        (await bridge.snapshot()).valueOrNull!.sessions.single.retainedUris,
+        (mode.isCrossFolder ? tracks : tracks.take(2)).map(
+          (track) => track.path,
+        ),
+      );
+    }
   });
 
   test(

@@ -7,6 +7,7 @@ import '../../library/application/work_text_service.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_api_service.dart';
 import 'asmr_download_manager.dart';
+import 'asmr_download_planner.dart';
 
 List<MusicTrack> flattenAsmrPlayableTracks(
   AsmrWork work,
@@ -115,13 +116,14 @@ List<WorkTextFile> collectAsmrWorkTextFiles(
             workFolderName != null &&
             workFolderName.isNotEmpty &&
             !PathMatcher.isContentUri(destinationRoot)) {
-          final candidate = path.join(
-            destinationRoot,
-            workFolderName,
-            node.relativePath,
-          );
-          if (File(candidate).existsSync()) {
-            localPath = candidate;
+          try {
+            final candidate = const AsmrDownloadPlanner().resolveLocalPathWithin(
+              task!.workRootPath,
+              node.relativePath,
+            );
+            if (File(candidate).existsSync()) localPath = candidate;
+          } on FormatException {
+            // A malformed remote filename can still be opened through its URL.
           }
         }
 

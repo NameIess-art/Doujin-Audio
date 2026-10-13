@@ -768,11 +768,14 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   }) {
     final current = _sessions[sessionId];
     if (current != null &&
-        (queueRevision == 0 || queueRevision > current.externalQueueRevision)) {
+        (queueRevision == 0 ||
+            queueRevision >= current.externalQueueRevision)) {
       current.cancelRetry();
     }
     return _change(sessionId, (session) async {
-      if (queueRevision > 0 && queueRevision <= session.externalQueueRevision) {
+      // Scope and loop changes reuse the content revision; only older content
+      // is stale, matching the Android queue update contract.
+      if (queueRevision > 0 && queueRevision < session.externalQueueRevision) {
         return;
       }
       if (queueRevision < 0) {

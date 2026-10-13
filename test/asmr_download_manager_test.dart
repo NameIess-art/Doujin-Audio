@@ -12,6 +12,7 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_internal_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_serialization.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_work_content_mapping.dart';
 import 'package:doujin_audio/features/library/data/audio_detail_json_codec.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +20,144 @@ import 'package:path/path.dart' as path;
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test(
+    'Windows downloads legal local names while retaining remote paths',
+    () async {
+      if (!Platform.isWindows) return;
+      final root = await Directory.systemTemp.createTemp('windows_names_');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      unawaited(
+        server.forEach((request) async {
+          final bytes = request.uri.path == '/json' ? utf8.encode('{}') : [1];
+          request.response.contentLength = bytes.length;
+          request.response.add(bytes);
+          await request.response.close();
+        }),
+      );
+      final manager = AsmrDownloadManager(
+        persistTasks: false,
+        stagingDirectoryProvider: () async => root,
+      );
+      try {
+        final existingJson = File(path.join(root.path, 'Work_', 'note.json'));
+        await existingJson.parent.create(recursive: true);
+        const preservedJson = '{"kept":true}';
+        await existingJson.writeAsString(preservedJson);
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: [
+            _file(
+              downloadUrl: 'http://${server.address.host}:${server.port}/track',
+              title: 'Folder?/01?.mp3',
+            ),
+            _file(
+              downloadUrl: 'http://${server.address.host}:${server.port}/json',
+              title: 'Folder?/info?.json.',
+              type: 'text',
+              size: 2,
+            ),
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/reserved',
+              title: 'CON.txt',
+              type: 'text',
+            ),
+            _file(
+              downloadUrl: 'http://${server.address.host}:${server.port}/note',
+              title: 'note.json.',
+              type: 'text',
+            ),
+          ],
+          destinationRoot: root.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+          saveCover: false,
+          automaticFileRetryCount: 0,
+          customWorkFolderName: 'Work?',
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+        final task = manager.getTask(1)!;
+        expect(task.completedFilePaths, {
+          'Folder?/01?.mp3',
+          'Folder?/info?.json.',
+          'CON.txt',
+          'note.json.',
+        });
+        expect(await existingJson.readAsString(), preservedJson);
+        expect(task.workFolderName, 'Work_');
+        expect(
+          await File(
+            path.join(task.workRootPath, 'Folder_', 'info_.json'),
+          ).readAsString(),
+          '{}',
+        );
+        expect(
+          await File(path.join(task.workRootPath, '_CON.txt')).readAsBytes(),
+          [1],
+        );
+        final textFiles = collectAsmrWorkTextFiles(
+          task.selectedRoots,
+          downloadManager: manager,
+          workId: 1,
+        );
+        expect(
+          textFiles.singleWhere((file) => file.name == 'CON.txt').path,
+          path.join(task.workRootPath, '_CON.txt'),
+        );
+        final target = File(path.join(task.workRootPath, 'Folder_', '01_.mp3'));
+        expect(await target.readAsBytes(), [1]);
+        await manager.deleteTask(1);
+        expect(await target.exists(), isFalse);
+        expect(await existingJson.readAsString(), preservedJson);
+      } finally {
+        await manager.shutdown();
+        await server.close(force: true);
+        await root.delete(recursive: true);
+      }
+    },
+  );
+
+  for (final names in [
+    ['01?.mp3', '01*.mp3'],
+    ['01.mp3', '01.MP3'],
+    ['01.mp3', '01.mp3.'],
+    ['CON.txt', '_CON.txt'],
+    ['Folder?/01.mp3', 'Folder*/02.mp3'],
+    ['Folder', 'Folder/01.mp3'],
+  ]) {
+    test(
+      'Windows rejects colliding local download names before writing ($names)',
+      () async {
+        if (!Platform.isWindows) return;
+        final root = await Directory.systemTemp.createTemp(
+          'windows_name_collision_',
+        );
+        final manager = AsmrDownloadManager(persistTasks: false);
+        try {
+          await expectLater(
+            manager.startDownload(
+              work: _work(),
+              selectedRoots: [
+                _file(downloadUrl: 'http://localhost/first', title: names[0]),
+                _file(downloadUrl: 'http://localhost/second', title: names[1]),
+              ],
+              destinationRoot: root.path,
+              conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+              saveMetadata: false,
+              saveCover: false,
+            ),
+            throwsFormatException,
+          );
+          expect(manager.tasks, isEmpty);
+          expect(await root.list().isEmpty, isTrue);
+        } finally {
+          await manager.shutdown();
+          await root.delete(recursive: true);
+        }
+      },
+    );
+  }
 
   test('initialization shares one read and retries after failure', () async {
     final firstRead = Completer<String?>();

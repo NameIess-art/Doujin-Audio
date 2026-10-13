@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:path/path.dart' as path;
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/media/path_display.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_download_internal_models.dart';
 import 'asmr_download_models.dart';
@@ -101,7 +103,7 @@ class AsmrDownloadPlanner {
   }
 
   String resolveLocalPathWithin(String basePath, String relativePath) {
-    final normalizedRelative = validatedDownloadRelativePath(relativePath);
+    final normalizedRelative = localRelativePath(relativePath);
     final root = path.normalize(path.absolute(basePath));
     final target = path.normalize(
       path.absolute(
@@ -112,6 +114,71 @@ class AsmrDownloadPlanner {
       throw const FormatException('Download path escapes its destination.');
     }
     return target;
+  }
+
+  String localRelativePath(String relativePath) {
+    final normalized = validatedDownloadRelativePath(relativePath);
+    if (!Platform.isWindows) return normalized;
+    return normalized
+        .split('/')
+        .map((segment) {
+          var safe = PathDisplay.safeFileName(
+            segment,
+            replacement: '_',
+            collapseWhitespace: false,
+            fallback: '_',
+          );
+          if (RegExp(
+            r'^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)',
+            caseSensitive: false,
+          ).hasMatch(safe)) {
+            safe = '_$safe';
+          }
+          return safe;
+        })
+        .join('/');
+  }
+
+  void validateLocalOutputs(
+    List<PlannedDownloadFile> files, {
+    required bool saveMetadata,
+  }) {
+    if (!Platform.isWindows) return;
+    final owners = <String, String>{};
+    final kinds = <String, bool>{};
+    void register(
+      String original, {
+      bool directory = false,
+      bool generated = false,
+    }) {
+      final output = localRelativePath(original).toLowerCase();
+      final owner = generated ? 'generated:$original' : original;
+      if ((owners.containsKey(output) && owners[output] != owner) ||
+          (kinds.containsKey(output) && kinds[output] != directory)) {
+        throw FormatException('Download paths collide on Windows: $original');
+      }
+      owners[output] = owner;
+      kinds[output] = directory;
+    }
+
+    if (saveMetadata) register('doujin-audio.json', generated: true);
+    for (final file in files) {
+      final original = validatedDownloadRelativePath(file.relativePath);
+      // The generated metadata already owns this remote document name.
+      if (saveMetadata && original.toLowerCase() == 'doujin-audio.json') {
+        continue;
+      }
+      final segments = original.split('/');
+      for (var count = 1; count < segments.length; count++) {
+        register(segments.take(count).join('/'), directory: true);
+      }
+      register(original);
+      if (file.isCover) {
+        for (final extension in ['.jpg', '.jpeg', '.png', '.webp', '.gif']) {
+          register('cover/${file.coverFileStem}$extension', generated: true);
+        }
+      }
+    }
   }
 
   AudioDetail buildBackupDetail(AsmrWork work, String workRootPath) {

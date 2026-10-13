@@ -707,7 +707,16 @@ final class TimerFacade {
     _setFadeMultiplier(0.0);
     final resumedSessionIds = <String>[];
     for (final session in resumableSessions) {
-      final resumed = await _resumeSession(session);
+      var resumed = false;
+      try {
+        resumed = await _resumeSession(session);
+      } catch (error, stackTrace) {
+        AppLogService.error(
+          'timer_session_resume_failed sessionId=${session.id}',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
       if (!_isCurrentGeneration(generation)) return;
       if (resumed) {
         resumedSessionIds.add(session.id);
@@ -730,6 +739,8 @@ final class TimerFacade {
     }
     if (resumedSessionIds.isNotEmpty) {
       _startResumeFadeIn();
+    } else {
+      _setFadeMultiplier(1.0);
     }
     _changed();
     await saveRuntime();

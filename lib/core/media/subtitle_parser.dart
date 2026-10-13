@@ -34,6 +34,25 @@ class SubtitleTrack {
   final List<SubtitleCue> cues;
   final Duration offset;
 
+  // Keep source order for ASS editing while time lookup uses a stable index.
+  late final List<SubtitleCue> _timeOrderedCues = (() {
+    final indexed = cues.indexed.toList()
+      ..sort((a, b) {
+        final byStart = a.$2.start.compareTo(b.$2.start);
+        return byStart != 0 ? byStart : a.$1.compareTo(b.$1);
+      });
+    return indexed.map((entry) => entry.$2).toList(growable: false);
+  })();
+  late final List<Duration> _latestEnds = (() {
+    var latest = Duration.zero;
+    return _timeOrderedCues
+        .map((cue) {
+          if (cue.end > latest) latest = cue.end;
+          return latest;
+        })
+        .toList(growable: false);
+  })();
+
   SubtitleTrack withOffset(Duration newOffset) {
     return SubtitleTrack(sourcePath: sourcePath, cues: cues, offset: newOffset);
   }
@@ -42,30 +61,12 @@ class SubtitleTrack {
     if (cues.isEmpty) return null;
     final effectivePosition = position - offset;
     if (effectivePosition < Duration.zero) return null;
-    if (persistent && effectivePosition < cues.first.start) return null;
-
     var low = 0;
-    var high = cues.length - 1;
-
-    if (!persistent) {
-      while (low <= high) {
-        final mid = low + ((high - low) >> 1);
-        final cue = cues[mid];
-        if (effectivePosition < cue.start) {
-          high = mid - 1;
-        } else if (effectivePosition >= cue.end) {
-          low = mid + 1;
-        } else {
-          return cue;
-        }
-      }
-      return null;
-    }
-
-    var result = 0;
+    var high = _timeOrderedCues.length - 1;
+    var result = -1;
     while (low <= high) {
       final mid = low + ((high - low) >> 1);
-      if (cues[mid].start <= effectivePosition) {
+      if (_timeOrderedCues[mid].start <= effectivePosition) {
         result = mid;
         low = mid + 1;
       } else {
@@ -73,7 +74,16 @@ class SubtitleTrack {
       }
     }
 
-    return cues[result];
+    if (result < 0) return null;
+    if (persistent) return _timeOrderedCues[result];
+
+    // An expired short cue cannot exclude an earlier, longer overlapping cue.
+    for (var index = result; index >= 0; index--) {
+      if (_latestEnds[index] <= effectivePosition) break;
+      final cue = _timeOrderedCues[index];
+      if (cue.contains(effectivePosition)) return cue;
+    }
+    return null;
   }
 }
 

@@ -59,7 +59,14 @@ class AsmrDownloadTransferService {
       return DownloadWriteResult.skipped(bytesDownloaded: item.size);
     }
     final preserveExistingJson =
-        path.extension(normalizedRelativePath).toLowerCase() == '.json';
+        path
+            .extension(
+              PathMatcher.isContentUri(workRootPath)
+                  ? normalizedRelativePath
+                  : _planner.localRelativePath(normalizedRelativePath),
+            )
+            .toLowerCase() ==
+        '.json';
     final jsonLocation = preserveExistingJson
         ? _outputs.jsonDownloadLocation(workRootPath, normalizedRelativePath)
         : null;

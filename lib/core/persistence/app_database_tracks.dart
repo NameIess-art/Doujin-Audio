@@ -231,6 +231,15 @@ extension AppDatabaseTracks on AppDatabase {
           ])
             table: await _queryTrackRowsForPaths(txn, table, sources),
         };
+        final entryRows = await _queryTrackRowsForPaths(
+          txn,
+          'library_entries',
+          sources.map(PathMatcher.normalize).toList(),
+        );
+        final replacementsByKey = {
+          for (final entry in replacements.entries)
+            PathMatcher.equivalenceKey(entry.key): entry.value,
+        };
         await AppDatabaseTracks._deleteTrackPaths(txn, sources);
         final batch = txn.batch();
         for (final entry in replacements.entries) {
@@ -249,6 +258,24 @@ extension AppDatabaseTracks on AppDatabase {
               'path': replacements[row['path']]!.path,
             }, conflictAlgorithm: ConflictAlgorithm.replace);
           }
+        }
+        for (final row in entryRows) {
+          batch.delete(
+            'library_entries',
+            where: 'library_path = ? AND path = ? AND kind = ?',
+            whereArgs: [row['library_path'], row['path'], row['kind']],
+          );
+        }
+        for (final row in entryRows) {
+          final track =
+              replacementsByKey[PathMatcher.equivalenceKey(
+                row['path'] as String,
+              )]!;
+          batch.insert('library_entries', {
+            ...row,
+            'path': PathMatcher.normalize(track.path),
+            'display_name': track.displayName,
+          }, conflictAlgorithm: ConflictAlgorithm.abort);
         }
         await batch.commit(noResult: true);
       });

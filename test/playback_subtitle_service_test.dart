@@ -343,6 +343,55 @@ void main() {
     expect(await directory.list().isEmpty, isTrue);
   });
 
+  test('subtitle time lookup handles out-of-order ASS dialogue', () async {
+    final track = await parseSubtitleTrackFromRaw(
+      sourcePath: 'unordered.ass',
+      extension: '.ass',
+      raw:
+          '[Events]\n'
+          'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
+          'Dialogue: 0,0:00:10.00,0:00:12.00,Later,,0,0,0,,later\n'
+          'Dialogue: 0,0:00:01.00,0:00:03.00,Early,,0,0,0,,early\n',
+    );
+    expect(track, isNotNull);
+    // Editing maps ASS styles to the source dialogue order.
+    expect(track!.cues.map((cue) => cue.text), ['later', 'early']);
+    expect(track.cueAt(const Duration(seconds: 2))?.text, 'early');
+    expect(track.cueAt(const Duration(seconds: 11))?.text, 'later');
+    expect(
+      track.cueAt(const Duration(seconds: 5), persistent: true)?.text,
+      'early',
+    );
+    expect(track.cueAt(Duration.zero, persistent: true), isNull);
+  });
+
+  test('subtitle time lookup finds a longer overlapping SRT cue', () async {
+    final track = await parseSubtitleTrackFromRaw(
+      sourcePath: 'overlap.srt',
+      extension: '.srt',
+      raw:
+          '1\n00:00:00,000 --> 00:00:10,000\nlong\n\n'
+          '2\n00:00:01,000 --> 00:00:02,000\nshort\n\n'
+          '3\n00:00:12,000 --> 00:00:14,000\nnext\n',
+    );
+    expect(track, isNotNull);
+    expect(track!.cueAt(const Duration(milliseconds: 1500))?.text, 'short');
+    expect(track.cueAt(const Duration(seconds: 3))?.text, 'long');
+    expect(track.cueAt(const Duration(seconds: 10)), isNull);
+    expect(track.cueAt(const Duration(seconds: 12))?.text, 'next');
+    expect(
+      track.cueAt(const Duration(seconds: 11), persistent: true)?.text,
+      'short',
+    );
+    expect(
+      track
+          .withOffset(const Duration(seconds: 2))
+          .cueAt(const Duration(seconds: 5))
+          ?.text,
+      'long',
+    );
+  });
+
   test(
     'persistent cueAt and textAt hold subtitle text across gaps between cues',
     () async {

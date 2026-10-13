@@ -435,8 +435,29 @@ class LibraryService {
   ) {
     final oldPath = PathMatcher.normalize(oldTrackPath);
     final newPath = PathMatcher.normalize(newTrackPath);
+    for (final entries in libraryEntriesByLibrary.values) {
+      final previousKey = entries.keys
+          .where((key) => PathMatcher.equalsNormalized(key, oldPath))
+          .firstOrNull;
+      if (previousKey == null) continue;
+      final entry = entries.remove(previousKey)!;
+      entries[newPath] = entry.copyWith(
+        path: newPath,
+        displayName: displayName,
+      );
+    }
+    for (final excluded in excludedLibraryTracks.values) {
+      final previousLength = excluded.length;
+      excluded.removeWhere(
+        (value) => PathMatcher.equalsNormalized(value, oldPath),
+      );
+      if (excluded.length != previousLength) excluded.add(newPath);
+    }
     final track = libraryByPath[oldPath];
-    if (track == null) return null;
+    if (track == null) {
+      markStructureChanged();
+      return null;
+    }
     final updatedTrack = _copyTrackForRetarget(
       track,
       path: newPath,

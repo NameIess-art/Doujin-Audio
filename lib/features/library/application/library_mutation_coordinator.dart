@@ -745,15 +745,33 @@ final class LibraryMutationCoordinator {
       newTrackPath,
       displayName,
     );
-    if (updatedTrack != null) {
-      _coverArtwork().invalidateAll();
-      snapshotCacheService.markStructureChanged();
-      _syncStateSlice();
-      if (_persistenceCoordinator.enabled) {
+    _coverArtwork().invalidateAll();
+    snapshotCacheService.markStructureChanged();
+    _syncStateSlice();
+    if (_persistenceCoordinator.enabled) {
+      if (updatedTrack != null) {
         await databaseRepository.replaceTrackPaths({
           oldTrackPath: updatedTrack,
         });
+      } else {
+        final entries = <LibraryEntry>[];
+        final removedPaths = <String, List<String>>{};
+        for (final root in _service.libraryEntriesByLibrary.keys) {
+          final entry = _service.libraryEntryForPath(root, newTrackPath);
+          if (entry == null) continue;
+          entries.add(entry);
+          removedPaths[root] = [oldTrackPath];
+        }
+        if (entries.isNotEmpty) {
+          await databaseRepository.commitLibraryBatch(
+            tracks: const [],
+            entries: entries,
+            catalogSettings: const {},
+            removedEntryPaths: removedPaths,
+          );
+        }
       }
+      await _persistenceCoordinator.saveExclusions();
     }
   }
 

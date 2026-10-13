@@ -207,6 +207,13 @@ void main() {
       const oldPath = '/library/old.mp3';
       const newPath = '/library/new.mp3';
       await seedDeferredTrack(oldPath);
+      await repository.upsertLibraryEntries([
+        LibraryEntry.track(
+          libraryPath: '/library',
+          track: catalogTrack(oldPath, name: 'Old'),
+          state: LibraryEntryState.excluded,
+        ),
+      ]);
       await repository.updateTrackDurations({
         oldPath: const Duration(seconds: 40),
       });
@@ -221,6 +228,10 @@ void main() {
       expect(renamed.isFavorite, isTrue);
       expect(renamed.lastPlayedPosition, const Duration(seconds: 12));
       expect((await db.query('track_scan_info')).single['scan_generation'], 17);
+      final entry = (await repository.loadLibraryEntries('/library')).single;
+      expect(entry.path, PathMatcher.normalize(newPath));
+      expect(entry.displayName, 'New');
+      expect(entry.state, LibraryEntryState.excluded);
     },
   );
 
@@ -229,6 +240,10 @@ void main() {
     const secondPath = '/library/second.mp3';
     await seedDeferredTrack(firstPath);
     await seedDeferredTrack(secondPath);
+    await repository.upsertLibraryEntries([
+      LibraryEntry.track(libraryPath: '/library', track: catalogTrack(firstPath), state: LibraryEntryState.active),
+      LibraryEntry.track(libraryPath: '/library', track: catalogTrack(secondPath), state: LibraryEntryState.excluded),
+    ]);
     final tables = [
       'tracks',
       'track_scan_info',
@@ -236,6 +251,7 @@ void main() {
       'track_assets',
       'track_tags',
       'track_remote_metadata',
+      'library_entries',
     ];
     final before = {for (final table in tables) table: await db.query(table)};
     await db.execute('''
@@ -253,6 +269,20 @@ void main() {
     for (final table in tables) {
       expect(await db.query(table), before[table], reason: table);
     }
+  });
+
+  test('batch rename swaps entry paths without losing their states', () async {
+    const first = '/library/first.mp3';
+    const second = '/library/second.mp3';
+    await repository.insertTracks([catalogTrack(first), catalogTrack(second)]);
+    await repository.upsertLibraryEntries([
+      LibraryEntry.track(libraryPath: '/library', track: catalogTrack(first), state: LibraryEntryState.active),
+      LibraryEntry.track(libraryPath: '/library', track: catalogTrack(second), state: LibraryEntryState.excluded),
+    ]);
+    await repository.replaceTrackPaths({first: catalogTrack(second), second: catalogTrack(first)});
+    final entries = await repository.loadLibraryEntries('/library');
+    expect(entries.singleWhere((entry) => entry.path == PathMatcher.normalize(first)).state, LibraryEntryState.excluded);
+    expect(entries.singleWhere((entry) => entry.path == PathMatcher.normalize(second)).state, LibraryEntryState.active);
   });
 
   test(

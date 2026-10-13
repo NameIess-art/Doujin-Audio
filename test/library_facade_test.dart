@@ -549,6 +549,76 @@ void main() {
     );
   }
 
+  for (final excludedBeforeRename in [false, true]) {
+    test(
+      'renamed file exclusion survives persisted state reload ($excludedBeforeRename)',
+      () async {
+        final directory = await Directory.systemTemp.createTemp(
+          'rename_exclusion_',
+        );
+        addTearDown(() => directory.delete(recursive: true));
+        final audio = await File(
+          path.join(directory.path, 'old.mp3'),
+        ).writeAsBytes([1]);
+        final track = MusicTrack(
+          path: audio.path,
+          displayName: 'old',
+          groupKey: directory.path,
+          groupTitle: 'Work',
+          groupSubtitle: directory.path,
+          isSingle: false,
+        );
+        final repository = TestPersistenceRepository(
+          database: AppDatabase.test(db),
+        );
+        await runtimeGraph.runtime.dispose();
+        runtimeGraph = createTestRuntimeGraph(
+          notificationService: notificationService,
+          persistenceRepository: repository,
+          jsonDocumentStore: TestJsonDocumentStore(),
+          skipPersistence: false,
+        );
+        final library = runtimeGraph.library;
+        library.beginLibraryBatch();
+        library.addWatchedLibrary(directory.path, notify: false);
+        library.recordLibraryEntriesForTracks(directory.path, [track]);
+        library.addOrReplaceTracks([track]);
+        await library.endLibraryBatch();
+
+        if (excludedBeforeRename) {
+          await library.removeTrack(audio.path);
+          await library.flushPendingPersistence();
+        }
+
+        final newPath = await library.renameWorkEntryToName(
+          libraryRootPath: directory.path,
+          entryPath: audio.path,
+          targetName: 'new',
+          isMedia: true,
+          isDirectory: false,
+        );
+        if (!excludedBeforeRename) await library.removeTrack(newPath);
+        await Future<void>.delayed(Duration.zero);
+        await library.flushPendingPersistence();
+        await library.loadPersistedState();
+
+        expect(library.isLibraryPathExcluded(directory.path, newPath), isTrue);
+        final entries = library.libraryEntriesForLibrary(directory.path);
+        expect(entries.where((entry) => entry.path == audio.path), isEmpty);
+        expect(
+          entries.singleWhere((entry) => entry.path == newPath).isExcluded,
+          isTrue,
+        );
+        expect(library.trackByPath(newPath), isNull);
+        final persistedEntries = await repository.loadLibraryEntries(
+          directory.path,
+        );
+        expect(persistedEntries.single.path, newPath);
+        expect(persistedEntries.single.isExcluded, isTrue);
+      },
+    );
+  }
+
   for (final cancelled in [false, true]) {
     test(
       'refresh retains excluded entry batches and rolls them back on cancellation ($cancelled)',

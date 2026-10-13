@@ -169,11 +169,12 @@ internal fun <T> createSafDocumentIfAbsent(
     write: (T) -> Boolean,
     delete: (T) -> Boolean
 ): Boolean {
-    if (listFiles().any(isTarget)) return false
+    val existing = listFiles().toList()
+    if (existing.any(isTarget)) return false
     val created = runCatching { create() }.getOrNull() ?: return false
     // Some SAF providers return an existing same-name document from
     // createFile(). Never write to or delete that URI.
-    if (isTarget(created)) return false
+    if (existing.any { sameDocument(it, created) }) return false
     if (listFiles().any { isTarget(it) && !sameDocument(it, created) }) {
         runCatching { delete(created) }
         return false

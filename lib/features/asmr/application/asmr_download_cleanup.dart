@@ -236,7 +236,10 @@ class AsmrDownloadOutputStore {
       final usesCache =
           PathMatcher.isContentUri(task.workRootPath) ||
           (!item.isCover &&
-              path.extension(relativePath).toLowerCase() == '.json');
+              path
+                      .extension(_planner.localRelativePath(relativePath))
+                      .toLowerCase() ==
+                  '.json');
       final staging = usesCache
           ? await persistentStagingFile(task.workRootPath, relativePath)
           : File(
@@ -349,6 +352,14 @@ class AsmrDownloadOutputStore {
     String workRootPath,
     String relativePath,
   ) {
+    if (!PathMatcher.isContentUri(workRootPath)) {
+      return JsonDocumentLocation.folderChild(
+        folder: path.dirname(
+          _planner.resolveLocalPathWithin(workRootPath, relativePath),
+        ),
+        name: path.posix.basename(_planner.localRelativePath(relativePath)),
+      );
+    }
     final parentRelative = path.posix.dirname(relativePath);
     final folder = parentRelative == '.'
         ? workRootPath

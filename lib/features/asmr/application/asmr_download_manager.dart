@@ -432,13 +432,18 @@ class AsmrDownloadManager {
     final workId = work.id;
     if (!_startingTasks.add(workId)) return;
     try {
-      final workFolderName =
+      var workFolderName =
           customWorkFolderName != null && customWorkFolderName.trim().isNotEmpty
           ? customWorkFolderName.trim()
           : buildAsmrDownloadWorkFolderName(work, folderNameFields);
+      if (Platform.isWindows &&
+          !PathMatcher.isContentUri(normalizedDestination)) {
+        workFolderName = _planner.localRelativePath(workFolderName);
+      }
       final plannedFiles = _planner.collectPlannedFiles(selectedRoots);
       final coverFile = saveCover ? _planner.plannedCoverFile(work) : null;
       if (coverFile != null) plannedFiles.add(coverFile);
+      _planner.validateLocalOutputs(plannedFiles, saveMetadata: saveMetadata);
       for (final file in plannedFiles) {
         if (!file.isCover) {
           _planner.validatedDownloadRelativePath(file.relativePath);
@@ -584,6 +589,14 @@ class AsmrDownloadManager {
         taskSnapshot.completedFilePaths.length;
 
     try {
+      final plannedFiles = _plannedFilesMap.putIfAbsent(
+        workId,
+        () => _planner.collectTaskFiles(taskSnapshot),
+      );
+      _planner.validateLocalOutputs(
+        _planner.collectTaskFiles(taskSnapshot),
+        saveMetadata: taskSnapshot.saveMetadata,
+      );
       await _outputs.prepareTask(taskSnapshot);
       _transfers.throwIfCancelled(workId);
 
@@ -671,10 +684,6 @@ class AsmrDownloadManager {
         );
       }
 
-      final plannedFiles = _plannedFilesMap.putIfAbsent(
-        workId,
-        () => _planner.collectTaskFiles(_store[workId]!),
-      );
       if (plannedFiles.isNotEmpty) {
         final progress = AsmrDownloadFileProgress(
           completed: completed,

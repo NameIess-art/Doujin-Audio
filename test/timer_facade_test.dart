@@ -693,6 +693,49 @@ void main() {
       expect(timer.state.stopAfterCurrentTrack, isFalse);
     });
 
+    for (final throws in [false, true]) {
+      test(
+        'failed auto-resume leaves other sessions audible (throws: $throws)',
+        () async {
+          final platform = _ControlledPowerPlatformService();
+          final service = TimerService()
+            ..autoResumeEnabled = true
+            ..autoResumeAt = DateTime.now().subtract(const Duration(minutes: 1))
+            ..pausedByTimerSessionIds.add('paused');
+          final timer = TimerFacade.create(
+            service: service,
+            powerPlatformService: platform,
+          );
+          addTearDown(timer.dispose);
+          final globalFades = <double>[];
+          final finished = Completer<void>();
+          timer.attachRuntime(
+            hasPlayingSession: () => true,
+            sessions: () => [
+              _TestSession('paused'),
+              _TestSession('already-playing')..requested = true,
+            ],
+            pauseSession: (_) async => true,
+            activateAudioSession: () async => true,
+            resumeSession: (session) async {
+              if (throws) throw StateError('Source unavailable');
+              return false;
+            },
+            onStateChanged: () {
+              if (!finished.isCompleted) finished.complete();
+            },
+            onRuntimeRestored: () {},
+            applyFadeMultiplier: globalFades.add,
+          );
+          platform.autoResumeResult.complete(TimerExecutionResult.failed);
+          timer.retryOverdueAutoResume();
+          await finished.future.timeout(const Duration(seconds: 1));
+          expect(globalFades, [0.0, 1.0]);
+          expect(service.pausedByTimerSessionIds, ['paused']);
+        },
+      );
+    }
+
     test('auto-resume ramps fade multiplier from 0.0 to 1.0', () async {
       final platform = _ControlledPowerPlatformService();
       final timerService = TimerService()

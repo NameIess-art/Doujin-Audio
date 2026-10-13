@@ -117,6 +117,7 @@ class LibraryEntry {
   bool get isExcluded => state.isExcluded;
 
   LibraryEntry copyWith({
+    String? path,
     LibraryEntryState? state,
     String? parentPath,
     String? displayName,
@@ -131,7 +132,7 @@ class LibraryEntry {
   }) {
     return LibraryEntry(
       libraryPath: libraryPath,
-      path: path,
+      path: path ?? this.path,
       kind: kind,
       state: state ?? this.state,
       parentPath: parentPath ?? this.parentPath,

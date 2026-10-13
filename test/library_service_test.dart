@@ -5,6 +5,54 @@ import 'package:doujin_audio/features/library/domain/library_entry.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
+  for (final state in LibraryEntryState.values) {
+    test('single track rename retains its entry state ($state)', () async {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+      final root = path.normalize('/library');
+      final oldPath = path.join(root, 'old.mp3');
+      final newPath = path.join(root, 'new.mp3');
+      final track = MusicTrack(
+        path: oldPath,
+        displayName: 'old',
+        groupKey: root,
+        groupTitle: 'Library',
+        groupSubtitle: root,
+        isSingle: false,
+      );
+      if (state.isActive) service.addTracks([track], persist: false);
+      service.replaceLibraryEntries([
+        LibraryEntry.track(libraryPath: root, track: track, state: state),
+      ]);
+      service.rebuildExclusionsFromEntries(
+        service.libraryEntriesForLibrary(root),
+      );
+
+      service.retargetSingleTrack(oldPath, newPath, 'new');
+
+      expect(service.libraryEntryForPath(root, oldPath), isNull);
+      final entry = service.libraryEntryForPath(root, newPath)!;
+      expect(entry.state, state);
+      expect(entry.displayName, 'new');
+      expect(service.isLibraryTrackExplicitlyExcluded(root, oldPath), isFalse);
+      expect(
+        service.isLibraryTrackExplicitlyExcluded(root, newPath),
+        state.isExcluded,
+      );
+      if (state.isActive) {
+        expect(
+          service
+              .setLibraryTrackExcluded(root, newPath, true)
+              .affectedEntryPaths,
+          [newPath],
+        );
+      }
+      service.rebuildExclusionsFromEntries(
+        service.libraryEntriesForLibrary(root),
+      );
+      expect(service.isLibraryTrackExplicitlyExcluded(root, newPath), isTrue);
+    });
+  }
   test(
     'equivalent Windows paths preserve spelling and user state when merged',
     () async {

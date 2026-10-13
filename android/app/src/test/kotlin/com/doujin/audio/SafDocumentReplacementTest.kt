@@ -79,47 +79,90 @@ class SafDocumentReplacementTest {
     }
 
     @Test
-    fun `createFile returning the target never opens or deletes it`() {
-        val files = mutableListOf("metadata.json")
+    fun `create in an empty directory writes the new same-name document`() {
+        val files = mutableListOf<CreatedDocument>()
+        val result = createSafDocumentIfAbsent(
+            listFiles = { files.toList() },
+            isTarget = { it.name == "track.mp3" },
+            sameDocument = { first, second -> first.uri == second.uri },
+            create = { CreatedDocument("new-uri", "track.mp3").also(files::add) },
+            write = { it.content = "audio bytes"; true },
+            delete = { files.remove(it) }
+        )
+
+        assertTrue(result)
+        assertEquals("audio bytes", files.single().content)
+    }
+
+    @Test
+    fun `createFile returning an existing URI never opens or deletes it`() {
+        val existing = CreatedDocument("old-uri", "provider-alias", "old bytes")
+        val files = mutableListOf(existing)
         var writeCalled = false
         var deleteCalled = false
 
         val result = createSafDocumentIfAbsent(
-            listFiles = { emptyList() },
-            isTarget = { it.equals("metadata.json", ignoreCase = true) },
-            sameDocument = { first, second -> first == second },
-            create = { "metadata.json" },
+            listFiles = { files.toList() },
+            isTarget = { it.name == "track.mp3" },
+            sameDocument = { first, second -> first.uri == second.uri },
+            create = { existing.copy(name = "track.mp3") },
             write = { writeCalled = true; true },
-            delete = { deleteCalled = true; files.remove(it) }
+            delete = { deleteCalled = true; files.removeAll { file -> file.uri == it.uri } }
         )
 
         assertFalse(result)
         assertFalse(writeCalled)
         assertFalse(deleteCalled)
-        assertTrue(files.single() == "metadata.json")
+        assertEquals(existing, files.single())
+        assertEquals("old bytes", files.single().content)
     }
 
     @Test
     fun `preserve create removes its new document when a target wins the race`() {
-        val files = mutableListOf<String>()
+        val files = mutableListOf<CreatedDocument>()
+        val concurrent = CreatedDocument("concurrent-uri", "track.mp3", "other bytes")
         var listCount = 0
         var writeCalled = false
 
         val result = createSafDocumentIfAbsent(
             listFiles = {
                 listCount++
-                if (listCount == 1) emptyList() else files + "concurrent"
+                if (listCount > 1) files.add(concurrent)
+                files.toList()
             },
-            isTarget = { it == "concurrent" },
-            sameDocument = { first, second -> first == second },
-            create = { "created".also(files::add) },
+            isTarget = { it.name == "track.mp3" },
+            sameDocument = { first, second -> first.uri == second.uri },
+            create = { CreatedDocument("new-uri", "track.mp3").also(files::add) },
             write = { writeCalled = true; true },
             delete = { files.remove(it) }
         )
 
         assertFalse(result)
         assertFalse(writeCalled)
-        assertFalse(files.contains("created"))
+        assertEquals(listOf(concurrent), files)
+        assertEquals("other bytes", concurrent.content)
+    }
+
+    @Test
+    fun `failed create writes remove the new document`() {
+        for (throws in listOf(false, true)) {
+            val files = mutableListOf<CreatedDocument>()
+            val result = createSafDocumentIfAbsent(
+                listFiles = { files.toList() },
+                isTarget = { it.name == "track.mp3" },
+                sameDocument = { first, second -> first.uri == second.uri },
+                create = { CreatedDocument("new-uri", "track.mp3").also(files::add) },
+                write = {
+                    it.content = "partial"
+                    if (throws) throw java.io.IOException("storage full")
+                    false
+                },
+                delete = { files.remove(it) }
+            )
+
+            assertFalse(result)
+            assertTrue(files.isEmpty())
+        }
     }
 
     @Test
@@ -372,6 +415,8 @@ class SafDocumentReplacementTest {
             executor.shutdownNow()
         }
     }
+
+    private data class CreatedDocument(val uri: String, val name: String, var content: String = "")
 
     private fun replace(
         files: LinkedHashMap<String, String>,

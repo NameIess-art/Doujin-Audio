@@ -94,6 +94,126 @@ ScrollPosition _cardTextPosition(
 }
 
 void main() {
+  for (final sample in [
+    (scale: 1.0, rows: 3),
+    (scale: 2.0, rows: 3),
+    (scale: 1.0, rows: 4),
+  ]) {
+    testWidgets(
+      'work card keeps metadata within its cover and scrolls text (${sample.scale}, ${sample.rows} rows)',
+      (tester) async {
+        final title = 'A long overflowing work title ' * 12;
+        await tester.pumpWidget(
+          _buildApp(
+            MediaQuery(
+              data: MediaQueryData(textScaler: TextScaler.linear(sample.scale)),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: 300,
+                  child: LibraryLikeWorkCardContent(
+                    title: title,
+                    lines: [
+                      for (var i = 0; i < sample.rows; i++)
+                        LibraryLikeInfoLineData(
+                          'Metadata $i',
+                          'Value $i',
+                          icon: Icons.info_outline,
+                        ),
+                      const LibraryLikeInfoLineData(
+                        'Release',
+                        '2026-10-09',
+                        icon: Icons.calendar_today_rounded,
+                        isSecondary: true,
+                      ),
+                    ],
+                    coverBuilder: (width) => SizedBox(width: width, height: 90),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final card = find.byType(LibraryLikeWorkCardContent);
+        final bounds = tester.getRect(card);
+        expect(bounds.height, LibraryLikeCardMetrics.contentHeight);
+        for (var i = 0; i < sample.rows; i++) {
+          final value = tester.getRect(find.text('Value $i'));
+          expect(value.top, greaterThanOrEqualTo(bounds.top));
+          expect(value.bottom, lessThanOrEqualTo(bounds.bottom + 0.01));
+        }
+        final footer = tester.getRect(find.text('2026-10-09'));
+        expect(footer.bottom, closeTo(bounds.bottom, 0.01));
+        final position = _cardTextPosition(tester, card, title);
+        expect(position.maxScrollExtent, greaterThan(0));
+        position.jumpTo(position.maxScrollExtent);
+        await tester.pump();
+        expect(position.pixels, position.maxScrollExtent);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  testWidgets(
+    'edge fade uses an external controller for drag and Windows wheel scrolling',
+    (tester) async {
+      final controller = ScrollController(keepScrollOffset: false);
+      addTearDown(controller.dispose);
+      const fadeKey = ValueKey('external-controller-edge-fade');
+      await tester.pumpWidget(
+        _buildApp(
+          Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 120,
+              child: HorizontalEdgeFadeScroll(
+                key: fadeKey,
+                controller: controller,
+                builder: (value) {
+                  expect(value, same(controller));
+                  return SingleChildScrollView(
+                    controller: value,
+                    scrollDirection: Axis.horizontal,
+                    child: const SizedBox(width: 600, height: 20),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(find.byKey(fadeKey), const Offset(-60, 0));
+      await tester.pumpAndSettle();
+      expect(controller.offset, greaterThan(0));
+      controller.jumpTo(0);
+      await tester.pumpAndSettle();
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: tester.getCenter(find.byKey(fadeKey)),
+            scrollDelta: const Offset(0, 60),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(controller.offset, greaterThan(0));
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(controller.hasClients, isFalse);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets(
     'card text starts at the beginning when rows enter a scrolled list',
     (tester) async {

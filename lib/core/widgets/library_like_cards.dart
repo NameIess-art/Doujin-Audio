@@ -347,8 +347,45 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
       fontSize: 11,
       color: cs.onSurface.withValues(alpha: 0.82),
     );
-    final primaryLines = lines.where((line) => !line.isSecondary);
+    final primaryLines = lines.where((line) => !line.isSecondary).toList();
     final secondaryLines = lines.where((line) => line.isSecondary).toList();
+    final textScaler = MediaQuery.textScalerOf(context);
+    final info = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(
+            minHeight: _libraryLikeInfoLineHeight,
+          ),
+          child: LibraryLikeScrollableText(
+            text: title,
+            style: _libraryLikeFixedLineStyle(titleStyle),
+          ),
+        ),
+        for (final line in primaryLines)
+          LibraryLikeDetailInfoLine(
+            label: line.label,
+            icon: line.icon,
+            text: line.text,
+            style: infoStyle,
+            loading: false,
+            accentColor: accentColor,
+          ),
+        _libraryLikeSecondaryInfo(
+          context,
+          secondaryLines,
+          trailingActions: trailingActions,
+        ),
+      ],
+    );
+    // Five fixed-height rows already fit the cover at normal text sizes.
+    // Keep scaling for larger accessibility fonts or additional metadata rows.
+    final fitsWithoutScaling =
+        primaryLines.length <= 3 &&
+        textScaler.scale(14) <= 14 &&
+        textScaler.scale(11) <= 11;
     const coverWidth =
         LibraryLikeCardMetrics.coverHeight *
         LibraryLikeCardMetrics.coverAspectRatio;
@@ -363,50 +400,26 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
             coverBuilder(coverWidth),
             const SizedBox(width: 10),
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) => FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.topLeft,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      minHeight: LibraryLikeCardMetrics.contentHeight,
-                    ),
-                    child: SizedBox(
-                      width: constraints.maxWidth,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(
-                              minHeight: _libraryLikeInfoLineHeight,
-                            ),
-                            child: LibraryLikeScrollableText(
-                              text: title,
-                              style: _libraryLikeFixedLineStyle(titleStyle),
-                            ),
+              child: fitsWithoutScaling
+                  ? SizedBox(
+                      height: LibraryLikeCardMetrics.contentHeight,
+                      child: info,
+                    )
+                  : LayoutBuilder(
+                      builder: (context, constraints) => FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.topLeft,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            minHeight: LibraryLikeCardMetrics.contentHeight,
                           ),
-                          for (final line in primaryLines)
-                            LibraryLikeDetailInfoLine(
-                              label: line.label,
-                              icon: line.icon,
-                              text: line.text,
-                              style: infoStyle,
-                              loading: false,
-                              accentColor: accentColor,
-                            ),
-                          _libraryLikeSecondaryInfo(
-                            context,
-                            secondaryLines,
-                            trailingActions: trailingActions,
+                          child: SizedBox(
+                            width: constraints.maxWidth,
+                            child: info,
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              ),
             ),
           ],
         ),

@@ -279,9 +279,14 @@ void main() {
   };
 
   for (final cover in deferredFileCovers.entries) {
-    for (final cached in [false, true]) {
+    for (final (scrolling, cached) in const [
+      (false, false),
+      (false, true),
+      (true, false),
+      (true, true),
+    ]) {
       testWidgets(
-        '${cover.key} ${cached ? 'reuses cached file during transition' : 'decodes cold file after transition'}',
+        '${cover.key} ${cached ? 'reuses cached file during' : 'decodes cold file after'} ${scrolling ? 'scroll' : 'transition'}',
         (tester) async {
           final directory = await tester.runAsync(
             () => Directory.systemTemp.createTemp('deferred-cover-'),
@@ -305,17 +310,20 @@ void main() {
             await provider.evict();
             await tester.runAsync(() => directory.delete(recursive: true));
           });
-          Widget page() => ProviderScope(
+          Widget page({bool showCover = true}) => ProviderScope(
             overrides: [
               coverImageResolutionProvider.overrideWithValue(
                 CoverImageResolution.balanced,
               ),
             ],
             child: MaterialApp(
-              home: SizedBox(
-                width: 120,
-                height: 90,
-                child: cover.value(file.path),
+              home: ScrollActivityGate(
+                child: SizedBox(
+                  key: const ValueKey('cover-slot'),
+                  width: 120,
+                  height: 90,
+                  child: showCover ? cover.value(file.path) : null,
+                ),
               ),
             ),
           );
@@ -351,15 +359,45 @@ void main() {
           }
 
           final interactionSource = Object();
-          UiInteractionCoordinator.instance.beginNavigation(interactionSource);
+          void notifyScroll({required bool ended}) {
+            final context = tester.element(
+              find.byKey(const ValueKey('cover-slot')),
+            );
+            final metrics = FixedScrollMetrics(
+              minScrollExtent: 0,
+              maxScrollExtent: 100,
+              pixels: 0,
+              viewportDimension: 100,
+              axisDirection: AxisDirection.down,
+              devicePixelRatio: 1,
+            );
+            if (ended) {
+              ScrollEndNotification(
+                metrics: metrics,
+                context: context,
+              ).dispatch(context);
+            } else {
+              ScrollStartNotification(
+                metrics: metrics,
+                context: context,
+              ).dispatch(context);
+            }
+          }
+
+          if (scrolling) {
+            await tester.pumpWidget(page(showCover: false));
+            notifyScroll(ended: false);
+            await tester.pump();
+          } else {
+            UiInteractionCoordinator.instance.beginNavigation(
+              interactionSource,
+            );
+          }
           await tester.pumpWidget(page());
           await tester.pump();
           if (cached) {
             expect(coverImages, findsOneWidget);
-            expect(
-              tester.widget<RawImage>(coverFrames).image,
-              isNotNull,
-            );
+            expect(tester.widget<RawImage>(coverFrames).image, isNotNull);
             expect(find.byType(CoverLoadingArtwork), findsNothing);
           } else {
             expect(coverImages, findsNothing);
@@ -369,17 +407,21 @@ void main() {
                   .tracked,
               isFalse,
             );
-            UiInteractionCoordinator.instance.cancelNavigation(
-              interactionSource,
-            );
+            if (scrolling) {
+              await tester.pump(const Duration(seconds: 1));
+              expect(coverImages, findsNothing);
+              notifyScroll(ended: true);
+              await tester.pump(const Duration(milliseconds: 200));
+            } else {
+              UiInteractionCoordinator.instance.cancelNavigation(
+                interactionSource,
+              );
+            }
             await tester.pump();
             expect(coverImages, findsOneWidget);
             await finishFileDecode();
             await tester.pumpAndSettle();
-            expect(
-              tester.widget<RawImage>(coverFrames).image,
-              isNotNull,
-            );
+            expect(tester.widget<RawImage>(coverFrames).image, isNotNull);
           }
           await tester.pumpWidget(const SizedBox.shrink());
           expect(tester.takeException(), isNull);
@@ -1148,7 +1190,7 @@ void main() {
 
   for (final scrolling in [false, true]) {
     testWidgets(
-      'cold cover resolves and decodes during ${scrolling ? 'a scroll drag' : 'a general interaction'}',
+      'cold cover resolves during ${scrolling ? 'a scroll drag and decodes after release' : 'a general interaction'}',
       (tester) async {
         final path = Completer<String?>();
         final provider = _ControlledImageProvider();
@@ -1197,13 +1239,24 @@ void main() {
         await tester.pump();
         await tester.pump();
         expect(find.text('loading'), findsNothing);
+        if (scrolling) {
+          expect(provider.loadCount, 0);
+          expect(find.text('decoding'), findsOneWidget);
+          await tester.pump(const Duration(seconds: 3));
+          expect(provider.loadCount, 0);
+          await gesture!.up();
+          await tester.pumpAndSettle();
+          await tester.pump(const Duration(seconds: 2));
+          await tester.pump();
+        }
         expect(provider.loadCount, 1);
         provider.complete(await _createTestImage());
         await tester.pumpAndSettle();
-        expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
+        if (!scrolling) {
+          expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
+        }
         expect(find.text('decoding'), findsNothing);
         expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
-        await gesture?.up();
         await tester.pumpWidget(const SizedBox.shrink());
         UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
       },
@@ -1241,6 +1294,105 @@ void main() {
     expect(find.text('loaded:first.image'), findsNothing);
     expect(find.text('loading'), findsOneWidget);
   });
+
+  testWidgets(
+    'cold covers resume one per frame and discard replaced scroll requests',
+    (tester) async {
+      final providers = List.generate(4, (_) => _ControlledImageProvider());
+      final interaction = UiInteractionCoordinator.instance;
+      addTearDown(() async {
+        for (final provider in providers) {
+          await provider.evict();
+        }
+      });
+      Widget page(List<_ControlledImageProvider> visible) => MaterialApp(
+        home: ScrollActivityGate(
+          child: Column(
+            key: const ValueKey('cover-slots'),
+            children: [
+              for (var index = 0; index < visible.length; index++)
+                SizedBox(
+                  height: 90,
+                  child: RetryingImage(
+                    key: ValueKey(index),
+                    retryKey: visible[index],
+                    imageProviderBuilder: () => visible[index],
+                    loadingBuilder: (_) => const Text('waiting'),
+                    fallbackBuilder: (_) => const Text('decoding'),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+      void notifyScroll({required bool ended}) {
+        final context = tester.element(
+          find.byKey(const ValueKey('cover-slots')),
+        );
+        final metrics = FixedScrollMetrics(
+          minScrollExtent: 0,
+          maxScrollExtent: 100,
+          pixels: 0,
+          viewportDimension: 100,
+          axisDirection: AxisDirection.down,
+          devicePixelRatio: 1,
+        );
+        if (ended) {
+          ScrollEndNotification(
+            metrics: metrics,
+            context: context,
+          ).dispatch(context);
+        } else {
+          ScrollStartNotification(
+            metrics: metrics,
+            context: context,
+          ).dispatch(context);
+        }
+      }
+
+      int loadCount() =>
+          providers.fold(0, (count, provider) => count + provider.loadCount);
+
+      await tester.pumpWidget(page([]));
+      notifyScroll(ended: false);
+      await tester.pump();
+      await tester.pumpWidget(page(providers.take(3).toList()));
+      expect(loadCount(), 0);
+      await tester.pumpWidget(page([providers[3], providers[1], providers[2]]));
+      expect(loadCount(), 0);
+      notifyScroll(ended: true);
+      await tester.pump(const Duration(milliseconds: 200));
+      // Re-entering a drag before scheduled loads run must keep them deferred.
+      notifyScroll(ended: false);
+      await tester.pump();
+      expect(loadCount(), 0);
+      await tester.pump(const Duration(seconds: 1));
+      expect(loadCount(), 0);
+      notifyScroll(ended: true);
+      await tester.pump(const Duration(milliseconds: 200));
+      // The idle timer may release a previously scheduled commit in this frame.
+      expect(loadCount(), lessThanOrEqualTo(1));
+      while (loadCount() < 3) {
+        final previous = loadCount();
+        await tester.pump();
+        expect(loadCount(), previous + 1);
+      }
+      expect(providers.first.loadCount, 0);
+      for (final provider in providers.skip(1)) {
+        provider.complete(await _createTestImage());
+      }
+      await tester.pumpAndSettle();
+      final displayed = tester.widgetList<RawImage>(find.byType(RawImage));
+      expect(displayed.where((image) => image.image != null), hasLength(3));
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(interaction.pendingCommitCount, 0);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('RetryingImage retries an image error during interaction', (
     tester,

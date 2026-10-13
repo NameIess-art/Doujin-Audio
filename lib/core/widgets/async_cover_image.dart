@@ -648,14 +648,24 @@ class _RetryingImageState extends State<RetryingImage> {
   Object? _cacheCheckKey;
   String get _retryCommitKey =>
       'retrying_image_${identityHashCode(this)}_retry';
+  String get _loadCommitKey => 'retrying_image_${identityHashCode(this)}_load';
+
+  bool get _canStartLoad =>
+      !widget.deferLoadDuringInteraction ||
+      (_interaction.navigationAllowed.value &&
+          !ScrollActivityGate.isScrollingWithoutDependencyOf(context));
 
   @override
   void initState() {
     super.initState();
-    _loadEnabled =
-        !widget.deferLoadDuringInteraction ||
-        _interaction.navigationAllowed.value;
-    _interaction.navigationAllowed.addListener(_handleNavigationChanged);
+    _loadEnabled = _canStartLoad;
+    _interaction.navigationAllowed.addListener(_scheduleLoadWhenAllowed);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_loadEnabled) _scheduleLoadWhenAllowed();
   }
 
   @override
@@ -664,30 +674,40 @@ class _RetryingImageState extends State<RetryingImage> {
     if (oldWidget.retryKey != widget.retryKey) {
       _retryTimer?.cancel();
       _interaction.cancelCommit(_retryCommitKey);
+      _interaction.cancelCommit(_loadCommitKey);
       _retryAttempt = 0;
-      _loadEnabled =
-          !widget.deferLoadDuringInteraction ||
-          _interaction.navigationAllowed.value;
+      _loadEnabled = _canStartLoad;
       _cacheCheckKey = null;
     }
+    if (!widget.deferLoadDuringInteraction) _loadEnabled = true;
   }
 
   @override
   void dispose() {
     _retryTimer?.cancel();
-    _interaction.navigationAllowed.removeListener(_handleNavigationChanged);
+    _interaction.navigationAllowed.removeListener(_scheduleLoadWhenAllowed);
     _interaction.cancelCommit(_retryCommitKey);
+    _interaction.cancelCommit(_loadCommitKey);
     super.dispose();
   }
 
-  void _handleNavigationChanged() {
-    if (!widget.deferLoadDuringInteraction ||
-        !mounted ||
-        !_interaction.navigationAllowed.value ||
-        _loadEnabled) {
+  void _scheduleLoadWhenAllowed() {
+    if (!mounted || !_canStartLoad || _loadEnabled) {
       return;
     }
-    setState(() => _loadEnabled = true);
+    // Starting Image builds/decodes can exceed a short notification's budget.
+    // Reuse structural commits to resume cold covers one per frame after drag.
+    _interaction.scheduleCommit(
+      key: _loadCommitKey,
+      priority: 20,
+      allowDuringScroll: true,
+      structural: true,
+      commit: () {
+        if (mounted && !_loadEnabled && _canStartLoad) {
+          setState(() => _loadEnabled = true);
+        }
+      },
+    );
   }
 
   ImageProvider<Object>? _cachedProviderForBuild(BuildContext context) {
@@ -757,6 +777,7 @@ class _RetryingImageState extends State<RetryingImage> {
   Widget build(BuildContext context) {
     ImageProvider<Object>? provider;
     if (!_loadEnabled) {
+      ScrollActivityGate.isScrollingOf(context);
       provider = _cachedProviderForBuild(context);
     }
     if (!_loadEnabled) {

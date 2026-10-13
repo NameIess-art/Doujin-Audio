@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -23,8 +24,10 @@ class HorizontalEdgeFadeScroll extends StatefulWidget {
 
 class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
   // Inline rows share the enclosing list's PageStorage key, not its offset.
-  final _ownedController = ScrollController(keepScrollOffset: false);
-  ScrollController get _controller => widget.controller ?? _ownedController;
+  ScrollController? _ownedController;
+  ScrollController get _controller =>
+      widget.controller ??
+      (_ownedController ??= ScrollController(keepScrollOffset: false));
   bool _fadeLeft = false;
   bool _fadeRight = false;
   Drag? _drag;
@@ -48,7 +51,7 @@ class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
 
   @override
   void dispose() {
-    _ownedController.dispose();
+    _ownedController?.dispose();
     super.dispose();
   }
 
@@ -68,44 +71,47 @@ class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
 
   @override
   Widget build(BuildContext context) {
-    final content = WindowsHorizontalWheelScroll(
-      controller: _controller,
-      builder: (controller) => ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(
-          dragDevices: widget.deferDragAtEdges
-              ? const <PointerDeviceKind>{}
-              : PointerDeviceKind.values.toSet(),
-          scrollbars: false,
-        ),
-        child: NotificationListener<ScrollMetricsNotification>(
+    Widget buildContent(ScrollController controller) => ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(
+        dragDevices: widget.deferDragAtEdges
+            ? const <PointerDeviceKind>{}
+            : PointerDeviceKind.values.toSet(),
+        scrollbars: false,
+      ),
+      child: NotificationListener<ScrollMetricsNotification>(
+        onNotification: (notification) {
+          if (notification.depth == 0) _updateEdges(notification.metrics);
+          return false;
+        },
+        child: NotificationListener<ScrollNotification>(
           onNotification: (notification) {
-            if (notification.depth == 0) _updateEdges(notification.metrics);
-            return false;
+            if (notification.depth != 0) return false;
+            _updateEdges(notification.metrics);
+            return true;
           },
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (notification) {
-              if (notification.depth != 0) return false;
-              _updateEdges(notification.metrics);
-              return true;
-            },
-            child: _HorizontalEdgeMask(
-              enabled: _fadeLeft || _fadeRight,
-              blendMode: BlendMode.dstIn,
-              shaderCallback: (bounds) => LinearGradient(
-                colors: [
-                  _fadeLeft ? Colors.transparent : Colors.black,
-                  Colors.black,
-                  Colors.black,
-                  _fadeRight ? Colors.transparent : Colors.black,
-                ],
-                stops: const [0, 0.06, 0.94, 1],
-              ).createShader(bounds),
-              child: widget.builder(controller),
-            ),
+          child: _HorizontalEdgeMask(
+            enabled: _fadeLeft || _fadeRight,
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (bounds) => LinearGradient(
+              colors: [
+                _fadeLeft ? Colors.transparent : Colors.black,
+                Colors.black,
+                Colors.black,
+                _fadeRight ? Colors.transparent : Colors.black,
+              ],
+              stops: const [0, 0.06, 0.94, 1],
+            ).createShader(bounds),
+            child: widget.builder(controller),
           ),
         ),
       ),
     );
+    final content = defaultTargetPlatform == TargetPlatform.windows
+        ? WindowsHorizontalWheelScroll(
+            controller: _controller,
+            builder: buildContent,
+          )
+        : buildContent(_controller);
     if (!widget.deferDragAtEdges) return content;
     return RawGestureDetector(
       gestures: {

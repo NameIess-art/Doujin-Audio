@@ -671,8 +671,7 @@ class _RetryingImageState extends State<RetryingImage> {
 
   bool get _canStartLoad =>
       !widget.deferLoadDuringInteraction ||
-      (_interaction.navigationAllowed.value &&
-          !ScrollActivityGate.isScrollingWithoutDependencyOf(context));
+      _interaction.navigationAllowed.value;
 
   @override
   void initState() {
@@ -717,7 +716,7 @@ class _RetryingImageState extends State<RetryingImage> {
       return;
     }
     // Starting Image builds/decodes can exceed a short notification's budget.
-    // Reuse structural commits to resume cold covers one per frame after drag.
+    // Resume deferred covers one per frame, including during an active scroll.
     _interaction.scheduleCommit(
       key: _loadCommitKey,
       priority: 20,
@@ -801,7 +800,6 @@ class _RetryingImageState extends State<RetryingImage> {
   Widget build(BuildContext context) {
     ImageProvider<Object>? provider;
     if (!_loadEnabled) {
-      ScrollActivityGate.isScrollingOf(context);
       provider = _cachedProviderForBuild(context);
     }
     final requested = provider ?? widget.imageProviderBuilder();

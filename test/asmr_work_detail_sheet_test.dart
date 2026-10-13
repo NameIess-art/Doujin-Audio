@@ -497,6 +497,11 @@ void main() {
           isFalse,
         );
         UiInteractionCoordinator.instance.cancelNavigation(interaction);
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.byType(ListView)),
+        );
+        await gesture.moveBy(const Offset(0, -40));
+        await tester.pump();
         for (var tick = 0; tick < 100; tick++) {
           await tester.runAsync(
             () => Future<void>.delayed(const Duration(milliseconds: 10)),
@@ -506,6 +511,9 @@ void main() {
           if (images.any((image) => image.image != null)) break;
         }
         expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
+        await tester.pumpAndSettle();
+        expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
+        await gesture.up();
         await tester.pumpAndSettle();
         final warmedImage = tester
             .widget<RawImage>(decodedCover)

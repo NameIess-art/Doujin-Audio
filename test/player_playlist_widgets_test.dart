@@ -4617,9 +4617,18 @@ void main() {
               (widget) => widget is Image && widget.image == provider,
             ),
           ),
-          matching: find.byWidgetPredicate(
-            (widget) => widget is RawImage && widget.image != null,
-          ),
+          matching: find.byElementPredicate((element) {
+            final widget = element.widget;
+            if (widget is! RawImage || widget.image == null) return false;
+            Image? owner;
+            element.visitAncestorElements((ancestor) {
+              if (ancestor.widget is! Image) return true;
+              owner = ancestor.widget as Image;
+              return false;
+            });
+            // The loading placeholder has its own decoded brand icon.
+            return owner?.image == provider;
+          }),
         );
         expect(interaction.navigationAllowed.value, isFalse);
         expect(imageCache.statusForKey(key).tracked, cached);

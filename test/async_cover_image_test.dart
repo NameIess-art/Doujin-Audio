@@ -295,8 +295,10 @@ void main() {
       (true, false),
       (true, true),
     ]) {
+      final action = cached ? 'reuses cached file' : 'decodes cold file';
+      final timing = cached || scrolling ? 'during' : 'after';
       testWidgets(
-        '${cover.key} ${cached ? 'reuses cached file during' : 'decodes cold file after'} ${scrolling ? 'scroll' : 'transition'}',
+        '${cover.key} $action $timing ${scrolling ? 'scroll' : 'transition'}',
         (tester) async {
           final directory = await tester.runAsync(
             () => Directory.systemTemp.createTemp('deferred-cover-'),
@@ -369,7 +371,7 @@ void main() {
           }
 
           final interactionSource = Object();
-          void notifyScroll({required bool ended}) {
+          void notifyScroll() {
             final context = tester.element(
               find.byKey(const ValueKey('cover-slot')),
             );
@@ -381,22 +383,15 @@ void main() {
               axisDirection: AxisDirection.down,
               devicePixelRatio: 1,
             );
-            if (ended) {
-              ScrollEndNotification(
-                metrics: metrics,
-                context: context,
-              ).dispatch(context);
-            } else {
-              ScrollStartNotification(
-                metrics: metrics,
-                context: context,
-              ).dispatch(context);
-            }
+            ScrollStartNotification(
+              metrics: metrics,
+              context: context,
+            ).dispatch(context);
           }
 
           if (scrolling) {
             await tester.pumpWidget(page(showCover: false));
-            notifyScroll(ended: false);
+            notifyScroll();
             await tester.pump();
           } else {
             UiInteractionCoordinator.instance.beginNavigation(
@@ -410,19 +405,14 @@ void main() {
             expect(tester.widget<RawImage>(coverFrames).image, isNotNull);
             expect(find.byType(CoverLoadingArtwork), findsNothing);
           } else {
-            expect(coverImages, findsNothing);
-            expect(
-              PaintingBinding.instance.imageCache
-                  .statusForKey(cacheKey)
-                  .tracked,
-              isFalse,
-            );
-            if (scrolling) {
-              await tester.pump(const Duration(seconds: 1));
+            if (!scrolling) {
               expect(coverImages, findsNothing);
-              notifyScroll(ended: true);
-              await tester.pump(const Duration(milliseconds: 200));
-            } else {
+              expect(
+                PaintingBinding.instance.imageCache
+                    .statusForKey(cacheKey)
+                    .tracked,
+                isFalse,
+              );
               UiInteractionCoordinator.instance.cancelNavigation(
                 interactionSource,
               );
@@ -1473,7 +1463,7 @@ void main() {
 
   for (final scrolling in [false, true]) {
     testWidgets(
-      'cold cover resolves during ${scrolling ? 'a scroll drag and decodes after release' : 'a general interaction'}',
+      'cold cover resolves and decodes during ${scrolling ? 'a scroll drag' : 'a general interaction'}',
       (tester) async {
         final path = Completer<String?>();
         final provider = _ControlledImageProvider();
@@ -1522,22 +1512,11 @@ void main() {
         await tester.pump();
         await tester.pump();
         expect(find.text('loading'), findsNothing);
-        if (scrolling) {
-          expect(provider.loadCount, 0);
-          expect(find.text('decoding'), findsOneWidget);
-          await tester.pump(const Duration(seconds: 3));
-          expect(provider.loadCount, 0);
-          await gesture!.up();
-          await tester.pumpAndSettle();
-          await tester.pump(const Duration(seconds: 2));
-          await tester.pump();
-        }
         expect(provider.loadCount, 1);
         provider.complete(await _createTestImage());
         await tester.pumpAndSettle();
-        if (!scrolling) {
-          expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
-        }
+        expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
+        if (scrolling) await gesture!.up();
         expect(find.text('decoding'), findsNothing);
         expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -1579,7 +1558,7 @@ void main() {
   });
 
   testWidgets(
-    'cold covers resume one per frame and discard replaced scroll requests',
+    'cold covers resume one per frame and discard replaced navigation requests',
     (tester) async {
       final providers = List.generate(4, (_) => _ControlledImageProvider());
       final interaction = UiInteractionCoordinator.instance;
@@ -1608,52 +1587,27 @@ void main() {
           ),
         ),
       );
-      void notifyScroll({required bool ended}) {
-        final context = tester.element(
-          find.byKey(const ValueKey('cover-slots')),
-        );
-        final metrics = FixedScrollMetrics(
-          minScrollExtent: 0,
-          maxScrollExtent: 100,
-          pixels: 0,
-          viewportDimension: 100,
-          axisDirection: AxisDirection.down,
-          devicePixelRatio: 1,
-        );
-        if (ended) {
-          ScrollEndNotification(
-            metrics: metrics,
-            context: context,
-          ).dispatch(context);
-        } else {
-          ScrollStartNotification(
-            metrics: metrics,
-            context: context,
-          ).dispatch(context);
-        }
-      }
-
       int loadCount() =>
           providers.fold(0, (count, provider) => count + provider.loadCount);
 
+      final navigation = Object();
+      interaction.beginNavigation(navigation);
       await tester.pumpWidget(page([]));
-      notifyScroll(ended: false);
       await tester.pump();
       await tester.pumpWidget(page(providers.take(3).toList()));
       expect(loadCount(), 0);
       await tester.pumpWidget(page([providers[3], providers[1], providers[2]]));
       expect(loadCount(), 0);
-      notifyScroll(ended: true);
-      await tester.pump(const Duration(milliseconds: 200));
-      // Re-entering a drag before scheduled loads run must keep them deferred.
-      notifyScroll(ended: false);
+      interaction.cancelNavigation(navigation);
+      // A second navigation before scheduled loads run keeps them deferred.
+      interaction.beginNavigation(navigation);
       await tester.pump();
       expect(loadCount(), 0);
       await tester.pump(const Duration(seconds: 1));
       expect(loadCount(), 0);
-      notifyScroll(ended: true);
-      await tester.pump(const Duration(milliseconds: 200));
-      // The idle timer may release a previously scheduled commit in this frame.
+      interaction.cancelNavigation(navigation);
+      await tester.pump();
+      // Navigation resumes cold covers through structural commits.
       expect(loadCount(), lessThanOrEqualTo(1));
       while (loadCount() < 3) {
         final previous = loadCount();

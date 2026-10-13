@@ -452,7 +452,7 @@ void main() {
     );
   }
 
-  testWidgets('playlist detail revision affects only detail-based sorting', (
+  testWidgets('playlist ignores artwork changes and observes sorting inputs', (
     tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
@@ -489,11 +489,18 @@ void main() {
     );
 
     Object? sorted;
+    List<String> sortedIds = const [];
+    var displayedCoverGeneration = -1;
     await tester.pumpWidget(
       fixture.build(
         Consumer(
           builder: (context, ref, child) {
-            sorted = ref.watch(playlistSortedEntriesUiProvider);
+            final entries = ref.watch(playlistSortedEntriesUiProvider);
+            sorted = entries;
+            sortedIds = entries.map((entry) => entry.sessionId).toList();
+            displayedCoverGeneration = ref
+                .watch(playlistStructureUiProvider)
+                .coverGeneration;
             return const SizedBox.shrink();
           },
         ),
@@ -502,6 +509,13 @@ void main() {
     await tester.pumpAndSettle();
     final initial = sorted;
     expect(initial, hasLength(2));
+    final initialCoverGeneration = displayedCoverGeneration;
+
+    fixture.library.coverArtworkCacheService.invalidateAll();
+    await tester.pump();
+    await tester.pump();
+    expect(displayedCoverGeneration, greaterThan(initialCoverGeneration));
+    expect(identical(sorted, initial), isTrue);
 
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 1);
     await tester.pump();
@@ -520,5 +534,14 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(identical(sorted, detailSorted), isFalse);
+
+    final beforePin = sorted;
+    fixture.settingsRepository
+      ..pinnedPlaylistSessionIds = [sessions.first.id]
+      ..syncSlice(isInitialized: true);
+    await tester.pump();
+    await tester.pump();
+    expect(identical(sorted, beforePin), isFalse);
+    expect(sortedIds.first, sessions.first.id);
   });
 }

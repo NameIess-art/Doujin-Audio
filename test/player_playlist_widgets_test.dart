@@ -6815,6 +6815,100 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'fullscreen progress drag updates controls without rebuilding video on ${platform.name}',
+      (tester) async {
+        final orientation = AppOrientationController(
+          setPreferredOrientations: (_) async {},
+          setSystemUiMode: (_) async {},
+        );
+        final lease = await orientation.enterVideoFullscreen();
+        addTearDown(lease.release);
+        final track = testMusicTrack(
+          name: 'Video',
+          path: '/videos/progress.mp4',
+          groupKey: '/videos',
+          groupTitle: 'Videos',
+        ).copyWith(isVideo: true);
+        final setup = await _pumpSubtitleDetail(
+          tester: tester,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+          initialPosition: const Duration(seconds: 10),
+          queueTracks: [track],
+          physicalSize: const Size(2400, 1080),
+          detailBuilder: (session) => SessionVideoFullscreenPage(
+            sessionId: session.id,
+            trackPath: track.path,
+            fullscreenLease: lease,
+          ),
+        );
+        final session = setup.session
+          ..loadedPath = track.path
+          ..setOptimisticDuration(const Duration(minutes: 2))
+          ..setOptimisticState(playing: true);
+        setup.fixture.playbackService.syncSlice(
+          activeSessions: [session],
+          playingSessionCount: 1,
+          focusedSessionId: session.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        await tester.pumpAndSettle();
+
+        final progress = find.byKey(
+          const ValueKey<String>('fullscreen_video_progress'),
+        );
+        final controls = find.byKey(
+          const ValueKey<String>('fullscreen_video_controls'),
+        );
+        final video = tester.widget<NativeSessionVideoSurface>(
+          find.byType(NativeSessionVideoSurface),
+        );
+        final cover = tester.widget<AsyncLocalCoverImage>(
+          find.byType(AsyncLocalCoverImage),
+        );
+        expect(tester.widget<Slider>(progress).value, 10000);
+        tester.widget<Slider>(progress).onChangeStart!(10000);
+        for (final value in [30000.0, 45000.0]) {
+          tester.widget<Slider>(progress).onChanged!(value);
+          await tester.pump();
+          expect(tester.widget<Slider>(progress).value, value);
+          expect(
+            tester.widget<NativeSessionVideoSurface>(
+              find.byType(NativeSessionVideoSurface),
+            ),
+            same(video),
+          );
+          expect(
+            tester.widget<AsyncLocalCoverImage>(
+              find.byType(AsyncLocalCoverImage),
+            ),
+            same(cover),
+          );
+          expect(session.position, const Duration(seconds: 10));
+        }
+        await tester.pump(const Duration(seconds: 4));
+        expect(tester.widget<AnimatedOpacity>(controls).opacity, 1);
+
+        tester.widget<Slider>(progress).onChangeEnd!(45000);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(session.position, const Duration(seconds: 45));
+        expect(tester.widget<Slider>(progress).value, 45000);
+        session.setOptimisticPosition(const Duration(seconds: 46));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(tester.widget<Slider>(progress).value, 46000);
+        await tester.pump(const Duration(seconds: 3));
+        expect(tester.widget<AnimatedOpacity>(controls).opacity, 0);
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant.only(platform),
+    );
+  }
+
   testWidgets(
     'portrait video fullscreen returns its only surface to landscape detail',
     (tester) async {

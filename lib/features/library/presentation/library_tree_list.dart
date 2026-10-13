@@ -7,6 +7,7 @@ import '../../../app/presentation/browse_page_scroll.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../domain/library_node.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/immutable_collections.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -75,6 +76,9 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   >
   _folderLoadAnimations = {};
   List<VisibleLibraryItem> _visibleItemsCache = const <VisibleLibraryItem>[];
+  List<String> _visibleItemIds = const [];
+  List<String> _reorderItemIds = const [];
+  Set<String> _visibleNodeIds = const {};
   List<LibraryNode>? _visibleItemsSource;
   int? _visibleItemsStructureRevision;
   int _visibleItemsVersion = 0;
@@ -395,6 +399,16 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
     _visibleItemsSource = tree;
     _visibleItemsStructureRevision = structureRevision;
     _visibleItemsCacheVersion = _visibleItemsVersion;
+    final ids = <String>[];
+    final reorderIds = <String>[];
+    for (final item in result) {
+      final id = PathMatcher.equivalenceKey(item.node.path);
+      ids.add(id);
+      if (!item.isFolderError) reorderIds.add(id);
+    }
+    _visibleItemIds = immutableList(ids);
+    _reorderItemIds = immutableList(reorderIds);
+    _visibleNodeIds = reorderIds.toSet();
     return _visibleItemsCache = result;
   }
 
@@ -480,11 +494,8 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
       tree: widget.tree,
       structureRevision: widget.structureRevision,
     );
-    final itemIds = visibleItems
-        .where((item) => !item.isFolderError)
-        .map((item) => PathMatcher.equivalenceKey(item.node.path))
-        .toList(growable: false);
-    final currentIds = itemIds.toSet();
+    final itemIds = _reorderItemIds;
+    final currentIds = _visibleNodeIds;
     _itemKeys.removeWhere((id, _) => !currentIds.contains(id));
     _removingItemIds.addAll(
       ref
@@ -521,10 +532,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
               isSelectableLibraryNode(item.node),
         );
     final itemIndices = <Key, int>{};
-    BrowsePageScroll.setAnchorIds(
-      context,
-      visibleItems.map((item) => PathMatcher.equivalenceKey(item.node.path)),
-    );
+    BrowsePageScroll.setAnchorIds(context, _visibleItemIds);
     Widget buildTopLevelLibraryItem(BuildContext context, int index) {
       final item = visibleItems[index];
       final node = item.node;
@@ -589,7 +597,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         }
         treeItem = FadeTransition(opacity: opacity, child: treeItem);
       }
-      final id = PathMatcher.equivalenceKey(node.path);
+      final id = _visibleItemIds[index];
       // The sliver changes when expanding/removing rows. Keep the card's State
       // (including its undo size animation) when it moves between those slivers.
       final itemKey = _itemKeys.putIfAbsent(id, GlobalKey.new);
@@ -620,10 +628,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         itemIndices.clear();
         if (columnCount == 1) {
           for (var i = 0; i < visibleItems.length; i++) {
-            final key =
-                _itemKeys[PathMatcher.equivalenceKey(
-                  visibleItems[i].node.path,
-                )];
+            final key = _itemKeys[_visibleItemIds[i]];
             if (!visibleItems[i].isFolderError && key != null) {
               itemIndices[key] = i;
             }

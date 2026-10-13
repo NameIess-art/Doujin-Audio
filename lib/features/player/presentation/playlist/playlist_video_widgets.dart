@@ -114,7 +114,7 @@ class _SessionVideoFullscreenPageState
   bool _allowPop = false;
   bool? _lastPlaying;
   bool _sliderInteracting = false;
-  double? _sliderPositionMs;
+  final _sliderPositionMs = ValueNotifier<double?>(null);
   double _brightness = 0.5;
   final _dragVolume = ValueNotifier<double?>(null);
   final _feedback = ValueNotifier<({IconData icon, String text})?>(null);
@@ -147,7 +147,11 @@ class _SessionVideoFullscreenPageState
         deferDuringInteraction: false,
       );
     }
-    _controlValues = Listenable.merge([?_positionGate, _dragVolume]);
+    _controlValues = Listenable.merge([
+      ?_positionGate,
+      _sliderPositionMs,
+      _dragVolume,
+    ]);
     final paths = ref.read(audioPathCoordinatorProvider);
     final track = paths.trackByPath(widget.trackPath);
     _activeTrackPath = widget.trackPath;
@@ -179,6 +183,7 @@ class _SessionVideoFullscreenPageState
     }
     unawaited(_restoreTemporarySpeed(showFailure: false));
     _positionGate?.dispose();
+    _sliderPositionMs.dispose();
     _dragVolume.dispose();
     _feedback.dispose();
     super.dispose();
@@ -552,10 +557,8 @@ class _SessionVideoFullscreenPageState
 
   void _endProgressInteraction(double value) {
     final target = Duration(milliseconds: value.round());
-    setState(() {
-      _sliderInteracting = false;
-      _sliderPositionMs = null;
-    });
+    _sliderInteracting = false;
+    _sliderPositionMs.value = null;
     unawaited(_playback.seekSession(widget.sessionId, target));
     _scheduleControlsHide();
   }
@@ -840,7 +843,7 @@ class _SessionVideoFullscreenPageState
                       final duration = snapshot?.duration ?? Duration.zero;
                       final maxMs = max(1, duration.inMilliseconds).toDouble();
                       final positionMs =
-                          (_sliderPositionMs ??
+                          (_sliderPositionMs.value ??
                                   snapshot?.position.inMilliseconds
                                       .toDouble() ??
                                   0)
@@ -974,9 +977,7 @@ class _SessionVideoFullscreenPageState
                                   ? (_) => _beginControlInteraction()
                                   : null,
                               onChanged: duration > Duration.zero
-                                  ? (value) => setState(
-                                      () => _sliderPositionMs = value,
-                                    )
+                                  ? (value) => _sliderPositionMs.value = value
                                   : null,
                               onChangeEnd: duration > Duration.zero
                                   ? _endProgressInteraction

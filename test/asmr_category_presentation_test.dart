@@ -1000,6 +1000,67 @@ void main() {
     );
 
     testWidgets(
+      'ASMR single-column favorites retain cards through reorder append and collapse on $platform',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(400, 1000);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final works = [
+          for (var id = 1; id <= 4; id++)
+            AsmrWork.fromJson({'id': id, 'title': 'Work $id'}),
+        ];
+        final controller = _PresentationController(createTestAsmrServices())
+          ..publishedWorks = works.take(3).toList();
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Work 1'));
+        await tester.pumpAndSettle();
+        tester
+            .widget<HeaderSegmentedCategoryBar<AsmrCategoryType>>(
+              find.byType(HeaderSegmentedCategoryBar<AsmrCategoryType>),
+            )
+            .onSelected(AsmrCategoryType.favorites);
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
+        Finder card(int id) => find.byKey(ValueKey<String>('asmr-work-$id'));
+        final retainedCard = tester.element(card(2));
+
+        controller
+          ..publishedWorks = [works[2], works[0], works[1], works[3]]
+          ..publish('Reordered');
+        await tester.pumpAndSettle();
+        expect(tester.element(card(2)), same(retainedCard));
+        expect(find.text('Work 4'), findsOneWidget);
+
+        controller
+          ..publishedWorks = [works[2], works[1], works[3]]
+          ..publish('Removed');
+        await tester.pump();
+        await tester.pump(interaction.idleDelay);
+        await tester.pump();
+        expect(card(1), findsOneWidget);
+        expect(tester.element(card(2)), same(retainedCard));
+        await tester.pumpAndSettle();
+        expect(card(1), findsNothing);
+        expect(tester.element(card(2)), same(retainedCard));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
       'ASMR repeat switches retain category projections on $platform',
       (tester) async {
         final controller = _PresentationController(createTestAsmrServices());
@@ -1193,6 +1254,7 @@ class _PresentationController extends AsmrLibraryController {
   bool hasMore = false;
   bool needsRetry = false;
   int workCount = 1;
+  List<AsmrWork>? publishedWorks;
   int loadMoreCount = 0;
   String lastSearchQuery = '';
   final searchQueries = <String>[];
@@ -1262,13 +1324,15 @@ class _PresentationController extends AsmrLibraryController {
     }
     return AsmrCategoryViewState(
       category: category,
-      works: [
-        for (var i = 0; cacheValid && i < workCount; i++)
-          AsmrWork.fromJson({
-            'id': i + 1,
-            'title': i == 0 ? title : '$title $i',
-          }),
-      ],
+      works:
+          publishedWorks ??
+          [
+            for (var i = 0; cacheValid && i < workCount; i++)
+              AsmrWork.fromJson({
+                'id': i + 1,
+                'title': i == 0 ? title : '$title $i',
+              }),
+          ],
       isLoading: false,
       isLoadingMore: false,
       isRefreshing: false,
@@ -1276,7 +1340,7 @@ class _PresentationController extends AsmrLibraryController {
       hasAttemptedLoad: cacheValid,
       hasMore: hasMore,
       needsLoadMoreRetry: needsRetry,
-      totalCount: workCount,
+      totalCount: publishedWorks?.length ?? workCount,
       activeQuery: searchQuery,
       lastError: null,
       operationError: null,

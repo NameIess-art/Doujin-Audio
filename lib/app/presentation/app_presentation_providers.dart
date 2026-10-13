@@ -307,7 +307,16 @@ final playlistStructureUiProvider = Provider<PlaylistStructureState>((ref) {
 final playlistSortedEntriesUiProvider = Provider<List<PlaylistStructureEntry>>((
   ref,
 ) {
-  final structureState = ref.watch(playlistStructureUiProvider);
+  // Artwork changes refresh cards without invalidating their sort order.
+  final structureState = ref.watch(
+    playlistStructureUiProvider.select(
+      (state) => PlaylistStructureState(
+        entries: state.entries,
+        coverGeneration: 0,
+        isInitialized: state.isInitialized,
+      ),
+    ),
+  );
   final criterion = ref.watch(
     settingsStateProvider.select(
       (state) =>

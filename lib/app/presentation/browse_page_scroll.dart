@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/browse_page_state_store.dart';
 import '../state/app_runtime_providers.dart';
+import '../../core/immutable_collections.dart';
 
 /// Restores display position without retaining routes or a second data source.
 class BrowsePageScroll extends ConsumerStatefulWidget {
@@ -29,7 +30,7 @@ class BrowsePageScroll extends ConsumerStatefulWidget {
         .dependOnInheritedWidgetOfExactType<_BrowseAnchors>()
         ?.owner;
     if (owner == null) return;
-    owner._anchorIds = ids.toList(growable: false);
+    owner._anchorIds = immutableList(ids);
     owner._scheduleRestore();
   }
 

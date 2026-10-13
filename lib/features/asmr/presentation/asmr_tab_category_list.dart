@@ -440,6 +440,13 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   );
                   final rowCount = (visibleWorks.length / columnCount).ceil();
                   final hasLoadMore = state.isLoadingMore || state.hasMore;
+                  final workIndices = columnCount == 1
+                      ? <Key, int>{
+                          for (var i = 0; i < visibleWorks.length; i++)
+                            ValueKey<String>('asmr-work-${visibleWorks[i].id}'):
+                                i,
+                        }
+                      : const <Key, int>{};
                   return workList = ListView.builder(
                     key: PageStorageKey(widget.category),
                     controller: widget.scrollController,
@@ -466,11 +473,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         return rowCount;
                       }
                       if (columnCount != 1) return null;
-                      final index = visibleWorks.indexWhere(
-                        (work) =>
-                            key == ValueKey<String>('asmr-work-${work.id}'),
-                      );
-                      return index < 0 ? null : index;
+                      return workIndices[key];
                     },
                     itemBuilder: (context, rowIndex) {
                       if (visibleWorks.isEmpty) {

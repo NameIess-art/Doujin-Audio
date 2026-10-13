@@ -114,16 +114,20 @@ final class LibraryCoverUiController {
       _scheduler.setPaused(true);
       final requests =
           _deferredLookups.entries
-              .where((entry) => _canRunLookup(entry.value))
+              .where(
+                (entry) => !entry.value.submitted && _canRunLookup(entry.value),
+              )
+              .map(
+                (entry) => (
+                  key: entry.key,
+                  request: entry.value,
+                  priority: _priorityForRequest(entry.value),
+                ),
+              )
               .toList()
-            ..sort(
-              (left, right) => _priorityForRequest(
-                left.value,
-              ).compareTo(_priorityForRequest(right.value)),
-            );
+            ..sort((left, right) => left.priority.compareTo(right.priority));
       for (final entry in requests) {
-        final request = entry.value;
-        if (request.submitted) continue;
+        final request = entry.request;
         request.submitted = _scheduler.schedule(
           key: 'visible_library_cover:${entry.key}',
           priority: -1,

@@ -69,6 +69,16 @@ final class _CountingCodec implements ui.Codec {
   }
 }
 
+final class _ControlledFileImage extends FileImage {
+  const _ControlledFileImage(super.file, this.controller);
+
+  final _ControlledImageProvider controller;
+
+  @override
+  ImageStreamCompleter loadImage(FileImage key, ImageDecoderCallback decode) =>
+      controller.loadImage(controller, decode);
+}
+
 final class _AnimatedImageProvider
     extends ImageProvider<_AnimatedImageProvider> {
   _AnimatedImageProvider(this.codec);
@@ -90,11 +100,11 @@ final class _AnimatedImageProvider
   }
 }
 
-Future<ui.Image> _createTestImage() {
+Future<ui.Image> _createTestImage([int size = 2]) {
   final recorder = ui.PictureRecorder();
   final canvas = ui.Canvas(recorder);
   canvas.drawColor(const Color(0xFF336699), ui.BlendMode.src);
-  return recorder.endRecording().toImage(2, 2);
+  return recorder.endRecording().toImage(size, size);
 }
 
 Future<void> _flushImageCacheDisposals(WidgetTester tester) async {
@@ -735,6 +745,198 @@ void main() {
     expect(provider.loadCount, 1);
     expect(find.text('loading cover'), findsNothing);
     expect(find.byType(RawImage), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('detail reuses thumbnail pixels until its one quality upgrade', (
+    tester,
+  ) async {
+    final thumbnail = _ControlledImageProvider();
+    final detail = _ControlledImageProvider();
+    final smaller = _ControlledImageProvider();
+    final unrelated = _ControlledImageProvider();
+    ImageProvider<Object> provider(
+      _ControlledImageProvider controller,
+      int width, {
+      String path = 'shared-cover.png',
+    }) =>
+        ResizeImage(_ControlledFileImage(File(path), controller), width: width);
+    final thumbnailProvider = provider(thumbnail, 2);
+    final detailProvider = provider(detail, 8);
+    final interaction = Object();
+    final coordinator = UiInteractionCoordinator.instance;
+    addTearDown(() {
+      coordinator.cancelNavigation(interaction);
+      releaseRetainedCoverImages();
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+    });
+    Widget page(ImageProvider<Object> image) => MaterialApp(
+      home: SizedBox.square(
+        dimension: 80,
+        child: RetryingImage(
+          retryKey: image,
+          imageProviderBuilder: () => image,
+          retainInImageCache: true,
+          fallbackBuilder: (_) => const Text('loading cover'),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(page(thumbnailProvider));
+    thumbnail.complete(await _createTestImage());
+    await tester.pumpAndSettle();
+    final thumbnailPixels = tester
+        .widget<RawImage>(find.byType(RawImage))
+        .image!
+        .clone();
+    addTearDown(thumbnailPixels.dispose);
+    coordinator.beginNavigation(interaction);
+    await tester.pumpWidget(page(detailProvider));
+    expect(detail.loadCount, 0);
+    expect(find.byType(CoverLoadingArtwork), findsNothing);
+    expect(
+      tester
+          .widget<RawImage>(find.byType(RawImage))
+          .image!
+          .isCloneOf(thumbnailPixels),
+      isTrue,
+    );
+
+    coordinator.cancelNavigation(interaction);
+    await tester.pump();
+    await tester.pump();
+    expect(detail.loadCount, 1);
+    expect(find.byType(CoverLoadingArtwork), findsNothing);
+    expect(
+      tester
+          .widget<RawImage>(find.byType(RawImage))
+          .image!
+          .isCloneOf(thumbnailPixels),
+      isTrue,
+    );
+    detail.complete(await _createTestImage(8));
+    await tester.pumpAndSettle();
+    expect(tester.widget<RawImage>(find.byType(RawImage)).image!.width, 8);
+    expect(detail.loadCount, 1);
+    final detailPixels = tester
+        .widget<RawImage>(find.byType(RawImage))
+        .image!
+        .clone();
+    addTearDown(detailPixels.dispose);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    coordinator.beginNavigation(interaction);
+    await tester.pumpWidget(page(detailProvider));
+    expect(detail.loadCount, 1);
+    expect(
+      tester
+          .widget<RawImage>(find.byType(RawImage))
+          .image!
+          .isCloneOf(detailPixels),
+      isTrue,
+    );
+    await tester.pumpWidget(page(provider(smaller, 4)));
+    expect(smaller.loadCount, 0);
+    expect(
+      tester
+          .widget<RawImage>(find.byType(RawImage))
+          .image!
+          .isCloneOf(detailPixels),
+      isTrue,
+    );
+    coordinator.cancelNavigation(interaction);
+    await tester.pumpAndSettle();
+    expect(smaller.loadCount, 0);
+
+    coordinator.beginNavigation(interaction);
+    await tester.pumpWidget(
+      page(provider(unrelated, 8, path: 'another-cover.png')),
+    );
+    expect(find.byType(RawImage), findsNothing);
+    expect(find.byType(CoverLoadingArtwork), findsOneWidget);
+    expect(unrelated.loadCount, 0);
+    coordinator.cancelNavigation(interaction);
+    await tester.pump();
+    await tester.pump();
+    unrelated.complete(await _createTestImage(8));
+    await tester.pumpAndSettle();
+    expect(unrelated.loadCount, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('a failed quality upgrade keeps its preview through retry', (
+    tester,
+  ) async {
+    final thumbnail = _ControlledImageProvider();
+    final failedDetail = _ControlledImageProvider();
+    final repairedDetail = _ControlledImageProvider();
+    final file = File('retry-shared-cover.png');
+    final thumbnailProvider = ResizeImage(
+      _ControlledFileImage(file, thumbnail),
+      width: 2,
+    );
+    ImageProvider<Object> detailProvider = ResizeImage(
+      _ControlledFileImage(file, failedDetail),
+      width: 8,
+    );
+    addTearDown(() {
+      releaseRetainedCoverImages();
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+    });
+    Widget page({required bool isDetail}) => MaterialApp(
+      home: SizedBox.square(
+        dimension: 80,
+        child: RetryingImage(
+          retryKey: isDetail ? 'detail' : 'thumbnail',
+          imageProviderBuilder: () =>
+              isDetail ? detailProvider : thumbnailProvider,
+          retainInImageCache: true,
+          maxRetryAttempts: 1,
+          retryDelay: const Duration(milliseconds: 100),
+          fallbackBuilder: (_) => const Text('loading cover'),
+        ),
+      ),
+    );
+    await tester.pumpWidget(page(isDetail: false));
+    thumbnail.complete(await _createTestImage());
+    await tester.pumpAndSettle();
+    final pixels = tester
+        .widget<RawImage>(find.byType(RawImage))
+        .image!
+        .clone();
+    addTearDown(pixels.dispose);
+    await tester.pumpWidget(page(isDetail: true));
+    await tester.pump();
+    await tester.pump();
+    expect(failedDetail.loadCount, 1);
+    failedDetail._imageInfo.completeError(StateError('failed detail decode'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('loading cover'), findsNothing);
+    expect(
+      tester.widget<RawImage>(find.byType(RawImage)).image!.isCloneOf(pixels),
+      isTrue,
+    );
+    detailProvider = ResizeImage(
+      _ControlledFileImage(file, repairedDetail),
+      width: 8,
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
+    await tester.pump();
+    expect(repairedDetail.loadCount, 1);
+    expect(find.byType(CoverLoadingArtwork), findsNothing);
+    expect(
+      tester.widget<RawImage>(find.byType(RawImage)).image!.isCloneOf(pixels),
+      isTrue,
+    );
+    repairedDetail.complete(await _createTestImage(8));
+    await tester.pumpAndSettle();
+    expect(tester.widget<RawImage>(find.byType(RawImage)).image!.width, 8);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

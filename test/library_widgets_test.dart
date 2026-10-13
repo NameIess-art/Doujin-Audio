@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -1666,11 +1667,14 @@ void main() {
     CoverImageResolution.original,
   ]) {
     testWidgets(
-      'library and playlist entries retain display-sized covers independently of detail at ${resolution.name}',
+      'library and playlist entries reuse warmed covers on detail entry at ${resolution.name}',
       (WidgetTester tester) async {
         addTearDown(releaseRetainedCoverImages);
         tester.view.devicePixelRatio = 2;
-        tester.view.physicalSize = const Size(1000, 1800);
+        tester.view.physicalSize =
+            defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(2560, 1600)
+            : const Size(1000, 1800);
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.view.resetPhysicalSize);
         final fixture = AppRuntimeWidgetTestFixture(
@@ -1699,20 +1703,21 @@ void main() {
         );
         await tester.runAsync(() async {
           await File(trackPath).writeAsBytes(const <int>[1]);
-          await File(coverPath).writeAsBytes(
-            base64Decode(
-              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
-              '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-            ),
-          );
+          final recorder = ui.PictureRecorder();
+          ui.Canvas(recorder).drawColor(Colors.blue, ui.BlendMode.src);
+          final picture = recorder.endRecording();
+          final image = await picture.toImage(600, 450);
+          final bytes = (await image.toByteData(
+            format: ui.ImageByteFormat.png,
+          ))!;
+          await File(coverPath).writeAsBytes(bytes.buffer.asUint8List());
+          image.dispose();
+          picture.dispose();
           fixture.runtimeGraph.library.addWatchedFolder(
             folder.path,
             notify: false,
           );
-          fixture.runtimeGraph.library.addTracks(
-            [track],
-            persist: false,
-          );
+          fixture.runtimeGraph.library.addTracks([track], persist: false);
           await fixture.runtimeGraph.library.setFolderManualCover(
             folder.path,
             coverPath,
@@ -1723,7 +1728,10 @@ void main() {
             ).copyWith(workTitle: 'Metadata Work Title'),
           );
         });
-        fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+        fixture.libraryService.syncSlice(
+          isInitialized: true,
+          detailRevision: 0,
+        );
 
         await tester.pumpWidget(fixture.build(const LibraryTab()));
         await tester.pump();
@@ -1743,27 +1751,86 @@ void main() {
         );
         await tester.pump();
         expect(find.text('Metadata Work Title'), findsOneWidget);
-        final card = tester.widget<AsyncLocalCoverImage>(
-          find.byType(AsyncLocalCoverImage).first,
-        );
+        final cardSurface = find.byType(AsyncLocalCoverImage).first;
+        final card = tester.widget<AsyncLocalCoverImage>(cardSurface);
         expect(card.initialPath, isNotNull);
         expect(card.cacheWidth, 256);
-        final cardKey = await resizeFileImageIfNeeded(
+        final cardProvider = resizeFileImageIfNeeded(
           path: card.initialPath!,
           cacheWidth: card.cacheWidth,
           cacheHeight: card.cacheHeight,
           useDefaultCacheWidth: card.useDefaultCacheWidth,
-        ).obtainKey(ImageConfiguration.empty);
+        );
+        final cardKey = await cardProvider.obtainKey(ImageConfiguration.empty);
+        await tester.runAsync(
+          () => precacheImage(cardProvider, tester.element(cardSurface)),
+        );
+        await tester.pumpAndSettle();
+        final cardImage = tester
+            .widget<RawImage>(
+              find.descendant(of: cardSurface, matching: find.byType(RawImage)),
+            )
+            .image!
+            .clone();
+        addTearDown(cardImage.dispose);
+        expect(cardImage.width, 256);
 
         await tester.tap(find.byType(ListTile).first);
+        final detailSurface = find.descendant(
+          of: find.byType(WorkDetailPage, skipOffstage: false),
+          matching: find.byType(AsyncLocalCoverImage, skipOffstage: false),
+          skipOffstage: false,
+        );
+        // Dispatch and route preparation need separate frames, without elapsed
+        // animation time or an opportunity for a new file decode to complete.
+        for (
+          var frame = 0;
+          frame < 12 && detailSurface.evaluate().isEmpty;
+          frame++
+        ) {
+          await tester.pump();
+        }
+        expect(detailSurface, findsOneWidget);
+        final detailFrames = find.descendant(
+          of: detailSurface,
+          matching: find.byType(RawImage, skipOffstage: false),
+          skipOffstage: false,
+        );
+        expect(
+          tester.widget<RawImage>(detailFrames).image!.isCloneOf(cardImage),
+          isTrue,
+        );
+        expect(
+          find.descendant(
+            of: detailSurface,
+            matching: find.byType(CoverLoadingArtwork),
+          ),
+          findsNothing,
+        );
         await pumpUntilFound(tester, find.byType(WorkDetailPage));
         await pumpUntilNotFound(
           tester,
           find.byKey(const ValueKey('work_detail_entries_skeleton')),
         );
         await tester.pumpAndSettle();
+        for (var tick = 0; tick < 100; tick++) {
+          if (tester.widget<RawImage>(detailFrames).image?.width == 600) break;
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        expect(tester.widget<RawImage>(detailFrames).image!.width, 600);
+        final detailImage = tester
+            .widget<RawImage>(detailFrames)
+            .image!
+            .clone();
+        addTearDown(detailImage.dispose);
         final detail = tester.widget<LocalCoverImage>(
-          find.byType(LocalCoverImage).first,
+          find.descendant(
+            of: detailSurface,
+            matching: find.byType(LocalCoverImage),
+          ),
         );
         expect(detail.path, card.initialPath);
         final detailKey = await resizeFileImageIfNeeded(
@@ -1821,6 +1888,59 @@ void main() {
         ).obtainKey(ImageConfiguration.empty);
         expect(playlistCard.cacheWidth, 128);
         expect(playlistKey, isNot(cardKey));
+        unawaited(
+          Navigator.of(
+            tester.element(find.byType(PlaylistTab)),
+          ).push(buildSessionDetailRoute(sessionId: session.id)),
+        );
+        final playbackArtwork = find.byKey(
+          ValueKey<String>('artwork_${session.id}'),
+          skipOffstage: false,
+        );
+        for (
+          var frame = 0;
+          frame < 12 && playbackArtwork.evaluate().isEmpty;
+          frame++
+        ) {
+          await tester.pump();
+        }
+        expect(
+          tester
+              .widget<RawImage>(
+                find.descendant(
+                  of: playbackArtwork,
+                  matching: find.byType(RawImage, skipOffstage: false),
+                  skipOffstage: false,
+                ),
+              )
+              .image!
+              .isCloneOf(detailImage),
+          isTrue,
+        );
+        expect(
+          find.descendant(
+            of: playbackArtwork,
+            matching: find.byType(CoverLoadingArtwork),
+          ),
+          findsNothing,
+        );
+        await tester.pumpAndSettle();
+        final playbackCover = tester.widget<AsyncLocalCoverImage>(
+          find.descendant(
+            of: playbackArtwork,
+            matching: find.byType(AsyncLocalCoverImage),
+          ),
+        );
+        expect(
+          coverCacheWidth(
+            resolution: resolution,
+            cacheWidth: playbackCover.cacheWidth,
+            useDefaultCacheWidth: playbackCover.useDefaultCacheWidth,
+          ),
+          coverCacheWidthForResolution(resolution),
+        );
+        Navigator.of(tester.element(playbackArtwork)).pop();
+        await tester.pumpAndSettle();
         await tester.pumpWidget(const SizedBox.shrink());
         if (defaultTargetPlatform == TargetPlatform.windows) {
           PaintingBinding.instance.imageCache.clear();

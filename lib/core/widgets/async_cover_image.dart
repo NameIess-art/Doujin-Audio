@@ -663,6 +663,8 @@ class _RetryingImageState extends State<RetryingImage> {
   Timer? _retryTimer;
   late bool _loadEnabled;
   Object? _cacheCheckKey;
+  ImageProvider<Object>? _previewProvider;
+  bool _hasDisplayedFrame = false;
   String get _retryCommitKey =>
       'retrying_image_${identityHashCode(this)}_retry';
   String get _loadCommitKey => 'retrying_image_${identityHashCode(this)}_load';
@@ -695,6 +697,8 @@ class _RetryingImageState extends State<RetryingImage> {
       _retryAttempt = 0;
       _loadEnabled = _canStartLoad;
       _cacheCheckKey = null;
+      _previewProvider = null;
+      _hasDisplayedFrame = false;
     }
     if (!widget.deferLoadDuringInteraction) _loadEnabled = true;
   }
@@ -778,7 +782,10 @@ class _RetryingImageState extends State<RetryingImage> {
         provider.evict().ignore();
         setState(() {
           _retryAttempt = nextAttempt;
+          _hasDisplayedFrame = false;
+          if (_previewProvider != null) _loadEnabled = false;
         });
+        if (_previewProvider != null) _scheduleLoadWhenAllowed();
       }
 
       _interaction.scheduleCommit(
@@ -797,32 +804,46 @@ class _RetryingImageState extends State<RetryingImage> {
       ScrollActivityGate.isScrollingOf(context);
       provider = _cachedProviderForBuild(context);
     }
-    if (!_loadEnabled) {
+    final requested = provider ?? widget.imageProviderBuilder();
+    final retained = widget.retainInImageCache && _retryAttempt == 0
+        ? retainedCoverImageFor(requested)
+        : null;
+    if (retained != null) {
+      if (retained.isAdequate) {
+        provider = retained.provider;
+        if (provider != requested) _previewProvider ??= provider;
+        _loadEnabled = true;
+      } else if (_previewProvider == null && !_hasDisplayedFrame) {
+        _previewProvider = retained.provider;
+        _loadEnabled = false;
+        _scheduleLoadWhenAllowed();
+      }
+    }
+    if (!_loadEnabled) provider ??= _previewProvider;
+    if (!_loadEnabled && provider == null) {
       final loadingBuilder = widget.loadingBuilder;
       return loadingBuilder != null
           ? loadingBuilder(context)
           : CoverLoadingArtwork(placeholder: widget.fallbackBuilder(context));
     }
-    final imageProvider = provider ?? widget.imageProviderBuilder();
+    final imageProvider = provider ?? requested;
     if (widget.retainInImageCache) restoreRetainedCoverImage(imageProvider);
-    return Image(
-      key: ValueKey('${widget.retryKey}#$_retryAttempt'),
-      image: imageProvider,
-      fit: widget.fit ?? BoxFit.cover,
-      alignment: widget.alignment,
-      color: widget.color,
-      colorBlendMode: widget.colorBlendMode,
-      filterQuality: widget.filterQuality,
-      gaplessPlayback: widget.gaplessPlayback,
+    return _image(
+      imageProvider,
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-        if (widget.retainInImageCache &&
-            (wasSynchronouslyLoaded || frame != null)) {
-          retainCoverImage(
-            imageProvider,
-            createLocalImageConfiguration(context),
-          );
+        if (wasSynchronouslyLoaded || frame != null) {
+          _hasDisplayedFrame = true;
+          if (widget.retainInImageCache) {
+            retainCoverImage(
+              imageProvider,
+              createLocalImageConfiguration(context),
+            );
+          }
         }
-        if (wasSynchronouslyLoaded) {
+        // Image keeps its previous pixels during an upgrade (gaplessPlayback).
+        // Do not cover those pixels with a placeholder while the new decode runs.
+        if (wasSynchronouslyLoaded ||
+            (_previewProvider != null && _hasDisplayedFrame)) {
           return child;
         }
         final loadingBuilder = widget.loadingBuilder;
@@ -840,10 +861,36 @@ class _RetryingImageState extends State<RetryingImage> {
           widget.onImageError?.call();
         }
         _scheduleRetry(imageProvider);
+        final preview = _previewProvider;
+        if (preview != null && preview != imageProvider) {
+          restoreRetainedCoverImage(preview);
+          return _image(
+            preview,
+            errorBuilder: (context, error, stackTrace) =>
+                widget.fallbackBuilder(context),
+          );
+        }
         return widget.fallbackBuilder(context);
       },
     );
   }
+
+  Image _image(
+    ImageProvider<Object> provider, {
+    ImageFrameBuilder? frameBuilder,
+    ImageErrorWidgetBuilder? errorBuilder,
+  }) => Image(
+    key: ValueKey('${widget.retryKey}#$_retryAttempt'),
+    image: provider,
+    fit: widget.fit ?? BoxFit.cover,
+    alignment: widget.alignment,
+    color: widget.color,
+    colorBlendMode: widget.colorBlendMode,
+    filterQuality: widget.filterQuality,
+    gaplessPlayback: widget.gaplessPlayback,
+    frameBuilder: frameBuilder,
+    errorBuilder: errorBuilder,
+  );
 }
 
 ImageProvider<Object> resizeFileImageIfNeeded({

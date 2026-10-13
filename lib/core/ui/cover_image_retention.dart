@@ -3,6 +3,8 @@ import 'dart:collection';
 
 import 'package:flutter/painting.dart';
 
+import '../media/path_matcher.dart';
+
 // Keep recent completers without a live listener: hidden animated covers must
 // stop decoding, while recycled cards can still reuse the same decoded image.
 int _maximumRetainedCoverBytes = 50 * 1024 * 1024;
@@ -48,6 +50,8 @@ void retainCoverImage(
                   if (!identical(_retainedCovers[provider], cover)) return;
                   cover.handle = stream.completer!.keepAlive();
                   cover.bytes = info.sizeBytes;
+                  cover.width = info.image.width;
+                  cover.height = info.image.height;
                   _retainedCoverBytes += cover.bytes;
                   _trimRetainedCovers();
                 } finally {
@@ -83,6 +87,59 @@ void restoreRetainedCoverImage(ImageProvider<Object> provider) {
   );
 }
 
+({ImageProvider<Object> provider, bool isAdequate})? retainedCoverImageFor(
+  ImageProvider<Object> requested,
+) {
+  if (_retainedCovers[requested]?.handle != null) {
+    return (provider: requested, isAdequate: true);
+  }
+  final source = _fileSource(requested);
+  if (source == null) return null;
+  ImageProvider<Object>? selected;
+  _RetainedCover? selectedCover;
+  var selectedIsAdequate = false;
+  for (final entry in _retainedCovers.entries) {
+    final cover = entry.value;
+    if (cover.handle == null) continue;
+    final candidateSource = _fileSource(entry.key);
+    if (candidateSource == null ||
+        candidateSource.scale != source.scale ||
+        !PathMatcher.equalsNormalized(
+          candidateSource.file.path,
+          source.file.path,
+        )) {
+      continue;
+    }
+    final adequate =
+        entry.key is FileImage ||
+        (requested is ResizeImage &&
+            (requested.width == null || cover.width >= requested.width!) &&
+            (requested.height == null || cover.height >= requested.height!));
+    // Prefer the smallest adequate decode; otherwise show the best preview.
+    if (selectedCover == null ||
+        (adequate && !selectedIsAdequate) ||
+        (adequate == selectedIsAdequate &&
+            (adequate
+                ? cover.bytes < selectedCover.bytes
+                : cover.bytes > selectedCover.bytes))) {
+      selected = entry.key;
+      selectedCover = cover;
+      selectedIsAdequate = adequate;
+    }
+  }
+  return selected == null
+      ? null
+      : (provider: selected, isAdequate: selectedIsAdequate);
+}
+
+FileImage? _fileSource(ImageProvider<Object> provider) {
+  if (provider is FileImage) return provider;
+  if (provider is ResizeImage && provider.imageProvider is FileImage) {
+    return provider.imageProvider as FileImage;
+  }
+  return null;
+}
+
 void releaseRetainedCoverImages() {
   for (final provider in _retainedCovers.keys.toList(growable: false)) {
     _removeRetainedCover(provider);
@@ -114,6 +171,8 @@ final class _RetainedCover {
   ImageStreamListener? listener;
   ImageStreamCompleterHandle? handle;
   int bytes = 0;
+  int width = 0;
+  int height = 0;
 
   void stopListening() {
     final current = listener;

@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
@@ -344,7 +344,7 @@ void main() {
 
   for (final resolution in CoverImageResolution.values) {
     testWidgets(
-      'ASMR display-sized entries reuse disk cache independently of detail at ${resolution.name}',
+      'ASMR and playback detail reuse warmed covers on entry at ${resolution.name}',
       (tester) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         tester.view.devicePixelRatio = 2;
@@ -360,14 +360,18 @@ void main() {
         final cover = File(
           '${directory.path}${Platform.pathSeparator}cover.png',
         );
-        await tester.runAsync(
-          () => cover.writeAsBytes(
-            base64Decode(
-              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
-              '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-            ),
-          ),
-        );
+        await tester.runAsync(() async {
+          final recorder = ui.PictureRecorder();
+          ui.Canvas(recorder).drawColor(Colors.blue, ui.BlendMode.src);
+          final picture = recorder.endRecording();
+          final image = await picture.toImage(600, 450);
+          final bytes = (await image.toByteData(
+            format: ui.ImageByteFormat.png,
+          ))!;
+          await cover.writeAsBytes(bytes.buffer.asUint8List());
+          image.dispose();
+          picture.dispose();
+        });
         addTearDown(() async {
           releaseRetainedCoverImages();
           PaintingBinding.instance.imageCache
@@ -503,7 +507,10 @@ void main() {
         }
         expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
         await tester.pumpAndSettle();
-        final warmedImage = tester.widget<RawImage>(decodedCover).image!.clone();
+        final warmedImage = tester
+            .widget<RawImage>(decodedCover)
+            .image!
+            .clone();
         addTearDown(warmedImage.dispose);
         final originalElement = tester.element(card);
         scrollController.jumpTo(7500);
@@ -546,16 +553,60 @@ void main() {
         unawaited(
           showAsmrWorkDetailSheet(tester.element(find.byType(AsmrTab)), work),
         );
+        final detail = find.descendant(
+          of: find.byType(WorkDetailPage, skipOffstage: false),
+          matching: find.byType(AsyncRemoteCoverImage, skipOffstage: false),
+          skipOffstage: false,
+        );
+        // Dispatch and route preparation need separate frames, without elapsed
+        // animation time or an opportunity for a new file decode to complete.
+        for (var frame = 0; frame < 12 && detail.evaluate().isEmpty; frame++) {
+          await tester.pump();
+        }
+        expect(detail, findsOneWidget);
+        final detailFrames = find.descendant(
+          of: detail,
+          matching: find.byType(RawImage, skipOffstage: false),
+          skipOffstage: false,
+        );
+        expect(
+          tester.widget<RawImage>(detailFrames).image!.isCloneOf(warmedImage),
+          isTrue,
+        );
+        expect(
+          find.descendant(
+            of: detail,
+            matching: find.byType(CoverLoadingArtwork),
+          ),
+          findsNothing,
+        );
         await pumpUntilFound(tester, find.byType(WorkDetailPage));
         await pumpUntilNotFound(
           tester,
           find.byKey(const ValueKey('work_detail_entries_skeleton')),
         );
         await tester.pumpAndSettle();
-        final detail = find.descendant(
-          of: find.byType(WorkDetailPage),
-          matching: find.byType(AsyncRemoteCoverImage),
+        final expectedDetailWidth =
+            resolution == CoverImageResolution.memorySaver ? 300 : 600;
+        for (var tick = 0; tick < 100; tick++) {
+          if ((tester.widget<RawImage>(detailFrames).image?.width ?? 0) >=
+              expectedDetailWidth) {
+            break;
+          }
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        expect(
+          tester.widget<RawImage>(detailFrames).image!.width,
+          greaterThanOrEqualTo(expectedDetailWidth),
         );
+        final detailImage = tester
+            .widget<RawImage>(detailFrames)
+            .image!
+            .clone();
+        addTearDown(detailImage.dispose);
         expect(detail, findsOneWidget);
         expect(
           tester.widget<AsyncRemoteCoverImage>(detail).initialPath,
@@ -629,6 +680,37 @@ void main() {
           Navigator.of(
             tester.element(find.byType(PlaylistTab)),
           ).push(buildSessionDetailRoute(sessionId: session.id)),
+        );
+        final playbackArtwork = find.byKey(
+          ValueKey<String>('artwork_${session.id}'),
+          skipOffstage: false,
+        );
+        for (
+          var frame = 0;
+          frame < 12 && playbackArtwork.evaluate().isEmpty;
+          frame++
+        ) {
+          await tester.pump();
+        }
+        expect(
+          tester
+              .widget<RawImage>(
+                find.descendant(
+                  of: playbackArtwork,
+                  matching: find.byType(RawImage, skipOffstage: false),
+                  skipOffstage: false,
+                ),
+              )
+              .image!
+              .isCloneOf(detailImage),
+          isTrue,
+        );
+        expect(
+          find.descendant(
+            of: playbackArtwork,
+            matching: find.byType(CoverLoadingArtwork),
+          ),
+          findsNothing,
         );
         await tester.pumpAndSettle();
         expect(

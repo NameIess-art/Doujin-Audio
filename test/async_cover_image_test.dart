@@ -501,6 +501,87 @@ void main() {
     expect(coverCacheWidth(resolution: CoverImageResolution.original), isNull);
   });
 
+  test('thumbnail decode sizes follow display pixels in stable buckets', () {
+    for (final (logicalWidth, ratio, expected) in const [
+      (1.0, 1.0, 64),
+      (64.0, 1.0, 64),
+      (64.1, 1.0, 128),
+      (120.0, 1.0, 128),
+      (120.0, 1.25, 192),
+      (120.0, 2.0, 256),
+      (120.0, 3.0, 384),
+      (52.0, 3.0, 192),
+    ]) {
+      expect(
+        coverThumbnailCacheWidth(
+          logicalWidth: logicalWidth,
+          devicePixelRatio: ratio,
+          resolution: CoverImageResolution.balanced,
+        ),
+        expected,
+        reason: '$logicalWidth logical pixels at $ratio DPR',
+      );
+    }
+  });
+
+  test(
+    'thumbnail quality caps keep full-size and original artwork separate',
+    () {
+      for (final (resolution, expected) in const [
+        (CoverImageResolution.memorySaver, 300),
+        (CoverImageResolution.balanced, 600),
+        (CoverImageResolution.high, 900),
+        (CoverImageResolution.ultraHigh, 1200),
+        (CoverImageResolution.original, 1600),
+      ]) {
+        expect(
+          coverThumbnailCacheWidth(
+            logicalWidth: 800,
+            devicePixelRatio: 2,
+            resolution: resolution,
+          ),
+          expected,
+        );
+      }
+      expect(
+        coverThumbnailCacheWidth(
+          logicalWidth: 120,
+          devicePixelRatio: 2,
+          resolution: CoverImageResolution.original,
+        ),
+        256,
+      );
+      expect(
+        coverCacheWidth(resolution: CoverImageResolution.original),
+        isNull,
+      );
+    },
+  );
+
+  test('the same file and thumbnail bucket share an image cache key', () async {
+    ImageProvider<Object> thumbnail(double width) => resizeFileImageIfNeeded(
+      path: 'shared-cover.png',
+      cacheWidth: coverThumbnailCacheWidth(
+        logicalWidth: width,
+        devicePixelRatio: 2,
+        resolution: CoverImageResolution.balanced,
+      ),
+      useDefaultCacheWidth: false,
+    );
+    final key = await thumbnail(120).obtainKey(ImageConfiguration.empty);
+    expect(await thumbnail(125).obtainKey(ImageConfiguration.empty), key);
+    expect(
+      await thumbnail(129).obtainKey(ImageConfiguration.empty),
+      isNot(key),
+    );
+    expect(
+      await resizeFileImageIfNeeded(
+        path: 'shared-cover.png',
+      ).obtainKey(ImageConfiguration.empty),
+      isNot(key),
+    );
+  });
+
   testWidgets(
     'AsyncLocalCoverImage shows the brand placeholder while loading',
     (tester) async {

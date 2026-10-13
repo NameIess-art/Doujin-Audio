@@ -21,7 +21,11 @@ class _AsmrWorkCover extends ConsumerWidget {
     final height = width / kStandardCoverAspectRatio;
     final url = this.url.trim();
     final coverResolution = ref.watch(coverImageResolutionProvider);
-    final coverCacheWidth = coverCacheWidthForResolution(coverResolution);
+    final coverCacheWidth = coverThumbnailCacheWidth(
+      logicalWidth: width,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: coverResolution,
+    );
     final library = ref.read(libraryFacadeProvider);
     ref.watch(
       coverGenerationProvider.select(

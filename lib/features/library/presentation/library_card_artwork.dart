@@ -99,7 +99,11 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
     final coverPathFuture = _coverFutureFor(coverUi, coverRevision);
     final width = widget.width;
     final height = width / kStandardCoverAspectRatio;
-    final coverCacheWidth = coverCacheWidthForResolution(resolution);
+    final coverCacheWidth = coverThumbnailCacheWidth(
+      logicalWidth: width,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: resolution,
+    );
     return SizedBox(
       width: width,
       height: height,
@@ -207,7 +211,11 @@ class _LibraryTrackCoverThumbnailState
 
     final width = widget.width;
     final height = width / kStandardCoverAspectRatio;
-    final coverCacheWidth = coverCacheWidthForResolution(resolution);
+    final coverCacheWidth = coverThumbnailCacheWidth(
+      logicalWidth: width,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: resolution,
+    );
     return Stack(
       children: [
         SizedBox(

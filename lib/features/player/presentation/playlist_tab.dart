@@ -651,7 +651,11 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         )
         .toSet();
     final coverImageResolution = ref.watch(coverImageResolutionProvider);
-    final coverCacheWidth = coverCacheWidthForResolution(coverImageResolution);
+    final coverCacheWidth = coverThumbnailCacheWidth(
+      logicalWidth: playlistCoverSize,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: coverImageResolution,
+    );
     Widget buildSessionItem(BuildContext context, int index) {
       if (index == visibleEntries.length) {
         return const SizedBox.shrink(key: ValueKey('bottom_spacing'));

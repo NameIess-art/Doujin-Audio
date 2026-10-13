@@ -344,7 +344,7 @@ void main() {
 
   for (final resolution in CoverImageResolution.values) {
     testWidgets(
-      'ASMR covers share one cache across all surfaces at ${resolution.name}',
+      'ASMR display-sized entries reuse disk cache independently of detail at ${resolution.name}',
       (tester) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         tester.view.devicePixelRatio = 2;
@@ -423,6 +423,7 @@ void main() {
         final cardArtwork = tester.widget<AsyncRemoteCoverImage>(
           find.byType(AsyncRemoteCoverImage).first,
         );
+        expect(cardArtwork.cacheWidth, 256);
         await tester.pumpWidget(const SizedBox.shrink());
         releaseRetainedCoverImages();
         PaintingBinding.instance.imageCache
@@ -433,9 +434,21 @@ void main() {
           UiInteractionCoordinator.instance.cancelNavigation(interaction);
         });
         UiInteractionCoordinator.instance.beginNavigation(interaction);
+        final scrollController = ScrollController();
+        addTearDown(scrollController.dispose);
         await tester.pumpWidget(
           fixture.build(
-            SizedBox(width: 200, height: 150, child: cardArtwork),
+            SizedBox(
+              width: 200,
+              height: 150,
+              child: ListView.builder(
+                controller: scrollController,
+                itemExtent: 150,
+                itemCount: 100,
+                itemBuilder: (_, index) =>
+                    index == 0 ? cardArtwork : const SizedBox.shrink(),
+              ),
+            ),
             overrides: [
               asmrLibraryControllerProvider.overrideWithValue(controller),
             ],
@@ -447,10 +460,10 @@ void main() {
           tester.widget<AsyncRemoteCoverImage>(card).initialPath,
           cover.path,
         );
-        final sharedKey = await imageKey(card);
+        final cardKey = await imageKey(card);
         final coverProvider = resizeFileImageIfNeeded(
           path: cover.path,
-          cacheWidth: coverCacheWidthForResolution(resolution),
+          cacheWidth: cardArtwork.cacheWidth,
           useDefaultCacheWidth: false,
         );
         final coverImage = find.descendant(
@@ -476,7 +489,7 @@ void main() {
         );
         expect(coverImage, findsNothing);
         expect(
-          PaintingBinding.instance.imageCache.statusForKey(sharedKey).tracked,
+          PaintingBinding.instance.imageCache.statusForKey(cardKey).tracked,
           isFalse,
         );
         UiInteractionCoordinator.instance.cancelNavigation(interaction);
@@ -490,23 +503,31 @@ void main() {
         }
         expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
         await tester.pumpAndSettle();
-        await tester.pumpWidget(const SizedBox.shrink());
-        UiInteractionCoordinator.instance.beginNavigation(interaction);
-        await tester.pumpWidget(
-          fixture.build(
-            SizedBox(width: 200, height: 150, child: cardArtwork),
-            overrides: [
-              asmrLibraryControllerProvider.overrideWithValue(controller),
-            ],
-          ),
+        final warmedImage = tester.widget<RawImage>(decodedCover).image!.clone();
+        addTearDown(warmedImage.dispose);
+        final originalElement = tester.element(card);
+        scrollController.jumpTo(7500);
+        await tester.pump();
+        expect(originalElement.mounted, isFalse);
+        expect(find.byType(AsyncRemoteCoverImage), findsNothing);
+        expect(
+          PaintingBinding.instance.imageCache.statusForKey(cardKey).keepAlive,
+          isTrue,
         );
+        UiInteractionCoordinator.instance.beginNavigation(interaction);
+        scrollController.jumpTo(0);
+        await tester.pump();
         expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
+        expect(
+          tester.widget<RawImage>(decodedCover).image!.isCloneOf(warmedImage),
+          isTrue,
+        );
         UiInteractionCoordinator.instance.cancelNavigation(interaction);
         expect(
-          sharedKey,
+          cardKey,
           await resizeFileImageIfNeeded(
             path: cover.path,
-            cacheWidth: coverCacheWidthForResolution(resolution),
+            cacheWidth: cardArtwork.cacheWidth,
             useDefaultCacheWidth: false,
           ).obtainKey(ImageConfiguration.empty),
         );
@@ -540,7 +561,12 @@ void main() {
           tester.widget<AsyncRemoteCoverImage>(detail).initialPath,
           cover.path,
         );
-        expect(await imageKey(detail), sharedKey);
+        final detailKey = await imageKey(detail);
+        expect(detailKey, isNot(cardKey));
+        expect(
+          tester.widget<AsyncRemoteCoverImage>(detail).cacheWidth,
+          coverCacheWidthForResolution(resolution),
+        );
         Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
         await tester.pumpAndSettle();
 
@@ -594,7 +620,11 @@ void main() {
           tester.widget<AsyncLocalCoverImage>(playlistCover).initialPath,
           cover.path,
         );
-        expect(await imageKey(playlistCover), sharedKey);
+        expect(
+          tester.widget<AsyncLocalCoverImage>(playlistCover).cacheWidth,
+          128,
+        );
+        expect(await imageKey(playlistCover), isNot(cardKey));
         unawaited(
           Navigator.of(
             tester.element(find.byType(PlaylistTab)),
@@ -603,7 +633,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(
           await imageKey(find.byKey(ValueKey<String>('artwork_${session.id}'))),
-          sharedKey,
+          detailKey,
         );
         Navigator.of(
           tester.element(find.byKey(ValueKey<String>('artwork_${session.id}'))),
@@ -636,7 +666,7 @@ void main() {
         expect(PaintingBinding.instance.imageCache.pendingImageCount, 0);
         expect(
           await imageKey(find.byType(AsyncLocalCoverImage).first),
-          sharedKey,
+          detailKey,
         );
         expect(downloads, 1);
         await tester.pumpWidget(const SizedBox.shrink());

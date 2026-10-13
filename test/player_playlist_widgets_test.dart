@@ -6610,7 +6610,7 @@ void main() {
     );
   });
 
-  testWidgets('playlist card, playback card and detail share a decoded cover', (
+  testWidgets('playlist thumbnail updates for DPI and detail keeps quality', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -6652,11 +6652,19 @@ void main() {
           cacheHeight: cover.cacheHeight,
           useDefaultCacheWidth: cover.useDefaultCacheWidth,
         ).obtainKey(ImageConfiguration.empty);
-    final cardKey = await imageKey(
-      tester.widget<AsyncLocalCoverImage>(
-        find.byType(AsyncLocalCoverImage).first,
-      ),
+    final card = tester.widget<AsyncLocalCoverImage>(
+      find.byType(AsyncLocalCoverImage).first,
     );
+    expect(card.cacheWidth, 64);
+    final cardKey = await imageKey(card);
+    tester.view.devicePixelRatio = 2;
+    tester.view.physicalSize = const Size(1000, 2000);
+    await tester.pump();
+    final resizedCard = tester.widget<AsyncLocalCoverImage>(
+      find.byType(AsyncLocalCoverImage).first,
+    );
+    expect(resizedCard.cacheWidth, 128);
+    expect(await imageKey(resizedCard), isNot(cardKey));
     unawaited(
       Navigator.of(
         tester.element(find.byType(PlaylistTab)),
@@ -6668,7 +6676,13 @@ void main() {
         find.byType(AsyncLocalCoverImage).first,
       ),
     );
-    expect(detailKey, cardKey);
+    expect(detailKey, isNot(cardKey));
+    expect(
+      tester.widget<AsyncLocalCoverImage>(
+        find.byType(AsyncLocalCoverImage).first,
+      ).cacheWidth,
+      600,
+    );
     await tester.pumpWidget(
       fixture.build(
         ActiveSessionCarousel(
@@ -6684,7 +6698,7 @@ void main() {
           find.byType(AsyncLocalCoverImage).first,
         ),
       ),
-      cardKey,
+      detailKey,
     );
   });
 
@@ -7086,6 +7100,15 @@ void main() {
       );
       expect(tester.getSize(grid), const Size.square(52));
       expect(tester.getSize(firstCell), const Size.square(52));
+      expect(
+        tester.widget<AsyncLocalCoverImage>(
+          find.descendant(
+            of: firstCell,
+            matching: find.byType(AsyncLocalCoverImage),
+          ),
+        ).cacheWidth,
+        64,
+      );
 
       unawaited(
         Navigator.of(

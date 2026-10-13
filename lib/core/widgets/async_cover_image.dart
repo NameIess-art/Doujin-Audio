@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -18,7 +19,7 @@ import 'scroll_activity_gate.dart';
 const Duration kCoverImageTransitionDuration = Duration.zero;
 const double kStandardCoverAspectRatio = 4 / 3;
 
-// A stable decode size lets cards and detail pages share one ImageCache entry.
+// Full-size artwork follows the selected quality; thumbnails use display pixels.
 int? coverCacheWidthForResolution(CoverImageResolution resolution) {
   switch (resolution) {
     case CoverImageResolution.memorySaver:
@@ -42,6 +43,22 @@ int? coverCacheWidth({
   if (cacheWidth != null) return cacheWidth;
   if (!useDefaultCacheWidth) return null;
   return coverCacheWidthForResolution(resolution);
+}
+
+int coverThumbnailCacheWidth({
+  required double logicalWidth,
+  required double devicePixelRatio,
+  required CoverImageResolution resolution,
+}) {
+  assert(logicalWidth.isFinite && logicalWidth > 0);
+  assert(devicePixelRatio.isFinite && devicePixelRatio > 0);
+  // Nearby layout sizes share a decode without undersampling the display.
+  final width = math.max(
+    64,
+    (logicalWidth * devicePixelRatio / 64).ceil() * 64,
+  );
+  final maximumWidth = coverCacheWidthForResolution(resolution);
+  return maximumWidth == null ? width : math.min(width, maximumWidth);
 }
 
 bool hasDisplayableCoverArtwork(MusicTrack? track, String? resolvedCoverPath) {

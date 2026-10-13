@@ -231,6 +231,7 @@ class AsmrDownloadNodeTile extends ConsumerWidget {
     final hasChildren = node.children.isNotEmpty;
     final row = FileTreeRow(
       title: node.track.title,
+      titleMaxLines: 2,
       depth: depth,
       isFolder: isFolder,
       selectionControl: _CompactNodeCheckbox(

@@ -72,6 +72,49 @@ Future<void> _jumpToEnd(WidgetTester tester, ScrollPosition position) async {
 }
 
 void main() {
+  testWidgets(
+    'download rows keep their height and center one or two name lines',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      const longFolder = 'A long folder name that needs two lines';
+      const longFile = 'A long audio filename that needs two lines.mp3';
+      final model = AsmrDownloadSelectionModel([
+        _node('Root', children: [_node('Short.mp3'), _node(longFile)]),
+        _node(longFolder, children: [_node('Other.mp3')]),
+      ]);
+      await _pumpList(tester, model);
+      final rows = find.byType(FileTreeRow);
+      expect(rows, findsNWidgets(5));
+      for (var index = 0; index < 5; index++) {
+        final row = rows.at(index);
+        final title = tester.widget<FileTreeRow>(row).title;
+        final textFinder = find.descendant(of: row, matching: find.text(title));
+        final text = tester.widget<Text>(textFinder);
+        final nameRect = tester.getRect(textFinder);
+        final rowRect = tester.getRect(row);
+        expect(rowRect.height, 44);
+        expect(text.maxLines, 2);
+        expect(nameRect.center.dy, closeTo(rowRect.center.dy, 0.01));
+        final painter = TextPainter(
+          text: TextSpan(text: title, style: text.style),
+          textDirection: TextDirection.ltr,
+          maxLines: 2,
+          ellipsis: '…',
+        )..layout(maxWidth: nameRect.width);
+        expect(painter.computeLineMetrics().length, title.length > 20 ? 2 : 1);
+        painter.dispose();
+      }
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('download file type icons use work detail colors', (
     tester,
   ) async {

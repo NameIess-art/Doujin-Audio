@@ -464,8 +464,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   final workIndices = columnCount == 1
                       ? <Key, int>{
                           for (var i = 0; i < visibleWorks.length; i++)
-                            if (_itemKeys[visibleWorks[i].id] case final key?)
-                              key: i,
+                            ?_itemKeys[visibleWorks[i].id]: i,
                         }
                       : const <Key, int>{};
                   return workList = ListView.builder(

@@ -158,7 +158,7 @@ void main() {
   );
 
   testWidgets(
-    'Windows hides Android permissions, cache and orientation settings',
+    'Windows hides Android permissions, cache and mobile settings',
     (tester) async {
       final harness = AppRuntimeWidgetTestFixture();
       addTearDown(harness.dispose);
@@ -166,7 +166,7 @@ void main() {
       await tester.pumpAndSettle();
       final i18n = harness.languageProvider;
       for (final entry in {
-        'section_common': ['portrait_lock', 'haptic_feedback_enabled'],
+        'section_common': ['haptic_feedback_enabled'],
         'section_playback': [
           'audio_focus_strategy',
           'transient_audio_focus_loss_behavior',
@@ -324,7 +324,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(i18n.tr('startup_page')), findsOneWidget);
-    expect(find.text(i18n.tr('portrait_lock')), findsOneWidget);
+    expect(find.byIcon(Icons.screen_lock_portrait_rounded), findsNothing);
     expect(find.text('允许添加相同作品'), findsNothing);
     expect(find.byIcon(Icons.copy_all_rounded), findsNothing);
     expect(find.text(i18n.tr('reduce_animations')), findsOneWidget);
@@ -354,16 +354,6 @@ void main() {
     expect(tester.widget<SwitchListTile>(hapticFeedbackTile).value, isTrue);
     expect(harness.settingsRepository.hapticFeedbackEnabled, isTrue);
     expect(AppInteractionFeedback.hapticFeedbackEnabled, isTrue);
-    final portraitLockTile = find.widgetWithText(
-      SwitchListTile,
-      i18n.tr('portrait_lock'),
-    );
-    expect(tester.widget<SwitchListTile>(portraitLockTile).value, isFalse);
-    await tester.ensureVisible(portraitLockTile);
-    await tester.pumpAndSettle();
-    await tester.tap(portraitLockTile);
-    await tester.pump();
-    expect(tester.widget<SwitchListTile>(portraitLockTile).value, isTrue);
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await tester.pumpAndSettle();
 

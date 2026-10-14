@@ -319,7 +319,6 @@ void main() {
         InterruptionResumeBehavior.resume,
       );
       expect(state.reduceAnimations, isFalse);
-      expect(state.portraitLockEnabled, isFalse);
       expect(state.preferEmbeddedCover, isFalse);
     });
 
@@ -471,12 +470,18 @@ void main() {
       },
     );
 
-    test('portrait lock persists and defaults to disabled', () async {
+    test('legacy portrait lock is ignored and omitted when settings are saved', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'playback_settings_v1': json.encode(<String, Object?>{
+          'portraitLockEnabled': true,
+          'reduceAnimations': false,
+        }),
+      });
       final repository = SettingsRepository();
       addTearDown(repository.dispose);
-
-      expect(repository.portraitLockEnabled, isFalse);
-      await repository.setPortraitLockEnabled(true);
+      await repository.loadPersistedState();
+      expect(repository.reduceAnimations, isFalse);
+      await repository.setReduceAnimations(true);
       final saved =
           json.decode(
                 (await SharedPreferences.getInstance()).getString(
@@ -484,12 +489,13 @@ void main() {
                 )!,
               )
               as Map<String, dynamic>;
-      expect(saved['portraitLockEnabled'], isTrue);
+      expect(saved.containsKey('portraitLockEnabled'), isFalse);
+      expect(saved['reduceAnimations'], isTrue);
 
       final restored = SettingsRepository();
       addTearDown(restored.dispose);
       await restored.loadPersistedState();
-      expect(restored.portraitLockEnabled, isTrue);
+      expect(restored.reduceAnimations, isTrue);
     });
 
     test('ASMR.ONE download conflict policy defaults to overwrite', () {

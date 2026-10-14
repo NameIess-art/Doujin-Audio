@@ -62,7 +62,6 @@ class SettingsState {
     this.showAsmrOne = true,
     this.workNameDisplay = WorkNameDisplay.workTitle,
     this.startupPage = StartupPage.library,
-    this.portraitLockEnabled = false,
     this.coverImageResolution = CoverImageResolution.balanced,
     this.preferEmbeddedCover = false,
     this.asmrDownloadDestinationRoot,
@@ -107,7 +106,6 @@ class SettingsState {
   final bool showAsmrOne;
   final WorkNameDisplay workNameDisplay;
   final StartupPage startupPage;
-  final bool portraitLockEnabled;
   final CoverImageResolution coverImageResolution;
   final bool preferEmbeddedCover;
   final String? asmrDownloadDestinationRoot;
@@ -148,7 +146,6 @@ class SettingsState {
         other.showAsmrOne == showAsmrOne &&
         other.workNameDisplay == workNameDisplay &&
         other.startupPage == startupPage &&
-        other.portraitLockEnabled == portraitLockEnabled &&
         other.coverImageResolution == coverImageResolution &&
         other.preferEmbeddedCover == preferEmbeddedCover &&
         other.asmrDownloadDestinationRoot == asmrDownloadDestinationRoot &&
@@ -193,7 +190,6 @@ class SettingsState {
     showAsmrOne,
     workNameDisplay,
     startupPage,
-    portraitLockEnabled,
     coverImageResolution,
     preferEmbeddedCover,
     asmrDownloadDestinationRoot,

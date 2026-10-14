@@ -850,6 +850,53 @@ void main() {
       variant: TargetPlatformVariant({platform}),
     );
 
+    testWidgets(
+      'ASMR cards retain state across column changes on $platform',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(1280, 800);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final controller = _PresentationController(createTestAsmrServices())
+          ..workCount = 12;
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        final card = find.byKey(const ValueKey<String>('asmr-work-3'));
+        Finder statefulCard() => find
+            .descendant(
+              of: card,
+              matching: find.byWidgetPredicate(
+                (widget) => widget is ConsumerStatefulWidget,
+              ),
+            )
+            .first;
+        final originalElement = tester.element(card);
+        final originalState = tester.state(statefulCard());
+        for (final width in [640.0, 1280.0, 1800.0, 640.0]) {
+          tester.view.physicalSize = Size(width, 800);
+          await tester.pump();
+          expect(tester.element(card), same(originalElement));
+          expect(tester.state(statefulCard()), same(originalState));
+          expect(tester.widget<FadeTransition>(card).opacity.value, 1);
+          expect(tester.takeException(), isNull);
+          await tester.pumpAndSettle();
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     for (final count in [100, 1000]) {
       for (final retryFooter in [false, true]) {
         testWidgets(

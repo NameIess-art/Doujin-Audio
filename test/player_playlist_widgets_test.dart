@@ -6888,6 +6888,7 @@ void main() {
         final video = tester.widget<NativeSessionVideoSurface>(
           find.byType(NativeSessionVideoSurface),
         );
+        final videoState = tester.state(find.byType(NativeSessionVideoSurface));
         final cover = tester.widget<AsyncLocalCoverImage>(
           find.byType(AsyncLocalCoverImage),
         );
@@ -6923,6 +6924,29 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
         expect(tester.widget<Slider>(progress).value, 46000);
+        tester.view.physicalSize = const Size(1080, 2400);
+        await tester.pump();
+        expect(
+          tester.state(find.byType(NativeSessionVideoSurface)),
+          same(videoState),
+        );
+        final rotatedVideo = tester.widget<NativeSessionVideoSurface>(
+          find.byType(NativeSessionVideoSurface),
+        );
+        tester.widget<Slider>(progress).onChangeStart!(46000);
+        tester.widget<Slider>(progress).onChanged!(60000);
+        await tester.pump();
+        expect(
+          tester.state(find.byType(NativeSessionVideoSurface)),
+          same(videoState),
+        );
+        expect(
+          tester.widget<NativeSessionVideoSurface>(
+            find.byType(NativeSessionVideoSurface),
+          ),
+          same(rotatedVideo),
+        );
+        tester.widget<Slider>(progress).onChangeEnd!(60000);
         await tester.pump(const Duration(seconds: 3));
         expect(tester.widget<AnimatedOpacity>(controls).opacity, 0);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -6930,6 +6954,157 @@ void main() {
       },
       variant: TargetPlatformVariant.only(platform),
     );
+  }
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    final sizes = platform == TargetPlatform.android
+        ? const [Size(320, 640), Size(390, 844), Size(640, 320), Size(800, 1280)]
+        : const [Size(960, 600), Size(1280, 800)];
+    for (final size in sizes) {
+      testWidgets(
+        'fullscreen video controls fit safe bounds at $size on ${platform.name}',
+        (tester) async {
+          final orientation = AppOrientationController(
+            setPreferredOrientations: (_) async {},
+            setSystemUiMode: (_) async {},
+          );
+          final lease = await orientation.enterVideoFullscreen();
+          addTearDown(lease.release);
+          final track = testMusicTrack(
+            name: 'Long video',
+            path: '/videos/long-layout.mp4',
+            groupKey: '/videos',
+            groupTitle: 'Videos',
+          ).copyWith(isVideo: true);
+          final sidePadding =
+              platform == TargetPlatform.android && size.width > size.height
+              ? 44.0
+              : 20.0;
+          final padding = EdgeInsets.fromLTRB(sidePadding, 20, sidePadding, 34);
+          final capture = GlobalKey();
+          final setup = await _pumpSubtitleDetail(
+            tester: tester,
+            subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+            initialPosition: const Duration(hours: 12, minutes: 34, seconds: 56),
+            queueTracks: [track],
+            physicalSize: size * 3,
+            detailBuilder: (session) => Builder(
+              builder: (context) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  padding: padding,
+                  viewPadding: padding,
+                  textScaler: const TextScaler.linear(1.5),
+                ),
+                child: RepaintBoundary(
+                  key: capture,
+                  child: SessionVideoFullscreenPage(
+                    sessionId: session.id,
+                    trackPath: track.path,
+                    fullscreenLease: lease,
+                  ),
+                ),
+              ),
+            ),
+          );
+          final session = setup.session
+            ..loadedPath = track.path
+            ..setOptimisticDuration(
+              const Duration(hours: 15, minutes: 59, seconds: 59),
+            );
+          setup.fixture.playbackService.syncSlice(
+            activeSessions: [session],
+            playingSessionCount: 0,
+            focusedSessionId: session.id,
+            coverGeneration: 0,
+            isInitialized: true,
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          final safe = Rect.fromLTRB(
+            sidePadding,
+            20,
+            size.width - sidePadding,
+            size.height - 34,
+          );
+          final names = ['previous', 'play_pause', 'next', 'progress', 'volume'];
+          final rects = [
+            for (final name in names)
+              tester.getRect(find.byKey(ValueKey('fullscreen_video_$name'))),
+          ];
+          for (var i = 0; i < rects.length; i++) {
+            final rect = rects[i];
+            expect(rect.left, greaterThanOrEqualTo(safe.left), reason: names[i]);
+            expect(rect.right, lessThanOrEqualTo(safe.right), reason: names[i]);
+            expect(rect.top, greaterThanOrEqualTo(safe.top), reason: names[i]);
+            expect(rect.bottom, lessThanOrEqualTo(safe.bottom), reason: names[i]);
+            for (var j = i + 1; j < rects.length; j++) {
+              expect(
+                rect.overlaps(rects[j]),
+                isFalse,
+                reason: '${names[i]} overlaps ${names[j]}',
+              );
+            }
+          }
+          expect(rects[3].width, greaterThan(100));
+          expect(rects[4].width, greaterThan(40));
+          final currentTime = tester.getRect(
+            find.byKey(const ValueKey('fullscreen_video_current_time')),
+          );
+          final duration = tester.getRect(
+            find.byKey(const ValueKey('fullscreen_video_duration')),
+          );
+          expect(currentTime.left, greaterThanOrEqualTo(safe.left));
+          expect(duration.right, lessThanOrEqualTo(safe.right));
+          expect(currentTime.overlaps(duration), isFalse);
+          expect(
+            find.byKey(const ValueKey('fullscreen_video_control_bar')),
+            findsOneWidget,
+          );
+          if (size.width >= 600) {
+            expect(
+              find.byKey(const ValueKey('fullscreen_video_volume_value')),
+              findsOneWidget,
+            );
+          }
+          if (const bool.fromEnvironment('FULLSCREEN_VIDEO_SCREENSHOTS') &&
+              (size == const Size(320, 640) || size == const Size(1280, 800))) {
+            final timeContext = tester.element(
+              find.byKey(const ValueKey('fullscreen_video_current_time')),
+            );
+            final fontFamily =
+                DefaultTextStyle.of(timeContext).style.fontFamily ?? 'Roboto';
+            await tester.runAsync(() async {
+              final textFont = FontLoader(fontFamily)
+                ..addFont(rootBundle.load('assets/fonts/Outfit-Variable.ttf'));
+              final iconFont = FontLoader('MaterialIcons')
+                ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+              await textFont.load();
+              await iconFont.load();
+            });
+            await tester.pump();
+            await tester.runAsync(() async {
+              final boundary = tester.renderObject<RenderRepaintBoundary>(
+                find.byKey(capture),
+              );
+              final image = await boundary.toImage();
+              final bytes = (await image.toByteData(
+                format: ui.ImageByteFormat.png,
+              ))!;
+              final folder = Directory('test-artifacts');
+              await folder.create(recursive: true);
+              final path =
+                  '${folder.path}/fullscreen-video-${platform.name}-'
+                  '${size.width.toInt()}x${size.height.toInt()}.png';
+              await File(path).writeAsBytes(bytes.buffer.asUint8List());
+              image.dispose();
+            });
+          }
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: TargetPlatformVariant.only(platform),
+      );
+    }
   }
 
   testWidgets(

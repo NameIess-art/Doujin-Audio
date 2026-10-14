@@ -24,11 +24,13 @@ void main() {
         ),
       );
       final controller = AppOrientationController(
-        setPreferredOrientations: (_) async =>
-            fail('Android orientation invoked'),
-        setSystemUiMode: (_) async => fail('Android UI mode invoked'),
+        setPreferredOrientations: (value) async =>
+            calls.add(MethodCall('orientation', value)),
+        setSystemUiMode: (value) async =>
+            calls.add(MethodCall('system_ui', value)),
       );
-      await controller.setPortraitLockEnabled(true);
+      await controller.updateDisplay(360);
+      await controller.setPlaybackDetailVisible(true);
       final first = await controller.enterVideoFullscreen();
       final second = await controller.enterVideoFullscreen();
       expect(first.initialBrightness, isNull);
@@ -42,7 +44,7 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
   test(
-    'fullscreen overrides portrait lock and restores it on release',
+    'fullscreen allows rotation and restores the current phone page on release',
     () async {
       final orientationCalls = <List<DeviceOrientation>>[];
       final uiModeCalls = <SystemUiMode>[];
@@ -53,13 +55,13 @@ void main() {
         setSystemUiMode: (mode) async => uiModeCalls.add(mode),
       );
 
-      await controller.setPortraitLockEnabled(true);
+      await controller.updateDisplay(360);
       final lease = await controller.enterVideoFullscreen();
-      await controller.setPortraitLockEnabled(false);
+      await controller.setPlaybackDetailVisible(true);
 
       expect(orientationCalls, <List<DeviceOrientation>>[
         AppOrientationPolicy.portrait.allowedOrientations,
-        AppOrientationPolicy.videoFullscreen.allowedOrientations,
+        AppOrientationPolicy.rotatable.allowedOrientations,
       ]);
       expect(uiModeCalls, <SystemUiMode>[SystemUiMode.immersiveSticky]);
 
@@ -67,11 +69,100 @@ void main() {
 
       expect(
         orientationCalls.last,
-        AppOrientationPolicy.current.allowedOrientations,
+        AppOrientationPolicy.rotatable.allowedOrientations,
       );
       expect(uiModeCalls.last, SystemUiMode.edgeToEdge);
     },
   );
+
+  test('device policy distinguishes phones, tablets and Windows', () {
+    for (final side in [360.0, 599.0, 600.0, 800.0]) {
+      expect(
+        AppOrientationPolicy.forDisplay(
+          platform: TargetPlatform.android,
+          shortestSide: side,
+        ),
+        side < 600
+            ? AppOrientationPolicy.portrait
+            : AppOrientationPolicy.rotatable,
+      );
+      expect(
+        AppOrientationPolicy.forDisplay(
+          platform: TargetPlatform.android,
+          shortestSide: side,
+          playbackDetailVisible: true,
+        ),
+        AppOrientationPolicy.rotatable,
+      );
+      expect(
+        AppOrientationPolicy.forDisplay(
+          platform: TargetPlatform.windows,
+          shortestSide: side,
+          playbackDetailVisible: true,
+        ),
+        AppOrientationPolicy.landscape,
+      );
+    }
+  });
+
+  test(
+    'phone rotation is scoped to the visible playback detail page',
+    () async {
+      final calls = <List<DeviceOrientation>>[];
+      final controller = AppOrientationController(
+        setPreferredOrientations: (value) async => calls.add(value),
+      );
+      await controller.updateDisplay(390);
+      await controller.updateDisplay(390);
+      await controller.setPlaybackDetailVisible(true);
+      await controller.setPlaybackDetailVisible(true);
+      await controller.setPlaybackDetailVisible(false);
+      expect(calls, [
+        AppOrientationPolicy.portrait.allowedOrientations,
+        AppOrientationPolicy.rotatable.allowedOrientations,
+        AppOrientationPolicy.portrait.allowedOrientations,
+      ]);
+    },
+  );
+
+  test('display class changes reapply the visible page policy', () async {
+    final calls = <List<DeviceOrientation>>[];
+    final controller = AppOrientationController(
+      setPreferredOrientations: (value) async => calls.add(value),
+    );
+    await controller.updateDisplay(800);
+    await controller.updateDisplay(700);
+    await controller.updateDisplay(500);
+    await controller.setPlaybackDetailVisible(true);
+    await controller.updateDisplay(800);
+    await controller.setPlaybackDetailVisible(false);
+    await controller.updateDisplay(500);
+    expect(calls, [
+      AppOrientationPolicy.rotatable.allowedOrientations,
+      AppOrientationPolicy.portrait.allowedOrientations,
+      AppOrientationPolicy.rotatable.allowedOrientations,
+      AppOrientationPolicy.rotatable.allowedOrientations,
+      AppOrientationPolicy.rotatable.allowedOrientations,
+      AppOrientationPolicy.portrait.allowedOrientations,
+    ]);
+  });
+
+  test('fullscreen restores tablet policy after a display change', () async {
+    final calls = <List<DeviceOrientation>>[];
+    final controller = AppOrientationController(
+      setPreferredOrientations: (value) async => calls.add(value),
+      setSystemUiMode: (_) async {},
+    );
+    await controller.updateDisplay(360);
+    final lease = await controller.enterVideoFullscreen();
+    await controller.updateDisplay(800);
+    await lease.release();
+    expect(calls, [
+      AppOrientationPolicy.portrait.allowedOrientations,
+      AppOrientationPolicy.rotatable.allowedOrientations,
+      AppOrientationPolicy.rotatable.allowedOrientations,
+    ]);
+  });
 
   test(
     'nested fullscreen leases restore only after the final release',

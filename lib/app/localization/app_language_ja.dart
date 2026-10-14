@@ -655,7 +655,6 @@ const Map<String, String> appLanguageJa = {
   'interface_language': '表示言語',
   'follow_system': 'システムに従う',
   'startup_page': '起動画面',
-  'portrait_lock': '縦画面固定',
   'startup_page_asmrOne': 'ASMR.ONE',
   'startup_page_library': '音声ライブラリ',
   'startup_page_playlist': 'プレイリスト',

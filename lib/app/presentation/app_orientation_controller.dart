@@ -24,18 +24,28 @@ class AppOrientationPolicy {
     DeviceOrientation.portraitUp,
   ]);
 
-  static const current = AppOrientationPolicy._([
+  static const rotatable = AppOrientationPolicy._([
     DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
 
-  static const videoFullscreen = AppOrientationPolicy._([
+  static const landscape = AppOrientationPolicy._([
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
 
   final List<DeviceOrientation> allowedOrientations;
+
+  static AppOrientationPolicy forDisplay({
+    required TargetPlatform platform,
+    required double shortestSide,
+    bool playbackDetailVisible = false,
+  }) {
+    if (platform == TargetPlatform.windows) return landscape;
+    return shortestSide >= 600 || playbackDetailVisible ? rotatable : portrait;
+  }
 }
 
 final appOrientationControllerProvider = Provider<AppOrientationController>((
@@ -62,13 +72,24 @@ class AppOrientationController {
   final Set<int> _fullscreenLeaseIds = <int>{};
   PlatformBrightnessLease? _brightnessLease;
 
-  bool _portraitLockEnabled = false;
+  bool _playbackDetailVisible = false;
+  double? _displayShortestSide;
   int _nextLeaseId = 0;
 
   bool get isVideoFullscreen => _fullscreenLeaseIds.isNotEmpty;
 
-  Future<void> setPortraitLockEnabled(bool enabled) async {
-    _portraitLockEnabled = enabled;
+  Future<void> updateDisplay(double shortestSide) async {
+    final previousTablet = (_displayShortestSide ?? 0) >= 600;
+    final initialized = _displayShortestSide != null;
+    _displayShortestSide = shortestSide;
+    if (initialized && previousTablet == (shortestSide >= 600)) return;
+    if (isVideoFullscreen) return;
+    await _applyPreferredOrientation();
+  }
+
+  Future<void> setPlaybackDetailVisible(bool visible) async {
+    if (_playbackDetailVisible == visible) return;
+    _playbackDetailVisible = visible;
     if (isVideoFullscreen) return;
     await _applyPreferredOrientation();
   }
@@ -85,7 +106,7 @@ class AppOrientationController {
       await _runPlatformUpdate(
         'video_fullscreen_orientation_enter_failed',
         () => _setPreferredOrientations(
-          AppOrientationPolicy.videoFullscreen.allowedOrientations,
+          AppOrientationPolicy.rotatable.allowedOrientations,
         ),
       );
       await _runPlatformUpdate(
@@ -174,9 +195,11 @@ class AppOrientationController {
     return _runPlatformUpdate(
       'orientation_preference_update_failed',
       () => _setPreferredOrientations(
-        _portraitLockEnabled
-            ? AppOrientationPolicy.portrait.allowedOrientations
-            : AppOrientationPolicy.current.allowedOrientations,
+        AppOrientationPolicy.forDisplay(
+          platform: defaultTargetPlatform,
+          shortestSide: _displayShortestSide ?? 0,
+          playbackDetailVisible: _playbackDetailVisible,
+        ).allowedOrientations,
       ),
     );
   }

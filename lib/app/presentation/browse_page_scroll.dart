@@ -25,12 +25,20 @@ class BrowsePageScroll extends ConsumerStatefulWidget {
   final bool restoreReady;
 
   /// A nested tree can supply its current visible order without owning scroll state.
-  static void setAnchorIds(BuildContext context, Iterable<String> ids) {
+  static void setAnchorIds(
+    BuildContext context,
+    Iterable<String> ids, {
+    int? columnCount,
+    double? rowExtent,
+    double topPadding = 0,
+  }) {
     final owner = context
         .dependOnInheritedWidgetOfExactType<_BrowseAnchors>()
         ?.owner;
     if (owner == null) return;
-    owner._anchorIds = immutableList(ids);
+    final nextIds = immutableList(ids);
+    owner._prepareColumns(columnCount, rowExtent, topPadding, nextIds);
+    owner._anchorIds = nextIds;
     owner._scheduleRestore();
   }
 
@@ -51,6 +59,50 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
   List<String> _anchorIds = const [];
   (double, double)? _lastDimensions;
   Key? _contentKey;
+  int? _columnCount;
+
+  void _prepareColumns(
+    int? columns,
+    double? extent,
+    double topPadding,
+    List<String> nextIds,
+  ) {
+    final previous = _columnCount;
+    _columnCount = columns;
+    if (previous == null ||
+        columns == null ||
+        columns == previous ||
+        !_restored ||
+        !widget.restoreReady ||
+        !widget.controller.hasClients) {
+      return;
+    }
+    final position = widget.controller.position;
+    if (!position.hasContentDimensions || position.isScrollingNotifier.value) {
+      return;
+    }
+    if (extent == null) {
+      for (final anchor in _anchors.values) {
+        final box = anchor.findRenderObject();
+        if (box is RenderBox && box.attached && box.hasSize) {
+          extent = box.size.height;
+          break;
+        }
+      }
+    }
+    if (extent == null || extent <= 0) return;
+    _save();
+    final saved = _store.stateFor(widget.pageKey);
+    final index = nextIds.indexOf(saved['anchor'] as String? ?? '');
+    final offset = (saved['anchorOffset'] as num?)?.toDouble();
+    if (index < 0 || offset == null) return;
+    final destination = (topPadding + (index ~/ columns) * extent - offset)
+        .clamp(position.minScrollExtent, double.infinity);
+    // Column grouping changes before the viewport lays out. Correct its offset
+    // without notifying widgets or painting the old pixel window for one frame.
+    position.correctBy(destination - position.pixels);
+    _anchorRestored = false;
+  }
 
   @override
   void initState() {

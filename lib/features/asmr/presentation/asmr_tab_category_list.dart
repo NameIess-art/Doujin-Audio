@@ -86,6 +86,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   AsmrCategoryViewState? _lastLoadState;
   final Map<int, Animation<double>> _loadingWorkAnimations = {};
   final Set<AnimationController> _loadingBatchControllers = {};
+  final Map<int, GlobalKey> _itemKeys = {};
 
   bool get _isActive =>
       widget.isActive() &&
@@ -323,6 +324,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         visibleWorks.insert(insertIndex, entry.work);
       }
     }
+    final visibleIds = visibleWorks.map((work) => work.id).toSet();
+    _itemKeys.removeWhere((id, _) => !visibleIds.contains(id));
 
     Widget buildWorkCard(AsmrWork work) {
       final card = _AsmrWorkTreeCard(
@@ -333,7 +336,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         onLongPress: () => widget.onEnterSelectionMode(work),
         onToggleSelect: () => widget.onToggleSelection(work),
       );
-      final workCard = FadeTransition(
+      Widget workCard = FadeTransition(
         key: ValueKey<String>('asmr-work-${work.id}'),
         opacity:
             _loadingWorkAnimations[work.id] ??
@@ -345,19 +348,26 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         ),
       );
       final collapsing = _collapsingWorks[work.id];
-      if (collapsing == null) return workCard;
-      return AnimatedBuilder(
-        animation: collapsing.controller,
-        builder: (context, child) {
-          return SizeTransition(
-            sizeFactor: collapsing.animation,
-            axisAlignment: -1.0,
-            child: FadeTransition(
-              opacity: collapsing.animation,
-              child: IgnorePointer(child: ExcludeSemantics(child: child)),
-            ),
-          );
-        },
+      if (collapsing != null) {
+        workCard = AnimatedBuilder(
+          animation: collapsing.controller,
+          builder: (context, child) {
+            return SizeTransition(
+              sizeFactor: collapsing.animation,
+              axisAlignment: -1.0,
+              child: FadeTransition(
+                opacity: collapsing.animation,
+                child: IgnorePointer(child: ExcludeSemantics(child: child)),
+              ),
+            );
+          },
+          child: workCard,
+        );
+      }
+      // Rows regroup on resize; retain the complete card, including its
+      // removal host and decoded cover, when it moves to another row.
+      return KeyedSubtree(
+        key: _itemKeys.putIfAbsent(work.id, GlobalKey.new),
         child: workCard,
       );
     }
@@ -438,13 +448,24 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   final columnCount = responsiveLibraryCardColumnCount(
                     constraints.maxWidth,
                   );
+                  if (!widget.searchSession) {
+                    BrowsePageScroll.setAnchorIds(
+                      context,
+                      visibleWorks.map((work) => '${work.id}'),
+                      columnCount: _collapsingWorks.isEmpty
+                          ? columnCount
+                          : null,
+                      rowExtent: LibraryLikeCardMetrics.rootTileHeight,
+                      topPadding: widget.topInset,
+                    );
+                  }
                   final rowCount = (visibleWorks.length / columnCount).ceil();
                   final hasLoadMore = state.isLoadingMore || state.hasMore;
                   final workIndices = columnCount == 1
                       ? <Key, int>{
                           for (var i = 0; i < visibleWorks.length; i++)
-                            ValueKey<String>('asmr-work-${visibleWorks[i].id}'):
-                                i,
+                            if (_itemKeys[visibleWorks[i].id] case final key?)
+                              key: i,
                         }
                       : const <Key, int>{};
                   return workList = ListView.builder(

@@ -29,6 +29,7 @@ import '../../core/widgets/app_transitions.dart';
 import '../theme/theme_provider.dart';
 import '../../core/persistence/app_preferences.dart';
 import '../../features/settings/application/settings_state.dart';
+import '../../features/player/presentation/playlist/session_detail_route.dart';
 import '../../features/data_support/application/data_backup_service.dart';
 
 import 'routed_playback_dock_host.dart';
@@ -129,7 +130,8 @@ class MusicPlayerApp extends ConsumerStatefulWidget {
   ConsumerState<MusicPlayerApp> createState() => _MusicPlayerAppState();
 }
 
-class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
+class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
+    with WidgetsBindingObserver {
   late final AppBootstrapController _presentationBootstrapController;
   late final AppBootstrapController _runtimeBootstrapController;
   late final bool _shouldShowOnboarding;
@@ -143,10 +145,13 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   Future<void>? _secondaryInitialization;
   double _stablePortraitTopPadding = 0;
   double _stableLandscapeTopPadding = 0;
+  late final AppOrientationController _orientationController;
 
   @override
   void initState() {
     super.initState();
+    _orientationController = ref.read(appOrientationControllerProvider);
+    WidgetsBinding.instance.addObserver(this);
     UiInteractionCoordinator.instance.addListener(
       _scheduleSecondaryInitialization,
     );
@@ -163,12 +168,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
               .read(appPersistenceCoordinatorProvider)
               .initializePresentation();
         }
-        if (!mounted) return;
-        await ref
-            .read(appOrientationControllerProvider)
-            .setPortraitLockEnabled(
-              ref.read(settingsRepositoryProvider).portraitLockEnabled,
-            );
       },
     );
     _presentationBootstrapController.addListener(
@@ -185,7 +184,28 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateDisplayOrientation();
+  }
+
+  @override
+  void didChangeMetrics() => _updateDisplayOrientation();
+
+  void _updateDisplayOrientation() {
+    if (defaultTargetPlatform == TargetPlatform.windows) return;
+    // Window bounds can be letterboxed or split; device class uses the display.
+    final display = View.of(context).display;
+    unawaited(
+      _orientationController.updateDisplay(
+        display.size.shortestSide / display.devicePixelRatio,
+      ),
+    );
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     UiInteractionCoordinator.instance.removeListener(
       _scheduleSecondaryInitialization,
     );
@@ -262,14 +282,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   Widget build(BuildContext context) {
     ref.watch(appInteractionEffectsControllerProvider);
     ref.listen<AsyncValue<SettingsState>>(settingsStateProvider, (_, next) {
-      final portraitLockEnabled = next.asData?.value.portraitLockEnabled;
-      if (portraitLockEnabled != null) {
-        unawaited(
-          ref
-              .read(appOrientationControllerProvider)
-              .setPortraitLockEnabled(portraitLockEnabled),
-        );
-      }
       final hapticFeedbackEnabled = next.asData?.value.hapticFeedbackEnabled;
       if (hapticFeedbackEnabled != null) {
         AppInteractionFeedback.hapticFeedbackEnabled = hapticFeedbackEnabled;
@@ -320,6 +332,11 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
       navigation: _workDetailNavigation,
       child: RoutedPlaybackDockHost(
         navigatorKey: _navigatorKey,
+        onTopPageChanged: (route) => unawaited(
+          _orientationController.setPlaybackDetailVisible(
+            route is SessionDetailRoute,
+          ),
+        ),
         builder:
             (
               context,

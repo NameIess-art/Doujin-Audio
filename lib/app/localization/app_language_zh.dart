@@ -642,7 +642,6 @@ const Map<String, String> appLanguageZh = {
   'interface_language': '界面语言',
   'follow_system': '跟随系统',
   'startup_page': '启动页',
-  'portrait_lock': '竖屏锁定',
   'startup_page_asmrOne': 'ASMR.ONE',
   'startup_page_library': '本地音频库',
   'startup_page_playlist': '播放列表',

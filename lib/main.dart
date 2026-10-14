@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -105,10 +106,15 @@ Future<StartupRestoreOutcome?> _initializeAudioPlayerApp() async {
   applyCoverImageCachePolicy(CoverImageResolution.balanced);
 
   // Initialize platform UI policy alongside the startup services.
+  final display =
+      WidgetsBinding.instance.platformDispatcher.views.first.display;
   final initFutures = Future.wait([
     if (!Platform.isWindows)
       SystemChrome.setPreferredOrientations(
-        AppOrientationPolicy.current.allowedOrientations,
+        AppOrientationPolicy.forDisplay(
+          platform: defaultTargetPlatform,
+          shortestSide: display.size.shortestSide / display.devicePixelRatio,
+        ).allowedOrientations,
       ),
     if (!Platform.isWindows)
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),

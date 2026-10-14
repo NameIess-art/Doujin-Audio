@@ -574,6 +574,17 @@ class _SessionVideoFullscreenPageState
     _scheduleControlsHide();
   }
 
+  double _controlBarHeight(BuildContext context) {
+    final timeHeight = max(
+      24.0,
+      MediaQuery.textScalerOf(context).scale(12) * 1.4,
+    );
+    return sessionVideoFullscreenControlBarHeight +
+        timeHeight -
+        24 +
+        MediaQuery.viewPaddingOf(context).bottom;
+  }
+
   @override
   Widget build(BuildContext context) {
     final detail = ref.watch(sessionDetailTransportProvider(widget.sessionId));
@@ -642,6 +653,7 @@ class _SessionVideoFullscreenPageState
                   final gestureRect = sessionVideoFullscreenGestureRect(
                     viewportSize: viewportSize,
                     controlsVisible: _controlsVisible,
+                    controlBarHeight: _controlBarHeight(context),
                   );
                   return Stack(
                     fit: StackFit.expand,
@@ -820,22 +832,26 @@ class _SessionVideoFullscreenPageState
               left: 0,
               right: 0,
               bottom: 0,
-              height: sessionVideoFullscreenControlBarHeight,
+              height: _controlBarHeight(context),
               child: DecoratedBox(
+                key: const ValueKey<String>('fullscreen_video_control_bar'),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      Colors.black.withValues(alpha: 0.82),
+                      Colors.black.withValues(alpha: 0.92),
                     ],
                   ),
                 ),
-                child: SafeArea(
-                  minimum: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  top: false,
-                  bottom: false,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    max(16, MediaQuery.viewPaddingOf(context).left + 8),
+                    8,
+                    max(16, MediaQuery.viewPaddingOf(context).right + 8),
+                    8 + MediaQuery.viewPaddingOf(context).bottom,
+                  ),
                   child: AnimatedBuilder(
                     animation: _controlValues,
                     builder: (context, _) {
@@ -872,105 +888,24 @@ class _SessionVideoFullscreenPageState
                           hasPrevious;
                       final canNext = hasNext;
 
-                      return Row(
+                      final timeStyle = TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 12,
+                        height: 1.4,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      );
+                      final timeline = Column(
                         children: [
-                          IconButton(
-                            key: const ValueKey<String>(
-                              'fullscreen_video_previous',
-                            ),
-                            tooltip: i18n.tr('previous_track'),
-                            onPressed: canPrevious
-                                ? () {
-                                    _showControls();
-                                    unawaited(
-                                      AppInteractionFeedback.trigger(
-                                        AppInteractionFeedbackType.selection,
-                                      ),
-                                    );
-                                    unawaited(
-                                      _playback.seekSessionToPrev(
-                                        widget.sessionId,
-                                      ),
-                                    );
-                                  }
-                                : null,
-                            color: Colors.white,
-                            disabledColor: Colors.white38,
-                            iconSize: 26,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 40,
-                              height: 44,
-                            ),
-                            icon: const Icon(Icons.skip_previous_rounded),
-                          ),
-                          IconButton(
-                            key: const ValueKey<String>(
-                              'fullscreen_video_play_pause',
-                            ),
-                            tooltip: playing
-                                ? i18n.tr('pause')
-                                : i18n.tr('play'),
-                            onPressed: () {
-                              _showControls();
-                              unawaited(
-                                _playback.toggleSessionPlayPause(
-                                  widget.sessionId,
-                                ),
-                              );
-                            },
-                            color: Colors.white,
-                            iconSize: 30,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 44,
-                              height: 44,
-                            ),
-                            icon: Icon(
-                              playing
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
-                            ),
-                          ),
-                          IconButton(
-                            key: const ValueKey<String>(
-                              'fullscreen_video_next',
-                            ),
-                            tooltip: i18n.tr('next_track'),
-                            onPressed: canNext
-                                ? () {
-                                    _showControls();
-                                    unawaited(
-                                      AppInteractionFeedback.trigger(
-                                        AppInteractionFeedbackType.selection,
-                                      ),
-                                    );
-                                    unawaited(
-                                      _playback.seekSessionToNext(
-                                        widget.sessionId,
-                                      ),
-                                    );
-                                  }
-                                : null,
-                            color: Colors.white,
-                            disabledColor: Colors.white38,
-                            iconSize: 26,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 40,
-                              height: 44,
-                            ),
-                            icon: const Icon(Icons.skip_next_rounded),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            formatDurationCompact(
-                              Duration(milliseconds: positionMs.round()),
-                            ),
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          Expanded(
+                          SizedBox(
+                            height: 32,
                             child: Slider(
                               key: const ValueKey<String>(
                                 'fullscreen_video_progress',
                               ),
+                              semanticFormatterCallback: (value) =>
+                                  formatDurationCompact(
+                                    Duration(milliseconds: value.round()),
+                                  ),
                               max: maxMs,
                               value: positionMs,
                               onChangeStart: duration > Duration.zero
@@ -984,53 +919,258 @@ class _SessionVideoFullscreenPageState
                                   : null,
                             ),
                           ),
-                          Text(
-                            formatDurationCompact(duration),
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          const SizedBox(width: 8),
-                          Icon(
-                            _volumeIcon(volumeGain),
-                            color: Colors.white,
-                            semanticLabel: i18n.tr('volume'),
-                          ),
                           SizedBox(
-                            width: 104,
-                            child: Slider(
-                              key: const ValueKey<String>(
-                                'fullscreen_video_volume',
-                              ),
-                              max: sessionVolumeDisplayMaximum,
-                              value: displayVolume,
-                              onChangeStart: (_) => _beginControlInteraction(),
-                              onChanged: (displayValue) {
-                                final volumeGain =
-                                    sessionVolumeGainFromDisplayValue(
-                                      displayValue,
-                                    );
-                                _dragVolume.value = volumeGain;
-                                AppInteractionFeedback.continuous(
-                                  (displayValue * 100).round(),
-                                );
-                                UiInteractionCoordinator.instance
-                                    .scheduleThrottledCommit(
-                                      key: 'video_volume:${widget.sessionId}',
-                                      commit: () => _playback.setSessionVolume(
-                                        widget.sessionId,
-                                        volumeGain,
-                                        persist: false,
+                            height: max(
+                              24.0,
+                              MediaQuery.textScalerOf(context).scale(12) * 1.4,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      key: const ValueKey<String>(
+                                        'fullscreen_video_current_time',
                                       ),
-                                    );
-                              },
-                              onChangeEnd: (displayValue) =>
-                                  _endVolumeInteraction(
-                                    sessionVolumeGainFromDisplayValue(
-                                      displayValue,
+                                      formatDurationCompact(
+                                        Duration(milliseconds: positionMs.round()),
+                                      ),
+                                      maxLines: 1,
+                                      style: timeStyle,
                                     ),
                                   ),
+                                ),
+                                const SizedBox(width: 12),
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      key: const ValueKey<String>(
+                                        'fullscreen_video_duration',
+                                      ),
+                                      formatDurationCompact(duration),
+                                      maxLines: 1,
+                                      style: timeStyle,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
+                      );
+                      final transport = IconButtonTheme(
+                        data: IconButtonThemeData(
+                          style: IconButton.styleFrom(
+                            fixedSize: const Size(44, 44),
+                            minimumSize: const Size(44, 44),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              key: const ValueKey<String>(
+                                'fullscreen_video_previous',
+                              ),
+                              tooltip: i18n.tr('previous_track'),
+                              onPressed: canPrevious
+                                  ? () {
+                                      _showControls();
+                                      unawaited(
+                                        AppInteractionFeedback.trigger(
+                                          AppInteractionFeedbackType.selection,
+                                        ),
+                                      );
+                                      unawaited(
+                                        _playback.seekSessionToPrev(
+                                          widget.sessionId,
+                                        ),
+                                      );
+                                    }
+                                  : null,
+                              color: Colors.white,
+                              disabledColor: Colors.white38,
+                              iconSize: 26,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 44,
+                                height: 44,
+                              ),
+                              icon: const Icon(Icons.skip_previous_rounded),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              key: const ValueKey<String>(
+                                'fullscreen_video_play_pause',
+                              ),
+                              tooltip: playing
+                                  ? i18n.tr('pause')
+                                  : i18n.tr('play'),
+                              onPressed: () {
+                                _showControls();
+                                unawaited(
+                                  _playback.toggleSessionPlayPause(
+                                    widget.sessionId,
+                                  ),
+                                );
+                              },
+                              style: IconButton.styleFrom(
+                                fixedSize: const Size(48, 48),
+                                minimumSize: const Size(48, 48),
+                                backgroundColor: Colors.white,
+                                foregroundColor: Colors.black,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: EdgeInsets.zero,
+                              ),
+                              iconSize: 30,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 48,
+                                height: 48,
+                              ),
+                              icon: Icon(
+                                playing
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              key: const ValueKey<String>(
+                                'fullscreen_video_next',
+                              ),
+                              tooltip: i18n.tr('next_track'),
+                              onPressed: canNext
+                                  ? () {
+                                      _showControls();
+                                      unawaited(
+                                        AppInteractionFeedback.trigger(
+                                          AppInteractionFeedbackType.selection,
+                                        ),
+                                      );
+                                      unawaited(
+                                        _playback.seekSessionToNext(
+                                          widget.sessionId,
+                                        ),
+                                      );
+                                    }
+                                  : null,
+                              color: Colors.white,
+                              disabledColor: Colors.white38,
+                              iconSize: 26,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 44,
+                                height: 44,
+                              ),
+                              icon: const Icon(Icons.skip_next_rounded),
+                            ),
+                          ],
+                        ),
+                      );
+                      final volumeSlider = Slider(
+                        key: const ValueKey<String>('fullscreen_video_volume'),
+                        semanticFormatterCallback: (value) =>
+                            '${(value * 100).round()}%',
+                        max: sessionVolumeDisplayMaximum,
+                        value: displayVolume,
+                        onChangeStart: (_) => _beginControlInteraction(),
+                        onChanged: (displayValue) {
+                          final volumeGain = sessionVolumeGainFromDisplayValue(
+                            displayValue,
+                          );
+                          _dragVolume.value = volumeGain;
+                          AppInteractionFeedback.continuous(
+                            (displayValue * 100).round(),
+                          );
+                          UiInteractionCoordinator.instance
+                              .scheduleThrottledCommit(
+                                key: 'video_volume:${widget.sessionId}',
+                                commit: () => _playback.setSessionVolume(
+                                  widget.sessionId,
+                                  volumeGain,
+                                  persist: false,
+                                ),
+                              );
+                        },
+                        onChangeEnd: (value) => _endVolumeInteraction(
+                          sessionVolumeGainFromDisplayValue(value),
+                        ),
+                      );
+                      return SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3,
+                          activeTrackColor: Colors.white,
+                          inactiveTrackColor: Colors.white24,
+                          thumbColor: Colors.white,
+                          overlayColor: Colors.white12,
+                          disabledActiveTrackColor: Colors.white38,
+                          disabledInactiveTrackColor: Colors.white24,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 5,
+                          ),
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 12,
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        child: Column(
+                          children: [
+                            timeline,
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: 48,
+                              child: LayoutBuilder(
+                                builder: (context, constraints) => Row(
+                                  children: [
+                                    transport,
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Align(
+                                        alignment: Alignment.centerRight,
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            maxWidth: 240,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                _volumeIcon(volumeGain),
+                                                color: Colors.white,
+                                                semanticLabel: i18n.tr(
+                                                  'volume',
+                                                ),
+                                              ),
+                                              Expanded(child: volumeSlider),
+                                              if (constraints.maxWidth >= 480)
+                                                SizedBox(
+                                                  width: 56,
+                                                  child: Text(
+                                                    '${(displayVolume * 100).round()}%',
+                                                    key: const ValueKey<String>(
+                                                      'fullscreen_video_volume_value',
+                                                    ),
+                                                    textAlign: TextAlign.right,
+                                                    style: timeStyle,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       );
                     },
                   ),

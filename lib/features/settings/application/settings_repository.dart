@@ -35,7 +35,6 @@ class SettingsRepository {
   bool showAsmrOne = true;
   WorkNameDisplay workNameDisplay = WorkNameDisplay.workTitle;
   StartupPage startupPage = StartupPage.library;
-  bool portraitLockEnabled = false;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
   bool preferEmbeddedCover = false;
   String? asmrDownloadDestinationRoot;
@@ -73,7 +72,6 @@ class SettingsRepository {
         (value) => value.name == playback['startupPage'],
         orElse: () => StartupPage.library,
       );
-      portraitLockEnabled = playback['portraitLockEnabled'] as bool? ?? false;
       autoCheckUpdates = playback['autoCheckUpdates'] as bool? ?? false;
       recordPlaybackProgress =
           playback['recordPlaybackProgress'] as bool? ?? true;
@@ -201,7 +199,6 @@ class SettingsRepository {
       _playbackSettingsKey,
       <String, Object?>{
         'startupPage': startupPage.name,
-        'portraitLockEnabled': portraitLockEnabled,
         'autoCheckUpdates': autoCheckUpdates,
         'recordPlaybackProgress': recordPlaybackProgress,
         'allowVideoPlayback': allowVideoPlayback,
@@ -422,11 +419,6 @@ class SettingsRepository {
     update: () => startupPage = page,
   );
 
-  Future<void> setPortraitLockEnabled(bool enabled) => _setValue(
-    unchanged: () => portraitLockEnabled == enabled,
-    update: () => portraitLockEnabled = enabled,
-  );
-
   Future<void> setCoverImageResolution(
     CoverImageResolution resolution, {
     Future<void> Function()? afterSave,
@@ -601,7 +593,6 @@ class SettingsRepository {
     showAsmrOne = snapshot.showAsmrOne;
     workNameDisplay = snapshot.workNameDisplay;
     startupPage = snapshot.startupPage;
-    portraitLockEnabled = snapshot.portraitLockEnabled;
     coverImageResolution = snapshot.coverImageResolution;
     preferEmbeddedCover = snapshot.preferEmbeddedCover;
     asmrDownloadDestinationRoot = snapshot.asmrDownloadDestinationRoot;
@@ -643,7 +634,6 @@ class SettingsRepository {
     showAsmrOne = true;
     workNameDisplay = WorkNameDisplay.workTitle;
     startupPage = StartupPage.library;
-    portraitLockEnabled = false;
     coverImageResolution = CoverImageResolution.balanced;
     preferEmbeddedCover = false;
     asmrDownloadDestinationRoot = null;
@@ -711,7 +701,6 @@ class SettingsRepository {
       showAsmrOne: showAsmrOne,
       workNameDisplay: workNameDisplay,
       startupPage: startupPage,
-      portraitLockEnabled: portraitLockEnabled,
       coverImageResolution: coverImageResolution,
       preferEmbeddedCover: preferEmbeddedCover,
       asmrDownloadDestinationRoot: asmrDownloadDestinationRoot,

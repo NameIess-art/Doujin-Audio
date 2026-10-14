@@ -11,7 +11,7 @@ enum SessionVideoGestureZone { left, center, right }
 
 enum SessionVideoVerticalGestureSide { left, right }
 
-const sessionVideoFullscreenControlBarHeight = 64.0;
+const sessionVideoFullscreenControlBarHeight = 128.0;
 const sessionVideoFullscreenGestureHorizontalInset = 24.0;
 
 bool sessionVideoControlsVisibleAfterBlankTap(bool controlsVisible) {
@@ -28,15 +28,17 @@ bool sessionVideoShouldAutoHideControls({
 Rect sessionVideoFullscreenGestureRect({
   required Size viewportSize,
   required bool controlsVisible,
+  double controlBarHeight = sessionVideoFullscreenControlBarHeight,
 }) {
   final horizontalInset = sessionVideoFullscreenGestureHorizontalInset.clamp(
     0.0,
     viewportSize.width / 2,
   );
   final bottom =
-      (viewportSize.height -
-              (controlsVisible ? sessionVideoFullscreenControlBarHeight : 0))
-          .clamp(0.0, viewportSize.height);
+      (viewportSize.height - (controlsVisible ? controlBarHeight : 0)).clamp(
+        0.0,
+        viewportSize.height,
+      );
   return Rect.fromLTRB(
     horizontalInset,
     0,

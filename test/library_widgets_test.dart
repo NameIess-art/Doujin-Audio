@@ -325,6 +325,97 @@ void main() {
   );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final fixedExtent in [false, true]) {
+      testWidgets(
+        'library column resize preserves the first painted anchor (fixed=$fixedExtent) on $platform',
+        (tester) async {
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = const Size(1280, 650);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          addTearDown(tester.view.resetPhysicalSize);
+          final fixture = AppRuntimeWidgetTestFixture(
+            coverArtworkCacheService: _NoCoverArtworkCacheService(),
+          );
+          final scroll = ScrollController();
+          final store = BrowsePageStateStore();
+          addTearDown(fixture.dispose);
+          addTearDown(scroll.dispose);
+          final nodes = List.generate(
+            100,
+            (index) => FolderNode('Work $index', '/resize/work-$index'),
+          );
+          Widget page() => fixture.build(
+            Builder(
+              builder: (context) => Theme(
+                data: Theme.of(context).copyWith(
+                  listTileTheme: ListTileThemeData(
+                    minVerticalPadding: fixedExtent ? 0 : 12,
+                  ),
+                ),
+                child: libraryRows(fixture, nodes, scroll),
+              ),
+            ),
+            overrides: [
+              browsePageStateStoreProvider.overrideWithValue(store),
+              libraryDetailForTargetProvider.overrideWith(
+                (ref, target) async => AudioDetail.empty(target),
+              ),
+            ],
+          );
+          await tester.pumpWidget(page());
+          await tester.pumpAndSettle();
+          expect(
+            tester.widget<ListView>(find.byType(ListView)).itemExtent,
+            fixedExtent ? LibraryLikeCardMetrics.rootTileHeight : null,
+          );
+          scroll.jumpTo(scroll.position.maxScrollExtent / 2 + 17);
+          await tester.pumpAndSettle();
+          final visible =
+              find.byType(AnimatedReorderItem).evaluate().where((element) {
+                final rect = tester.getRect(
+                  find.byElementPredicate((e) => e == element),
+                );
+                return rect.bottom > 0 && rect.top < 650;
+              }).toList()..sort((a, b) {
+                final aRect = tester.getRect(
+                  find.byElementPredicate((e) => e == a),
+                );
+                final bRect = tester.getRect(
+                  find.byElementPredicate((e) => e == b),
+                );
+                final vertical = aRect.top.compareTo(bRect.top);
+                return vertical == 0
+                    ? aRect.left.compareTo(bRect.left)
+                    : vertical;
+              });
+          final original = visible.first;
+          final id = (original.widget as AnimatedReorderItem).id;
+          final anchor = find.byWidgetPredicate(
+            (widget) => widget is AnimatedReorderItem && widget.id == id,
+          );
+          Finder removal() => find.descendant(
+            of: anchor,
+            matching: find.byType(UndoableRemovalTransition),
+          );
+          final originalState = tester.state(removal());
+          final originalTop = tester.getTopLeft(anchor).dy;
+          for (final width in [450.0, 1280.0]) {
+            tester.view.physicalSize = Size(width, 650);
+            await tester.pumpWidget(page());
+            expect(anchor, findsOneWidget);
+            expect(tester.element(anchor), same(original));
+            expect(tester.state(removal()), same(originalState));
+            expect(tester.getTopLeft(anchor).dy, closeTo(originalTop, 1));
+            expect(tester.getRect(anchor).bottom, greaterThan(0));
+            expect(tester.takeException(), isNull);
+            await tester.pumpAndSettle();
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
     testWidgets(
       'library fixed rows match natural card heights at scaled responsive widths',
       (tester) async {

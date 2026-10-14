@@ -32,6 +32,7 @@ class RoutedPlaybackDockHost extends ConsumerStatefulWidget {
     this.enabled = true,
     this.menuDismiss,
     this.backgroundColor,
+    this.onTopPageChanged,
   });
 
   final GlobalKey<NavigatorState> navigatorKey;
@@ -41,6 +42,7 @@ class RoutedPlaybackDockHost extends ConsumerStatefulWidget {
   final bool enabled;
   final ValueNotifier<VoidCallback?>? menuDismiss;
   final Color? backgroundColor;
+  final ValueChanged<PageRoute<dynamic>?>? onTopPageChanged;
 
   @override
   ConsumerState<RoutedPlaybackDockHost> createState() =>
@@ -59,7 +61,10 @@ class _RoutedPlaybackDockHostState
   @override
   void initState() {
     super.initState();
-    _routeObserver = _RootPageRouteObserver(_routeRevision);
+    _routeObserver = _RootPageRouteObserver(
+      _routeRevision,
+      (route) => widget.onTopPageChanged?.call(route),
+    );
     // Keep the dock below newly pushed routes before their first frame.
     _routeRevision.addListener(_syncRoutedPlaybackDock);
     _playbackDockGeometry = widget.geometry ?? PlaybackDockGeometryController();
@@ -279,9 +284,10 @@ class _RoutedPlaybackDockHostState
 }
 
 class _RootPageRouteObserver extends NavigatorObserver {
-  _RootPageRouteObserver(this.revision);
+  _RootPageRouteObserver(this.revision, this.onTopPageChanged);
 
   final ValueNotifier<int> revision;
+  final ValueChanged<PageRoute<dynamic>?> onTopPageChanged;
   final List<PageRoute<dynamic>> _routes = <PageRoute<dynamic>>[];
   final Map<PageRoute<dynamic>, (Animation<double>, AnimationStatusListener)>
   _routeAnimationListeners = {};
@@ -331,7 +337,10 @@ class _RootPageRouteObserver extends NavigatorObserver {
     _syncScheduled = true;
     scheduleMicrotask(() {
       _syncScheduled = false;
-      if (!_disposed) revision.value++;
+      if (!_disposed) {
+        onTopPageChanged(topRoute);
+        revision.value++;
+      }
     });
   }
 

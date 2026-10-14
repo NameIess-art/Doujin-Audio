@@ -519,20 +519,20 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         ListTileTheme.of(context).minVerticalPadding ??
         Theme.of(context).listTileTheme.minVerticalPadding ??
         (Theme.of(context).useMaterial3 ? 8.0 : 4.0);
-    final useFixedExtent =
+    final uniformRootRows =
         !_removalMotionActive &&
         _removingItemIds.isEmpty &&
         _expandedCardPaths.isEmpty &&
         _cardExpansionMotions.isEmpty &&
-        tilePadding <= LibraryLikeCardMetrics.coverDistance &&
         visibleItems.every(
           (item) =>
               item.depth == 0 &&
               !item.isFolderError &&
               isSelectableLibraryNode(item.node),
         );
+    final useFixedExtent =
+        uniformRootRows && tilePadding <= LibraryLikeCardMetrics.coverDistance;
     final itemIndices = <Key, int>{};
-    BrowsePageScroll.setAnchorIds(context, _visibleItemIds);
     Widget buildTopLevelLibraryItem(BuildContext context, int index) {
       final item = visibleItems[index];
       final node = item.node;
@@ -623,6 +623,15 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
       builder: (context, constraints) {
         final columnCount = responsiveLibraryCardColumnCount(
           constraints.maxWidth,
+        );
+        BrowsePageScroll.setAnchorIds(
+          context,
+          _visibleItemIds,
+          columnCount: uniformRootRows ? columnCount : null,
+          rowExtent: useFixedExtent
+              ? LibraryLikeCardMetrics.rootTileHeight
+              : null,
+          topPadding: widget.topPadding,
         );
         final rowCount = (visibleItems.length / columnCount).ceil();
         itemIndices.clear();

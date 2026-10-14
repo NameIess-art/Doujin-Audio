@@ -41,8 +41,16 @@ void main() {
           controlsVisible: false,
         );
 
-        expect(visibleRect, const Rect.fromLTRB(24, 0, 776, 336));
+        expect(visibleRect, const Rect.fromLTRB(24, 0, 776, 272));
         expect(hiddenRect, const Rect.fromLTRB(24, 0, 776, 400));
+        expect(
+          sessionVideoFullscreenGestureRect(
+            viewportSize: const Size(800, 400),
+            controlsVisible: true,
+            controlBarHeight: sessionVideoFullscreenControlBarHeight + 34,
+          ),
+          const Rect.fromLTRB(24, 0, 776, 238),
+        );
       },
     );
 

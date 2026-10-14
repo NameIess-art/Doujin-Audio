@@ -719,7 +719,6 @@ const Map<String, String> appLanguageEn = {
   'interface_language': 'Interface language',
   'follow_system': 'Follow system',
   'startup_page': 'Startup page',
-  'portrait_lock': 'Portrait lock',
   'startup_page_asmrOne': 'ASMR.ONE',
   'startup_page_library': 'Local audio library',
   'startup_page_playlist': 'Playlist',

@@ -26,28 +26,43 @@ void main() {
           controller: controller,
           restoreReady: restoreReady,
           anchorIds: List.generate(count, (i) => '${i + start}'),
-          child: ListView.builder(
-            controller: controller,
-            itemExtent: fixedExtent ? extent : null,
-            itemCount: (count / columns).ceil(),
-            itemBuilder: (_, row) => columns == 1 && fixedExtent
-                ? BrowseAnchor(id: '${row + start}', child: Text('item $row'))
-                : SizedBox(
-                    height: extent,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (var column = 0; column < columns; column++)
-                          if (row * columns + column < count)
-                            Expanded(
-                              child: BrowseAnchor(
-                                id: '${row * columns + column + start}',
-                                child: Text('item ${row * columns + column}'),
-                              ),
-                            ),
-                      ],
-                    ),
-                  ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              BrowsePageScroll.setAnchorIds(
+                context,
+                List.generate(count, (i) => '${i + start}'),
+                columnCount: columns,
+                rowExtent: extent,
+              );
+              return ListView.builder(
+                controller: controller,
+                itemExtent: fixedExtent ? extent : null,
+                itemCount: (count / columns).ceil(),
+                itemBuilder: (_, row) => columns == 1 && fixedExtent
+                    ? BrowseAnchor(
+                        id: '${row + start}',
+                        child: Text('item $row'),
+                      )
+                    : SizedBox(
+                        height: extent,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (var column = 0; column < columns; column++)
+                              if (row * columns + column < count)
+                                Expanded(
+                                  child: BrowseAnchor(
+                                    id: '${row * columns + column + start}',
+                                    child: Text(
+                                      'item ${row * columns + column}',
+                                    ),
+                                  ),
+                                ),
+                          ],
+                        ),
+                      ),
+              );
+            },
           ),
         ),
       ),
@@ -270,6 +285,30 @@ void main() {
       expect(controller.offset, controller.position.maxScrollExtent);
       expect(find.text('item 100'), findsOneWidget);
     }
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
+
+  testWidgets('column reflow paints the visible anchor in its first frame', (
+    tester,
+  ) async {
+    final store = BrowsePageStateStore();
+    final controller = ScrollController();
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(800, 600);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(page(store, controller, count: 100, columns: 2));
+    await tester.pumpAndSettle();
+    controller.jumpTo(640);
+    await tester.pumpAndSettle();
+    final top = tester.getTopLeft(find.text('item 16')).dy;
+    expect(store.stateFor('page')['anchor'], '16');
+    tester.view.physicalSize = const Size(400, 600);
+    await tester.pumpWidget(page(store, controller, count: 100));
+    expect(find.text('item 16'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('item 16')).dy, closeTo(top, 0.5));
+    await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
   });

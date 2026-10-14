@@ -50,6 +50,7 @@ Future<WorkDetailNavigation> _pumpApp(
   Size size = const Size(1280, 800),
   bool withSession = false,
   bool withNavigationLock = false,
+  bool showAsmrOne = false,
   Widget? home,
 }) async {
   tester.view.devicePixelRatio = 1;
@@ -59,7 +60,8 @@ Future<WorkDetailNavigation> _pumpApp(
     tester.view.resetPhysicalSize();
   });
   final fixture = AppRuntimeWidgetTestFixture(
-    configureSettingsRepository: (settings) => settings.showAsmrOne = false,
+    configureSettingsRepository: (settings) =>
+        settings.showAsmrOne = showAsmrOne,
   );
   addTearDown(fixture.dispose);
   fixture.settings.syncSlice(isInitialized: true);
@@ -212,6 +214,71 @@ void main() {
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   testWidgets(
+    'portrait secondary routes cover the main dock through entry and exit',
+    (tester) async {
+      final navigation = await _pumpApp(
+        tester,
+        size: const Size(390, 820),
+        withSession: true,
+      );
+      final dock = find.byKey(const ValueKey('mobile_bottom_capsule_panel'));
+      expect(dock, findsOneWidget);
+      final content = navigation.contentNavigatorKey.currentState!;
+      unawaited(
+        content.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('Portrait secondary')),
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(dock, findsNothing);
+      expect(navigation.isContentOpen, isTrue);
+      content.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 75));
+      expect(dock, findsNothing);
+      expect(navigation.isContentOpen, isTrue);
+      await _settle(tester);
+      expect(dock, findsOneWidget);
+      expect(navigation.isContentOpen, isFalse);
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
+
+  testWidgets(
+    'portrait search retains input when rotated into the landscape content navigator',
+    (tester) async {
+      final navigation = await _pumpApp(tester, size: const Size(390, 820));
+      await tester.tap(find.byKey(const ValueKey('library_search_button')));
+      await _settle(tester);
+      final field = find.byKey(const ValueKey('app_search_field'));
+      await tester.enterText(field, 'retained query');
+      await _settle(tester);
+      expect(navigation.isContentOpen, isTrue);
+      expect(navigation.canOpenInPane(tester.element(field)), isFalse);
+      final searchState = tester.state(field);
+      tester.view.physicalSize = const Size(1280, 800);
+      await _settle(tester);
+      expect(tester.state(field), same(searchState));
+      expect(
+        tester.widget<TextField>(field).controller!.text,
+        'retained query',
+      );
+      expect(navigation.canOpenInPane(tester.element(field)), isTrue);
+      expect(tester.getRect(_main).contains(tester.getCenter(field)), isTrue);
+      await tester.binding.handlePopRoute();
+      await _settle(tester);
+      expect(navigation.isContentOpen, isFalse);
+      expect(
+        find.byKey(const ValueKey('library_refresh_button')),
+        findsOneWidget,
+      );
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
+
+  testWidgets(
     'portrait detail slides over the painted main page on entry and exit',
     (tester) async {
       final surface = GlobalKey();
@@ -259,12 +326,14 @@ void main() {
               bytes.getUint8(offset + 2),
             );
           }
+
           final result = (pixel(8), pixel(380));
           image.dispose();
           return result;
         });
         expect(colors, (const Color(0xfff44336), const Color(0xff2196f3)));
       }
+
       unawaited(navigation.open('slide', (_) => route));
       await tester.pump();
       await tester.pump();
@@ -282,6 +351,155 @@ void main() {
   );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final split in [false, true]) {
+      testWidgets(
+        'secondary pages stay in content and reset on tab switch (split=$split) on $platform',
+        (tester) async {
+          final navigation = await _pumpApp(tester, withNavigationLock: true);
+          if (split) await _open(tester, navigation, 'A');
+          final mainRect = tester.getRect(_main);
+          final content = navigation.contentNavigatorKey.currentState!;
+          var completed = false;
+          unawaited(
+            content
+                .push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (context) => Scaffold(
+                      key: const ValueKey('secondary_content_page'),
+                      appBar: AppBar(title: const Text('Secondary content')),
+                      body: TextButton(
+                        onPressed: () => Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                const Scaffold(body: Text('Secondary child')),
+                          ),
+                        ),
+                        child: const Text('Open content child'),
+                      ),
+                    ),
+                  ),
+                )
+                .then((_) => completed = true),
+          );
+          await _settle(tester);
+          expect(
+            tester.getRect(
+              find.byKey(const ValueKey('secondary_content_page')),
+            ),
+            mainRect,
+          );
+          expect(navigation.rootNavigatorKey.currentState!.canPop(), isFalse);
+          expect(
+            find.byType(DesktopMainNavigation).hitTestable(),
+            findsOneWidget,
+          );
+          expect(navigation.isContentOpen, isTrue);
+          expect(
+            navigation.canOpenInPane(
+              tester.element(find.text('Secondary content')),
+            ),
+            isTrue,
+          );
+          await tester.tap(find.text('Open content child'));
+          await _settle(tester);
+          if (platform == TargetPlatform.windows) {
+            await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          } else {
+            await tester.binding.handlePopRoute();
+          }
+          await _settle(tester);
+          // Back closes the right detail before the left content stack.
+          if (split) {
+            expect(navigation.isOpen, isFalse);
+            expect(find.text('Secondary child'), findsOneWidget);
+            content.pop();
+            await _settle(tester);
+          }
+          expect(find.text('Secondary child'), findsNothing);
+          await tester.tap(find.text('Open content child'));
+          await _settle(tester);
+          if (split) await _open(tester, navigation, 'A');
+          final rail = tester.widget<NavigationRail>(
+            find.byType(NavigationRail),
+          );
+          await tester.tap(find.byWidget(rail.destinations[1].label));
+          await _settle(tester);
+          expect(completed, isTrue);
+          expect(navigation.isContentOpen, isFalse);
+          expect(find.text('Secondary content'), findsNothing);
+          expect(find.text('Secondary child'), findsNothing);
+          if (split) expect(find.text('Work A'), findsOneWidget);
+          final nextRail = tester.widget<NavigationRail>(
+            find.byType(NavigationRail),
+          );
+          await tester.tap(find.byWidget(nextRail.destinations[0].label));
+          await _settle(tester);
+          expect(navigation.isContentOpen, isFalse);
+          expect(
+            find.byKey(const ValueKey('library_search_button')),
+            findsOneWidget,
+          );
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
+    testWidgets(
+      'both library headers retain refresh actions in narrow split panes on $platform',
+      (tester) async {
+        final navigation = await _pumpApp(tester, showAsmrOne: true);
+        await _open(tester, navigation, 'A');
+        expect(
+          tester.getSize(_main).width,
+          lessThan(tester.getSize(_main).height),
+        );
+        final library = find.byKey(const ValueKey('library_refresh_button'));
+        expect(library, findsOneWidget);
+        expect(
+          tester.getRect(_main).contains(tester.getCenter(library)),
+          isTrue,
+        );
+        final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
+        await tester.tap(find.byWidget(rail.destinations[0].label));
+        await _settle(tester);
+        final asmr = find.byKey(const ValueKey('asmr_refresh_button'));
+        expect(asmr, findsOneWidget);
+        expect(tester.getRect(_main).contains(tester.getCenter(asmr)), isTrue);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'library search stays beside the menu and opens details in the right pane on $platform',
+      (tester) async {
+        final navigation = await _pumpApp(tester, withNavigationLock: true);
+        await tester.tap(find.byKey(const ValueKey('library_search_button')));
+        await _settle(tester);
+        final search = find.byKey(const ValueKey('app_search_close'));
+        expect(search, findsOneWidget);
+        final searchContext = tester.element(search);
+        expect(
+          Navigator.of(searchContext),
+          same(navigation.contentNavigatorKey.currentState),
+        );
+        expect(navigation.canOpenInPane(searchContext), isTrue);
+        expect(navigation.rootNavigatorKey.currentState!.canPop(), isFalse);
+        await _open(tester, navigation, 'A');
+        expect(search, findsOneWidget);
+        expect(
+          tester.getRect(_main).contains(tester.getCenter(search)),
+          isTrue,
+        );
+        expect(find.text('Work A'), findsOneWidget);
+        navigation.navigatorKey.currentState!.pop();
+        await _settle(tester);
+        await tester.tap(search);
+        await _settle(tester);
+        expect(navigation.isContentOpen, isFalse);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     for (final asmr in [false, true]) {
       testWidgets(
         'search results open visible details and return with input unlocked (asmr=$asmr) on $platform',

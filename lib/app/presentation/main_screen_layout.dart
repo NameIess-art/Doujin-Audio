@@ -1,6 +1,33 @@
 part of 'main_screen.dart';
 
 extension _MainScreenLayout on _MainScreenState {
+  Widget _buildContentNavigator(
+    BuildContext context, {
+    required bool isDesktop,
+    required bool isLandscapeLayout,
+    required double bottomInset,
+  }) {
+    final body = _buildBody(
+      context,
+      isDesktop: isDesktop,
+      isLandscapeLayout: isLandscapeLayout,
+    );
+    final navigation = WorkDetailNavigationScope.maybeOf(context);
+    if (navigation == null) return body;
+    return MainContentNavigator(
+      navigation: navigation,
+      isLandscape: isLandscapeLayout,
+      geometry: widget.playbackDockGeometry,
+      // The root page keeps the main dock inset; routed pages use their host's.
+      child: MobileOverlayInset(
+        bottomInset: bottomInset,
+        menuOverlayKey: _mainMenuOverlayKey,
+        menuDismiss: navigation.menuDismiss,
+        child: body,
+      ),
+    );
+  }
+
   Widget _buildBody(
     BuildContext context, {
     required bool isDesktop,
@@ -42,7 +69,12 @@ extension _MainScreenLayout on _MainScreenState {
       _activePageIndex.value = destinations.length - 1;
     }
     Widget pageShell(BuildContext context, int actualIndex) {
-      final page = _buildMainPage(context, actualIndex, destinations);
+      final page = _buildMainPage(
+        context,
+        actualIndex,
+        destinations,
+        isLandscapeLayout: isLandscapeLayout,
+      );
 
       return KeyedSubtree(
         key: ValueKey<String>('main_page_fade_$actualIndex'),
@@ -93,7 +125,7 @@ extension _MainScreenLayout on _MainScreenState {
                 separateHeader: true,
                 indexListenable: _activePageIndex,
                 itemCount: destinations.length,
-                contentRevision: (showLocal, showAsmr),
+                contentRevision: (showLocal, showAsmr, isLandscapeLayout),
                 itemBuilder: pageShell,
                 duration: kAppMotionSlow,
                 onTransitionCompleted: _handlePageTransitionCompleted,

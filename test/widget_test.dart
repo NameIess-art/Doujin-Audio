@@ -4030,7 +4030,7 @@ void main() {
     expect(animatedShell, findsOneWidget);
     expect(
       tester.widget<AnimatedContainer>(animatedShell).duration,
-      kThemeAnimationDuration,
+      Duration.zero,
     );
     expect(
       tester.widget<AnimatedContainer>(animatedShell).curve,

@@ -52,12 +52,14 @@ class LibraryTab extends ConsumerStatefulWidget {
     this.activeTabIndexListenable,
     this.activeSectionListenable,
     this.sectionIndex = 0,
+    this.isLandscapeLayout,
   });
 
   final int tabIndex;
   final ValueListenable<int>? activeTabIndexListenable;
   final ValueListenable<int>? activeSectionListenable;
   final int sectionIndex;
+  final bool? isLandscapeLayout;
 
   @override
   ConsumerState<LibraryTab> createState() => _LibraryTabState();
@@ -713,7 +715,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     // Remove the extra 96px to make content flush with the bottom dock.
     final listBottomInset = bottomInset;
     final isLandscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
+        widget.isLandscapeLayout ??
+        (MediaQuery.orientationOf(context) == Orientation.landscape);
     final listTopPadding = headerContentHeight;
     final listBottomPadding = listBottomInset + 16.0;
     // Reduced cacheExtent to significantly lower memory footprint and improve
@@ -967,6 +970,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               const SizedBox(width: 8),
                               HeaderFloatingButton(
                                 child: IconButton(
+                                  key: const ValueKey('library_refresh_button'),
                                   onPressed:
                                       canPullRefresh && !libraryRefreshBusy
                                       ? () => unawaited(

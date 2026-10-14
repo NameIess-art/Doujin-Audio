@@ -438,7 +438,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (!conditionMet) return;
     _sleepModeAutoEntryTriggeredThisRun = true;
     if (BedtimeCanvasPage.isCanvasActive) return;
-    Navigator.of(context).push(BedtimeCanvasPage.route(context));
+    final navigator = _previousNavigationLayout?.$2 == true
+        ? WorkDetailNavigationScope.maybeOf(
+                context,
+              )?.contentNavigatorKey.currentState ??
+              Navigator.of(context)
+        : Navigator.of(context);
+    navigator.push(BedtimeCanvasPage.route(navigator.context));
   }
 
   void _queueAutoUpdateCheckIfReady() {
@@ -707,6 +713,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final coordinator = UiInteractionCoordinator.instance;
     coordinator.beginNavigation(_pageSwitchInteraction);
     _pageSwitchCoordinatorGeneration = coordinator.beginGeneration();
+    if (_previousNavigationLayout?.$2 == true) {
+      WorkDetailNavigationScope.maybeOf(context)?.resetContent();
+    }
     _activePageIndex.value = index;
     final destinations = _currentDestinations();
     if (index >= 0 && index < destinations.length) {
@@ -753,8 +762,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
   Widget _buildMainPage(
     BuildContext context,
     int index,
-    List<MainDestination> destinations,
-  ) {
+    List<MainDestination> destinations, {
+    required bool isLandscapeLayout,
+  }) {
     if (index < 0 || index >= destinations.length) {
       return const SizedBox.shrink();
     }
@@ -764,11 +774,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
         key: const ValueKey<String>('audio_library_local_page'),
         tabIndex: index,
         activeTabIndexListenable: _activePageIndex,
+        isLandscapeLayout: isLandscapeLayout,
       ),
       MainDestinationType.asmrOne => AsmrTab(
         key: const ValueKey<String>('audio_library_asmr_page'),
         tabIndex: index,
         activeTabIndexListenable: _activePageIndex,
+        isLandscapeLayout: isLandscapeLayout,
       ),
       MainDestinationType.playlist => Consumer(
         builder: (context, ref, child) => IgnorePointer(
@@ -872,8 +884,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         defaultTargetPlatform == TargetPlatform.windows ||
         mediaQuery.orientation == Orientation.landscape;
     final navigationLayout = (isDesktop, isLandscape);
-    var navigationLayoutChanged =
-        _previousNavigationLayout != navigationLayout;
+    var navigationLayoutChanged = _previousNavigationLayout != navigationLayout;
     _previousNavigationLayout = navigationLayout;
     final detailNavigation = WorkDetailNavigationScope.maybeOf(context);
     final isTinyWindow = width < 300 || layoutSize.height < 300;
@@ -916,7 +927,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
           tween: Tween<double>(begin: sidebarWidth, end: sidebarWidth),
           // A newly mounted sidebar already has its final width on rotation.
           duration:
-              snapSidebarWidth || MediaQuery.disableAnimationsOf(context)
+              isLandscape ||
+                  snapSidebarWidth ||
+                  MediaQuery.disableAnimationsOf(context)
               ? Duration.zero
               : kThemeAnimationDuration,
           curve: Curves.easeInOut,
@@ -1001,8 +1014,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                                 child: Stack(
                                                   fit: StackFit.expand,
                                                   children: [
-                                                    _buildBody(
+                                                    _buildContentNavigator(
                                                       context,
+                                                      bottomInset:
+                                                          mobileContentInset,
                                                       isDesktop: isDesktop,
                                                       isLandscapeLayout:
                                                           isLandscape,
@@ -1024,20 +1039,23 @@ class _MainScreenState extends ConsumerState<MainScreen>
                         ),
 
                         if (!isDesktop)
-                          Consumer(
-                            builder: (context, ref, _) {
-                              final overlaySessions = ref.watch(
-                                mainOverlayUiProvider.select(
-                                  (state) => state.overlaySessions,
-                                ),
-                              );
-                              return _buildMobileBottomDock(
-                                context,
-                                i18n: i18n,
-                                overlaySessions: overlaySessions,
-                                tinyMode: isTinyWindow,
-                              );
-                            },
+                          Offstage(
+                            offstage: detailNavigation?.isContentOpen ?? false,
+                            child: Consumer(
+                              builder: (context, ref, _) {
+                                final overlaySessions = ref.watch(
+                                  mainOverlayUiProvider.select(
+                                    (state) => state.overlaySessions,
+                                  ),
+                                );
+                                return _buildMobileBottomDock(
+                                  context,
+                                  i18n: i18n,
+                                  overlaySessions: overlaySessions,
+                                  tinyMode: isTinyWindow,
+                                );
+                              },
+                            ),
                           ),
                       ],
                     ),

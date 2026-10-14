@@ -8,6 +8,7 @@ import '../../features/player/presentation/active_session_carousel.dart';
 import '../../features/player/presentation/playlist/session_detail_page.dart';
 import 'main_destination.dart';
 import 'app_dock_panel.dart';
+import 'work_detail_navigation.dart';
 
 class DesktopMainNavigation extends StatefulWidget {
   const DesktopMainNavigation({
@@ -119,7 +120,6 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     final isLandscapeLayout =
         defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    // Keep the landscape shell in sync with NavigationRail's width animation.
     final motionDuration = _disableAnimations
         ? Duration.zero
         : isLandscapeLayout
@@ -146,11 +146,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
 
     return AnimatedContainer(
       key: ValueKey<bool>(isLandscapeLayout),
-      duration: motionDuration,
-      onEnd: () {
-        _motionActive = false;
-        _syncMotionInteraction();
-      },
+      // Resizing the shell every frame also relayouts the adjacent page trees.
+      // Landscape motion is confined to the rail below instead.
+      duration: isLandscapeLayout ? Duration.zero : motionDuration,
+      onEnd: isLandscapeLayout ? null : _finishMotion,
       curve: Curves.easeInOut,
       width: containerWidth,
       margin: isLandscapeLayout
@@ -248,7 +247,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                             extended: !isMenuCollapsed,
                             minWidth: railMinWidth,
                             minExtendedWidth: railMinExtendedWidth,
-                            useIndicator: true,
+                            useIndicator: !isLandscapeLayout,
                             groupAlignment: -1.0,
                             leading: isLandscapeLayout
                                 ? Container(
@@ -262,6 +261,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                           key: _menuToggleKey,
                                           style: IconButton.styleFrom(
                                             shape: const CircleBorder(),
+                                            fixedSize: const Size.square(48),
                                           ),
                                           icon: Icon(
                                             isMenuCollapsed
@@ -356,12 +356,16 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                 icon: CompositedTransformTarget(
                                   key: menuIconKeys[item.type.index],
                                   link: menuIconLinks[item.type.index],
-                                  child: const SizedBox.square(dimension: 21),
+                                  child: SizedBox.square(
+                                    dimension: isLandscapeLayout ? 48 : 21,
+                                  ),
                                 ),
                                 selectedIcon: CompositedTransformTarget(
                                   key: menuIconKeys[item.type.index],
                                   link: menuIconLinks[item.type.index],
-                                  child: const SizedBox.square(dimension: 22),
+                                  child: SizedBox.square(
+                                    dimension: isLandscapeLayout ? 48 : 22,
+                                  ),
                                 ),
                                 label: Text(
                                   label,
@@ -379,71 +383,109 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                           ),
                           Positioned.fill(
                             child: IgnorePointer(
-                              child: ExcludeSemantics(
-                                child: TweenAnimationBuilder<double>(
-                                  tween: Tween<double>(
-                                    end: isMenuCollapsed && !isLandscapeLayout
-                                        ? 1
-                                        : 0,
-                                  ),
-                                  duration: motionDuration,
-                                  curve: Curves.easeInOut,
-                                  builder: (context, collapse, _) => Stack(
-                                    children: [
-                                      for (final entry
-                                          in destinations.asMap().entries)
-                                        if (entry.key != activeIndex)
-                                          Positioned(
-                                            left: 0,
-                                            top: 0,
-                                            child: CompositedTransformFollower(
-                                              link:
-                                                  menuIconLinks[entry
-                                                      .value
-                                                      .type
-                                                      .index],
-                                              showWhenUnlinked: false,
-                                              offset:
-                                                  collapseOffset(
-                                                    entry.value.type,
-                                                    destinations[activeIndex]
-                                                        .type,
-                                                  ) *
-                                                  collapse,
-                                              child: Opacity(
-                                                opacity: 1 - collapse,
-                                                child: Icon(
-                                                  entry.value.icon,
-                                                  key: ValueKey<String>(
-                                                    'main_destination_${entry.value.labelKey}',
+                              ignoring: !isLandscapeLayout,
+                              child: ExcludeFocus(
+                                child: ExcludeSemantics(
+                                  child: TweenAnimationBuilder<double>(
+                                    tween: Tween<double>(
+                                      end: isMenuCollapsed && !isLandscapeLayout
+                                          ? 1
+                                          : 0,
+                                    ),
+                                    duration: motionDuration,
+                                    curve: Curves.easeInOut,
+                                    builder: (context, collapse, _) => Stack(
+                                      children: [
+                                        for (final entry
+                                            in destinations.asMap().entries)
+                                          if (entry.key != activeIndex)
+                                            Positioned(
+                                              left: 0,
+                                              top: 0,
+                                              child: CompositedTransformFollower(
+                                                link:
+                                                    menuIconLinks[entry
+                                                        .value
+                                                        .type
+                                                        .index],
+                                                showWhenUnlinked: false,
+                                                offset:
+                                                    collapseOffset(
+                                                          entry.value.type,
+                                                          destinations[activeIndex]
+                                                              .type,
+                                                        ) *
+                                                        collapse +
+                                                    (isLandscapeLayout
+                                                        ? Offset(
+                                                            -(railMinWidth -
+                                                                    48) /
+                                                                2,
+                                                            -8,
+                                                          )
+                                                        : Offset.zero),
+                                                child: Opacity(
+                                                  opacity: 1 - collapse,
+                                                  child: _buildDestinationIcon(
+                                                    isLandscapeLayout:
+                                                        isLandscapeLayout,
+                                                    railMinWidth: railMinWidth,
+                                                    onPressed: () =>
+                                                        onSwitchPage(entry.key),
+                                                    icon: Icon(
+                                                      entry.value.icon,
+                                                      key: ValueKey<String>(
+                                                        'main_destination_${entry.value.labelKey}',
+                                                      ),
+                                                      color:
+                                                          cs.onSurfaceVariant,
+                                                      size: 21,
+                                                    ),
                                                   ),
-                                                  color: cs.onSurfaceVariant,
-                                                  size: 21,
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                      Positioned(
-                                        left: 0,
-                                        top: 0,
-                                        child: CompositedTransformFollower(
-                                          link:
-                                              menuIconLinks[destinations[activeIndex]
-                                                  .type
-                                                  .index],
-                                          showWhenUnlinked: false,
-                                          child: Icon(
-                                            destinations[activeIndex]
-                                                .selectedIcon,
-                                            key: ValueKey<String>(
-                                              'main_destination_${destinations[activeIndex].labelKey}',
+                                        Positioned(
+                                          left: 0,
+                                          top: 0,
+                                          child: CompositedTransformFollower(
+                                            link:
+                                                menuIconLinks[destinations[activeIndex]
+                                                    .type
+                                                    .index],
+                                            showWhenUnlinked: false,
+                                            offset: isLandscapeLayout
+                                                ? Offset(
+                                                    -(railMinWidth - 48) / 2,
+                                                    -8,
+                                                  )
+                                                : Offset.zero,
+                                            child: _buildDestinationIcon(
+                                              isLandscapeLayout:
+                                                  isLandscapeLayout,
+                                              railMinWidth: railMinWidth,
+                                              onPressed: () =>
+                                                  onSwitchPage(activeIndex),
+                                              backgroundColor: isDark
+                                                  ? cs.primary.withValues(
+                                                      alpha: 0.15,
+                                                    )
+                                                  : cs.primaryContainer
+                                                        .withValues(alpha: 0.6),
+                                              icon: Icon(
+                                                destinations[activeIndex]
+                                                    .selectedIcon,
+                                                key: ValueKey<String>(
+                                                  'main_destination_${destinations[activeIndex].labelKey}',
+                                                ),
+                                                color: cs.primary,
+                                                size: 22,
+                                              ),
                                             ),
-                                            color: cs.primary,
-                                            size: 22,
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
@@ -455,7 +497,30 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                   },
                 );
 
-                return rail;
+                if (!isLandscapeLayout) return rail;
+                return ClipRect(
+                  child: OverflowBox(
+                    alignment: Alignment.topLeft,
+                    minWidth: 0,
+                    maxWidth: railMinExtendedWidth,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(
+                          end: isMenuCollapsed
+                              ? railMinWidth
+                              : railMinExtendedWidth,
+                        ),
+                        duration: motionDuration,
+                        curve: Curves.easeInOut,
+                        onEnd: _finishMotion,
+                        child: rail,
+                        builder: (context, width, child) =>
+                            SizedBox(width: width, child: child),
+                      ),
+                    ),
+                  ),
+                );
               },
             ),
           ),
@@ -501,7 +566,13 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                               presentation:
                                   ActiveSessionCarouselPresentation.embedded,
                               onOpenSession: (sessionId) {
-                                Navigator.of(context).push(
+                                final navigator = isLandscapeLayout
+                                    ? WorkDetailNavigationScope.maybeOf(
+                                            context,
+                                          )?.contentNavigatorKey.currentState ??
+                                          Navigator.of(context)
+                                    : Navigator.of(context);
+                                navigator.push(
                                   buildSessionDetailRoute(sessionId: sessionId),
                                 );
                               },
@@ -515,6 +586,41 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  void _finishMotion() {
+    _motionActive = false;
+    _syncMotionInteraction();
+  }
+
+  Widget _buildDestinationIcon({
+    required bool isLandscapeLayout,
+    required double railMinWidth,
+    required Widget icon,
+    required VoidCallback onPressed,
+    Color? backgroundColor,
+  }) {
+    if (!isLandscapeLayout) return icon;
+    // Consume the rail's surrounding padding so only the 48px button accepts
+    // pointer taps in the icon column. The rail retains keyboard/label actions.
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: railMinWidth,
+        height: 64,
+        child: Center(
+          child: IconButton(
+            style: IconButton.styleFrom(
+              fixedSize: const Size.square(48),
+              shape: const CircleBorder(),
+              backgroundColor: backgroundColor,
+            ),
+            onPressed: onPressed,
+            icon: icon,
+          ),
+        ),
       ),
     );
   }

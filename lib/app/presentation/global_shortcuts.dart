@@ -115,6 +115,10 @@ class GlobalShortcuts extends ConsumerWidget {
         unawaited(detail!.navigatorKey.currentState!.maybePop());
         return KeyEventResult.handled;
       }
+      if (detail?.contentNavigatorKey.currentState?.canPop() == true) {
+        unawaited(detail!.contentNavigatorKey.currentState!.maybePop());
+        return KeyEventResult.handled;
+      }
       return KeyEventResult.ignored;
     }
     if (focusContext?.findAncestorStateOfType<EditableTextState>() != null) {

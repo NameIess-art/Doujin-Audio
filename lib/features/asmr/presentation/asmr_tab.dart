@@ -60,12 +60,14 @@ class AsmrTab extends ConsumerStatefulWidget {
     this.activeTabIndexListenable,
     this.activeSectionListenable,
     this.sectionIndex = 0,
+    this.isLandscapeLayout,
   });
 
   final int tabIndex;
   final ValueListenable<int>? activeTabIndexListenable;
   final ValueListenable<int>? activeSectionListenable;
   final int sectionIndex;
+  final bool? isLandscapeLayout;
 
   @override
   ConsumerState<AsmrTab> createState() => _AsmrTabState();
@@ -890,7 +892,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     }
     _schedulePageLanguageSync(i18n.language);
     final isLandscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
+        widget.isLandscapeLayout ??
+        (MediaQuery.orientationOf(context) == Orientation.landscape);
     final bottomInset = MobileOverlayInset.of(context);
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
@@ -1079,6 +1082,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                                     const SizedBox(width: 8),
                                     HeaderFloatingButton(
                                       child: IconButton(
+                                        key: const ValueKey(
+                                          'asmr_refresh_button',
+                                        ),
                                         onPressed: globalInitialized
                                             ? () => unawaited(
                                                 _refreshCategoryWithFeedback(

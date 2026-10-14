@@ -10,14 +10,19 @@ import 'routed_playback_dock_host.dart';
 class WorkDetailNavigation extends ChangeNotifier {
   WorkDetailNavigation({required this.rootNavigatorKey}) {
     observer = _WorkDetailObserver(this);
+    contentObserver = _WorkDetailObserver(this, content: true);
   }
 
   final GlobalKey<NavigatorState> rootNavigatorKey;
   final navigatorKey = GlobalKey<NavigatorState>();
+  final contentNavigatorKey = GlobalKey<NavigatorState>();
   final menuDismiss = ValueNotifier<VoidCallback?>(null);
   late final NavigatorObserver observer;
+  late final NavigatorObserver contentObserver;
   final List<Route<dynamic>> _routes = [];
+  final List<Route<dynamic>> _contentRoutes = [];
   final Set<Route<dynamic>> _closing = {};
+  final Set<Route<dynamic>> _contentClosing = {};
   Object? _identity;
   Future<void>? _completion;
   bool _scheduled = false;
@@ -25,12 +30,26 @@ class WorkDetailNavigation extends ChangeNotifier {
   int _request = 0;
 
   bool get isOpen => _routes.length > 1 || _closing.isNotEmpty;
+  bool get isContentOpen =>
+      _contentRoutes.length > 1 || _contentClosing.isNotEmpty;
+
+  void resetContent() {
+    menuDismiss.value?.call();
+    final navigator = contentNavigatorKey.currentState;
+    if (navigator == null) return;
+    for (final route in _contentRoutes.skip(1).toList().reversed) {
+      navigator.removeRoute(route);
+    }
+  }
 
   bool canOpenInPane(BuildContext context) {
     final originNavigator = Navigator.of(context);
-    // Root pages such as search cover the main route and mute its navigator's
-    // tickers. Their details must stay on the visible root stack.
+    // Pages on the root stack mute the main route's navigator tickers, so
+    // their details must stay on that visible stack.
     return originNavigator == navigatorKey.currentState ||
+        (originNavigator == contentNavigatorKey.currentState &&
+            (WorkDetailNavigationScope.isLandscapeOf(context) ||
+                ModalRoute.of(context)?.isFirst == true)) ||
         (originNavigator == rootNavigatorKey.currentState &&
             ModalRoute.of(context)?.isFirst == true);
   }
@@ -47,6 +66,7 @@ class WorkDetailNavigation extends ChangeNotifier {
     final request = ++_request;
     if (returnToMain) {
       rootNavigatorKey.currentState!.popUntil((route) => route.isFirst);
+      resetContent();
       await WidgetsBinding.instance.endOfFrame;
     }
     if (_disposed || request != _request) return;
@@ -91,25 +111,30 @@ class WorkDetailNavigation extends ChangeNotifier {
 }
 
 class _WorkDetailObserver extends NavigatorObserver {
-  _WorkDetailObserver(this.navigation);
+  _WorkDetailObserver(this.navigation, {this.content = false});
 
   final WorkDetailNavigation navigation;
+  final bool content;
+  List<Route<dynamic>> get routes =>
+      content ? navigation._contentRoutes : navigation._routes;
+  Set<Route<dynamic>> get closing =>
+      content ? navigation._contentClosing : navigation._closing;
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    navigation._routes.add(route);
+    routes.add(route);
     navigation._changed();
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    navigation._routes.remove(route);
-    // Keep the pane's bounds stable until the last page has painted its exit.
+    routes.remove(route);
+    // Retain pane bounds and dock ownership until the exit has finished.
     if (route is TransitionRoute<dynamic>) {
-      navigation._closing.add(route);
+      closing.add(route);
       unawaited(
         route.completed.then((_) {
-          navigation._closing.remove(route);
+          closing.remove(route);
           navigation._changed();
         }),
       );
@@ -119,14 +144,14 @@ class _WorkDetailObserver extends NavigatorObserver {
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    navigation._routes.remove(route);
+    routes.remove(route);
     navigation._changed();
   }
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    final index = oldRoute == null ? -1 : navigation._routes.indexOf(oldRoute);
-    if (index >= 0 && newRoute != null) navigation._routes[index] = newRoute;
+    final index = oldRoute == null ? -1 : routes.indexOf(oldRoute);
+    if (index >= 0 && newRoute != null) routes[index] = newRoute;
     navigation._changed();
   }
 }
@@ -135,10 +160,18 @@ class WorkDetailNavigationScope extends InheritedWidget {
   const WorkDetailNavigationScope({
     super.key,
     required this.navigation,
+    this.isLandscape = false,
     required super.child,
   });
 
   final WorkDetailNavigation navigation;
+  final bool isLandscape;
+
+  static bool isLandscapeOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<WorkDetailNavigationScope>()
+          ?.isLandscape ??
+      false;
 
   static WorkDetailNavigation? maybeOf(BuildContext context) => context
       .dependOnInheritedWidgetOfExactType<WorkDetailNavigationScope>()
@@ -146,7 +179,69 @@ class WorkDetailNavigationScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(WorkDetailNavigationScope oldWidget) =>
-      navigation != oldWidget.navigation;
+      navigation != oldWidget.navigation ||
+      isLandscape != oldWidget.isLandscape;
+}
+
+class MainContentNavigator extends StatefulWidget {
+  const MainContentNavigator({
+    super.key,
+    required this.navigation,
+    required this.isLandscape,
+    required this.child,
+    this.geometry,
+  });
+
+  final WorkDetailNavigation navigation;
+  final bool isLandscape;
+  final Widget child;
+  final PlaybackDockGeometryController? geometry;
+
+  @override
+  State<MainContentNavigator> createState() => _MainContentNavigatorState();
+}
+
+class _MainContentNavigatorState extends State<MainContentNavigator> {
+  final _interactionObserver = UiInteractionNavigatorObserver();
+
+  @override
+  void dispose() {
+    _interactionObserver.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => WorkDetailNavigationScope(
+    navigation: widget.navigation,
+    isLandscape: widget.isLandscape,
+    child: ClipRect(
+      child: RoutedPlaybackDockHost(
+        navigatorKey: widget.navigation.contentNavigatorKey,
+        playbackNavigatorKey: widget.navigation.rootNavigatorKey,
+        geometry: widget.geometry,
+        enabled: !widget.isLandscape,
+        menuDismiss: widget.navigation.menuDismiss,
+        builder: (context, observer, geometry, wrapNavigator) => wrapNavigator(
+          context,
+          Navigator(
+            key: widget.navigation.contentNavigatorKey,
+            observers: [
+              widget.navigation.contentObserver,
+              observer,
+              _interactionObserver,
+            ],
+            pages: [
+              MaterialPage<void>(
+                key: const ValueKey('main_content_home'),
+                child: widget.child,
+              ),
+            ],
+            onDidRemovePage: (_) {},
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class WorkDetailPane extends StatefulWidget {
@@ -196,7 +291,10 @@ class _WorkDetailPaneState extends State<WorkDetailPane> {
             ? (contentWidth - 1).clamp(0.0, contentWidth) / 2
             : size.width;
         return PopScope<Object?>(
-          canPop: !navigation.isOpen && navigation.menuDismiss.value == null,
+          canPop:
+              !navigation.isOpen &&
+              !navigation.isContentOpen &&
+              navigation.menuDismiss.value == null,
           onPopInvokedWithResult: (didPop, _) {
             if (didPop ||
                 !UiInteractionCoordinator.instance.navigationAllowed.value) {
@@ -206,7 +304,10 @@ class _WorkDetailPaneState extends State<WorkDetailPane> {
             if (dismissMenu != null) {
               dismissMenu();
             } else {
-              unawaited(navigation.navigatorKey.currentState!.maybePop());
+              final navigator = navigation.isOpen
+                  ? navigation.navigatorKey.currentState
+                  : navigation.contentNavigatorKey.currentState;
+              unawaited(navigator?.maybePop());
             }
           },
           child: Stack(

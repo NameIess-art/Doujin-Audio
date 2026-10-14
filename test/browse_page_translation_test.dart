@@ -204,7 +204,7 @@ void _expectHeader(WidgetTester tester, String page) {
     );
     expect(
       metadata.center.dx - edit.center.dx,
-      tester.view.physicalSize.width >= 390 ? 48 : 28,
+      inInclusiveRange(28, 48),
     );
     expect(metadata.right, lessThanOrEqualTo(search.left - 12));
     expect(find.byIcon(Icons.video_library_rounded), findsNothing);

@@ -66,7 +66,7 @@ void main() {
       await tester.pumpAndSettle();
       final navigation = tester.element(find.byType(DesktopMainNavigation));
       final content = find.byKey(const ValueKey('main_content_region'));
-      final expandedContentWidth = tester.getSize(content).width;
+      expect(tester.getSize(content).width, 1020);
       await tester.tap(find.byIcon(Icons.menu_open_rounded));
       await tester.pump();
 
@@ -81,8 +81,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 16));
       }
       final movingContentWidth = tester.getSize(content).width;
-      expect(movingContentWidth, greaterThan(expandedContentWidth));
-      expect(movingContentWidth, lessThan(1200));
+      expect(movingContentWidth, 1200);
       expect(navigationBuilds, 0);
       debugOnRebuildDirtyWidget = previous;
       await tester.pumpAndSettle();

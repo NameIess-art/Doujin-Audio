@@ -508,27 +508,29 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                 );
 
                 if (!isLandscapeLayout) return rail;
-                return ClipRect(
-                  child: OverflowBox(
-                    alignment: Alignment.topLeft,
-                    minWidth: 0,
-                    maxWidth: railMinExtendedWidth,
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: TweenAnimationBuilder<double>(
-                        tween: Tween<double>(
-                          end: isMenuCollapsed
-                              ? railMinWidth
-                              : railMinExtendedWidth,
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween<double>(
+                      end: isMenuCollapsed
+                          ? railMinWidth
+                          : railMinExtendedWidth,
+                    ),
+                    duration: motionDuration,
+                    curve: Curves.easeInOut,
+                    onEnd: _finishMotion,
+                    builder: (context, width, child) => ClipRect(
+                      child: SizedBox(
+                        width: width,
+                        child: OverflowBox(
+                          alignment: Alignment.topLeft,
+                          minWidth: 0,
+                          maxWidth: railMinExtendedWidth,
+                          child: child,
                         ),
-                        duration: motionDuration,
-                        curve: Curves.easeInOut,
-                        onEnd: _finishMotion,
-                        child: rail,
-                        builder: (context, width, child) =>
-                            SizedBox(width: width, child: child),
                       ),
                     ),
+                    child: rail,
                   ),
                 );
               },

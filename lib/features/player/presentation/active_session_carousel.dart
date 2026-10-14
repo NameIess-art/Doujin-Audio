@@ -261,7 +261,10 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       onOpenSession(session.id);
       return;
     }
-    Navigator.of(context).push(buildSessionDetailRoute(sessionId: session.id));
+    Navigator.of(
+      context,
+      rootNavigator: true,
+    ).push(buildSessionDetailRoute(sessionId: session.id));
   }
 
   double get _viewportFraction => widget.viewportFraction ?? 0.90;

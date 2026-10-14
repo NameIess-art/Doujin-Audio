@@ -300,6 +300,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
         }
         Navigator.of(
           context,
+          rootNavigator: true,
         ).push(buildSessionDetailRoute(sessionId: sessionId));
       },
     );

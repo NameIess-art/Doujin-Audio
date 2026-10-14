@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
@@ -36,6 +37,8 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
   final Object _interactionSource = Object();
   Timer? _idleTimer;
   bool _tickerModeEnabled = true;
+  bool _scrolling = false;
+  bool _scrollingUpdateScheduled = false;
 
   @override
   void didChangeDependencies() {
@@ -44,7 +47,8 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
     if (!_tickerModeEnabled) {
       _idleTimer?.cancel();
       _idleTimer = null;
-      _isScrolling.value = false;
+      _scrolling = false;
+      _publishScrolling();
       UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
     }
   }
@@ -78,13 +82,30 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
   }
 
   void _setScrolling(bool value) {
-    if (_isScrolling.value == value) return;
-    _isScrolling.value = value;
+    if (_scrolling == value) return;
+    _scrolling = value;
     if (value) {
       UiInteractionCoordinator.instance.beginInteraction(_interactionSource);
     } else {
       UiInteractionCoordinator.instance.endInteraction(_interactionSource);
     }
+    _publishScrolling();
+  }
+
+  void _publishScrolling() {
+    if (SchedulerBinding.instance.schedulerPhase !=
+        SchedulerPhase.persistentCallbacks) {
+      _isScrolling.value = _scrolling;
+      return;
+    }
+    if (_scrollingUpdateScheduled) return;
+    _scrollingUpdateScheduled = true;
+    // Resizing columns can start a ballistic correction during viewport layout.
+    // Protect interaction immediately, but notify dependent widgets after layout.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollingUpdateScheduled = false;
+      if (mounted) _isScrolling.value = _scrolling;
+    });
   }
 
   void _scheduleIdle() {

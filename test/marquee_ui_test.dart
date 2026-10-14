@@ -337,9 +337,11 @@ void main() {
         tester.getCenter(find.byKey(const ValueKey('hover-cover-0'))),
       );
       await tester.pump();
-      await _pumpMarqueeFrames(tester, 700);
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
       for (final value in values) {
-        expect(_cardTextPosition(tester, first, value).pixels, 0);
+        expect(_cardTextPosition(tester, first, value).pixels, greaterThan(0));
+        expect(_cardTextPosition(tester, second, value).pixels, 0);
       }
       await _pumpMarqueeFrames(tester, 2300);
       for (final value in values) {
@@ -372,7 +374,8 @@ void main() {
         tester.getCenter(find.byKey(const ValueKey('hover-cover-1'))),
       );
       await tester.pump();
-      await _pumpMarqueeFrames(tester, 3000);
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
       for (final value in values) {
         expect(_cardTextPosition(tester, first, value).pixels, 0);
         expect(_cardTextPosition(tester, second, value).pixels, greaterThan(0));
@@ -423,7 +426,8 @@ void main() {
       await mouse.addPointer(location: const Offset(700, 500));
       await mouse.moveTo(tester.getCenter(card));
       await tester.pump();
-      await _pumpMarqueeFrames(tester, 3000);
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
       expect(_cardTextPosition(tester, card, title).pixels, greaterThan(0));
       expect(_cardTextPosition(tester, card, voice).pixels, greaterThan(0));
       await mouse.moveTo(const Offset(700, 500));

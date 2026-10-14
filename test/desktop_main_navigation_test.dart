@@ -1,9 +1,12 @@
+import 'dart:ui' as ui;
+
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/desktop_main_navigation.dart';
 import 'package:doujin_audio/app/presentation/main_destination.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -40,26 +43,29 @@ void main() {
               builder: (context, setState) => Scaffold(
                 body: Row(
                   children: [
-                    DesktopMainNavigation(
-                      i18n: i18n,
-                      overlaySessions: const [],
-                      destinations: destinations,
-                      isMenuCollapsed: collapsed,
-                      activePageIndex: activePage,
-                      menuIconKeys: iconKeys,
-                      menuIconLinks: iconLinks,
-                      collapseOffset: (_, _) => Offset.zero,
-                      onSwitchPage: (index) => activePage.value = index,
-                      onToggleMenu: () => setState(() {
-                        collapsed = !collapsed;
-                      }),
-                      playbackGeometryKey: GlobalKey(),
-                      onReportPlaybackRect:
-                          ({
-                            required dockCollapsed,
-                            required dockAreaWidth,
-                            required expandedDockWidth,
-                          }) {},
+                    RepaintBoundary(
+                      key: const ValueKey('sidebar_capture'),
+                      child: DesktopMainNavigation(
+                        i18n: i18n,
+                        overlaySessions: const [],
+                        destinations: destinations,
+                        isMenuCollapsed: collapsed,
+                        activePageIndex: activePage,
+                        menuIconKeys: iconKeys,
+                        menuIconLinks: iconLinks,
+                        collapseOffset: (_, _) => Offset.zero,
+                        onSwitchPage: (index) => activePage.value = index,
+                        onToggleMenu: () => setState(() {
+                          collapsed = !collapsed;
+                        }),
+                        playbackGeometryKey: GlobalKey(),
+                        onReportPlaybackRect:
+                            ({
+                              required dockCollapsed,
+                              required dockAreaWidth,
+                              required expandedDockWidth,
+                            }) {},
+                      ),
                     ),
                     Expanded(
                       child: LayoutBuilder(
@@ -84,6 +90,85 @@ void main() {
         final toggle = find.widgetWithIcon(IconButton, Icons.menu_open_rounded);
         expect(tester.getSize(target), tester.getSize(toggle));
         final center = tester.getCenter(target);
+        Future<List<int>> iconPixels() async =>
+            (await tester.runAsync(() async {
+              final boundary = tester.renderObject<RenderRepaintBoundary>(
+                find.byKey(const ValueKey('sidebar_capture')),
+              );
+              final image = await boundary.toImage();
+              final data = (await image.toByteData())!;
+              final localCenter = boundary.globalToLocal(center);
+              final left = (localCenter.dx - 31.5).floor();
+              final top = (localCenter.dy - 32).floor();
+              final pixels = [
+                for (var y = top; y < top + 64; y++)
+                  for (var x = left; x < left + 63; x++)
+                    data.getUint32((y * image.width + x) * 4),
+              ];
+              image.dispose();
+              return pixels;
+            }))!;
+        final mouse = await tester.createGesture(
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await mouse.addPointer(location: const Offset(1000, 400));
+        await tester.pumpAndSettle();
+        final idlePixels = await iconPixels();
+        final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
+        await mouse.moveTo(
+          tester.getCenter(find.byWidget(rail.destinations[1].label)),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          await iconPixels(),
+          idlePixels,
+          reason: 'Hovering a label must not paint rail ink behind the icon.',
+        );
+        await mouse.down(
+          tester.getCenter(find.byWidget(rail.destinations[1].label)),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          await iconPixels(),
+          idlePixels,
+          reason: 'Holding a label must not paint rectangular pressed ink.',
+        );
+        expect(activePage.value, 0);
+        await mouse.cancel();
+        await tester.pumpAndSettle();
+        await mouse.moveTo(center);
+        await tester.pumpAndSettle();
+        final hoveredPixels = await iconPixels();
+        expect(
+          hoveredPixels,
+          isNot(idlePixels),
+          reason: 'The independent icon button must retain hover feedback.',
+        );
+        void expectCircularInk(List<int> pixels) {
+          for (var y = 0; y < 64; y++) {
+            for (var x = 0; x < 63; x++) {
+              if ((Offset(x + 0.5, y + 0.5) - const Offset(31.5, 32)).distance >
+                  25) {
+                expect(
+                  pixels[y * 63 + x],
+                  idlePixels[y * 63 + x],
+                  reason: 'Icon feedback must remain circular.',
+                );
+              }
+            }
+          }
+        }
+
+        expectCircularInk(hoveredPixels);
+        await mouse.down(center);
+        await tester.pumpAndSettle();
+        final pressedPixels = await iconPixels();
+        expect(pressedPixels, isNot(idlePixels));
+        expectCircularInk(pressedPixels);
+        await mouse.cancel();
+        await tester.pumpAndSettle();
+        await mouse.removePointer();
+        await tester.pumpAndSettle();
         for (final offset in [
           const Offset(25, 0),
           const Offset(-25, 0),

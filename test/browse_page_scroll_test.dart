@@ -15,6 +15,8 @@ void main() {
     double extent = 80,
     int start = 0,
     bool restoreReady = true,
+    int columns = 1,
+    bool fixedExtent = true,
   }) => ProviderScope(
     overrides: [browsePageStateStoreProvider.overrideWithValue(store)],
     child: MaterialApp(
@@ -26,12 +28,26 @@ void main() {
           anchorIds: List.generate(count, (i) => '${i + start}'),
           child: ListView.builder(
             controller: controller,
-            itemExtent: extent,
-            itemCount: count,
-            itemBuilder: (_, index) => BrowseAnchor(
-              id: '${index + start}',
-              child: Text('item $index'),
-            ),
+            itemExtent: fixedExtent ? extent : null,
+            itemCount: (count / columns).ceil(),
+            itemBuilder: (_, row) => columns == 1 && fixedExtent
+                ? BrowseAnchor(id: '${row + start}', child: Text('item $row'))
+                : SizedBox(
+                    height: extent,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (var column = 0; column < columns; column++)
+                          if (row * columns + column < count)
+                            Expanded(
+                              child: BrowseAnchor(
+                                id: '${row * columns + column + start}',
+                                child: Text('item ${row * columns + column}'),
+                              ),
+                            ),
+                      ],
+                    ),
+                  ),
           ),
         ),
       ),
@@ -228,6 +244,32 @@ void main() {
     await tester.pumpWidget(page(store, controller, extent: 160));
     await tester.pumpAndSettle();
     expect(controller.offset, 1800);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
+
+  testWidgets('bottom anchor settles when variable rows change column count', (
+    tester,
+  ) async {
+    final store = BrowsePageStateStore();
+    final controller = ScrollController();
+    for (final columns in [2, 1, 2, 3, 1, 3]) {
+      await tester.pumpWidget(
+        page(
+          store,
+          controller,
+          count: 101,
+          columns: columns,
+          fixedExtent: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+      controller.jumpTo(controller.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(controller.offset, controller.position.maxScrollExtent);
+      expect(find.text('item 100'), findsOneWidget);
+    }
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
   });

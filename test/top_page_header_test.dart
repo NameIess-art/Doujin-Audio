@@ -89,14 +89,14 @@ void main() {
     }),
   );
 
-  Widget header({required int trailingButtons}) {
+  Widget header({required int trailingButtons, int actionButtons = 4}) {
     return MaterialApp(
       home: Scaffold(
         body: TopPageHeader(
           topCapsuleTitle: 'Library',
           titleWidget: HeaderActionPill(
             children: List.generate(
-              4,
+              actionButtons,
               (index) => IconButton(
                 key: ValueKey('action_$index'),
                 onPressed: () {},
@@ -151,12 +151,16 @@ void main() {
       await tester.pumpWidget(header(trailingButtons: 3));
 
       expect(tester.takeException(), isNull);
-      expect(tester.getSize(find.byKey(const ValueKey('action_0'))).width, 28);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('action_0'))).width,
+        inExclusiveRange(28, 48),
+      );
       final lastAction = tester.getRect(find.byKey(const ValueKey('action_3')));
       final firstTrailing = tester.getRect(
         find.byType(HeaderFloatingButton).first,
       );
       expect(lastAction.right, lessThan(firstTrailing.left));
+      expect(firstTrailing.left - lastAction.right, closeTo(12, 0.01));
 
       await tester.binding.setSurfaceSize(const Size(510, 600));
       await tester.pump();
@@ -164,4 +168,28 @@ void main() {
       expect(tester.getSize(find.byKey(const ValueKey('action_0'))).width, 48);
     });
   }
+
+  testWidgets(
+    'split library action pill uses the space before trailing buttons',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(349.5, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(header(trailingButtons: 4, actionButtons: 3));
+
+      expect(tester.takeException(), isNull);
+      final first = tester.getRect(find.byKey(const ValueKey('action_0')));
+      final second = tester.getRect(find.byKey(const ValueKey('action_1')));
+      final last = tester.getRect(find.byKey(const ValueKey('action_2')));
+      final trailing = tester.getRect(find.byType(HeaderFloatingButton).first);
+      expect(first.width, inExclusiveRange(28, 48));
+      expect(second.width, closeTo(first.width, 0.01));
+      expect(last.width, closeTo(first.width, 0.01));
+      expect(second.left - first.left, closeTo(first.width, 0.01));
+      expect(trailing.left - last.right, closeTo(12, 0.01));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 }

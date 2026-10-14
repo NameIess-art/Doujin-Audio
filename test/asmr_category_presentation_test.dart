@@ -850,6 +850,82 @@ void main() {
       variant: TargetPlatformVariant({platform}),
     );
 
+    for (final count in [100, 1000]) {
+      for (final retryFooter in [false, true]) {
+        testWidgets(
+          'ASMR bottom column resize settles with $count works and retry footer=$retryFooter on $platform',
+          (tester) async {
+            tester.view.devicePixelRatio = 1;
+            tester.view.physicalSize = const Size(1280, 800);
+            addTearDown(tester.view.resetDevicePixelRatio);
+            addTearDown(tester.view.resetPhysicalSize);
+            final controller = _PresentationController(createTestAsmrServices())
+              ..workCount = count
+              ..hasMore = retryFooter
+              ..needsRetry = retryFooter;
+            final fixture = AppRuntimeWidgetTestFixture();
+            addTearDown(controller.dispose);
+            addTearDown(fixture.dispose);
+            await tester.pumpWidget(
+              fixture.build(
+                const AsmrTab(),
+                overrides: [
+                  asmrLibraryControllerProvider.overrideWithValue(controller),
+                ],
+              ),
+            );
+            await pumpUntilFound(tester, find.text('Published work'));
+            await tester.pumpAndSettle();
+            ScrollPosition position() => tester
+                .stateList<ScrollableState>(find.byType(Scrollable))
+                .singleWhere(
+                  (state) =>
+                      state.position.axis == Axis.vertical &&
+                      state.position.hasContentDimensions &&
+                      state.position.maxScrollExtent > 1000,
+                )
+                .position;
+            Future<void> scrollToBottom() async {
+              for (var attempt = 0; attempt < 5; attempt++) {
+                final scroll = position();
+                scroll.jumpTo(scroll.maxScrollExtent);
+                await tester.pumpAndSettle(
+                  const Duration(milliseconds: 20),
+                  EnginePhase.sendSemanticsUpdate,
+                  const Duration(seconds: 5),
+                );
+                if (position().extentAfter <= 0.5) break;
+              }
+              expect(position().extentAfter, lessThanOrEqualTo(0.5));
+              expect(
+                find.byKey(const ValueKey('asmr_load_more_footer')),
+                findsOneWidget,
+              );
+              expect(tester.takeException(), isNull);
+            }
+
+            expect(responsiveLibraryCardColumnCount(1280), greaterThan(1));
+            expect(responsiveLibraryCardColumnCount(640), 1);
+            await scrollToBottom();
+            for (final width in [640.0, 1280.0, 640.0, 1280.0]) {
+              tester.view.physicalSize = Size(width, 800);
+              await tester.pumpAndSettle(
+                const Duration(milliseconds: 20),
+                EnginePhase.sendSemanticsUpdate,
+                const Duration(seconds: 5),
+              );
+              expect(tester.takeException(), isNull);
+              await scrollToBottom();
+              expect(interaction.navigationAllowed.value, isTrue);
+            }
+            expect(controller.loadMoreCount, 0);
+            await tester.pumpWidget(const SizedBox.shrink());
+          },
+          variant: TargetPlatformVariant({platform}),
+        );
+      }
+    }
+
     testWidgets(
       'ASMR search builds only nearby cards and retains them during keyboard resize on $platform',
       (tester) async {

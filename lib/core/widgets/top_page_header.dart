@@ -688,14 +688,26 @@ class HeaderActionPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        final horizontalPadding = padding
+            .resolve(Directionality.of(context))
+            .horizontal;
         final fullWidth =
-            children.length * kMinInteractiveDimension +
-            padding.resolve(Directionality.of(context)).horizontal;
+            children.length * kMinInteractiveDimension + horizontalPadding;
+        final compact = children.isNotEmpty && constraints.maxWidth < fullWidth;
+        final actionWidth = compact
+            ? ((constraints.maxWidth - horizontalPadding) / children.length)
+                  .clamp(buttonWidth, kMinInteractiveDimension)
+            : kMinInteractiveDimension;
         Widget actions = Row(
           mainAxisSize: MainAxisSize.min,
-          children: children,
+          children: compact
+              ? [
+                  for (final child in children)
+                    SizedBox(width: actionWidth, child: child),
+                ]
+              : children,
         );
-        if (constraints.maxWidth < fullWidth) {
+        if (compact) {
           actions = IconButtonTheme(
             data: IconButtonThemeData(
               style: IconButton.styleFrom(

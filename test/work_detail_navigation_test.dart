@@ -21,6 +21,7 @@ import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.da
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
+import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_view_models.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
@@ -51,6 +52,7 @@ Future<WorkDetailNavigation> _pumpApp(
   bool withSession = false,
   bool withNavigationLock = false,
   bool showAsmrOne = false,
+  int libraryWorkCount = 0,
   Widget? home,
 }) async {
   tester.view.devicePixelRatio = 1;
@@ -66,6 +68,21 @@ Future<WorkDetailNavigation> _pumpApp(
   addTearDown(fixture.dispose);
   fixture.settings.syncSlice(isInitialized: true);
   fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+  if (libraryWorkCount > 0) {
+    fixture.library.addTracks(
+      List.generate(
+        libraryWorkCount,
+        (index) => testMusicTrack(
+          name: 'Track $index',
+          path: '/library/work-$index/track.mp3',
+          groupKey: '/library/work-$index',
+          groupTitle: 'Work $index',
+        ),
+      ),
+      persist: false,
+    );
+    await tester.runAsync(() => fixture.library.ensureCardSnapshot());
+  }
   final sessions = <PlaybackSessionSnapshot>[];
   if (withSession) {
     final session = PlaybackSession(
@@ -351,6 +368,108 @@ void main() {
   );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final split in [false, true]) {
+      testWidgets(
+        'landscape playback details cover the window from every entry (split=$split) on $platform',
+        (tester) async {
+          final navigation = await _pumpApp(tester, withSession: true);
+          if (split) {
+            await _open(tester, navigation, 'A');
+            await tester.enterText(_input, 'retained detail input');
+          }
+          // The runtime fixture wraps this app in its own MaterialApp.
+          final root = Navigator.of(
+            navigation.rootNavigatorKey.currentContext!,
+            rootNavigator: true,
+          );
+          final content = navigation.contentNavigatorKey.currentState!;
+          final sidebarCarousel = tester.widget<ActiveSessionCarousel>(
+            find.descendant(
+              of: find.byType(DesktopMainNavigation),
+              matching: find.byType(ActiveSessionCarousel),
+            ),
+          );
+          Future<void> expectFullscreenAndClose() async {
+            await _settle(tester);
+            final detail = find.byType(SessionDetailPage);
+            expect(detail, findsOneWidget);
+            expect(Navigator.of(tester.element(detail)), same(root));
+            expect(tester.getRect(detail), Offset.zero & const Size(1280, 800));
+            expect(
+              find.byType(DesktopMainNavigation).hitTestable(),
+              findsNothing,
+            );
+            root.pop();
+            await _settle(tester);
+            expect(detail, findsNothing);
+            if (split) {
+              expect(navigation.isOpen, isTrue);
+              expect(
+                tester.widget<TextField>(_input).controller!.text,
+                'retained detail input',
+              );
+            }
+          }
+
+          await tester.tap(
+            find.byKey(
+              const ValueKey('active_session_ink_pane_session_expanded'),
+            ),
+          );
+          await expectFullscreenAndClose();
+
+          final rail = tester.widget<NavigationRail>(
+            find.byType(NavigationRail),
+          );
+          await tester.tap(find.byWidget(rail.destinations[1].label));
+          await _settle(tester);
+          tester.widget<SessionListCard>(find.byType(SessionListCard)).onOpen();
+          await expectFullscreenAndClose();
+          expect(content.canPop(), isFalse);
+
+          unawaited(
+            content.push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => Scaffold(
+                  key: const ValueKey('content_carousel_page'),
+                  body: Center(
+                    child: SizedBox(
+                      width: 300,
+                      height: kActiveSessionCarouselDockHeight,
+                      child: ActiveSessionCarousel(
+                        sessions: sidebarCarousel.sessions,
+                        i18n: sidebarCarousel.i18n,
+                        presentation:
+                            ActiveSessionCarouselPresentation.embedded,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await _settle(tester);
+          await tester.tap(
+            find
+                .descendant(
+                  of: find.byKey(const ValueKey('content_carousel_page')),
+                  matching: find.byKey(
+                    const ValueKey('active_session_ink_pane_session_expanded'),
+                  ),
+                )
+                .hitTestable(),
+          );
+          await expectFullscreenAndClose();
+          expect(content.canPop(), isTrue);
+          expect(
+            find.byKey(const ValueKey('content_carousel_page')),
+            findsOneWidget,
+          );
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
     for (final split in [false, true]) {
       testWidgets(
         'secondary pages stay in content and reset on tab switch (split=$split) on $platform',
@@ -672,6 +791,69 @@ void main() {
           expect(tester.getSize(_main).width, 349.5);
           expect(tester.getSize(_pane).width, 349.5);
         }
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'bottom library reflow remains clickable after detail closes on $platform',
+      (tester) async {
+        final navigation = await _pumpApp(
+          tester,
+          libraryWorkCount: 40,
+          withSession: true,
+          withNavigationLock: true,
+        );
+        final list = find.descendant(
+          of: _main,
+          matching: find.byType(ListView),
+        );
+        expect(list, findsOneWidget);
+        final controller = tester.widget<ListView>(list).controller!;
+        controller.jumpTo(controller.position.maxScrollExtent);
+        await _settle(tester);
+        final wideExtent = controller.position.maxScrollExtent;
+        for (var cycle = 0; cycle < 2; cycle++) {
+          unawaited(
+            showAudioDetailSheet(
+              tester.element(list),
+              AudioDetailTarget.libraryRootFolder('/library/work-39'),
+            ),
+          );
+          await _finishRouteAnimation(tester);
+          expect(controller.position.maxScrollExtent, greaterThan(wideExtent));
+          if (cycle == 1) {
+            controller.jumpTo(controller.position.maxScrollExtent);
+            await _finishRouteAnimation(tester);
+          }
+          await tester.tap(
+            find.byKey(const ValueKey('work_detail_back_button')),
+          );
+          await _settle(tester);
+          expect(tester.takeException(), isNull);
+          expect(navigation.isOpen, isFalse);
+          expect(
+            UiInteractionCoordinator.instance.navigationAllowed.value,
+            isTrue,
+          );
+          expect(
+            controller.offset,
+            lessThanOrEqualTo(controller.position.maxScrollExtent),
+          );
+          expect(
+            controller.position.maxScrollExtent,
+            closeTo(wideExtent, 0.01),
+          );
+        }
+        final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
+        await tester.tap(find.byWidget(rail.destinations[1].label));
+        await _settle(tester);
+        expect(
+          tester
+              .widget<NavigationRail>(find.byType(NavigationRail))
+              .selectedIndex,
+          1,
+        );
       },
       variant: TargetPlatformVariant({platform}),
     );

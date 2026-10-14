@@ -33,11 +33,14 @@ class _MarqueePauseScopeState extends State<MarqueePauseScope> {
 
   @override
   Widget build(BuildContext context) {
+    final parentScope = context
+        .dependOnInheritedWidgetOfExactType<_MarqueePauseScope>();
     final child = _MarqueePauseScope(
       isPaused:
           widget.isPaused ||
-          MarqueePauseScope.isPausedOf(context) ||
+          (parentScope?.isPaused ?? false) ||
           (widget.hoverToRun && !_hovered),
+      hoverToRun: widget.hoverToRun || (parentScope?.hoverToRun ?? false),
       child: widget.child,
     );
     return widget.hoverToRun
@@ -51,12 +54,17 @@ class _MarqueePauseScopeState extends State<MarqueePauseScope> {
 }
 
 class _MarqueePauseScope extends InheritedWidget {
-  const _MarqueePauseScope({required this.isPaused, required super.child});
+  const _MarqueePauseScope({
+    required this.isPaused,
+    required this.hoverToRun,
+    required super.child,
+  });
   final bool isPaused;
+  final bool hoverToRun;
 
   @override
   bool updateShouldNotify(_MarqueePauseScope oldWidget) =>
-      isPaused != oldWidget.isPaused;
+      isPaused != oldWidget.isPaused || hoverToRun != oldWidget.hoverToRun;
 }
 
 class MarqueeText extends StatefulWidget {
@@ -139,7 +147,15 @@ class _MarqueeTextState extends State<MarqueeText>
         _controller.position.maxScrollExtent > 0;
     if (shouldRun && !_ticker.isActive) {
       _previousTick = null;
-      _pauseSeconds = _pauseDuration;
+      final hoverToRun =
+          context
+              .getInheritedWidgetOfExactType<_MarqueePauseScope>()
+              ?.hoverToRun ??
+          false;
+      _pauseSeconds =
+          defaultTargetPlatform == TargetPlatform.windows && hoverToRun
+          ? 0
+          : _pauseDuration;
       _atEnd = _controller.offset >= _controller.position.maxScrollExtent;
       _ticker.start();
     } else if (!shouldRun && _ticker.isActive) {

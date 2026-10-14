@@ -8,7 +8,6 @@ import '../../features/player/presentation/active_session_carousel.dart';
 import '../../features/player/presentation/playlist/session_detail_page.dart';
 import 'main_destination.dart';
 import 'app_dock_panel.dart';
-import 'work_detail_navigation.dart';
 
 class DesktopMainNavigation extends StatefulWidget {
   const DesktopMainNavigation({
@@ -203,6 +202,16 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                     return Theme(
                       data: Theme.of(context).copyWith(
                         splashFactory: NoSplash.splashFactory,
+                        highlightColor: isLandscapeLayout
+                            ? Colors.transparent
+                            : Theme.of(context).highlightColor,
+                        // NavigationRail derives its ink colors directly from
+                        // primary; landscape pointer feedback belongs to buttons.
+                        colorScheme: isLandscapeLayout
+                            ? cs.copyWith(
+                                primary: cs.primary.withValues(alpha: 0),
+                              )
+                            : cs,
                         navigationRailTheme: Theme.of(context)
                             .navigationRailTheme
                             .copyWith(
@@ -262,6 +271,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                           style: IconButton.styleFrom(
                                             shape: const CircleBorder(),
                                             fixedSize: const Size.square(48),
+                                            overlayColor: cs.primary,
                                           ),
                                           icon: Icon(
                                             isMenuCollapsed
@@ -566,13 +576,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                               presentation:
                                   ActiveSessionCarouselPresentation.embedded,
                               onOpenSession: (sessionId) {
-                                final navigator = isLandscapeLayout
-                                    ? WorkDetailNavigationScope.maybeOf(
-                                            context,
-                                          )?.contentNavigatorKey.currentState ??
-                                          Navigator.of(context)
-                                    : Navigator.of(context);
-                                navigator.push(
+                                Navigator.of(context, rootNavigator: true).push(
                                   buildSessionDetailRoute(sessionId: sessionId),
                                 );
                               },
@@ -616,6 +620,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
               fixedSize: const Size.square(48),
               shape: const CircleBorder(),
               backgroundColor: backgroundColor,
+              overlayColor: Theme.of(context).colorScheme.primary,
             ),
             onPressed: onPressed,
             icon: icon,

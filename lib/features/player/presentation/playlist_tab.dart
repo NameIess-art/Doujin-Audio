@@ -268,7 +268,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       AppInteractionFeedbackType.tap,
       context: context,
     );
-    Navigator.of(context).push(buildSessionDetailRoute(sessionId: sessionId));
+    Navigator.of(
+      context,
+      rootNavigator: true,
+    ).push(buildSessionDetailRoute(sessionId: sessionId));
   }
 
   Future<void> _openQueueEditor(BuildContext context, String sessionId) {

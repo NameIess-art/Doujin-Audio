@@ -140,13 +140,9 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
       Success(result); Action("exit");
     } else if (call.method_name() == "syncAppTheme") {
       auto mode = RequiredText(Arguments(call),"themeMode");
-      BOOL dark = mode == "dark";
-      if (mode == "system") {
-        DWORD value = 1, size = sizeof(value);
-        RegGetValueW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",L"AppsUseLightTheme",RRF_RT_REG_DWORD,nullptr,&value,&size);
-        dark = value == 0;
-      }
-      DwmSetWindowAttribute(window_,20,&dark,sizeof(dark)); Success(result);
+      if (mode != "system" && mode != "dark" && mode != "light") throw std::invalid_argument("themeMode");
+      theme_mode_ = mode;
+      UpdateTheme(); Success(result);
     } else result.NotImplemented();
   });
   add("doujin_audio/update",[this](const auto& call, Result& result) {
@@ -261,6 +257,15 @@ void DesktopIntegration::EndSession() {
   OutputDebugStringA(status);
   std::cerr << status;
 }
+void DesktopIntegration::UpdateTheme() {
+  BOOL dark = theme_mode_ == "dark";
+  if (theme_mode_ == "system") {
+    DWORD value = 1, size = sizeof(value);
+    RegGetValueW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",L"AppsUseLightTheme",RRF_RT_REG_DWORD,nullptr,&value,&size);
+    dark = value == 0;
+  }
+  DwmSetWindowAttribute(window_,20,&dark,sizeof(dark));
+}
 void DesktopIntegration::Show() {
   ShowWindow(window_,IsIconic(window_) ? SW_RESTORE : SW_SHOW);
   SetForegroundWindow(window_); Action("resume");
@@ -301,6 +306,8 @@ void DesktopIntegration::SetFullscreen(bool enabled) {
   }
 }
 std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp, LPARAM lp) {
+  if (message == WM_DWMCOLORIZATIONCOLORCHANGED) { UpdateTheme(); return 0; }
+  if (message == WM_SETTINGCHANGE && theme_mode_ == "system") UpdateTheme();
   if (message == ScheduledTasks::kReply) { scheduled_tasks_->Reply(); return 0; }
   if (auto action = media_->HandleMessage(message, wp)) {
     if (*action == "showWindow") Show();

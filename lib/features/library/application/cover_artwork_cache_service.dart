@@ -224,7 +224,10 @@ class CoverArtworkCacheService {
     if (manualCoverPath != null) {
       return manualCoverPath;
     }
-    final cachedCoverPath = _cachedManualCoverPath(track?.coverCachePath);
+    final cachedCoverPath = _cachedManualCoverPath(
+      track?.coverCachePath,
+      automatic: true,
+    );
     if (cachedCoverPath != null) {
       return cachedCoverPath;
     }
@@ -1158,6 +1161,9 @@ class CoverArtworkCacheService {
       revision: requestRevision,
     );
 
+    await _initializeArtworkStore();
+    if (!isCurrent()) return resolvedForTrack(track, trackPath: trackPath);
+
     final preferEmbeddedCover = _preferTrackEmbeddedCover(
       track,
       trackPath: pathValue,
@@ -1203,6 +1209,7 @@ class CoverArtworkCacheService {
         : SynchronousFuture<String?>(null);
     final coverCachePathFuture = _validatedManualCoverPath(
       track?.coverCachePath,
+      automatic: true,
     );
     return _trackCoverFutures.putIfAbsent(coverSearchKey, () async {
       final manualPath = await manualPathFuture;
@@ -1442,6 +1449,15 @@ class CoverArtworkCacheService {
     final requestRevision = _coverKeyRevision(normalizedFolderPath);
     late final Future<String?> lookup;
     lookup = () async {
+      await _initializeArtworkStore();
+      if (!_isFolderLookupCurrent(
+        normalizedFolderPath,
+        requestGeneration,
+        requestRevision,
+        lookup,
+      )) {
+        return _resolvedFolderCovers[normalizedFolderPath];
+      }
       final storedFolderPath = await _artworkStore.validatedPath(
         _folderStoreKey(normalizedFolderPath),
       );
@@ -1613,6 +1629,14 @@ class CoverArtworkCacheService {
       final cacheService = _audioDetailCacheService;
       if (cacheService == null) return (path: null, selected: false);
       final storedCover = await cacheService.loadCardCoverSelection(target);
+      if (!storedCover.selected &&
+          storedCover.path != null &&
+          _artworkStore.isObsoleteAndroidAutomaticPath(
+            _artworkStore.resolveStoredPath(storedCover.path) ??
+                storedCover.path!,
+          )) {
+        return (path: null, selected: false);
+      }
       final path = await _displayPathForStoredCover(target, storedCover.path);
       return (path: path, selected: path != null && storedCover.selected);
     } catch (error, stackTrace) {
@@ -1710,10 +1734,15 @@ class CoverArtworkCacheService {
     await _generationSlice.dispose();
   }
 
-  String? _cachedManualCoverPath(String? coverPath) {
+  String? _cachedManualCoverPath(String? coverPath, {bool automatic = false}) {
     final value = coverPath?.trim();
     if (value == null || value.isEmpty) return null;
     final stored = _artworkStore.resolveStoredPath(value);
+    if (automatic &&
+        stored != null &&
+        _artworkStore.isObsoleteAndroidAutomaticPath(stored)) {
+      return null;
+    }
     if (stored != null && _manualCoverPathValidityCache[stored] == true) {
       return stored;
     }
@@ -1723,9 +1752,18 @@ class CoverArtworkCacheService {
     return _manualCoverPathValidityCache[value] == true ? value : null;
   }
 
-  Future<String?> _validatedManualCoverPath(String? coverPath) {
+  Future<String?> _validatedManualCoverPath(
+    String? coverPath, {
+    bool automatic = false,
+  }) {
     final value = coverPath?.trim();
     if (value == null || value.isEmpty) return SynchronousFuture<String?>(null);
+    if (automatic &&
+        _artworkStore.isObsoleteAndroidAutomaticPath(
+          _artworkStore.resolveStoredPath(value) ?? value,
+        )) {
+      return SynchronousFuture<String?>(null);
+    }
     if (PathMatcher.isContentUri(value) || PathMatcher.isRemoteUri(value)) {
       return SynchronousFuture<String?>(value);
     }

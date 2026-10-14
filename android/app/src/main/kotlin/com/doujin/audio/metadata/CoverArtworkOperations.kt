@@ -111,7 +111,7 @@ internal class CoverArtworkOperations(
             modifiedAtMs ?: runCatching { document?.lastModified() }.getOrNull(),
             sizeBytes ?: runCatching { document?.length() }.getOrNull()
         )
-        val output = File(coverDirectory(), "cover_${kotlin.math.abs(versionedKey.hashCode())}.$extension")
+        val output = File(coverDirectory(), artworkCacheFileName(versionedKey.toByteArray(Charsets.UTF_8), "cover", extension))
         if (output.exists() && output.length() > 0L) {
             cachePolicy.touch(output)
             return output.absolutePath
@@ -140,7 +140,7 @@ internal class CoverArtworkOperations(
             candidate.lastModified(),
             candidate.length()
         )
-        val output = File(coverDirectory(), "cover_${kotlin.math.abs(versionedKey.hashCode())}.jpg")
+        val output = File(coverDirectory(), artworkCacheFileName(versionedKey.toByteArray(Charsets.UTF_8), "cover", "jpg"))
         if (output.exists() && output.length() > 0L) {
             cachePolicy.touch(output)
             return output.absolutePath
@@ -175,7 +175,7 @@ internal class CoverArtworkOperations(
                     file.lastModified(),
                     fileSizeBytes
                 )
-                val output = File(coverDirectory(), "cover_${kotlin.math.abs(versionedKey.hashCode())}.jpg")
+                val output = File(coverDirectory(), artworkCacheFileName(versionedKey.toByteArray(Charsets.UTF_8), "cover", "jpg"))
                 try {
                     if (!output.exists() || output.length() <= 0L) file.copyTo(output, overwrite = true)
                     cachePolicy.touch(output)

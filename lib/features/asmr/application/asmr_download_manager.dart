@@ -265,12 +265,7 @@ class AsmrDownloadManager {
       _queue.remove(workId);
       await _discardTaskStaging(task);
 
-      _manualRetryOnlyPaths.remove(workId);
-      _plannedFilesMap.remove(workId);
-      _outputs.createdOutputPaths.remove(workId);
-      _outputs.createdJsonDocuments.remove(workId);
-      _store.remove(workId);
-      _store.notifyTaskChanged();
+      _removeTask(workId);
       await flushPersistence();
       return;
     }
@@ -281,8 +276,7 @@ class AsmrDownloadManager {
       _store[workId] = task.copyWith(message: 'canceling');
       _store.notifyTaskChanged();
       await _transfers.waitFor(workId);
-      _store.remove(workId);
-      _store.notifyTaskChanged();
+      _removeTask(workId);
       await flushPersistence();
       return;
     }
@@ -293,23 +287,25 @@ class AsmrDownloadManager {
       await _outputs.cleanupCancelledTask(workId);
     }
     await _discardTaskStaging(task);
-    _outputs.createdOutputPaths.remove(workId);
-    _outputs.createdJsonDocuments.remove(workId);
-
-    _manualRetryOnlyPaths.remove(workId);
-    _plannedFilesMap.remove(workId);
-    _store.remove(workId);
-    _store.notifyTaskChanged();
+    _removeTask(workId);
     await flushPersistence();
   }
 
-  Future<void> _discardTaskStaging(AsmrDownloadTaskSnapshot task) async {
-    await _outputs.discardTaskStaging(
-      task,
-      _planner.collectTaskFiles(task),
-      _outputs.createdOutputPaths[task.work.id] ?? const {},
-    );
+  void _removeTask(int workId) {
+    _manualRetryOnlyPaths.remove(workId);
+    _plannedFilesMap.remove(workId);
+    _outputs.createdOutputPaths.remove(workId);
+    _outputs.createdJsonDocuments.remove(workId);
+    _store.remove(workId);
+    _store.notifyTaskChanged();
   }
+
+  Future<void> _discardTaskStaging(AsmrDownloadTaskSnapshot task) =>
+      _outputs.discardTaskStaging(
+        task,
+        _planner.collectTaskFiles(task),
+        _outputs.createdOutputPaths[task.work.id] ?? const {},
+      );
 
   Future<void> deleteTask(int workId) async {
     if (_disposed || _shutdownFuture != null) return;
@@ -326,15 +322,9 @@ class AsmrDownloadManager {
     if (_activeTasks.contains(workId) || _queue.contains(workId)) {
       await cancelTask(workId, deleteDownloaded: false);
     } else {
-      _store.remove(workId);
-      _store.notifyTaskChanged();
+      _removeTask(workId);
       await flushPersistence();
     }
-    _outputs.createdOutputPaths.remove(workId);
-    _outputs.createdJsonDocuments.remove(workId);
-
-    _manualRetryOnlyPaths.remove(workId);
-    _plannedFilesMap.remove(workId);
 
     await _outputs.deleteTaskDownloadedFiles(
       task,

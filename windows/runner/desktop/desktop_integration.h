@@ -30,6 +30,7 @@ class DesktopIntegration {
   void SavePlacement();
   void RefreshPower();
   void EndSession();
+  void UpdateTheme();
   HWND window_;
   bool ready_ = false;
   bool quitting_ = false;
@@ -37,6 +38,7 @@ class DesktopIntegration {
   bool fullscreen_ = false;
   bool screen_on_ = false;
   bool playback_active_ = false;
+  std::string theme_mode_ = "system";
   EXECUTION_STATE power_flags_ = 0;
   int initial_show_command_ = SW_SHOWNORMAL;
   WINDOWPLACEMENT placement_{sizeof(WINDOWPLACEMENT)};

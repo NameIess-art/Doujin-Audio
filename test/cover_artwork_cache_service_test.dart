@@ -20,6 +20,138 @@ import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
+  for (final kind in [
+    'video',
+    'native',
+    'card',
+    'cachePath',
+    'nativeCard',
+    'nativeCachePath',
+    'folderCard',
+    'selectedCard',
+    'manual',
+  ]) {
+    for (final delayInitialization in [false, true]) {
+      test(
+        'Android cold cache repairs automatic artwork and preserves selections ($kind, delayed=$delayInitialization)',
+        () async {
+          final directory = await Directory.systemTemp.createTemp(
+            'android_cover_upgrade_',
+          );
+          addTearDown(() => directory.delete(recursive: true));
+          final support = Directory('${directory.path}/support');
+          final temporary = Directory('${directory.path}/temporary');
+          final root = '${support.path}/$coverArtworkStoreDirectoryName';
+          final old = File(
+            kind.startsWith('nativeC')
+                ? '${temporary.path}/doujin_audio_covers/cover_123.jpg'
+                : '$root/generated/old.image',
+          );
+          await old.parent.create(recursive: true);
+          await old.writeAsBytes([1]);
+          final fresh = File('${directory.path}/native.image');
+          await fresh.writeAsBytes([9]);
+          final track = _track(
+            path:
+                '${directory.path}/work/track.${kind == 'video' ? 'mp4' : 'mp3'}',
+            groupKey: '${directory.path}/work',
+            isSingle: kind != 'folderCard',
+            isVideo: kind == 'video',
+            coverCachePath: kind == 'cachePath' || kind == 'nativeCachePath'
+                ? old.path
+                : null,
+            manualCoverPath: kind == 'manual' ? old.path : null,
+          );
+          final index = File('$root/$coverArtworkStoreIndexFileName');
+          await index.parent.create(recursive: true);
+          await index.writeAsString(
+            jsonEncode({
+              'version': 2,
+              'bindings': {
+                'video:${track.path}:0:v3': old.path,
+                'native:${track.path}|0|0': old.path,
+                'track:${track.path}|0|0|false': old.path,
+                'folder:${track.groupKey}': old.path,
+              },
+              'legacyAliases': <String, String>{},
+            }),
+          );
+          final library = LibraryService()..library.add(track);
+          if (kind == 'folderCard') library.watchedFolders.add(track.groupKey);
+          addTearDown(library.dispose);
+          final details = _MemoryAudioDetailCacheService();
+          if (kind == 'card' ||
+              kind == 'nativeCard' ||
+              kind == 'selectedCard' ||
+              kind == 'folderCard') {
+            details.seedCardCover(
+              kind == 'folderCard'
+                  ? AudioDetailTarget.libraryRootFolder(track.groupKey)
+                  : AudioDetailTarget.singleAudioFile(track.path),
+              old.path,
+              selected: kind == 'selectedCard',
+            );
+          }
+          final gateway = _FakeFileCachePlatformGateway(
+            coversByPath: {track.path: fresh.path},
+            videoFramesByPath: {track.path: fresh.path},
+          );
+          final storeStarted = Completer<void>();
+          final releaseStore = Completer<void>();
+          CoverArtworkCacheService createCache({bool delayed = false}) =>
+              CoverArtworkCacheService(
+                libraryService: library,
+                audioDetailCacheService: details,
+                fileCacheGateway: gateway,
+                artworkStore: CoverArtworkStore(
+                  persistentDirectory: () async {
+                    if (delayed) {
+                      storeStarted.complete();
+                      await releaseStore.future;
+                    }
+                    return support;
+                  },
+                  temporaryDirectory: () async => temporary,
+                  isAndroid: () => true,
+                ),
+              );
+          final cache = createCache(delayed: delayInitialization);
+          addTearDown(cache.dispose);
+          final initialization = cache.initialize();
+          if (!delayInitialization) await initialization;
+          var completed = false;
+          final resolution =
+              (kind == 'folderCard'
+                      ? cache.futureForFolder(track.groupKey)
+                      : cache.futureForTrack(track))
+                  .then((value) {
+                    completed = true;
+                    return value;
+                  });
+          if (delayInitialization) {
+            await storeStarted.future;
+            await Future<void>.delayed(Duration.zero);
+            expect(completed, isFalse);
+            releaseStore.complete();
+          }
+          await initialization;
+          final resolved = await resolution;
+          final selected = kind == 'selectedCard' || kind == 'manual';
+          expect(await File(resolved!).readAsBytes(), selected ? [1] : [9]);
+          expect(await old.readAsBytes(), [1]);
+          if (!selected) expect(resolved, isNot(old.path));
+          final restored = createCache();
+          addTearDown(restored.dispose);
+          await restored.initialize();
+          final restoredPath = kind == 'folderCard'
+              ? await restored.futureForFolder(track.groupKey)
+              : await restored.futureForTrack(track);
+          expect(PathMatcher.equalsNormalized(restoredPath!, resolved), isTrue);
+        },
+      );
+    }
+  }
+
   test(
     'Windows retains long-list covers and evicts least recent results',
     () async {
@@ -1008,10 +1140,12 @@ void main() {
     );
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     var requests = 0;
+    final firstFourStarted = Completer<void>();
     final fifthStarted = Completer<void>();
     server.listen((request) async {
       requests++;
-      if (requests <= 4) {
+      if (request.uri.path != '/4.png') {
+        if (requests == 4) firstFourStarted.complete();
         request.response.headers.chunkedTransferEncoding = true;
         request.response.add(pngBytes.take(8).toList());
         await request.response.flush();
@@ -1035,9 +1169,11 @@ void main() {
     final baseUrl = 'http://${server.address.address}:${server.port}';
 
     final futures = <Future<String?>>[
-      for (var index = 0; index < 5; index++)
+      for (var index = 0; index < 4; index++)
         cache.futureForRemoteCover('$baseUrl/$index.png'),
     ];
+    await firstFourStarted.future.timeout(const Duration(seconds: 2));
+    futures.add(cache.futureForRemoteCover('$baseUrl/4.png'));
 
     await fifthStarted.future.timeout(const Duration(seconds: 2));
     final results = await Future.wait(futures);

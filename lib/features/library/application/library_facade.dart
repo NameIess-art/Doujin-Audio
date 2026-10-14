@@ -157,6 +157,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   Future<void>? _loadFuture;
   int _scanOperationGeneration = 0;
   Completer<void>? _scanCompletion;
+  int _pathMutationCount = 0;
   bool _interactionPaused = false;
   void Function()? _coverChangeHandler;
   late final LibraryStartupMaintenanceCoordinator
@@ -770,7 +771,10 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   Future<AudioDetailRenameResult> renameAudioDetailTargetToName(
     AudioDetail detail,
     String targetName,
-  ) => _mutationCoordinator.renameAudioDetailTargetToName(detail, targetName);
+  ) => _withScanPaused(
+    () =>
+        _mutationCoordinator.renameAudioDetailTargetToName(detail, targetName),
+  );
 
   Future<String> renameWorkEntryToName({
     required String libraryRootPath,
@@ -778,13 +782,28 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     required String targetName,
     required bool isMedia,
     required bool isDirectory,
-  }) => _mutationCoordinator.renameWorkEntryToName(
-    libraryRootPath: libraryRootPath,
-    entryPath: entryPath,
-    targetName: targetName,
-    isMedia: isMedia,
-    isDirectory: isDirectory,
+  }) => _withScanPaused(
+    () => _mutationCoordinator.renameWorkEntryToName(
+      libraryRootPath: libraryRootPath,
+      entryPath: entryPath,
+      targetName: targetName,
+      isMedia: isMedia,
+      isDirectory: isDirectory,
+    ),
   );
+
+  Future<T> _withScanPaused<T>(Future<T> Function() mutation) async {
+    _pathMutationCount++;
+    try {
+      cancelScan();
+      // A cancelled scan still owns its batch until rollback has finished.
+      await scanIdle;
+      if (_disposed) throw StateError('LibraryFacade has been disposed.');
+      return await mutation();
+    } finally {
+      _pathMutationCount--;
+    }
+  }
 
   @override
   void beginLibraryBatch() => _catalogWrites.beginLibraryBatch();
@@ -831,7 +850,9 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
 
   @override
   int tryBeginScan({required String source, bool background = false}) {
-    if (_scanOperationGeneration != 0) return 0;
+    if (_disposed || _scanOperationGeneration != 0 || _pathMutationCount != 0) {
+      return 0;
+    }
     _service.scanGenerationSeed++;
     final generation = _service.scanGenerationSeed;
     _scanOperationGeneration = generation;

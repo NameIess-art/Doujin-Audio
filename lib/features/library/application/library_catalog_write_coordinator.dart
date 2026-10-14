@@ -299,6 +299,18 @@ final class LibraryCatalogWriteCoordinator {
     Iterable<String> removeEntryPaths = const <String>[],
     bool persist = true,
   }) {
+    // Isolate results may predate an exclusion or its undo.
+    final currentExclusions = _service.libraryExclusionMatcherForLibrary(
+      libraryRoot,
+    );
+    final activeTracks = <String, MusicTrack>{
+      for (final track in tracks)
+        if (!currentExclusions.isExcluded(track.path)) track.path: track,
+      for (final track in entryTracks)
+        if (!currentExclusions.isExcluded(track.path) &&
+            !_service.libraryByPath.containsKey(track.path))
+          track.path: track,
+    }.values.toList(growable: false);
     for (final folderPath in removeWatchedFolders) {
       removeWatchedFolder(folderPath, notify: false);
       _refreshFolderWrites[PathMatcher.normalize(folderPath)] = false;
@@ -309,19 +321,20 @@ final class LibraryCatalogWriteCoordinator {
         entryTracks.isEmpty ? tracks : entryTracks,
         folderPaths: folderPaths,
         persist: persist,
-        exclusionMatcher: exclusionMatcher,
+        exclusionMatcher: currentExclusions,
         entrySnapshot: entrySnapshot,
         refreshWrite: true,
       );
     }
     for (final folderPath in addWatchedFolders) {
+      if (currentExclusions.isExcluded(folderPath)) continue;
       addWatchedFolder(folderPath, notify: false);
       _refreshFolderWrites[PathMatcher.normalize(folderPath)] = true;
     }
     final beforeCount = _service.library.length;
-    if (tracks.isNotEmpty) {
-      addOrReplaceTracks(tracks, persist: persist, recordEntries: false);
-      for (final track in tracks) {
+    if (activeTracks.isNotEmpty) {
+      addOrReplaceTracks(activeTracks, persist: persist, recordEntries: false);
+      for (final track in activeTracks) {
         final current = _service.libraryByPath[track.path];
         if (current != null) _refreshTrackWrites[current.path] = current;
       }
@@ -406,7 +419,11 @@ final class LibraryCatalogWriteCoordinator {
         if (original == null) {
           currentEntries.remove(entry.key);
         } else {
-          currentEntries[entry.key] = original;
+          currentEntries[entry.key] = original.copyWith(
+            state: _service.isLibraryPathExcluded(root.key, entry.key)
+                ? LibraryEntryState.excluded
+                : LibraryEntryState.active,
+          );
         }
       }
     }
@@ -416,7 +433,11 @@ final class LibraryCatalogWriteCoordinator {
       for (final entry in root.value.entries) {
         final original = before.entries[root.key]?[entry.key];
         if (original != null && !current.containsKey(entry.key)) {
-          current[entry.key] = original.copyWith(state: entry.value.state);
+          current[entry.key] = original.copyWith(
+            state: _service.isLibraryPathExcluded(root.key, entry.key)
+                ? LibraryEntryState.excluded
+                : LibraryEntryState.active,
+          );
         }
       }
     }

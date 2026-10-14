@@ -115,6 +115,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     bool showLoading = true,
     int? targetQueueIndex,
     bool shouldStartTriggerCountdown = true,
+    double? initialFadeMultiplier,
   }) async {
     if (!_isRegisteredSession(session)) return false;
     if (!PathMatcher.equalsNormalized(session.currentTrackPath, nextPath) ||
@@ -319,6 +320,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         session,
         shouldStartTriggerCountdown: shouldStartTriggerCountdown,
         allowPreparationFallback: false,
+        initialFadeMultiplier: initialFadeMultiplier,
       );
     } else {
       if (autoPlay) {

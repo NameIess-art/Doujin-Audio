@@ -5,6 +5,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.ExoPlayer
 import com.doujin.audio.player.effects.NativeSessionAudioEffectsRuntime
+import com.doujin.audio.player.effects.NativePlaybackResumeFade
 import com.doujin.audio.player.effects.PlaybackVolumeMapper
 import com.doujin.audio.player.service.NativePlaybackService
 import com.doujin.audio.player.session.NativeAudioEffects
@@ -28,6 +29,20 @@ import org.robolectric.util.ReflectionHelpers
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class NativePlaybackCommandSnapshotTest {
+    @Test
+    fun `changing one fade multiplier restores another interrupted resume fade`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(service, "getSessionManager")
+        val first = sessions.getOrCreate("A")
+        val second = sessions.getOrCreate("B")
+        val fade = ReflectionHelpers.callInstanceMethod<NativePlaybackResumeFade>(service, "getTimerResumeFade")
+        fade.start(listOf("A", "B"))
+        service.setFadeMultiplier("A", 0.5f)
+
+        assertEquals(0.5f, first.fadeMultiplier, 0f)
+        assertEquals(1f, second.fadeMultiplier, 0f)
+    }
+
     @Test
     fun `combined stereo changes reprepare once and live changes preserve the queue`() {
         val service = Robolectric.buildService(NativePlaybackService::class.java).get()

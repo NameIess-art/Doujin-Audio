@@ -731,6 +731,8 @@ class NativePlaybackService : MediaSessionService() {
         return try {
             nativeSession.configure(args.copy(deferPlayerCreation = !args.autoPlay))
             if (args.autoPlay) {
+                PlaybackTimerAlarmScheduler.onManualPlaybackStopped(this, sessionId)
+                timerExecution.removeTarget(sessionId)
                 playbackSuspended = false
                 focusSession(sessionId)
                 markPlaybackIntended(sessionId)
@@ -848,7 +850,12 @@ class NativePlaybackService : MediaSessionService() {
             syncForegroundState()
             return errorResult("Unknown session.")
         }
-        if (session.stoppedAtTrackBoundary) clearTrackStopForManualCommand(sessionId)
+        if (session.stoppedAtTrackBoundary) {
+            clearTrackStopForManualCommand(sessionId)
+        } else {
+            PlaybackTimerAlarmScheduler.onManualPlaybackStopped(this, sessionId)
+            timerExecution.removeTarget(sessionId)
+        }
         val pausedSessionIds = if (exclusive) {
             exclusivePlaybackSessionIdsToPause(
                 targetSessionId = sessionId,
@@ -1294,7 +1301,6 @@ class NativePlaybackService : MediaSessionService() {
         logInfo("player_is_playing_changed isPlaying=$isPlaying", sessionManager.get(sessionId))
         if (isPlaying) {
             playbackRecovery.onPlaying(sessionId)
-            PlaybackTimerAlarmScheduler.onPlaybackStarted(this, sessionId)
         }
         statePersistence.schedulePersist()
         syncForegroundState()

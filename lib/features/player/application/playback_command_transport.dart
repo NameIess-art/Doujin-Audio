@@ -14,6 +14,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     PlaybackSession session, {
     required bool shouldStartTriggerCountdown,
     bool allowPreparationFallback = true,
+    double? initialFadeMultiplier,
   }) async {
     if (!_isRegisteredSession(session)) return false;
     final preparationGeneration = session.loadGeneration;
@@ -54,6 +55,29 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     );
 
     try {
+      // A cold timer restore has only a local definition. Prepare it before
+      // applying the fade so its first audible play is already muted.
+      if (initialFadeMultiplier != null) {
+        final fade = await _nativePlaybackRepository.setFadeMultiplier(
+          session.id,
+          initialFadeMultiplier,
+        );
+        if (!_isSessionCommandCurrent(session, token)) return false;
+        if (fade.isFailure) {
+          if (allowPreparationFallback && session.currentTrackPath.isNotEmpty) {
+            session.loadedPath = null;
+            return _prepareAndPlay(
+              session,
+              nextPath: session.currentTrackPath,
+              shouldStartTriggerCountdown: shouldStartTriggerCountdown,
+              initialFadeMultiplier: initialFadeMultiplier,
+            );
+          }
+          session.failTransportCommand(generation);
+          _notifyPlaybackChanged(session.id);
+          return false;
+        }
+      }
       final playResult = await _nativePlaybackRepository.play(
         session.id,
         transportCommandId: generation,
@@ -76,6 +100,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
             session,
             nextPath: session.currentTrackPath,
             shouldStartTriggerCountdown: shouldStartTriggerCountdown,
+            initialFadeMultiplier: initialFadeMultiplier,
           );
         }
         session.failTransportCommand(generation);
@@ -100,6 +125,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
           session,
           nextPath: session.currentTrackPath,
           shouldStartTriggerCountdown: shouldStartTriggerCountdown,
+          initialFadeMultiplier: initialFadeMultiplier,
         );
       }
       if (_isSessionCommandCurrent(session, token)) {

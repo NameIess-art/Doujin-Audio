@@ -216,9 +216,11 @@ final class PlaybackCommandCoordinator
   Future<bool> startSession(
     PlaybackSession session, {
     required bool shouldStartTriggerCountdown,
+    double? initialFadeMultiplier,
   }) => _startSessionPlayback(
     session,
     shouldStartTriggerCountdown: shouldStartTriggerCountdown,
+    initialFadeMultiplier: initialFadeMultiplier,
   );
 
   @override

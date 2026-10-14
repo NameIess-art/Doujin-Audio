@@ -475,7 +475,7 @@ class WorkTextService {
                 'Document request failed (${response.statusCode}).',
                 uri: uri,
               );
-              await response.drain<void>();
+              await response.listen(null).cancel();
               continue;
             }
             final bytesBuilder = BytesBuilder(copy: false);

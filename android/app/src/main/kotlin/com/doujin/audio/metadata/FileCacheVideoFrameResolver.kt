@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal const val VIDEO_FRAME_MAX_EDGE_PX = 1200
@@ -62,7 +61,7 @@ internal class FileCacheVideoFrameResolver(
         val cacheKey = videoFrameCacheKey(trackPath, modifiedAtMs)
         val outputFile = File(
             coverCacheDir,
-            "video_frame_${abs(cacheKey.hashCode())}.jpg"
+            artworkCacheFileName(cacheKey.toByteArray(Charsets.UTF_8), "video_frame", "jpg")
         )
         if (outputFile.exists() && outputFile.length() > 0) {
             touchCacheFile(outputFile)

@@ -152,26 +152,51 @@ class AsmrAuthService {
 
   final AsmrApiService _apiService;
   final AsmrTokenStore _tokenStore;
+  int _generation = 0;
+  Future<void> _storageTail = Future<void>.value();
+
+  Future<bool> _commit(int generation, Future<void> Function() write) {
+    final committed = _storageTail.then((_) async {
+      if (generation != _generation) return false;
+      await write();
+      return generation == _generation;
+    });
+    // Serialize storage only: a slow recovery request must not block logout.
+    _storageTail = committed.then<void>((_) {}, onError: (Object _) {});
+    return committed;
+  }
 
   Future<AsmrAuthSession?> restoreSession() async {
+    final generation = _generation;
+    await _storageTail;
     final token = await _tokenStore.readToken();
+    if (generation != _generation) return null;
     if (token == null || token.trim().isEmpty) {
-      return _restoreWithStoredCredentials();
+      return _restoreWithStoredCredentials(generation);
     }
     try {
       final session = await _apiService.checkSession(token);
+      if (generation != _generation) return null;
       if (session == null || !session.isValid) {
-        await _tokenStore.clearToken();
-        return _restoreWithStoredCredentials();
+        if (!await _commit(generation, _tokenStore.clearToken)) return null;
+        return _restoreWithStoredCredentials(generation);
       }
       if (session.token != token) {
-        await _tokenStore.writeToken(session.token);
+        if (!await _commit(
+          generation,
+          () => _tokenStore.writeToken(session.token),
+        )) {
+          return null;
+        }
       }
-      return _withStoredAccountName(session);
+      final restored = await _withStoredAccountName(session);
+      return generation == _generation ? restored : null;
     } catch (error, stackTrace) {
+      if (generation != _generation) return null;
       if (AsmrApiException.isAuthenticationError(error)) {
-        await _tokenStore.clearToken();
+        if (!await _commit(generation, _tokenStore.clearToken)) return null;
         return _restoreWithStoredCredentials(
+          generation,
           clearCredentialsOnAuthFailure: true,
         );
       }
@@ -181,18 +206,19 @@ class AsmrAuthService {
         stackTrace: stackTrace,
       );
       final fallbackName = await _storedAccountName();
-      if (fallbackName == null) {
+      if (fallbackName == null || generation != _generation) {
         return null;
       }
       return AsmrAuthSession(token: token, userName: fallbackName);
     }
   }
 
-  Future<AsmrAuthSession?> _restoreWithStoredCredentials({
+  Future<AsmrAuthSession?> _restoreWithStoredCredentials(
+    int generation, {
     bool clearCredentialsOnAuthFailure = false,
   }) async {
     final creds = await _tokenStore.readCredentials();
-    if (creds == null) {
+    if (creds == null || generation != _generation) {
       return null;
     }
     try {
@@ -200,9 +226,19 @@ class AsmrAuthService {
         name: creds['name']!,
         password: creds['password']!,
       );
-      await _tokenStore.writeToken(session.token);
-      return _withStoredAccountName(session, credentials: creds);
+      if (!await _commit(
+        generation,
+        () => _tokenStore.writeToken(session.token),
+      )) {
+        return null;
+      }
+      final restored = await _withStoredAccountName(
+        session,
+        credentials: creds,
+      );
+      return generation == _generation ? restored : null;
     } catch (error, stackTrace) {
+      if (generation != _generation) return null;
       AppLogService.error(
         'asmr_auto_login_failed',
         error: error,
@@ -210,7 +246,7 @@ class AsmrAuthService {
       );
       if (clearCredentialsOnAuthFailure &&
           AsmrApiException.isAuthenticationError(error)) {
-        await _tokenStore.clearCredentials();
+        await _commit(generation, _tokenStore.clearCredentials);
       }
       return null;
     }
@@ -238,14 +274,20 @@ class AsmrAuthService {
   }
 
   Future<AsmrAuthSession> login(String name, String password) async {
+    final generation = ++_generation;
     final session = await _apiService.login(name: name, password: password);
-    await _tokenStore.writeToken(session.token);
-    await _tokenStore.writeCredentials(name, password);
+    await _commit(generation, () async {
+      await _tokenStore.writeToken(session.token);
+      await _tokenStore.writeCredentials(name, password);
+    });
     return session;
   }
 
   Future<void> logout() async {
-    await _tokenStore.clearToken();
-    await _tokenStore.clearCredentials();
+    final generation = ++_generation;
+    await _commit(generation, () async {
+      await _tokenStore.clearToken();
+      await _tokenStore.clearCredentials();
+    });
   }
 }

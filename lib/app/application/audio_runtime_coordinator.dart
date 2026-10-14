@@ -139,6 +139,15 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
         // cleanup after their pending restore work has stopped.
       }
     }
+    final lifecycle = _lifecycleFuture;
+    if (lifecycle != null) {
+      try {
+        await lifecycle;
+      } catch (_) {
+        // The transition reports its error to its caller. Owners must remain
+        // alive until already-started native replies finish applying state.
+      }
+    }
     await _onDispose();
   }
 }

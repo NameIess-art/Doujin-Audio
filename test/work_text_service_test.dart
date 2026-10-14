@@ -484,6 +484,39 @@ void main() {
     );
 
     test(
+      'stalled error response is cancelled before trying fallback',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        final requestedPaths = <String>[];
+        server.listen((request) async {
+          requestedPaths.add(request.uri.path);
+          if (request.uri.path == '/unavailable') {
+            request.response.statusCode = HttpStatus.notFound;
+            request.response.headers.chunkedTransferEncoding = true;
+            request.response.write('partial error');
+            await request.response.flush();
+            return;
+          }
+          request.response.write('fallback text');
+          await request.response.close();
+        });
+        final result = await WorkTextService()
+            .readDecodedText(
+              WorkTextFile(
+                name: 'script.txt',
+                relativePath: 'script.txt',
+                path: 'http://127.0.0.1:${server.port}/unavailable',
+                fallbackUrls: ['http://127.0.0.1:${server.port}/script'],
+              ),
+            )
+            .timeout(const Duration(seconds: 2));
+        expect(requestedPaths, ['/unavailable', '/script']);
+        expect(result.text, 'fallback text');
+      },
+    );
+
+    test(
       'concurrent image refresh shares equivalent Windows paths and later refresh scans again',
       () async {
         final scan = Completer<List<CoverImageReference>>();

@@ -10,7 +10,9 @@ typedef PermissionGrantedCallback = Future<void> Function();
 
 class PermissionActionController {
   _PendingPermissionAction? _pendingAction;
-  bool _resumeCheckScheduled = false;
+  int _generation = 0;
+  int? _resumeCheckGeneration;
+  bool _disposed = false;
 
   Future<bool> ensureGrantedAndRun({
     required BuildContext context,
@@ -22,12 +24,18 @@ class PermissionActionController {
     String? confirmLabel,
     String? cancelLabel,
   }) async {
-    if (await isGranted()) {
+    if (_disposed || !context.mounted) return false;
+    clear();
+    final generation = _generation;
+    final granted = await isGranted();
+    if (_disposed || generation != _generation || !context.mounted) {
+      return false;
+    }
+    if (granted) {
       await onGranted();
       return true;
     }
 
-    if (!context.mounted) return false;
     final shouldOpenSettings = await showConfirmActionDialog(
       context: context,
       title: title,
@@ -38,17 +46,24 @@ class PermissionActionController {
       confirmIcon: Icons.settings_rounded,
       isDestructive: false,
     );
-    if (!shouldOpenSettings) {
+    if (_disposed ||
+        generation != _generation ||
+        !context.mounted ||
+        !shouldOpenSettings) {
       return false;
     }
 
     final opened = await openSettings();
+    if (_disposed || generation != _generation || !context.mounted) {
+      return false;
+    }
     if (!opened) {
       _pendingAction = null;
       return false;
     }
 
     _pendingAction = _PendingPermissionAction(
+      context: context,
       isGranted: isGranted,
       onGranted: onGranted,
     );
@@ -57,44 +72,48 @@ class PermissionActionController {
 
   Future<void> handleAppResumed() async {
     final pendingAction = _pendingAction;
-    if (pendingAction == null || _resumeCheckScheduled) {
+    if (_disposed || pendingAction == null || _resumeCheckGeneration != null) {
       return;
     }
-    _resumeCheckScheduled = true;
-    await Future<void>.delayed(const Duration(milliseconds: 450));
-    _resumeCheckScheduled = false;
-
-    final latestPendingAction = _pendingAction;
-    if (latestPendingAction == null) {
-      return;
-    }
-
-    final granted = await latestPendingAction.isGranted();
-    if (!granted) {
+    final generation = _generation;
+    bool isCurrent() =>
+        !_disposed &&
+        generation == _generation &&
+        identical(_pendingAction, pendingAction) &&
+        pendingAction.context.mounted;
+    _resumeCheckGeneration = generation;
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      if (!isCurrent()) return;
+      final granted = await pendingAction.isGranted();
+      if (!isCurrent()) return;
       _pendingAction = null;
-      return;
+      if (granted) await pendingAction.onGranted();
+    } finally {
+      if (_resumeCheckGeneration == generation) _resumeCheckGeneration = null;
     }
-
-    _pendingAction = null;
-    await latestPendingAction.onGranted();
   }
 
   void clear() {
+    _generation++;
     _pendingAction = null;
-    _resumeCheckScheduled = false;
+    _resumeCheckGeneration = null;
   }
 
   void dispose() {
+    _disposed = true;
     clear();
   }
 }
 
 class _PendingPermissionAction {
   const _PendingPermissionAction({
+    required this.context,
     required this.isGranted,
     required this.onGranted,
   });
 
+  final BuildContext context;
   final PermissionCheckCallback isGranted;
   final PermissionGrantedCallback onGranted;
 }

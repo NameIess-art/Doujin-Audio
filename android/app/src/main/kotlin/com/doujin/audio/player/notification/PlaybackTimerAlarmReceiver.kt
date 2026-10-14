@@ -214,6 +214,11 @@ object PlaybackTimerAlarmScheduler {
                         ?: elapsedTriggerFromWallClock(runtimeState.timerEndsAtWallClockMs)
                 }
             }
+            if (runtimeState.timerEndsElapsedRealtimeMs != triggerElapsedRealtimeMs) {
+                // BOOT establishes a new monotonic clock origin; later broadcasts reuse it.
+                runtimeState = runtimeState.copy(timerEndsElapsedRealtimeMs = triggerElapsedRealtimeMs)
+                NativePlaybackStateStore.saveTimerRuntimeState(context, runtimeState)
+            }
             scheduleElapsedAlarm(
                 context = context,
                 action = actionTimerExpired,
@@ -552,7 +557,8 @@ object PlaybackTimerAlarmScheduler {
         return PendingIntent.getBroadcast(context, requestCode, intent, flags)
     }
 
-    fun onPlaybackStarted(context: Context, sessionId: String) {
+    fun onManualPlaybackStopped(context: Context, sessionId: String) {
+        // An explicit transport command removes a target; buffering and focus recovery do not.
         if (sessionId.isBlank()) return
         val pausedSessionIds = NativePlaybackStateStore.loadPausedSessionIds(context)
         if (sessionId !in pausedSessionIds) return
@@ -587,11 +593,6 @@ object PlaybackTimerAlarmScheduler {
             }
         }
         logInfo(context, "manual_playback_cleared_timer_pause sessionId=$sessionId")
-    }
-
-    fun onManualPlaybackStopped(context: Context, sessionId: String) {
-        // A user-paused or removed session is no longer an automatic-resume target.
-        onPlaybackStarted(context, sessionId)
     }
 
     fun logInfo(context: Context, message: String) {

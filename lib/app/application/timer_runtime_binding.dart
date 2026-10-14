@@ -28,17 +28,11 @@ final class TimerRuntimeBinding implements RuntimeBinding {
       sessions: () => playback.sessions.values,
       pauseSession: playbackCommands.pauseSession,
       activateAudioSession: keepAlive.activateAudioSession,
-      resumeSession: (session) async {
-        final fade = await playback.nativeRepository.setFadeMultiplier(
-          session.id,
-          0,
-        );
-        if (fade.isFailure) return false;
-        return playbackCommands.startSession(
-          session,
-          shouldStartTriggerCountdown: false,
-        );
-      },
+      resumeSession: (session) => playbackCommands.startSession(
+        session,
+        shouldStartTriggerCountdown: false,
+        initialFadeMultiplier: 0,
+      ),
       onStateChanged: () {
         keepAlive.sync();
         syncTimerState();

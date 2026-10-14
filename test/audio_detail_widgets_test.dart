@@ -1564,6 +1564,11 @@ void main() {
     await tester.runAsync(
       () => runtimeGraph.library.saveAudioDetail(AudioDetail.empty(target)),
     );
+    // This case isolates duration loading. Finish cover persistence restoration
+    // before mounting so unrelated SQLite work cannot outlive the widget test.
+    await tester.runAsync(
+      runtimeGraph.library.coverArtworkCacheService.initialize,
+    );
     final durationCompleter = Completer<Duration?>();
 
     await tester.pumpWidget(

@@ -3,18 +3,23 @@ import 'dart:convert';
 
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/playback_command_coordinator.dart';
 import 'package:doujin_audio/features/player/application/windows_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
+import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart'
     as playback;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/app_runtime_test_fixture.dart';
+import 'support/test_persistence_repository.dart';
 
 void main() {
   AppRuntimeTestFixture.initialize();
@@ -68,6 +73,80 @@ void main() {
     expect(playlistReads, 1);
     expect(players.single.state.playing, true);
   });
+
+  for (final overdue in [true, false]) {
+    test(
+      'cold timer restore prepares muted sessions (overdue=$overdue)',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final target = DateTime.now().add(
+          overdue ? const Duration(minutes: -1) : const Duration(minutes: 5),
+        );
+        final tracks = [
+          for (final name in ['saved-a', 'saved-b'])
+            testMusicTrack(
+              name: name,
+              path: 'https://example.com/$name.wav',
+              groupKey: 'saved',
+              groupTitle: 'saved',
+            ),
+        ];
+        SharedPreferences.setMockInitialValues({
+          'timer_runtime_v1': jsonEncode({
+            'timerMode': null,
+            'timerDurationMs': null,
+            'timerWaitingForPlayback': false,
+            'autoResumeEnabled': true,
+            'autoResumeHour': target.hour,
+            'autoResumeMinute': target.minute,
+            'autoResumeAtMs': target.millisecondsSinceEpoch,
+            'pausedSessionIds': tracks
+                .map((track) => track.displayName)
+                .toList(),
+            'generation': 3,
+          }),
+        });
+        final graph = createTestRuntimeGraph(
+          persistenceRepository: _RestoredSessionRepository(tracks),
+          nativePlaybackRepository: NativePlaybackRepository(bridge: bridge),
+          powerPlatformService: PowerPlatformService(isAndroidOverride: false),
+        );
+        addTearDown(graph.runtime.dispose);
+        graph.library.addTracks(tracks, persist: false);
+        await graph.playback.loadPersistedState();
+        expect((await bridge.snapshot()).valueOrNull!.sessions, isEmpty);
+        await graph.timer.loadRuntimeFromSystem();
+        if (!overdue) {
+          expect(players, isEmpty);
+          expect(graph.timer.hasArmedRuntime, isTrue);
+          // Arm a near deadline only after restoration, so a slow runner
+          // cannot turn the future-runtime case into an overdue restore.
+          graph.timer.scheduleAutoResumeTimer(
+            DateTime.now().add(const Duration(milliseconds: 100)),
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 550));
+        }
+        expect((await bridge.snapshot()).valueOrNull!.sessions, hasLength(2));
+        expect(graph.timer.hasArmedRuntime, isFalse);
+        for (final player in players) {
+          player.loaded();
+        }
+        await Future<void>.delayed(Duration.zero);
+        await bridge.snapshot();
+        expect(players, hasLength(2));
+        for (final player in players) {
+          expect(player.actions, contains('mute'));
+          expect(
+            player.actions.indexOf('play'),
+            greaterThan(player.actions.indexOf('mute')),
+            reason: 'Mute must be applied before the first native play.',
+          );
+          expect(player.seeks, contains(const Duration(seconds: 1)));
+        }
+      },
+    );
+  }
 
   test('edited queue restores its scope after loop mode round trip', () async {
     final graph = createTestRuntimeGraph(
@@ -1871,7 +1950,7 @@ void main() {
   );
 
   test(
-    'queue replacement cancels retries bound to the previous queue',
+    'queue replacement rebinds network recovery to the updated queue',
     () async {
       await prepare('one');
       players.single.emitError('connection reset');
@@ -1884,11 +1963,102 @@ void main() {
         ],
         queueRevision: 1,
       );
-      await Future<void>.delayed(const Duration(milliseconds: 550));
-      expect(players.single.opens, 1);
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+      expect(players.single.opens, 2);
       expect(players.single.state.playlist.medias, hasLength(2));
     },
   );
+
+  test('loop queue edit retries candidates from the updated scope', () async {
+    await prepare('one');
+    players.single.emitError('connection reset');
+    await Future<void>.delayed(Duration.zero);
+    final result = await bridge.setRepeatOne(
+      'one',
+      true,
+      queue: [
+        {
+          'uri': 'https://example.com/one.wav',
+          'title': 'one',
+          'candidateUris': [
+            'https://example.com/one.wav',
+            'https://new.example.com/one.wav',
+          ],
+        },
+      ],
+    );
+    expect(result.isOk, isTrue);
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    expect(players.single.opens, 2);
+    expect(
+      players.single.state.playlist.medias.single.uri,
+      'https://new.example.com/one.wav',
+    );
+    expect(players.single.state.playlistMode, PlaylistMode.single);
+  });
+
+  test(
+    'queued edits bind recovery only to the final candidate scope',
+    () async {
+      await prepare('one');
+      players.single.emitError('connection reset');
+      await Future<void>.delayed(Duration.zero);
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var reads = 0;
+      playlistGetter = (player) async {
+        if (reads++ == 0) {
+          started.complete();
+          await release.future;
+        }
+        return _playlistJson(player);
+      };
+      List<Map<String, Object?>> scope(String host) => [
+        {
+          'uri': 'https://example.com/one.wav',
+          'title': 'one',
+          'candidateUris': [
+            'https://example.com/one.wav',
+            'https://$host/one.wav',
+          ],
+        },
+      ];
+      final first = bridge.updateQueue(
+        'one',
+        queue: scope('first.example.com'),
+        queueRevision: 1,
+      );
+      await started.future;
+      final second = bridge.updateQueue(
+        'one',
+        queue: scope('final.example.com'),
+        queueRevision: 2,
+      );
+      release.complete();
+      for (final result in await Future.wait([first, second])) {
+        expect(result.isOk, isTrue);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 1600));
+      expect(players.single.opens, 2);
+      expect(
+        players.single.state.playlist.medias.single.uri,
+        'https://final.example.com/one.wav',
+      );
+    },
+  );
+
+  test('invalid queue edit preserves pending network recovery', () async {
+    await prepare('one');
+    players.single.emitError('connection reset');
+    await Future<void>.delayed(Duration.zero);
+    expect((await bridge.updateQueue('one', queue: [])).isFailure, isTrue);
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    expect(players.single.opens, 2);
+    expect(
+      players.single.state.playlist.medias.single.uri,
+      'https://example.com/one.wav',
+    );
+  });
 
   test('device disconnect follows the configured preference', () async {
     final repository = NativePlaybackRepository(bridge: bridge);
@@ -2009,6 +2179,7 @@ class _Player extends PlatformPlayer {
   bool reorderOnShuffle = false;
   List<Media>? _unshuffledMedias;
   final seeks = <Duration>[];
+  final actions = <String>[];
   @override
   Future<void> add(Media media) async {
     adds++;
@@ -2082,6 +2253,7 @@ class _Player extends PlatformPlayer {
   @override
   Future<void> play() async {
     plays++;
+    actions.add('play');
     state = state.copyWith(playing: true);
     playingController.add(true);
   }
@@ -2106,8 +2278,11 @@ class _Player extends PlatformPlayer {
   }
 
   @override
-  Future<void> setVolume(double volume) async =>
-      state = state.copyWith(volume: volume);
+  Future<void> setVolume(double volume) async {
+    if (volume == 0) actions.add('mute');
+    state = state.copyWith(volume: volume);
+  }
+
   @override
   Future<void> setRate(double rate) async => state = state.copyWith(rate: rate);
   @override
@@ -2159,6 +2334,26 @@ class _Player extends PlatformPlayer {
     await disposeGate?.future;
     await super.dispose();
   }
+}
+
+class _RestoredSessionRepository extends TestPersistenceRepository {
+  _RestoredSessionRepository(this.tracks);
+  final List<MusicTrack> tracks;
+  @override
+  Future<List<PersistedPlaybackSession>> loadAllSessions() async => [
+    for (final track in tracks)
+      PersistedPlaybackSession(
+        id: track.displayName,
+        trackPath: track.path,
+        loopModeIndex: 0,
+        volume: 1,
+        positionMs: 1000,
+        durationMs: 300000,
+        customQueueTracks: [track],
+        channelSwapEnabled: false,
+        sortOrder: 0,
+      ),
+  ];
 }
 
 String _playlistJson(Player player) => jsonEncode([

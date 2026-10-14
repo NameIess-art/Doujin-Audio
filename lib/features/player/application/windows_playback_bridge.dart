@@ -795,16 +795,26 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     List<Map<String, Object?>> queue, {
     int? queueStartIndex,
   }) async {
-    _validateQueue(queue);
-    if (queueStartIndex != null &&
-        (queueStartIndex < 0 || queueStartIndex >= queue.length)) {
-      throw ArgumentError('queueStartIndex is outside the queue');
+    // An earlier queued edit can bind a retry after this command's immediate
+    // cancellation. Cancel again inside the session lane before replacing it.
+    session.cancelRetry();
+    try {
+      _validateQueue(queue);
+      if (queueStartIndex != null &&
+          (queueStartIndex < 0 || queueStartIndex >= queue.length)) {
+        throw ArgumentError('queueStartIndex is outside the queue');
+      }
+      await session.updateQueue(
+        queue,
+        queueStartIndex: queueStartIndex,
+        isCurrent: () => _isCurrent(session),
+      );
+    } finally {
+      // Queue edits cancel callbacks that captured the old queue. Preserve
+      // recovery intent, including when an edit fails, using the current scope.
+      final error = session.error;
+      if (error != null) _handleError(session, error);
     }
-    await session.updateQueue(
-      queue,
-      queueStartIndex: queueStartIndex,
-      isCurrent: () => _isCurrent(session),
-    );
   }
 
   @override

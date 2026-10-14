@@ -25,6 +25,126 @@ void registerAsmrAccountSyncTests({
     expect(await auth.restoreSession(), isNull);
   });
 
+  for (final fail in [false, true]) {
+    for (final switchAccount in [false, true]) {
+      test(
+        'old authentication recovery cannot mutate storage after '
+        '${switchAccount ? "account switch" : "logout"} (failure: $fail)',
+        () async {
+          await resetPrefs();
+          final api = _FakeAsmrApiService();
+          addTearDown(api.close);
+          final tokenStore = _MemoryAsmrTokenStore();
+          final auth = AsmrAuthService(apiService: api, tokenStore: tokenStore);
+          final service = AsmrAccountSyncService(
+            authService: auth,
+            apiService: api,
+            preferencesStore: preferences,
+          );
+          await service.login('alice', 'password');
+          final started = Completer<void>();
+          final release = Completer<void>();
+          api.beforeLogin = (name) async {
+            if (name != 'alice') return;
+            started.complete();
+            await release.future;
+            if (fail) throw const AsmrApiException('expired', statusCode: 401);
+          };
+          api.fetchReviewAuthFailuresRemaining = 1;
+          api.checkSessionAuthFailuresRemaining = 1;
+          final cancellation = AsmrRequestCancellationToken();
+          final sync = service.synchronize(
+            language: AsmrContentLanguage.zh,
+            cancellationToken: cancellation,
+          );
+          final cancelled = expectLater(
+            sync,
+            throwsA(isA<AsmrRequestCancelled>()),
+          );
+          await started.future;
+          cancellation.cancel();
+          // Logout and a new login finish while recovery's HTTP request is pending.
+          await service.logout();
+          if (switchAccount) await service.login('bob', 'new-password');
+          release.complete();
+          await cancelled;
+          expect(tokenStore.token, switchAccount ? 'token-bob' : null);
+          expect(tokenStore.credentials?['name'], switchAccount ? 'bob' : null);
+          expect(
+            service.snapshot.session?.userName,
+            switchAccount ? 'bob' : null,
+          );
+        },
+      );
+    }
+  }
+
+  test(
+    'old session validation cannot clear a newly logged in account',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      addTearDown(api.close);
+      final tokenStore = _MemoryAsmrTokenStore();
+      final auth = AsmrAuthService(apiService: api, tokenStore: tokenStore);
+      await auth.login('alice', 'password');
+      final started = Completer<void>();
+      final release = Completer<void>();
+      api.beforeCheckSession = (_) async {
+        started.complete();
+        await release.future;
+        throw const AsmrApiException('expired', statusCode: 401);
+      };
+      final restore = auth.restoreSession();
+      await started.future;
+      await auth.login('bob', 'new-password');
+      release.complete();
+      expect(await restore, isNull);
+      expect(tokenStore.token, 'token-bob');
+      expect(tokenStore.credentials?['name'], 'bob');
+    },
+  );
+
+  for (final failWrite in [false, true]) {
+    test(
+      'account switch drains an already-started recovery write (failure: $failWrite)',
+      () async {
+        await resetPrefs();
+        final api = _FakeAsmrApiService();
+        addTearDown(api.close);
+        final store = _MemoryAsmrTokenStore();
+        final auth = AsmrAuthService(apiService: api, tokenStore: store);
+        await auth.login('alice', 'password');
+        api.checkSessionAuthFailuresRemaining = 1;
+        api.loginTokenOverride = 'recovered-alice';
+        final started = Completer<void>();
+        final release = Completer<void>();
+        store.beforeWriteToken = (token) async {
+          if (token != 'recovered-alice') return;
+          started.complete();
+          await release.future;
+          if (failWrite) throw const FileSystemException('write failed');
+        };
+        final recovery = auth.restoreSession();
+        await started.future;
+        var switched = false;
+        final switchAccount = () async {
+          await auth.logout();
+          api.loginTokenOverride = null;
+          await auth.login('bob', 'new-password');
+          switched = true;
+        }();
+        await Future<void>.delayed(Duration.zero);
+        expect(switched, isFalse);
+        release.complete();
+        expect(await recovery, isNull);
+        await switchAccount;
+        expect(store.token, 'token-bob');
+        expect(store.credentials?['name'], 'bob');
+      },
+    );
+  }
+
   test(
     'ASMR auth restore uses saved account name when session check omits it',
     () async {

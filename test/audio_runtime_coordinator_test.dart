@@ -2,9 +2,52 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/application/audio_runtime_coordinator.dart';
+import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
+
+import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  AppRuntimeTestFixture.initialize();
+  test(
+    'shutdown keeps playback state alive for a pending native reconciliation',
+    () async {
+      final repository = _DelayedSnapshotRepository();
+      final graph = createTestRuntimeGraph(
+        nativePlaybackRepository: repository,
+      );
+      final coordinator = AudioRuntimeCoordinator(
+        snapshots: repository.snapshots,
+        progressUpdates: repository.progressUpdates,
+        startListening: repository.startListening,
+        stopListening: repository.stopListening,
+        onSnapshot: (_) {},
+        onProgress: (_) {},
+        onStart: () => graph.playback.replaceNativeRetainedContentUris([]),
+        onEnterBackground: () {},
+        onResumeForeground: graph.playbackCommands.reconcileNativeRuntime,
+        onDispose: graph.runtime.dispose,
+      );
+      await coordinator.start();
+      final resume = coordinator.resumeForeground();
+      await repository.started.future;
+      final shutdown = coordinator.dispose();
+      repository.reply.complete(
+        NativeSuccess(
+          NativePlaybackBundleSnapshot(
+            sessions: [
+              _snapshot('native-retained').copyWith(
+                retainedUris: ['content://media/external/audio/media/42'],
+              ),
+            ],
+          ),
+        ),
+      );
+      await resume;
+      await shutdown;
+    },
+  );
   for (final fail in [false, true]) {
     test(
       'startup shares its Future and shutdown drains it (failure: $fail)',
@@ -272,22 +315,98 @@ void main() {
     expect(resumes, 1);
   });
 
-  test('dispose skips queued foreground work', () async {
-    final pending = Completer<void>();
-    var resumes = 0;
-    final coordinator = _lifecycleCoordinator(
-      onEnterBackground: () => pending.future,
-      onResumeForeground: () => resumes++,
+  test(
+    'dispose drains started work and skips queued foreground work',
+    () async {
+      final pending = Completer<void>();
+      var resumes = 0;
+      final coordinator = _lifecycleCoordinator(
+        onEnterBackground: () => pending.future,
+        onResumeForeground: () => resumes++,
+      );
+      await coordinator.start();
+      final first = coordinator.enterBackground();
+      await Future<void>.delayed(Duration.zero);
+      final foreground = coordinator.resumeForeground();
+      var disposed = false;
+      final shutdown = coordinator.dispose().then((_) => disposed = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(disposed, isFalse);
+      pending.complete();
+      await Future.wait([first, foreground]);
+      await shutdown;
+      expect(disposed, isTrue);
+      expect(resumes, 0);
+    },
+  );
+
+  for (final fail in [false, true]) {
+    test(
+      'shutdown drains a native reply before closing state (failure: $fail)',
+      () async {
+        final reply = Completer<void>();
+        final state = StreamController<void>();
+        final events = <String>[];
+        final coordinator = AudioRuntimeCoordinator(
+          snapshots: const Stream<NativePlaybackSnapshot>.empty(),
+          progressUpdates: const Stream<NativePlaybackProgressUpdate>.empty(),
+          startListening: () {},
+          stopListening: () async {},
+          onSnapshot: (_) {},
+          onProgress: (_) {},
+          onStart: () {},
+          onEnterBackground: () {},
+          onResumeForeground: () async {
+            await reply.future;
+            state.add(null);
+            events.add('reply');
+            if (fail) throw StateError('native reply failed');
+          },
+          onDispose: () async {
+            await state.close();
+            events.add('dispose');
+          },
+        );
+        // Consume the controller so its close Future can finish.
+        final subscription = state.stream.listen((_) {});
+        await coordinator.start();
+        final resume = coordinator.resumeForeground();
+        final result = fail ? expectLater(resume, throwsStateError) : resume;
+        await Future<void>.delayed(Duration.zero);
+        final shutdown = coordinator.dispose();
+        await Future<void>.delayed(Duration.zero);
+        expect(state.isClosed, isFalse);
+        reply.complete();
+        await result;
+        await shutdown;
+        expect(events, ['reply', 'dispose']);
+        await subscription.cancel();
+      },
     );
-    await coordinator.start();
-    final first = coordinator.enterBackground();
-    await Future<void>.delayed(Duration.zero);
-    final foreground = coordinator.resumeForeground();
-    await coordinator.dispose();
-    pending.complete();
-    await Future.wait([first, foreground]);
-    expect(resumes, 0);
-  });
+  }
+}
+
+class _DelayedSnapshotRepository extends NativePlaybackRepository {
+  final started = Completer<void>();
+  final reply = Completer<NativeResult<NativePlaybackBundleSnapshot>>();
+
+  @override
+  Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() {
+    started.complete();
+    return reply.future;
+  }
+
+  @override
+  Stream<NativePlaybackSnapshot> get snapshots => const Stream.empty();
+  @override
+  Stream<NativePlaybackProgressUpdate> get progressUpdates =>
+      const Stream.empty();
+  @override
+  void startListening() {}
+  @override
+  Future<void> stopListening() async {}
+  @override
+  Future<void> dispose() async {}
 }
 
 AudioRuntimeCoordinator _lifecycleCoordinator({

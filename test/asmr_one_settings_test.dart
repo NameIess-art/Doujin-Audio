@@ -316,6 +316,8 @@ class _FakeAsmrApiService extends AsmrApiService {
   final Future<void> Function(String request)? beforeFetchSearchResponse;
   final Future<void> Function(int workId)? beforeFetchTrackTree;
   Future<void> Function()? beforeFetchReviews;
+  Future<void> Function(String name)? beforeLogin;
+  Future<void> Function(String token)? beforeCheckSession;
   int failPutReviewCount;
   int transientFetchFailuresRemaining;
   int checkSessionAuthFailuresRemaining = 0;
@@ -335,6 +337,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     required String password,
   }) async {
     loginCount++;
+    await beforeLogin?.call(name);
     final failureStatusCode = loginFailureStatusCode;
     if (failureStatusCode != null) {
       throw AsmrApiException(
@@ -352,6 +355,7 @@ class _FakeAsmrApiService extends AsmrApiService {
 
   @override
   Future<AsmrAuthSession?> checkSession(String token) async {
+    await beforeCheckSession?.call(token);
     if (checkSessionAuthFailuresRemaining > 0) {
       checkSessionAuthFailuresRemaining--;
       throw AsmrApiException(
@@ -611,6 +615,7 @@ class _MemoryAsmrTokenStore implements AsmrTokenStore {
   String? token;
   Map<String, String>? credentials;
   bool failClearToken = false;
+  Future<void> Function(String token)? beforeWriteToken;
 
   @override
   Future<void> clearToken() async {
@@ -623,6 +628,7 @@ class _MemoryAsmrTokenStore implements AsmrTokenStore {
 
   @override
   Future<void> writeToken(String token) async {
+    await beforeWriteToken?.call(token);
     this.token = token;
   }
 

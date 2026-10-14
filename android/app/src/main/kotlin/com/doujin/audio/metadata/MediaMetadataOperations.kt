@@ -13,12 +13,15 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.security.MessageDigest
 
-internal fun embeddedCoverCacheFileName(bytes: ByteArray): String {
+internal fun embeddedCoverCacheFileName(bytes: ByteArray): String =
+    artworkCacheFileName(bytes, "embedded", "image")
+
+internal fun artworkCacheFileName(bytes: ByteArray, prefix: String, extension: String): String {
     val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
     val contentKey = digest.joinToString(separator = "") {
         (it.toInt() and 0xff).toString(16).padStart(2, '0')
     }
-    return "embedded_$contentKey.image"
+    return "${prefix}_$contentKey.$extension"
 }
 
 internal class MediaMetadataOperations(

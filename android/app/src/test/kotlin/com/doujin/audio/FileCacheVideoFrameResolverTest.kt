@@ -4,13 +4,49 @@ import com.doujin.audio.metadata.VideoFrameSize
 import com.doujin.audio.metadata.calculateVideoFrameSize
 import com.doujin.audio.metadata.shouldDecodeLegacyVideoFrame
 import com.doujin.audio.metadata.videoFrameCacheKey
+import com.doujin.audio.metadata.artworkCacheFileName
+import com.doujin.audio.metadata.FileCacheVideoFrameResolver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+import java.io.File
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33], manifest = Config.NONE)
 class FileCacheVideoFrameResolverTest {
+    @get:Rule
+    val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun `cached frames separate hash collisions and source revisions`() {
+        val cache = temporaryFolder.newFolder()
+        val coverDirectory = File(cache, "doujin_audio_covers").apply { mkdirs() }
+        val keys = listOf(
+            videoFrameCacheKey("/media/Aa.mp4", 100L),
+            videoFrameCacheKey("/media/BB.mp4", 100L),
+            videoFrameCacheKey("/media/Aa.mp4", 101L)
+        )
+        assertEquals(keys[0].hashCode(), keys[1].hashCode())
+        val files = keys.mapIndexed { index, key ->
+            File(coverDirectory, artworkCacheFileName(key.toByteArray(Charsets.UTF_8), "video_frame", "jpg"))
+                .apply { writeText("frame $index") }
+        }
+        assertNotEquals(files[0], files[1])
+        val resolver = FileCacheVideoFrameResolver(RuntimeEnvironment.getApplication(), cache, {}, { null })
+        assertEquals(files[0].absolutePath, resolver.resolve("/media/Aa.mp4", 100L))
+        assertEquals(files[1].absolutePath, resolver.resolve("/media/BB.mp4", 100L))
+        assertEquals(files[2].absolutePath, resolver.resolve("/media/Aa.mp4", 101L))
+    }
+
     @Test
     fun `landscape video frame is scaled to the maximum edge`() {
         assertEquals(

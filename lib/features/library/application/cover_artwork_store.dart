@@ -13,6 +13,7 @@ export '../../../core/media/cover_image_format.dart'
     show coverArtworkStoreDirectoryName;
 
 const String coverArtworkStoreIndexFileName = 'index.json';
+const int _androidGeneratedArtworkVersion = 2;
 
 enum CoverArtworkNamespace { remote, embedded, generated, legacy }
 
@@ -49,12 +50,16 @@ final class CoverArtworkStore {
   CoverArtworkStore({
     Future<Directory> Function()? persistentDirectory,
     Future<Directory> Function()? temporaryDirectory,
+    bool Function()? isAndroid,
   }) : _persistentDirectory =
            persistentDirectory ?? getApplicationSupportDirectory,
-       _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory;
+       _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
+       _isAndroid = isAndroid ?? (() => Platform.isAndroid);
 
   final Future<Directory> Function() _persistentDirectory;
   final Future<Directory> Function() _temporaryDirectory;
+  final bool Function() _isAndroid;
+  Directory? _androidTemporaryDirectory;
   final Map<String, String> _bindings = <String, String>{};
   final Map<String, String> _legacyAliases = <String, String>{};
   Future<void>? _initializeFuture;
@@ -88,6 +93,8 @@ final class CoverArtworkStore {
     _root = Directory(path.join(support.path, coverArtworkStoreDirectoryName));
     _index = File(path.join(_root.path, coverArtworkStoreIndexFileName));
     await _root.create(recursive: true);
+    if (_isAndroid()) _androidTemporaryDirectory = await _temporaryDirectory();
+    var androidGeneratedVersion = 0;
     try {
       if (await _index.exists()) {
         final decoded = json.decode(await _index.readAsString());
@@ -95,6 +102,10 @@ final class CoverArtworkStore {
             (decoded['version'] == 1 || decoded['version'] == 2)) {
           _decodeMap(decoded['bindings'], _bindings);
           _decodeMap(decoded['legacyAliases'], _legacyAliases);
+          final generatedVersion = decoded['androidGeneratedVersion'];
+          androidGeneratedVersion = generatedVersion is num
+              ? generatedVersion.toInt()
+              : 0;
         }
       }
     } catch (_) {
@@ -106,13 +117,63 @@ final class CoverArtworkStore {
       for (final entry in _bindings.entries)
         _canonicalLogicalKey(entry.key): entry.value,
     };
-    if (migrated.keys.any((key) => !_bindings.containsKey(key)) ||
+    var changed = false;
+    if (_isAndroid() &&
+        androidGeneratedVersion != _androidGeneratedArtworkVersion) {
+      migrated.removeWhere((key, value) {
+        final resolved = _absoluteValue(value);
+        return _isAutomaticKey(key) &&
+            !key.contains('remote-cover:') &&
+            !_isUri(resolved) &&
+            !path.isWithin(path.join(_root.path, 'remote'), resolved) &&
+            !path.isWithin(
+              path.join(_root.parent.path, 'portable_card_covers'),
+              resolved,
+            );
+      });
+      changed = true;
+    }
+    if (changed ||
+        migrated.keys.any((key) => !_bindings.containsKey(key)) ||
         migrated.length != _bindings.length) {
       _bindings
         ..clear()
         ..addAll(migrated);
       await _persistIndex();
     }
+  }
+
+  bool _isAutomaticKey(String key) => const [
+    'video:',
+    'native:',
+    'embedded:',
+    'track:',
+    'folder:',
+    'source-image:',
+  ].any(key.startsWith);
+
+  // Old derived files stay on disk because an explicit selection may own them.
+  bool isObsoleteAndroidAutomaticPath(String value) {
+    if (!_isAndroid() || !_initialized || _isUri(value)) return false;
+    if (path.isWithin(_root.path, value)) {
+      final parts = path.split(path.relative(value, from: _root.path));
+      return parts.length > 1 &&
+          const ['generated', 'embedded', 'legacy'].contains(parts.first) &&
+          parts[1] != 'android-v$_androidGeneratedArtworkVersion';
+    }
+    final temporary = _androidTemporaryDirectory;
+    if (temporary == null || !path.isWithin(temporary.path, value)) {
+      return false;
+    }
+    final parts = path.split(path.relative(value, from: temporary.path));
+    if (parts.isEmpty) return false;
+    if (parts.first == 'video_frames' || parts.first == 'embedded_covers') {
+      return true;
+    }
+    return parts.first == 'doujin_audio_covers' &&
+        RegExp(
+          r'^(cover|video_frame)_-?[0-9]{1,10}\.[a-zA-Z]+$',
+        ).hasMatch(path.basename(value));
   }
 
   void _decodeMap(Object? value, Map<String, String> target) {
@@ -317,6 +378,7 @@ final class CoverArtworkStore {
       var migrated = 0;
       for (final root in roots) {
         if (shouldCancel?.call() == true) break;
+        if (_isAndroid() && !root.remote) continue;
         if (!await root.directory.exists()) continue;
         await for (final entity in root.directory.list(
           recursive: true,
@@ -376,8 +438,15 @@ final class CoverArtworkStore {
     return result;
   }
 
-  File _artifactFile(CoverArtworkNamespace namespace, String fileName) =>
-      File(path.join(_root.path, namespace.name, _safeFileName(fileName)));
+  File _artifactFile(CoverArtworkNamespace namespace, String fileName) => File(
+    path.joinAll([
+      _root.path,
+      namespace.name,
+      if (_isAndroid() && namespace != CoverArtworkNamespace.remote)
+        'android-v$_androidGeneratedArtworkVersion',
+      _safeFileName(fileName),
+    ]),
+  );
 
   Future<void> _writeBytes(File output, List<int> bytes) async {
     await output.parent.create(recursive: true);
@@ -408,6 +477,8 @@ final class CoverArtworkStore {
     final partial = File('${_index.path}.part');
     final payload = json.encode(<String, Object>{
       'version': 2,
+      if (_isAndroid())
+        'androidGeneratedVersion': _androidGeneratedArtworkVersion,
       'bindings': _bindings,
       'legacyAliases': _legacyAliases,
     });

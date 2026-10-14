@@ -50,6 +50,201 @@ void main() {
     await fixture.dispose(currentGraph: runtimeGraph);
   });
 
+  for (final kind in ['media', 'folder', 'detail']) {
+    test('rename $kind waits for a captured scan to retire', () async {
+      final root = await Directory.systemTemp.createTemp('scan_rename_');
+      addTearDown(() => root.delete(recursive: true));
+      final folder = await Directory(path.join(root.path, 'old')).create();
+      final file = await File(
+        path.join(folder.path, 'old.mp3'),
+      ).writeAsString('audio');
+      final library = runtimeGraph.library;
+      library.addWatchedLibrary(root.path);
+      library.addTracks([
+        _localDurationTrack(folder.path, filename: 'old.mp3'),
+      ]);
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final source = _JsonPreservationScanDataSource()
+        ..configure(
+          selectedPath: root.path,
+          tracks: [_scannedTrackForPath(file.path)],
+          beforeChunk: () async {
+            started.complete();
+            await release.future;
+          },
+        );
+      final scan = LibraryScannerService(dataSource: source)
+          .refreshWatchedFolders(
+            provider: library,
+            labels: const LibraryScanLabels(
+              chooseMusicFolder: '',
+              chooseLibraryFolder: '',
+              chooseAudioFiles: '',
+              importedFiles: '',
+              manuallySelectedFiles: '',
+            ),
+          );
+      await started.future;
+      final rename = kind == 'detail'
+          ? library
+                .renameAudioDetailTargetToName(
+                  AudioDetail.empty(
+                    AudioDetailTarget.singleAudioFile(file.path),
+                  ),
+                  'new',
+                )
+                .then((result) => result.detail.target.targetPath)
+          : library.renameWorkEntryToName(
+              libraryRootPath: root.path,
+              entryPath: kind == 'folder' ? folder.path : file.path,
+              targetName: 'new',
+              isMedia: kind == 'media',
+              isDirectory: kind == 'folder',
+            );
+      var renamed = false;
+      unawaited(rename.then((_) => renamed = true));
+      await Future<void>.delayed(Duration.zero);
+      expect(renamed, isFalse);
+      expect(await file.exists(), isTrue);
+      expect(library.tryBeginScan(source: root.path), 0);
+      release.complete();
+      expect((await scan).code, LibraryScanOutcomeCode.cancelled);
+      final newPath = await rename;
+      final newTrackPath = kind == 'folder'
+          ? path.join(newPath, 'old.mp3')
+          : newPath;
+      expect(await File(newTrackPath).exists(), isTrue);
+      expect(library.trackByPath(newTrackPath), isNotNull);
+      expect(library.trackByPath(file.path), isNull);
+      final nextGeneration = library.tryBeginScan(source: root.path);
+      expect(nextGeneration, greaterThan(0));
+      library.finishScan(nextGeneration);
+    });
+  }
+
+  for (final folder in [false, true]) {
+    for (final undo in [false, true]) {
+      test(
+        'refresh commits current ${folder ? 'folder' : 'track'} exclusion (undo=$undo)',
+        () async {
+          const root = 'C:/library';
+          const child = '$root/work';
+          final track = _localDurationTrack(child);
+          final library = runtimeGraph.library;
+          library.addWatchedLibrary(root);
+          library.addTracks([track]);
+          void setExcluded(bool excluded) => folder
+              ? library.setLibraryFolderExcluded(root, child, excluded)
+              : library.setLibraryTrackExcluded(root, track.path, excluded);
+          if (undo) setExcluded(true);
+          final source = _JsonPreservationScanDataSource()
+            ..configure(
+              selectedPath: root,
+              childFolders: [child],
+              tracks: [_scannedTrackForPath(track.path)],
+              beforeChunk: () async {
+                setExcluded(!undo);
+                await Future<void>.delayed(Duration.zero);
+              },
+            );
+          await LibraryScannerService(dataSource: source).refreshWatchedFolders(
+            provider: library,
+            labels: const LibraryScanLabels(
+              chooseMusicFolder: '',
+              chooseLibraryFolder: '',
+              chooseAudioFiles: '',
+              importedFiles: '',
+              manuallySelectedFiles: '',
+            ),
+          );
+          expect(library.isLibraryPathExcluded(root, track.path), !undo);
+          expect(library.trackByPath(track.path), undo ? isNotNull : isNull);
+          expect(
+            library
+                .libraryEntriesForLibrary(root)
+                .singleWhere((entry) => entry.path == track.path)
+                .isExcluded,
+            !undo,
+          );
+          if (folder && !undo) {
+            expect(library.watchedFolders, isNot(contains(child)));
+          }
+        },
+      );
+    }
+  }
+
+  for (final disposed in [false, true]) {
+    test(
+      'rename releases scan exclusion after failure (disposed=$disposed)',
+      () async {
+        final library = LibraryFacade.create(
+          databaseRepository: TestPersistenceRepository(
+            database: AppDatabase.test(db),
+          ),
+          jsonDocumentStore: TestJsonDocumentStore(),
+        );
+        if (!disposed) addTearDown(library.dispose);
+        final generation = library.tryBeginScan(source: '/missing');
+        final rename = library.renameWorkEntryToName(
+          libraryRootPath: '/missing',
+          entryPath: '/missing/file.mp3',
+          targetName: 'new',
+          isMedia: true,
+          isDirectory: false,
+        );
+        final failure = expectLater(
+          rename,
+          disposed ? throwsStateError : throwsA(isA<FileSystemException>()),
+        );
+        if (disposed) await library.dispose();
+        library.finishScan(generation);
+        await failure;
+        final nextGeneration = library.tryBeginScan(source: '/missing');
+        expect(nextGeneration, disposed ? 0 : greaterThan(0));
+        if (nextGeneration != 0) library.finishScan(nextGeneration);
+      },
+    );
+  }
+
+  for (final undo in [false, true]) {
+    test(
+      'cancelled refresh preserves current exclusion state (undo=$undo)',
+      () async {
+        const root = 'C:/library';
+        final track = _localDurationTrack(root);
+        final library = runtimeGraph.library;
+        library.addWatchedLibrary(root);
+        library.addTracks([track]);
+        if (undo) library.setLibraryTrackExcluded(root, track.path, true);
+        final exclusions = library.libraryExclusionMatcherForLibrary(root);
+        final entries = library.libraryEntrySnapshotForLibrary(root);
+        library.beginStagedLibraryRefresh();
+        library.setLibraryTrackExcluded(root, track.path, !undo);
+        await Future<void>.delayed(Duration.zero);
+        library.applyStagedLibraryRefreshChunk(
+          sourceFolderPath: root,
+          libraryRoot: root,
+          tracks: undo ? const [] : [track],
+          entryTracks: [track],
+          exclusionMatcher: exclusions,
+          entrySnapshot: entries,
+        );
+        await library.finishStagedLibraryRefresh(commit: false);
+        expect(library.isLibraryPathExcluded(root, track.path), !undo);
+        expect(library.trackByPath(track.path), undo ? isNotNull : isNull);
+        expect(
+          library
+              .libraryEntriesForLibrary(root)
+              .singleWhere((entry) => entry.path == track.path)
+              .isExcluded,
+          !undo,
+        );
+      },
+    );
+  }
+
   test(
     'reset rejects a pending restore without cancelling its replacement',
     () async {
@@ -3459,17 +3654,20 @@ class _JsonPreservationScanDataSource implements LibraryScanDataSource {
   List<String> _childFolders = const <String>[];
   List<ScannedTrack> _tracks = const <ScannedTrack>[];
   void Function()? _afterChunk;
+  Future<void> Function()? _beforeChunk;
 
   void configure({
     required String selectedPath,
     List<String> childFolders = const <String>[],
     required List<ScannedTrack> tracks,
     void Function()? afterChunk,
+    Future<void> Function()? beforeChunk,
   }) {
     _selectedPath = selectedPath;
     _childFolders = childFolders;
     _tracks = tracks;
     _afterChunk = afterChunk;
+    _beforeChunk = beforeChunk;
   }
 
   @override
@@ -3510,6 +3708,7 @@ class _JsonPreservationScanDataSource implements LibraryScanDataSource {
     FutureOr<void> Function(FolderScanSessionEvent event)? onProgress,
   }) async {
     final paths = _tracks.map((track) => track.path).toSet();
+    await _beforeChunk?.call();
     await onChunk(FolderScanChunk(tracks: _tracks, paths: paths));
     _afterChunk?.call();
     return _resultForCurrentTracks();

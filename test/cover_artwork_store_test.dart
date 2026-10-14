@@ -34,6 +34,184 @@ void main() {
     temporaryDirectory: () async => temporaryDirectory,
   );
 
+  for (final android in [false, true]) {
+    for (final version in [1, 2]) {
+      test(
+        'cold restore retires old Android automatic artwork ($android, index $version)',
+        () async {
+          final root = Directory(
+            path.join(supportDirectory.path, coverArtworkStoreDirectoryName),
+          );
+          const videoKey = 'video:/work/video.mp4:100:v3';
+          final old = File(
+            path.join(
+              root.path,
+              'generated',
+              '${sha256.convert(utf8.encode(videoKey))}.image',
+            ),
+          );
+          await old.parent.create(recursive: true);
+          await old.writeAsBytes([1]);
+          final selected = File(
+            path.join(root.path, 'embedded', 'selected.image'),
+          );
+          await selected.parent.create(recursive: true);
+          await selected.writeAsBytes([2]);
+          final remote = File(path.join(root.path, 'remote', 'remote.image'));
+          await remote.parent.create(recursive: true);
+          await remote.writeAsBytes([3]);
+          final portable = File(
+            path.join(
+              supportDirectory.path,
+              'portable_card_covers',
+              'cover.jpg',
+            ),
+          );
+          await portable.parent.create(recursive: true);
+          await portable.writeAsBytes([4]);
+          final keys = [
+            videoKey,
+            'native:/work/audio.mp3|1|2',
+            'track:/work/audio.mp3|1|2|false',
+            'folder:/work',
+            'source-image:content://images/cover',
+          ];
+          final index = File(
+            path.join(root.path, coverArtworkStoreIndexFileName),
+          );
+          await index.writeAsString(
+            jsonEncode({
+              'version': version,
+              'bindings': {
+                for (final key in keys)
+                  key: path.relative(old.path, from: root.path),
+                'selected-image:/chosen': path.relative(
+                  selected.path,
+                  from: root.path,
+                ),
+                'selected-image:/other': path.relative(
+                  old.path,
+                  from: root.path,
+                ),
+                'folder:/chosen': path.relative(selected.path, from: root.path),
+                'folder:/portable': portable.path,
+                'remote-cover:https://example.com/cover': path.relative(
+                  remote.path,
+                  from: root.path,
+                ),
+              },
+              'legacyAliases': <String, String>{},
+            }),
+          );
+          final store = CoverArtworkStore(
+            persistentDirectory: () async => supportDirectory,
+            temporaryDirectory: () async => temporaryDirectory,
+            isAndroid: () => android,
+          );
+          await store.initialize();
+          for (final key in keys) {
+            expect(await store.validatedPath(key), android ? isNull : old.path);
+          }
+          expect(
+            await store.validatedPath('folder:/chosen'),
+            android ? isNull : selected.path,
+          );
+          expect(await store.validatedPath('selected-image:/other'), old.path);
+          expect(
+            await store.validatedPath('selected-image:/chosen'),
+            selected.path,
+          );
+          expect(await store.validatedPath('folder:/portable'), portable.path);
+          expect(
+            await store.validatedPath('remote-cover:https://example.com/cover'),
+            remote.path,
+          );
+          expect(store.isObsoleteAndroidAutomaticPath(old.path), android);
+          final source = File(path.join(supportDirectory.path, 'fresh.jpg'));
+          await source.writeAsBytes([9]);
+          final rebuilt = await store.putFile(
+            logicalKey: videoKey,
+            sourcePath: source.path,
+          );
+          expect(await File(rebuilt!).readAsBytes(), android ? [9] : [1]);
+          expect(await old.readAsBytes(), [1]);
+          final restarted = CoverArtworkStore(
+            persistentDirectory: () async => supportDirectory,
+            temporaryDirectory: () async => temporaryDirectory,
+            isAndroid: () => android,
+          );
+          await restarted.initialize();
+          expect(await restarted.validatedPath(videoKey), rebuilt);
+        },
+      );
+    }
+  }
+
+  test(
+    'old Android native artifacts are recognized only within the application cache',
+    () async {
+      final store = CoverArtworkStore(
+        persistentDirectory: () async => supportDirectory,
+        temporaryDirectory: () async => temporaryDirectory,
+        isAndroid: () => true,
+      );
+      await store.initialize();
+      final old = File(
+        path.join(
+          temporaryDirectory.path,
+          'doujin_audio_covers',
+          'cover_123.jpg',
+        ),
+      );
+      await old.parent.create(recursive: true);
+      await old.writeAsBytes([1]);
+      expect(await store.migrateLegacyCaches(), 0);
+      expect(await old.readAsBytes(), [1]);
+      for (final name in [
+        'cover_-2147483648.jpg',
+        'video_frame_-2147483648.jpg',
+      ]) {
+        expect(
+          store.isObsoleteAndroidAutomaticPath(
+            path.join(temporaryDirectory.path, 'doujin_audio_covers', name),
+          ),
+          isTrue,
+        );
+      }
+      expect(
+        store.isObsoleteAndroidAutomaticPath(
+          path.join(
+            temporaryDirectory.path,
+            'doujin_audio_covers',
+            'cover_123.jpg',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        store.isObsoleteAndroidAutomaticPath(
+          path.join(
+            supportDirectory.path,
+            'user',
+            'doujin_audio_covers',
+            'cover_123.jpg',
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        store.isObsoleteAndroidAutomaticPath(
+          path.join(
+            temporaryDirectory.path,
+            'doujin_audio_covers',
+            'video_frame_${'a' * 64}.jpg',
+          ),
+        ),
+        isFalse,
+      );
+    },
+  );
+
   test(
     'legacy path bindings migrate to equivalent Windows and SAF identities',
     () async {

@@ -12,6 +12,7 @@ import '../../application/playback_session_snapshot.dart';
 import '../../domain/time_segment_label.dart';
 import '../playback_position_ui_gate.dart';
 import 'playlist_volume_timer_widgets.dart';
+import 'session_detail_theme.dart';
 
 typedef _ProgressSliderValue = ({
   double maxMillis,
@@ -480,8 +481,11 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame> {
                   clipBehavior: Clip.none,
                   children: [
                     Positioned.fill(child: widget.staticLayer),
-                    _ProgressSliderTheme(
-                      primaryColor: widget.primaryColor,
+                    SliderTheme(
+                      data: sessionDetailProgressSliderTheme(
+                        context,
+                        widget.primaryColor,
+                      ),
                       child: ValueListenableBuilder<_ProgressSliderValue>(
                         valueListenable: widget.sliderValue,
                         builder: (context, value, child) {
@@ -523,33 +527,6 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ProgressSliderTheme extends StatelessWidget {
-  const _ProgressSliderTheme({required this.primaryColor, required this.child});
-
-  final Color primaryColor;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return SliderTheme(
-      data: SliderTheme.of(context).copyWith(
-        trackHeight: 3.0,
-        thumbShape: const RoundSliderThumbShape(
-          enabledThumbRadius: 6,
-          elevation: 2,
-          pressedElevation: 5,
-        ),
-        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-        activeTrackColor: primaryColor,
-        inactiveTrackColor: primaryColor.withValues(alpha: 0.22),
-        thumbColor: primaryColor,
-        overlayColor: primaryColor.withValues(alpha: 0.15),
-      ),
-      child: child,
     );
   }
 }

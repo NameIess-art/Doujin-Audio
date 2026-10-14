@@ -13,6 +13,15 @@ import com.doujin.audio.player.session.NativePlaybackSession
 import com.doujin.audio.player.session.NativeMediaItemDescriptor
 import com.doujin.audio.player.session.NativePlaybackSessionManager
 import com.doujin.audio.player.session.NativePlaybackStatePersistenceCoordinator
+import com.doujin.audio.player.video.NativeVideoOutputBinding
+import com.doujin.audio.player.video.shouldRetainPausedVideoPlayer
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.TrackGroup
+import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
+import androidx.media3.common.PlaybackException
+import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertFalse
@@ -29,6 +38,116 @@ import org.robolectric.util.ReflectionHelpers
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class NativePlaybackCommandSnapshotTest {
+    @Test
+    fun `pause and pause all retain the player attached to a video output`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(service, "getSessionManager")
+        val session = sessions.getOrCreate("video")
+        val player = ExoPlayer.Builder(RuntimeEnvironment.getApplication()).setUsePlatformDiagnostics(false).build()
+        ReflectionHelpers.setField(session, "_player", player)
+        var boundPlayer: Player? = null
+        service.addStateListener("ui") { }
+        service.registerVideoOutput("video", "inline", object : NativeVideoOutputBinding<Player> {
+            override fun bindPlayer(player: Player?) { boundPlayer = player }
+            override fun setKeepScreenOn(keepScreenOn: Boolean) = Unit
+        })
+        try {
+            session.applyTemporarySpeed(2f)
+            assertEquals(true, service.pause("video")["ok"])
+            assertSame(session, sessions.get("video"))
+            assertSame(player, session.playerOrNull())
+            assertSame(player, boundPlayer)
+            assertFalse(player.playWhenReady)
+            assertEquals(1f, player.playbackParameters.speed, 0f)
+            service.pauseAll()
+            assertSame(player, session.playerOrNull())
+            assertSame(player, boundPlayer)
+            service.stop("video")
+            assertNull(sessions.get("video"))
+            assertNull(boundPlayer)
+        } finally {
+            session.release()
+            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence").shutdown()
+        }
+    }
+
+    @Test
+    fun `pausing audio without a video output still retires its player`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(service, "getSessionManager")
+        val session = sessions.getOrCreate("audio")
+        ReflectionHelpers.setField(session, "_player", ExoPlayer.Builder(RuntimeEnvironment.getApplication()).setUsePlatformDiagnostics(false).build())
+        try {
+            assertEquals(true, service.pause("audio")["ok"])
+            assertNull(sessions.get("audio"))
+            assertNull(session.playerOrNull())
+        } finally {
+            session.release()
+            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence").shutdown()
+        }
+    }
+
+    @Test
+    fun `loaded video remains retained without an output during fullscreen handoff`() {
+        val videoTrack = Tracks.Group(
+            TrackGroup(Format.Builder().setSampleMimeType("video/avc").build()),
+            false, intArrayOf(C.FORMAT_HANDLED), booleanArrayOf(true)
+        )
+        var tracks = Tracks(listOf(videoTrack))
+        var videoSize = VideoSize.UNKNOWN
+        var error: PlaybackException? = null
+        val player = Proxy.newProxyInstance(Player::class.java.classLoader, arrayOf(Player::class.java)) { _, method, _ ->
+            when (method.name) {
+                "getCurrentTracks" -> tracks
+                "getVideoSize" -> videoSize
+                "getPlayerError" -> error
+                else -> error("Unexpected Player access: ${method.name}")
+            }
+        } as Player
+        assertTrue(shouldRetainPausedVideoPlayer(player, false))
+        tracks = Tracks.EMPTY
+        videoSize = VideoSize(640, 360)
+        assertTrue(shouldRetainPausedVideoPlayer(player, false))
+        videoSize = VideoSize.UNKNOWN
+        assertFalse(shouldRetainPausedVideoPlayer(player, false))
+        assertTrue(shouldRetainPausedVideoPlayer(player, true))
+        error = PlaybackException("failed video", null, PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND)
+        assertFalse(shouldRetainPausedVideoPlayer(player, true))
+        assertFalse(shouldRetainPausedVideoPlayer(null, true))
+    }
+
+    @Test
+    fun `idle cleanup preserves a paused video for attached UI and releases it after UI detaches`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(service, "getSessionManager")
+        val session = sessions.getOrCreate("video")
+        val player = ExoPlayer.Builder(RuntimeEnvironment.getApplication()).setUsePlatformDiagnostics(false).build()
+        ReflectionHelpers.setField(session, "_player", player)
+        service.addStateListener("ui") { }
+        service.registerVideoOutput("video", "inline", object : NativeVideoOutputBinding<Player> {
+            override fun bindPlayer(player: Player?) = Unit
+            override fun setKeepScreenOn(keepScreenOn: Boolean) = Unit
+        })
+        fun expireIdle() = ReflectionHelpers.callInstanceMethod<Unit>(service, "stopIdleServiceAfterRestore",
+            ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType!!, 0),
+            ReflectionHelpers.ClassParameter.from(String::class.java, "test_idle"),
+            ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType!!, true)
+        )
+        try {
+            expireIdle()
+            assertSame(player, session.playerOrNull())
+            assertSame(session, sessions.get("video"))
+            service.unregisterVideoOutput("video", "inline")
+            service.removeStateListener("ui")
+            expireIdle()
+            assertNull(session.playerOrNull())
+            assertNull(sessions.get("video"))
+        } finally {
+            session.release()
+            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence").shutdown()
+        }
+    }
+
     @Test
     fun `changing one fade multiplier restores another interrupted resume fade`() {
         val service = Robolectric.buildService(NativePlaybackService::class.java).get()

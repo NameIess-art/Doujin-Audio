@@ -12,12 +12,14 @@ import org.junit.Test
 
 class NativeVideoOutputRegistryTest {
     @Test
-    fun `pausing detaches the video decoder and a later player can rebind the same page`() {
+    fun `releasing a decoder detaches it and a later player can rebind the same page`() {
         var player: FakePlayer? = FakePlayer(playing = true)
         val output = FakeOutput()
         val registry = NativeVideoOutputRegistry<FakePlayer>({ player }, FakePlayer::playing)
         registry.register("session", "owner", output)
+        assertTrue(registry.hasOutput("session"))
         registry.detachPlayer("session")
+        assertTrue(registry.hasOutput("session"))
         assertNull(output.player)
         assertFalse(output.screenKeptOn)
         player = null
@@ -85,10 +87,12 @@ class NativeVideoOutputRegistryTest {
         registry.register("session", "fullscreen", newOutput)
         registry.unregister("session", "inline")
 
+        assertTrue(registry.hasOutput("session"))
         assertSame(player, newOutput.player)
         assertEquals(1, newOutput.boundPlayers.size)
 
         registry.unregister("session", "fullscreen")
+        assertFalse(registry.hasOutput("session"))
         assertNull(newOutput.player)
         assertFalse(newOutput.screenKeptOn)
     }

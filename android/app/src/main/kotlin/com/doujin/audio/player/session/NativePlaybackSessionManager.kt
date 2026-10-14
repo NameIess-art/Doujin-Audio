@@ -128,6 +128,7 @@ internal class NativePlaybackSessionManager(
         isIntended: (String) -> Boolean,
         isFocusPending: (String) -> Boolean,
         isRecoveryPending: (String) -> Boolean,
+        shouldRetainPlayer: (NativePlaybackSession) -> Boolean = { false },
         beforeRelease: (NativePlaybackSession) -> Unit = {}
     ): List<NativePlaybackSession> {
         val idleSessions = sessions.values
@@ -135,6 +136,7 @@ internal class NativePlaybackSessionManager(
                 val player = session.playerOrNull() ?: return@filter false
                 !player.isPlaying &&
                     !player.playWhenReady &&
+                    !shouldRetainPlayer(session) &&
                     !isIntended(session.sessionId) &&
                     !isFocusPending(session.sessionId) &&
                     !isRecoveryPending(session.sessionId)

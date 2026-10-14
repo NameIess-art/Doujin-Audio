@@ -1,5 +1,14 @@
 package com.doujin.audio.player.video
 
+import androidx.media3.common.C
+import androidx.media3.common.Player
+
+internal fun shouldRetainPausedVideoPlayer(player: Player?, hasVideoOutput: Boolean): Boolean {
+    if (player == null || player.playerError != null) return false
+    return hasVideoOutput || player.currentTracks.containsType(C.TRACK_TYPE_VIDEO) ||
+        (player.videoSize.width > 0 && player.videoSize.height > 0)
+}
+
 internal interface NativeVideoOutputBinding<P : Any> {
     fun bindPlayer(player: P?)
     fun setKeepScreenOn(keepScreenOn: Boolean)
@@ -16,6 +25,8 @@ internal class NativeVideoOutputRegistry<P : Any>(
     )
 
     private val entries = mutableMapOf<String, Entry<P>>()
+
+    fun hasOutput(sessionId: String): Boolean = entries.containsKey(sessionId)
 
     fun register(
         sessionId: String,

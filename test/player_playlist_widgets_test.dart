@@ -18,6 +18,7 @@ import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -27,6 +28,7 @@ import 'package:doujin_audio/features/player/application/playback_session_snapsh
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_layout.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/session_detail_theme.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_track_switcher_sheet.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_panel.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playback_queue_cover.dart';
@@ -142,6 +144,7 @@ _pumpSubtitleDetail({
   Future<SubtitleTrack?>? subtitleResult,
   Widget Function(PlaybackSessionSnapshot)? detailBuilder,
   List<MusicTrack>? queueTracks,
+  int? queueColorValue,
   bool preloadSubtitle = false,
   bool openDetail = true,
   VoidCallback? onSubtitleLoad,
@@ -186,6 +189,7 @@ _pumpSubtitleDetail({
         ? null
         : PlaybackQueueDefinition(
             name: 'Test queue',
+            colorValue: queueColorValue,
             entries: [
               for (var index = 0; index < queueTracks.length; index++)
                 PlaybackQueueEntry(
@@ -6776,6 +6780,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(videoReady(), isTrue);
 
+    final surfaceBeforePause = tester.element(
+      find.byType(NativeSessionVideoSurface),
+    );
+    session.setOptimisticState(playing: false);
+    sync();
+    await tester.pumpAndSettle();
+    expect(videoReady(), isTrue);
+    expect(
+      tester.element(find.byType(NativeSessionVideoSurface)),
+      same(surfaceBeforePause),
+    );
+    session.setOptimisticState(playing: true);
+    sync();
+    await tester.pumpAndSettle();
+    expect(videoReady(), isTrue);
+    expect(
+      tester.element(find.byType(NativeSessionVideoSurface)),
+      same(surfaceBeforePause),
+    );
+
     session.currentTrackPath = tracks[1].path;
     sync();
     await tester.pumpAndSettle();
@@ -6797,6 +6821,16 @@ void main() {
     expect(
       find.byType(NativeSessionVideoSurface, skipOffstage: false),
       findsOneWidget,
+    );
+    final fullscreenSurface = tester.element(
+      find.byType(NativeSessionVideoSurface),
+    );
+    session.setOptimisticState(playing: false);
+    sync();
+    await tester.pumpAndSettle();
+    expect(
+      tester.element(find.byType(NativeSessionVideoSurface)),
+      same(fullscreenSurface),
     );
     await tester.tap(
       find.byKey(const ValueKey<String>('fullscreen_video_exit')),
@@ -7068,11 +7102,13 @@ void main() {
           }
           if (const bool.fromEnvironment('FULLSCREEN_VIDEO_SCREENSHOTS') &&
               (size == const Size(320, 640) || size == const Size(1280, 800))) {
-            final timeContext = tester.element(
-              find.byKey(const ValueKey('fullscreen_video_current_time')),
+            final timeLabel = find.byKey(
+              const ValueKey('fullscreen_video_current_time'),
             );
-            final fontFamily =
-                DefaultTextStyle.of(timeContext).style.fontFamily ?? 'Roboto';
+            final timeText = tester.widget<Text>(
+              find.descendant(of: timeLabel, matching: find.byType(Text)),
+            );
+            final fontFamily = timeText.style?.fontFamily ?? 'Roboto';
             await tester.runAsync(() async {
               final textFont = FontLoader(fontFamily)
                 ..addFont(rootBundle.load('assets/fonts/Outfit-Variable.ttf'));
@@ -7105,6 +7141,174 @@ void main() {
         variant: TargetPlatformVariant.only(platform),
       );
     }
+  }
+
+  for (final kind in ['normal', 'asmr', 'queue']) {
+    testWidgets('fullscreen video controls share detail styles for $kind', (
+      tester,
+    ) async {
+      final orientation = AppOrientationController(
+        setPreferredOrientations: (_) async {},
+        setSystemUiMode: (_) async {},
+      );
+      final lease = await orientation.enterVideoFullscreen();
+      addTearDown(lease.release);
+      const queueColor = Color(0xFF2E9C8B);
+      final track = testMusicTrack(
+        name: 'Styled video',
+        path: '/videos/style.mp4',
+        groupKey: '/videos',
+        groupTitle: 'Videos',
+      ).copyWith(
+        isVideo: true,
+        remoteMetadataKind: kind == 'asmr'
+            ? MusicTrack.remoteMetadataKindAsmrOne
+            : null,
+      );
+      final setup = await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: const Duration(seconds: 10),
+        initialTrack: track,
+        queueTracks: kind == 'queue' ? [track] : null,
+        queueColorValue: kind == 'queue' ? queueColor.toARGB32() : null,
+        physicalSize: const Size(3840, 2400),
+        detailBuilder: (session) => SessionVideoFullscreenPage(
+          sessionId: session.id,
+          trackPath: track.path,
+          fullscreenLease: lease,
+        ),
+      );
+      final session = setup.session
+        ..loadedPath = track.path
+        ..setOptimisticDuration(const Duration(minutes: 2));
+      setup.fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpAndSettle();
+
+      final outer = tester.element(find.byType(SessionVideoFullscreenPage));
+      final base = ProviderScope.containerOf(outer)
+          .read(themeProviderInstanceProvider)
+          .darkTheme;
+      final expectedTheme = kind == 'queue'
+          ? createPlaybackQueueSessionDetailTheme(base, queueColor)
+          : kind == 'asmr'
+          ? createAsmrSessionDetailTheme(
+              base,
+              base.extension<AppDesignTokens>()!,
+            )
+          : base;
+      final expectedPrimary = expectedTheme.colorScheme.primary;
+      final play = find.byKey(
+        const ValueKey('fullscreen_video_play_pause'),
+      );
+      final playContext = tester.element(play);
+      final theme = Theme.of(playContext);
+      final cs = theme.colorScheme;
+      expect(theme.brightness, Brightness.dark);
+      expect(cs.primary, expectedPrimary);
+      expect(cs.onPrimary, expectedTheme.colorScheme.onPrimary);
+      expect(tester.getSize(play), const Size(48, 48));
+      final playDecoration = tester.widget<DecoratedBox>(
+        find.ancestor(of: play, matching: find.byType(DecoratedBox)).first,
+      ).decoration as BoxDecoration;
+      expect(playDecoration.shape, BoxShape.circle);
+      expect(playDecoration.color, expectedPrimary);
+      expect(
+        playDecoration,
+        sessionDetailPlayButtonDecoration(
+          playContext,
+          expectedPrimary,
+          enabled: true,
+        ),
+      );
+      final playButton = tester.widget<IconButton>(play);
+      expect(playButton.style!.shape!.resolve({}), isA<CircleBorder>());
+      expect(playButton.style!.foregroundColor!.resolve({}), cs.onPrimary);
+      for (final name in ['previous', 'next']) {
+        final button = find.byKey(ValueKey('fullscreen_video_$name'));
+        final transport = tester.widget<PrimaryTransportButton>(button);
+        final plate = tester.widget<Container>(
+          find.descendant(of: button, matching: find.byType(Container)).first,
+        ).decoration as BoxDecoration;
+        expect(plate.shape, BoxShape.circle);
+        expect(
+          plate.color,
+          cs.surfaceContainerHighest.withValues(
+            alpha: transport.enabled ? 0.35 : 0.15,
+          ),
+        );
+      }
+      final progressContext = tester.element(
+        find.byKey(const ValueKey('fullscreen_video_progress')),
+      );
+      final progressTheme = SliderTheme.of(progressContext);
+      expect(progressTheme.trackHeight, 3);
+      expect(progressTheme.activeTrackColor, expectedPrimary);
+      expect(progressTheme.thumbColor, expectedPrimary);
+      expect(
+        progressTheme.inactiveTrackColor,
+        expectedPrimary.withValues(alpha: 0.22),
+      );
+      final progressThumb = progressTheme.thumbShape! as RoundSliderThumbShape;
+      expect(progressThumb.enabledThumbRadius, 6);
+      expect(progressThumb.elevation, 2);
+      expect(
+        (progressTheme.overlayShape! as RoundSliderOverlayShape).overlayRadius,
+        12,
+      );
+      expect(
+        progressTheme,
+        sessionDetailProgressSliderTheme(progressContext, expectedPrimary),
+      );
+      final volumeContext = tester.element(
+        find.byKey(const ValueKey('fullscreen_video_volume')),
+      );
+      final volumeTheme = SliderTheme.of(volumeContext);
+      expect(volumeTheme.trackHeight, 6);
+      expect(
+        (volumeTheme.thumbShape! as RoundSliderThumbShape).enabledThumbRadius,
+        6,
+      );
+      expect(
+        (volumeTheme.overlayShape! as RoundSliderOverlayShape).overlayRadius,
+        14,
+      );
+      expect(
+        volumeTheme,
+        sessionDetailVolumeSliderTheme(volumeContext, isBoosted: false),
+      );
+      for (final name in ['current_time', 'duration']) {
+        final label = find.byKey(ValueKey('fullscreen_video_$name'));
+        expect(tester.widget(label), isA<TimecodeLabel>());
+        final style = tester.widget<Text>(
+          find.descendant(of: label, matching: find.byType(Text)),
+        ).style!;
+        expect(style.fontSize, 13);
+        expect(style.fontWeight, FontWeight.w800);
+        expect(
+          style.color,
+          sessionDetailForeground(
+            cs,
+            SessionDetailForegroundLevel.muted,
+            darkFallback: cs.onSurface.withValues(alpha: 0.8),
+          ),
+        );
+      }
+      final volumeLabel = tester.widget<Text>(
+        find.byKey(const ValueKey('fullscreen_video_volume_value')),
+      );
+      expect(volumeLabel.style!.fontSize, 11);
+      expect(volumeLabel.style!.fontWeight, FontWeight.w900);
+      expect(volumeLabel.style!.color, theme.textTheme.labelSmall!.color);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
   }
 
   testWidgets(

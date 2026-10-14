@@ -329,7 +329,7 @@ class NativePlaybackService : MediaSessionService() {
             hasSessions = { sessionManager.isNotEmpty },
             hasPlaybackToKeepAlive = ::hasPlaybackToKeepAlive,
             hasPendingCommandDelivery = ::hasPendingCommandDelivery,
-            stopIdleService = ::stopIdleServiceAfterRestore,
+            stopIdleService = { startId, reason -> stopIdleServiceAfterRestore(startId, reason) },
             onMissingSessionsRestored = { restoredSessionIds ->
                 restoredSessionIds.forEach(::publishSessionState)
                 evictPlayersIfNeeded()
@@ -631,6 +631,10 @@ class NativePlaybackService : MediaSessionService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         logInfo("on_task_removed hasActivePlayback=${hasPlaybackToKeepAlive()}")
+        if (!hasPlaybackToKeepAlive()) {
+            stopIdleServiceAfterRestore(restoreCoordinator.latestStartId, "task_removed_no_playback", preserveVideo = false)
+            return
+        }
         if (foregroundCoordinator.onTaskRemoved()) {
             stopSelf()
         }
@@ -695,6 +699,7 @@ class NativePlaybackService : MediaSessionService() {
     fun removeStateListener(ownerId: String) {
         stateListeners.remove(ownerId)
         progressHeartbeat.stopIfUnobserved()
+        if (stateListeners.isEmpty()) syncForegroundState()
     }
 
     internal fun registerVideoOutput(
@@ -946,7 +951,7 @@ class NativePlaybackService : MediaSessionService() {
         val player = session.playerOrNull()
         player?.stop()
         player?.clearMediaItems()
-        val snapshot = retirePausedSession(session)
+        val snapshot = retireSession(session, "idle")
         evictPlayersIfNeeded()
         statePersistence.persistNow()
         syncForegroundState()
@@ -1047,6 +1052,7 @@ class NativePlaybackService : MediaSessionService() {
         focusRecovery.removePending(sessionId)
         clearPlaybackIntent(sessionId)
         val wasFocused = focusedSessionId == sessionId
+        videoOutputs.detachPlayer(sessionId)
         sessionManager.remove(sessionId)?.release()
         statePersistence.removeSession(sessionId)
         if (wasFocused) {
@@ -1098,6 +1104,7 @@ class NativePlaybackService : MediaSessionService() {
         restoreCoordinator.cancelRestartRestore()
         focusRecovery.clearInterruptionState()
         playbackRecovery.clearAll()
+        videoOutputs.clear()
         sessionManager.forEach { it.release() }
         sessionManager.clear()
         mediaSessionHost.release("clear_all")
@@ -1214,6 +1221,7 @@ class NativePlaybackService : MediaSessionService() {
             isIntended = playbackRecovery::isIntended,
             isFocusPending = focusRecovery::isPending,
             isRecoveryPending = playbackRecovery::isPending,
+            shouldRetainPlayer = ::shouldRetainVideoPlayer,
             beforeRelease = { session ->
                 videoOutputs.detachPlayer(session.sessionId)
                 if (mediaSessionHost.current()?.player === session.playerOrNull()) {
@@ -1224,7 +1232,17 @@ class NativePlaybackService : MediaSessionService() {
         updateMediaSessionPlayer()
     }
 
-    private fun retirePausedSession(session: NativePlaybackSession): Map<String, Any?> = retireSession(session, "idle")
+    private fun shouldRetainVideoPlayer(session: NativePlaybackSession): Boolean =
+        shouldRetainPausedVideoPlayer(session.playerOrNull(), videoOutputs.hasOutput(session.sessionId))
+
+    private fun retirePausedSession(session: NativePlaybackSession): Map<String, Any?> {
+        // Keep the loaded decoder across pause and inline/fullscreen output handoff.
+        if (shouldRetainVideoPlayer(session)) {
+            session.applyTemporarySpeed(null)
+            return checkNotNull(publishSessionState(session.sessionId))
+        }
+        return retireSession(session, "idle")
+    }
 
     private fun retireSession(session: NativePlaybackSession, processingState: String): Map<String, Any?> {
         videoOutputs.detachPlayer(session.sessionId)
@@ -1442,19 +1460,28 @@ class NativePlaybackService : MediaSessionService() {
         statePersistence.cancelScheduledPersist()
         playbackRecovery.clearAll()
         videoOutputs.clear()
-        sessionManager.allSessions.forEach(::retirePausedSession)
+        sessionManager.allSessions.forEach { retireSession(it, "idle") }
         mediaSessionHost.release(reason)
     }
 
-    private fun stopIdleServiceAfterRestore(startId: Int, reason: String) {
+    private fun stopIdleServiceAfterRestore(startId: Int, reason: String, preserveVideo: Boolean = true) {
         statePersistence.persistNow()
-        releaseIdlePlaybackResources(reason)
+        val retainVideo = preserveVideo && stateListeners.isNotEmpty() &&
+            sessionManager.allSessions.any(::shouldRetainVideoPlayer)
+        if (retainVideo) {
+            // A paused video still belongs to the attached UI, even without a surface.
+            progressHeartbeat.stop()
+            statePersistence.stopTicker()
+        } else {
+            releaseIdlePlaybackResources(reason)
+        }
         foregroundCoordinator.cancelGrace()
         foregroundCoordinator.stopWatchdog()
         focusRecovery.abandon(reason = reason)
         releaseWakeLock()
         PlaybackKeepAliveAlarmScheduler.cancel(this)
         foregroundCoordinator.stop(reason = reason)
+        if (retainVideo) return
         logInfo("idle_exit_stop_self reason=$reason startId=$startId")
         stoppingForIdleExit = true
         publishController(null)

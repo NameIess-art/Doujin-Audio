@@ -8,6 +8,7 @@ import 'package:meta/meta.dart';
 
 import '../../../core/errors/native_result.dart';
 import '../../../core/immutable_collections.dart';
+import '../../../core/media/media_file_support.dart';
 import '../domain/audio_effects.dart';
 import 'native_playback_bridge.dart';
 
@@ -37,10 +38,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
 
   static Player _defaultPlayer() {
     final player = Player(
-      configuration: const PlayerConfiguration(
-        title: 'Doujin Audio',
-        vo: 'libmpv',
-      ),
+      configuration: const PlayerConfiguration(title: 'Doujin Audio'),
     );
     if (const bool.fromEnvironment('WINDOWS_TEST_NULL_AUDIO')) {
       (player.platform! as NativePlayer).setProperty('ao', 'null');
@@ -67,54 +65,84 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   VideoController? videoControllerForSession(String sessionId) {
     final session = _sessions[sessionId];
     final player = session?.player;
-    if (session == null || player == null || !session.wantsPlay) return null;
+    if (session == null || player == null) return null;
+    final generation = session.generation;
     if (session.videoController == null) {
+      final position = session.position;
+      // Changing from null output to the render context may emit an unload/EOF.
+      // Treat it as source preparation, preserving the user's playback intent.
+      session.opening = true;
       session.videoController = VideoController(
         player,
         configuration: _videoControllerConfiguration,
       );
       unawaited(
         _change(sessionId, (current) async {
-          await player.platform!.waitForVideoControllerInitializationIfAttached;
-          if (current.wantsPlay) await _playIfIdle(current);
+          try {
+            await player
+                .platform!
+                .waitForVideoControllerInitializationIfAttached;
+            if (generation != current.generation ||
+                !identical(current.player, player)) {
+              return;
+            }
+            await _loadVideoIfIdle(current, position: position);
+            if (!current.wantsPlay &&
+                position > Duration.zero &&
+                current.pendingStart == null &&
+                player.state.position != position) {
+              await player.seek(position);
+              current.position = position;
+            }
+            final controller = current.videoController;
+            final video = player.state.videoParams;
+            final width = video.dw;
+            final height = video.dh;
+            if (controller != null &&
+                (controller.rect.value?.width ?? 0) <= 0 &&
+                width != null &&
+                width > 0 &&
+                height != null &&
+                height > 0) {
+              // media_kit_video does not replay dimensions decoded before the
+              // controller subscribed. Seed that first size; later events resize it.
+              final rotated = video.rotate == 90 || video.rotate == 270;
+              await controller.setSize(
+                width: rotated ? height : width,
+                height: rotated ? width : height,
+              );
+            }
+          } finally {
+            if (generation == current.generation &&
+                identical(current.player, player)) {
+              current.opening = false;
+            }
+          }
         }),
       );
     }
     return session.videoController;
   }
 
-  Future<void> _playIfIdle(_WindowsPlaybackSession session) async {
-    if (!_isCurrent(session) || !session.wantsPlay) return;
+  Future<void> _loadVideoIfIdle(
+    _WindowsPlaybackSession session, {
+    Duration? position,
+  }) async {
+    if (!_isCurrent(session)) return;
     final player = session.player;
     if (player == null) return;
     final generation = session.generation;
     final native = player.platform;
     if (session.videoController != null &&
         native is NativePlayer &&
-        !player.state.completed &&
         await native.getProperty('playlist-pos') == '-1') {
-      if (!_isCurrent(session) ||
-          generation != session.generation ||
-          !session.wantsPlay) {
+      if (!_isCurrent(session) || generation != session.generation) {
         return;
       }
-      final ids = await session.nativeEntryIds(player);
-      if (!_isCurrent(session) ||
-          generation != session.generation ||
-          !identical(session.player, player) ||
-          !session.wantsPlay) {
-        return;
-      }
-      final index = ids.indexWhere(
-        (id) => session.nativeQueueIndices[id] == session.index,
-      );
-      if (index < 0) throw StateError('Current native entry is missing');
-      await player.jump(index);
-      if (_isCurrent(session) &&
-          generation == session.generation &&
-          session.wantsPlay) {
-        await player.play();
-      }
+      // Installing the render context can unload null output. Reuse the normal
+      // open/seek sequence so the saved position is applied after source loading.
+      session.position = position ?? session.position;
+      await _open(session);
     }
   }
 
@@ -184,6 +212,30 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
 
   Future<void> _releaseIfIdle(_WindowsPlaybackSession session) async {
     if (session.wantsPlay) {
+      return;
+    }
+    final video = session.player?.state.videoParams;
+    // Demuxed tracks identify video before its decoder produces dimensions.
+    final hasVideoTrack =
+        session.player?.state.tracks.video.any(
+          (track) =>
+              track.id != 'auto' && track.id != 'no' && track.albumart != true,
+        ) ??
+        false;
+    if (session.error == null &&
+        ((session.videoController != null &&
+                isVideoMediaFile(
+                  session.queue[session.index]['path'] as String? ??
+                      Uri.parse(
+                        session.queue[session.index]['uri'] as String,
+                      ).path,
+                )) ||
+            hasVideoTrack ||
+            ((video?.w ?? 0) > 0 && (video?.h ?? 0) > 0))) {
+      if (session.temporarySpeed != null) {
+        session.temporarySpeed = null;
+        await session.player?.setRate(session.speed);
+      }
       return;
     }
     await session.releasePlayer();
@@ -323,7 +375,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         session.retryStartedAt = null;
         session.retainedCurrentIndex = null;
         session.externalQueueRevision = 0;
-        if (session.wantsPlay) {
+        if (session.wantsPlay || session.videoController != null) {
           await _open(session);
         } else {
           await session.releasePlayer();
@@ -355,6 +407,21 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         ? session.position
         : null;
     try {
+      final platform = player.platform;
+      if (platform is NativePlayer && session.videoController == null) {
+        final items = session.stopAfterCurrentTrack
+            ? [session.queue[session.index]]
+            : session.queue;
+        final hasVideo = items.any(
+          (item) => isVideoMediaFile(
+            item['path'] as String? ?? Uri.parse(item['uri'] as String).path,
+          ),
+        );
+        // libmpv output needs an attached render context. Keep background video
+        // loaded with null output until VideoController installs that context.
+        await platform.setProperty('vo', 'null');
+        await platform.setProperty('vid', hasVideo ? 'auto' : 'no');
+      }
       final playlist = Playlist([
         if (session.stopAfterCurrentTrack)
           Media(session.queue[session.index]['uri'] as String)
@@ -368,7 +435,6 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
       }
       await session.mapNativeEntries(player);
       await _applyMode(session, force: true);
-      final platform = player.platform;
       if (platform is NativePlayer) {
         await platform.setProperty('volume-max', '300');
         await platform.setProperty('audio-pitch-correction', 'yes');
@@ -653,7 +719,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         await _open(session);
       } else if (session.pendingStart == null) {
         await session.player!.play();
-        await _playIfIdle(session);
+        await _loadVideoIfIdle(session);
       }
     });
   }
@@ -690,7 +756,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
       await session.player?.pause();
       await session.player?.seek(Duration.zero);
       session.position = Duration.zero;
-      await _releaseIfIdle(session);
+      await session.releasePlayer();
     });
   }
 

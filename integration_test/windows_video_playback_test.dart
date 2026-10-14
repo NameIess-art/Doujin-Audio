@@ -78,15 +78,53 @@ void registerWindowsVideoPlaybackTest() {
         await tester.pump();
         expect(find.byType(Video), findsNothing);
         expect(bridge.playerForSession('video'), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
         final playResult = await bridge.play('video');
         expect(playResult.isOk, true, reason: playResult.errorOrNull);
+        final player = bridge.playerForSession('video')!;
+        final loadDeadline = DateTime.now().add(const Duration(seconds: 15));
+        while (DateTime.now().isBefore(loadDeadline) &&
+            (!player.state.tracks.video.any((track) => track.id == '1') ||
+                player.state.duration <= Duration.zero ||
+                player.state.buffering)) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        if (!player.state.tracks.video.any((track) => track.id == '1')) {
+          final snapshot =
+              (await bridge.snapshot()).valueOrNull!.sessions.single;
+          final native = bridge.playerForSession('video')?.platform;
+          final tracks = native is NativePlayer
+              ? await native.getProperty('track-list')
+              : 'player released';
+          throw TestFailure(
+            'Video without surface: playerReleased=${native == null}, '
+            'playing=${snapshot.playing}, requested=${snapshot.playWhenReady}, '
+            'processing=${snapshot.processingState}, position=${snapshot.position}, '
+            'completed=${player.state.completed}, '
+            'tracks=${player.state.tracks.video}, nativeTracks=$tracks, '
+            'error=${snapshot.error}',
+          );
+        }
+        expect(
+          (await bridge.seek('video', const Duration(seconds: 12))).isOk,
+          true,
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(player.state.position.inMilliseconds, closeTo(12000, 1500));
+        final firstPause = await bridge.pause('video');
+        expect(firstPause.isOk, true);
+        expect(
+          firstPause.valueOrNull!.position.inMilliseconds,
+          closeTo(12000, 1500),
+        );
+        expect(bridge.playerForSession('video'), same(player));
+        await tester.pumpWidget(surface('video'));
         final surfaceDeadline = DateTime.now().add(const Duration(seconds: 15));
         while (DateTime.now().isBefore(surfaceDeadline) &&
             find.byType(Video).evaluate().isEmpty) {
           await tester.pump(const Duration(milliseconds: 50));
         }
         expect(find.byType(Video), findsOneWidget);
-        final player = bridge.playerForSession('video')!;
         final controller = tester.widget<Video>(find.byType(Video)).controller;
         final deadline = DateTime.now().add(const Duration(seconds: 15));
         while (DateTime.now().isBefore(deadline) &&
@@ -107,8 +145,15 @@ void registerWindowsVideoPlaybackTest() {
         await tester.pump(const Duration(milliseconds: 500));
         expect(controller.rect.value?.size, const Size(320, 180));
         expect(find.byType(Texture), findsOneWidget);
-        expect(player.state.position, greaterThan(Duration.zero));
+        expect(player.state.playing, false);
+        expect(player.state.position.inMilliseconds, closeTo(12000, 1500));
         expect(await player.screenshot(format: 'image/png'), isNotEmpty);
+        final initialPosition = player.state.position;
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(player.state.position, initialPosition);
+        expect((await bridge.play('video')).isOk, true);
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(player.state.playing, true);
 
         // The detail surface is removed while fullscreen owns the same session.
         await tester.pumpWidget(const SizedBox.shrink());
@@ -124,14 +169,32 @@ void registerWindowsVideoPlaybackTest() {
         final paused = await bridge.pause('video');
         expect(paused.isOk, true, reason: paused.errorOrNull);
         await tester.pump();
-        expect(bridge.playerForSession('video'), isNull);
-        expect(find.byType(Video), findsNothing);
-        final pausedPosition = paused.valueOrNull!.position;
+        expect(bridge.playerForSession('video'), same(player));
+        expect(find.byType(Video), findsOneWidget);
+        expect(await player.screenshot(format: 'image/png'), isNotEmpty);
+        expect(
+          (await bridge.seek('video', const Duration(seconds: 20))).isOk,
+          true,
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(player.state.playing, false);
+        expect(player.state.position.inMilliseconds, closeTo(20000, 100));
+        final pausedPosition = player.state.position;
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpWidget(surface('video'));
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(bridge.playerForSession('video'), same(player));
+        expect(
+          tester.widget<Video>(find.byType(Video)).controller,
+          same(controller),
+        );
+        expect(player.state.position, pausedPosition);
+        expect(await player.screenshot(format: 'image/png'), isNotEmpty);
         final resumed = await bridge.play('video');
         expect(resumed.isOk, true, reason: resumed.errorOrNull);
         final resumedPlayer = bridge.playerForSession('video');
         expect(resumedPlayer, isNotNull);
-        expect(resumedPlayer, isNot(same(player)));
+        expect(resumedPlayer, same(player));
         final resumeDeadline = DateTime.now().add(const Duration(seconds: 15));
         while (DateTime.now().isBefore(resumeDeadline) &&
             (!resumedPlayer!.state.playing ||
@@ -147,11 +210,14 @@ void registerWindowsVideoPlaybackTest() {
         final resumedController = tester
             .widget<Video>(find.byType(Video))
             .controller;
-        expect(resumedController, isNot(same(controller)));
+        expect(resumedController, same(controller));
         await bridge.pause('video');
         await tester.pump();
+        expect(bridge.playerForSession('video'), same(player));
+        expect(find.byType(Video), findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect((await bridge.removeSession('video')).isOk, true);
         expect(bridge.playerForSession('video'), isNull);
-        expect(find.byType(Video), findsNothing);
 
         final autoResult = await bridge.prepareSession(
           sessionId: 'autoVideo',
@@ -172,12 +238,43 @@ void registerWindowsVideoPlaybackTest() {
             (autoController.rect.value?.width ?? 0) <= 0) {
           await tester.pump(const Duration(milliseconds: 100));
         }
-        expect(autoController.rect.value?.size, const Size(320, 180));
+        if (autoController.rect.value?.size != const Size(320, 180)) {
+          final native = autoController.player.platform! as NativePlayer;
+          final properties = <String, String>{};
+          for (final name in [
+            'vo',
+            'vid',
+            'playlist-pos',
+            'idle-active',
+            'pause',
+            'time-pos',
+            'duration',
+            'track-list',
+            'video-params',
+          ]) {
+            properties[name] = await native.getProperty(name);
+          }
+          final snapshot =
+              (await bridge.snapshot()).valueOrNull!.sessions.single;
+          throw TestFailure(
+            'Auto video: $properties; '
+            'playing=${snapshot.playing}, requested=${snapshot.playWhenReady}, '
+            'processing=${snapshot.processingState}, error=${snapshot.error}; '
+            'videoParams=${autoController.player.state.videoParams}',
+          );
+        }
         expect(bridge.playerForSession('video'), isNull);
         await bridge.pause('autoVideo');
         await tester.pump();
-        expect(bridge.playerForSession('autoVideo'), isNull);
-        expect(find.byType(Video), findsNothing);
+        expect(
+          bridge.playerForSession('autoVideo'),
+          same(autoController.player),
+        );
+        expect(find.byType(Video), findsOneWidget);
+        expect(
+          await autoController.player.screenshot(format: 'image/png'),
+          isNotEmpty,
+        );
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
         await bridge.dispose();

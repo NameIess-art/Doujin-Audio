@@ -1038,18 +1038,115 @@ void main() {
     },
   );
 
-  test('paused video surfaces never create or retain a player', () async {
+  test('never-loaded paused video preparation stays lazy', () async {
     await prepare('one', deferred: true);
     expect(bridge.videoControllerForSession('one'), isNull);
     expect(players, isEmpty);
-    await bridge.play('one');
-    await bridge.pause('one');
-    expect(players.single.disposed, true);
-    expect(bridge.videoControllerForSession('one'), isNull);
     await bridge.setVolume('one', 1);
-    expect(players, hasLength(1));
+    expect(players, isEmpty);
     expect(bridge.playerForSession('one'), isNull);
   });
+
+  test(
+    'pause retains the video player and controller across surfaces',
+    () async {
+      await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse('https://example.com/one.mp4'),
+        title: 'one',
+        autoPlay: true,
+      );
+      final player = bridge.playerForSession('one');
+      final platform = players.single;
+      platform.loaded();
+      final controller = bridge.videoControllerForSession('one');
+      expect(controller, isNotNull);
+      platform.videoControllerCompleter.complete();
+      await bridge.setTemporarySpeed('one', 2);
+      await bridge.seek('one', const Duration(seconds: 18));
+      final paused = await bridge.pause('one');
+      expect(paused.isOk, true);
+      expect(paused.valueOrNull!.playing, false);
+      expect(paused.valueOrNull!.playWhenReady, false);
+      expect(bridge.playerForSession('one'), same(player));
+      expect(bridge.videoControllerForSession('one'), same(controller));
+      expect(platform.disposed, false);
+      expect(platform.state.rate, 1);
+      await bridge.seek('one', const Duration(seconds: 24));
+      expect(platform.seeks.last, const Duration(seconds: 24));
+      expect(platform.state.playing, false);
+      await bridge.play('one');
+      expect(players, hasLength(1));
+      expect(bridge.playerForSession('one'), same(player));
+      expect(bridge.videoControllerForSession('one'), same(controller));
+      expect((await bridge.stop('one')).isOk, true);
+      expect(bridge.playerForSession('one'), isNull);
+      expect(bridge.videoControllerForSession('one'), isNull);
+      expect(platform.disposed, true);
+      await bridge.removeSession('one');
+      expect(platform.disposed, true);
+    },
+  );
+
+  test(
+    'an earlier video controller does not retain a paused audio track',
+    () async {
+      await prepare('one');
+      final platform = players.single;
+      platform.loaded();
+      expect(bridge.videoControllerForSession('one'), isNotNull);
+      platform.videoControllerCompleter.complete();
+      await bridge.pause('one');
+      expect(bridge.playerForSession('one'), isNull);
+      expect(platform.disposed, true);
+    },
+  );
+
+  test(
+    'loaded video stays available when first attached after pause',
+    () async {
+      await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse('https://example.com/two.mp4'),
+        title: 'two',
+        queue: [
+          {'uri': 'https://example.com/one.mp4', 'title': 'one'},
+          {'uri': 'https://example.com/two.mp4', 'title': 'two'},
+        ],
+        queueStartIndex: 1,
+        autoPlay: true,
+      );
+      final player = bridge.playerForSession('one');
+      final platform = players.single;
+      platform.loaded();
+      platform.state = platform.state.copyWith(
+        tracks: const Tracks(
+          video: [VideoTrack('1', null, null, w: 320, h: 180)],
+        ),
+      );
+      await bridge.seek('one', const Duration(seconds: 32));
+      await bridge.pause('one');
+      expect(bridge.playerForSession('one'), same(player));
+      expect(platform.disposed, false);
+      final controller = bridge.videoControllerForSession('one');
+      expect(controller, isNotNull);
+      platform.videoControllerCompleter.complete();
+      await bridge.setVolume('one', 1);
+      expect(players, hasLength(1));
+      expect(platform.opens, 1);
+      expect(platform.state.playlist.index, 1);
+      expect(platform.plays, 1);
+      expect(platform.seeks, [const Duration(seconds: 32)]);
+      expect(platform.state.playing, false);
+      expect(bridge.videoControllerForSession('one'), same(controller));
+      final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(snapshot.position, const Duration(seconds: 32));
+      expect(snapshot.playWhenReady, false);
+      expect(snapshot.queueIndex, 1);
+      await bridge.pause('one');
+      expect(platform.disposed, false);
+    },
+  );
 
   test(
     'completed playback releases its decoder even before the playing event arrives',

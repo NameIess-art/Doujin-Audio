@@ -18,6 +18,7 @@ import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import 'playlist_loop_widgets.dart';
 import 'playlist_shared_helpers.dart';
+import 'session_detail_theme.dart';
 
 // Seven 50px controls plus the scroll view's 8px horizontal insets.
 const double _kPlaybackSecondaryControlsWidth = 366;
@@ -213,8 +214,6 @@ class _PlaybackPrimaryControls extends StatelessWidget {
         enabled && (session.position.inSeconds > 3 || hasPrevious);
     final canNext = enabled && hasNext;
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return SizedBox(
       height: 92,
       child: LayoutBuilder(
@@ -231,7 +230,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
           return Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _PrimaryTransportButton(
+              PrimaryTransportButton(
                 tooltip: i18n.tr('previous_track'),
                 constraints: sideBox,
                 enabled: canPrevious,
@@ -244,7 +243,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   playback.seekSessionToPrev(session.id);
                 },
               ),
-              _PrimaryTransportButton(
+              PrimaryTransportButton(
                 constraints: sideBox,
                 enabled: enabled,
                 icon: Icons.replay_5_rounded,
@@ -260,20 +259,10 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                 },
               ),
               Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: enabled ? primaryColor : cs.surfaceContainerHighest,
-                  boxShadow: enabled
-                      ? [
-                          BoxShadow(
-                            color: primaryColor.withValues(
-                              alpha: isDark ? 0.38 : 0.24,
-                            ),
-                            blurRadius: 18,
-                            offset: const Offset(0, 4),
-                          ),
-                        ]
-                      : null,
+                decoration: sessionDetailPlayButtonDecoration(
+                  context,
+                  primaryColor,
+                  enabled: enabled,
                 ),
                 child: IconButton(
                   tooltip: showPauseIcon ? i18n.tr('pause') : i18n.tr('play'),
@@ -315,7 +304,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                         ),
                 ),
               ),
-              _PrimaryTransportButton(
+              PrimaryTransportButton(
                 constraints: sideBox,
                 enabled: enabled,
                 icon: Icons.forward_5_rounded,
@@ -330,7 +319,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   );
                 },
               ),
-              _PrimaryTransportButton(
+              PrimaryTransportButton(
                 tooltip: i18n.tr('next_track'),
                 constraints: sideBox,
                 enabled: canNext,
@@ -551,15 +540,9 @@ class _PlaybackSecondaryControlsState
             ),
             Expanded(
               child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 6,
-                  thumbShape: const RoundSliderThumbShape(
-                    enabledThumbRadius: 6,
-                  ),
-                  overlayShape: const RoundSliderOverlayShape(
-                    overlayRadius: 14,
-                  ),
-                  activeTrackColor: isBoosted ? cs.primary : null,
+                data: sessionDetailVolumeSliderTheme(
+                  context,
+                  isBoosted: isBoosted,
                 ),
                 child: Slider(
                   key: const ValueKey('session_volume_slider'),
@@ -721,8 +704,9 @@ class _PlaybackSecondaryControlsState
   }
 }
 
-class _PrimaryTransportButton extends StatelessWidget {
-  const _PrimaryTransportButton({
+class PrimaryTransportButton extends StatelessWidget {
+  const PrimaryTransportButton({
+    super.key,
     required this.constraints,
     required this.enabled,
     required this.icon,

@@ -1,6 +1,56 @@
 import 'package:flutter/material.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 
+SliderThemeData sessionDetailProgressSliderTheme(
+  BuildContext context,
+  Color primaryColor,
+) => SliderTheme.of(context).copyWith(
+  trackHeight: 3,
+  thumbShape: const RoundSliderThumbShape(
+    enabledThumbRadius: 6,
+    elevation: 2,
+    pressedElevation: 5,
+  ),
+  overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+  activeTrackColor: primaryColor,
+  inactiveTrackColor: primaryColor.withValues(alpha: 0.22),
+  thumbColor: primaryColor,
+  overlayColor: primaryColor.withValues(alpha: 0.15),
+);
+
+SliderThemeData sessionDetailVolumeSliderTheme(
+  BuildContext context, {
+  required bool isBoosted,
+}) => SliderTheme.of(context).copyWith(
+  trackHeight: 6,
+  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+  overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+  activeTrackColor: isBoosted ? Theme.of(context).colorScheme.primary : null,
+);
+
+BoxDecoration sessionDetailPlayButtonDecoration(
+  BuildContext context,
+  Color primaryColor, {
+  required bool enabled,
+}) {
+  final theme = Theme.of(context);
+  return BoxDecoration(
+    shape: BoxShape.circle,
+    color: enabled ? primaryColor : theme.colorScheme.surfaceContainerHighest,
+    boxShadow: enabled
+        ? [
+            BoxShadow(
+              color: primaryColor.withValues(
+                alpha: theme.brightness == Brightness.dark ? 0.38 : 0.24,
+              ),
+              blurRadius: 18,
+              offset: const Offset(0, 4),
+            ),
+          ]
+        : null,
+  );
+}
+
 ThemeData createAsmrSessionDetailTheme(ThemeData base, AppDesignTokens tokens) {
   final scheme = base.colorScheme.copyWith(
     primary: tokens.asmrAccent,

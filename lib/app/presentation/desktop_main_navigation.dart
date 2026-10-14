@@ -519,17 +519,24 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                     duration: motionDuration,
                     curve: Curves.easeInOut,
                     onEnd: _finishMotion,
-                    builder: (context, width, child) => ClipRect(
-                      child: SizedBox(
-                        width: width,
-                        child: OverflowBox(
-                          alignment: Alignment.topLeft,
-                          minWidth: 0,
-                          maxWidth: railMinExtendedWidth,
-                          child: child,
+                    builder: (context, width, child) {
+                      final maxWidth = isMenuCollapsed
+                          ? width
+                          : (width < railMinWidth + 8.0
+                              ? railMinWidth + 8.0
+                              : width);
+                      return ClipRect(
+                        child: SizedBox(
+                          width: width,
+                          child: OverflowBox(
+                            alignment: Alignment.topLeft,
+                            minWidth: width,
+                            maxWidth: maxWidth,
+                            child: child,
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                     child: rail,
                   ),
                 );

@@ -6509,119 +6509,237 @@ void main() {
     expect(disabledSwitcher.reverseDuration, Duration.zero);
   });
 
-  testWidgets('playlist cards show loading spinners without loading text', (
-    tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final track = MusicTrack(
-      path: '/library/work/loading.mp3',
-      displayName: 'Loading track',
-      groupKey: '/library/work',
-      groupTitle: 'Work',
-      groupSubtitle: '/library/work',
-      isSingle: false,
-    );
-    fixture.runtimeGraph.library.addTracks(
-      <MusicTrack>[track],
-      persist: false,
-    );
-    final trackSession = fixture.runtimeGraph.playback.createTrackSession(track)
-      ..state = const PlayerState(true, ProcessingState.buffering)
-      ..beginPreparation(showLoading: true, autoPlay: true);
-    final queueSession =
-        fixture.runtimeGraph.playback.createPlaybackQueue('Loading queue')
-          ..state = const PlayerState(true, ProcessingState.buffering)
-          ..currentTrackPath = track.path
-          ..playbackQueue = PlaybackQueueDefinition(
-            name: 'Loading queue',
-            entries: <PlaybackQueueEntry>[
-              PlaybackQueueEntry(
-                id: 'loading-entry',
-                kind: PlaybackQueueEntryKind.track,
-                title: track.displayName,
-                tracks: <MusicTrack>[track],
-              ),
-            ],
-          )
-          ..beginPreparation(showLoading: true, autoPlay: true);
-    addTearDown(trackSession.shutdown);
-    addTearDown(queueSession.shutdown);
-    fixture.playbackService.syncSlice(
-      activeSessions: <PlaybackSession>[trackSession, queueSession],
-      playingSessionCount: 2,
-      focusedSessionId: trackSession.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
-
-    await tester.pumpWidget(fixture.build(const PlaylistTab()));
-    await tester.pump();
-
-    expect(
-      find.text(fixture.languageProvider.tr('playback_loading')),
-      findsNothing,
-    );
-    expect(find.byKey(const ValueKey('loading')), findsNothing);
-    await tester.pump(PlaybackSession.loadingIndicatorThreshold);
-    fixture.playbackService.syncSlice(
-      activeSessions: <PlaybackSession>[trackSession, queueSession],
-      playingSessionCount: 2,
-      focusedSessionId: trackSession.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
-    await tester.pump();
-    expect(find.byKey(const ValueKey('loading')), findsNWidgets(2));
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('failed playlist item keeps play control without retry text', (
-    tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture(
-      coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
-    );
-    addTearDown(fixture.dispose);
-    final track = MusicTrack(
-      path: '/library/work/failed.mp3',
-      displayName: 'Failed track',
-      groupKey: '/library/work',
-      groupTitle: 'Work',
-      groupSubtitle: '',
-      isSingle: false,
-    );
-    fixture.library.addTracks([track], persist: false);
-    final session = fixture.playback.createTrackSession(track)
-      ..finishPreparation(
-        0,
-        prepared: false,
-        autoPlay: false,
-        error: 'playback failed',
+  testWidgets(
+    'playlist cards show loading and failure spinners without loading text',
+    (tester) async {
+      final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        notificationsChannel,
+        (_) async => <String, Object?>{'ok': true, 'value': null},
       );
-    addTearDown(session.shutdown);
-    fixture.playbackService.syncSlice(
-      activeSessions: [session],
-      playingSessionCount: 0,
-      focusedSessionId: session.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
+      addTearDown(() => messenger.setMockMethodCallHandler(notificationsChannel, null));
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track = MusicTrack(
+        path: '/library/work/loading.mp3',
+        displayName: 'Loading track',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        groupSubtitle: '/library/work',
+        isSingle: false,
+      );
+      fixture.runtimeGraph.library.addTracks(<MusicTrack>[
+        track,
+      ], persist: false);
+      final trackSession =
+          fixture.runtimeGraph.playback.createTrackSession(track)
+            ..state = const PlayerState(false, ProcessingState.buffering)
+            ..beginPreparation(showLoading: true, autoPlay: false);
+      final queueSession =
+          fixture.runtimeGraph.playback.createPlaybackQueue('Loading queue')
+            ..state = const PlayerState(false, ProcessingState.buffering)
+            ..currentTrackPath = track.path
+            ..playbackQueue = PlaybackQueueDefinition(
+              name: 'Loading queue',
+              entries: <PlaybackQueueEntry>[
+                PlaybackQueueEntry(
+                  id: 'loading-entry',
+                  kind: PlaybackQueueEntryKind.track,
+                  title: track.displayName,
+                  tracks: <MusicTrack>[track],
+                ),
+              ],
+            )
+            ..beginPreparation(showLoading: true, autoPlay: false);
+      addTearDown(trackSession.shutdown);
+      addTearDown(queueSession.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[trackSession, queueSession],
+        playingSessionCount: 2,
+        focusedSessionId: trackSession.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
 
-    await tester.pumpWidget(fixture.build(const PlaylistTab()));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(ValueKey<String>('playlist_card_content_${session.id}')),
-      findsOneWidget,
-    );
-    expect(find.byTooltip(fixture.languageProvider.tr('play')), findsOneWidget);
-    expect(
-      find.text(fixture.languageProvider.tr('playback_failed_retry')),
-      findsNothing,
-    );
-  });
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pump();
+
+      expect(
+        find.text(fixture.languageProvider.tr('playback_loading')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('loading')), findsNothing);
+      await tester.pump(PlaybackSession.loadingIndicatorThreshold);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[trackSession, queueSession],
+        playingSessionCount: 2,
+        focusedSessionId: trackSession.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey('loading')), findsNWidgets(2));
+
+      for (final session in [trackSession, queueSession]) {
+        session.finishPreparation(
+          session.loadGeneration,
+          prepared: false,
+          autoPlay: false,
+          error: 'playback failed',
+        );
+        session.setOptimisticState(processingState: ProcessingState.idle);
+        fixture.playback.publishSessionState(session.id);
+      }
+      await pumpFiniteTransitions(tester);
+      expect(find.byKey(const ValueKey('loading')), findsNWidgets(2));
+
+      for (final session in [trackSession, queueSession]) {
+        session.beginTransportCommand(commandId: 1, playing: false);
+        session.setOptimisticState(processingState: ProcessingState.ready);
+        fixture.playback.publishSessionState(session.id);
+      }
+      await pumpFiniteTransitions(tester);
+      expect(find.byKey(const ValueKey('loading')), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'failed playlist item keeps a clickable spinner without retry text',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+      );
+      addTearDown(fixture.dispose);
+      final track = MusicTrack(
+        path: '/library/work/failed.mp3',
+        displayName: 'Failed track',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        groupSubtitle: '',
+        isSingle: false,
+      );
+      fixture.library.addTracks([track], persist: false);
+      final session = fixture.playback.createTrackSession(track)
+        ..finishPreparation(
+          0,
+          prepared: false,
+          autoPlay: false,
+          error: 'playback failed',
+        );
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await pumpFiniteTransitions(tester);
+      expect(
+        find.byKey(ValueKey<String>('playlist_card_content_${session.id}')),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip(fixture.languageProvider.tr('play')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('loading')), findsOneWidget);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.ancestor(
+                of: find.byKey(const ValueKey('loading')),
+                matching: find.byType(IconButton),
+              ),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      expect(
+        find.text(fixture.languageProvider.tr('playback_failed_retry')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'detail and carousel show spinners while loading or failed and recover',
+    (tester) async {
+      final harness = await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+        physicalSize: defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(3840, 2400)
+            : const Size(1080, 2400),
+      );
+      final session = harness.session;
+      final fixture = harness.fixture;
+
+      for (final carousel in [false, true]) {
+        if (carousel) {
+          await tester.pumpWidget(const SizedBox.shrink());
+          await pumpFiniteTransitions(tester);
+          await tester.pumpWidget(
+            fixture.build(
+              ActiveSessionCarousel(
+                sessions: [PlaybackSessionSnapshot.fromRuntime(session)],
+                onOpenSession: (_) {},
+              ),
+            ),
+          );
+          await pumpFiniteTransitions(tester);
+        }
+        final controls = carousel
+            ? find.byType(ActiveSessionCarousel)
+            : find.byType(TransportPlaybackControlPanel);
+        final spinner = find.descendant(
+          of: controls,
+          matching: find.byKey(const ValueKey('loading')),
+        );
+        expect(spinner, findsNothing);
+
+        session.setOptimisticState(processingState: ProcessingState.loading);
+        fixture.playback.publishSessionState(session.id);
+        await pumpFiniteTransitions(tester);
+        expect(spinner, findsNWidgets(carousel ? 3 : 1));
+
+        session.finishPreparation(
+          session.loadGeneration,
+          prepared: false,
+          autoPlay: false,
+          error: 'playback failed',
+        );
+        session.setOptimisticState(processingState: ProcessingState.idle);
+        fixture.playback.publishSessionState(session.id);
+        await pumpFiniteTransitions(tester);
+        expect(spinner, findsNWidgets(carousel ? 3 : 1));
+
+        session.beginTransportCommand(
+          commandId: session.transportCommandId + 1,
+          playing: false,
+        );
+        session.setOptimisticState(processingState: ProcessingState.ready);
+        fixture.playback.publishSessionState(session.id);
+        await pumpFiniteTransitions(tester);
+        expect(spinner, findsNothing);
+        expect(tester.takeException(), isNull);
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('playlist thumbnail updates for DPI and detail keeps quality', (
     tester,

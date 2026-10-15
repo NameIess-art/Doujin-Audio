@@ -413,7 +413,9 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                                         ),
                                       );
                                     },
-                                    child: cardState.isLoading
+                                    child:
+                                        cardState.isLoading ||
+                                            cardState.playbackError != null
                                         ? const SizedBox(
                                             key: ValueKey('loading'),
                                             width: 22,

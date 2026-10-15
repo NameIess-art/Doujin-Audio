@@ -1202,127 +1202,159 @@ void main() {
       },
     );
 
-    test(
-      'ASMR custom queue with subdirectories maintains enabled adjacent buttons and advances across folders and loop modes',
-      () async {
-        final firstTrack = MusicTrack(
-          path: 'https://example.com/asmr/disc1/01.mp3',
-          displayName: '01',
-          groupKey: 'asmr-work-1',
-          groupTitle: 'ASMR Work',
-          groupSubtitle: 'RJ000001',
-          isSingle: false,
-          remoteMetadataKind: 'asmr.one',
-          remoteMetadata: const <String, Object?>{
-            'trackDirectoryPath': 'Disc 1',
-            'playbackUrls': <String>['https://example.com/asmr/disc1/01.mp3'],
-          },
-        );
-        final secondTrack = MusicTrack(
-          path: 'https://example.com/asmr/disc2/02.mp3',
-          displayName: '02',
-          groupKey: 'asmr-work-1',
-          groupTitle: 'ASMR Work',
-          groupSubtitle: 'RJ000001',
-          isSingle: false,
-          remoteMetadataKind: 'asmr.one',
-          remoteMetadata: const <String, Object?>{
-            'trackDirectoryPath': 'Disc 2',
-            'playbackUrls': <String>['https://example.com/asmr/disc2/02.mp3'],
-          },
-        );
+    for (final mode in SessionLoopMode.values) {
+      test(
+        'ASMR custom queue follows the loop menu scope and flags for $mode',
+        () async {
+          final preparations = <Map<Object?, Object?>>[];
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+                if (call.method == NativePlaybackMethod.prepareSession) {
+                  preparations.add(call.arguments as Map<Object?, Object?>);
+                }
+                return <String, Object?>{'ok': true, 'value': null};
+              });
+          final tracks = [
+            _asmrTrack('Disc 1/01.mp3', directoryPath: 'Disc 1'),
+            _asmrTrack('Disc 2/02.mp3', directoryPath: 'Disc 2'),
+            _asmrTrack('Disc 1/03.mp3'),
+            _asmrTrack('04.mp3', directoryPath: '.'),
+          ];
+          await runtimeGraph.playback.spawnSessionWithQueue(
+            tracks,
+            loopMode: mode,
+          );
+          final session = runtimeGraph.playback.activeSessions.single;
+          await runtimeGraph.playback.toggleSessionPlayPause(session.id);
 
+          final expectedIndices = mode.isCrossFolder ? [0, 1, 2, 3] : [0, 2];
+          final preparation = preparations.last;
+          expect(
+            (preparation['queue'] as List).map((item) => (item as Map)['path']),
+            expectedIndices.map((index) => tracks[index].path),
+          );
+          expect(preparation['queueStartIndex'], 0);
+          expect(preparation['repeatOne'], mode == SessionLoopMode.single);
+          expect(
+            preparation['repeatAll'],
+            mode != SessionLoopMode.single && !mode.isOneShot,
+          );
+          expect(preparation['shuffle'], mode.isShuffle);
+
+          final automatic = runtimeGraph.playbackCommands.resolveAdvance(
+            session,
+            forward: true,
+          );
+          if (mode == SessionLoopMode.single) {
+            expect(automatic?.path, tracks.first.path);
+          } else {
+            expect(automatic?.queueIndex, isIn(expectedIndices.skip(1)));
+          }
+          expect(
+            runtimeGraph.playback.hasSessionAdjacentTrack(
+              session.id,
+              forward: true,
+            ),
+            isTrue,
+          );
+          await runtimeGraph.playback.seekSessionToNext(session.id);
+          expect(session.currentQueueIndex, isIn(expectedIndices.skip(1)));
+          if (!mode.isShuffle) {
+            expect(session.currentQueueIndex, mode.isCrossFolder ? 1 : 2);
+          }
+          expect(
+            (preparations.last['queue'] as List).map(
+              (item) => (item as Map)['path'],
+            ),
+            expectedIndices.map((index) => tracks[index].path),
+          );
+        },
+      );
+    }
+
+    test(
+      'ASMR folder switches refresh the native scope within the same work',
+      () async {
+        var loopSynchronization = Completer<void>();
+        final commands = <(String, Map<Object?, Object?>)>[];
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
-              if (call.method == NativePlaybackMethod.prepareSession) {
-                final args = call.arguments as Map<Object?, Object?>;
-                return <String, Object?>{
-                  'ok': true,
-                  'value': <String, Object?>{
-                    'sessionId': args['sessionId'] as String,
-                    'uri': args['uri'] as String,
-                    'path': args['path'] as String,
-                    'title': args['title'] as String,
-                    'playing': false,
-                    'playWhenReady': false,
-                    'processingState': 'ready',
-                    'positionMs': 0,
-                    'bufferedPositionMs': 0,
-                    'durationMs': 0,
-                    'volume': 1.0,
-                    'queueIndex': 0,
-                  },
-                };
+              if (call.method == NativePlaybackMethod.prepareSession ||
+                  call.method == NativePlaybackMethod.updateQueue) {
+                commands.add((
+                  call.method,
+                  call.arguments as Map<Object?, Object?>,
+                ));
+                if (call.method == NativePlaybackMethod.updateQueue &&
+                    !loopSynchronization.isCompleted) {
+                  loopSynchronization.complete();
+                }
               }
               return <String, Object?>{'ok': true, 'value': null};
             });
-
-        await runtimeGraph.playback.spawnSessionWithQueue(<MusicTrack>[
-          firstTrack,
-          secondTrack,
-        ], autoPlay: false);
-
+        final tracks = [
+          _asmrTrack('Disc 1/01.mp3', directoryPath: 'Disc 1'),
+          _asmrTrack('Disc 2/02.mp3', directoryPath: 'Disc 2'),
+          _asmrTrack('Disc 1/03.mp3'),
+          _asmrTrack('Disc 2/04.mp3'),
+          _asmrTrack('05.mp3', directoryPath: '.'),
+          _asmrTrack('Disc 1/01.mp3', directoryPath: 'Disc 1', workId: 2),
+        ];
+        await runtimeGraph.playback.spawnSessionWithQueue(tracks);
         final session = runtimeGraph.playback.activeSessions.single;
-        expect(session.currentTrackPath, firstTrack.path);
+        await runtimeGraph.playback.toggleSessionPlayPause(session.id);
 
-        // 1. In default folderSequential mode, buttons are enabled despite subdirectories
+        await runtimeGraph.playback.switchSessionQueueTrack(session.id, 1);
+        expect(commands.last.$2['queueStartIndex'], 0);
         expect(
-          runtimeGraph.playback.hasSessionAdjacentTrack(
-            session.id,
-            forward: true,
+          (commands.last.$2['queue'] as List).map(
+            (item) => (item as Map)['path'],
           ),
-          isTrue,
+          [tracks[1].path, tracks[3].path],
         );
-        expect(
-          runtimeGraph.playback.hasSessionAdjacentTrack(
-            session.id,
-            forward: false,
-          ),
-          isTrue,
-        );
-
-        // 2. hasSessionAdjacentTrack remains true even when session is loading
-        session.beginCompletionAdvance(
-          commandGeneration: session.playbackCommandGeneration,
-        );
-        expect(session.isLoading, isTrue);
-        expect(
-          runtimeGraph.playback.hasSessionAdjacentTrack(
-            session.id,
-            forward: true,
-          ),
-          isTrue,
-        );
-        session.confirmPaused();
-
-        // 3. Advancing skips across subdirectories to Disc 2
         await runtimeGraph.playback.seekSessionToNext(session.id);
-        await runtimeGraph.playback.pendingSessionPreparation;
-        expect(session.currentTrackPath, secondTrack.path);
+        expect(session.currentTrackPath, tracks[3].path);
+        expect(commands.last.$2['queueStartIndex'], 1);
+        await runtimeGraph.playback.seekSessionToPrev(session.id);
+        expect(session.currentTrackPath, tracks[1].path);
 
-        // 4. In single loop mode, buttons remain enabled and manual skips advance
         await runtimeGraph.playback.setSessionLoopMode(
           session.id,
-          SessionLoopMode.single,
+          SessionLoopMode.crossSequential,
         );
+        await loopSynchronization.future.timeout(const Duration(seconds: 5));
+        expect(commands.last.$1, NativePlaybackMethod.updateQueue);
         expect(
-          runtimeGraph.playback.hasSessionAdjacentTrack(
-            session.id,
-            forward: true,
+          (commands.last.$2['queue'] as List).map(
+            (item) => (item as Map)['path'],
           ),
-          isTrue,
+          tracks.map((track) => track.path),
         );
+
+        loopSynchronization = Completer<void>();
+        await runtimeGraph.playback.setSessionLoopMode(
+          session.id,
+          SessionLoopMode.folderSequential,
+        );
+        await loopSynchronization.future.timeout(const Duration(seconds: 5));
+        expect(commands.last.$1, NativePlaybackMethod.updateQueue);
+        expect(
+          (commands.last.$2['queue'] as List).map(
+            (item) => (item as Map)['path'],
+          ),
+          [tracks[1].path, tracks[3].path],
+        );
+
+        await runtimeGraph.playback.switchSessionQueueTrack(session.id, 4);
+        expect(commands.last.$2['queueStartIndex'], 0);
+        expect((commands.last.$2['queue'] as List), hasLength(1));
         expect(
           runtimeGraph.playback.hasSessionAdjacentTrack(
             session.id,
             forward: false,
           ),
-          isTrue,
+          isFalse,
         );
-
-        await runtimeGraph.playback.seekSessionToNext(session.id);
-        await runtimeGraph.playback.pendingSessionPreparation;
-        expect(session.currentTrackPath, firstTrack.path);
       },
     );
   });
@@ -1331,6 +1363,24 @@ void main() {
 
   // 鈹€鈹€ notification integration 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 }
+
+MusicTrack _asmrTrack(
+  String relativePath, {
+  String? directoryPath,
+  int workId = 1,
+}) => MusicTrack(
+  path: 'https://example.com/asmr/$workId/$relativePath',
+  displayName: relativePath,
+  groupKey: 'asmr-work-$workId',
+  groupTitle: 'ASMR Work',
+  groupSubtitle: 'RJ$workId',
+  isSingle: false,
+  remoteMetadataKind: 'asmr.one',
+  remoteMetadata: {
+    'trackRelativePath': relativePath,
+    'trackDirectoryPath': ?directoryPath,
+  },
+);
 
 class _RecordingCoverArtworkCacheService extends CoverArtworkCacheService {
   _RecordingCoverArtworkCacheService({

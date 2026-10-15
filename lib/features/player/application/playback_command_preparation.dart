@@ -728,9 +728,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         (session.loopMode.isCrossFolder || (hasCustomQueue && track == null));
     final scopeIdentity = singleTrackScope
         ? currentPath
-        : crossFolderScope
+        : crossFolderScope || track == null
         ? null
-        : track?.groupKey;
+        : _folderKeyForTrack(track);
     return Object.hash(
       session.queueVersion,
       singleTrackScope,

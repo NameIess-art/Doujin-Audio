@@ -62,9 +62,14 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final transport = ref.watch(
-      sessionDetailTransportProvider(
-        session.id,
-      ).select((state) => (state?.showPauseIcon, state?.isPlaybackLoading)),
+      sessionDetailTransportProvider(session.id).select(
+        (state) => (
+          state?.showPauseIcon,
+          state == null
+              ? null
+              : state.isPlaybackLoading || state.playbackError != null,
+        ),
+      ),
     );
     return _PlaybackControlPanel(
       session: session,
@@ -73,7 +78,7 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
       showPauseIcon: transport.$1 ?? session.playbackRequested,
       isLoading:
           transport.$2 ??
-          (session.isPlaybackLoading && session.playbackRequested),
+          (session.isPlaybackLoading || session.playbackError != null),
       hasSiblings: hasSiblings,
       segmentPanelExpanded: segmentPanelExpanded,
       hasSubtitle: hasSubtitle,

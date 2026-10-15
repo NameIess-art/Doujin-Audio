@@ -41,9 +41,7 @@ class _ActiveSessionCard extends ConsumerWidget {
         final currentSession = value ?? session;
         return (
           playing: currentSession.playbackRequested,
-          loading:
-              currentSession.isPlaybackLoading &&
-              currentSession.playbackRequested,
+          loading: currentSession.isPlaybackLoading,
           trackPath: currentSession.currentTrackPath,
           channelSwapEnabled: currentSession.channelSwapEnabled,
           audioEffects: currentSession.audioEffects,
@@ -308,7 +306,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                 builder: (context, ref, child) {
                   return _ActiveSessionPlayPauseButton(
                     showPauseIcon: isPlaying,
-                    isLoading: view.loading,
+                    isLoading: view.loading || view.error != null,
                     enabled: view.trackPath.isNotEmpty,
                     showTooltip: !embedded,
                     activeColor: activeColor,

@@ -661,7 +661,9 @@ class SessionListCard extends ConsumerWidget {
                                     ),
                                   );
                                 },
-                                child: cardState.isLoading
+                                child:
+                                    cardState.isLoading ||
+                                        cardState.playbackError != null
                                     ? const SizedBox(
                                         key: ValueKey('loading'),
                                         width: 22,

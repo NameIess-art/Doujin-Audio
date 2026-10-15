@@ -558,7 +558,7 @@ void main() {
 
     detailSession.beginTransportCommand(commandId: 1, playing: false);
     expect(view().isLoading, isTrue);
-    expect(view().isPlaybackLoading, isFalse);
+    expect(view().isPlaybackLoading, isTrue);
     expect(view().showPauseIcon, isFalse);
 
     detailSession.finishPreparation(

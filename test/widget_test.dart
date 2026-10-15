@@ -4862,7 +4862,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('ASMR playback errors show retry subtitle and play icon', (
+  testWidgets('ASMR playback errors show retry subtitle and retry spinner', (
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
@@ -5012,8 +5012,9 @@ void main() {
     );
     expect(find.text('network failed'), findsNothing);
     expect(inSessionCard(find.byIcon(Icons.pause_rounded)), findsNothing);
+    expect(inSessionCard(find.byIcon(Icons.play_arrow_rounded)), findsNothing);
     expect(
-      inSessionCard(find.byIcon(Icons.play_arrow_rounded)),
+      inSessionCard(find.byKey(const ValueKey('loading'))),
       findsOneWidget,
     );
     expect(find.byType(SessionFeatureBadgeStack), findsNothing);
@@ -5067,13 +5068,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
 
-    expect(inSessionCard(find.byType(CircularProgressIndicator)), findsNothing);
+    expect(inSessionCard(find.byType(CircularProgressIndicator)), findsOneWidget);
     expect(
       inSessionCard(find.text(languageProvider.tr('playback_loading'))),
-      findsNothing,
+      findsOneWidget,
     );
     expect(inSessionCard(find.byIcon(Icons.pause_rounded)), findsNothing);
-    expect(inSessionCard(find.byIcon(Icons.play_arrow_rounded)), findsWidgets);
+    expect(inSessionCard(find.byIcon(Icons.play_arrow_rounded)), findsNothing);
 
     session.setOptimisticState(
       playing: true,
@@ -5088,6 +5089,7 @@ void main() {
       isInitialized: true,
     );
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(inSessionCard(find.byType(CircularProgressIndicator)), findsNothing);
     expect(inSessionCard(find.byIcon(Icons.pause_rounded)), findsWidgets);

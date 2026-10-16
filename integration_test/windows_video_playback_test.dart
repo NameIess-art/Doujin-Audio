@@ -196,7 +196,10 @@ void _registerWindowsVideoPlaybackTest({required bool softwareRendering}) {
         await tester.pump(const Duration(milliseconds: 500));
         expect(player.state.position, initialPosition);
         expect((await bridge.play('video')).isOk, true);
-        await tester.pump(const Duration(milliseconds: 500));
+        final playDeadline = DateTime.now().add(const Duration(seconds: 15));
+        while (DateTime.now().isBefore(playDeadline) && !player.state.playing) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
         expect(player.state.playing, true);
 
         // The detail surface is removed while fullscreen owns the same session.

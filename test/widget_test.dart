@@ -4477,13 +4477,19 @@ void main() {
       );
       expect(closeRect.topLeft, const Offset(16, 30));
       expect(tester.getRect(find.byType(SessionDetailContent)).top, 0);
+      final coverRect = tester.getRect(
+        find.descendant(
+          of: find.byType(SessionDetailContent),
+          matching: find.byType(AspectRatio),
+        ),
+      );
       expect(
         tester
             .getRect(
               find.byKey(const ValueKey('title_marquee_orientation_session')),
             )
             .top,
-        40,
+        closeTo(coverRect.top, 0.5),
       );
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.padding = const FakeViewPadding(top: 32);
@@ -4573,11 +4579,17 @@ void main() {
         await tester.pumpAndSettle();
         final contentRect = tester.getRect(find.byType(SessionDetailContent));
         expect(contentRect.top, 0);
+        final coverRect = tester.getRect(
+          find.descendant(
+            of: find.byType(SessionDetailContent),
+            matching: find.byType(AspectRatio),
+          ),
+        );
         final title = find.byKey(
           const ValueKey('title_marquee_orientation_session'),
         );
         final titleRect = tester.getRect(title);
-        expect(titleRect.top, 40);
+        expect(titleRect.top, closeTo(coverRect.top, 0.5));
         tester.view.padding = FakeViewPadding.zero;
         tester.view.viewPadding = FakeViewPadding.zero;
         await tester.pumpAndSettle();

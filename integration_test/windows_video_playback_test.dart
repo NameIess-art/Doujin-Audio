@@ -16,6 +16,11 @@ void main() {
   registerWindowsVideoPlaybackTest();
 }
 
+const _isHeadlessTest = bool.fromEnvironment(
+  'WINDOWS_TEST_NULL_AUDIO',
+  defaultValue: false,
+);
+
 void registerWindowsVideoPlaybackTest() {
   _registerWindowsVideoPlaybackTest(softwareRendering: false);
   _registerWindowsVideoPlaybackTest(softwareRendering: true);
@@ -329,7 +334,12 @@ void _registerWindowsVideoPlaybackTest({required bool softwareRendering}) {
         await directory.delete(recursive: true);
       }
     }),
-    skip: !Platform.isWindows,
+    skip: !Platform.isWindows ||
+        (!softwareRendering &&
+            (_isHeadlessTest ||
+                Platform.environment['CI']?.trim().toLowerCase() == 'true' ||
+                Platform.environment['GITHUB_ACTIONS']?.trim().toLowerCase() ==
+                    'true')),
   );
 }
 

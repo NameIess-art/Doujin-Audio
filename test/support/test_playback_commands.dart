@@ -2,6 +2,7 @@ import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_command_port.dart';
 import 'package:doujin_audio/features/player/application/playback_queue_resolver.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 
 typedef PlaybackSessionPreparer =
     Future<bool> Function(
@@ -41,6 +42,9 @@ extension TestPlaybackCommands on PlaybackFacade {
         startSession: startSession,
         resolveAdvance: resolveAdvance,
         hasAdjacent: hasAdjacent,
+        handleNativeSnapshot: (snapshot) {
+          applyNativeSnapshot(snapshot, hasLibraryTrack: (_) => false);
+        },
       ),
     );
   }
@@ -53,17 +57,24 @@ final class _DelegatePlaybackCommandPort implements PlaybackCommandPort {
     required PlaybackSessionStarter startSession,
     required PlaybackAdvanceResolver resolveAdvance,
     required PlaybackAdjacentResolver hasAdjacent,
+    required void Function(NativePlaybackSnapshot) handleNativeSnapshot,
   }) : _prepareSession = prepareSession,
        _pauseSession = pauseSession,
        _startSession = startSession,
        _resolveAdvance = resolveAdvance,
-       _hasAdjacent = hasAdjacent;
+       _hasAdjacent = hasAdjacent,
+       _handleNativeSnapshot = handleNativeSnapshot;
 
   final PlaybackSessionPreparer _prepareSession;
   final PlaybackSessionPauser _pauseSession;
   final PlaybackSessionStarter _startSession;
   final PlaybackAdvanceResolver _resolveAdvance;
   final PlaybackAdjacentResolver _hasAdjacent;
+  final void Function(NativePlaybackSnapshot) _handleNativeSnapshot;
+
+  @override
+  void handleNativeSnapshot(NativePlaybackSnapshot snapshot) =>
+      _handleNativeSnapshot(snapshot);
 
   @override
   Future<bool> prepareSession(

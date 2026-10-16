@@ -39,6 +39,62 @@ import org.robolectric.util.ReflectionHelpers
 @Config(sdk = [33], manifest = Config.NONE)
 class NativePlaybackCommandSnapshotTest {
     @Test
+    fun `early pause retains video before tracks or a surface are available`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(service, "getSessionManager")
+        val session = sessions.getOrCreate("video")
+        val descriptor = NativeMediaItemDescriptor(
+            "content://media/document/primary%3AMovies%2Fclip.MP4", "file:///clip.mp4", "Clip", null, null
+        )
+        session.configure(
+            descriptor = descriptor, queue = listOf(descriptor), queueStartIndex = 0,
+            startPositionMs = 12_000L, volume = 1f, speed = 1f,
+            repeatOne = false, repeatAll = false, shuffleModeEnabled = false, autoPlay = true
+        )
+        val player = checkNotNull(session.playerOrNull())
+        service.addStateListener("ui") { }
+        try {
+            assertEquals(Tracks.EMPTY, player.currentTracks)
+            assertEquals(VideoSize.UNKNOWN, player.videoSize)
+            assertEquals(true, service.pause("video")["ok"])
+            assertSame(session, sessions.get("video"))
+            assertSame(player, session.playerOrNull())
+            assertFalse(player.playWhenReady)
+            assertEquals(12_000L, player.currentPosition)
+            service.pauseAll()
+            assertSame(player, session.playerOrNull())
+
+            var boundPlayer: Player? = null
+            val output = object : NativeVideoOutputBinding<Player> {
+                override fun bindPlayer(player: Player?) { boundPlayer = player }
+                override fun setKeepScreenOn(keepScreenOn: Boolean) = Unit
+            }
+            service.registerVideoOutput("video", "inline", output)
+            assertSame(player, boundPlayer)
+            service.unregisterVideoOutput("video", "inline")
+            assertNull(boundPlayer)
+            service.registerVideoOutput("video", "fullscreen", output)
+            assertSame(player, boundPlayer)
+            service.unregisterVideoOutput("video", "fullscreen")
+
+            fun expireIdle() = ReflectionHelpers.callInstanceMethod<Unit>(service, "stopIdleServiceAfterRestore",
+                ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType!!, 0),
+                ReflectionHelpers.ClassParameter.from(String::class.java, "test_idle"),
+                ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType!!, true)
+            )
+            expireIdle()
+            assertSame(player, session.playerOrNull())
+            service.removeStateListener("ui")
+            expireIdle()
+            assertNull(session.playerOrNull())
+            assertNull(sessions.get("video"))
+        } finally {
+            session.release()
+            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence").shutdown()
+        }
+    }
+
+    @Test
     fun `pause and pause all retain the player attached to a video output`() {
         val service = Robolectric.buildService(NativePlaybackService::class.java).get()
         val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(service, "getSessionManager")

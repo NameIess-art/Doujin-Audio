@@ -14,8 +14,6 @@ import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
 
-private const val SURFACE_REFRESH_DEBOUNCE_MS = 120L
-
 class NativeVideoPlatformViewFactory : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
     companion object {
         const val viewType = "com.doujin.audio/native_video_surface"
@@ -41,28 +39,9 @@ private class NativeVideoPlatformView(
     private val ownerId = "native-video-$viewId-${System.identityHashCode(this)}"
     private val stateListenerId = "$ownerId-state"
     private var boundService: NativePlaybackService? = null
-    private var boundPlayer: Player? = null
     private var disposed = false
-    private val surfaceRefreshRunnable = Runnable(::refreshVideoSurface)
-    private val attachStateListener = object : View.OnAttachStateChangeListener {
-        override fun onViewAttachedToWindow(view: View) {
-            scheduleVideoSurfaceRefresh()
-        }
-
-        override fun onViewDetachedFromWindow(view: View) {
-            playerView.removeCallbacks(surfaceRefreshRunnable)
-        }
-    }
-    private val layoutChangeListener = View.OnLayoutChangeListener {
-            _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-        val sizeChanged = right - left != oldRight - oldLeft ||
-            bottom - top != oldBottom - oldTop
-        if (sizeChanged) scheduleVideoSurfaceRefresh()
-    }
 
     init {
-        playerView.addOnAttachStateChangeListener(attachStateListener)
-        playerView.addOnLayoutChangeListener(layoutChangeListener)
         if (sessionId.isNotEmpty()) {
             NativePlaybackService.addControllerListener(ownerId) { service ->
                 playerView.post { if (!disposed) connectToPlaybackService(service) }
@@ -77,9 +56,6 @@ private class NativeVideoPlatformView(
         if (disposed) return
         disposed = true
         NativePlaybackService.removeControllerListener(ownerId)
-        playerView.removeCallbacks(surfaceRefreshRunnable)
-        playerView.removeOnAttachStateChangeListener(attachStateListener)
-        playerView.removeOnLayoutChangeListener(layoutChangeListener)
         boundService?.let { service ->
             service.removeStateListener(stateListenerId)
             service.unregisterVideoOutput(sessionId, ownerId)
@@ -90,8 +66,6 @@ private class NativeVideoPlatformView(
     }
 
     override fun bindPlayer(player: Player?) {
-        if (boundPlayer === player && playerView.player === player) return
-        boundPlayer = player
         playerView.player = player
     }
 
@@ -120,20 +94,5 @@ private class NativeVideoPlatformView(
                 }
             }
         }
-    }
-
-    private fun scheduleVideoSurfaceRefresh() {
-        if (disposed || boundService == null) return
-        playerView.removeCallbacks(surfaceRefreshRunnable)
-        playerView.postDelayed(surfaceRefreshRunnable, SURFACE_REFRESH_DEBOUNCE_MS)
-    }
-
-    private fun refreshVideoSurface() {
-        if (disposed || !playerView.isAttachedToWindow) return
-        boundService?.refreshVideoOutput(
-            sessionId,
-            ownerId,
-            forceRebind = true
-        )
     }
 }

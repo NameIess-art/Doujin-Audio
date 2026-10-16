@@ -28,6 +28,7 @@ class NativeSessionVideoSurface extends StatefulWidget {
 
 class _NativeSessionVideoSurfaceState extends State<NativeSessionVideoSurface> {
   StreamSubscription<NativePlaybackSnapshot>? _subscription;
+  VideoController? _controller;
 
   @override
   void initState() {
@@ -37,8 +38,17 @@ class _NativeSessionVideoSurfaceState extends State<NativeSessionVideoSurface> {
 
   void _subscribeToRuntime() {
     if (!Platform.isWindows) return;
+    _controller = widget.nativeRepository.videoControllerForSession(
+      widget.sessionId,
+    );
     _subscription = widget.nativeRepository.snapshots.listen((snapshot) {
-      if (mounted && snapshot.sessionId == widget.sessionId) setState(() {});
+      if (!mounted || snapshot.sessionId != widget.sessionId) return;
+      final controller = widget.nativeRepository.videoControllerForSession(
+        widget.sessionId,
+      );
+      if (!identical(controller, _controller)) {
+        setState(() => _controller = controller);
+      }
     });
   }
 
@@ -66,9 +76,8 @@ class _NativeSessionVideoSurfaceState extends State<NativeSessionVideoSurface> {
   @override
   Widget build(BuildContext context) {
     final sessionId = widget.sessionId;
-    final nativeRepository = widget.nativeRepository;
     if (Platform.isWindows) {
-      final controller = nativeRepository.videoControllerForSession(sessionId);
+      final controller = _controller;
       if (controller == null) return const SizedBox.shrink();
       return Video(
         key: ValueKey<String>('native_video_surface_$sessionId'),

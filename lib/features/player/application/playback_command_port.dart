@@ -1,5 +1,6 @@
 import 'playback_queue_resolver.dart';
 import 'playback_session.dart';
+import 'native_playback_bridge.dart';
 
 abstract interface class PlaybackCommandPort {
   Future<bool> prepareSession(
@@ -17,6 +18,8 @@ abstract interface class PlaybackCommandPort {
   });
 
   Future<bool> pauseSession(PlaybackSession session);
+
+  void handleNativeSnapshot(NativePlaybackSnapshot snapshot);
 
   PlaybackAdvanceResult? resolveAdvance(
     PlaybackSession session, {

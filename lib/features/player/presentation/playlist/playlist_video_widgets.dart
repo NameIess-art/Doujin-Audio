@@ -115,7 +115,6 @@ class _SessionVideoFullscreenPageState
   bool _exitScheduled = false;
   bool _exitRunning = false;
   bool _allowPop = false;
-  bool? _lastPlaying;
   bool _sliderInteracting = false;
   final _sliderPositionMs = ValueNotifier<double?>(null);
   double _brightness = 0.5;
@@ -162,6 +161,9 @@ class _SessionVideoFullscreenPageState
         .read(libraryFacadeProvider)
         .playbackCoverPathFutureForTrack(track);
     _brightness = widget.fullscreenLease.initialBrightness ?? 0.5;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scheduleControlsHide();
+    });
   }
 
   @override
@@ -222,17 +224,6 @@ class _SessionVideoFullscreenPageState
     if (!mounted) return;
     setState(() => _allowPop = true);
     Navigator.of(context).pop();
-  }
-
-  void _syncPlaying(bool playing) {
-    if (_lastPlaying == playing) return;
-    _lastPlaying = playing;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_controlsVisible && !_sliderInteracting) {
-        _scheduleControlsHide();
-      }
-    });
   }
 
   void _scheduleControlsHide() {
@@ -468,7 +459,9 @@ class _SessionVideoFullscreenPageState
       max(1, MediaQuery.sizeOf(context).width - 48),
     );
     if (zone == SessionVideoGestureZone.center) {
-      final playing = _lastPlaying == true;
+      final playing =
+          _playback.sessionSnapshotById(widget.sessionId)?.playbackRequested ==
+          true;
       unawaited(
         AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
       );
@@ -621,7 +614,6 @@ class _SessionVideoFullscreenPageState
           .playbackCoverPathFutureForTrack(track);
     }
     final playing = detail?.isPlaying == true;
-    _syncPlaying(playing);
     final library = ref.read(libraryFacadeProvider);
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(

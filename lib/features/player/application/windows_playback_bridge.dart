@@ -66,8 +66,8 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     final session = _sessions[sessionId];
     final player = session?.player;
     if (session == null || player == null) return null;
-    final generation = session.generation;
     if (session.videoController == null) {
+      final generation = session.generation;
       final position = session.position;
       // Changing from null output to the render context may emit an unload/EOF.
       // Treat it as source preparation, preserving the user's playback intent.
@@ -85,6 +85,14 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
             if (generation != current.generation ||
                 !identical(current.player, player)) {
               return;
+            }
+            final native = player.platform;
+            if (native is NativePlayer) {
+              // Switching output before its render context exists can disable
+              // video while audio keeps the file loaded. Reset the saved auto
+              // selection before selecting again; another auto alone is ignored.
+              await native.setProperty('vid', 'no');
+              await native.setProperty('vid', 'auto');
             }
             await _loadVideoIfIdle(current, position: position);
             if (!current.wantsPlay &&
@@ -222,14 +230,13 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
               track.id != 'auto' && track.id != 'no' && track.albumart != true,
         ) ??
         false;
+    // Pause may arrive before tracks, dimensions or the first surface exist.
+    // Keep a known video source loaded so it can still produce its paused frame.
     if (session.error == null &&
-        ((session.videoController != null &&
-                isVideoMediaFile(
-                  session.queue[session.index]['path'] as String? ??
-                      Uri.parse(
-                        session.queue[session.index]['uri'] as String,
-                      ).path,
-                )) ||
+        (isVideoMediaFile(
+              session.queue[session.index]['path'] as String? ??
+                  Uri.parse(session.queue[session.index]['uri'] as String).path,
+            ) ||
             hasVideoTrack ||
             ((video?.w ?? 0) > 0 && (video?.h ?? 0) > 0))) {
       if (session.temporarySpeed != null) {
@@ -528,8 +535,12 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
       }),
       player.stream.playing.listen((_) => _emit(session)),
       player.stream.completed.listen((completed) {
-        if (!_isCurrent(session) || !identical(session.player, player)) return;
-        if (completed && !session.opening && session.error == null) {
+        if (!_isCurrent(session) ||
+            !identical(session.player, player) ||
+            session.opening) {
+          return;
+        }
+        if (completed && session.error == null) {
           session.wantsPlay = false;
           session.completed = true;
         }
@@ -731,7 +742,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   }) {
     final current = _sessions[sessionId];
     if (current != null) {
-      current.commandId = transportCommandId;
+      if (transportCommandId > 0) current.commandId = transportCommandId;
       current.wantsPlay = false;
       current.cancelRetry();
     }

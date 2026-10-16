@@ -5,6 +5,7 @@ import 'package:doujin_audio/features/player/application/windows_playback_bridge
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_surface.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:media_kit/media_kit.dart';
@@ -16,18 +17,24 @@ void main() {
 }
 
 void registerWindowsVideoPlaybackTest() {
+  _registerWindowsVideoPlaybackTest(softwareRendering: false);
+  _registerWindowsVideoPlaybackTest(softwareRendering: true);
+}
+
+void _registerWindowsVideoPlaybackTest({required bool softwareRendering}) {
   testWidgets(
-    'Windows renders video and reuses the player across surfaces',
+    'Windows renders video and reuses the player across surfaces (software=$softwareRendering)',
     (tester) => tester.runAsync(() async {
       MediaKit.ensureInitialized();
       final directory = await Directory.systemTemp.createTemp('windows_video_');
       final file = File('${directory.path}/中文 video.mp4');
-      // CI runners may have no usable GPU or hardware video decoder.
       final bridge = WindowsPlaybackBridge(
-        videoControllerConfiguration: const VideoControllerConfiguration(
-          enableHardwareAcceleration: false,
-          hwdec: 'no',
-        ),
+        videoControllerConfiguration: softwareRendering
+            ? const VideoControllerConfiguration(
+                enableHardwareAcceleration: false,
+                hwdec: 'no',
+              )
+            : const VideoControllerConfiguration(),
       )..startListening();
       final repository = NativePlaybackRepository(bridge: bridge);
       try {
@@ -38,12 +45,20 @@ void registerWindowsVideoPlaybackTest() {
           '-f',
           'lavfi',
           '-i',
-          'testsrc2=size=320x180:rate=24',
+          'testsrc2=size=854x480:rate=24',
+          '-f',
+          'lavfi',
+          '-i',
+          'sine=frequency=440:sample_rate=48000',
           '-t',
           // Keep the fixture alive through the first-frame and resume deadlines.
           '60',
           '-c:v',
           'libx264',
+          '-profile:v',
+          'main',
+          '-c:a',
+          'aac',
           '-pix_fmt',
           'yuv420p',
           file.path,
@@ -56,12 +71,15 @@ void registerWindowsVideoPlaybackTest() {
         await output;
         Widget surface(String sessionId) => MaterialApp(
           home: Scaffold(
-            body: SizedBox(
-              width: 640,
-              height: 360,
-              child: NativeSessionVideoSurface(
-                sessionId: sessionId,
-                nativeRepository: repository,
+            body: RepaintBoundary(
+              key: const ValueKey('rendered_video'),
+              child: SizedBox(
+                width: 640,
+                height: 360,
+                child: NativeSessionVideoSurface(
+                  sessionId: sessionId,
+                  nativeRepository: repository,
+                ),
               ),
             ),
           ),
@@ -82,6 +100,10 @@ void registerWindowsVideoPlaybackTest() {
         final playResult = await bridge.play('video');
         expect(playResult.isOk, true, reason: playResult.errorOrNull);
         final player = bridge.playerForSession('video')!;
+        // A quick pause must retain video even before demuxing or surface attach.
+        final immediatePause = await bridge.pause('video');
+        expect(immediatePause.isOk, true, reason: immediatePause.errorOrNull);
+        expect(bridge.playerForSession('video'), same(player));
         final loadDeadline = DateTime.now().add(const Duration(seconds: 15));
         while (DateTime.now().isBefore(loadDeadline) &&
             (!player.state.tracks.video.any((track) => track.id == '1') ||
@@ -135,19 +157,41 @@ void registerWindowsVideoPlaybackTest() {
           final snapshot =
               (await bridge.snapshot()).valueOrNull!.sessions.single;
           final currentPlayer = bridge.playerForSession('video');
+          final native = currentPlayer?.platform;
+          final properties = <String, String>{};
+          if (native is NativePlayer) {
+            for (final name in [
+              'vo',
+              'vid',
+              'playlist-pos',
+              'pause',
+              'video-params',
+              'video-out-params',
+              'hwdec-current',
+              'track-list',
+            ]) {
+              properties[name] = await native.getProperty(name);
+            }
+          }
           throw TestFailure(
             'No video frame: playerReleased=${currentPlayer == null}, '
             'playing=${snapshot.playing}, requested=${snapshot.playWhenReady}, '
             'processing=${snapshot.processingState}, position=${snapshot.position}, '
-            'path=${snapshot.path ?? snapshot.uri}, error=${snapshot.error}',
+            'path=${snapshot.path ?? snapshot.uri}, error=${snapshot.error}, native=$properties',
           );
         }
         await tester.pump(const Duration(milliseconds: 500));
-        expect(controller.rect.value?.size, const Size(320, 180));
+        expect(controller.rect.value?.size, const Size(854, 480));
         expect(find.byType(Texture), findsOneWidget);
         expect(player.state.playing, false);
         expect(player.state.position.inMilliseconds, closeTo(12000, 1500));
         expect(await player.screenshot(format: 'image/png'), isNotEmpty);
+        await _expectRenderedVideoFrame(tester);
+        final mountedVideo = tester.widget<Video>(find.byType(Video));
+        await bridge.setVolume('video', 0.1);
+        await bridge.setSpeed('video', 1.2);
+        await tester.pump();
+        expect(tester.widget<Video>(find.byType(Video)), same(mountedVideo));
         final initialPosition = player.state.position;
         await tester.pump(const Duration(milliseconds: 500));
         expect(player.state.position, initialPosition);
@@ -238,7 +282,7 @@ void registerWindowsVideoPlaybackTest() {
             (autoController.rect.value?.width ?? 0) <= 0) {
           await tester.pump(const Duration(milliseconds: 100));
         }
-        if (autoController.rect.value?.size != const Size(320, 180)) {
+        if (autoController.rect.value?.size != const Size(854, 480)) {
           final native = autoController.player.platform! as NativePlayer;
           final properties = <String, String>{};
           for (final name in [
@@ -264,6 +308,7 @@ void registerWindowsVideoPlaybackTest() {
           );
         }
         expect(bridge.playerForSession('video'), isNull);
+        await _expectRenderedVideoFrame(tester);
         await bridge.pause('autoVideo');
         await tester.pump();
         expect(
@@ -282,5 +327,28 @@ void registerWindowsVideoPlaybackTest() {
       }
     }),
     skip: !Platform.isWindows,
+  );
+}
+
+Future<void> _expectRenderedVideoFrame(WidgetTester tester) async {
+  final boundary = tester.renderObject<RenderRepaintBoundary>(
+    find.byKey(const ValueKey('rendered_video')),
+  );
+  final rendered = await boundary.toImage();
+  final pixels = await rendered.toByteData();
+  rendered.dispose();
+  expect(pixels, isNotNull);
+  var coloredPixels = 0;
+  for (var i = 0; i < pixels!.lengthInBytes; i += 4) {
+    if (pixels.getUint8(i) > 40 ||
+        pixels.getUint8(i + 1) > 40 ||
+        pixels.getUint8(i + 2) > 40) {
+      coloredPixels++;
+    }
+  }
+  expect(
+    coloredPixels,
+    greaterThan(1000),
+    reason: 'Flutter video output is black',
   );
 }

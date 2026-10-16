@@ -400,6 +400,16 @@ final class PlaybackFacade {
       _logNativeCommandFailure('pauseAllSessions', response);
       return false;
     }
+    final snapshotResult = await nativeRepository.snapshot();
+    if (snapshotResult.isFailure) {
+      _logNativeCommandFailure('pauseAllSessions.snapshot', snapshotResult);
+    }
+    final nativeSessions = {
+      for (final snapshot
+          in snapshotResult.valueOrNull?.sessions ??
+              const <NativePlaybackSnapshot>[])
+        snapshot.sessionId: snapshot,
+    };
     for (final entry in requestedSessions.entries) {
       final session = entry.key;
       if (!isRegisteredSession(session) ||
@@ -407,11 +417,25 @@ final class PlaybackFacade {
           session.playbackCommandGeneration != entry.value.$2) {
         continue;
       }
-      session.confirmPaused();
-      session.loadedPath = null;
-      if (session.state.processingState != ProcessingState.completed) {
-        session.setOptimisticState(processingState: ProcessingState.idle);
+      final snapshot = nativeSessions[session.id];
+      if (snapshot != null) {
+        final commands = _commandPort;
+        if (commands != null) {
+          commands.handleNativeSnapshot(snapshot);
+        } else {
+          applyNativeSnapshot(
+            snapshot,
+            hasLibraryTrack: (path) =>
+                _persistedTrackResolver?.call(path) != null,
+          );
+        }
+      } else {
+        session.loadedPath = null;
+        if (session.state.processingState != ProcessingState.completed) {
+          session.setOptimisticState(processingState: ProcessingState.idle);
+        }
       }
+      session.confirmPaused();
     }
     _notifySessionStateChanged();
     _onRuntimeStateChanged?.call();

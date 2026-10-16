@@ -1038,6 +1038,140 @@ void main() {
     },
   );
 
+  for (final useLocalPath in [false, true]) {
+    test(
+      'pause before video tracks load retains the source (local path: $useLocalPath)',
+      () async {
+        final result = await bridge.prepareSession(
+          sessionId: 'one',
+          uri: Uri.parse(
+            useLocalPath
+                ? 'https://example.com/stream'
+                : 'https://example.com/one.mp4',
+          ),
+          path: useLocalPath ? r'C:\媒体文件\Video Clip.mp4' : null,
+          title: 'one',
+          autoPlay: true,
+          startPosition: const Duration(seconds: 12),
+        );
+        expect(result.isOk, true);
+        final player = bridge.playerForSession('one');
+        final platform = players.single;
+        expect(
+          platform.state.tracks.video.where(
+            (track) => track.id != 'auto' && track.id != 'no',
+          ),
+          isEmpty,
+        );
+        expect(platform.state.videoParams.w, isNull);
+        final paused = await bridge.pause('one');
+        expect(paused.isOk, true);
+        expect(bridge.playerForSession('one'), same(player));
+        expect(platform.disposed, false);
+        platform.loaded();
+        await bridge.setVolume('one', 1);
+        expect(platform.seeks, [const Duration(seconds: 12)]);
+        expect(platform.state.playing, false);
+        final controller = bridge.videoControllerForSession('one');
+        expect(controller, isNotNull);
+        platform.videoControllerCompleter.complete();
+        await bridge.setVolume('one', 1);
+        expect(bridge.videoControllerForSession('one'), same(controller));
+        expect((await bridge.stop('one')).isOk, true);
+        expect(platform.disposed, true);
+      },
+    );
+  }
+
+  for (final pauseAll in [false, true]) {
+    for (final video in [false, true]) {
+      test(
+        '${pauseAll ? 'global' : 'single'} pause keeps native source state through the runtime (video=$video)',
+        () async {
+          final database = await AppRuntimeTestFixture.installSharedDatabase();
+          final graph = createTestRuntimeGraph(
+            nativePlaybackRepository: NativePlaybackRepository(bridge: bridge),
+          );
+          addTearDown(() async {
+            await graph.runtime.dispose();
+            await AppRuntimeTestFixture.disposeSharedDatabase(database);
+          });
+          await graph.runtime.start();
+          final track = testMusicTrack(
+            name: 'Paused source',
+            path: 'https://example.com/source.${video ? 'mp4' : 'wav'}',
+            groupKey: 'paused-source',
+            groupTitle: 'Paused source',
+          ).copyWith(isVideo: video);
+          final tracks = [
+            testMusicTrack(
+              name: 'First',
+              path: 'https://example.com/first.wav',
+              groupKey: track.groupKey,
+              groupTitle: track.groupTitle,
+            ),
+            testMusicTrack(
+              name: 'Other',
+              path: 'https://example.com/other.wav',
+              groupKey: 'other-group',
+              groupTitle: 'Other group',
+            ),
+            track,
+          ];
+          graph.library.addTracks(tracks, persist: false);
+          final session = graph.playback.createTrackSession(
+            track,
+            customQueueTracks: tracks,
+          );
+          await graph.playback.toggleSessionPlayPause(session.id);
+          final platform = players.single;
+          platform.loaded();
+          await Future<void>.delayed(Duration.zero);
+          await graph.playback.seekSession(
+            session.id,
+            const Duration(seconds: 12),
+          );
+          expect(session.currentQueueIndex, 2);
+          expect(
+            (await bridge.snapshot()).valueOrNull!.sessions.single.queueIndex,
+            1,
+          );
+
+          if (pauseAll) {
+            expect(await graph.playback.pauseAllSessions(), true);
+          } else {
+            await graph.playback.toggleSessionPlayPause(session.id);
+          }
+          expect(session.playbackRequested, false);
+          expect(session.effectivePlaying, false);
+          expect(session.position, const Duration(seconds: 12));
+          expect(session.currentQueueIndex, 2);
+          expect(session.loadedPath, video ? track.path : null);
+          expect(
+            session.state.processingState,
+            video
+                ? playback.ProcessingState.ready
+                : playback.ProcessingState.idle,
+          );
+          expect(platform.disposed, !video);
+          await graph.playback.seekSession(
+            session.id,
+            const Duration(seconds: 20),
+          );
+          expect(platform.seeks.last, Duration(seconds: video ? 20 : 12));
+          expect(platform.state.playing, false);
+          await graph.playback.toggleSessionPlayPause(session.id);
+          expect(players, hasLength(video ? 1 : 2));
+          players.last.loaded();
+          await Future<void>.delayed(Duration.zero);
+          await bridge.setVolume(session.id, 1);
+          expect(players.last.state.playing, true);
+          expect(players.last.seeks.last, const Duration(seconds: 20));
+        },
+      );
+    }
+  }
+
   test('never-loaded paused video preparation stays lazy', () async {
     await prepare('one', deferred: true);
     expect(bridge.videoControllerForSession('one'), isNull);

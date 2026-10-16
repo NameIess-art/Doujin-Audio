@@ -712,10 +712,9 @@ class NativePlaybackService : MediaSessionService() {
 
     internal fun refreshVideoOutput(
         sessionId: String,
-        ownerId: String,
-        forceRebind: Boolean = false
+        ownerId: String
     ): Boolean {
-        return videoOutputs.refresh(sessionId, ownerId, forceRebind)
+        return videoOutputs.refresh(sessionId, ownerId)
     }
 
     internal fun unregisterVideoOutput(sessionId: String, ownerId: String) {
@@ -1233,7 +1232,9 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun shouldRetainVideoPlayer(session: NativePlaybackSession): Boolean =
-        shouldRetainPausedVideoPlayer(session.playerOrNull(), videoOutputs.hasOutput(session.sessionId))
+        shouldRetainPausedVideoPlayer(
+            session.playerOrNull(), videoOutputs.hasOutput(session.sessionId), session.path
+        )
 
     private fun retirePausedSession(session: NativePlaybackSession): Map<String, Any?> {
         // Keep the loaded decoder across pause and inline/fullscreen output handoff.

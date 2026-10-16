@@ -191,13 +191,11 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       final snapshot = pauseResult.valueOrNull;
       if (snapshot != null) {
         _handleNativePlaybackSnapshot(snapshot);
+      } else {
+        session.loadedPath = null;
+        session.setOptimisticState(processingState: ProcessingState.idle);
       }
-      session.loadedPath = null;
       session.confirmPaused();
-      session.setOptimisticState(
-        playing: false,
-        processingState: ProcessingState.idle,
-      );
       _notifyPlaybackChanged(session.id);
       return true;
     } catch (error, stackTrace) {

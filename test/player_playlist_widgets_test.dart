@@ -26,6 +26,7 @@ import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_layout.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_theme.dart';
@@ -6833,162 +6834,208 @@ void main() {
     );
   });
 
-  testWidgets('temporary video detail updates when only loadedPath changes', (
-    tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture(
-      coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
-    );
-    addTearDown(fixture.dispose);
-    final tracks = [
-      for (final name in ['first', 'second'])
-        testMusicTrack(
-          name: name,
-          path: PathMatcher.normalize('/videos/$name.mp4'),
-          groupKey: PathMatcher.normalize('/videos'),
-          groupTitle: 'Videos',
-        ).copyWith(isVideo: true),
-    ];
-    fixture.runtimeGraph.library.addTracks(
-      tracks,
-      persist: false,
-    );
-    final session = fixture.runtimeGraph.playback.createTrackSession(tracks[0])
-      ..isTemporary = true
-      ..setOptimisticState(playing: true);
-    void sync() => fixture.playbackService.syncSlice(
-      activeSessions: [session],
-      playingSessionCount: 0,
-      focusedSessionId: session.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
-    sync();
-    await tester.pumpWidget(fixture.build(const PlaylistTab()));
-    await pumpUntilFound(tester, find.byType(SessionListCard));
-    await tester.pump(kAppMotionFast);
-    await tester.pump();
-    unawaited(
-      Navigator.of(
-        tester.element(find.byType(PlaylistTab)),
-      ).push(buildSessionDetailRoute(sessionId: session.id)),
-    );
-    await tester.pumpAndSettle();
-    final subtitleMenuButton = find.byKey(
-      const ValueKey('session_subtitle_menu_button'),
-    );
-    expect(
-      tester
-          .widget<IconButton>(
-            find.descendant(
-              of: subtitleMenuButton,
-              matching: find.byType(IconButton),
+  testWidgets(
+    'video detail retains its surface through real pause commands',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+        providedNativePlaybackRepository: NativePlaybackRepository(
+          bridge: NativePlaybackBridge.instance,
+        ),
+      );
+      addTearDown(fixture.dispose);
+      final tracks = [
+        for (final name in ['first', 'second'])
+          testMusicTrack(
+            name: name,
+            path: PathMatcher.normalize('/videos/$name.mp4'),
+            groupKey: PathMatcher.normalize('/videos'),
+            groupTitle: 'Videos',
+          ).copyWith(isVideo: true),
+      ];
+      fixture.runtimeGraph.library.addTracks(tracks, persist: false);
+      final session =
+          fixture.runtimeGraph.playback.createTrackSession(tracks[0])
+            ..isTemporary = true
+            ..setOptimisticState(playing: true);
+      var pauseCount = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method != NativePlaybackMethod.pause &&
+                call.method != NativePlaybackMethod.play) {
+              return <String, Object?>{'ok': true, 'value': null};
+            }
+            if (call.method == NativePlaybackMethod.pause) pauseCount++;
+            final playing = call.method == NativePlaybackMethod.play;
+            return <String, Object?>{
+              'ok': true,
+              'value': {
+                'sessionId': session.id,
+                'path': session.currentTrackPath,
+                'playing': playing,
+                'playWhenReady': playing,
+                'processingState': 'ready',
+                'positionMs': 12000,
+                'transportCommandId':
+                    (call.arguments as Map)['transportCommandId'],
+              },
+            };
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, null);
+      });
+      void sync() => fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      sync();
+      await tester.pumpWidget(
+        fixture.build(
+          const PlaylistTab(),
+          overrides: [
+            appOrientationControllerProvider.overrideWithValue(
+              AppOrientationController(
+                setPreferredOrientations: (_) async {},
+                setSystemUiMode: (_) async {},
+              ),
             ),
-          )
-          .onPressed,
-      isNotNull,
-    );
-    bool videoReady() => tester
-        .widget<SessionVideoViewport>(find.byType(SessionVideoViewport))
-        .videoReady;
-    expect(videoReady(), isFalse);
+          ],
+        ),
+      );
+      await pumpUntilFound(tester, find.byType(SessionListCard));
+      await tester.pump(kAppMotionFast);
+      await tester.pump();
+      unawaited(
+        Navigator.of(
+          tester.element(find.byType(PlaylistTab)),
+        ).push(buildSessionDetailRoute(sessionId: session.id)),
+      );
+      await tester.pumpAndSettle();
+      final subtitleMenuButton = find.byKey(
+        const ValueKey('session_subtitle_menu_button'),
+      );
+      expect(
+        tester
+            .widget<IconButton>(
+              find.descendant(
+                of: subtitleMenuButton,
+                matching: find.byType(IconButton),
+              ),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      bool videoReady() => tester
+          .widget<SessionVideoViewport>(find.byType(SessionVideoViewport))
+          .videoReady;
+      expect(videoReady(), isFalse);
 
-    session.loadedPath = tracks[0].path;
-    sync();
-    await tester.pumpAndSettle();
-    expect(videoReady(), isTrue);
+      session.loadedPath = tracks[0].path;
+      sync();
+      await tester.pumpAndSettle();
+      expect(videoReady(), isTrue);
 
-    final surfaceBeforePause = tester.element(
-      find.byType(NativeSessionVideoSurface),
-    );
-    session.setOptimisticState(playing: false);
-    sync();
-    await tester.pumpAndSettle();
-    expect(videoReady(), isTrue);
-    expect(
-      tester.element(find.byType(NativeSessionVideoSurface)),
-      same(surfaceBeforePause),
-    );
-    session.setOptimisticState(playing: true);
-    sync();
-    await tester.pumpAndSettle();
-    expect(videoReady(), isTrue);
-    expect(
-      tester.element(find.byType(NativeSessionVideoSurface)),
-      same(surfaceBeforePause),
-    );
+      final surfaceBeforePause = tester.element(
+        find.byType(NativeSessionVideoSurface),
+      );
+      await tester.tap(find.byTooltip(fixture.languageProvider.tr('pause')));
+      await tester.pumpAndSettle();
+      expect(pauseCount, 1);
+      expect(session.playbackRequested, false);
+      expect(session.position, const Duration(seconds: 12));
+      expect(videoReady(), isTrue);
+      expect(
+        tester.element(find.byType(NativeSessionVideoSurface)),
+        same(surfaceBeforePause),
+      );
+      await tester.tap(find.byTooltip(fixture.languageProvider.tr('play')));
+      await tester.pumpAndSettle();
+      expect(session.playbackRequested, true);
+      expect(videoReady(), isTrue);
+      expect(
+        tester.element(find.byType(NativeSessionVideoSurface)),
+        same(surfaceBeforePause),
+      );
 
-    session.currentTrackPath = tracks[1].path;
-    sync();
-    await tester.pumpAndSettle();
-    expect(videoReady(), isFalse);
-    session.loadedPath = tracks[1].path;
-    sync();
-    await tester.pumpAndSettle();
-    expect(videoReady(), isTrue);
+      session.currentTrackPath = tracks[1].path;
+      sync();
+      await tester.pumpAndSettle();
+      expect(videoReady(), isFalse);
+      session.loadedPath = tracks[1].path;
+      sync();
+      await tester.pumpAndSettle();
+      expect(videoReady(), isTrue);
 
-    final originalPlatform = debugDefaultTargetPlatformOverride;
-    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-    addTearDown(() => debugDefaultTargetPlatformOverride = originalPlatform);
-    await tester.tap(
-      find.byKey(const ValueKey<String>('session_video_tap_target')),
-    );
-    await tester.pump();
-    await tester.tap(find.byIcon(Icons.fullscreen_rounded));
-    await tester.pumpAndSettle();
-    expect(
-      find.byType(NativeSessionVideoSurface, skipOffstage: false),
-      findsOneWidget,
-    );
-    final fullscreenSurface = tester.element(
-      find.byType(NativeSessionVideoSurface),
-    );
-    session.setOptimisticState(playing: false);
-    sync();
-    await tester.pumpAndSettle();
-    expect(
-      tester.element(find.byType(NativeSessionVideoSurface)),
-      same(fullscreenSurface),
-    );
-    await tester.tap(
-      find.byKey(const ValueKey<String>('fullscreen_video_exit')),
-    );
-    await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 200)),
-    );
-    await tester.pump(const Duration(milliseconds: 50));
-    // The outgoing fullscreen route still owns the only video surface.
-    expect(
-      find.byType(NativeSessionVideoSurface, skipOffstage: false),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byType(SessionVideoViewport, skipOffstage: false),
-        matching: find.byType(NativeSessionVideoSurface, skipOffstage: false),
-      ),
-      findsNothing,
-    );
-    await tester.pumpAndSettle();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 200)),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      find.descendant(
-        of: find.byType(SessionVideoViewport),
-        matching: find.byType(NativeSessionVideoSurface),
-      ),
-      findsOneWidget,
-    );
-    debugDefaultTargetPlatformOverride = originalPlatform;
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 200)),
-    );
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.pumpAndSettle();
-  });
+      await tester.tap(
+        find.byKey(const ValueKey<String>('session_video_tap_target')),
+      );
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.fullscreen_rounded));
+      await tester.pumpAndSettle();
+      expect(
+        find.byType(NativeSessionVideoSurface, skipOffstage: false),
+        findsOneWidget,
+      );
+      final fullscreenSurface = tester.element(
+        find.byType(NativeSessionVideoSurface),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('fullscreen_video_play_pause')),
+      );
+      await tester.pumpAndSettle();
+      expect(pauseCount, 2);
+      expect(session.playbackRequested, false);
+      expect(
+        tester.element(find.byType(NativeSessionVideoSurface)),
+        same(fullscreenSurface),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('fullscreen_video_exit')),
+      );
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      // The outgoing fullscreen route still owns the only video surface.
+      expect(
+        find.byType(NativeSessionVideoSurface, skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(SessionVideoViewport, skipOffstage: false),
+          matching: find.byType(NativeSessionVideoSurface, skipOffstage: false),
+        ),
+        findsNothing,
+      );
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(SessionVideoViewport),
+          matching: find.byType(NativeSessionVideoSurface),
+        ),
+        findsOneWidget,
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
@@ -7100,6 +7147,17 @@ void main() {
         );
         tester.widget<Slider>(progress).onChangeEnd!(60000);
         await tester.pump(const Duration(seconds: 3));
+        expect(tester.widget<AnimatedOpacity>(controls).opacity, 0);
+        await tester.tap(
+          find.byKey(const ValueKey('fullscreen_video_gesture_surface')),
+        );
+        await tester.pump(kDoubleTapTimeout);
+        expect(tester.widget<AnimatedOpacity>(controls).opacity, 1);
+        await tester.pump(const Duration(seconds: 2));
+        session.setOptimisticState(playing: false);
+        setup.fixture.playback.publishSessionState(session.id);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 1100));
         expect(tester.widget<AnimatedOpacity>(controls).opacity, 0);
         await tester.pumpWidget(const SizedBox.shrink());
         expect(tester.takeException(), isNull);
@@ -9130,17 +9188,32 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  for (final (platform, screenSize, headerHeight) in [
-    (TargetPlatform.android, const Size(2400, 1080), 40.0),
-    (TargetPlatform.windows, const Size(2880, 1800), 48.0),
-    (TargetPlatform.windows, const Size(3840, 2400), 48.0),
+  for (final (platform, screenSize, headerHeight, hasSubtitles) in [
+    (TargetPlatform.android, const Size(2400, 1080), 40.0, false),
+    (TargetPlatform.windows, const Size(2880, 1800), 48.0, false),
+    (TargetPlatform.windows, const Size(3840, 2400), 48.0, false),
+    (TargetPlatform.android, const Size(2400, 1080), 40.0, true),
+    (TargetPlatform.windows, const Size(2880, 1800), 48.0, true),
+    (TargetPlatform.windows, const Size(3840, 2400), 48.0, true),
   ]) {
     testWidgets(
-      'landscape session detail displays 4:3 cover in equal columns on ${platform.name} at ${screenSize.width / 3}',
+      'landscape session detail displays 4:3 cover in equal columns on ${platform.name} at ${screenSize.width / 3}, subtitles=$hasSubtitles',
       (tester) async {
         await _pumpSubtitleDetail(
           tester: tester,
-          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+          subtitleTrack: SubtitleTrack(
+            sourcePath: 'layout.srt',
+            cues: hasSubtitles
+                ? const [
+                    SubtitleCue(
+                      start: Duration.zero,
+                      end: Duration(minutes: 1),
+                      text: 'Subtitle alignment',
+                    ),
+                  ]
+                : const [],
+          ),
+          preloadSubtitle: hasSubtitles,
           initialPosition: Duration.zero,
           physicalSize: screenSize,
         );
@@ -9169,24 +9242,20 @@ void main() {
 
         // Title is in the right section (to the right of the cover)
         expect(titleRect.left, greaterThan(coverRect.right));
-        // Title is at the top of the right section
-        expect(
-          titleRect.top,
-          closeTo(
-            tester.getRect(find.byType(SessionDetailContent)).top + headerHeight,
-            0.5,
-          ),
-        );
+        expect(titleRect.top, closeTo(coverRect.top, 0.5));
         expect(coverRect.width / coverRect.height, closeTo(4 / 3, 0.001));
         final progressRect = tester.getRect(find.byType(SessionProgressBar));
         expect(progressRect.top - coverRect.bottom, closeTo(5, 0.5));
         final leftRect = tester.getRect(
-          find.byKey(const ValueKey('session_detail_left_column')),
+          find.byKey(const ValueKey('session_detail_cover_area')),
         );
-        final coverAreaBottom = leftRect.bottom - progressRect.height - 5;
+        final layoutRect = tester.getRect(
+          find.byKey(const ValueKey('session_detail_landscape_layout')),
+        );
+        final coverAreaBottom = layoutRect.bottom - progressRect.height - 5;
         expect(
           coverRect.center.dy,
-          closeTo((leftRect.top + headerHeight + coverAreaBottom) / 2, 0.5),
+          closeTo((layoutRect.top + headerHeight + coverAreaBottom) / 2, 0.5),
         );
         final rightRect = tester.getRect(
           find.byKey(const ValueKey('session_detail_right_column')),
@@ -9195,6 +9264,44 @@ void main() {
         expect(rightRect.left - leftRect.right, closeTo(12, 0.5));
         expect(coverRect.width, lessThanOrEqualTo(leftRect.width));
         expect(titleRect.left, closeTo(rightRect.left + 4, 0.5));
+        expect(rightRect.top, closeTo(coverRect.top, 0.5));
+        expect(rightRect.bottom, closeTo(progressRect.bottom, 0.5));
+        expect(
+          tester.getRect(find.byType(TransportPlaybackControlPanel)).bottom,
+          closeTo(progressRect.bottom, 0.5),
+        );
+        if (hasSubtitles) {
+          expect(find.text('Subtitle alignment'), findsOneWidget);
+        }
+
+        if (platform == TargetPlatform.windows) {
+          for (final resized in [
+            const Size(3840, 1800),
+            const Size(2880, 1800),
+            screenSize,
+          ]) {
+            tester.view.physicalSize = resized;
+            await tester.pumpAndSettle();
+            final resizedCover = tester.getRect(aspectRatioFinder);
+            final resizedProgress = tester.getRect(
+              find.byType(SessionProgressBar),
+            );
+            expect(
+              tester.getRect(titleFinder).top,
+              closeTo(resizedCover.top, 0.5),
+            );
+            expect(
+              tester.getRect(find.byType(TransportPlaybackControlPanel)).bottom,
+              closeTo(resizedProgress.bottom, 0.5),
+            );
+            expect(
+              resizedCover.width / resizedCover.height,
+              closeTo(4 / 3, 0.001),
+            );
+            expect(tester.takeException(), isNull);
+          }
+        }
+        expect(tester.takeException(), isNull);
       },
       variant: TargetPlatformVariant.only(platform),
     );
@@ -9227,7 +9334,7 @@ void main() {
       // Progress bar is below the cover image
       expect(progressRect.top - coverRect.bottom, closeTo(5, 0.5));
       final leftRect = tester.getRect(
-        find.byKey(const ValueKey('session_detail_left_column')),
+        find.byKey(const ValueKey('session_detail_cover_area')),
       );
       expect(progressRect.left, closeTo(leftRect.left, 0.5));
       expect(progressRect.width, closeTo(leftRect.width, 0.5));
@@ -9592,6 +9699,24 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('segments_landscape')), findsOneWidget);
+      final coverRect = tester.getRect(
+        find.descendant(
+          of: find.byType(SessionDetailPage),
+          matching: find.byType(AspectRatio),
+        ),
+      );
+      expect(
+        tester
+            .getRect(
+              find.byKey(const ValueKey('title_marquee_subtitle-session')),
+            )
+            .top,
+        closeTo(coverRect.top, 0.5),
+      );
+      expect(
+        tester.getRect(find.byType(TransportPlaybackControlPanel)).bottom,
+        closeTo(progressRect.bottom, 0.5),
+      );
       expect(closeButton, findsNothing);
       final headerRect = tester.getRect(find.byType(SegmentPanelPageHeader));
       final surfaceRect = tester.getRect(

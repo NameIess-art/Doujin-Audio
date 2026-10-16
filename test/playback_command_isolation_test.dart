@@ -816,7 +816,13 @@ class _Native extends NativePlaybackRepository {
     int transportCommandId = 0,
   }) async {
     paused.add(sessionId);
-    return NativeSuccess(_snapshot(sessionId, commandId: transportCommandId));
+    return NativeSuccess(
+      _snapshot(
+        sessionId,
+        commandId: transportCommandId,
+        processingState: 'idle',
+      ),
+    );
   }
 
   @override

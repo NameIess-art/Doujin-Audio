@@ -266,6 +266,7 @@ final class PlaybackCommandCoordinator
     bool selectFirst = false,
   }) => _syncPlaybackQueueSession(session, selectFirst: selectFirst);
 
+  @override
   void handleNativeSnapshot(NativePlaybackSnapshot snapshot) =>
       _handleNativePlaybackSnapshot(snapshot);
 

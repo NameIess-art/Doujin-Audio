@@ -43,105 +43,74 @@ class SessionDetailLayout extends StatelessWidget {
           right: padding.right,
           bottom: padding.bottom,
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: CustomMultiChildLayout(
+          key: const ValueKey('session_detail_landscape_layout'),
+          delegate: _LandscapeDetailLayoutDelegate(
+            topPadding: padding.top,
+            segmentTop: MediaQuery.paddingOf(context).top + 6,
+          ),
           children: [
-            Expanded(
-              key: const ValueKey('session_detail_left_column'),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Flexible(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final coverHeight = min(
-                          constraints.maxWidth * 3 / 4,
-                          max(0.0, constraints.maxHeight - padding.top),
-                        );
-                        final verticalSpace = max(
-                          0.0,
-                          (constraints.maxHeight - padding.top - coverHeight) /
-                              2,
-                        );
-                        return SizedBox(
-                          height: padding.top + verticalSpace + coverHeight,
-                          child: Stack(
-                            children: [
-                              Padding(
-                                padding: EdgeInsets.only(
-                                  top: padding.top + verticalSpace,
-                                ),
-                                child: Align(
-                                  alignment: Alignment.bottomCenter,
-                                  heightFactor: 1,
-                                  child: AspectRatio(
-                                    aspectRatio: 4 / 3,
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: artwork,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (segmentPanelExpanded)
-                                Positioned.fill(
-                                  top: MediaQuery.paddingOf(context).top + 6,
-                                  child: ClipRRect(
-                                    borderRadius: const BorderRadius.only(
-                                      topLeft: Radius.circular(19),
-                                      topRight: Radius.circular(19),
-                                      bottomLeft: Radius.circular(16),
-                                      bottomRight: Radius.circular(16),
-                                    ),
-                                    child: segmentPanelBuilder(
-                                      const ValueKey('segments_landscape'),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+            LayoutId(
+              id: _LandscapeDetailSlot.artwork,
+              child: Align(
+                key: const ValueKey('session_detail_cover_area'),
+                child: AspectRatio(
+                  aspectRatio: 4 / 3,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: artwork,
                   ),
-                  const SizedBox(height: 5),
-                  RepaintBoundary(child: progress),
-                ],
+                ),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              key: const ValueKey('session_detail_right_column'),
-              child: Padding(
-                padding: EdgeInsets.only(top: padding.top),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        left: 4,
-                        right: 4,
-                        bottom: 8,
-                      ),
-                      child: MarqueeText(
-                        key: ValueKey('title_marquee_$sessionId'),
-                        text: title,
-                        pauseDuration: const Duration(seconds: 1),
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: sessionDetailForeground(
-                                cs,
-                                SessionDetailForegroundLevel.strong,
-                                darkFallback: cs.onSurface,
-                              ),
-                              fontWeight: FontWeight.w700,
-                            ),
+            LayoutId(
+              id: _LandscapeDetailSlot.progress,
+              child: RepaintBoundary(child: progress),
+            ),
+            if (segmentPanelExpanded)
+              LayoutId(
+                id: _LandscapeDetailSlot.segments,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(19),
+                    topRight: Radius.circular(19),
+                    bottomLeft: Radius.circular(16),
+                    bottomRight: Radius.circular(16),
+                  ),
+                  child: segmentPanelBuilder(
+                    const ValueKey('segments_landscape'),
+                  ),
+                ),
+              ),
+            LayoutId(
+              id: _LandscapeDetailSlot.details,
+              child: Column(
+                key: const ValueKey('session_detail_right_column'),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      left: 4,
+                      right: 4,
+                      bottom: 8,
+                    ),
+                    child: MarqueeText(
+                      key: ValueKey('title_marquee_$sessionId'),
+                      text: title,
+                      pauseDuration: const Duration(seconds: 1),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: sessionDetailForeground(
+                          cs,
+                          SessionDetailForegroundLevel.strong,
+                          darkFallback: cs.onSurface,
+                        ),
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Expanded(child: RepaintBoundary(child: subtitle)),
-                    transport,
-                  ],
-                ),
+                  ),
+                  Expanded(child: RepaintBoundary(child: subtitle)),
+                  transport,
+                ],
               ),
             ),
           ],
@@ -283,4 +252,66 @@ class SessionDetailLayout extends StatelessWidget {
       },
     );
   }
+}
+
+enum _LandscapeDetailSlot { artwork, progress, segments, details }
+
+class _LandscapeDetailLayoutDelegate extends MultiChildLayoutDelegate {
+  _LandscapeDetailLayoutDelegate({
+    required this.topPadding,
+    required this.segmentTop,
+  });
+
+  final double topPadding;
+  final double segmentTop;
+
+  @override
+  void performLayout(Size size) {
+    final columnWidth = max(0.0, (size.width - 12) / 2);
+    final progressSize = layoutChild(
+      _LandscapeDetailSlot.progress,
+      BoxConstraints.tightFor(width: columnWidth),
+    );
+    final coverSpace = max(
+      0.0,
+      size.height - progressSize.height - 5 - topPadding,
+    );
+    final coverHeight = min(columnWidth * 3 / 4, coverSpace);
+    final coverTop = topPadding + (coverSpace - coverHeight) / 2;
+    final coverBottom = coverTop + coverHeight;
+
+    layoutChild(
+      _LandscapeDetailSlot.artwork,
+      BoxConstraints.tight(Size(columnWidth, coverHeight)),
+    );
+    positionChild(_LandscapeDetailSlot.artwork, Offset(0, coverTop));
+    positionChild(_LandscapeDetailSlot.progress, Offset(0, coverBottom + 5));
+
+    // Both columns use the same measured content bounds, including timecodes.
+    layoutChild(
+      _LandscapeDetailSlot.details,
+      BoxConstraints.tight(
+        Size(columnWidth, coverHeight + 5 + progressSize.height),
+      ),
+    );
+    positionChild(
+      _LandscapeDetailSlot.details,
+      Offset(columnWidth + 12, coverTop),
+    );
+
+    if (hasChild(_LandscapeDetailSlot.segments)) {
+      layoutChild(
+        _LandscapeDetailSlot.segments,
+        BoxConstraints.tight(
+          Size(columnWidth, max(0.0, coverBottom - segmentTop)),
+        ),
+      );
+      positionChild(_LandscapeDetailSlot.segments, Offset(0, segmentTop));
+    }
+  }
+
+  @override
+  bool shouldRelayout(_LandscapeDetailLayoutDelegate oldDelegate) =>
+      topPadding != oldDelegate.topPadding ||
+      segmentTop != oldDelegate.segmentTop;
 }

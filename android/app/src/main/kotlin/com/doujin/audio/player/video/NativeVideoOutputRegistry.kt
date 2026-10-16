@@ -1,12 +1,22 @@
 package com.doujin.audio.player.video
 
+import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.Player
+import com.doujin.audio.metadata.MediaNameMetadata
 
-internal fun shouldRetainPausedVideoPlayer(player: Player?, hasVideoOutput: Boolean): Boolean {
+internal fun shouldRetainPausedVideoPlayer(
+    player: Player?,
+    hasVideoOutput: Boolean,
+    mediaPath: String? = null
+): Boolean {
     if (player == null || player.playerError != null) return false
+    // Pausing before track discovery still needs the decoder when the detail page opens.
     return hasVideoOutput || player.currentTracks.containsType(C.TRACK_TYPE_VIDEO) ||
-        (player.videoSize.width > 0 && player.videoSize.height > 0)
+        (player.videoSize.width > 0 && player.videoSize.height > 0) ||
+        mediaPath?.let {
+            MediaNameMetadata.mediaNameInfoOrNull(Uri.parse(it).lastPathSegment ?: it)?.isVideo
+        } == true
 }
 
 internal interface NativeVideoOutputBinding<P : Any> {
@@ -43,15 +53,11 @@ internal class NativeVideoOutputRegistry<P : Any>(
 
     fun refresh(
         sessionId: String,
-        ownerId: String,
-        forceRebind: Boolean = false
+        ownerId: String
     ): Boolean {
         val entry = entries[sessionId]?.takeIf { it.ownerId == ownerId } ?: return false
         val player = playerForSession(sessionId)
-        if (forceRebind && player != null && entry.player === player) {
-            entry.output.bindPlayer(null)
-            entry.output.bindPlayer(player)
-        } else if (entry.player !== player) {
+        if (entry.player !== player) {
             entry.output.bindPlayer(player)
             entry.player = player
         }

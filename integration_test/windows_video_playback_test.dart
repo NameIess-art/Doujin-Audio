@@ -16,10 +16,7 @@ void main() {
   registerWindowsVideoPlaybackTest();
 }
 
-const _isHeadlessTest = bool.fromEnvironment(
-  'WINDOWS_TEST_NULL_AUDIO',
-  defaultValue: false,
-);
+const _isHeadlessTest = bool.fromEnvironment('WINDOWS_TEST_NULL_AUDIO');
 
 void registerWindowsVideoPlaybackTest() {
   _registerWindowsVideoPlaybackTest(softwareRendering: false);

@@ -1,8 +1,15 @@
 part of 'app_database.dart';
 
+typedef _SessionRestoreRows = ({
+  List<Map<String, dynamic>> sessions,
+  Map<String, Map<int, double>> eqBands,
+  Map<String, List<Map<String, dynamic>>> queueEntries,
+  Map<String, List<Map<String, dynamic>>> queueTracks,
+});
+
 extension AppDatabaseSessions on AppDatabase {
   Future<List<PlaybackSessionRecord>> loadAllSessions() async {
-    return _runDatabaseRead((db) async {
+    final data = await _runDatabaseRead<_SessionRestoreRows?>((db) async {
       final rows = await db.rawQuery('''
       SELECT
         s.id,
@@ -33,7 +40,7 @@ extension AppDatabaseSessions on AppDatabase {
       LEFT JOIN playback_queues queue ON queue.session_id = s.id
       ORDER BY s.sort_order ASC
     ''');
-      if (rows.isEmpty) return const <PlaybackSessionRecord>[];
+      if (rows.isEmpty) return null;
       final sessionIds = rows.map((row) => row['id'] as String).toList();
       final eqBandsBySession = await _loadSessionEqBandsBySession(
         db,
@@ -44,31 +51,17 @@ extension AppDatabaseSessions on AppDatabase {
         sessionIds,
       );
       final queueTracksByEntry = await _loadQueueTracksByEntry(db, sessionIds);
-      final sessions = <PlaybackSessionRecord>[];
-      for (final row in rows) {
-        final id = row['id'] as String;
-        sessions.add(
-          _sessionFromRow(
-            row,
-            customQueueTracks: _customQueueTracksForSession(
-              id,
-              queueTracksByEntry,
-            ),
-            playbackQueue: _playbackQueueForSession(
-              id,
-              row,
-              queueEntriesBySession,
-              queueTracksByEntry,
-            ),
-            audioEffects: _sessionAudioEffectsFromRow(
-              row,
-              eqBandsBySession[id] ?? const <int, double>{},
-            ),
-          ),
-        );
-      }
-      return sessions;
+      return (
+        sessions: rows,
+        eqBands: eqBandsBySession,
+        queueEntries: queueEntriesBySession,
+        queueTracks: queueTracksByEntry,
+      );
     });
+    if (data == null) return const <PlaybackSessionRecord>[];
+    // Queue JSON decoding and deep immutable copies can dominate large restores.
+    // Only detached query results cross the isolate boundary, never the database.
+    return compute(_sessionsFromRows, data, debugLabel: 'restore_sessions');
   }
 
   Future<void> updateSessionOrder(List<String> sessionIds) async {
@@ -165,3 +158,24 @@ extension AppDatabaseSessions on AppDatabase {
     });
   }
 }
+
+List<PlaybackSessionRecord> _sessionsFromRows(_SessionRestoreRows data) => [
+  for (final row in data.sessions)
+    _sessionFromRow(
+      row,
+      customQueueTracks: _customQueueTracksForSession(
+        row['id'] as String,
+        data.queueTracks,
+      ),
+      playbackQueue: _playbackQueueForSession(
+        row['id'] as String,
+        row,
+        data.queueEntries,
+        data.queueTracks,
+      ),
+      audioEffects: _sessionAudioEffectsFromRow(
+        row,
+        data.eqBands[row['id']] ?? const <int, double>{},
+      ),
+    ),
+];

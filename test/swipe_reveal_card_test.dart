@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -206,8 +207,8 @@ void main() {
       expect(tester.getRect(entry), closedRect);
       expect(pin, findsOneWidget);
       expect(opacity(), 1);
-      await tester.pump(const Duration(milliseconds: 225));
-      expect(opacity(), closeTo(0.5, 0.01));
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
       await tester.pumpAndSettle();
       expect(pin, findsNothing);
       expect(tester.takeException(), isNull);

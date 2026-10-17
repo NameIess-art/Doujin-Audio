@@ -1,13 +1,9 @@
 part of 'asmr_tab.dart';
 
 const Color _asmrSelectionCheckmarkColor = Color(0xFF4CAF50);
-const Duration _asmrSelectionFadeDuration = Duration(milliseconds: 450);
 
 class _AsmrSelectionIndicator extends StatelessWidget {
-  const _AsmrSelectionIndicator({
-    this.workId,
-    this.isSelected = true,
-  });
+  const _AsmrSelectionIndicator({this.workId, this.isSelected = true});
 
   final String? workId;
   final bool isSelected;
@@ -17,7 +13,7 @@ class _AsmrSelectionIndicator extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : _asmrSelectionFadeDuration;
+        : kAppFadeDuration;
     final surfaceBorderColor = isSelected
         ? Color.alphaBlend(
             cs.primaryContainer.withValues(alpha: 0.15),
@@ -29,13 +25,10 @@ class _AsmrSelectionIndicator extends StatelessWidget {
         child: AnimatedSwitcher(
           duration: duration,
           reverseDuration: duration,
-          switchInCurve: Curves.easeInOut,
-          switchOutCurve: Curves.easeInOut,
+          switchInCurve: kAppFadeCurve,
+          switchOutCurve: kAppFadeCurve,
           transitionBuilder: (child, animation) {
-            return FadeTransition(
-              opacity: animation,
-              child: child,
-            );
+            return FadeTransition(opacity: animation, child: child);
           },
           child: isSelected
               ? Container(
@@ -57,7 +50,9 @@ class _AsmrSelectionIndicator extends StatelessWidget {
                 )
               : SizedBox.shrink(
                   key: workId == null
-                      ? const ValueKey<String>('asmr_selection_indicator_hidden')
+                      ? const ValueKey<String>(
+                          'asmr_selection_indicator_hidden',
+                        )
                       : ValueKey<String>(
                           'asmr_selection_indicator_hidden_$workId',
                         ),

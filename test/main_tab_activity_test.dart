@@ -115,7 +115,6 @@ void main() {
             AppFadeThroughIndexedStack.lazy(
               indexListenable: active,
               itemCount: 2,
-              duration: kAppMotionSlow,
               itemBuilder: (_, index) => index == 0
                   ? const SizedBox()
                   : PlaylistTab(tabIndex: 1, activeTabIndexListenable: active),
@@ -480,8 +479,8 @@ void main() {
             ? tester.element(
                 find
                     .ancestor(
-                      of: find.byType(
-                        PlaceholderContentTransition,
+                      of: find.byKey(
+                        const ValueKey('playlist_loaded_content'),
                         skipOffstage: false,
                       ),
                       matching: find.byType(Consumer, skipOffstage: false),

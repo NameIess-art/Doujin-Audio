@@ -13,6 +13,7 @@ import '../domain/library_persistence_repository.dart';
 import 'audio_detail_cache_service.dart';
 import 'audio_detail_repository.dart';
 import 'cover_artwork_cache_service.dart';
+import 'cover_artwork_store.dart';
 import 'dlsite_metadata_query.dart';
 import 'dlsite_metadata_service.dart';
 import 'library_organizer.dart';
@@ -90,10 +91,15 @@ final class LibraryMetadataCoordinator {
     bool deferCategoryUpdate = false,
     bool preserveExistingDuration = false,
   }) async {
-    final result = await _detailCacheService.save(
+    final coverPath = detail.cardCoverPath;
+    Future<AudioDetailSaveResult> save() => _detailCacheService.save(
       detail.copyWith(target: canonicalTarget(detail.target)),
       preserveExistingDuration: preserveExistingDuration,
     );
+    final result =
+        coverPath != null && CoverArtworkStore.isStoreArtifactPath(coverPath)
+        ? await _coverArtwork().withPreservedCoverReference(coverPath, save)
+        : await save();
     _snapshotCacheService.markDetailChanged(result.detail, deferCategoryUpdate);
     if (!deferCategoryUpdate) _syncState();
     return result;

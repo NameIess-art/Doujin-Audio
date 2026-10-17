@@ -214,7 +214,10 @@ class AppUpdateFlow {
       return;
     }
 
-    if (!context.mounted) return;
+    if (!context.mounted) {
+      _updateService.releaseDownloadedUpdate(updateFile);
+      return;
+    }
     showAppSnackBar(
       context,
       i18n.tr('update_install_preparing_message', {

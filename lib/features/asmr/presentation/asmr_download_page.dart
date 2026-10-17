@@ -623,9 +623,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                     child: AnimatedSwitcher(
                       duration: MediaQuery.disableAnimationsOf(context)
                           ? Duration.zero
-                          : kPlaceholderContentTransitionDuration,
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
+                          : kAppFadeDuration,
+                      switchInCurve: kAppFadeCurve,
+                      switchOutCurve: kAppFadeCurve,
                       child: AsmrDownloadSummaryCard(
                         key: ValueKey(_work == null),
                         work: _work,

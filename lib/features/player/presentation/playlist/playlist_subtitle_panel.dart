@@ -274,7 +274,7 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final transitionDuration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : kPlaceholderContentTransitionDuration;
+        : kAppFadeDuration;
 
     late final Widget content;
     final subtitleTrack = _subtitleTrack;
@@ -370,8 +370,8 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
       builder: (context, constraints) {
         final animatedContent = AnimatedSwitcher(
           duration: transitionDuration,
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
+          switchInCurve: kAppFadeCurve,
+          switchOutCurve: kAppFadeCurve,
           transitionBuilder: (child, animation) => FadeTransition(
             key: ValueKey<Object>(('subtitle_fade', child.key)),
             opacity: animation,
@@ -415,8 +415,14 @@ class SessionSubtitlePlaceholder extends StatelessWidget {
             ? max(0.0, constraints.maxWidth - 40.0)
             : 240.0;
         final centerWidth = min(240.0, max(80.0, availableWidth * 0.70));
-        final topWidth = min(centerWidth * 0.75, max(60.0, availableWidth * 0.50));
-        final bottomWidth = min(centerWidth * 0.85, max(70.0, availableWidth * 0.58));
+        final topWidth = min(
+          centerWidth * 0.75,
+          max(60.0, availableWidth * 0.50),
+        );
+        final bottomWidth = min(
+          centerWidth * 0.85,
+          max(70.0, availableWidth * 0.58),
+        );
 
         return Center(
           child: Column(
@@ -432,11 +438,7 @@ class SessionSubtitlePlaceholder extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              ShimmerContainer(
-                width: centerWidth,
-                height: 16,
-                borderRadius: 4,
-              ),
+              ShimmerContainer(width: centerWidth, height: 16, borderRadius: 4),
               const SizedBox(height: 16),
               Opacity(
                 opacity: 0.35,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
+import '../../core/widgets/app_transitions.dart';
 import '../localization/app_language_provider.dart';
 import '../theme/app_styles.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
@@ -402,8 +403,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                           ? 1
                                           : 0,
                                     ),
-                                    duration: motionDuration,
-                                    curve: Curves.easeInOut,
+                                    duration: _disableAnimations
+                                        ? Duration.zero
+                                        : kAppFadeDuration,
+                                    curve: kAppFadeCurve,
                                     builder: (context, collapse, _) => Stack(
                                       children: [
                                         for (final entry

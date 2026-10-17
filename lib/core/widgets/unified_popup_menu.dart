@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../ui/ui_interaction_coordinator.dart';
 import '../../app/theme/app_design_tokens.dart';
 import 'app_feedback.dart';
+import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
 
 class UnifiedMenuEntry<T> {
@@ -90,8 +91,8 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 160),
-      reverseDuration: const Duration(milliseconds: 100),
+      duration: kAppFadeDuration,
+      reverseDuration: kAppFadeDuration,
     )..addStatusListener(_handleAnimationStatus);
   }
 
@@ -303,8 +304,8 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   void _bindAnimation() {
     _curved = CurvedAnimation(
       parent: widget.animation,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
+      curve: kAppFadeCurve,
+      reverseCurve: kAppFadeCurve,
     );
     _scale = Tween<double>(begin: 0.96, end: 1).animate(_curved);
   }
@@ -713,13 +714,13 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 160),
-      reverseDuration: const Duration(milliseconds: 100),
+      duration: kAppFadeDuration,
+      reverseDuration: kAppFadeDuration,
     )..addStatusListener(_handleAnimationStatus);
     _curved = CurvedAnimation(
       parent: _controller,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
+      curve: kAppFadeCurve,
+      reverseCurve: kAppFadeCurve,
     );
   }
 

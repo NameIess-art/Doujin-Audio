@@ -750,10 +750,12 @@ class _SessionVideoFullscreenPageState
           valueListenable: _feedback,
           builder: (context, feedback, _) {
             return AnimatedSwitcher(
+              switchOutCurve: kAppFadeCurve,
+              switchInCurve: kAppFadeCurve,
               key: const ValueKey<String>('fullscreen_video_gesture_feedback'),
               duration: MediaQuery.disableAnimationsOf(context)
                   ? Duration.zero
-                  : const Duration(milliseconds: 120),
+                  : kAppFadeDuration,
               child: feedback == null
                   ? const SizedBox.shrink()
                   : Material(
@@ -815,11 +817,12 @@ class _SessionVideoFullscreenPageState
     const exitButtonOffset =
         (AppPageHeaderMetrics.buttonSize - exitButtonSize) / 2;
     return AnimatedOpacity(
+      curve: kAppFadeCurve,
       key: const ValueKey<String>('fullscreen_video_controls'),
       opacity: _controlsVisible ? 1 : 0,
       duration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
-          : const Duration(milliseconds: 160),
+          : kAppFadeDuration,
       child: IgnorePointer(
         ignoring: !_controlsVisible,
         child: Stack(

@@ -35,6 +35,152 @@ void main() {
   );
 
   for (final android in [false, true]) {
+    test(
+      'collects only new unreferenced artifacts (Android=$android)',
+      () async {
+        var now = DateTime.now().subtract(const Duration(days: 3));
+        CoverArtworkStore store() => CoverArtworkStore(
+          persistentDirectory: () async => supportDirectory,
+          temporaryDirectory: () async => temporaryDirectory,
+          isAndroid: () => android,
+          now: () => now,
+        );
+        final first = store();
+        await first.initialize();
+        final old = File(path.join(first.rootPath!, 'generated', 'old.image'));
+        await old.parent.create(recursive: true);
+        await old.writeAsBytes([9]);
+        final artifacts = <String, String>{};
+        for (final name in [
+          'orphan',
+          'pinned',
+          'bound',
+          'alias',
+          'live',
+          'recent',
+        ]) {
+          artifacts[name] = (await first.putBytes(
+            logicalKey: name,
+            bytes: utf8.encode(name),
+          ))!;
+          await File(artifacts[name]!).setLastModified(now);
+        }
+        await first.preserveReference(
+          Platform.isWindows
+              ? artifacts['pinned']!.toUpperCase()
+              : artifacts['pinned']!,
+        );
+        await first.invalidate(artifacts.keys.where((name) => name != 'bound'));
+        final index = File(
+          path.join(first.rootPath!, coverArtworkStoreIndexFileName),
+        );
+        final payload =
+            jsonDecode(await index.readAsString()) as Map<String, dynamic>;
+        payload['legacyAliases'] = {'old-key': artifacts['alias']!};
+        await index.writeAsString(jsonEncode(payload));
+        now = DateTime.now();
+        await File(artifacts['recent']!).setLastModified(now);
+        final restarted = store();
+        expect(
+          await restarted.collectOrphanedArtifacts(
+            retainedPaths: [artifacts['live']!],
+          ),
+          utf8.encode('orphan').length,
+        );
+        expect(await File(artifacts['orphan']!).exists(), isFalse);
+        for (final name in artifacts.keys.where((name) => name != 'orphan')) {
+          expect(await File(artifacts[name]!).exists(), isTrue, reason: name);
+        }
+        expect(await old.exists(), isTrue);
+        // Losing an index must never adopt existing files as reclaimable.
+        await index.delete();
+        expect(await store().collectOrphanedArtifacts(), 0);
+        expect(await File(artifacts['live']!).exists(), isTrue);
+      },
+    );
+  }
+
+  test(
+    'selection arriving during collection is pinned before queued writes',
+    () async {
+      final oldTime = DateTime.now().subtract(const Duration(days: 3));
+      final first = CoverArtworkStore(
+        persistentDirectory: () async => supportDirectory,
+        now: () => oldTime,
+      );
+      final value = (await first.putBytes(logicalKey: 'old', bytes: [1, 2]))!;
+      await File(value).setLastModified(oldTime);
+      await first.invalidate(['old']);
+      final restarted = createStore();
+      Future<void>? selection;
+      var checks = 0;
+      final bytes = await restarted.collectOrphanedArtifacts(
+        shouldCancel: () {
+          if (++checks == 3) selection = restarted.preserveReference(value);
+          return false;
+        },
+      );
+      expect(selection, isNotNull);
+      await selection;
+      expect(bytes, 0);
+      expect(await createStore().collectOrphanedArtifacts(), 0);
+      expect(await File(value).exists(), isTrue);
+    },
+  );
+
+  test(
+    'failed pin can retry and missing selected artwork is rejected',
+    () async {
+      final store = createStore();
+      final value = (await store.putBytes(logicalKey: 'selected', bytes: [1]))!;
+      await store.invalidate(['selected']);
+      final blocker = Directory(
+        path.join(store.rootPath!, '$coverArtworkStoreIndexFileName.part'),
+      );
+      await blocker.create();
+      await expectLater(
+        store.preserveReference(value),
+        throwsA(isA<FileSystemException>()),
+      );
+      await blocker.delete();
+      await store.preserveReference(value);
+      final index = File(
+        path.join(store.rootPath!, coverArtworkStoreIndexFileName),
+      );
+      final payload =
+          jsonDecode(await index.readAsString()) as Map<String, dynamic>;
+      expect(
+        payload['managedArtifacts'][path.relative(value, from: store.rootPath)],
+        0,
+      );
+      await File(value).delete();
+      await expectLater(
+        store.preserveReference(value),
+        throwsA(isA<FileSystemException>()),
+      );
+    },
+  );
+
+  test(
+    'cache clear cancels a queued selection without retaining pending pins',
+    () async {
+      final store = createStore();
+      final value = (await store.putBytes(logicalKey: 'selected', bytes: [1]))!;
+      final selection = store.preserveReference(value);
+      final rejected = expectLater(selection, throwsStateError);
+      final clear = store.clear();
+      await rejected;
+      await clear;
+      final rebuilt = (await store.putBytes(
+        logicalKey: 'selected',
+        bytes: [1],
+      ))!;
+      await store.preserveReference(rebuilt);
+      expect(await File(rebuilt).exists(), isTrue);
+    },
+  );
+
+  for (final android in [false, true]) {
     for (final version in [1, 2]) {
       test(
         'cold restore retires old Android automatic artwork ($android, index $version)',

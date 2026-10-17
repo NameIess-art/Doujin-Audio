@@ -9,10 +9,10 @@ class _CollapsingAsmrWork {
   }) {
     controller = AnimationController(
       vsync: vsync,
-      duration: const Duration(milliseconds: 260),
+      duration: kAppFadeDuration,
       value: 1.0,
     );
-    animation = CurvedAnimation(parent: controller, curve: Curves.easeOutCubic);
+    animation = CurvedAnimation(parent: controller, curve: kAppFadeCurve);
     controller.reverse().then((_) {
       onComplete();
     });
@@ -192,11 +192,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     // records. Lazy card creation then observes the batch's current opacity.
     final controller = AnimationController(
       vsync: this,
-      duration: kPlaceholderContentTransitionDuration,
+      duration: kAppFadeDuration,
     );
-    final animation = controller.drive(
-      CurveTween(curve: Curves.easeInOutCubic),
-    );
+    final animation = controller.drive(CurveTween(curve: kAppFadeCurve));
     _loadingBatchControllers.add(controller);
     for (final work in works.skip(previous.works.length)) {
       _loadingWorkAnimations[work.id] = animation;
@@ -524,9 +522,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                           key: const ValueKey<String>('asmr_load_more_footer'),
                           duration: reduceMotion
                               ? Duration.zero
-                              : kPlaceholderContentTransitionDuration,
-                          switchInCurve: Curves.easeInOutCubic,
-                          switchOutCurve: Curves.easeInOutCubic,
+                              : kAppFadeDuration,
+                          switchInCurve: kAppFadeCurve,
+                          switchOutCurve: kAppFadeCurve,
                           child: !hasLoadMore
                               ? const SizedBox.shrink(
                                   key: ValueKey<String>(

@@ -1,3 +1,4 @@
+import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
@@ -272,7 +273,10 @@ class _RoutedPlaybackDockHostState
                 color:
                     widget.backgroundColor ??
                     Theme.of(context).colorScheme.surface,
-                child: navigatorChild!,
+                child: AppPageTransitionHost(
+                  enabled: !_routeObserver.hasPopups,
+                  child: navigatorChild!,
+                ),
               ),
               Overlay(key: _menuOverlayKey),
             ],
@@ -295,6 +299,8 @@ class _RootPageRouteObserver extends NavigatorObserver {
   final Set<PageRoute<dynamic>> _departingWorkDetailRoutes = {};
   // Nested dialogs must not restore dock ordering while their menu is open.
   final Set<PopupRoute<dynamic>> _sessionDetailPopups = {};
+  final Set<PopupRoute<dynamic>> _popups = {};
+  bool get hasPopups => _popups.isNotEmpty;
   bool _syncScheduled = false;
   bool _disposed = false;
 
@@ -355,6 +361,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
     }
     _routeAnimationListeners.clear();
     _sessionDetailPopups.clear();
+    _popups.clear();
     _departingRoutes.clear();
     _departingWorkDetailRoutes.clear();
   }
@@ -386,6 +393,15 @@ class _RootPageRouteObserver extends NavigatorObserver {
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PopupRoute<dynamic>) {
+      _popups.add(route);
+      _sync();
+      unawaited(
+        route.completed.then((_) {
+          if (!_disposed && _popups.remove(route)) _syncImmediately();
+        }),
+      );
+    }
     if (route case final PageRoute<dynamic> pageRoute) {
       _routes.add(pageRoute);
       _trackAnimation(pageRoute);

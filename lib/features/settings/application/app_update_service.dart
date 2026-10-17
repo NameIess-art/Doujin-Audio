@@ -53,13 +53,30 @@ class AppUpdateService {
   final Future<Directory> Function() _temporaryDirectoryProvider;
   final DateTime Function() _clock;
   final bool _isWindows;
-  final _verifiedDownloads = <String, String>{};
+  ({String path, String checksum, CachePathLease lease})? _verifiedDownload;
+  HttpClient? _downloadClient;
+  String? _downloadWritePath;
+  bool _disposed = false;
   String? _activeDownloadIdentity;
   Future<File>? _activeDownload;
   final Set<void Function(double? progress)> _downloadListeners =
       <void Function(double? progress)>{};
   final Map<String, Future<UpdateInstallResult>> _activeInstalls =
       <String, Future<UpdateInstallResult>>{};
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _downloadClient?.close(force: true);
+    _verifiedDownload?.lease.release();
+    _verifiedDownload = null;
+  }
+
+  void releaseDownloadedUpdate(File file) {
+    if (_verifiedDownload?.path != path.normalize(file.absolute.path)) return;
+    _verifiedDownload?.lease.release();
+    _verifiedDownload = null;
+  }
 
   Future<AppUpdateInfo> checkLatest() async {
     final currentVersion = await currentAppVersion();
@@ -367,6 +384,7 @@ class AppUpdateService {
     AppUpdateInfo info, {
     required void Function(double? progress) onProgress,
   }) async {
+    if (_disposed) throw StateError('Update service has been disposed.');
     final identity =
         '${info.assetUrl}|${info.checksumAssetUrl}|${info.assetName}';
     final active = _activeDownload;
@@ -418,6 +436,7 @@ class AppUpdateService {
     required void Function(double? progress) onProgress,
   }) async {
     final tempDir = await _temporaryDirectoryProvider();
+    if (_disposed) throw StateError('Update service has been disposed.');
     final assetName = info.assetName;
     final assetUrl = info.assetUrl;
     if (assetName == null || assetUrl == null || !info.canDownload) {
@@ -439,23 +458,21 @@ class AppUpdateService {
       ),
     );
     final partialFile = File('${file.path}.part');
+    final filePath = path.normalize(file.absolute.path);
     final cacheLease = AppCacheService.protectPaths(<String>[
       file.path,
       partialFile.path,
     ]);
+    var retained = false;
+    var ownsOutput = false;
     final client = _httpClientFactory();
+    _downloadClient = client;
     try {
       client.connectionTimeout = _requestTimeout;
     } catch (_) {
       // Test doubles and platform clients may not expose socket settings.
     }
     try {
-      if (await file.exists()) {
-        await file.delete();
-      }
-      if (await partialFile.exists()) {
-        await partialFile.delete();
-      }
       final checksumUrl = info.checksumAssetUrl;
       if (checksumUrl == null || checksumUrl.isEmpty) {
         throw const FormatException(
@@ -467,6 +484,35 @@ class AppUpdateService {
         checksumUrl,
         assetName,
       );
+      final verified = _verifiedDownload;
+      if (verified?.path == filePath &&
+          verified?.checksum == expectedChecksum &&
+          await file.exists() &&
+          (await sha256.bind(file.openRead()).first).toString() ==
+              expectedChecksum) {
+        onProgress(1);
+        if (_disposed) throw StateError('Update service has been disposed.');
+        final previous = _verifiedDownload;
+        _verifiedDownload = (
+          path: filePath,
+          checksum: expectedChecksum,
+          lease: cacheLease,
+        );
+        retained = true;
+        previous?.lease.release();
+        return file;
+      }
+      if (_disposed) throw StateError('Update service has been disposed.');
+      if (_activeInstalls.containsKey(filePath)) {
+        throw StateError('Cannot replace an update while it is installing.');
+      }
+      // Serialize destructive writes against install calls, which can start
+      // while the checksum request or local verification is awaiting I/O.
+      _downloadWritePath = filePath;
+      releaseDownloadedUpdate(file);
+      ownsOutput = true;
+      if (await file.exists()) await file.delete();
+      if (await partialFile.exists()) await partialFile.delete();
       final request = await client
           .getUrl(Uri.parse(assetUrl))
           .timeout(_requestTimeout);
@@ -498,22 +544,35 @@ class AppUpdateService {
         throw const FormatException('Update checksum verification failed.');
       }
       await partialFile.rename(file.path);
-      _verifiedDownloads[path.normalize(file.absolute.path)] = expectedChecksum;
       await file.setLastModified(_clock());
       await AppCacheService.enforceLimit();
       onProgress(1);
+      if (_disposed) throw StateError('Update service has been disposed.');
+      final previous = _verifiedDownload;
+      // Android hands a FileProvider URI to an external installer and returns
+      // before it finishes reading. Keep at most this one verified package until
+      // replacement or service disposal; the native call's Future is too short.
+      _verifiedDownload = (
+        path: filePath,
+        checksum: expectedChecksum,
+        lease: cacheLease,
+      );
+      retained = true;
+      previous?.lease.release();
       return file;
     } catch (error) {
-      if (await partialFile.exists()) {
+      if (ownsOutput && await partialFile.exists()) {
         await partialFile.delete();
       }
-      if (await file.exists()) {
+      if (ownsOutput && await file.exists()) {
         await file.delete();
       }
       rethrow;
     } finally {
       client.close(force: true);
-      cacheLease.release();
+      if (_downloadWritePath == filePath) _downloadWritePath = null;
+      if (identical(_downloadClient, client)) _downloadClient = null;
+      if (!retained) cacheLease.release();
     }
   }
 
@@ -586,9 +645,13 @@ class AppUpdateService {
   }
 
   Future<UpdateInstallResult> installUpdate(File file) async {
+    if (_disposed) throw StateError('Update service has been disposed.');
     final installPath = path.normalize(file.absolute.path);
     final active = _activeInstalls[installPath];
     if (active != null) return active;
+    if (_downloadWritePath == installPath) {
+      throw StateError('Cannot install an update while it is downloading.');
+    }
     late final Future<UpdateInstallResult> future;
     future = _installUpdateOnce(file).whenComplete(() {
       if (identical(_activeInstalls[installPath], future)) {
@@ -600,8 +663,25 @@ class AppUpdateService {
   }
 
   Future<UpdateInstallResult> _installUpdateOnce(File file) async {
+    final lease = AppCacheService.protectPaths([file.absolute.path]);
+    try {
+      final result = await _launchUpdateInstaller(file);
+      if (!result.ok && !result.needsPermission) releaseDownloadedUpdate(file);
+      return result;
+    } catch (_) {
+      releaseDownloadedUpdate(file);
+      rethrow;
+    } finally {
+      lease.release();
+    }
+  }
+
+  Future<UpdateInstallResult> _launchUpdateInstaller(File file) async {
     if (_isWindows) {
-      final expected = _verifiedDownloads[path.normalize(file.absolute.path)];
+      final verified = _verifiedDownload;
+      final expected = verified?.path == path.normalize(file.absolute.path)
+          ? verified?.checksum
+          : null;
       if (expected == null ||
           !await file.exists() ||
           (await sha256.bind(file.openRead()).first).toString() != expected) {

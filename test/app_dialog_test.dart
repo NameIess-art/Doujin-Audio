@@ -115,12 +115,21 @@ void main() {
     final dialogScrim = tester.widget<ColoredBox>(
       find.byKey(const ValueKey('app_dialog_scrim')),
     );
-    expect(
-      dialogScrim.color.a,
-      closeTo(kSecondaryOverlayConfig.backgroundOpacity, 0.001),
-    );
+    expect(dialogScrim.color.a, closeTo(0, 0.001));
 
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(
+      tester
+          .widget<ColoredBox>(find.byKey(const ValueKey('app_dialog_scrim')))
+          .color
+          .a,
+      closeTo(
+        kAppFadeCurve.transform(0.5) *
+            kSecondaryOverlayConfig.backgroundOpacity,
+        0.001,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 150));
 
     expect(find.byType(AppDialog), findsOneWidget);
     expect(find.byKey(const ValueKey('app_dialog_surface')), findsOneWidget);
@@ -223,7 +232,11 @@ void main() {
     final beforeClose = scrimOpacity();
     expect(
       beforeClose,
-      closeTo(kSecondaryOverlayConfig.backgroundOpacity, 0.001),
+      closeTo(
+        kAppFadeCurve.transform(110 / 300) *
+            kSecondaryOverlayConfig.backgroundOpacity,
+        0.001,
+      ),
     );
     expect(coordinator.navigationAllowed.value, isFalse);
     await tester.testTextInput.receiveAction(TextInputAction.done);

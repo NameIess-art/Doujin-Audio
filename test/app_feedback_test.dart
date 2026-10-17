@@ -889,7 +889,7 @@ void main() {
       await tester.tap(find.text('First'));
       await tester.pump();
       await tester.pump(
-        const Duration(milliseconds: 250),
+        const Duration(milliseconds: 300),
       ); // Finish initial fade-in
 
       expect(find.text('First message'), findsOneWidget);

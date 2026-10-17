@@ -323,7 +323,6 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
         return AppFadeThroughIndexedStack.lazy(
           key: const ValueKey<String>('library_search_category_stack'),
           indexListenable: _activeCategoryIndex,
-          duration: kAppMotionSlow,
           contentRevision: (
             libraryFacade,
             structureRevision,

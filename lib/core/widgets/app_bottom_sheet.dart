@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_styles.dart';
+import 'app_transitions.dart';
 
 class AppBottomSheet {
   static const contentPadding = EdgeInsets.fromLTRB(20, 8, 20, 12);
@@ -10,7 +11,7 @@ class AppBottomSheet {
   static Duration reverseAnimationDurationOf(BuildContext context) =>
       MediaQuery.disableAnimationsOf(context)
       ? Duration.zero
-      : const Duration(milliseconds: 250);
+      : kAppFadeDuration;
 
   static Future<T?> show<T>({
     required BuildContext context,
@@ -33,7 +34,7 @@ class AppBottomSheet {
         (MediaQuery.disableAnimationsOf(context)
             ? AnimationStyle.noAnimation
             : AnimationStyle(
-                duration: const Duration(milliseconds: 320),
+                duration: kAppFadeDuration,
                 reverseDuration: reverseAnimationDurationOf(context),
                 curve: Curves.fastOutSlowIn,
                 reverseCurve: Curves.fastOutSlowIn,
@@ -136,6 +137,9 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
   });
 
   final bool halfWidth;
+
+  @override
+  Curve get barrierCurve => kAppFadeCurve;
 
   @override
   Widget buildPage(

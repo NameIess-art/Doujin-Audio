@@ -1,3 +1,4 @@
+import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -16,7 +17,6 @@ import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
-import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
@@ -1272,7 +1272,7 @@ void main() {
     },
   );
 
-  testWidgets('download skeletons fade out for 450ms as data arrives', (
+  testWidgets('download skeletons fade out for 300ms as data arrives', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -1305,7 +1305,7 @@ void main() {
       const ValueKey<String>('asmr_download_summary_skeleton'),
     );
     expect(summarySkeleton, findsOneWidget);
-    expect(find.byType(OperationSkeletonList), findsOneWidget);
+    expect(find.byType(FileTreeSkeleton), findsOneWidget);
 
     workResult.complete(_work());
     await tester.pump();
@@ -1316,9 +1316,9 @@ void main() {
       findsOneWidget,
     );
     await tester.pump(const Duration(milliseconds: 1));
-    await tester.pump(const Duration(milliseconds: 225));
+    await tester.pump(const Duration(milliseconds: 150));
     expect(summarySkeleton, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 223));
+    await tester.pump(const Duration(milliseconds: 148));
     expect(summarySkeleton, findsOneWidget);
     await tester.pump(const Duration(milliseconds: 2));
     expect(summarySkeleton, findsNothing);
@@ -1334,12 +1334,12 @@ void main() {
           .duration,
       kPlaceholderContentTransitionDuration,
     );
-    expect(find.byType(OperationSkeletonList), findsOneWidget);
+    expect(find.byType(FileTreeSkeleton), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1));
-    await tester.pump(const Duration(milliseconds: 225));
-    expect(find.byType(OperationSkeletonList), findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 225));
-    expect(find.byType(OperationSkeletonList), findsNothing);
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(find.byType(FileTreeSkeleton), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(find.byType(FileTreeSkeleton), findsNothing);
     expect(
       find.byKey(const ValueKey<String>('asmr_download_file_list')),
       findsOneWidget,

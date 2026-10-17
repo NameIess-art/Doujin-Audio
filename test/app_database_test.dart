@@ -2438,6 +2438,74 @@ void main() {
   );
 
   test(
+    'session restoration keeps large nested remote queues ordered and immutable',
+    () async {
+      final tracks = List.generate(
+        1001,
+        (index) => MusicTrack(
+          path: 'https://example.com/$index.mp3',
+          displayName: 'Track $index',
+          groupKey: 'asmr-work-1',
+          groupTitle: 'Remote work',
+          groupSubtitle: 'RJ000001',
+          isSingle: false,
+          remoteMetadataKind: 'asmr.one',
+          remoteMetadata: {
+            'trackDirectoryPath': '01_mp3',
+            'trackRelativePath': '01_mp3/$index.mp3',
+            'subtitles': [
+              {
+                'url': 'https://example.com/$index.vtt',
+                'languages': ['zh', 'ja'],
+              },
+            ],
+          },
+        ),
+      );
+      await repository.seedSessions([
+        PersistedPlaybackSession(
+          id: 'large_remote',
+          trackPath: tracks[500].path,
+          loopModeIndex: 1,
+          volume: 0.75,
+          positionMs: 1234,
+          durationMs: 5678,
+          customQueueTracks: [...tracks, tracks.first],
+          currentQueueIndex: 500,
+          channelSwapEnabled: true,
+          audioEffects: AudioEffectsState(eqBandLevels: {1000: 2.5}),
+          sortOrder: 0,
+        ),
+      ]);
+
+      final loaded = (await repository.loadAllSessions()).single;
+      final restored = loaded.customQueueTracks!;
+      expect(restored.map((track) => track.path), [
+        ...tracks.map((track) => track.path),
+        tracks.first.path,
+      ]);
+      expect(restored[500].toJson(), tracks[500].toJson());
+      expect(restored.last.toJson(), tracks.first.toJson());
+      expect(loaded.currentQueueIndex, 500);
+      expect(loaded.positionMs, 1234);
+      expect(loaded.channelSwapEnabled, isTrue);
+      expect(loaded.audioEffects.eqBandLevels, {1000: 2.5});
+      final metadata = restored[500].remoteMetadata!;
+      final subtitles = metadata['subtitles'] as List;
+      final subtitle = subtitles.single as Map;
+      expect(
+        () => metadata['trackDirectoryPath'] = 'changed',
+        throwsUnsupportedError,
+      );
+      expect(() => subtitles.clear(), throwsUnsupportedError);
+      expect(
+        () => (subtitle['languages'] as List).clear(),
+        throwsUnsupportedError,
+      );
+    },
+  );
+
+  test(
     'upsertSession preserves unrelated sessions and skipped queue and effects',
     () async {
       final first = _playbackSession('a');

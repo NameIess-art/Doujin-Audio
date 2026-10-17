@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart' show clampDouble;
 import 'package:flutter/material.dart';
 
 import 'app_feedback.dart';
+import 'app_transitions.dart';
 
 // The over-scroll distance that moves the indicator to its maximum
 // displacement, as a percentage of the scrollable's container extent.
@@ -581,6 +582,9 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
 
   // Stop showing the refresh indicator.
   Future<void> _dismiss(GlassGlassRefreshIndicatorStatus newMode) async {
+    final fadeDuration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : kAppFadeDuration;
     await Future<void>.value();
     // This can only be called from _show() when refreshing and
     // _handleScrollNotification in response to a ScrollEndNotification or
@@ -597,7 +601,8 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
       case GlassGlassRefreshIndicatorStatus.done:
         await _scaleController.animateTo(
           1.0,
-          duration: _kIndicatorScaleDuration,
+          duration: fadeDuration,
+          curve: kAppFadeCurve,
         );
       case GlassGlassRefreshIndicatorStatus.canceled:
         await _positionController.animateTo(

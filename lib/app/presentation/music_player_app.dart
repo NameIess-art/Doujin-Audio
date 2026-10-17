@@ -79,7 +79,10 @@ Widget createAudioPlayerApp({
       appLanguageProviderInstanceProvider.overrideWithValue(
         appLanguageProvider,
       ),
-      appUpdateServiceProvider.overrideWithValue(appUpdateService),
+      appUpdateServiceProvider.overrideWith((ref) {
+        ref.onDispose(appUpdateService.dispose);
+        return appUpdateService;
+      }),
       asmrDownloadManagerProvider.overrideWithValue(asmrDownloadManager),
       asmrWorkFinderProvider.overrideWithValue(
         asmrMetadataService.findAsmrWorkByRjCode,

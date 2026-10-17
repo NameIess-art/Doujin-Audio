@@ -369,9 +369,11 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
           customBorder: const CircleBorder(),
           child: Center(
             child: AnimatedSwitcher(
+              switchOutCurve: kAppFadeCurve,
+              switchInCurve: kAppFadeCurve,
               duration: MediaQuery.disableAnimationsOf(context)
                   ? Duration.zero
-                  : AppDesignTokens.of(context).motionFast,
+                  : kAppFadeDuration,
               transitionBuilder: (child, animation) {
                 return ScaleTransition(
                   scale: Tween<double>(begin: 0.4, end: 1.0).animate(

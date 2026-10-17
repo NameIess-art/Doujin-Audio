@@ -114,7 +114,9 @@ class _StorageUsageCardState extends ConsumerState<StorageUsageCard> {
         return AnimatedSwitcher(
           duration: MediaQuery.disableAnimationsOf(context)
               ? Duration.zero
-              : kPlaceholderContentTransitionDuration,
+              : kAppFadeDuration,
+          switchInCurve: kAppFadeCurve,
+          switchOutCurve: kAppFadeCurve,
           child: KeyedSubtree(key: ValueKey(phase), child: card),
         );
       },

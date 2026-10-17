@@ -54,7 +54,6 @@ import 'package:doujin_audio/features/library/application/library_organizer.dart
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
-import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -633,7 +632,7 @@ void main() {
       }
 
       await remove();
-      await tester.pump(kAppMotionStandard ~/ 2);
+      await tester.pump(kAppFadeDuration ~/ 2);
       final collapsing = tester.getSize(libraryRow(nodes.first.path)).height;
       expect(collapsing, greaterThan(0));
       expect(collapsing, lessThan(LibraryLikeCardMetrics.rootTileHeight));
@@ -641,19 +640,19 @@ void main() {
       await tester.pumpWidget(page());
       await service.undoPending();
       await tester.pump();
-      await tester.pump(kAppMotionStandard + const Duration(milliseconds: 1));
+      await tester.pump(kAppFadeDuration + const Duration(milliseconds: 1));
       expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
       rowTickers = true;
       await tester.pumpWidget(page());
       await tester.pump();
       expect(tester.state(transition()), same(state));
       expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
-      await tester.pump(kAppMotionStandard ~/ 2);
+      await tester.pump(kAppFadeDuration ~/ 2);
       expect(
         tester.getSize(libraryRow(nodes.first.path)).height,
         greaterThan(collapsing),
       );
-      await tester.pump(kAppMotionStandard + const Duration(milliseconds: 1));
+      await tester.pump(kAppFadeDuration + const Duration(milliseconds: 1));
       await tester.pump();
       expect(tester.state(transition()), same(state));
       expect(
@@ -661,7 +660,7 @@ void main() {
         LibraryLikeCardMetrics.rootTileHeight,
       );
       await remove();
-      await tester.pump(kAppMotionStandard + const Duration(milliseconds: 1));
+      await tester.pump(kAppFadeDuration + const Duration(milliseconds: 1));
       await service.commitPending();
       await tester.pump();
       expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
@@ -3691,15 +3690,14 @@ void main() {
     expect(find.byIcon(Icons.video_library_rounded), findsNothing);
     await tester.tap(find.byTooltip(languageProvider.tr('add')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text(languageProvider.tr('import_folder')), findsOneWidget);
     expect(find.text(languageProvider.tr('import_file')), findsOneWidget);
     expect(find.text(languageProvider.tr('choose_library')), findsOneWidget);
 
     await tester.tapAt(const Offset(10, 10));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip(languageProvider.tr('edit_library')));
     await tester.pump();
@@ -5247,7 +5245,7 @@ void main() {
         PathMatcher.normalize('/library/Works'),
       );
       expect(pageWidget.customWorkFolderName, 'RJ123456_Work');
-      expect(find.byType(OperationSkeletonList), findsOneWidget);
+      expect(find.byType(FileTreeSkeleton), findsOneWidget);
       expect(
         find.byKey(const ValueKey<String>('asmr_download_summary_skeleton')),
         findsOneWidget,

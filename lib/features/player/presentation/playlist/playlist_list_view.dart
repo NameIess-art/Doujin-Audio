@@ -24,7 +24,6 @@ import 'playlist_shared_helpers.dart';
 const double playlistListHorizontalPadding = AppSpacing.xs;
 
 const Color _playlistSelectionCheckmarkColor = Color(0xFF4CAF50);
-const Duration _playlistIndicatorFadeDuration = Duration(milliseconds: 450);
 
 class PlaylistSelectionIndicator extends StatelessWidget {
   const PlaylistSelectionIndicator({
@@ -41,7 +40,7 @@ class PlaylistSelectionIndicator extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : _playlistIndicatorFadeDuration;
+        : kAppFadeDuration;
     final surfaceBorderColor = isSelected
         ? Color.alphaBlend(
             cs.primaryContainer.withValues(alpha: 0.15),
@@ -53,8 +52,8 @@ class PlaylistSelectionIndicator extends StatelessWidget {
         child: AnimatedSwitcher(
           duration: duration,
           reverseDuration: duration,
-          switchInCurve: Curves.easeInOut,
-          switchOutCurve: Curves.easeInOut,
+          switchInCurve: kAppFadeCurve,
+          switchOutCurve: kAppFadeCurve,
           transitionBuilder: (child, animation) {
             return FadeTransition(opacity: animation, child: child);
           },
@@ -106,7 +105,7 @@ class PlaylistPinnedIndicator extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : _playlistIndicatorFadeDuration;
+        : kAppFadeDuration;
     final pinColor = color ?? cs.primary;
     final surfaceBorderColor = isSelected
         ? Color.alphaBlend(
@@ -119,8 +118,8 @@ class PlaylistPinnedIndicator extends StatelessWidget {
         child: AnimatedSwitcher(
           duration: duration,
           reverseDuration: duration,
-          switchInCurve: Curves.easeInOut,
-          switchOutCurve: Curves.easeInOut,
+          switchInCurve: kAppFadeCurve,
+          switchOutCurve: kAppFadeCurve,
           child: isPinned
               ? Container(
                   key: ValueKey<String>('playlist_session_pinned_$sessionId'),
@@ -642,10 +641,12 @@ class SessionListCard extends ConsumerWidget {
                                 padding: EdgeInsets.zero,
                               ),
                               icon: AnimatedSwitcher(
+                                switchOutCurve: kAppFadeCurve,
+                                switchInCurve: kAppFadeCurve,
                                 duration:
                                     MediaQuery.disableAnimationsOf(context)
                                     ? Duration.zero
-                                    : const Duration(milliseconds: 120),
+                                    : kAppFadeDuration,
                                 transitionBuilder: (child, animation) {
                                   return ScaleTransition(
                                     scale: Tween<double>(begin: 0.4, end: 1.0)

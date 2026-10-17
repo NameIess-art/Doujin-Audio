@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
+import '../../core/widgets/app_transitions.dart';
 import '../localization/app_language_provider.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
@@ -30,6 +31,7 @@ class MobileDockCapsuleContent extends StatefulWidget {
     required bool isPlaybackExpanded,
     required double anchorProgress,
     required double stackProgress,
+    required double fadeProgress,
     required double expandedWidth,
     required VoidCallback onCurrentTap,
   })
@@ -199,6 +201,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
             final stackProgress = Curves.easeInOut.transform(
               ((expand - 0.2) / 0.45).clamp(0.0, 1.0),
             );
+            final fadeProgress = kAppFadeCurve.transform(expand);
             final layoutProgress = Curves.easeInOut.transform(
               ((expand - 0.25) / 0.5).clamp(0.0, 1.0),
             );
@@ -217,6 +220,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
               context,
               anchorProgress: anchorProgress,
               stackProgress: stackProgress,
+              fadeProgress: fadeProgress,
               expandedWidth: availableWidth - compactWidth * appearance,
             );
 
@@ -271,6 +275,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     BuildContext context, {
     required double anchorProgress,
     required double stackProgress,
+    required double fadeProgress,
     required double expandedWidth,
   }) {
     return ClipRect(
@@ -279,6 +284,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
         isPlaybackExpanded: widget.isPlaybackExpanded,
         anchorProgress: anchorProgress,
         stackProgress: stackProgress,
+        fadeProgress: fadeProgress,
         expandedWidth: expandedWidth,
         onCurrentTap: widget.onShowDestinations,
       ),

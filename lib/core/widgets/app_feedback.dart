@@ -10,6 +10,7 @@ import '../ui/app_interaction_feedback_settings.dart';
 import '../ui/undoable_removal_service.dart';
 import '../ui/ui_operation_service.dart';
 import '../logging/app_log_service.dart';
+import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
 
 enum AppFeedbackTone { info, success, warning, destructive }
@@ -98,8 +99,9 @@ void Function(String message)? get _activeFeedbackUpdateMessage {
   return (String nextMessage) {
     if (_activeDataNotifier != null &&
         _activeDataNotifier!.value.message != nextMessage) {
-      _activeDataNotifier!.value =
-          _activeDataNotifier!.value.copyWith(message: nextMessage);
+      _activeDataNotifier!.value = _activeDataNotifier!.value.copyWith(
+        message: nextMessage,
+      );
     }
   };
 }
@@ -465,15 +467,18 @@ void _showTopFeedback(
                 if (findCanvas(element)) element.visitChildren(visit);
               }
 
-              final routeContext =
-                  ModalRoute.of(currentData.context)?.subtreeContext;
+              final routeContext = ModalRoute.of(
+                currentData.context,
+              )?.subtreeContext;
               if (routeContext is Element) visit(routeContext);
             }
             final box = targetBox;
             final overlayBox = overlay.context.findRenderObject();
             if (box != null && overlayBox is RenderBox) {
-              final origin =
-                  box.localToGlobal(Offset.zero, ancestor: overlayBox);
+              final origin = box.localToGlobal(
+                Offset.zero,
+                ancestor: overlayBox,
+              );
               leftInset = origin.dx + 16.0;
               rightInset =
                   overlayBox.size.width - origin.dx - box.size.width + 16.0;
@@ -492,8 +497,9 @@ void _showTopFeedback(
             child: _FeedbackAnimationWrapper(
               key: animationKey,
               duration: currentData.duration,
-              transitionDuration:
-                  AppDesignTokens.of(overlayContext).motionStandard,
+              transitionDuration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : kAppFadeDuration,
               showCountdown: currentData.showCountdown,
               onRemove: () => removeEntry(AppFeedbackDismissReason.timeout),
               builder: (wrapperContext, remainingSeconds) {
@@ -602,7 +608,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
       vsync: this,
       duration: widget.transitionDuration,
     );
-    _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _opacity = CurvedAnimation(parent: _controller, curve: kAppFadeCurve);
 
     _controller.forward();
     _startDuration(_currentDuration, _currentShowCountdown);
@@ -739,7 +745,11 @@ class AppFeedbackSurface extends StatelessWidget {
               ),
               child: Center(
                 child: AnimatedSwitcher(
-                  duration: tokens.motionFast,
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : kAppFadeDuration,
+                  switchInCurve: kAppFadeCurve,
+                  switchOutCurve: kAppFadeCurve,
                   child: Icon(
                     icon,
                     key: ValueKey<IconData>(icon),

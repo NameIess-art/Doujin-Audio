@@ -66,15 +66,25 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
         topInset: headerHeight + 16,
         child: Stack(
           children: [
-            AppPageContentTransition.deferred(
-              placeholder: placeholder,
-              builder: (context) => FutureBuilder<void>(
-                future: _initialization,
-                builder: (context, snapshot) {
-                  final manager = ref.read(asmrDownloadManagerProvider);
-                  if (manager != null && !manager.persistedUriReferencesReady) {
-                    if (snapshot.hasError) {
-                      return Padding(
+            FutureBuilder<void>(
+              future: _initialization,
+              builder: (context, snapshot) {
+                final manager = ref.read(asmrDownloadManagerProvider);
+                final recovering =
+                    manager != null && !manager.persistedUriReferencesReady;
+                final failed =
+                    snapshot.connectionState == ConnectionState.done &&
+                    snapshot.hasError;
+                final waiting = recovering && !failed;
+                return AppPageContentTransition.deferred(
+                  isReady: !waiting,
+                  placeholder: placeholder,
+                  builder: (context) {
+                    final Widget content;
+                    if (waiting) {
+                      content = const SizedBox.shrink();
+                    } else if (recovering && failed) {
+                      content = Padding(
                         padding: listPadding,
                         child: OperationStatusBanner(
                           label: i18n.tr('asmr_detail_load_failed'),
@@ -83,55 +93,60 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
                           onRetry: () => setState(_initialize),
                         ),
                       );
-                    }
-                    return placeholder;
-                  }
-                  return Consumer(
-                    builder: (context, ref, _) {
-                      final state = ref
-                          .watch(asmrDownloadTaskIdsProvider)
-                          .value;
-                      final removalState = ref.watch(
-                        undoableRemovalStateProvider,
-                      );
-                      final taskIds =
-                          (state ??
-                                  ref
-                                      .read(asmrDownloadManagerProvider)
-                                      ?.taskIds ??
-                                  const <int>[])
-                              .where(
-                                (workId) => !removalState.isHidden(
-                                  _asmrDownloadTaskRemovalKey(workId),
-                                ),
-                              )
-                              .toList(growable: false);
-                      return taskIds.isEmpty
-                          ? Center(
-                              child: Text(
-                                i18n.tr('asmr_download_no_tasks'),
-                                style: Theme.of(context).textTheme.bodyLarge
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
+                    } else {
+                      content = Consumer(
+                        builder: (context, ref, _) {
+                          final state = ref
+                              .watch(asmrDownloadTaskIdsProvider)
+                              .value;
+                          final removalState = ref.watch(
+                            undoableRemovalStateProvider,
+                          );
+                          final taskIds =
+                              (state ??
+                                      ref
+                                          .read(asmrDownloadManagerProvider)
+                                          ?.taskIds ??
+                                      const <int>[])
+                                  .where(
+                                    (workId) => !removalState.isHidden(
+                                      _asmrDownloadTaskRemovalKey(workId),
                                     ),
-                              ),
-                            )
-                          : ListView.builder(
-                              padding: listPadding,
-                              physics: const ClampingScrollPhysics(),
-                              itemCount: taskIds.length,
-                              itemBuilder: (context, index) {
-                                return _DownloadTaskItem(
-                                  workId: taskIds[index],
+                                  )
+                                  .toList(growable: false);
+                          return taskIds.isEmpty
+                              ? Center(
+                                  child: Text(
+                                    i18n.tr('asmr_download_no_tasks'),
+                                    style: Theme.of(context).textTheme.bodyLarge
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                )
+                              : ListView.builder(
+                                  padding: listPadding,
+                                  physics: const ClampingScrollPhysics(),
+                                  itemCount: taskIds.length,
+                                  itemBuilder: (context, index) {
+                                    return _DownloadTaskItem(
+                                      workId: taskIds[index],
+                                    );
+                                  },
                                 );
-                              },
-                            );
-                    },
-                  );
-                },
-              ),
+                        },
+                      );
+                    }
+                    return PlaceholderContentTransition(
+                      showPlaceholder: waiting,
+                      placeholder: placeholder,
+                      content: content,
+                    );
+                  },
+                );
+              },
             ),
             Positioned(
               top: 0,

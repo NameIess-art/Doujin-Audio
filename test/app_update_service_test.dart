@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/cache/app_cache_service.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 
@@ -28,10 +30,14 @@ void main() {
         });
     payload = utf8.encode('verified update payload');
     service = AppUpdateService();
+    AppCacheService.resetForTest(temporaryDirectories: () async => [tempDir]);
+    AppCacheService.scheduledEnforceEnabled = false;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   });
 
   tearDown(() async {
+    service.dispose();
+    AppCacheService.resetForTest();
     HttpOverrides.global = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(pathProviderChannel, null);
@@ -47,7 +53,7 @@ void main() {
     }
   });
 
-  AppUpdateInfo info({String? checksumPath}) {
+  AppUpdateInfo info({String? checksumPath, String name = assetName}) {
     final base = 'http://${server.address.host}:${server.port}';
     return AppUpdateInfo(
       currentVersion: const AppVersionInfo(
@@ -56,7 +62,7 @@ void main() {
       ),
       latestVersionName: '1.0.1',
       tagName: '1.0.1',
-      assetName: assetName,
+      assetName: name,
       assetUrl: '$base/update',
       checksumAssetUrl: checksumPath == null ? null : '$base/$checksumPath',
       releaseUrl: '$base/release',
@@ -104,6 +110,345 @@ void main() {
     expect(await file.readAsBytes(), payload);
     expect(File('${file.path}.part').existsSync(), isFalse);
   });
+
+  test(
+    'verified package survives maintenance after native installer returns',
+    () async {
+      AppCacheService.scheduledEnforceEnabled = true;
+      await AppCacheService.setMaxCacheBytes(1, enforceImmediately: false);
+      server.listen((request) async {
+        if (request.uri.path == '/checksum') {
+          request.response.write('${sha256.convert(payload)}  $assetName');
+        } else {
+          request.response.add(payload);
+        }
+        await request.response.close();
+      });
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            updateChannel,
+            (_) async => {
+              'ok': true,
+              'value': {'ok': true, 'needsPermission': false},
+            },
+          );
+      final file = await service.downloadUpdate(
+        info(checksumPath: 'checksum'),
+        onProgress: (_) {},
+      );
+      expect((await service.installUpdate(file)).ok, isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 2200));
+      await AppCacheService.enforceLimit();
+      expect(await file.readAsBytes(), payload);
+      expect(await AppCacheService.clearTemporaryCaches(), 0);
+      service.dispose();
+      await AppCacheService.clearTemporaryCaches();
+      expect(await file.exists(), isFalse);
+    },
+  );
+
+  test(
+    'permission retry retains the package and terminal failure releases it',
+    () async {
+      await AppCacheService.setMaxCacheBytes(1, enforceImmediately: false);
+      server.listen((request) async {
+        if (request.uri.path == '/checksum') {
+          request.response.write('${sha256.convert(payload)}  $assetName');
+        } else {
+          request.response.add(payload);
+        }
+        await request.response.close();
+      });
+      var calls = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            updateChannel,
+            (_) async => {
+              'ok': true,
+              'value': {'ok': false, 'needsPermission': ++calls == 1},
+            },
+          );
+      final file = await service.downloadUpdate(
+        info(checksumPath: 'checksum'),
+        onProgress: (_) {},
+      );
+      expect((await service.installUpdate(file)).needsPermission, isTrue);
+      await AppCacheService.enforceLimit();
+      expect(await file.exists(), isTrue);
+      expect((await service.installUpdate(file)).ok, isFalse);
+      await AppCacheService.clearTemporaryCaches();
+      expect(await file.exists(), isFalse);
+    },
+  );
+
+  test(
+    'failed replacement keeps the previous verified package leased',
+    () async {
+      await AppCacheService.setMaxCacheBytes(1, enforceImmediately: false);
+      server.listen((request) async {
+        if (request.uri.path == '/checksum') {
+          request.response.write('${sha256.convert(payload)}  $assetName');
+        } else if (request.uri.path == '/bad-checksum') {
+          request.response.write('${'0' * 64}  next.apk');
+        } else {
+          request.response.add(payload);
+        }
+        await request.response.close();
+      });
+      final file = await service.downloadUpdate(
+        info(checksumPath: 'checksum'),
+        onProgress: (_) {},
+      );
+      await expectLater(
+        service.downloadUpdate(
+          info(checksumPath: 'bad-checksum', name: 'next.apk'),
+          onProgress: (_) {},
+        ),
+        throwsFormatException,
+      );
+      await AppCacheService.enforceLimit();
+      expect(await file.readAsBytes(), payload);
+      service.releaseDownloadedUpdate(file);
+      await AppCacheService.clearTemporaryCaches();
+      expect(await file.exists(), isFalse);
+    },
+  );
+
+  test(
+    'replacement retains only latest package without dropping an active install',
+    () async {
+      await AppCacheService.setMaxCacheBytes(1, enforceImmediately: false);
+      server.listen((request) async {
+        if (request.uri.path == '/checksum' ||
+            request.uri.path == '/next-checksum') {
+          final name = request.uri.path == '/checksum' ? assetName : 'next.apk';
+          request.response.write('${sha256.convert(payload)}  $name');
+        } else {
+          request.response.add(payload);
+        }
+        await request.response.close();
+      });
+      final entered = Completer<void>();
+      final finish = Completer<void>();
+      var launches = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(updateChannel, (_) async {
+            launches++;
+            entered.complete();
+            await finish.future;
+            return {
+              'ok': true,
+              'value': {'ok': true, 'needsPermission': false},
+            };
+          });
+      final first = await service.downloadUpdate(
+        info(checksumPath: 'checksum'),
+        onProgress: (_) {},
+      );
+      final install = service.installUpdate(first);
+      final duplicate = service.installUpdate(first);
+      await entered.future;
+      final next = await service.downloadUpdate(
+        info(checksumPath: 'next-checksum', name: 'next.apk'),
+        onProgress: (_) {},
+      );
+      await AppCacheService.clearTemporaryCaches();
+      expect(await first.exists(), isTrue);
+      expect(await next.exists(), isTrue);
+      finish.complete();
+      expect((await install).ok, isTrue);
+      expect((await duplicate).ok, isTrue);
+      expect(launches, 1);
+      await AppCacheService.clearTemporaryCaches();
+      expect(await first.exists(), isFalse);
+      expect(await next.exists(), isTrue);
+    },
+  );
+
+  test(
+    'dispose cancels an active download without retaining partial files',
+    () async {
+      final entered = Completer<void>();
+      server.listen((request) async {
+        if (request.uri.path == '/checksum') {
+          request.response.write('${sha256.convert(payload)}  $assetName');
+          await request.response.close();
+        } else {
+          entered.complete();
+        }
+      });
+      final download = service.downloadUpdate(
+        info(checksumPath: 'checksum'),
+        onProgress: (_) {},
+      );
+      final failure = expectLater(download, throwsA(isA<Exception>()));
+      await entered.future;
+      service.dispose();
+      await failure;
+      expect(Directory('${tempDir.path}/updates').listSync(), isEmpty);
+      await expectLater(
+        service.downloadUpdate(
+          info(checksumPath: 'checksum'),
+          onProgress: (_) {},
+        ),
+        throwsStateError,
+      );
+    },
+  );
+
+  test(
+    'completion callback disposal cannot retain a finished package',
+    () async {
+      server.listen((request) async {
+        if (request.uri.path == '/checksum') {
+          request.response.write('${sha256.convert(payload)}  $assetName');
+        } else {
+          request.response.add(payload);
+        }
+        await request.response.close();
+      });
+      var disposedOnCompletion = false;
+      await expectLater(
+        service.downloadUpdate(
+          info(checksumPath: 'checksum'),
+          onProgress: (progress) {
+            if (progress == 1 &&
+                File('${tempDir.path}/updates/$assetName').existsSync()) {
+              disposedOnCompletion = true;
+              service.dispose();
+            }
+          },
+        ),
+        throwsStateError,
+      );
+      expect(disposedOnCompletion, isTrue);
+      expect(Directory('${tempDir.path}/updates').listSync(), isEmpty);
+    },
+  );
+
+  test(
+    'same package is reverified and reused during an active install',
+    () async {
+      var requests = 0;
+      var assetRequests = 0;
+      server.listen((request) async {
+        requests++;
+        if (request.uri.path == '/checksum') {
+          request.response.write('${sha256.convert(payload)}  $assetName');
+        } else {
+          assetRequests++;
+          request.response.add(payload);
+        }
+        await request.response.close();
+      });
+      final entered = Completer<void>();
+      final finish = Completer<void>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(updateChannel, (_) async {
+            entered.complete();
+            await finish.future;
+            return {
+              'ok': true,
+              'value': {'ok': true, 'needsPermission': false},
+            };
+          });
+      final first = await service.downloadUpdate(
+        info(checksumPath: 'checksum'),
+        onProgress: (_) {},
+      );
+      final install = service.installUpdate(first);
+      await entered.future;
+      final reused = await service.downloadUpdate(
+        info(checksumPath: 'checksum'),
+        onProgress: (_) {},
+      );
+      expect(reused.path, first.path);
+      expect(await first.readAsBytes(), payload);
+      expect(requests, 3);
+      expect(assetRequests, 1);
+      finish.complete();
+      expect((await install).ok, isTrue);
+      await AppCacheService.clearTemporaryCaches();
+      expect(await first.exists(), isTrue);
+    },
+  );
+
+  test(
+    'changed same-path package cannot overwrite an active install',
+    () async {
+      var changed = false;
+      server.listen((request) async {
+        if (request.uri.path == '/checksum') {
+          final checksum = changed
+              ? sha256.convert([1, 2, 3])
+              : sha256.convert(payload);
+          request.response.write('$checksum  $assetName');
+        } else {
+          request.response.add(payload);
+        }
+        await request.response.close();
+      });
+      final entered = Completer<void>();
+      final finish = Completer<void>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(updateChannel, (_) async {
+            entered.complete();
+            await finish.future;
+            return {
+              'ok': true,
+              'value': {'ok': true, 'needsPermission': false},
+            };
+          });
+      final first = await service.downloadUpdate(
+        info(checksumPath: 'checksum'),
+        onProgress: (_) {},
+      );
+      final install = service.installUpdate(first);
+      await entered.future;
+      changed = true;
+      await expectLater(
+        service.downloadUpdate(
+          info(checksumPath: 'checksum'),
+          onProgress: (_) {},
+        ),
+        throwsStateError,
+      );
+      expect(await first.readAsBytes(), payload);
+      await AppCacheService.clearTemporaryCaches();
+      expect(await first.exists(), isTrue);
+      finish.complete();
+      expect((await install).ok, isTrue);
+    },
+  );
+
+  test(
+    'install cannot open a path while a replacement download is writing',
+    () async {
+      final entered = Completer<void>();
+      final finish = Completer<void>();
+      server.listen((request) async {
+        if (request.uri.path == '/checksum') {
+          request.response.write('${sha256.convert(payload)}  $assetName');
+        } else {
+          entered.complete();
+          await finish.future;
+          request.response.add(payload);
+        }
+        await request.response.close();
+      });
+      final download = service.downloadUpdate(
+        info(checksumPath: 'checksum'),
+        onProgress: (_) {},
+      );
+      await entered.future;
+      await expectLater(
+        service.installUpdate(File('${tempDir.path}/updates/$assetName')),
+        throwsStateError,
+      );
+      finish.complete();
+      expect(await (await download).readAsBytes(), payload);
+    },
+  );
 
   test('Windows release selects exact installer and its checksum', () {
     const exe = 'DoujinAudio-windows-x64-v1.0.1-setup.exe';

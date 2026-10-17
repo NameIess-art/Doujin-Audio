@@ -14,6 +14,7 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/media_file_support.dart';
 import '../domain/library_persistence_repository.dart';
 import 'audio_detail_cache_service.dart';
+import 'audio_detail_repository.dart' show AudioDetailOperationCancelled;
 import 'cover_artwork_store.dart';
 import 'remote_cover_cache.dart';
 export 'remote_cover_cache.dart'
@@ -141,6 +142,7 @@ class CoverArtworkCacheService {
   bool _disposed = false;
   Future<int>? _clearPersistentCacheFuture;
   bool _isClearingPersistentCache = false;
+  final Set<Future<void>> _referenceWrites = <Future<void>>{};
 
   int get generation => _generation;
 
@@ -173,6 +175,63 @@ class CoverArtworkCacheService {
   Future<int> migrateLegacyCaches({bool Function()? shouldCancel}) =>
       _artworkStore.migrateLegacyCaches(shouldCancel: shouldCancel);
 
+  Future<void> preserveCoverReference(String? value) =>
+      value == null || value.trim().isEmpty
+      ? Future<void>.value()
+      : _artworkStore.preserveReference(value);
+
+  Future<T> withPreservedCoverReference<T>(
+    String? value,
+    Future<T> Function() action,
+  ) {
+    if (_disposed || _isClearingPersistentCache) {
+      return Future<T>.error(const AudioDetailOperationCancelled());
+    }
+    final completed = Completer<void>();
+    _referenceWrites.add(completed.future);
+    return () async {
+      try {
+        await preserveCoverReference(value);
+        return await action();
+      } finally {
+        _referenceWrites.remove(completed.future);
+        completed.complete();
+      }
+    }();
+  }
+
+  Future<int> collectOrphanedArtwork({bool Function()? shouldCancel}) {
+    // Startup initializes storage and selections together. Without that state,
+    // maintenance cannot establish the complete set of live references.
+    if (!_artworkStore.isInitialized ||
+        _disposed ||
+        _isClearingPersistentCache) {
+      return Future<int>.value(0);
+    }
+    final epoch = _cacheEpoch;
+    return _artworkStore.collectOrphanedArtifacts(
+      retainedPaths: [
+        ..._folderCoverSelections.values,
+        ..._resolvedFolderCovers.values.whereType<String>(),
+        ..._resolvedTrackCovers.values.whereType<String>(),
+        for (final track in _libraryService.library) ...[
+          if (track.manualCoverPath != null) track.manualCoverPath!,
+          if (track.coverCachePath != null) track.coverCachePath!,
+        ],
+      ],
+      shouldCancel: () =>
+          _disposed ||
+          epoch != _cacheEpoch ||
+          _isClearingPersistentCache ||
+          _trackCoverFutures.isNotEmpty ||
+          _folderCoverFutures.isNotEmpty ||
+          _playbackTrackCoverFutures.isNotEmpty ||
+          _remoteCovers.pending.isNotEmpty ||
+          _sourceResolver.pendingPlatformCovers.isNotEmpty ||
+          (shouldCancel?.call() ?? false),
+    );
+  }
+
   Future<int> clearPersistentCache({
     Future<int> Function()? clearTemporaryCaches,
   }) => _clearPersistentCacheFuture ??= _clearPersistentCache(
@@ -190,6 +249,7 @@ class CoverArtworkCacheService {
       ..._sourceResolver.pendingPlatformCovers,
     };
     try {
+      await Future.wait(_referenceWrites.toList());
       invalidateAll();
       await prepareManualCoversForCacheClear();
       await Future.wait<void>(
@@ -786,6 +846,21 @@ class CoverArtworkCacheService {
     String coverPath, {
     bool newlySaved = false,
     String? sourcePath,
+  }) => withPreservedCoverReference(
+    coverPath,
+    () => _setFolderCoverSelection(
+      folderPath,
+      coverPath,
+      newlySaved: newlySaved,
+      sourcePath: sourcePath,
+    ),
+  );
+
+  Future<String?> _setFolderCoverSelection(
+    String folderPath,
+    String coverPath, {
+    required bool newlySaved,
+    String? sourcePath,
   }) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     final normalizedCover = coverPath.trim();
@@ -857,6 +932,7 @@ class CoverArtworkCacheService {
     _folderCoverSelections[normalizedFolder] = hasDurableSource
         ? _persistedFolderCoverPath(normalizedCover)
         : effectiveCoverPath;
+    await preserveCoverReference(effectiveCoverPath);
     await _saveFolderCoverSelections();
     if (!_isCoverKeyCurrent(
       normalizedFolder,
@@ -1680,6 +1756,7 @@ class CoverArtworkCacheService {
     bool? selected,
     bool writeDocument = false,
   }) async {
+    await preserveCoverReference(coverPath);
     try {
       return await _audioDetailCacheService?.saveCardCoverPath(
         target,

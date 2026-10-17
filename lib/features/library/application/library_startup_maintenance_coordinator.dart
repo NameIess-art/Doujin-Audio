@@ -57,7 +57,7 @@ final class LibraryStartupMaintenanceCoordinator {
             metadataCoordinator,
           ),
       migrateCoverCache: (epoch) =>
-          coordinator._migrateCoverCacheOnce(epoch, repository, coverArtwork()),
+          coordinator._maintainCoverCache(epoch, repository, coverArtwork()),
       backfillDurations: metadataCoordinator.backfillMissingDurations,
     );
     return coordinator;
@@ -183,18 +183,23 @@ final class LibraryStartupMaintenanceCoordinator {
     await repository.saveAppSetting(_audioDetailDocumentImportKey, '1');
   }
 
-  Future<void> _migrateCoverCacheOnce(
+  Future<void> _maintainCoverCache(
     int epoch,
     LibraryPersistenceRepository repository,
     CoverArtworkCacheService coverArtwork,
   ) async {
     if (!_isCurrent(epoch)) return;
     final completed = await repository.loadAppSetting(_coverCacheMigrationKey);
-    if (completed == '1') return;
-    await coverArtwork.migrateLegacyCaches(
+    if (completed != '1') {
+      await coverArtwork.migrateLegacyCaches(
+        shouldCancel: () => !_isCurrent(epoch),
+      );
+      if (!_isCurrent(epoch)) return;
+      await repository.saveAppSetting(_coverCacheMigrationKey, '1');
+    }
+    if (!_isCurrent(epoch)) return;
+    await coverArtwork.collectOrphanedArtwork(
       shouldCancel: () => !_isCurrent(epoch),
     );
-    if (!_isCurrent(epoch)) return;
-    await repository.saveAppSetting(_coverCacheMigrationKey, '1');
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -53,6 +54,192 @@ void main() {
   tearDown(() async {
     if (sourceDatabase.isOpen) await sourceDatabase.close();
     await temporaryDirectory.delete(recursive: true);
+  });
+
+  test('startup removes abandoned work without a pending restore', () async {
+    for (final name in ['export_interrupted', 'validation_interrupted']) {
+      final file = File(
+        '${temporaryDirectory.path}/backup_work/$name/database.sqlite',
+      );
+      await file.parent.create(recursive: true);
+      await file.writeAsString('abandoned');
+    }
+    final unrelated = Directory(
+      '${temporaryDirectory.path}/backup_work/unrelated',
+    );
+    await unrelated.create();
+
+    final outcome = await DataBackupService(
+      supportDirectoryProvider: () async => temporaryDirectory,
+    ).applyAtStartup();
+
+    expect(outcome, isNull);
+    expect(
+      Directory('${temporaryDirectory.path}/backup_work').listSync(),
+      hasLength(1),
+    );
+    expect(unrelated.existsSync(), isTrue);
+  });
+
+  test('work cleanup preserves pending restore and rollback files', () async {
+    final abandoned = Directory(
+      '${temporaryDirectory.path}/backup_work/export_interrupted',
+    );
+    await abandoned.create(recursive: true);
+    final restoreFiles = [
+      for (final name in [
+        'pending.dabackup',
+        'rollback/database.sqlite',
+        'decoded/database.sqlite',
+      ])
+        File('${temporaryDirectory.path}/backup_restore/$name'),
+    ];
+    for (final file in restoreFiles) {
+      await file.parent.create(recursive: true);
+      await file.writeAsString('preserved');
+    }
+
+    await DataBackupService(
+      database: appDatabase,
+      accountStore: accountStore,
+      appUpdateService: _FakeAppUpdateService(),
+      supportDirectoryProvider: () async => temporaryDirectory,
+    ).exportBackup('${temporaryDirectory.path}/backup.dabackup');
+
+    expect(abandoned.existsSync(), isFalse);
+    for (final file in restoreFiles) {
+      expect(await file.readAsString(), 'preserved');
+    }
+  });
+
+  test('instances preserve concurrent export and validation work', () async {
+    final source = await DataBackupService(
+      database: appDatabase,
+      accountStore: accountStore,
+      appUpdateService: _FakeAppUpdateService(),
+      supportDirectoryProvider: () async =>
+          Directory('${temporaryDirectory.path}/source_support'),
+      platformName: 'test-platform',
+    ).exportBackup('${temporaryDirectory.path}/source.dabackup');
+    final exportStarted = Completer<void>();
+    final validationStarted = Completer<void>();
+    final resumeExport = Completer<void>();
+    final resumeValidation = Completer<void>();
+    DataBackupService service() => DataBackupService(
+      database: appDatabase,
+      accountStore: accountStore,
+      appUpdateService: _FakeAppUpdateService(),
+      supportDirectoryProvider: () async => temporaryDirectory,
+      platformName: 'test-platform',
+      clock: () => DateTime.utc(2026, 8, 8),
+    );
+    final exporting = DataBackupService(
+      database: appDatabase,
+      accountStore: accountStore,
+      appUpdateService: _FakeAppUpdateService(
+        beforeRead: () async {
+          exportStarted.complete();
+          await resumeExport.future;
+        },
+      ),
+      supportDirectoryProvider: () async => temporaryDirectory,
+    ).exportBackup('${temporaryDirectory.path}/concurrent.dabackup');
+    await exportStarted.future;
+    var supportReads = 0;
+    final validating = DataBackupService(
+      database: appDatabase,
+      accountStore: accountStore,
+      supportDirectoryProvider: () async {
+        if (++supportReads == 2) {
+          validationStarted.complete();
+          await resumeValidation.future;
+        }
+        return temporaryDirectory;
+      },
+      platformName: 'test-platform',
+    ).inspectAndStageRestore(source.path);
+    try {
+      await validationStarted.future;
+      final active = Directory(
+        '${temporaryDirectory.path}/backup_work',
+      ).listSync();
+      expect(active, hasLength(2));
+      expect(await service().applyAtStartup(), isNull);
+      for (final directory in active) {
+        expect(directory.existsSync(), isTrue);
+      }
+    } finally {
+      resumeExport.complete();
+      resumeValidation.complete();
+      await Future.wait<Object>([exporting, validating]);
+    }
+    expect(
+      Directory('${temporaryDirectory.path}/backup_work').listSync(),
+      isEmpty,
+    );
+    expect(
+      File(
+        '${temporaryDirectory.path}/backup_restore/pending.dabackup',
+      ).existsSync(),
+      isTrue,
+    );
+  });
+
+  test('work cleanup does not follow directory links', () async {
+    final outside = Directory('${temporaryDirectory.path}/outside');
+    await outside.create();
+    final kept = File('${outside.path}/keep.txt');
+    await kept.writeAsString('keep');
+    final work = Directory('${temporaryDirectory.path}/backup_work');
+    await work.create();
+    final link = Link('${work.path}/export_link');
+    try {
+      await link.create(outside.path);
+    } on FileSystemException catch (error) {
+      markTestSkipped('Directory links are unavailable: $error');
+      return;
+    }
+    try {
+      final abandoned = Directory('${work.path}/validation_interrupted');
+      await abandoned.create();
+      await Link('${abandoned.path}/nested').create(outside.path);
+      await DataBackupService(
+        supportDirectoryProvider: () async => temporaryDirectory,
+      ).applyAtStartup();
+      expect(await kept.readAsString(), 'keep');
+      expect(await FileSystemEntity.isLink(link.path), isTrue);
+      expect(abandoned.existsSync(), isFalse);
+    } finally {
+      await link.delete();
+    }
+  });
+
+  test('a linked work root cannot redirect backup writes', () async {
+    final outside = Directory('${temporaryDirectory.path}/outside');
+    await outside.create();
+    final kept = File('${outside.path}/keep.txt');
+    await kept.writeAsString('keep');
+    final link = Link('${temporaryDirectory.path}/backup_work');
+    try {
+      await link.create(outside.path);
+    } on FileSystemException catch (error) {
+      markTestSkipped('Directory links are unavailable: $error');
+      return;
+    }
+    try {
+      final service = DataBackupService(
+        supportDirectoryProvider: () async => temporaryDirectory,
+      );
+      expect(await service.applyAtStartup(), isNull);
+      await expectLater(
+        service.exportBackup('${temporaryDirectory.path}/backup.dabackup'),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(await kept.readAsString(), 'keep');
+      expect(outside.listSync(), hasLength(1));
+    } finally {
+      await link.delete();
+    }
   });
 
   test(
@@ -556,8 +743,13 @@ void main() {
 }
 
 class _FakeAppUpdateService extends AppUpdateService {
+  _FakeAppUpdateService({this.beforeRead});
+
+  final Future<void> Function()? beforeRead;
+
   @override
   Future<AppVersionInfo> currentAppVersion() async {
+    await beforeRead?.call();
     return const AppVersionInfo(versionName: '0.17.0', buildNumber: 1700);
   }
 }

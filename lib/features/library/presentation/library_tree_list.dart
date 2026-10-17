@@ -262,11 +262,11 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
           )) {
         final animation = AnimationController(
           vsync: this,
-          duration: kPlaceholderContentTransitionDuration,
+          duration: kAppFadeDuration,
         );
         _folderLoadAnimations[normalizedPath] = (
           controller: animation,
-          opacity: animation.drive(CurveTween(curve: Curves.easeInOutCubic)),
+          opacity: animation.drive(CurveTween(curve: kAppFadeCurve)),
         );
         animation.addStatusListener((status) {
           if (status != AnimationStatus.completed || !mounted) return;

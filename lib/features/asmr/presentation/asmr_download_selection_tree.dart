@@ -43,12 +43,10 @@ class _AsmrDownloadSelectionListState extends State<AsmrDownloadSelectionList>
     super.initState();
     _expansionController = AnimationController(
       vsync: this,
-      duration: kAppMotionStandard,
+      duration: kAppFadeDuration,
       value: 1,
     )..addStatusListener(_onAnimationStatus);
-    _opacity = _expansionController.drive(
-      CurveTween(curve: Curves.easeInOutCubic),
-    );
+    _opacity = _expansionController.drive(CurveTween(curve: kAppFadeCurve));
     // A non-zero extent keeps the animated rows lazy even in large folders.
     _sizeFactor = _opacity.drive(Tween<double>(begin: 0.2, end: 1));
     _resetExpansion();

@@ -373,13 +373,13 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                   duration:
                                       MediaQuery.disableAnimationsOf(context)
                                       ? Duration.zero
-                                      : kAppMotionSlow,
+                                      : kAppFadeDuration,
                                   reverseDuration:
                                       MediaQuery.disableAnimationsOf(context)
                                       ? Duration.zero
-                                      : kAppMotionStandard,
-                                  switchInCurve: Curves.easeOutCubic,
-                                  switchOutCurve: Curves.easeInCubic,
+                                      : kAppFadeDuration,
+                                  switchInCurve: kAppFadeCurve,
+                                  switchOutCurve: kAppFadeCurve,
                                   transitionBuilder: (child, animation) =>
                                       MediaQuery.disableAnimationsOf(context)
                                       ? child

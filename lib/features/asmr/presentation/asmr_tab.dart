@@ -958,7 +958,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                   content: AppFadeThroughIndexedStack.lazy(
                     key: const ValueKey<String>('asmr_category_stack'),
                     indexListenable: _activeCategoryIndex,
-                    duration: kAppMotionSlow,
                     itemCount: _headerCategories.length,
                     // Retained categories need new widgets only when their
                     // constructor inputs change, not for unrelated tab rebuilds.

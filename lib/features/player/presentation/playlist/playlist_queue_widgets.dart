@@ -391,10 +391,12 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                                     padding: EdgeInsets.zero,
                                   ),
                                   icon: AnimatedSwitcher(
+                                    switchOutCurve: kAppFadeCurve,
+                                    switchInCurve: kAppFadeCurve,
                                     duration:
                                         MediaQuery.disableAnimationsOf(context)
                                         ? Duration.zero
-                                        : const Duration(milliseconds: 120),
+                                        : kAppFadeDuration,
                                     transitionBuilder: (child, animation) {
                                       return ScaleTransition(
                                         scale:

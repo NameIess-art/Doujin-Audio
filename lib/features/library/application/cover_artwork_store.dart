@@ -51,17 +51,25 @@ final class CoverArtworkStore {
     Future<Directory> Function()? persistentDirectory,
     Future<Directory> Function()? temporaryDirectory,
     bool Function()? isAndroid,
+    DateTime Function()? now,
   }) : _persistentDirectory =
            persistentDirectory ?? getApplicationSupportDirectory,
        _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
-       _isAndroid = isAndroid ?? (() => Platform.isAndroid);
+       _isAndroid = isAndroid ?? (() => Platform.isAndroid),
+       _now = now ?? DateTime.now;
 
   final Future<Directory> Function() _persistentDirectory;
   final Future<Directory> Function() _temporaryDirectory;
   final bool Function() _isAndroid;
+  final DateTime Function() _now;
   Directory? _androidTemporaryDirectory;
   final Map<String, String> _bindings = <String, String>{};
   final Map<String, String> _legacyAliases = <String, String>{};
+  // Only new artifacts are eligible. Zero permanently protects authored paths,
+  // including references retained by old sidecars or database backups.
+  final Map<String, int> _managedArtifacts = <String, int>{};
+  final Map<String, int> _pendingReferences = <String, int>{};
+  final Set<String> _accessedArtifacts = <String>{};
   Future<void>? _initializeFuture;
   Future<void> _operations = Future<void>.value();
   late Directory _root;
@@ -102,6 +110,15 @@ final class CoverArtworkStore {
             (decoded['version'] == 1 || decoded['version'] == 2)) {
           _decodeMap(decoded['bindings'], _bindings);
           _decodeMap(decoded['legacyAliases'], _legacyAliases);
+          final managed = decoded['managedArtifacts'];
+          if (managed is Map) {
+            for (final entry in managed.entries) {
+              final createdAt = entry.value;
+              if (entry.key is String && createdAt is int && createdAt >= 0) {
+                _managedArtifacts[entry.key as String] = createdAt;
+              }
+            }
+          }
           final generatedVersion = decoded['androidGeneratedVersion'];
           androidGeneratedVersion = generatedVersion is num
               ? generatedVersion.toInt()
@@ -111,6 +128,7 @@ final class CoverArtworkStore {
     } catch (_) {
       _bindings.clear();
       _legacyAliases.clear();
+      _managedArtifacts.clear();
     }
     _initialized = true;
     final migrated = <String, String>{
@@ -188,7 +206,9 @@ final class CoverArtworkStore {
   String? resolvedPath(String logicalKey) {
     if (!_initialized || logicalKey.isEmpty) return null;
     final stored = _bindings[_canonicalLogicalKey(logicalKey)];
-    return stored == null ? null : _absoluteValue(stored);
+    final resolved = stored == null ? null : _absoluteValue(stored);
+    if (resolved != null) _rememberAccess(resolved);
+    return resolved;
   }
 
   Iterable<String> logicalKeysForPath(String resolvedPath) => _bindings.entries
@@ -245,6 +265,7 @@ final class CoverArtworkStore {
       _bindings.remove(logicalKey);
       await _enqueue<void>(_persistIndex);
     }
+    if (resolved != null) _rememberAccess(resolved);
     return resolved;
   }
 
@@ -256,6 +277,7 @@ final class CoverArtworkStore {
     final epoch = _clearEpoch;
     final candidate = _artifactFile(namespace, fileName);
     final usable = await _isUsableFile(candidate.path);
+    if (usable) _rememberAccess(candidate.path);
     return epoch == _clearEpoch && usable ? candidate.path : null;
   }
 
@@ -281,10 +303,16 @@ final class CoverArtworkStore {
       if (epoch != _clearEpoch) return null;
       final stem = fileStem ?? sha256.convert(bytes).toString();
       final output = _artifactFile(namespace, '$stem.image');
-      if (!await _isUsableFile(output.path)) await _writeBytes(output, bytes);
+      final managedCount = _managedArtifacts.length;
+      if (!await _isUsableFile(output.path)) {
+        final existed = await output.exists();
+        await _writeBytes(output, bytes);
+        if (!existed) _recordCreatedArtifact(output);
+      }
       final key = _canonicalLogicalKey(logicalKey);
       final stored = _storedValue(output.path);
-      if (_bindings[key] != stored) {
+      if (_bindings[key] != stored ||
+          managedCount != _managedArtifacts.length) {
         _bindings[key] = stored;
         await _persistIndex();
       }
@@ -302,6 +330,7 @@ final class CoverArtworkStore {
     return _enqueue<String?>(() async {
       await initialize();
       if (epoch != _clearEpoch) return null;
+      final managedCount = _managedArtifacts.length;
       final output = await _storeFile(
         logicalKey: logicalKey,
         sourcePath: sourcePath,
@@ -311,7 +340,8 @@ final class CoverArtworkStore {
       if (output == null) return null;
       final key = _canonicalLogicalKey(logicalKey);
       final stored = _storedValue(output);
-      if (_bindings[key] != stored) {
+      if (_bindings[key] != stored ||
+          managedCount != _managedArtifacts.length) {
         _bindings[key] = stored;
         await _persistIndex();
       }
@@ -331,6 +361,7 @@ final class CoverArtworkStore {
       await initialize();
       final results = List<String?>.filled(sources.length, null);
       final hashes = <(String, int, int, int), String>{};
+      final managedCount = _managedArtifacts.length;
       var changed = false;
       try {
         for (var index = 0; index < sources.length; index++) {
@@ -363,7 +394,9 @@ final class CoverArtworkStore {
           changed = true;
         }
       } finally {
-        if (changed) await _persistIndex();
+        if (changed || managedCount != _managedArtifacts.length) {
+          await _persistIndex();
+        }
       }
       return results;
     });
@@ -404,7 +437,11 @@ final class CoverArtworkStore {
           .toString();
     }
     final output = _artifactFile(namespace, '$stem.image');
-    if (!await _isUsableFile(output.path)) await _copyFile(source, output);
+    if (!await _isUsableFile(output.path)) {
+      final existed = await output.exists();
+      await _copyFile(source, output);
+      if (!existed) _recordCreatedArtifact(output);
+    }
     return output.path;
   }
 
@@ -430,6 +467,168 @@ final class CoverArtworkStore {
     }
     return changed ? _enqueue<void>(_persistIndex) : Future<void>.value();
   }
+
+  /// Commit this before persisting a user/backup reference to a store artifact.
+  Future<void> preserveReference(String value) {
+    if (!isStoreArtifactPath(value)) return Future<void>.value();
+    final resolved = resolveStoredPath(value) ?? value;
+    final reference = _referenceKey(resolved);
+    final epoch = _clearEpoch;
+    _pendingReferences.update(
+      reference,
+      (count) => count + 1,
+      ifAbsent: () => 1,
+    );
+    return _enqueue<void>(() async {
+      await initialize();
+      if (epoch != _clearEpoch) {
+        throw StateError(
+          'Cover storage changed before preserving a reference.',
+        );
+      }
+      final key = _artifactRelativePath(resolveStoredPath(value) ?? value);
+      if (key == null) return;
+      // An already-dispatched delete may finish before this queued pin runs.
+      // Refuse the selection rather than persist a reference to a removed file.
+      if (!await _isUsableFile(path.join(_root.path, key))) {
+        throw FileSystemException(
+          'Selected cover is no longer available.',
+          value,
+        );
+      }
+      if (_managedArtifacts[key] == 0) return;
+      final previous = _managedArtifacts[key];
+      _managedArtifacts[key] = 0;
+      try {
+        await _persistIndex();
+      } catch (_) {
+        if (previous == null) {
+          _managedArtifacts.remove(key);
+        } else {
+          _managedArtifacts[key] = previous;
+        }
+        rethrow;
+      }
+    }).whenComplete(() {
+      final count = _pendingReferences[reference]!;
+      if (count == 1) {
+        _pendingReferences.remove(reference);
+      } else {
+        _pendingReferences[reference] = count - 1;
+      }
+    });
+  }
+
+  Future<int> collectOrphanedArtifacts({
+    Iterable<String> retainedPaths = const [],
+    bool Function()? shouldCancel,
+  }) {
+    final epoch = _clearEpoch;
+    return _enqueue<int>(() async {
+      await initialize();
+      bool cancelled() =>
+          epoch != _clearEpoch || (shouldCancel?.call() ?? false);
+      if (cancelled() || !await _isPlainDirectory(_root.path)) return 0;
+      final cutoff = _now().subtract(const Duration(days: 1));
+      final retained = <String>{
+        ..._bindings.values.map(
+          (value) => _referenceKey(_absoluteValue(value)),
+        ),
+        ..._legacyAliases.values.map(
+          (value) => _referenceKey(_absoluteValue(value)),
+        ),
+        ...retainedPaths.map(_referenceKey),
+      };
+      var deletedBytes = 0;
+      var changed = false;
+      try {
+        for (final entry in _managedArtifacts.entries.toList()) {
+          if (cancelled()) break;
+          if (entry.value == 0 ||
+              entry.value >= cutoff.millisecondsSinceEpoch) {
+            continue;
+          }
+          final absolute = path.join(_root.path, entry.key);
+          if (_artifactRelativePath(absolute) != entry.key) continue;
+          // Do not traverse a namespace/version replaced by a link or junction.
+          var plain = true;
+          var parent = path.dirname(absolute);
+          while (parent != _root.path) {
+            if (!await _isPlainDirectory(parent)) {
+              plain = false;
+              break;
+            }
+            parent = path.dirname(parent);
+          }
+          if (!plain || cancelled()) continue;
+          if (await FileSystemEntity.type(absolute, followLinks: false) !=
+              FileSystemEntityType.file) {
+            continue;
+          }
+          final file = File(absolute);
+          final stat = await file.stat();
+          if (stat.modified.isAfter(cutoff) || cancelled()) continue;
+          final reference = _referenceKey(absolute);
+          // A selection can begin while an earlier cleanup is awaiting I/O.
+          if (_managedArtifacts[entry.key] == 0 ||
+              _pendingReferences.containsKey(reference) ||
+              _accessedArtifacts.contains(reference) ||
+              retained.contains(reference)) {
+            continue;
+          }
+          await file.delete();
+          deletedBytes += stat.size;
+          _managedArtifacts.remove(entry.key);
+          changed = true;
+        }
+      } finally {
+        if (changed) await _persistIndex();
+      }
+      return deletedBytes;
+    });
+  }
+
+  void _recordCreatedArtifact(File file) {
+    final key = _artifactRelativePath(file.path);
+    if (key != null) {
+      _managedArtifacts.putIfAbsent(key, () => _now().millisecondsSinceEpoch);
+    }
+  }
+
+  void _rememberAccess(String value) {
+    final key = _artifactRelativePath(value);
+    if (key != null && (_managedArtifacts[key] ?? 0) > 0) {
+      _accessedArtifacts.add(_referenceKey(value));
+    }
+  }
+
+  static bool isStoreArtifactPath(String value) =>
+      !value.contains('://') &&
+      value.toLowerCase().endsWith('.image') &&
+      path
+          .split(value)
+          .any((part) => part.toLowerCase() == coverArtworkStoreDirectoryName);
+
+  String? _artifactRelativePath(String value) {
+    if (_isUri(value) || !path.isWithin(_root.path, value)) return null;
+    final original = path.relative(value, from: _root.path);
+    final relative = Platform.isWindows ? original.toLowerCase() : original;
+    final parts = path.split(relative);
+    if ((parts.length != 2 && parts.length != 3) ||
+        !CoverArtworkNamespace.values.any((item) => item.name == parts.first) ||
+        (parts.length == 3 &&
+            !RegExp(r'^android-v[0-9]+$').hasMatch(parts[1])) ||
+        !parts.last.endsWith('.image')) {
+      return null;
+    }
+    return relative;
+  }
+
+  String _referenceKey(String value) => PathMatcher.equivalenceKey(value);
+
+  Future<bool> _isPlainDirectory(String value) async =>
+      await FileSystemEntity.type(value, followLinks: false) ==
+      FileSystemEntityType.directory;
 
   Future<int> migrateLegacyCaches({bool Function()? shouldCancel}) {
     return _enqueue<int>(() async {
@@ -502,6 +701,8 @@ final class CoverArtworkStore {
       }
       _bindings.clear();
       _legacyAliases.clear();
+      _managedArtifacts.clear();
+      _accessedArtifacts.clear();
       await _root.create(recursive: true);
       await _persistIndex();
       return deletedBytes + legacyBytes;
@@ -566,6 +767,7 @@ final class CoverArtworkStore {
         'androidGeneratedVersion': _androidGeneratedArtworkVersion,
       'bindings': _bindings,
       'legacyAliases': _legacyAliases,
+      'managedArtifacts': _managedArtifacts,
     });
     try {
       await partial.writeAsString(payload, flush: true);

@@ -292,14 +292,16 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
     );
     if (widget.duration == Duration.zero) return child;
 
-    final duration = ScrollActivityGate.isScrollingWithoutDependencyOf(context)
+    final duration =
+        MediaQuery.disableAnimationsOf(context) ||
+            ScrollActivityGate.isScrollingWithoutDependencyOf(context)
         ? Duration.zero
-        : widget.duration;
+        : kAppFadeDuration;
     // Keep the image element mounted when scrolling changes the duration.
     return AnimatedSwitcher(
       duration: duration,
-      switchInCurve: Curves.easeInOutSine,
-      switchOutCurve: Curves.easeInOutSine,
+      switchInCurve: kAppFadeCurve,
+      switchOutCurve: kAppFadeCurve,
       transitionBuilder: (child, animation) {
         return FadeTransition(opacity: animation, child: child);
       },

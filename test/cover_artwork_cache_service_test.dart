@@ -604,6 +604,70 @@ void main() {
   );
 
   test(
+    'clear waits for accepted cover writes and rejects later selections',
+    () async {
+      final support = await Directory.systemTemp.createTemp(
+        'cover_write_clear_',
+      );
+      addTearDown(() => support.delete(recursive: true));
+      final store = CoverArtworkStore(persistentDirectory: () async => support);
+      final selected = (await store.putBytes(
+        logicalKey: 'selected',
+        bytes: [0xff, 0xd8, 0xff, 0xd9],
+      ))!;
+      final folder = '${support.path}/work';
+      final target = AudioDetailTarget.libraryRootFolder(folder);
+      final library = LibraryService()..watchedFolders.add(folder);
+      final details = _MemoryAudioDetailCacheService();
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        audioDetailCacheService: details,
+        artworkStore: store,
+      );
+      addTearDown(cache.dispose);
+      addTearDown(library.dispose);
+      await cache.initialize();
+      final saving = Completer<void>();
+      final releaseSave = Completer<void>();
+      addTearDown(() {
+        if (!releaseSave.isCompleted) releaseSave.complete();
+      });
+      final save = cache.withPreservedCoverReference(selected, () async {
+        saving.complete();
+        await releaseSave.future;
+        return details.saveCardCoverPath(target, selected, selected: true);
+      });
+      await saving.future;
+      var temporaryCleared = false;
+      final clear = cache.clearPersistentCache(
+        clearTemporaryCaches: () async {
+          temporaryCleared = true;
+          final path = await details.loadCardCoverPath(target);
+          expect(path, contains('portable_card_covers'));
+          expect(await File(path!).exists(), isTrue);
+          return 0;
+        },
+      );
+      await expectLater(
+        cache.withPreservedCoverReference(
+          selected,
+          () async => fail('late save'),
+        ),
+        throwsA(isA<AudioDetailOperationCancelled>()),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(temporaryCleared, isFalse);
+      expect(await File(selected).exists(), isTrue);
+      releaseSave.complete();
+      expect(await save, selected);
+      await clear;
+      final preserved = (await details.loadCardCoverPath(target))!;
+      expect(await File(preserved).readAsBytes(), [0xff, 0xd8, 0xff, 0xd9]);
+      expect(await File(selected).exists(), isFalse);
+    },
+  );
+
+  test(
     'concurrent clear protects manual covers once and counts both caches',
     () async {
       final support = await Directory.systemTemp.createTemp(

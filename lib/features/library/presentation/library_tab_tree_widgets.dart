@@ -31,7 +31,6 @@ import 'library_card_artwork.dart';
 import 'library_tab_ui_helpers.dart';
 
 const Color _librarySelectionCheckmarkColor = Color(0xFF4CAF50);
-const Duration _libraryIndicatorFadeDuration = Duration(milliseconds: 450);
 
 class LibrarySelectionIndicator extends StatelessWidget {
   const LibrarySelectionIndicator({
@@ -48,7 +47,7 @@ class LibrarySelectionIndicator extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : _libraryIndicatorFadeDuration;
+        : kAppFadeDuration;
     final surfaceBorderColor = isSelected
         ? Color.alphaBlend(
             cs.primaryContainer.withValues(alpha: 0.15),
@@ -61,8 +60,8 @@ class LibrarySelectionIndicator extends StatelessWidget {
         child: AnimatedSwitcher(
           duration: duration,
           reverseDuration: duration,
-          switchInCurve: Curves.easeInOut,
-          switchOutCurve: Curves.easeInOut,
+          switchInCurve: kAppFadeCurve,
+          switchOutCurve: kAppFadeCurve,
           transitionBuilder: (child, animation) {
             return FadeTransition(opacity: animation, child: child);
           },
@@ -120,7 +119,7 @@ class LibraryPinnedIndicator extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : _libraryIndicatorFadeDuration;
+        : kAppFadeDuration;
     final pinColor = color ?? cs.primary;
     final normalizedPath = path == null ? null : PathMatcher.normalize(path!);
     final surfaceBorderColor = isSelected
@@ -134,8 +133,8 @@ class LibraryPinnedIndicator extends StatelessWidget {
         child: AnimatedSwitcher(
           duration: duration,
           reverseDuration: duration,
-          switchInCurve: Curves.easeInOut,
-          switchOutCurve: Curves.easeInOut,
+          switchInCurve: kAppFadeCurve,
+          switchOutCurve: kAppFadeCurve,
           child: isPinned
               ? Container(
                   key: normalizedPath == null
@@ -418,20 +417,24 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
       final canPlay = !widget.isSelectionMode && selection.firstTrack != null;
       final actions = LibraryLikeCardActions(
         onAdd: canPlay
-            ? () => unawaited(runLibraryCardAction(
-                context: context,
-                ref: ref,
-                selection: selection,
-                temporary: false,
-              ))
+            ? () => unawaited(
+                runLibraryCardAction(
+                  context: context,
+                  ref: ref,
+                  selection: selection,
+                  temporary: false,
+                ),
+              )
             : null,
         onPlay: canPlay
-            ? () => unawaited(runLibraryCardAction(
-                context: context,
-                ref: ref,
-                selection: selection,
-                temporary: true,
-              ))
+            ? () => unawaited(
+                runLibraryCardAction(
+                  context: context,
+                  ref: ref,
+                  selection: selection,
+                  temporary: true,
+                ),
+              )
             : null,
         addLabel: i18n.tr('add'),
         playLabel: i18n.tr('play'),
@@ -809,12 +812,14 @@ class _TrackNodeWidget extends ConsumerWidget {
     final actions = LibraryLikeCardActions(
       onAdd: isSelectionMode
           ? null
-          : () => unawaited(runLibraryCardAction(
-              context: context,
-              ref: ref,
-              selection: LibraryBatchSelection.fromNode(trackNode),
-              temporary: false,
-            )),
+          : () => unawaited(
+              runLibraryCardAction(
+                context: context,
+                ref: ref,
+                selection: LibraryBatchSelection.fromNode(trackNode),
+                temporary: false,
+              ),
+            ),
       onPlay: isSelectionMode ? null : () => unawaited(playSingleTrack()),
       addLabel: i18n.tr('add'),
       playLabel: i18n.tr('play'),

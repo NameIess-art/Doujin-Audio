@@ -264,11 +264,12 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
               right: 12,
               bottom: 12,
               child: AnimatedOpacity(
+                curve: kAppFadeCurve,
                 key: const ValueKey<String>('session_video_fullscreen_control'),
                 opacity: _isControlVisible ? 1 : 0,
                 duration: MediaQuery.disableAnimationsOf(context)
                     ? Duration.zero
-                    : kAppMotionFast,
+                    : kAppFadeDuration,
                 child: IgnorePointer(
                   ignoring: !_isControlVisible,
                   child: Material(

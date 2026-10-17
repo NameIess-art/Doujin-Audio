@@ -1768,7 +1768,7 @@ void main() {
     },
   );
 
-  testWidgets('RetryingImage fades the placeholder out over 450ms', (
+  testWidgets('RetryingImage crossfades the placeholder over 300ms', (
     tester,
   ) async {
     final provider = _ControlledImageProvider();
@@ -1812,7 +1812,7 @@ void main() {
     );
     expect(
       kPlaceholderContentTransitionDuration,
-      const Duration(milliseconds: 450),
+      const Duration(milliseconds: 300),
     );
     final fades = find.descendant(
       of: transition,
@@ -1832,8 +1832,7 @@ void main() {
         .widget<FadeTransition>(placeholderFade.first)
         .opacity
         .value;
-    expect(midwayOpacity, greaterThan(0));
-    expect(midwayOpacity, lessThan(1));
+    expect(midwayOpacity, closeTo(1 - kAppFadeCurve.transform(0.5), 0.001));
     await tester.pumpWidget(
       MaterialApp(
         home: SizedBox(

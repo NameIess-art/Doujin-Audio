@@ -24,6 +24,67 @@ void main() {
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
 
+  testWidgets('slow task recovery crossfades from skeleton to data', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final language = AppLanguageProvider();
+    await language.setLanguage(AppLanguage.en);
+    final restored = Completer<String?>();
+    final manager = AsmrDownloadManager(
+      persistenceReader: () => restored.future,
+      persistenceWriter: (_) async {},
+    );
+    final removals = UndoableRemovalService();
+    addTearDown(language.dispose);
+    addTearDown(manager.dispose);
+    addTearDown(removals.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          coreRuntimeReadyProvider.overrideWithValue(true),
+          appLanguageProviderInstanceProvider.overrideWithValue(language),
+          asmrDownloadManagerProvider.overrideWithValue(manager),
+          undoableRemovalServiceProvider.overrideWithValue(removals),
+        ],
+        child: const MaterialApp(home: AsmrDownloadTaskPage()),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(OperationSkeletonList), findsOneWidget);
+    expect(find.text('No download tasks'), findsNothing);
+    restored.complete();
+    for (
+      var i = 0;
+      i < 20 && find.text('No download tasks').evaluate().isEmpty;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    // The data layer has mounted, while the outer deferred reveal owns the fade.
+    expect(find.byType(OperationSkeletonList), findsOneWidget);
+    final reveal = tester
+        .widget<FadeTransition>(
+          find
+              .ancestor(
+                of: find.byKey(const ValueKey('deferred_content')),
+                matching: find.byType(FadeTransition),
+              )
+              .first,
+        )
+        .opacity;
+    expect(reveal.value, 0);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(reveal.value, closeTo(kAppFadeCurve.transform(0.5), 0.001));
+    expect(find.byType(OperationSkeletonList), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.byType(OperationSkeletonList), findsNothing);
+    expect(find.text('No download tasks'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
       'download task restoration stays scoped and can retry on $platform',

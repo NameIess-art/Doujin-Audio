@@ -198,16 +198,13 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
         _images.length <= 1) {
       return;
     }
-    GestureBinding.instance.pointerSignalResolver.register(
-      signal,
-      (_) {
-        if (signal.scrollDelta.dy > 0) {
-          _goToNext();
-        } else {
-          _goToPrevious();
-        }
-      },
-    );
+    GestureBinding.instance.pointerSignalResolver.register(signal, (_) {
+      if (signal.scrollDelta.dy > 0) {
+        _goToNext();
+      } else {
+        _goToPrevious();
+      }
+    });
   }
 
   Widget _buildNavButton({
@@ -221,7 +218,8 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
     return AnimatedOpacity(
       duration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
-          : kAppMotionFast,
+          : kAppFadeDuration,
+      curve: kAppFadeCurve,
       opacity: enabled ? 1 : 0.35,
       child: Material(
         color: transparent
@@ -535,7 +533,8 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
                     child: AnimatedOpacity(
                       duration: MediaQuery.disableAnimationsOf(context)
                           ? Duration.zero
-                          : const Duration(milliseconds: 160),
+                          : kAppFadeDuration,
+                      curve: kAppFadeCurve,
                       opacity: _saving ? 1 : 0,
                       child: TickerMode(
                         enabled: _saving,

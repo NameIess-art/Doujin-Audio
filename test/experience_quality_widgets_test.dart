@@ -200,7 +200,7 @@ void main() {
     expect(find.byType(BackdropFilter), findsNothing);
   });
 
-  testWidgets('placeholder content fades over the shared 450ms duration', (
+  testWidgets('placeholder content fades over the shared 300ms duration', (
     tester,
   ) async {
     var showPlaceholder = true;
@@ -228,7 +228,7 @@ void main() {
 
     expect(
       kPlaceholderContentTransitionDuration,
-      const Duration(milliseconds: 450),
+      const Duration(milliseconds: 300),
     );
 
     update(() => showPlaceholder = false);
@@ -249,7 +249,7 @@ void main() {
       unorderedEquals(<double>[0, 1]),
     );
 
-    await tester.pump(const Duration(milliseconds: 225));
+    await tester.pump(const Duration(milliseconds: 150));
     final midpointOpacities = tester
         .widgetList<FadeTransition>(fadeFinder)
         .map((fade) => fade.opacity.value)
@@ -259,7 +259,7 @@ void main() {
     expect(midpointOpacities[1], inInclusiveRange(0.3, 0.7));
     expect(midpointOpacities[0] + midpointOpacities[1], closeTo(1, 0.001));
 
-    await tester.pump(const Duration(milliseconds: 224));
+    await tester.pump(const Duration(milliseconds: 149));
     expect(find.byKey(const ValueKey('placeholder')), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 1));
@@ -325,6 +325,9 @@ void main() {
     );
     update(() => loading = true);
     await tester.pump();
+    // Retain the outgoing data until the reverse crossfade finishes.
+    expect(find.byKey(const ValueKey('inline_data')), findsOneWidget);
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('inline_data')), findsNothing);
     update(() {
       reducedMotion = true;
@@ -510,9 +513,7 @@ void main() {
 
   test('library-like info lines allow custom tagSeparator', () {
     final lines = buildLibraryLikeInfoLines(
-      metadata: const LibraryLikeInfoMetadata(
-        tags: <String>['ASMR', 'Sleep'],
-      ),
+      metadata: const LibraryLikeInfoMetadata(tags: <String>['ASMR', 'Sleep']),
       voiceActorLabel: 'Voice',
       circleLabel: 'Circle',
       tagsLabel: 'Tags',
@@ -639,7 +640,10 @@ void main() {
       final voiceStyle = tester.widget<Text>(find.text('Voice')).style!;
       final circleStyle = tester.widget<Text>(find.text('Circle')).style!;
       final tagsStyle = tester.widget<Text>(find.text('#ASMR   #Sleep')).style!;
-      expect(tagsStyle.color, Color.lerp(circleStyle.color, dateStyle.color, 0.5));
+      expect(
+        tagsStyle.color,
+        Color.lerp(circleStyle.color, dateStyle.color, 0.5),
+      );
       expect(dateStyle.fontSize, 11);
       expect(ratingStyle.fontSize, 11);
       expect(dateStyle.color, ratingStyle.color);
@@ -1512,7 +1516,7 @@ void main() {
   });
 
   testWidgets(
-    'LibrarySelectionIndicator performs 450ms fade-in and fade-out with 22x22 cutout border',
+    'LibrarySelectionIndicator performs 300ms fade-in and fade-out with 22x22 cutout border',
     (tester) async {
       final checkmarkFinder = find.byKey(
         const ValueKey<String>('library_selection_indicator_lib-fade-test'),
@@ -1544,8 +1548,8 @@ void main() {
 
       final switcherFinder = find.byType(AnimatedSwitcher);
       final switcher = tester.widget<AnimatedSwitcher>(switcherFinder);
-      expect(switcher.duration, const Duration(milliseconds: 450));
-      expect(switcher.reverseDuration, const Duration(milliseconds: 450));
+      expect(switcher.duration, const Duration(milliseconds: 300));
+      expect(switcher.reverseDuration, const Duration(milliseconds: 300));
 
       expect(tester.getSize(checkmarkFinder), const Size(22.0, 22.0));
       final container = tester.widget<Container>(checkmarkFinder);
@@ -1554,7 +1558,7 @@ void main() {
       expect(decoration.border?.top.width, 2.0);
 
       // Verify mid-animation opacity
-      await tester.pump(const Duration(milliseconds: 225));
+      await tester.pump(const Duration(milliseconds: 150));
       final fadeFinder = find
           .ancestor(of: checkmarkFinder, matching: find.byType(FadeTransition))
           .first;
@@ -1566,7 +1570,7 @@ void main() {
       expect(midOpacity, lessThan(1.0));
 
       // After remaining duration
-      await tester.pump(const Duration(milliseconds: 225));
+      await tester.pump(const Duration(milliseconds: 150));
       final fullOpacity = tester
           .widget<FadeTransition>(fadeFinder)
           .opacity
@@ -1586,7 +1590,7 @@ void main() {
       );
 
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 225));
+      await tester.pump(const Duration(milliseconds: 150));
       expect(checkmarkFinder, findsOneWidget);
 
       await tester.pump(const Duration(milliseconds: 250));
@@ -1611,7 +1615,7 @@ void main() {
       );
     }
 
-    testWidgets('$kind pin fades in and out over 450ms', (tester) async {
+    testWidgets('$kind pin fades in and out over 300ms', (tester) async {
       final pin = find.byIcon(Icons.push_pin_rounded);
       double opacity() => tester
           .widgetList<FadeTransition>(
@@ -1624,9 +1628,9 @@ void main() {
       await tester.pumpWidget(buildPinned(true));
       await tester.pump();
       expect(opacity(), 0);
-      await tester.pump(const Duration(milliseconds: 225));
-      expect(opacity(), closeTo(0.5, 0.01));
-      await tester.pump(const Duration(milliseconds: 225));
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+      await tester.pump(const Duration(milliseconds: 150));
       expect(opacity(), 1);
       await tester.pump(const Duration(milliseconds: 1));
 
@@ -1634,9 +1638,9 @@ void main() {
       await tester.pump();
       expect(pin, findsOneWidget);
       expect(opacity(), 1);
-      await tester.pump(const Duration(milliseconds: 225));
-      expect(opacity(), closeTo(0.5, 0.01));
-      await tester.pump(const Duration(milliseconds: 225));
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+      await tester.pump(const Duration(milliseconds: 150));
       await tester.pump(const Duration(milliseconds: 1));
       expect(pin, findsNothing);
       expect(tester.takeException(), isNull);

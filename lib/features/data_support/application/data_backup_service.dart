@@ -9,6 +9,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../../core/persistence/app_database.dart';
+import '../../../core/media/path_matcher.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../asmr/application/asmr_auth_service.dart';
 import '../../../core/persistence/app_preferences.dart';
 import '../../settings/application/app_update_service.dart';
@@ -139,6 +141,8 @@ class StartupRestoreOutcome {
 }
 
 class DataBackupService {
+  static final Map<String, Future<void>> _workDirectoryCleanup = {};
+
   DataBackupService({
     AppDatabase? database,
     SecureAsmrTokenStore? accountStore,
@@ -260,6 +264,7 @@ class DataBackupService {
   }
 
   Future<StartupRestoreOutcome?> applyAtStartup() async {
+    await _workDirectoryRoot();
     final restoreDirectory = await _restoreDirectory();
     final pending = File(path.join(restoreDirectory.path, 'pending.dabackup'));
     if (!await pending.exists()) return null;
@@ -425,16 +430,52 @@ class DataBackupService {
   }
 
   Future<Directory> _newWorkDirectory(String prefix) async {
+    final root = await _workDirectoryRoot();
+    final type = await FileSystemEntity.type(root.path, followLinks: false);
+    if (type != FileSystemEntityType.notFound &&
+        type != FileSystemEntityType.directory) {
+      throw FileSystemException('invalid_backup_work_directory', root.path);
+    }
+    await root.create(recursive: true);
+    return root.createTemp('${prefix}_');
+  }
+
+  Future<Directory> _workDirectoryRoot() async {
     final support = await _supportDirectoryProvider();
-    final directory = Directory(
-      path.join(
-        support.path,
-        'backup_work',
-        '${prefix}_${_clock().microsecondsSinceEpoch}',
-      ),
+    await support.create(recursive: true);
+    final root = Directory(
+      path.join(await support.resolveSymbolicLinks(), 'backup_work'),
     );
-    await directory.create(recursive: true);
-    return directory;
+    // Every instance waits for the same first sweep before creating work.
+    // Later calls must preserve this process's concurrent exports/validation.
+    await _workDirectoryCleanup.putIfAbsent(
+      PathMatcher.equivalenceKey(root.path),
+      () => _cleanupAbandonedWorkDirectories(root),
+    );
+    return root;
+  }
+
+  Future<void> _cleanupAbandonedWorkDirectories(Directory root) async {
+    try {
+      if (await FileSystemEntity.type(root.path, followLinks: false) !=
+          FileSystemEntityType.directory) {
+        return;
+      }
+      await for (final entity in root.list(followLinks: false)) {
+        final name = path.basename(entity.path);
+        if (entity is! Directory ||
+            (!name.startsWith('export_') && !name.startsWith('validation_'))) {
+          continue;
+        }
+        await _deleteDirectory(entity);
+      }
+    } on FileSystemException catch (error, stackTrace) {
+      AppLogService.warning(
+        'abandoned_backup_cleanup_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   Future<void> _writeJournal(

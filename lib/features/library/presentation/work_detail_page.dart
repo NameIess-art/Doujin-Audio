@@ -131,12 +131,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     super.initState();
     _directoryFade = AnimationController(
       vsync: this,
-      duration: kPlaceholderContentTransitionDuration,
+      duration: kAppFadeDuration,
       value: 1,
     );
     _directoryOpacity = CurvedAnimation(
       parent: _directoryFade,
-      curve: Curves.easeInOutCubic,
+      curve: kAppFadeCurve,
     );
     assert(
       widget.initialDetail == null ||
@@ -381,13 +381,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           if (addedIds.isNotEmpty) {
             final controller = AnimationController(
               vsync: this,
-              duration: kPlaceholderContentTransitionDuration,
+              duration: kAppFadeDuration,
             );
             _entryLoadBatches[controller] = (
               ids: addedIds,
-              opacity: controller.drive(
-                CurveTween(curve: Curves.easeInOutCubic),
-              ),
+              opacity: controller.drive(CurveTween(curve: kAppFadeCurve)),
             );
             controller.addStatusListener((status) {
               if (status == AnimationStatus.completed) {
@@ -992,10 +990,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     final result = await showAudioDetailEditor(context, ref, detail.target);
     final savedDetail = result?.detail;
     if (!mounted || savedDetail == null) return;
-    WorkDetailNavigationScope.maybeOf(context)?.updateIdentity(
-      ('local', _localTarget),
-      ('local', savedDetail.target),
-    );
+    WorkDetailNavigationScope.maybeOf(
+      context,
+    )?.updateIdentity(('local', _localTarget), ('local', savedDetail.target));
     setState(() {
       _localTarget = savedDetail.target;
       _localDetail = savedDetail;

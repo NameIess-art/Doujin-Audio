@@ -149,7 +149,6 @@ extension _MainScreenLayout on _MainScreenState {
                 itemCount: destinations.length,
                 contentRevision: (showLocal, showAsmr, isLandscapeLayout),
                 itemBuilder: pageShell,
-                duration: kAppMotionSlow,
                 onTransitionCompleted: _handlePageTransitionCompleted,
               ),
             ),
@@ -190,6 +189,7 @@ extension _MainScreenLayout on _MainScreenState {
     required bool isPlaybackExpanded,
     required double anchorProgress,
     required double stackProgress,
+    required double fadeProgress,
     required double expandedWidth,
     required VoidCallback onCurrentTap,
   }) {
@@ -217,6 +217,7 @@ extension _MainScreenLayout on _MainScreenState {
         isPlaybackExpanded: isPlaybackExpanded,
         anchorProgress: anchorProgress,
         stackProgress: stackProgress,
+        fadeProgress: fadeProgress,
         expandedWidth: expandedWidth,
         onCurrentTap: onCurrentTap,
       ),
@@ -230,6 +231,7 @@ extension _MainScreenLayout on _MainScreenState {
     required bool isPlaybackExpanded,
     required double anchorProgress,
     required double stackProgress,
+    required double fadeProgress,
     required double expandedWidth,
     required VoidCallback onCurrentTap,
   }) {
@@ -243,7 +245,7 @@ extension _MainScreenLayout on _MainScreenState {
     final activeIndex = selectedIndex.clamp(0, destinations.length - 1);
     // Keep the active destination on top throughout collapsing and expanding,
     // smoothly folding inactive destinations beneath it.
-    final collapsed = stackProgress == 1;
+    final collapsed = fadeProgress == 1;
     final layeredEntries = [
       if (!collapsed) ...entries.where((entry) => entry.key != activeIndex),
       entries[activeIndex],
@@ -264,10 +266,10 @@ extension _MainScreenLayout on _MainScreenState {
       final progress = index == 0 ? anchorProgress : stackProgress;
       final inactiveOpacity = selected
           ? 1.0
-          : (1.0 - stackProgress).clamp(0.0, 1.0);
+          : (1.0 - fadeProgress).clamp(0.0, 1.0);
       final inactiveScale = selected
           ? 1.0
-          : (1.0 - 0.15 * stackProgress).clamp(0.0, 1.0);
+          : (1.0 - 0.15 * fadeProgress).clamp(0.0, 1.0);
 
       final iconStack = Stack(
         alignment: Alignment.center,
@@ -289,9 +291,9 @@ extension _MainScreenLayout on _MainScreenState {
           AnimatedSwitcher(
             duration: MediaQuery.disableAnimationsOf(context)
                 ? Duration.zero
-                : kAppMotionFast,
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
+                : kAppFadeDuration,
+            switchInCurve: kAppFadeCurve,
+            switchOutCurve: kAppFadeCurve,
             transitionBuilder: (child, animation) =>
                 MediaQuery.disableAnimationsOf(context)
                 ? child
@@ -312,14 +314,11 @@ extension _MainScreenLayout on _MainScreenState {
         ],
       );
 
-      final content = selected || stackProgress == 0
+      final content = selected || fadeProgress == 0
           ? iconStack
           : Opacity(
               opacity: inactiveOpacity,
-              child: Transform.scale(
-                scale: inactiveScale,
-                child: iconStack,
-              ),
+              child: Transform.scale(scale: inactiveScale, child: iconStack),
             );
 
       return Positioned(

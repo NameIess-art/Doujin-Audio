@@ -2802,7 +2802,7 @@ void main() {
     }),
   );
 
-  testWidgets('playlist first open fades its card skeleton out over 180ms', (
+  testWidgets('playlist first open crossfades its card skeleton over 300ms', (
     WidgetTester tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
@@ -2913,7 +2913,7 @@ void main() {
     // Start the fade clock after the loaded list's first layout frame.
     await tester.pump();
     await tester.pump(
-      kAppMotionFast - const Duration(milliseconds: 1),
+      kAppFadeDuration - const Duration(milliseconds: 1),
     );
     expect(find.byKey(placeholderKey), findsOneWidget);
 
@@ -6418,7 +6418,7 @@ void main() {
     }),
   );
 
-  testWidgets('PlaylistSelectionIndicator performs 450ms fade-in and fade-out', (
+  testWidgets('PlaylistSelectionIndicator performs 300ms fade-in and fade-out', (
     tester,
   ) async {
     final checkmarkFinder = find.byKey(
@@ -6457,11 +6457,11 @@ void main() {
 
     final animatedSwitcherFinder = find.byType(AnimatedSwitcher);
     final switcher = tester.widget<AnimatedSwitcher>(animatedSwitcherFinder);
-    expect(switcher.duration, const Duration(milliseconds: 450));
-    expect(switcher.reverseDuration, const Duration(milliseconds: 450));
+    expect(switcher.duration, const Duration(milliseconds: 300));
+    expect(switcher.reverseDuration, const Duration(milliseconds: 300));
 
-    // Mid-animation: at 225ms, opacity is partial (0 < opacity < 1)
-    await tester.pump(const Duration(milliseconds: 225));
+    // Mid-animation: at 150ms, opacity is partial (0 < opacity < 1)
+    await tester.pump(const Duration(milliseconds: 150));
     final fadeTransitionFinder = find
         .ancestor(of: checkmarkFinder, matching: find.byType(FadeTransition))
         .first;
@@ -6473,8 +6473,8 @@ void main() {
     expect(midOpacity, greaterThan(0.0));
     expect(midOpacity, lessThan(1.0));
 
-    // After remaining 225ms (450ms total), opacity reaches 1.0
-    await tester.pump(const Duration(milliseconds: 225));
+    // After remaining 150ms (300ms total), opacity reaches 1.0
+    await tester.pump(const Duration(milliseconds: 150));
     final fullOpacity = tester
         .widget<FadeTransition>(fadeTransitionFinder)
         .opacity
@@ -6493,9 +6493,9 @@ void main() {
       ),
     );
 
-    // Mid reverse-animation: at 225ms, checkmark is still present and fading out
+    // Mid reverse-animation: at 150ms, checkmark is still present and fading out
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 225));
+    await tester.pump(const Duration(milliseconds: 150));
     expect(checkmarkFinder, findsOneWidget);
     final fadeOutOpacity = tester
         .widget<FadeTransition>(fadeTransitionFinder)
@@ -6504,8 +6504,8 @@ void main() {
     expect(fadeOutOpacity, greaterThan(0.0));
     expect(fadeOutOpacity, lessThan(1.0));
 
-    // After remaining reverse duration (total 475ms > 450ms), checkmark finishes fading out and is removed
-    await tester.pump(const Duration(milliseconds: 250));
+    // After remaining reverse duration (total 325ms > 300ms), checkmark finishes fading out and is removed
+    await tester.pump(const Duration(milliseconds: 175));
     expect(checkmarkFinder, findsNothing);
 
     // Verify reduced motion uses Duration.zero
@@ -8598,7 +8598,7 @@ void main() {
       expect(headerSwitcher, findsOneWidget);
       expect(
         tester.widget<AnimatedSwitcher>(headerSwitcher).duration,
-        kAppMotionFast,
+        kAppFadeDuration,
       );
       expect(find.byType(TopPageHeader), findsNWidgets(2));
       expect(

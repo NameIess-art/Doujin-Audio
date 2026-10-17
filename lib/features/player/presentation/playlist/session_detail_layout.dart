@@ -1,3 +1,4 @@
+import '../../../../core/widgets/app_transitions.dart';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -209,9 +210,9 @@ class SessionDetailLayout extends StatelessWidget {
               AnimatedSwitcher(
                 duration: MediaQuery.disableAnimationsOf(context)
                     ? Duration.zero
-                    : const Duration(milliseconds: 280),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
+                    : kAppFadeDuration,
+                switchInCurve: kAppFadeCurve,
+                switchOutCurve: kAppFadeCurve,
                 transitionBuilder: (child, animation) {
                   return SizeTransition(
                     sizeFactor: animation,

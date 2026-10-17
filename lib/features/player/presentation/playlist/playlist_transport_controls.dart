@@ -149,12 +149,12 @@ class _PlaybackControlPanel extends StatelessWidget {
           AnimatedSwitcher(
             duration: MediaQuery.disableAnimationsOf(context)
                 ? Duration.zero
-                : kAppMotionSlow,
+                : kAppFadeDuration,
             reverseDuration: MediaQuery.disableAnimationsOf(context)
                 ? Duration.zero
-                : kAppMotionStandard,
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
+                : kAppFadeDuration,
+            switchInCurve: kAppFadeCurve,
+            switchOutCurve: kAppFadeCurve,
             child: KeyedSubtree(
               key: ValueKey('secondary_${session.id}'),
               child: _PlaybackSecondaryControls(
@@ -690,9 +690,11 @@ class _PlaybackSecondaryControlsState
         ),
       ),
       child: AnimatedSwitcher(
+        switchOutCurve: kAppFadeCurve,
+        switchInCurve: kAppFadeCurve,
         duration: MediaQuery.disableAnimationsOf(context)
             ? Duration.zero
-            : const Duration(milliseconds: 200),
+            : kAppFadeDuration,
         child: _volumeMode ? buildVolumeBar() : buildButtonsRow(),
       ),
     );
@@ -741,10 +743,7 @@ class PrimaryTransportButton extends StatelessWidget {
 
     return Container(
       constraints: constraints,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: plateColor,
-      ),
+      decoration: BoxDecoration(shape: BoxShape.circle, color: plateColor),
       child: IconButton(
         tooltip: tooltip,
         constraints: constraints,
@@ -802,9 +801,11 @@ class _SecondaryControlButton extends StatelessWidget {
             }
           : null,
       icon: AnimatedSwitcher(
+        switchOutCurve: kAppFadeCurve,
+        switchInCurve: kAppFadeCurve,
         duration: MediaQuery.disableAnimationsOf(context)
             ? Duration.zero
-            : const Duration(milliseconds: 250),
+            : kAppFadeDuration,
         transitionBuilder: (child, animation) {
           return ScaleTransition(
             scale: Tween<double>(begin: 0.4, end: 1.0).animate(

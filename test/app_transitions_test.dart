@@ -130,7 +130,12 @@ void main() {
       expect(
         tester
             .widget<FadeTransition>(
-              find.byKey(const ValueKey('deferred_content')),
+              find
+                  .ancestor(
+                    of: find.byKey(const ValueKey('deferred_content')),
+                    matching: find.byType(FadeTransition),
+                  )
+                  .first,
             )
             .opacity
             .value,
@@ -227,6 +232,81 @@ void main() {
     );
   }
 
+  testWidgets('placeholder and data crossfade in both directions in 300 ms', (
+    tester,
+  ) async {
+    var loading = true;
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return PlaceholderContentTransition(
+              showPlaceholder: loading,
+              placeholder: const Text('skeleton'),
+              content: const Text('data'),
+            );
+          },
+        ),
+      ),
+    );
+    double opacity(String label) => tester
+        .widget<FadeTransition>(
+          find
+              .ancestor(
+                of: find.text(label),
+                matching: find.byType(FadeTransition),
+              )
+              .first,
+        )
+        .opacity
+        .value;
+    expect(find.text('data'), findsNothing);
+    update(() => loading = false);
+    await tester.pump();
+    expect(opacity('data'), 0);
+    expect(opacity('skeleton'), 1);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(opacity('data'), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+    expect(
+      opacity('skeleton'),
+      closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
+    );
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(opacity('data'), closeTo(1, 0.001));
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.text('skeleton'), findsNothing);
+    expect(opacity('data'), 1);
+
+    update(() => loading = true);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(opacity('data'), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+    expect(
+      opacity('skeleton'),
+      closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
+    );
+    // A second change reverses continuously from the current opacity.
+    update(() => loading = false);
+    await tester.pump();
+    expect(opacity('data'), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+    await tester.pumpAndSettle();
+    expect(find.text('skeleton'), findsNothing);
+    expect(opacity('data'), 1);
+    update(() => loading = true);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(kAppFadeDuration);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.text('data'), findsNothing);
+    expect(opacity('skeleton'), 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(UiInteractionCoordinator.instance.isVisualUpdateDeferred, isFalse);
+  });
+
   for (final reduced in [false, true]) {
     testWidgets(
       'deferred content waits for data and lays out behind its skeleton, reduced=$reduced',
@@ -268,7 +348,7 @@ void main() {
         expect(builds, 0);
         update(() => ready = true);
         await tester.pumpAndSettle();
-        expect(firstLayoutOpacity, 0);
+        expect(firstLayoutOpacity, reduced ? 1 : 0);
         expect(find.text('loaded'), findsOneWidget);
         expect(find.text('skeleton'), findsNothing);
         final state = tester.state(find.byType(_StateProbe));
@@ -496,7 +576,12 @@ void main() {
     expect(
       tester
           .widget<FadeTransition>(
-            find.byKey(const ValueKey('deferred_content')),
+            find
+                .ancestor(
+                  of: find.byKey(const ValueKey('deferred_content')),
+                  matching: find.byType(FadeTransition),
+                )
+                .first,
           )
           .opacity
           .value,
@@ -906,7 +991,6 @@ void main() {
           indexListenable: index,
           itemCount: 2,
           itemBuilder: (_, i) => page(i),
-          duration: kAppMotionSlow,
           onTransitionCompleted: completed.add,
         ),
       ),
@@ -954,7 +1038,6 @@ void main() {
                   child: AppFadeThroughIndexedStack.lazy(
                     indexListenable: index,
                     itemCount: 2,
-                    duration: kAppMotionSlow,
                     onTransitionCompleted: completed.add,
                     itemBuilder: (_, page) {
                       builds[page]++;
@@ -1007,7 +1090,6 @@ void main() {
         home: AppFadeThroughIndexedStack.lazy(
           indexListenable: index,
           itemCount: 2,
-          duration: kAppMotionSlow,
           separateHeader: true,
           itemBuilder: (_, page) => Column(
             children: [
@@ -1054,7 +1136,6 @@ void main() {
               home: AppFadeThroughIndexedStack.lazy(
                 indexListenable: index,
                 itemCount: 2,
-                duration: kAppMotionSlow,
                 separateHeader: separateHeader,
                 onTransitionCompleted: completed.add,
                 itemBuilder: (_, page) => _TickingPage(
@@ -1160,7 +1241,6 @@ void main() {
         home: AppFadeThroughIndexedStack.lazy(
           indexListenable: index,
           itemCount: 3,
-          duration: kAppMotionSlow,
           onTransitionCompleted: completed.add,
           itemBuilder: (_, page) {
             created.add(page);
@@ -2016,6 +2096,54 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final size in [const Size(400, 800), const Size(1000, 600)]) {
+      testWidgets('route header uses the full 300 ms ($platform, $size)', (
+        tester,
+      ) async {
+        await tester.binding.setSurfaceSize(size);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final key = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: platform),
+            navigatorKey: key,
+            home: const Scaffold(),
+          ),
+        );
+        final route = buildAppPageRoute<void>(
+          context: key.currentContext!,
+          child: regions('timed'),
+        );
+        unawaited(key.currentState!.push(route));
+        await tester.pump();
+        await tester.pump();
+        final header = find.byKey(const ValueKey('timed-header'));
+        double opacity() => tester
+            .widget<Opacity>(
+              find.ancestor(of: header, matching: find.byType(Opacity)).first,
+            )
+            .opacity;
+        expect(opacity(), 0);
+        final left = tester.getRect(header).left;
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+        expect(tester.getRect(header).left, closeTo(left, 0.01));
+        await tester.pump(const Duration(milliseconds: 75));
+        expect(opacity(), inExclusiveRange(0.5, 1));
+        await tester.pump(const Duration(milliseconds: 75));
+        expect(opacity(), 1);
+        key.currentState!.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+        expect(tester.getRect(header).left, closeTo(left, 0.01));
+        await tester.pumpAndSettle();
+        expect(header, findsNothing);
+      });
+    }
+  }
+
   testWidgets('stacked batch routes fade their headers on push and pop', (
     tester,
   ) async {
@@ -2058,7 +2186,10 @@ void main() {
         )
         .opacity;
     expect(headerOpacity(incoming), inExclusiveRange(0, 1));
-    expect(headerOpacity(outgoing), 1);
+    expect(
+      headerOpacity(outgoing),
+      closeTo(1 - headerOpacity(incoming), 0.001),
+    );
     final headerLeft = tester.getRect(outgoing).left;
     expect(tester.getRect(incoming).left, closeTo(headerLeft, 0.01));
     expect(
@@ -2267,7 +2398,6 @@ void main() {
           MaterialApp(
             home: AppFadeThroughIndexedStack.lazy(
               indexListenable: index,
-              duration: kAppMotionSlow,
               itemCount: 4,
               onTransitionCompleted: completed.add,
               itemBuilder: (_, page) {
@@ -2386,7 +2516,6 @@ void main() {
                   indexListenable: index,
                   itemCount: 4,
                   separateHeader: true,
-                  duration: kAppMotionSlow,
                   itemBuilder: (_, page) {
                     builds++;
                     return regions('fixed-$page', transparentPage: true);
@@ -2465,7 +2594,6 @@ void main() {
           home: AppFadeThroughIndexedStack.lazy(
             indexListenable: index,
             itemCount: 4,
-            duration: kAppMotionSlow,
             onTransitionCompleted: completed.add,
             itemBuilder: (_, page) {
               built.add(page);
@@ -2527,7 +2655,6 @@ void main() {
         home: AppFadeThroughIndexedStack.lazy(
           indexListenable: index,
           itemCount: 4,
-          duration: kAppMotionSlow,
           onTransitionCompleted: completed.add,
           itemBuilder: (_, page) => Text('opposite-$page'),
         ),
@@ -2573,7 +2700,6 @@ void main() {
           child: AppFadeThroughIndexedStack.lazy(
             indexListenable: index,
             itemCount: 4,
-            duration: kAppMotionSlow,
             onTransitionCompleted: completed.add,
             itemBuilder: (_, page) => Text('reduced-$page'),
           ),
@@ -2796,7 +2922,6 @@ void main() {
                 indexListenable: index,
                 itemCount: 2,
                 contentRevision: version,
-                duration: kAppMotionSlow,
                 itemBuilder: (_, page) {
                   builds[page]++;
                   return _StateProbe(
@@ -2871,7 +2996,6 @@ void main() {
             home: AppFadeThroughIndexedStack.lazy(
               indexListenable: index,
               itemCount: 3,
-              duration: kAppMotionSlow,
               itemBuilder: (_, page) {
                 builds[page]++;
                 return LayoutBuilder(
@@ -3252,7 +3376,6 @@ void main() {
             home: AppFadeThroughIndexedStack.lazy(
               indexListenable: index,
               itemCount: 2,
-              duration: kAppMotionSlow,
               separateHeader: true,
               itemBuilder: (_, page) => Focus(
                 focusNode: focus[page],

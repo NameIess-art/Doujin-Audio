@@ -12,6 +12,7 @@ import '../../../app/presentation/screen_view_models.dart';
 import '../../../app/theme/app_styles.dart';
 
 import '../../../core/widgets/app_buttons.dart';
+import '../../../core/widgets/app_transitions.dart';
 
 class LibraryScanCountChip extends StatelessWidget {
   const LibraryScanCountChip({
@@ -296,7 +297,9 @@ class LibraryScanProgressCard extends StatelessWidget {
                     child: AnimatedSwitcher(
                       duration: MediaQuery.disableAnimationsOf(context)
                           ? Duration.zero
-                          : const Duration(milliseconds: 180),
+                          : kAppFadeDuration,
+                      switchInCurve: kAppFadeCurve,
+                      switchOutCurve: kAppFadeCurve,
                       child: Text(
                         stageLabel,
                         key: ValueKey(scanState.stage),

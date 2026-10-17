@@ -63,12 +63,10 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet>
     super.initState();
     _expansionController = AnimationController(
       vsync: this,
-      duration: kAppMotionStandard,
+      duration: kAppFadeDuration,
       value: 1,
     )..addStatusListener(_handleAnimationStatus);
-    _opacity = _expansionController.drive(
-      CurveTween(curve: Curves.easeInOutCubic),
-    );
+    _opacity = _expansionController.drive(CurveTween(curve: kAppFadeCurve));
     // Non-zero row extents keep the lazy viewport bounded during expansion.
     _sizeFactor = _opacity.drive(Tween<double>(begin: 0.2, end: 1));
     _rebuildTree(expandSelected: true);

@@ -353,10 +353,8 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     return TweenAnimationBuilder<double>(
       key: ValueKey<int>(_loadGeneration),
       tween: Tween<double>(begin: disableAnimations ? 1.0 : 0.0, end: 1.0),
-      duration: disableAnimations
-          ? Duration.zero
-          : kPlaceholderContentTransitionDuration,
-      curve: Curves.easeOutCubic,
+      duration: disableAnimations ? Duration.zero : kAppFadeDuration,
+      curve: kAppFadeCurve,
       builder: (context, opacity, child) {
         return Opacity(opacity: opacity, child: child);
       },

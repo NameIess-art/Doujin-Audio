@@ -1,3 +1,4 @@
+import '../../../../core/widgets/app_transitions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -117,9 +118,10 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
                             },
                           ),
                           AnimatedOpacity(
+                            curve: kAppFadeCurve,
                             duration: MediaQuery.disableAnimationsOf(context)
                                 ? Duration.zero
-                                : const Duration(milliseconds: 200),
+                                : kAppFadeDuration,
                             opacity: _single ? 0.38 : 1.0,
                             child: IgnorePointer(
                               ignoring: _single,

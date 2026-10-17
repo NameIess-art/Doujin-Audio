@@ -153,12 +153,12 @@ class _LibraryEditTreeListState extends State<LibraryEditTreeList>
     super.initState();
     _animationController = AnimationController(
       vsync: this,
-      duration: kAppMotionStandard,
+      duration: kAppFadeDuration,
       value: 1,
     )..addStatusListener(_onAnimationStatus);
     _opacity = CurvedAnimation(
       parent: _animationController,
-      curve: Curves.easeInOutCubic,
+      curve: kAppFadeCurve,
     );
     // Nonzero incoming heights let the sliver stop at its cache extent.
     _sizeFactor = Tween<double>(begin: 0.2, end: 1).animate(_opacity);
@@ -180,10 +180,11 @@ class _LibraryEditTreeListState extends State<LibraryEditTreeList>
   String get _storageKey => 'library-edit-expanded:${widget.libraryPath}';
 
   void _restoreExpansion() {
-    final stored = PageStorage.maybeOf(context)?.readState(
-      context,
-      identifier: _storageKey,
-    ) as Set<String>?;
+    final stored =
+        PageStorage.maybeOf(
+              context,
+            )?.readState(context, identifier: _storageKey)
+            as Set<String>?;
     _expandedPaths
       ..clear()
       ..addAll(stored ?? const <String>{});

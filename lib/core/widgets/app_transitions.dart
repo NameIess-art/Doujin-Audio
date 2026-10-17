@@ -7,7 +7,9 @@ import 'package:flutter/rendering.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 
-const kPlaceholderContentTransitionDuration = Duration(milliseconds: 450);
+const kAppFadeDuration = Duration(milliseconds: 300);
+const kAppFadeCurve = Curves.easeInOutCubic;
+const kPlaceholderContentTransitionDuration = kAppFadeDuration;
 const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
@@ -95,6 +97,210 @@ class _AppNavigationInputLockState extends State<AppNavigationInputLock> {
   }
 }
 
+// Headers keep their layout and inherited state inside the page. Only their
+// painting moves above the navigator's sliding page backgrounds.
+class AppPageTransitionHost extends SingleChildRenderObjectWidget {
+  const AppPageTransitionHost({
+    super.key,
+    required super.child,
+    this.enabled = true,
+  });
+
+  final bool enabled;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderPageTransitionHost(enabled);
+
+  @override
+  void updateRenderObject(BuildContext context, RenderObject renderObject) {
+    (renderObject as _RenderPageTransitionHost).enabled = enabled;
+  }
+}
+
+class _RenderPageTransitionHost extends RenderProxyBox {
+  _RenderPageTransitionHost(this._enabled);
+
+  final Set<_RenderPageHeader> headers = {};
+  bool _enabled;
+
+  bool get enabled => _enabled;
+  set enabled(bool value) {
+    if (_enabled == value) return;
+    _enabled = value;
+    for (final header in headers) {
+      header.markNeedsPaint();
+    }
+    markNeedsPaint();
+  }
+
+  int _comparePaintOrder(RenderObject first, RenderObject second) {
+    List<RenderObject> path(RenderObject node) => [
+      for (
+        RenderObject? ancestor = node;
+        ancestor != null;
+        ancestor = ancestor.parent
+      )
+        ancestor,
+    ];
+    final firstPath = path(first).reversed.toList();
+    final secondPath = path(second).reversed.toList();
+    var index = 0;
+    while (index < firstPath.length &&
+        index < secondPath.length &&
+        firstPath[index] == secondPath[index]) {
+      index++;
+    }
+    if (index == firstPath.length || index == secondPath.length) {
+      return firstPath.length.compareTo(secondPath.length);
+    }
+    final siblings = <RenderObject>[];
+    firstPath[index - 1].visitChildren(siblings.add);
+    return siblings
+        .indexOf(firstPath[index])
+        .compareTo(siblings.indexOf(secondPath[index]));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    super.paint(context, offset);
+    if (!enabled) return;
+    // Cached tabs can reverse their Stack order without mounting new headers.
+    final orderedHeaders = headers.toList()..sort(_comparePaintOrder);
+    for (final header in orderedHeaders) {
+      if (!header.attached || !header.hasSize || header.child == null) continue;
+      var visible = true;
+      var opacity = 1.0;
+      for (
+        RenderObject? ancestor = header.parent;
+        ancestor != this;
+        ancestor = ancestor.parent
+      ) {
+        if (ancestor == null ||
+            ancestor is RenderOffstage && ancestor.offstage) {
+          visible = false;
+          break;
+        }
+        if (ancestor is RenderOpacity) opacity *= ancestor.opacity;
+        if (ancestor is RenderAnimatedOpacity) {
+          opacity *= ancestor.opacity.value;
+        }
+      }
+      if (!visible || opacity == 0) continue;
+      final viewport = header.viewport.currentContext?.findRenderObject();
+      if (viewport is! RenderBox || !viewport.hasSize) continue;
+      final clip = MatrixUtils.transformRect(
+        viewport.getTransformTo(this),
+        Offset.zero & viewport.size,
+      );
+      context.pushOpacity(offset, (opacity * 255).round(), (context, offset) {
+        context.pushClipRect(needsCompositing, offset, clip, (context, offset) {
+          context.pushTransform(
+            needsCompositing,
+            offset,
+            header.getTransformTo(this),
+            (context, offset) => context.paintChild(header.child!, offset),
+          );
+        });
+      });
+    }
+  }
+}
+
+class _PageHeaderPaint extends SingleChildRenderObjectWidget {
+  const _PageHeaderPaint({
+    required this.host,
+    required this.animation,
+    required this.viewport,
+    required super.child,
+  });
+
+  final _RenderPageTransitionHost host;
+  final Listenable animation;
+  final GlobalKey viewport;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderPageHeader(host, animation, viewport);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderPageHeader renderObject,
+  ) {
+    renderObject.update(host, animation, viewport);
+  }
+}
+
+class _RenderPageHeader extends RenderProxyBox {
+  _RenderPageHeader(this.host, this.animation, this.viewport);
+
+  _RenderPageTransitionHost host;
+  Listenable animation;
+  GlobalKey viewport;
+
+  void update(
+    _RenderPageTransitionHost nextHost,
+    Listenable nextAnimation,
+    GlobalKey nextViewport,
+  ) {
+    if (host == nextHost &&
+        animation == nextAnimation &&
+        viewport == nextViewport) {
+      return;
+    }
+    if (attached) _unregister();
+    host = nextHost;
+    animation = nextAnimation;
+    viewport = nextViewport;
+    if (attached) _register();
+    markNeedsPaint();
+  }
+
+  void _register() {
+    host.headers.add(this);
+    animation.addListener(host.markNeedsPaint);
+    host.markNeedsPaint();
+  }
+
+  void _unregister() {
+    host.headers.remove(this);
+    animation.removeListener(host.markNeedsPaint);
+    host.markNeedsPaint();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _register();
+  }
+
+  @override
+  void detach() {
+    _unregister();
+    super.detach();
+  }
+
+  @override
+  void markNeedsPaint() {
+    super.markNeedsPaint();
+    if (attached) host.markNeedsPaint();
+  }
+
+  @override
+  void markNeedsLayout() {
+    super.markNeedsLayout();
+    if (attached) host.markNeedsPaint();
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    // Layout, semantics and hit testing stay in the page; modal routes use the
+    // original paint location so their barrier can cover the header.
+    if (!host.enabled) super.paint(context, offset);
+  }
+}
+
 // Animation ownership stays with the route/tab; regions only choose which
 // transition to display, without moving header state out of its page.
 class _AppPageMotionScope extends InheritedWidget {
@@ -102,12 +308,16 @@ class _AppPageMotionScope extends InheritedWidget {
     super.key,
     required this.contentBuilder,
     required this.headerBuilder,
+    required this.headerAnimation,
+    required this.headerViewport,
     this.configuration,
     required super.child,
   });
 
   final _PageTransitionBuilder contentBuilder;
   final _PageTransitionBuilder headerBuilder;
+  final Listenable headerAnimation;
+  final GlobalKey headerViewport;
   final Object? configuration;
 
   @override
@@ -184,29 +394,20 @@ class _DeferredPageContent extends StatefulWidget {
   State<_DeferredPageContent> createState() => _DeferredPageContentState();
 }
 
-class _DeferredPageContentState extends State<_DeferredPageContent>
-    with SingleTickerProviderStateMixin {
+class _DeferredPageContentState extends State<_DeferredPageContent> {
   final _coordinator = UiInteractionCoordinator.instance;
   late final _commitKey = 'page_content_${identityHashCode(this)}';
   Animation<double>? _routeAnimation;
   bool _firstFrameBuilt = false;
   bool _active = false;
   bool _ready = false;
-  bool _contentLaidOut = false;
-  bool _revealScheduled = false;
   bool _commitScheduled = false;
-  late final AnimationController _fade;
 
   @override
   void initState() {
     super.initState();
-    _fade = AnimationController(vsync: this, duration: kAppMotionFast)
-      ..addStatusListener(_handleFadeStatus);
     if (widget.prepared && widget.isReady) {
       _ready = true;
-      _contentLaidOut = true;
-      _revealScheduled = true;
-      _fade.value = 1;
       return;
     }
     _coordinator.addListener(_scheduleContent);
@@ -220,16 +421,7 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_contentLaidOut && MediaQuery.disableAnimationsOf(context)) {
-      _fade.value = 1;
-    }
-    if (_ready) {
-      if (!TickerMode.valuesOf(context).enabled ||
-          ModalRoute.isCurrentOf(context) == false) {
-        _coordinator.cancelInteraction(_fade);
-      }
-      return;
-    }
+    if (_ready) return;
     final route = ModalRoute.of(context);
     _active =
         TickerMode.valuesOf(context).enabled &&
@@ -251,17 +443,10 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
     if (oldWidget.isReady != widget.isReady) _scheduleContent();
   }
 
-  void _handleFadeStatus(AnimationStatus status) {
-    if (status != AnimationStatus.completed) return;
-    _coordinator.endInteraction(_fade);
-    if (mounted) setState(() {});
-  }
-
   @override
   void deactivate() {
     _active = false;
     _coordinator.cancelCommit(_commitKey);
-    _coordinator.cancelInteraction(_fade);
     _commitScheduled = false;
     _coordinator.removeListener(_scheduleContent);
     _routeAnimation?.removeStatusListener(_handleRouteStatus);
@@ -307,61 +492,35 @@ class _DeferredPageContentState extends State<_DeferredPageContent>
         // Preparing only the shell lets entrance motion start without laying
         // out cached lists. Later visits keep the mounted content and its state.
         setState(() => _ready = true);
-        if (!MediaQuery.disableAnimationsOf(context)) {
-          _coordinator.beginInteraction(_fade, deferVisualUpdates: true);
-        }
         _coordinator.removeListener(_scheduleContent);
         _routeAnimation?.removeStatusListener(_handleRouteStatus);
       },
     );
   }
 
-  void _revealAfterLayout() {
-    if (!_ready || _revealScheduled) return;
-    _revealScheduled = true;
-    // The first list build/layout runs behind the static skeleton, before any
-    // fade tick. This also applies when animations are disabled.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _contentLaidOut = true;
-      if (MediaQuery.disableAnimationsOf(context)) {
-        setState(() => _fade.value = 1);
-      } else {
-        _fade.forward();
-      }
-    });
-  }
-
   @override
   void dispose() {
     _coordinator.cancelCommit(_commitKey);
-    _coordinator.cancelInteraction(_fade);
     _coordinator.removeListener(_scheduleContent);
     _routeAnimation?.removeStatusListener(_handleRouteStatus);
-    _fade.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    _revealAfterLayout();
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (!_ready || !_fade.isCompleted)
-          IgnorePointer(
-            key: const ValueKey('deferred_placeholder'),
-            child: TickerMode(enabled: false, child: widget.placeholder),
-          ),
-        FadeTransition(
-          key: const ValueKey('deferred_content'),
-          opacity: _fade,
-          child: IgnorePointer(
-            ignoring: !_fade.isCompleted,
-            child: _ready ? widget.builder(context) : const SizedBox.shrink(),
-          ),
-        ),
-      ],
+    return PlaceholderContentTransition(
+      showPlaceholder: !_ready,
+      placeholder: TickerMode(
+        key: const ValueKey('deferred_placeholder'),
+        enabled: false,
+        child: widget.placeholder,
+      ),
+      content: _ready
+          ? KeyedSubtree(
+              key: const ValueKey('deferred_content'),
+              child: widget.builder(context),
+            )
+          : const SizedBox.shrink(),
     );
   }
 }
@@ -375,7 +534,16 @@ class AppPageHeaderTransition extends StatelessWidget {
     final motion = context
         .dependOnInheritedWidgetOfExactType<_AppPageMotionScope>();
     if (motion == null) return child;
-    return motion.headerBuilder(context, child);
+    final header = motion.headerBuilder(context, child);
+    final host = context
+        .findAncestorRenderObjectOfType<_RenderPageTransitionHost>();
+    if (host == null) return header;
+    return _PageHeaderPaint(
+      host: host,
+      animation: motion.headerAnimation,
+      viewport: motion.headerViewport,
+      child: RepaintBoundary(child: header),
+    );
   }
 }
 
@@ -402,8 +570,10 @@ class _CoveringPageTransition extends StatefulWidget {
 class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   CurvedAnimation? _motion;
   late final ValueNotifier<Widget> _pageChild;
+  final _headerViewport = GlobalKey();
   late Animation<Offset> _position;
   late Listenable _headerAnimation;
+  Animation<double>? _routeSecondaryAnimation;
   late bool _interactive;
   Widget? _transition;
 
@@ -444,7 +614,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     );
     _headerAnimation = Listenable.merge([
       widget.animation,
-      widget.secondaryAnimation,
+      _routeSecondaryAnimation ?? widget.secondaryAnimation,
     ]);
   }
 
@@ -482,6 +652,14 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // MaterialPageRoute replaces the original secondary animation with a
+    // dismissed proxy when it delegates transitions to the incoming route.
+    // Read the route's real animation so its header still fades when covered.
+    _routeSecondaryAnimation = ModalRoute.of(context)?.secondaryAnimation;
+    _headerAnimation = Listenable.merge([
+      widget.animation,
+      _routeSecondaryAnimation ?? widget.secondaryAnimation,
+    ]);
     _transition = null;
   }
 
@@ -494,13 +672,18 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   }
 
   Widget _buildTransition() => _buildPageActivity(
-    ClipRect(child: LayoutBuilder(builder: _buildPage)),
+    ClipRect(
+      key: _headerViewport,
+      child: LayoutBuilder(builder: _buildPage),
+    ),
     interactive: _interactive,
   );
 
   Widget _buildPage(BuildContext context, BoxConstraints constraints) {
     final page = _AppPageMotionScope(
       key: widget.contentKey,
+      headerAnimation: _headerAnimation,
+      headerViewport: _headerViewport,
       configuration: (
         widget.animation,
         widget.secondaryAnimation,
@@ -523,11 +706,9 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
             ? RepaintBoundary(child: header)
             : header,
         builder: (context, header) {
-          final incoming = Curves.easeOutCubic.transform(
-            (widget.animation.value / 0.6).clamp(0.0, 1.0),
-          );
-          final outgoing = Curves.easeOutCubic.transform(
-            (widget.secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
+          final incoming = kAppFadeCurve.transform(widget.animation.value);
+          final outgoing = kAppFadeCurve.transform(
+            (_routeSecondaryAnimation ?? widget.secondaryAnimation).value,
           );
           final fadedHeader = Opacity(
             opacity: incoming * (1 - outgoing),
@@ -606,10 +787,10 @@ class _AppMenuContentTransitionState extends State<AppMenuContentTransition>
     _secondary = widget.secondary;
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: kAppFadeDuration,
       value: _secondary == null ? 0 : 1,
     )..addStatusListener(_handleStatus);
-    _opacity = _controller.drive(CurveTween(curve: Curves.easeInOutCubic));
+    _opacity = _controller.drive(CurveTween(curve: kAppFadeCurve));
   }
 
   void _handleStatus(AnimationStatus status) {
@@ -676,11 +857,11 @@ class AppHeaderTransition extends StatelessWidget {
   Widget build(BuildContext context) {
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : kAppMotionFast;
+        : kAppFadeDuration;
     return AnimatedSwitcher(
       duration: duration,
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
+      switchInCurve: kAppFadeCurve,
+      switchOutCurve: kAppFadeCurve,
       layoutBuilder: (currentChild, previousChildren) => Stack(
         alignment: Alignment.topLeft,
         children: [...previousChildren, ?currentChild],
@@ -701,8 +882,6 @@ class PlaceholderContentTransition extends StatefulWidget {
     required this.placeholder,
     required this.content,
     this.duration = kPlaceholderContentTransitionDuration,
-    this.fadeContent = true,
-    this.fadePlaceholder = true,
     this.fit = StackFit.expand,
   });
 
@@ -710,8 +889,6 @@ class PlaceholderContentTransition extends StatefulWidget {
   final Widget placeholder;
   final Widget content;
   final Duration duration;
-  final bool fadeContent;
-  final bool fadePlaceholder;
   final StackFit fit;
 
   @override
@@ -725,11 +902,13 @@ class _PlaceholderContentTransitionState
   late final AnimationController _controller;
   late final Animation<double> _placeholderOpacity;
   late final Animation<double> _contentOpacity;
-  bool _fadingPlaceholder = false;
+  bool _fading = false;
   int _fadeGeneration = 0;
+  Widget? _departingContent;
   final _interaction = UiInteractionCoordinator.instance;
 
   bool get _skipMotion =>
+      widget.duration == Duration.zero ||
       MediaQuery.disableAnimationsOf(context) ||
       !TickerMode.valuesOf(context).enabled ||
       ModalRoute.isCurrentOf(context) == false;
@@ -737,59 +916,63 @@ class _PlaceholderContentTransitionState
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: widget.duration)
-      ..addStatusListener(_handleAnimationStatus);
-    final crossFade = _controller.drive(
-      CurveTween(curve: Curves.easeInOutCubic),
-    );
-    _contentOpacity = crossFade;
-    _placeholderOpacity = ReverseAnimation(crossFade);
-    if (!widget.showPlaceholder) {
-      _controller.value = 1;
-    }
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.duration,
+      value: widget.showPlaceholder ? 0 : 1,
+    )..addStatusListener(_handleAnimationStatus);
+    _contentOpacity = _controller.drive(CurveTween(curve: kAppFadeCurve));
+    _placeholderOpacity = ReverseAnimation(_contentOpacity);
   }
 
   void _handleAnimationStatus(AnimationStatus status) {
-    if (status != AnimationStatus.completed ||
-        !_fadingPlaceholder ||
-        !mounted) {
+    if (!_fading ||
+        !mounted ||
+        (status != AnimationStatus.completed &&
+            status != AnimationStatus.dismissed)) {
       return;
     }
     _interaction.endInteraction(_controller);
-    setState(() => _fadingPlaceholder = false);
+    setState(() {
+      _fading = false;
+      _departingContent = null;
+    });
   }
 
   void _cancelFade() {
     _fadeGeneration++;
-    _fadingPlaceholder = false;
-    _controller.value = 1;
+    _fading = false;
+    _controller.stop();
+    _controller.value = widget.showPlaceholder ? 0 : 1;
+    _departingContent = null;
     _interaction.cancelInteraction(_controller);
   }
 
   void _prepareFade() {
     final generation = ++_fadeGeneration;
-    _fadingPlaceholder = true;
-    _controller.reset();
-    // Lay out the new list behind the static placeholder before its first tick.
+    _fading = true;
+    _controller.stop();
+    // Mount and lay out the incoming subtree before its first visible tick.
+    // Reversing keeps the current opacity instead of restarting either fade.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || generation != _fadeGeneration || widget.showPlaceholder) {
-        return;
-      }
+      if (!mounted || generation != _fadeGeneration) return;
       if (_skipMotion) {
         setState(_cancelFade);
         return;
       }
       _interaction.beginInteraction(_controller, deferVisualUpdates: true);
-      _controller.forward();
+      if (widget.showPlaceholder) {
+        _controller.reverse();
+      } else {
+        _controller.forward();
+      }
     });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_skipMotion) {
-      _cancelFade();
-    }
+    if (_skipMotion) _cancelFade();
   }
 
   @override
@@ -798,17 +981,13 @@ class _PlaceholderContentTransitionState
     if (oldWidget.duration != widget.duration) {
       _controller.duration = widget.duration;
     }
-    if (oldWidget.showPlaceholder && !widget.showPlaceholder) {
+    if (oldWidget.showPlaceholder != widget.showPlaceholder) {
+      _departingContent = widget.showPlaceholder ? oldWidget.content : null;
       if (_skipMotion) {
         _cancelFade();
       } else {
         _prepareFade();
       }
-    } else if (!oldWidget.showPlaceholder && widget.showPlaceholder) {
-      _fadeGeneration++;
-      _fadingPlaceholder = false;
-      _controller.reset();
-      _interaction.cancelInteraction(_controller);
     }
   }
 
@@ -828,28 +1007,25 @@ class _PlaceholderContentTransitionState
 
   @override
   Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) {
-      return widget.showPlaceholder ? widget.placeholder : widget.content;
-    }
-    if (widget.showPlaceholder && !_fadingPlaceholder) {
-      return widget.placeholder;
-    }
+    final content = _departingContent ?? widget.content;
     return Stack(
       fit: widget.fit,
       children: [
-        if (_fadingPlaceholder)
+        if (widget.showPlaceholder || _fading)
           IgnorePointer(
-            child: widget.fadePlaceholder
-                ? FadeTransition(
-                    opacity: _placeholderOpacity,
-                    child: widget.placeholder,
-                  )
-                : widget.placeholder,
+            key: const ValueKey('placeholder_transition_placeholder'),
+            ignoring: !widget.showPlaceholder,
+            child: FadeTransition(
+              opacity: _placeholderOpacity,
+              child: widget.placeholder,
+            ),
           ),
-        if (widget.fadeContent)
-          FadeTransition(opacity: _contentOpacity, child: widget.content)
-        else
-          widget.content,
+        if (!widget.showPlaceholder || _fading)
+          IgnorePointer(
+            key: const ValueKey('placeholder_transition_content'),
+            ignoring: widget.showPlaceholder,
+            child: FadeTransition(opacity: _contentOpacity, child: content),
+          ),
       ],
     );
   }
@@ -858,10 +1034,10 @@ class _PlaceholderContentTransitionState
 class SecondaryOverlayConfig {
   const SecondaryOverlayConfig({
     this.backgroundOpacity = 0.80,
-    this.transitionDuration = kAppMotionStandard,
-    this.reverseTransitionDuration = kAppMotionFast,
-    this.curve = Curves.easeOutCubic,
-    this.reverseCurve = Curves.easeInCubic,
+    this.transitionDuration = kAppFadeDuration,
+    this.reverseTransitionDuration = kAppFadeDuration,
+    this.curve = kAppFadeCurve,
+    this.reverseCurve = kAppFadeCurve,
   });
 
   final double backgroundOpacity;
@@ -915,8 +1091,8 @@ class AnimatedTreeReveal extends StatelessWidget {
           begin: animateInitial && visible ? 0 : target,
           end: target,
         ),
-        duration: kAppMotionStandard,
-        curve: visible ? Curves.easeOutCubic : Curves.easeInCubic,
+        duration: kAppFadeDuration,
+        curve: kAppFadeCurve,
         child: child,
         builder: (context, value, child) {
           // A non-zero extent keeps lazy lists from building every descendant
@@ -940,9 +1116,9 @@ class UndoableRemovalTransition extends StatefulWidget {
     super.key,
     required this.hidden,
     required this.child,
-    this.duration = kAppMotionStandard,
-    this.curve = Curves.easeInOutCubic,
-    this.reverseCurve = Curves.easeOutCubic,
+    this.duration = kAppFadeDuration,
+    this.curve = kAppFadeCurve,
+    this.reverseCurve = kAppFadeCurve,
   });
 
   final bool hidden;
@@ -1039,8 +1215,8 @@ Widget buildAppScaleFadeTransition({
   required Animation<double> animation,
   required Widget child,
   double beginScale = 0.94,
-  Curve curve = Curves.easeOutCubic,
-  Curve reverseCurve = Curves.easeInCubic,
+  Curve curve = kAppFadeCurve,
+  Curve reverseCurve = kAppFadeCurve,
 }) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
   return _AppFadeTransition(
@@ -1056,8 +1232,8 @@ Widget buildAppFadeTransition({
   required BuildContext context,
   required Animation<double> animation,
   required Widget child,
-  Curve curve = Curves.easeOutCubic,
-  Curve reverseCurve = Curves.easeInCubic,
+  Curve curve = kAppFadeCurve,
+  Curve reverseCurve = kAppFadeCurve,
 }) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
   return _AppFadeTransition(
@@ -1163,7 +1339,7 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     required this.itemBuilder,
     this.contentRevision,
     this.separateHeader = false,
-    this.duration = const Duration(milliseconds: 350),
+    this.duration = kAppFadeDuration,
     this.onTransitionCompleted,
   });
 
@@ -1189,6 +1365,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _progress;
+  late final Animation<double> _headerProgress;
   late final Animation<double> _reverseProgress;
   late final List<Animation<Offset>> _incomingPositions;
   late final List<Animation<Offset>> _outgoingPositions;
@@ -1200,6 +1377,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   final Set<int> _dirtyChildren = {};
   late List<GlobalKey> _pageKeys;
   final Object _transitionInteraction = Object();
+  final _headerViewport = GlobalKey();
   final Set<int> _preparedPages = {};
   BoxConstraints? _preparedConstraints;
   int? _pendingIndex;
@@ -1220,7 +1398,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     )..addStatusListener(_handleStatusChanged);
     _controller.value = 1;
     _progress = _controller.drive(CurveTween(curve: Curves.decelerate));
-    _reverseProgress = ReverseAnimation(_progress);
+    _headerProgress = _controller.drive(CurveTween(curve: kAppFadeCurve));
+    _reverseProgress = ReverseAnimation(_headerProgress);
     _incomingPositions = [
       for (final direction in [-1.0, 1.0])
         _progress.drive(Tween(begin: Offset(direction, 0), end: Offset.zero)),
@@ -1506,9 +1685,16 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         ),
       );
     }
+    final parentMotion = context
+        .dependOnInheritedWidgetOfExactType<_AppPageMotionScope>();
     return KeyedSubtree(
       key: ValueKey<String>('app_indexed_page_$index'),
       child: _AppPageMotionScope(
+        headerAnimation: Listenable.merge([
+          _controller,
+          parentMotion?.headerAnimation,
+        ]),
+        headerViewport: parentMotion?.headerViewport ?? _headerViewport,
         configuration: (
           animation,
           outgoing,
@@ -1523,16 +1709,19 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
             child: RepaintBoundary(child: content),
           ),
         ),
-        headerBuilder: (_, header) => FadeTransition(
-          opacity: preparing
-              ? const AlwaysStoppedAnimation<double>(0)
-              : outgoing
-              ? _reverseProgress
-              : incoming
-              ? _progress
-              : const AlwaysStoppedAnimation<double>(1),
-          child: header,
-        ),
+        headerBuilder: (context, header) {
+          final faded = FadeTransition(
+            opacity: preparing
+                ? const AlwaysStoppedAnimation<double>(0)
+                : outgoing
+                ? _reverseProgress
+                : incoming
+                ? _headerProgress
+                : const AlwaysStoppedAnimation<double>(1),
+            child: header,
+          );
+          return parentMotion?.headerBuilder(context, faded) ?? faded;
+        },
         child: RepaintBoundary(key: _pageKeys[index], child: page),
       ),
     );
@@ -1555,9 +1744,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           _pendingIndex != _currentIndex)
         _pendingIndex!,
     ];
-    return IgnorePointer(
+    final pages = IgnorePointer(
       ignoring: _isAnimating || _pendingIndex != null,
       child: ClipRect(
+        key: _headerViewport,
         child: Stack(
           fit: StackFit.expand,
           children: paintOrder
@@ -1572,6 +1762,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         ),
       ),
     );
+    return context
+                .findAncestorRenderObjectOfType<_RenderPageTransitionHost>() ==
+            null
+        ? AppPageTransitionHost(child: pages)
+        : pages;
   }
 
   void _handleVisiblePageLayout(BoxConstraints constraints) {
@@ -1636,8 +1831,26 @@ class _RenderAppPageOffstage extends RenderOffstage {
   }
 }
 
+// A stable delegate identity lets app routes retain their own secondary
+// animation, so their stationary headers fade once when covered or revealed.
+Widget _coveredPageTransition(
+  BuildContext context,
+  Animation<double> animation,
+  Animation<double> secondaryAnimation,
+  bool allowSnapshotting,
+  Widget? child,
+) => _buildPageActivity(
+  child!,
+  interactive:
+      animation.status == AnimationStatus.completed &&
+      secondaryAnimation.status == AnimationStatus.dismissed,
+);
+
 class AppPageTransitionsBuilder extends PageTransitionsBuilder {
   const AppPageTransitionsBuilder();
+
+  @override
+  DelegatedTransitionBuilder get delegatedTransition => _coveredPageTransition;
 
   @override
   Duration get transitionDuration => kAppMotionSlow;
@@ -1719,14 +1932,7 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
   // Material routes require a delegated transition to follow a custom route's
   // secondary animation. Keep their content still and pause it while covered.
   @override
-  DelegatedTransitionBuilder get delegatedTransition =>
-      (context, animation, secondaryAnimation, allowSnapshotting, child) =>
-          _buildPageActivity(
-            child!,
-            interactive:
-                animation.status == AnimationStatus.completed &&
-                secondaryAnimation.status == AnimationStatus.dismissed,
-          );
+  DelegatedTransitionBuilder get delegatedTransition => _coveredPageTransition;
 
   @override
   Widget buildPage(
@@ -1848,8 +2054,8 @@ class AppRollingNumber extends StatefulWidget {
     super.key,
     required this.number,
     this.style,
-    this.duration = const Duration(milliseconds: 280),
-    this.curve = Curves.easeOutCubic,
+    this.duration = kAppFadeDuration,
+    this.curve = kAppFadeCurve,
   });
 
   final int number;

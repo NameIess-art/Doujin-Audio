@@ -847,7 +847,7 @@ void main() {
       tester.getCenter(focusedDestination).dx,
       closeTo(tester.getRect(menuSurface).left + 28, 0.1),
     );
-    expect(trailingDestination, findsNothing);
+    expect(trailingDestination, findsOneWidget);
     await tester.pump(const Duration(milliseconds: 90));
     expect(
       tester.getCenter(trailingDestination).dx,
@@ -2197,7 +2197,7 @@ void main() {
       );
       for (
         var frame = 0;
-        frame < 12 && openingPlaceholder.evaluate().isNotEmpty;
+        frame < 24 && openingPlaceholder.evaluate().isNotEmpty;
         frame++
       ) {
         await tester.pump(const Duration(milliseconds: 20));
@@ -2431,7 +2431,6 @@ void main() {
       fixture.build(
         AppFadeThroughIndexedStack.lazy(
           indexListenable: activePageIndex,
-          duration: kAppMotionSlow,
           itemCount: 2,
           itemBuilder: (_, i) => [
             AsmrTab(
@@ -3034,9 +3033,7 @@ void main() {
     await tester.pump();
 
     expect(controller.collectedSearchRefreshCount, 0);
-    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-    await tester.pump();
+    await _waitForAsmrContent(tester);
     expect(controller.collectedSearchRefreshCount, 1);
     expect(
       find.descendant(
@@ -3110,7 +3107,7 @@ void main() {
       'sleep',
     );
     await tester.pump(const Duration(milliseconds: 250));
-    await tester.pump();
+    await _waitForAsmrContent(tester);
     expect(find.text('Second loaded work', findRichText: true), findsOneWidget);
 
     Navigator.of(
@@ -5111,7 +5108,8 @@ void main() {
       isInitialized: true,
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 1));
 
     expect(inSessionCard(find.byType(CircularProgressIndicator)), findsNothing);
     expect(inSessionCard(find.byIcon(Icons.pause_rounded)), findsWidgets);

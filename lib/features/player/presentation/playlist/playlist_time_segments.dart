@@ -158,7 +158,6 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
                   child: AppFadeThroughIndexedStack.lazy(
                     key: const ValueKey('playback_console_page_stack'),
                     indexListenable: _pageIndex,
-                    duration: kAppMotionSlow,
                     itemCount: 5,
                     contentRevision: Object(),
                     itemBuilder: (context, index) => switch (index) {

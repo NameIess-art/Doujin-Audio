@@ -1,8 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/cache/app_cache_service.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_store.dart';
+import 'package:doujin_audio/features/library/application/library_facade.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/cover_image_cache_policy.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
@@ -412,6 +418,101 @@ void main() {
     expect(await controller.clearApplicationCache(), 17);
     expect(clears, ['runtime', 'files']);
   });
+
+  test(
+    'settings clear waits for remote covers before deleting either cache',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final directory = await Directory.systemTemp.createTemp(
+        'settings_cache_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final temporary = Directory('${directory.path}/temporary');
+      final temporaryFile = File('${temporary.path}/asmr_subtitles/remote.srt');
+      await temporaryFile.parent.create(recursive: true);
+      await temporaryFile.writeAsBytes([1, 2, 3]);
+      AppCacheService.resetForTest(
+        temporaryDirectories: () async => [temporary],
+      );
+      addTearDown(AppCacheService.resetForTest);
+      final store = CoverArtworkStore(
+        persistentDirectory: () async => directory,
+      );
+      final cover = await store.putBytes(
+        logicalKey: 'remote-cover:https://example.com/old.jpg',
+        bytes: [0xff, 0xd8, 0xff, 0xd9],
+        namespace: CoverArtworkNamespace.remote,
+      );
+      final started = Completer<void>();
+      final download = Completer<String?>();
+      addTearDown(() {
+        if (!download.isCompleted) download.complete();
+      });
+      var downloads = 0;
+      var publications = 0;
+      final service = LibraryService();
+      final covers = CoverArtworkCacheService(
+        libraryService: service,
+        artworkStore: store,
+        remoteCoverDownloader: (_) {
+          downloads++;
+          if (!started.isCompleted) started.complete();
+          return download.future;
+        },
+        isActiveCoverKey: (_) => true,
+        onActiveCoverChanged: () => publications++,
+      );
+      final library = LibraryFacade.create(
+        databaseRepository: TestPersistenceRepository(),
+        service: service,
+        coverArtworkCacheService: covers,
+      );
+      final settings = SettingsRepository()..syncSlice(isInitialized: true);
+      final playback = PlaybackFacade.create(
+        databaseRepository: TestPersistenceRepository(),
+      );
+      addTearDown(library.dispose);
+      addTearDown(settings.dispose);
+      addTearDown(playback.dispose);
+      var clears = 0;
+      final controller = SettingsCommandController(
+        settings: settings,
+        playback: playback,
+        library: library,
+        clearApplicationCacheFiles: () {
+          clears++;
+          return AppCacheService.clearTemporaryCaches();
+        },
+      );
+      final pending = covers.futureForRemoteCover(
+        'https://example.com/pending.jpg',
+      );
+      await started.future;
+      final first = controller.clearApplicationCache();
+      final second = controller.clearApplicationCache();
+      await Future<void>.delayed(Duration.zero);
+      expect(clears, 0);
+      expect(await temporaryFile.exists(), isTrue);
+      expect(await File(cover!).exists(), isTrue);
+      expect(
+        await covers.futureForRemoteCover('https://example.com/new.jpg'),
+        isNull,
+      );
+      expect(downloads, 1);
+
+      download.complete(cover);
+      expect(await pending, isNull);
+      expect(await Future.wait([first, second]), [7, 7]);
+      expect(clears, 1);
+      expect(publications, 0);
+      expect(await temporaryFile.exists(), isFalse);
+      expect(await File(cover).exists(), isFalse);
+      expect(
+        covers.resolvedForRemoteCover('https://example.com/pending.jpg'),
+        isNull,
+      );
+    },
+  );
 }
 
 final class _CapturingPlaybackBehaviorRepository

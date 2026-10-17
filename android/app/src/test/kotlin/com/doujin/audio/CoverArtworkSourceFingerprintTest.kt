@@ -3,7 +3,6 @@ package com.doujin.audio
 import com.doujin.audio.metadata.coverBridgeCacheKey
 import com.doujin.audio.metadata.CoverArtworkOperations
 import com.doujin.audio.metadata.MediaMetadataOperations
-import com.doujin.audio.common.ApplicationCachePolicy
 import com.doujin.audio.storage.DocumentStorageOperations
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -29,8 +28,7 @@ class CoverArtworkSourceFingerprintTest {
         File(folder, "BB.jpg").apply { writeText("other"); setLastModified(100_000L) }
         val context = RuntimeEnvironment.getApplication()
         val storage = DocumentStorageOperations(context)
-        val policy = ApplicationCachePolicy(context)
-        val artwork = CoverArtworkOperations(context, storage, MediaMetadataOperations(context, storage, policy), policy)
+        val artwork = CoverArtworkOperations(context, storage, MediaMetadataOperations(context, storage))
         val images = artwork.discover("collision", null, folder.absolutePath, recursive = false)
 
         assertEquals(2, images.size)

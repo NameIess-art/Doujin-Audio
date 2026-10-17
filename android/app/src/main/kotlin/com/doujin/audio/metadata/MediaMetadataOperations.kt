@@ -26,8 +26,7 @@ internal fun artworkCacheFileName(bytes: ByteArray, prefix: String, extension: S
 
 internal class MediaMetadataOperations(
     private val context: Context,
-    private val storage: DocumentStorageOperations,
-    private val cachePolicy: ApplicationCachePolicy
+    private val storage: DocumentStorageOperations
 ) {
     private val embeddedCoverWriteLock = Any()
 
@@ -35,7 +34,7 @@ internal class MediaMetadataOperations(
         FileCacheVideoFrameResolver(
             context = context,
             cacheDir = context.cacheDir,
-            touchCacheFile = cachePolicy::touch,
+            touchCacheFile = ::touchCacheFile,
             resolveFilePath = storage::contentUriToFilePath
         )
     }
@@ -56,12 +55,12 @@ internal class MediaMetadataOperations(
         val output = File(coverDirectory, embeddedCoverCacheFileName(bytes))
         synchronized(embeddedCoverWriteLock) {
             if (output.exists() && output.length() > 0L) {
-                cachePolicy.touch(output)
+                touchCacheFile(output)
                 return output.absolutePath
             }
             return try {
                 output.writeBytes(bytes)
-                cachePolicy.touch(output)
+                touchCacheFile(output)
                 output.absolutePath
             } catch (_: Exception) {
                 output.delete()

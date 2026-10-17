@@ -108,7 +108,7 @@ void main() {
 
   test('action, subtitle and duration keys are localized properly', () {
     expect(appLanguageZh['root_directory'], '根目录');
-    expect(appLanguageJa['root_directory'], 'ルートディレクトリ');
+    expect(appLanguageJa['root_directory'], 'ルートフォルダ');
     expect(appLanguageEn['root_directory'], 'Root directory');
 
     expect(appLanguageZh['download'], '下载');
@@ -140,7 +140,7 @@ void main() {
     expect(appLanguageEn['minutes_duration'], '{count} min');
 
     expect(appLanguageZh['subtitle_global_display'], '字幕悬浮窗');
-    expect(appLanguageJa['subtitle_global_display'], '字幕を全体に表示');
+    expect(appLanguageJa['subtitle_global_display'], '字幕ウィンドウ');
     expect(appLanguageEn['subtitle_global_display'], 'Show subtitles globally');
   });
 }

@@ -22,8 +22,7 @@ internal fun coverBridgeCacheKey(
 internal class CoverArtworkOperations(
     private val context: Context,
     private val storage: DocumentStorageOperations,
-    private val metadata: MediaMetadataOperations,
-    private val cachePolicy: ApplicationCachePolicy
+    private val metadata: MediaMetadataOperations
 ) {
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "gif")
     private val preferredNames = listOf("cover", "folder", "front", "album", "artwork", "poster")
@@ -113,14 +112,14 @@ internal class CoverArtworkOperations(
         )
         val output = File(coverDirectory(), artworkCacheFileName(versionedKey.toByteArray(Charsets.UTF_8), "cover", extension))
         if (output.exists() && output.length() > 0L) {
-            cachePolicy.touch(output)
+            touchCacheFile(output)
             return output.absolutePath
         }
         return try {
             context.contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(output).use { target -> input.copyTo(target) }
             } ?: return null
-            cachePolicy.touch(output)
+            touchCacheFile(output)
             output.absolutePath
         } catch (_: Exception) {
             output.delete()
@@ -142,12 +141,12 @@ internal class CoverArtworkOperations(
         )
         val output = File(coverDirectory(), artworkCacheFileName(versionedKey.toByteArray(Charsets.UTF_8), "cover", "jpg"))
         if (output.exists() && output.length() > 0L) {
-            cachePolicy.touch(output)
+            touchCacheFile(output)
             return output.absolutePath
         }
         return try {
             candidate.copyTo(output, overwrite = true)
-            cachePolicy.touch(output)
+            touchCacheFile(output)
             output.absolutePath
         } catch (_: Exception) {
             output.delete()
@@ -178,7 +177,7 @@ internal class CoverArtworkOperations(
                 val output = File(coverDirectory(), artworkCacheFileName(versionedKey.toByteArray(Charsets.UTF_8), "cover", "jpg"))
                 try {
                     if (!output.exists() || output.length() <= 0L) file.copyTo(output, overwrite = true)
-                    cachePolicy.touch(output)
+                    touchCacheFile(output)
                     mapOf(
                         "path" to output.absolutePath,
                         "sourcePath" to file.absolutePath,

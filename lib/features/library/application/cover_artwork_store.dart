@@ -302,33 +302,110 @@ final class CoverArtworkStore {
     return _enqueue<String?>(() async {
       await initialize();
       if (epoch != _clearEpoch) return null;
-      final source = File(sourcePath);
-      if (!await source.exists() || await source.length() <= 0) return null;
-      final stat = await source.stat();
-      final stem =
-          fileStem ??
-          switch (namespace) {
-            CoverArtworkNamespace.embedded =>
-              await sha256.bind(source.openRead()).first,
-            CoverArtworkNamespace.generated => sha256.convert(
-              utf8.encode(logicalKey),
-            ),
-            _ => sha256.convert(
-              utf8.encode(
-                '$logicalKey|${stat.size}|${stat.modified.millisecondsSinceEpoch}',
-              ),
-            ),
-          };
-      final output = _artifactFile(namespace, '$stem.image');
-      if (!await _isUsableFile(output.path)) await _copyFile(source, output);
+      final output = await _storeFile(
+        logicalKey: logicalKey,
+        sourcePath: sourcePath,
+        namespace: namespace,
+        fileStem: fileStem,
+      );
+      if (output == null) return null;
       final key = _canonicalLogicalKey(logicalKey);
-      final stored = _storedValue(output.path);
+      final stored = _storedValue(output);
       if (_bindings[key] != stored) {
         _bindings[key] = stored;
         await _persistIndex();
       }
-      return output.path;
+      return output;
     });
+  }
+
+  /// A directory discovery commits its bindings with one durable index write.
+  /// Hash reuse is limited to this batch and its source revisions.
+  Future<List<String?>> putFiles(
+    List<({String logicalKey, String sourcePath})> sources, {
+    CoverArtworkNamespace namespace = CoverArtworkNamespace.embedded,
+    bool Function()? shouldCancel,
+  }) {
+    final epoch = _clearEpoch;
+    return _enqueue(() async {
+      await initialize();
+      final results = List<String?>.filled(sources.length, null);
+      final hashes = <(String, int, int, int), String>{};
+      var changed = false;
+      try {
+        for (var index = 0; index < sources.length; index++) {
+          if (epoch != _clearEpoch || (shouldCancel?.call() ?? false)) break;
+          final source = sources[index];
+          String? output;
+          try {
+            output = _isUri(source.sourcePath)
+                ? source.sourcePath
+                : await _storeFile(
+                    logicalKey: source.logicalKey,
+                    sourcePath: source.sourcePath,
+                    namespace: namespace,
+                    hashes: hashes,
+                  );
+          } on FileSystemException catch (error, stackTrace) {
+            AppLogService.warning(
+              'cover_artwork_batch_source_failed path=${source.sourcePath}',
+              error: error,
+              stackTrace: stackTrace,
+            );
+          }
+          if (epoch != _clearEpoch || (shouldCancel?.call() ?? false)) break;
+          if (output == null) continue;
+          results[index] = output;
+          final key = _canonicalLogicalKey(source.logicalKey);
+          final stored = _storedValue(output);
+          if (_bindings[key] == stored) continue;
+          _bindings[key] = stored;
+          changed = true;
+        }
+      } finally {
+        if (changed) await _persistIndex();
+      }
+      return results;
+    });
+  }
+
+  Future<String?> _storeFile({
+    required String logicalKey,
+    required String sourcePath,
+    required CoverArtworkNamespace namespace,
+    String? fileStem,
+    Map<(String, int, int, int), String>? hashes,
+  }) async {
+    final source = File(sourcePath);
+    final stat = await source.stat();
+    if (stat.type != FileSystemEntityType.file || stat.size <= 0) return null;
+    final fingerprint = (
+      PathMatcher.equivalenceKey(sourcePath),
+      stat.size,
+      stat.modified.microsecondsSinceEpoch,
+      stat.changed.microsecondsSinceEpoch,
+    );
+    final String stem;
+    if (fileStem != null) {
+      stem = fileStem;
+    } else if (namespace == CoverArtworkNamespace.embedded) {
+      final cached = hashes?[fingerprint];
+      stem = cached ?? (await sha256.bind(source.openRead()).first).toString();
+      hashes?[fingerprint] = stem;
+    } else {
+      stem = sha256
+          .convert(
+            utf8.encode(
+              namespace == CoverArtworkNamespace.generated
+                  ? logicalKey
+                  : '$logicalKey|${stat.size}|${stat.modified.millisecondsSinceEpoch}',
+            ),
+          )
+          .toString();
+    }
+    final output = _artifactFile(namespace, '$stem.image');
+    if (!await _isUsableFile(output.path)) await _copyFile(source, output);
+    return output.path;
   }
 
   Future<void> bind(String logicalKey, String resolvedPath) {
@@ -415,11 +492,19 @@ final class CoverArtworkStore {
       await initialize();
       final deletedBytes = await _artifactBytes(_root);
       if (await _root.exists()) await _root.delete(recursive: true);
+      // Legacy remote files are reconstructible artwork too. Leaving them here
+      // would let post-clear migration repopulate the store from stale files.
+      final legacy = Directory(path.join(_root.parent.path, 'remote_covers'));
+      final legacyBytes = await _artifactBytes(legacy);
+      if (await FileSystemEntity.type(legacy.path, followLinks: false) ==
+          FileSystemEntityType.directory) {
+        await legacy.delete(recursive: true);
+      }
       _bindings.clear();
       _legacyAliases.clear();
       await _root.create(recursive: true);
       await _persistIndex();
-      return deletedBytes;
+      return deletedBytes + legacyBytes;
     });
   }
 

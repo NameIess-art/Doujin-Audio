@@ -102,6 +102,7 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
                             segments: [
                               ButtonSegment<bool>(
                                 value: true,
+                                icon: const Icon(Icons.repeat_one_rounded),
                                 label: Text(i18n.tr('single_loop')),
                               ),
                             ],
@@ -133,6 +134,9 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
                                     segments: [
                                       ButtonSegment<bool>(
                                         value: true,
+                                        icon: const Icon(
+                                          Icons.pause_circle_outline_rounded,
+                                        ),
                                         label: Text(
                                           i18n.tr('pause_after_playback'),
                                         ),
@@ -154,10 +158,14 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
                                     segments: [
                                       ButtonSegment<bool>(
                                         value: false,
+                                        icon: const Icon(Icons.folder_rounded),
                                         label: Text(i18n.tr('current_folder')),
                                       ),
                                       ButtonSegment<bool>(
                                         value: true,
+                                        icon: const Icon(
+                                          Icons.folder_copy_rounded,
+                                        ),
                                         label: Text(i18n.tr('cross_folder')),
                                       ),
                                     ],
@@ -177,6 +185,7 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
                                     segments: [
                                       ButtonSegment<_PlaybackOption>(
                                         value: _PlaybackOption.loop,
+                                        icon: const Icon(Icons.repeat_rounded),
                                         label: Text(
                                           i18n.tr('loop_playback'),
                                           maxLines: 1,
@@ -185,6 +194,7 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
                                       ),
                                       ButtonSegment<_PlaybackOption>(
                                         value: _PlaybackOption.shuffle,
+                                        icon: const Icon(Icons.shuffle_rounded),
                                         label: Text(
                                           i18n.tr('shuffle_playback'),
                                           maxLines: 1,

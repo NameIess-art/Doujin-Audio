@@ -1,3 +1,4 @@
+import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/app/application/browse_page_state_store.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
@@ -544,7 +545,7 @@ void main() {
               );
               expect(find.text('Deferred voice actor'), findsOneWidget);
               expect(
-                find.byType(WorkDetailDirectorySkeleton),
+                find.byType(FileTreeSkeleton),
                 cached ? findsNothing : findsOneWidget,
               );
               expect(remote.cacheReads, local ? 0 : 1);
@@ -755,8 +756,8 @@ void main() {
           final skeleton = tester.renderObject<RenderRepaintBoundary>(
             find.byKey(const ValueKey('work_detail_entries_skeleton')),
           );
-          final directorySkeleton = tester.widget<WorkDetailDirectorySkeleton>(
-            find.byType(WorkDetailDirectorySkeleton),
+          final directorySkeleton = tester.widget<FileTreeSkeleton>(
+            find.byType(FileTreeSkeleton),
           );
           expect(directorySkeleton.viewportHeight, greaterThan(6 * 48));
           final skeletonBounds = tester.getRect(

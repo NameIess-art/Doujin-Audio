@@ -79,14 +79,12 @@ internal object SubtitleOverlayMethods {
 
 internal object FileCacheMethods {
     const val CACHE_FROM_URI = "cacheFromUri"
-    const val CLEAR_APPLICATION_CACHE = "clearApplicationCache"
     const val COPY_FILE_TO_FOLDER = "copyFileToFolder"
     const val DELETE_DOCUMENT_PATH = "deleteDocumentPath"
     const val DELETE_JSON_DOCUMENT = "deleteJsonDocument"
     const val DISCOVER_ROOT_IMAGES = "discoverRootImages"
     const val DOCUMENT_PATH_EXISTS = "documentPathExists"
     const val RESOLVE_DOCUMENT_FILE_SYSTEM_PATH = "resolveDocumentFileSystemPath"
-    const val ENFORCE_APPLICATION_CACHE_LIMIT = "enforceApplicationCacheLimit"
     const val GET_STORAGE_USAGE = "getStorageUsage"
     const val ENSURE_FOLDER_PATH = "ensureFolderPath"
     const val EXPORT_FILE = "exportFile"
@@ -106,7 +104,6 @@ internal object FileCacheMethods {
     const val START_FOLDER_SCAN = "startFolderScan"
     const val CANCEL_FOLDER_SCAN = "cancelFolderScan"
     const val ACKNOWLEDGE_FOLDER_SCAN_CHUNK = "acknowledgeFolderScanChunk"
-    const val SET_APPLICATION_CACHE_LIMIT = "setApplicationCacheLimit"
     const val WRITE_JSON_DOCUMENT = "writeJsonDocument"
     const val WRITE_FILE_BYTES_TO_FOLDER = "writeFileBytesToFolder"
     const val DISCOVER_WORK_TEXTS = "discoverWorkTexts"

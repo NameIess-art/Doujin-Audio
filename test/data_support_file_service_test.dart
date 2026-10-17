@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -5,9 +6,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:file_picker/src/platform/file_picker_platform_interface.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/cache/app_cache_service.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/features/data_support/application/data_support_file_service.dart';
+import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
 import 'package:doujin_audio/features/data_support/application/diagnostic_report_exporter.dart';
 import 'package:doujin_audio/features/data_support/application/diagnostic_report_service.dart';
 import 'package:path/path.dart' as path;
@@ -34,9 +37,14 @@ void main() {
           ? temporaryDirectory.path
           : null;
     });
+    AppCacheService.resetForTest(
+      temporaryDirectories: () async => [temporaryDirectory],
+    );
+    AppCacheService.scheduledEnforceEnabled = false;
   });
 
   tearDown(() async {
+    AppCacheService.resetForTest();
     FilePickerPlatform.instance = defaultFilePicker;
     messenger.setMockMethodCallHandler(pathProviderChannel, null);
     messenger.setMockMethodCallHandler(fileCacheChannel, null);
@@ -44,6 +52,135 @@ void main() {
       await temporaryDirectory.delete(recursive: true);
     }
   });
+
+  Future<void> verifyProtected(File file) async {
+    await AppCacheService.setMaxCacheBytes(1);
+    expect(await file.exists(), isTrue);
+    expect(await AppCacheService.clearTemporaryCaches(), 0);
+    expect(await file.exists(), isTrue);
+  }
+
+  for (final backup in [false, true]) {
+    test(
+      '${backup ? 'backup' : 'diagnostics'} staging stays leased through generation and desktop save',
+      () async {
+        final writing = Completer<File>();
+        final finishWriting = Completer<void>();
+        final saving = Completer<void>();
+        final finishSaving = Completer<void>();
+        Future<File> generate(String outputPath) async {
+          final partial = File('$outputPath.part');
+          await partial.writeAsBytes([1, 2, 3]);
+          writing.complete(partial);
+          await finishWriting.future;
+          return partial.rename(outputPath);
+        }
+
+        filePicker.savePath = path.join(temporaryDirectory.path, 'saved.data');
+        filePicker.onSave = () async {
+          saving.complete();
+          await finishSaving.future;
+        };
+        final service = DataSupportFileService(
+          diagnosticService: _TestDiagnosticReportService(generate: generate),
+          backupService: _TestBackupService(generate: generate),
+          isAndroid: () => false,
+        );
+        final task = backup
+            ? service.exportBackup(dialogTitle: 'Save')
+            : service.exportDiagnostics(dialogTitle: 'Save');
+        final partial = await writing.future;
+        await verifyProtected(partial);
+        finishWriting.complete();
+        await saving.future;
+        final output = File(partial.path.substring(0, partial.path.length - 5));
+        await verifyProtected(output);
+        finishSaving.complete();
+        expect(await task, filePicker.savePath);
+        expect(await File(filePicker.savePath!).readAsBytes(), [1, 2, 3]);
+        expect(await output.exists(), isFalse);
+        await output.parent.create(recursive: true);
+        await output.writeAsBytes([1, 2, 3]);
+        await AppCacheService.enforceLimit();
+        expect(await output.exists(), isFalse);
+      },
+    );
+  }
+
+  test(
+    'Android export keeps source leased until native export finishes',
+    () async {
+      final exporting = Completer<File>();
+      final finishExport = Completer<void>();
+      messenger.setMockMethodCallHandler(fileCacheChannel, (call) async {
+        final arguments = Map<String, Object?>.from(call.arguments as Map);
+        final source = File(arguments['sourcePath']! as String);
+        exporting.complete(source);
+        await finishExport.future;
+        expect(
+          await source.readAsBytes(),
+          _TestDiagnosticReportService.contents,
+        );
+        return {'ok': true, 'value': 'content://export/report.zip'};
+      });
+      final service = DataSupportFileService(
+        diagnosticService: _TestDiagnosticReportService(),
+        fileCacheGateway: FileCachePlatformGateway(
+          channel: fileCacheChannel,
+          isAndroid: () => true,
+        ),
+        isAndroid: () => true,
+      );
+      final task = service.exportDiagnostics(dialogTitle: 'Save');
+      final source = await exporting.future;
+      await verifyProtected(source);
+      finishExport.complete();
+      expect(await task, 'content://export/report.zip');
+      expect(await source.exists(), isFalse);
+    },
+  );
+
+  test(
+    'stream backup remains present until asynchronous validation finishes',
+    () async {
+      final validating = Completer<File>();
+      final finishValidation = Completer<void>();
+      filePicker.picked = FilePickerResult([
+        PlatformFile(
+          name: 'backup.dabackup',
+          size: 3,
+          readStream: Stream.value([1, 2, 3]),
+        ),
+      ]);
+      final service = DataSupportFileService(
+        backupService: _TestBackupService(
+          inspect: (inputPath) async {
+            final input = File(inputPath);
+            validating.complete(input);
+            await finishValidation.future;
+            expect(await input.readAsBytes(), [1, 2, 3]);
+            return BackupValidationResult(
+              manifest: BackupManifest(
+                formatVersion: 1,
+                appVersion: '1.0.0',
+                databaseSchemaVersion: 13,
+                platform: 'test',
+                createdAt: DateTime.utc(2026),
+                containsSensitiveAccountData: false,
+                files: const {},
+              ),
+            );
+          },
+        ),
+      );
+      final task = service.pickAndStageBackup(dialogTitle: 'Open');
+      final input = await validating.future;
+      await verifyProtected(input);
+      finishValidation.complete();
+      expect(await task, isA<BackupValidationResult>());
+      expect(await input.exists(), isFalse);
+    },
+  );
 
   test(
     'Android diagnostics export uses the native gateway before cleanup',
@@ -158,10 +295,13 @@ void main() {
 }
 
 final class _TestDiagnosticReportService extends DiagnosticReportService {
+  _TestDiagnosticReportService({this.generate});
+  final Future<File> Function(String)? generate;
   static const contents = <int>[0x50, 0x4b, 0x03, 0x04];
 
   @override
   Future<File> exportReport(String outputPath) async {
+    if (generate != null) return generate!(outputPath);
     final output = File(outputPath);
     await output.parent.create(recursive: true);
     await output.writeAsBytes(contents, flush: true);
@@ -169,11 +309,42 @@ final class _TestDiagnosticReportService extends DiagnosticReportService {
   }
 }
 
+final class _TestBackupService extends DataBackupService {
+  _TestBackupService({this.generate, this.inspect});
+  final Future<File> Function(String)? generate;
+  final Future<BackupValidationResult> Function(String)? inspect;
+
+  @override
+  Future<File> exportBackup(String outputPath) => generate!(outputPath);
+
+  @override
+  Future<BackupValidationResult> inspectAndStageRestore(String archivePath) =>
+      inspect!(archivePath);
+}
+
 final class _TestFilePicker extends FilePickerPlatform {
   String? savePath;
   String? dialogTitle;
   List<String>? allowedExtensions;
   Uint8List? bytes;
+  Future<void> Function()? onSave;
+  FilePickerResult? picked;
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    void Function(FilePickerStatus)? onFileLoading,
+    int compressionQuality = 0,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+    bool cancelUploadOnWindowBlur = true,
+  }) async => picked;
 
   @override
   Future<String?> saveFile({
@@ -188,6 +359,7 @@ final class _TestFilePicker extends FilePickerPlatform {
     this.dialogTitle = dialogTitle;
     this.allowedExtensions = allowedExtensions;
     this.bytes = bytes;
+    await onSave?.call();
     return savePath;
   }
 }

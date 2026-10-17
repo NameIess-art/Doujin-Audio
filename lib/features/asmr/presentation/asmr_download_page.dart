@@ -16,6 +16,7 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import 'asmr_download_summary_card.dart';
@@ -435,8 +436,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                   Positioned.fill(
                     child: PlaceholderContentTransition(
                       showPlaceholder: _loading,
-                      placeholder: OperationSkeletonList(
-                        showHeader: false,
+                      placeholder: FileTreeSkeleton(
                         padding: EdgeInsets.fromLTRB(
                           16,
                           listTopPadding,

@@ -259,33 +259,41 @@ final class CoverArtworkSourceResolver {
   }
 
   Future<String?> resolveVideoFramePathForTrack(MusicTrack track) async {
-    final logicalKey =
-        'video:${PathMatcher.normalize(track.path)}:'
-        '${track.modifiedAt?.millisecondsSinceEpoch ?? 0}:v3';
-    final storedFrame = await _artworkStore.validatedPath(logicalKey);
-    if (storedFrame != null) return storedFrame;
+    final lease = await AppCacheService.protectTemporaryDirectories({
+      'video_frames',
+      'doujin_audio_covers',
+    });
     try {
-      final nativeFrame = await _fileCacheGateway.resolveVideoFrame(
-        path: track.path,
-        modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
-      );
-      if (nativeFrame != null && nativeFrame.isNotEmpty) {
-        return await persistBridgeCover(
-          logicalKey: logicalKey,
-          sourcePath: nativeFrame,
-          namespace: CoverArtworkNamespace.generated,
+      final logicalKey =
+          'video:${PathMatcher.normalize(track.path)}:'
+          '${track.modifiedAt?.millisecondsSinceEpoch ?? 0}:v3';
+      final storedFrame = await _artworkStore.validatedPath(logicalKey);
+      if (storedFrame != null) return storedFrame;
+      try {
+        final nativeFrame = await _fileCacheGateway.resolveVideoFrame(
+          path: track.path,
+          modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
+        );
+        if (nativeFrame != null && nativeFrame.isNotEmpty) {
+          return await persistBridgeCover(
+            logicalKey: logicalKey,
+            sourcePath: nativeFrame,
+            namespace: CoverArtworkNamespace.generated,
+          );
+        }
+      } on MissingPluginException {
+        return null;
+      } catch (e, stackTrace) {
+        AppLogService.warning(
+          'CoverArtworkCacheService.resolveVideoFramePathForTrack error',
+          error: e,
+          stackTrace: stackTrace,
         );
       }
-    } on MissingPluginException {
       return null;
-    } catch (e, stackTrace) {
-      AppLogService.warning(
-        'CoverArtworkCacheService.resolveVideoFramePathForTrack error',
-        error: e,
-        stackTrace: stackTrace,
-      );
+    } finally {
+      lease.release();
     }
-    return null;
   }
 
   Future<String?> resolvePlatformCoverPathForTrack(
@@ -329,60 +337,69 @@ final class CoverArtworkSourceResolver {
     String? rootFolder,
     required bool includeGroupCoverFallback,
   }) async {
+    final lease = await AppCacheService.protectTemporaryDirectories({
+      'embedded_covers',
+      'doujin_audio_covers',
+    });
     try {
-      final nativeCover = await _fileCacheGateway.resolveTrackCover(
-        path: track.path,
-        groupKey: includeGroupCoverFallback ? track.groupKey : null,
-        rootFolder: rootFolder,
-      );
-      if (nativeCover != null && nativeCover.isNotEmpty) {
-        return await persistBridgeCover(
-          logicalKey: nativeKey,
-          sourcePath: nativeCover,
-          namespace: includeGroupCoverFallback
-              ? CoverArtworkNamespace.generated
-              : CoverArtworkNamespace.embedded,
+      try {
+        final nativeCover = await _fileCacheGateway.resolveTrackCover(
+          path: track.path,
+          groupKey: includeGroupCoverFallback ? track.groupKey : null,
+          rootFolder: rootFolder,
         );
-      }
-    } on MissingPluginException {
-      // Continue with the Dart fallback below.
-    } catch (e, stackTrace) {
-      AppLogService.warning(
-        'CoverArtworkCacheService.resolvePlatformCoverPathForTrack error',
-        error: e,
-        stackTrace: stackTrace,
-      );
-    }
-
-    String? embeddedCover;
-    try {
-      embeddedCover = await EmbeddedCoverArtworkService.resolveForTrack(track);
-      if (embeddedCover == null && PathMatcher.isContentUri(track.path)) {
-        final localPath = await _fileCacheGateway.resolveDocumentFileSystemPath(
-          track.path,
-        );
-        if (localPath != null && localPath.isNotEmpty) {
-          embeddedCover = await EmbeddedCoverArtworkService.resolveForPath(
-            localPath,
+        if (nativeCover != null && nativeCover.isNotEmpty) {
+          return await persistBridgeCover(
+            logicalKey: nativeKey,
+            sourcePath: nativeCover,
+            namespace: includeGroupCoverFallback
+                ? CoverArtworkNamespace.generated
+                : CoverArtworkNamespace.embedded,
           );
         }
+      } on MissingPluginException {
+        // Continue with the Dart fallback below.
+      } catch (e, stackTrace) {
+        AppLogService.warning(
+          'CoverArtworkCacheService.resolvePlatformCoverPathForTrack error',
+          error: e,
+          stackTrace: stackTrace,
+        );
       }
-    } catch (e, stackTrace) {
-      AppLogService.warning(
-        'CoverArtworkCacheService.resolvePlatformCoverPathForTrack embedded cover error',
-        error: e,
-        stackTrace: stackTrace,
-      );
-    }
-    if (embeddedCover != null) {
-      return await persistBridgeCover(
-        logicalKey: 'embedded:${_trackSourceFingerprint(track)}',
-        sourcePath: embeddedCover,
-        namespace: CoverArtworkNamespace.embedded,
-      );
-    }
 
-    return null;
+      String? embeddedCover;
+      try {
+        embeddedCover = await EmbeddedCoverArtworkService.resolveForTrack(
+          track,
+        );
+        if (embeddedCover == null && PathMatcher.isContentUri(track.path)) {
+          final localPath = await _fileCacheGateway
+              .resolveDocumentFileSystemPath(track.path);
+          if (localPath != null && localPath.isNotEmpty) {
+            embeddedCover = await EmbeddedCoverArtworkService.resolveForPath(
+              localPath,
+            );
+          }
+        }
+      } catch (e, stackTrace) {
+        AppLogService.warning(
+          'CoverArtworkCacheService.resolvePlatformCoverPathForTrack embedded cover error',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
+      if (embeddedCover != null) {
+        return await persistBridgeCover(
+          logicalKey: 'embedded:${_trackSourceFingerprint(track)}',
+          sourcePath: embeddedCover,
+          namespace: CoverArtworkNamespace.embedded,
+        );
+      }
+
+      return null;
+    } finally {
+      lease.release();
+    }
   }
 
   Future<String?> resolveEmbeddedCoverForPath(String filePath) async {
@@ -393,58 +410,65 @@ final class CoverArtworkSourceResolver {
         includeGroupCoverFallback: false,
       );
     }
+    final lease = await AppCacheService.protectTemporaryDirectories({
+      'embedded_covers',
+      'doujin_audio_covers',
+    });
     try {
-      final nativeCover = await _fileCacheGateway.resolveTrackCover(
-        path: filePath,
-      );
-      if (nativeCover != null && nativeCover.isNotEmpty) {
+      try {
+        final nativeCover = await _fileCacheGateway.resolveTrackCover(
+          path: filePath,
+        );
+        if (nativeCover != null && nativeCover.isNotEmpty) {
+          return await persistBridgeCover(
+            logicalKey: 'native:${PathMatcher.normalize(filePath)}',
+            sourcePath: nativeCover,
+            namespace: CoverArtworkNamespace.embedded,
+          );
+        }
+      } on MissingPluginException {
+        // Continue with the Dart fallback below.
+      } catch (e, stackTrace) {
+        AppLogService.warning(
+          'CoverArtworkCacheService.resolveEmbeddedCoverForPath native error',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
+
+      String? embeddedCover;
+      try {
+        embeddedCover = await EmbeddedCoverArtworkService.resolveForPath(
+          filePath,
+        );
+        if (embeddedCover == null && PathMatcher.isContentUri(filePath)) {
+          final localPath = await _fileCacheGateway
+              .resolveDocumentFileSystemPath(filePath);
+          if (localPath != null && localPath.isNotEmpty) {
+            embeddedCover = await EmbeddedCoverArtworkService.resolveForPath(
+              localPath,
+            );
+          }
+        }
+      } catch (e, stackTrace) {
+        AppLogService.warning(
+          'CoverArtworkCacheService.resolveEmbeddedCoverForPath embedded error',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }
+      if (embeddedCover != null) {
         return await persistBridgeCover(
-          logicalKey: 'native:${PathMatcher.normalize(filePath)}',
-          sourcePath: nativeCover,
+          logicalKey: 'embedded:${PathMatcher.normalize(filePath)}',
+          sourcePath: embeddedCover,
           namespace: CoverArtworkNamespace.embedded,
         );
       }
-    } on MissingPluginException {
-      // Continue with the Dart fallback below.
-    } catch (e, stackTrace) {
-      AppLogService.warning(
-        'CoverArtworkCacheService.resolveEmbeddedCoverForPath native error',
-        error: e,
-        stackTrace: stackTrace,
-      );
-    }
 
-    String? embeddedCover;
-    try {
-      embeddedCover = await EmbeddedCoverArtworkService.resolveForPath(
-        filePath,
-      );
-      if (embeddedCover == null && PathMatcher.isContentUri(filePath)) {
-        final localPath = await _fileCacheGateway.resolveDocumentFileSystemPath(
-          filePath,
-        );
-        if (localPath != null && localPath.isNotEmpty) {
-          embeddedCover = await EmbeddedCoverArtworkService.resolveForPath(
-            localPath,
-          );
-        }
-      }
-    } catch (e, stackTrace) {
-      AppLogService.warning(
-        'CoverArtworkCacheService.resolveEmbeddedCoverForPath embedded error',
-        error: e,
-        stackTrace: stackTrace,
-      );
+      return null;
+    } finally {
+      lease.release();
     }
-    if (embeddedCover != null) {
-      return await persistBridgeCover(
-        logicalKey: 'embedded:${PathMatcher.normalize(filePath)}',
-        sourcePath: embeddedCover,
-        namespace: CoverArtworkNamespace.embedded,
-      );
-    }
-
-    return null;
   }
 
   Future<String> persistBridgeCover({
@@ -703,31 +727,50 @@ final class CoverArtworkSourceResolver {
     required bool Function() isCurrent,
   }) async {
     if (PathMatcher.isContentUri(rootPath)) {
-      final discovered = await _fileCacheGateway.discoverRootImages(
-        path: rootPath,
-        rootFolder: rootPath,
-        recursive: recursive,
-      );
-      final durable = <CoverImageReference>[];
-      for (final image in discovered) {
-        // Removing this request from the index retires its generation. A native
-        // discovery can finish after cache clearing, without repopulating it.
-        if (!isCurrent()) return const [];
-        final display = await persistBridgeCover(
-          logicalKey:
-              'source-image:${PathMatcher.equivalenceKey(image.sourcePath)}',
-          sourcePath: image.displayPath,
-          namespace: CoverArtworkNamespace.embedded,
+      final lease = await AppCacheService.protectTemporaryDirectories({
+        'doujin_audio_covers',
+      });
+      try {
+        final discovered = await _fileCacheGateway.discoverRootImages(
+          path: rootPath,
+          rootFolder: rootPath,
+          recursive: recursive,
         );
+        // A retired native discovery must not repopulate the cleared index.
         if (!isCurrent()) return const [];
-        durable.add(
-          CoverImageReference(
-            displayPath: display,
-            sourcePath: image.sourcePath,
-          ),
-        );
+        var paths = List<String?>.filled(discovered.length, null);
+        if (_artworkStore.isInitialized && !_isClearingPersistentCache) {
+          try {
+            paths = await _artworkStore.putFiles([
+              for (final image in discovered)
+                (
+                  logicalKey:
+                      'source-image:${PathMatcher.equivalenceKey(image.sourcePath)}',
+                  sourcePath: image.displayPath,
+                ),
+            ], shouldCancel: () => !isCurrent());
+          } catch (error, stackTrace) {
+            AppLogService.warning(
+              'Unable to persist discovered cover artwork.',
+              error: error,
+              stackTrace: stackTrace,
+            );
+          }
+        }
+        if (!isCurrent()) return const [];
+        if (paths.any((value) => value == null)) {
+          AppCacheService.scheduleEnforce();
+        }
+        return List<CoverImageReference>.unmodifiable([
+          for (var index = 0; index < discovered.length; index++)
+            CoverImageReference(
+              displayPath: paths[index] ?? discovered[index].displayPath,
+              sourcePath: discovered[index].sourcePath,
+            ),
+        ]);
+      } finally {
+        lease.release();
       }
-      return List<CoverImageReference>.unmodifiable(durable);
     }
     final scanner = _filesystemImageScanner;
     final images = scanner == null

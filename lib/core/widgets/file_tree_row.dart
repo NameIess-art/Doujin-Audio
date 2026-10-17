@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'app_transitions.dart';
 import 'search_highlight.dart';
+import 'shimmer_loading.dart';
 
 /// Shared presentation only; callers own expansion, selection and actions.
 class FileTreeRow extends StatelessWidget {
@@ -12,6 +13,7 @@ class FileTreeRow extends StatelessWidget {
     required this.title,
     this.leading,
     this.subtitle,
+    this.subtitleWidget,
     this.selectionControl,
     this.trailing,
     this.onTap,
@@ -26,13 +28,14 @@ class FileTreeRow extends StatelessWidget {
     this.titleColor,
     this.backgroundColor,
     this.surfaceKey,
-  });
+  }) : assert(subtitle == null || subtitleWidget == null);
 
   static const borderRadius = BorderRadius.all(Radius.circular(12));
   static const indentWidth = 16.0;
 
   final String title;
   final String? subtitle;
+  final Widget? subtitleWidget;
   final Widget? leading;
   final Widget? selectionControl;
   final Widget? trailing;
@@ -115,7 +118,10 @@ class FileTreeRow extends StatelessWidget {
                 minHeight: minHeight,
                 titleMaxLines: titleMaxLines,
                 subtitleMaxLines: subtitleMaxLines,
-                reserveSubtitleSpace: reserveSubtitleSpace || subtitle != null,
+                reserveSubtitleSpace:
+                    reserveSubtitleSpace ||
+                    subtitle != null ||
+                    subtitleWidget != null,
                 verticalPadding: verticalPadding,
               ),
               child: Padding(
@@ -153,19 +159,20 @@ class FileTreeRow extends StatelessWidget {
                                           : FontWeight.w600,
                                     ),
                           ),
-                          if (subtitle != null) ...[
+                          if (subtitle != null || subtitleWidget != null) ...[
                             const SizedBox(height: 2),
-                            SearchHighlightedText(
-                              text: subtitle!,
-                              maxLines: subtitleMaxLines,
-                              style:
-                                  (theme.textTheme.labelSmall ??
-                                          const TextStyle())
-                                      .copyWith(
-                                        color: cs.onSurfaceVariant,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                            ),
+                            subtitleWidget ??
+                                SearchHighlightedText(
+                                  text: subtitle!,
+                                  maxLines: subtitleMaxLines,
+                                  style:
+                                      (theme.textTheme.labelSmall ??
+                                              const TextStyle())
+                                          .copyWith(
+                                            color: cs.onSurfaceVariant,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                ),
                           ],
                         ],
                       ),
@@ -188,6 +195,82 @@ class FileTreeRow extends StatelessWidget {
             ),
           ),
         ),
+      );
+    },
+  );
+}
+
+class FileTreeSkeleton extends StatelessWidget {
+  const FileTreeSkeleton({
+    super.key,
+    this.viewportHeight,
+    this.padding = EdgeInsets.zero,
+  });
+
+  final double? viewportHeight;
+  final EdgeInsetsGeometry padding;
+
+  static const _titleFractions = [0.52, 0.68, 0.44, 0.60, 0.38, 0.55];
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final availableHeight =
+          viewportHeight ??
+          (constraints.hasBoundedHeight
+              ? constraints.maxHeight
+              : MediaQuery.sizeOf(context).height);
+      final contentHeight =
+          availableHeight -
+          padding.resolve(Directionality.of(context)).vertical;
+      final itemCount = math.max(1, (contentHeight / 48).ceil());
+      final rows = ShimmerLoader(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < itemCount; i++)
+              SizedBox(
+                height: 48,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 16, right: 12),
+                  child: Row(
+                    children: [
+                      const ShimmerContainer(
+                        width: 22,
+                        height: 22,
+                        borderRadius: 5,
+                      ),
+                      const SizedBox(width: 18),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: FractionallySizedBox(
+                            widthFactor:
+                                _titleFractions[i % _titleFractions.length],
+                            child: const ShimmerContainer(height: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const ShimmerContainer(
+                        width: 16,
+                        height: 16,
+                        borderRadius: 8,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+      if (viewportHeight != null) return Padding(padding: padding, child: rows);
+      return SingleChildScrollView(
+        primary: false,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: padding,
+        child: rows,
       );
     },
   );

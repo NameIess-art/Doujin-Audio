@@ -5,7 +5,6 @@ import 'dart:isolate';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 
 import 'library_scan_wire_models.dart';
 import 'native_folder_scan_client.dart';
@@ -63,12 +62,10 @@ class StorageUsagePlatformSnapshot {
   const StorageUsagePlatformSnapshot({
     required this.totalBytes,
     required this.availableBytes,
-    required this.cacheBytes,
   });
 
   final int totalBytes;
   final int availableBytes;
-  final int cacheBytes;
 }
 
 class PersistedUriPermissionReconcileResult {
@@ -857,61 +854,22 @@ class FileCachePlatformGateway {
     return result.valueOrNull ?? false;
   }
 
-  Future<void> setApplicationCacheLimit(int maxBytes) async {
-    if (!_isAndroid()) return;
-    final result = await _client.invoke<Object?>(
-      FileCacheMethod.setApplicationCacheLimit,
-      arguments: <String, Object?>{'maxBytes': maxBytes},
-      decode: (value) => value,
-    );
-    if (result is NativeFailure<Object?>) {
-      throw PlatformException(
-        code: result.code,
-        message: result.message,
-        details: result.details,
-      );
-    }
-  }
-
-  Future<int> clearApplicationCache() async {
-    if (!_isAndroid()) return 0;
-    final result = await _client.invoke<num>(
-      FileCacheMethod.clearApplicationCache,
-      decode: (value) => value as num,
-    );
-    return result.valueOrNull?.toInt() ?? 0;
-  }
-
-  Future<void> enforceApplicationCacheLimit(int maxBytes) async {
-    if (!_isAndroid()) return;
-    await _client.invoke<Object?>(
-      FileCacheMethod.enforceApplicationCacheLimit,
-      arguments: <String, Object?>{'maxBytes': maxBytes},
-      decode: (value) => value,
-    );
-  }
-
   Future<StorageUsagePlatformSnapshot?> readStorageUsage() async {
     if (!_isAndroid() && !_isWindows()) return null;
     final result = await _client.invoke<Map<String, Object?>>(
       FileCacheMethod.getStorageUsage,
-      arguments: _isWindows() && !_isAndroid()
-          ? <String, Object?>{'cachePath': (await getTemporaryDirectory()).path}
-          : null,
       decode: (value) => Map<String, Object?>.from(value as Map),
     );
     final raw = result.valueOrNull;
     if (raw == null) return null;
     final totalBytes = (raw['totalBytes'] as num?)?.toInt();
     final availableBytes = (raw['availableBytes'] as num?)?.toInt();
-    final cacheBytes = (raw['cacheBytes'] as num?)?.toInt();
-    if (totalBytes == null || availableBytes == null || cacheBytes == null) {
+    if (totalBytes == null || availableBytes == null) {
       return null;
     }
     return StorageUsagePlatformSnapshot(
       totalBytes: totalBytes,
       availableBytes: availableBytes,
-      cacheBytes: cacheBytes,
     );
   }
 

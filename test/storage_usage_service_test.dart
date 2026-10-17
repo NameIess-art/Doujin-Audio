@@ -31,11 +31,7 @@ void main() {
     messenger.setMockMethodCallHandler(channel, (call) async {
       return <String, Object?>{
         'ok': true,
-        'value': <String, Object?>{
-          'totalBytes': 1000,
-          'availableBytes': 400,
-          'cacheBytes': 500,
-        },
+        'value': <String, Object?>{'totalBytes': 1000, 'availableBytes': 400},
       };
     });
     final gateway = FileCachePlatformGateway(
@@ -45,6 +41,7 @@ void main() {
     );
     final service = StorageUsageService(
       fileCacheGateway: gateway,
+      cacheBytes: () async => 500,
       libraryTracks: () => [
         track('/audio/a.mp3', 100),
         track('/audio/./a.mp3', 100),
@@ -89,15 +86,11 @@ void main() {
     },
   );
 
-  test('adds persistent covers without double counting', () async {
+  test('uses shared cache accounting without native double counting', () async {
     messenger.setMockMethodCallHandler(channel, (call) async {
       return <String, Object?>{
         'ok': true,
-        'value': <String, Object?>{
-          'totalBytes': 1000,
-          'availableBytes': 500,
-          'cacheBytes': 100,
-        },
+        'value': <String, Object?>{'totalBytes': 1000, 'availableBytes': 500},
       };
     });
     final service = StorageUsageService(
@@ -107,7 +100,7 @@ void main() {
         isAndroid: () => true,
       ),
       libraryTracks: () => const <MusicTrack>[],
-      persistentCoverCacheBytes: () async => 25,
+      cacheBytes: () async => 125,
     );
 
     final snapshot = await service.load();

@@ -4006,91 +4006,20 @@ void main() {
     expect(released, 1);
   });
 
-  testWidgets('MusicPlayerApp phone orientation follows visible page routes', (
-    tester,
-  ) async {
-    _setLogicalTestViewSize(tester, const Size(390, 820));
-    tester.view.display.size = const Size(1170, 2460);
-    tester.view.display.devicePixelRatio = 3;
-    tester.view.physicalSize = const Size(1170, 2460);
-    addTearDown(tester.view.display.reset);
-    final calls = <List<DeviceOrientation>>[];
-    final orientation = AppOrientationController(
-      setPreferredOrientations: (value) async => calls.add(List.of(value)),
-    );
-    await _pumpAppShell(tester, orientationController: orientation);
-    expect(calls.last, AppOrientationPolicy.portrait.allowedOrientations);
-    final root = Navigator.of(
-      tester.element(find.byType(MainScreen)),
-      rootNavigator: true,
-    );
-    unawaited(
-      root.push(buildSessionDetailRoute(sessionId: 'orientation_session')),
-    );
-    await _pumpMainScreenAnimations(tester);
-    expect(calls.last, AppOrientationPolicy.rotatable.allowedOrientations);
-    final detailCalls = calls.length;
-    unawaited(
-      showDialog<void>(
-        context: root.context,
-        builder: (_) => const AlertDialog(content: Text('Orientation dialog')),
-      ),
-    );
-    await _pumpMainScreenAnimations(tester);
-    expect(calls.length, detailCalls);
-    root.pop();
-    await _pumpMainScreenAnimations(tester);
-    expect(calls.length, detailCalls);
-    unawaited(
-      root.push(
-        buildAppPageRoute<void>(
-          context: root.context,
-          child: const Scaffold(body: Text('Ordinary covering page')),
-        ),
-      ),
-    );
-    await _pumpMainScreenAnimations(tester);
-    expect(calls.last, AppOrientationPolicy.portrait.allowedOrientations);
-    root.pop();
-    await _pumpMainScreenAnimations(tester);
-    expect(calls.last, AppOrientationPolicy.rotatable.allowedOrientations);
-    await tester.tap(find.byKey(const ValueKey('session_detail_close_button')));
-    await _pumpMainScreenAnimations(tester);
-    await tester.pumpAndSettle();
-    expect(calls.last, AppOrientationPolicy.portrait.allowedOrientations);
-    expect(calls, [
-      AppOrientationPolicy.portrait.allowedOrientations,
-      AppOrientationPolicy.rotatable.allowedOrientations,
-      AppOrientationPolicy.portrait.allowedOrientations,
-      AppOrientationPolicy.rotatable.allowedOrientations,
-      AppOrientationPolicy.portrait.allowedOrientations,
-    ]);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(milliseconds: 200));
-  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
-
-  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-    testWidgets('MusicPlayerApp display orientation ignores narrow windows on $platform', (
-      tester,
-    ) async {
+  testWidgets(
+    'MusicPlayerApp phone orientation follows visible page routes',
+    (tester) async {
       _setLogicalTestViewSize(tester, const Size(390, 820));
-      tester.view.display.size = const Size(1600, 2560);
-      tester.view.display.devicePixelRatio = 2;
-      tester.view.physicalSize = platform == TargetPlatform.windows
-          ? const Size(2560, 1600)
-          : const Size(780, 1640);
+      tester.view.display.size = const Size(1170, 2460);
+      tester.view.display.devicePixelRatio = 3;
+      tester.view.physicalSize = const Size(1170, 2460);
       addTearDown(tester.view.display.reset);
       final calls = <List<DeviceOrientation>>[];
       final orientation = AppOrientationController(
         setPreferredOrientations: (value) async => calls.add(List.of(value)),
       );
       await _pumpAppShell(tester, orientationController: orientation);
-      if (platform == TargetPlatform.android) {
-        expect(calls.last, AppOrientationPolicy.rotatable.allowedOrientations);
-      } else {
-        expect(calls, isEmpty);
-      }
+      expect(calls.last, AppOrientationPolicy.portrait.allowedOrientations);
       final root = Navigator.of(
         tester.element(find.byType(MainScreen)),
         rootNavigator: true,
@@ -4099,23 +4028,104 @@ void main() {
         root.push(buildSessionDetailRoute(sessionId: 'orientation_session')),
       );
       await _pumpMainScreenAnimations(tester);
+      expect(calls.last, AppOrientationPolicy.rotatable.allowedOrientations);
+      final detailCalls = calls.length;
+      unawaited(
+        showDialog<void>(
+          context: root.context,
+          builder: (_) =>
+              const AlertDialog(content: Text('Orientation dialog')),
+        ),
+      );
+      await _pumpMainScreenAnimations(tester);
+      expect(calls.length, detailCalls);
       root.pop();
       await _pumpMainScreenAnimations(tester);
-      tester.view.physicalSize = platform == TargetPlatform.windows
-          ? const Size(2400, 1600)
-          : const Size(860, 1640);
+      expect(calls.length, detailCalls);
+      unawaited(
+        root.push(
+          buildAppPageRoute<void>(
+            context: root.context,
+            child: const Scaffold(body: Text('Ordinary covering page')),
+          ),
+        ),
+      );
       await _pumpMainScreenAnimations(tester);
-      if (platform == TargetPlatform.android) {
-        expect(
-          calls,
-          everyElement(AppOrientationPolicy.rotatable.allowedOrientations),
-        );
-      } else {
-        expect(calls, isEmpty);
-      }
+      expect(calls.last, AppOrientationPolicy.portrait.allowedOrientations);
+      root.pop();
+      await _pumpMainScreenAnimations(tester);
+      expect(calls.last, AppOrientationPolicy.rotatable.allowedOrientations);
+      await tester.tap(
+        find.byKey(const ValueKey('session_detail_close_button')),
+      );
+      await _pumpMainScreenAnimations(tester);
+      await tester.pumpAndSettle();
+      expect(calls.last, AppOrientationPolicy.portrait.allowedOrientations);
+      expect(calls, [
+        AppOrientationPolicy.portrait.allowedOrientations,
+        AppOrientationPolicy.rotatable.allowedOrientations,
+        AppOrientationPolicy.portrait.allowedOrientations,
+        AppOrientationPolicy.rotatable.allowedOrientations,
+        AppOrientationPolicy.portrait.allowedOrientations,
+      ]);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
-    }, variant: TargetPlatformVariant({platform}));
+      await tester.pump(const Duration(milliseconds: 200));
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'MusicPlayerApp display orientation ignores narrow windows on $platform',
+      (tester) async {
+        _setLogicalTestViewSize(tester, const Size(390, 820));
+        tester.view.display.size = const Size(1600, 2560);
+        tester.view.display.devicePixelRatio = 2;
+        tester.view.physicalSize = platform == TargetPlatform.windows
+            ? const Size(2560, 1600)
+            : const Size(780, 1640);
+        addTearDown(tester.view.display.reset);
+        final calls = <List<DeviceOrientation>>[];
+        final orientation = AppOrientationController(
+          setPreferredOrientations: (value) async => calls.add(List.of(value)),
+        );
+        await _pumpAppShell(tester, orientationController: orientation);
+        if (platform == TargetPlatform.android) {
+          expect(
+            calls.last,
+            AppOrientationPolicy.rotatable.allowedOrientations,
+          );
+        } else {
+          expect(calls, isEmpty);
+        }
+        final root = Navigator.of(
+          tester.element(find.byType(MainScreen)),
+          rootNavigator: true,
+        );
+        unawaited(
+          root.push(buildSessionDetailRoute(sessionId: 'orientation_session')),
+        );
+        await _pumpMainScreenAnimations(tester);
+        root.pop();
+        await _pumpMainScreenAnimations(tester);
+        tester.view.physicalSize = platform == TargetPlatform.windows
+            ? const Size(2400, 1600)
+            : const Size(860, 1640);
+        await _pumpMainScreenAnimations(tester);
+        if (platform == TargetPlatform.android) {
+          expect(
+            calls,
+            everyElement(AppOrientationPolicy.rotatable.allowedOrientations),
+          );
+        } else {
+          expect(calls, isEmpty);
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
   }
 
   testWidgets('app shell supports Android landscape navigation', (
@@ -5858,6 +5868,31 @@ void main() {
       expect(pauseAfterRoundRect.left, closeTo(scopeRect.left, 0.1));
       expect(find.text(harness.language.tr('loop_playback')), findsOneWidget);
 
+      void expectLoopIcon(String rowKey, IconData icon, bool selected) {
+        final row = find.byKey(ValueKey(rowKey));
+        expect(
+          find.descendant(of: row, matching: find.byIcon(icon)),
+          selected ? findsNothing : findsOneWidget,
+        );
+        if (selected) {
+          expect(
+            find.descendant(of: row, matching: find.byIcon(Icons.check)),
+            findsOneWidget,
+          );
+        }
+      }
+
+      expectLoopIcon('loop_mode_single_row', Icons.repeat_one_rounded, true);
+      expectLoopIcon(
+        'loop_mode_pause_after_round_row',
+        Icons.pause_circle_outline_rounded,
+        false,
+      );
+      expectLoopIcon('loop_mode_scope_row', Icons.folder_rounded, true);
+      expectLoopIcon('loop_mode_scope_row', Icons.folder_copy_rounded, false);
+      expectLoopIcon('loop_mode_playback_row', Icons.repeat_rounded, true);
+      expectLoopIcon('loop_mode_playback_row', Icons.shuffle_rounded, false);
+
       final ignorePointer = tester.widget<IgnorePointer>(
         find
             .descendant(
@@ -5872,8 +5907,20 @@ void main() {
 
       await tester.tap(find.text(harness.language.tr('single_loop')));
       await tester.pump();
+      expectLoopIcon('loop_mode_single_row', Icons.repeat_one_rounded, false);
+      await tester.tap(find.text(harness.language.tr('cross_folder')));
+      await tester.pump();
+      expectLoopIcon('loop_mode_scope_row', Icons.folder_copy_rounded, true);
+      expectLoopIcon('loop_mode_scope_row', Icons.folder_rounded, false);
+      await tester.tap(find.text(harness.language.tr('current_folder')));
+      await tester.pump();
       await tester.tap(find.text(harness.language.tr('pause_after_playback')));
       await tester.pump();
+      expectLoopIcon(
+        'loop_mode_pause_after_round_row',
+        Icons.pause_circle_outline_rounded,
+        true,
+      );
       await tester.tap(find.byKey(const ValueKey('loop_mode_confirm')));
       await tester.pumpAndSettle();
       expect(
@@ -5887,6 +5934,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text(harness.language.tr('shuffle_playback')));
       await tester.pump();
+      expectLoopIcon('loop_mode_playback_row', Icons.shuffle_rounded, true);
+      expectLoopIcon('loop_mode_playback_row', Icons.repeat_rounded, false);
       await tester.tap(find.byKey(const ValueKey('loop_mode_confirm')));
       await tester.pumpAndSettle();
       expect(

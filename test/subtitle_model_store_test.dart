@@ -19,7 +19,6 @@ class _Storage extends FileCachePlatformGateway {
       StorageUsagePlatformSnapshot(
         totalBytes: availableBytes * 2,
         availableBytes: availableBytes,
-        cacheBytes: 0,
       );
 }
 

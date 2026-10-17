@@ -1021,6 +1021,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                                       isDesktop: isDesktop,
                                                       isLandscapeLayout:
                                                           isLandscape,
+                                                      tinyMode: isTinyWindow,
                                                     ),
                                                     Overlay(
                                                       key: _mainMenuOverlayKey,
@@ -1037,26 +1038,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
                             ),
                           ],
                         ),
-
-                        if (!isDesktop)
-                          Offstage(
-                            offstage: detailNavigation?.isContentOpen ?? false,
-                            child: Consumer(
-                              builder: (context, ref, _) {
-                                final overlaySessions = ref.watch(
-                                  mainOverlayUiProvider.select(
-                                    (state) => state.overlaySessions,
-                                  ),
-                                );
-                                return _buildMobileBottomDock(
-                                  context,
-                                  i18n: i18n,
-                                  overlaySessions: overlaySessions,
-                                  tinyMode: isTinyWindow,
-                                );
-                              },
-                            ),
-                          ),
                       ],
                     ),
                   ),

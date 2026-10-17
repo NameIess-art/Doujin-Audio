@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+import '../../../core/cache/app_cache_service.dart';
 import '../../../core/platform/app_platform.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'diagnostic_report_service.dart';
@@ -33,39 +34,31 @@ class DataSupportFileService {
   final bool Function() _isAndroid;
   final DataBackupService _backupService;
 
-  Future<String?> exportDiagnostics({required String dialogTitle}) async {
-    final temporary = await _temporaryFile(
-      'DoujinAudio-diagnostic-${_timestamp()}.zip',
-    );
-    try {
-      final report = await _diagnosticService.exportReport(temporary.path);
-      return await _saveGeneratedFile(
-        source: report,
-        dialogTitle: dialogTitle,
-        allowedExtensions: const <String>['zip'],
-        mimeType: 'application/zip',
-      );
-    } finally {
-      await _deleteTemporaryFile(temporary);
-    }
-  }
+  Future<String?> exportDiagnostics({required String dialogTitle}) =>
+      _withTemporaryFile('DoujinAudio-diagnostic-${_timestamp()}.zip', (
+        temporary,
+      ) async {
+        final report = await _diagnosticService.exportReport(temporary.path);
+        return await _saveGeneratedFile(
+          source: report,
+          dialogTitle: dialogTitle,
+          allowedExtensions: const <String>['zip'],
+          mimeType: 'application/zip',
+        );
+      });
 
-  Future<String?> exportBackup({required String dialogTitle}) async {
-    final temporary = await _temporaryFile(
-      'DoujinAudio-backup-${_timestamp()}.dabackup',
-    );
-    try {
-      final backup = await _backupService.exportBackup(temporary.path);
-      return await _saveGeneratedFile(
-        source: backup,
-        dialogTitle: dialogTitle,
-        allowedExtensions: const <String>['dabackup'],
-        mimeType: 'application/zip',
-      );
-    } finally {
-      await _deleteTemporaryFile(temporary);
-    }
-  }
+  Future<String?> exportBackup({required String dialogTitle}) =>
+      _withTemporaryFile('DoujinAudio-backup-${_timestamp()}.dabackup', (
+        temporary,
+      ) async {
+        final backup = await _backupService.exportBackup(temporary.path);
+        return await _saveGeneratedFile(
+          source: backup,
+          dialogTitle: dialogTitle,
+          allowedExtensions: const <String>['dabackup'],
+          mimeType: 'application/zip',
+        );
+      });
 
   Future<BackupValidationResult?> pickAndStageBackup({
     required String dialogTitle,
@@ -85,12 +78,29 @@ class DataSupportFileService {
     }
     final stream = selected.readStream;
     if (stream == null) return null;
-    final temporary = await _temporaryFile('selected-backup.dabackup');
-    try {
+    return _withTemporaryFile('selected-backup.dabackup', (temporary) async {
       await stream.pipe(temporary.openWrite());
-      return _backupService.inspectAndStageRestore(temporary.path);
+      return await _backupService.inspectAndStageRestore(temporary.path);
+    });
+  }
+
+  Future<T> _withTemporaryFile<T>(
+    String name,
+    Future<T> Function(File file) operation,
+  ) async {
+    final lease = await AppCacheService.protectTemporaryDirectories({
+      'exports',
+    });
+    File? temporary;
+    try {
+      temporary = await _temporaryFile(name);
+      return await operation(temporary);
     } finally {
-      await _deleteTemporaryFile(temporary);
+      try {
+        if (temporary != null) await _deleteTemporaryFile(temporary);
+      } finally {
+        lease.release();
+      }
     }
   }
 

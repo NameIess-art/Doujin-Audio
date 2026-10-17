@@ -32,7 +32,7 @@ import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
-import '../../../core/widgets/shimmer_loading.dart';
+import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../asmr/application/asmr_library_controller.dart';
@@ -462,7 +462,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
   Widget _directorySkeleton(double viewportHeight) => RepaintBoundary(
     key: const ValueKey('work_detail_entries_skeleton'),
-    child: WorkDetailDirectorySkeleton(viewportHeight: viewportHeight),
+    child: FileTreeSkeleton(viewportHeight: viewportHeight),
   );
 
   Animation<double> _entryLoadOpacity(String id) {
@@ -1547,67 +1547,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       context,
       i18n.tr('copied_to_clipboard', {'value': value}),
       icon: Icons.content_copy_rounded,
-    );
-  }
-}
-
-class WorkDetailDirectorySkeleton extends StatelessWidget {
-  const WorkDetailDirectorySkeleton({super.key, required this.viewportHeight});
-
-  final double viewportHeight;
-
-  static const List<double> _titleFractions = [
-    0.52,
-    0.68,
-    0.44,
-    0.60,
-    0.38,
-    0.55,
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final itemCount = viewportHeight <= 0 ? 1 : (viewportHeight / 48).ceil();
-    return ShimmerLoader(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < itemCount; i++)
-            SizedBox(
-              height: 48,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 16, right: 12),
-                child: Row(
-                  children: [
-                    const ShimmerContainer(
-                      width: 22,
-                      height: 22,
-                      borderRadius: 5,
-                    ),
-                    const SizedBox(width: 18),
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: FractionallySizedBox(
-                          widthFactor:
-                              _titleFractions[i % _titleFractions.length],
-                          child: const ShimmerContainer(height: 12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const ShimmerContainer(
-                      width: 16,
-                      height: 16,
-                      borderRadius: 8,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
     );
   }
 }

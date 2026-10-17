@@ -579,7 +579,13 @@ class _QueueTrackLeaf extends StatelessWidget {
           ? cs.primaryContainer.withValues(alpha: 0.24)
           : null,
       onTap: onTap,
-      leading: selected && isPlaying
+      leading: track.isVideo
+          ? Icon(
+              Icons.videocam_outlined,
+              size: AppDesignTokens.fileEntryIconSize,
+              color: accentColor,
+            )
+          : selected && isPlaying
           ? SizedBox(
               width: AppDesignTokens.fileEntryIconSize,
               height: AppDesignTokens.fileEntryIconSize,

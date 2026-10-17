@@ -11,10 +11,14 @@ import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/presentation/desktop_main_navigation.dart';
 import 'package:doujin_audio/app/presentation/global_shortcuts.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
+import 'package:doujin_audio/app/presentation/mobile_dock_capsule_content.dart';
 import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.dart';
@@ -52,6 +56,7 @@ Future<WorkDetailNavigation> _pumpApp(
   bool withSession = false,
   bool withNavigationLock = false,
   bool showAsmrOne = false,
+  bool withDownloadTasks = false,
   int libraryWorkCount = 0,
   Widget? home,
 }) async {
@@ -68,6 +73,10 @@ Future<WorkDetailNavigation> _pumpApp(
   addTearDown(fixture.dispose);
   fixture.settings.syncSlice(isInitialized: true);
   fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+  final downloads = withDownloadTasks
+      ? AsmrDownloadManager(persistTasks: false)
+      : null;
+  if (downloads != null) addTearDown(downloads.dispose);
   if (libraryWorkCount > 0) {
     fixture.library.addTracks(
       List.generate(
@@ -131,6 +140,15 @@ Future<WorkDetailNavigation> _pumpApp(
         ),
       ),
       overrides: [
+        if (downloads != null) ...[
+          asmrDownloadManagerProvider.overrideWithValue(downloads),
+          asmrLibraryControllerProvider.overrideWithValue(null),
+          asmrDownloadButtonViewStateProvider.overrideWith(
+            (ref) => Stream.value(
+              const AsmrDownloadButtonViewState(visible: true, progress: null),
+            ),
+          ),
+        ],
         settingsStateProvider.overrideWithValue(
           AsyncData(fixture.settings.slice.state),
         ),
@@ -228,10 +246,126 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     UiInteractionCoordinator.instance.resetForTest();
   });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final withSession in [false, true]) {
+      testWidgets(
+        'download pages cover and reveal the retained main menu (session=$withSession) on $platform',
+        (tester) async {
+          SharedPreferences.setMockInitialValues({
+            'asmr_online_notice_seen_v1': true,
+          });
+          final portrait = platform == TargetPlatform.android;
+          final navigation = await _pumpApp(
+            tester,
+            size: portrait ? const Size(390, 820) : const Size(1280, 800),
+            withSession: withSession,
+            showAsmrOne: true,
+            withDownloadTasks: true,
+          );
+          final menu = portrait
+              ? find.byKey(const ValueKey('mobile_bottom_capsule_panel'))
+              : find.byType(DesktopMainNavigation);
+          final retainedMenu = portrait
+              ? find.byType(MobileDockCapsuleContent, skipOffstage: false)
+              : find.byType(DesktopMainNavigation, skipOffstage: false);
+          Future<void> selectDestination(int index, String key) async {
+            if (portrait) {
+              await tester.tap(
+                find.byKey(ValueKey('main_destination_ink_$key')),
+              );
+            } else {
+              final rail = tester.widget<NavigationRail>(
+                find.byType(NavigationRail),
+              );
+              await tester.tap(find.byWidget(rail.destinations[index].label));
+            }
+            await _settle(tester);
+          }
+
+          await selectDestination(0, 'show_asmr_one');
+          if (portrait && withSession) {
+            tester
+                .widget<MobileDockCapsuleContent>(retainedMenu)
+                .onShowPlayback();
+            await _settle(tester);
+          }
+          final menuState = tester.state(retainedMenu);
+          final menuRect = tester.getRect(menu);
+          final content = navigation.contentNavigatorKey.currentState!;
+          void expectRetainedMenu() {
+            expect(tester.state(retainedMenu), same(menuState));
+            if (portrait) {
+              expect(
+                tester
+                    .widget<MobileDockCapsuleContent>(retainedMenu)
+                    .isPlaybackExpanded,
+                withSession,
+              );
+            }
+          }
+
+          await tester.tap(find.byIcon(Icons.downloading_rounded));
+          await _settle(tester);
+          expect(find.byType(AsmrDownloadTaskPage), findsOneWidget);
+          expect(menu.hitTestable(), portrait ? findsNothing : findsOneWidget);
+          expect(navigation.isContentOpen, isTrue);
+          expectRetainedMenu();
+          expect(navigation.rootNavigatorKey.currentState!.canPop(), isFalse);
+          content.pop();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 75));
+          expect(menu, findsOneWidget);
+          expect(tester.getRect(menu), menuRect);
+          expectRetainedMenu();
+          await _settle(tester);
+          expect(menu.hitTestable(), findsOneWidget);
+          expect(navigation.isContentOpen, isFalse);
+
+          unawaited(
+            content.push<void>(
+              buildAppPageRoute<void>(
+                context: content.context,
+                child: AsmrDownloadPage(
+                  work: AsmrWork.fromJson(const {
+                    'id': 1,
+                    'title': 'Download work',
+                  }),
+                ),
+              ),
+            ),
+          );
+          await _settle(tester);
+          expect(find.byType(AsmrDownloadPage), findsOneWidget);
+          expect(menu.hitTestable(), portrait ? findsNothing : findsOneWidget);
+          expectRetainedMenu();
+          content.pop();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 75));
+          expect(menu, findsOneWidget);
+          expect(tester.getRect(menu), menuRect);
+          expectRetainedMenu();
+          await _settle(tester);
+          expect(menu.hitTestable(), findsOneWidget);
+          expect(navigation.isContentOpen, isFalse);
+          if (portrait && withSession) {
+            tester
+                .widget<MobileDockCapsuleContent>(retainedMenu)
+                .onShowDestinations();
+            await _settle(tester);
+          }
+          await selectDestination(3, 'nav_settings');
+          expect(menu.hitTestable(), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+  }
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   testWidgets(
-    'portrait secondary routes cover the main dock through entry and exit',
+    'portrait secondary routes reveal the retained dock during exit',
     (tester) async {
       final navigation = await _pumpApp(
         tester,
@@ -254,7 +388,7 @@ void main() {
       content.pop();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 75));
-      expect(dock, findsNothing);
+      expect(dock, findsOneWidget);
       expect(navigation.isContentOpen, isTrue);
       await _settle(tester);
       expect(dock, findsOneWidget);

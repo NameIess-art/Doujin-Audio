@@ -130,10 +130,6 @@ abstract final class FileCacheMethod {
   static const String copyFileToFolder = 'copyFileToFolder';
   static const String exportFile = 'exportFile';
   static const String deleteDocumentPath = 'deleteDocumentPath';
-  static const String clearApplicationCache = 'clearApplicationCache';
-  static const String setApplicationCacheLimit = 'setApplicationCacheLimit';
-  static const String enforceApplicationCacheLimit =
-      'enforceApplicationCacheLimit';
   static const String getStorageUsage = 'getStorageUsage';
   static const String pickAudioFiles = 'pickAudioFiles';
   static const String pickAudioFolder = 'pickAudioFolder';

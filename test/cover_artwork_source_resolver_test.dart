@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/core/cache/app_cache_service.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_source_resolver.dart';
@@ -10,6 +11,80 @@ import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  for (final kind in ['embedded', 'video', 'directory']) {
+    test(
+      '$kind generation keeps temporary artwork until durable copy completes',
+      () async {
+        final workspace = await Directory.systemTemp.createTemp(
+          'artwork_lease_',
+        );
+        final temporary = Directory('${workspace.path}/temp');
+        final support = Directory('${workspace.path}/support');
+        final source = File('${temporary.path}/doujin_audio_covers/image.jpg');
+        final partial = File('${source.path}.part');
+        final entered = Completer<void>();
+        final resume = Completer<void>();
+        AppCacheService.resetForTest(
+          temporaryDirectories: () async => [temporary],
+        );
+        addTearDown(() async {
+          if (!resume.isCompleted) resume.complete();
+          await AppCacheService.enforceLimit();
+          AppCacheService.resetForTest();
+          await workspace.delete(recursive: true);
+        });
+        Future<String?> generate() async {
+          await source.parent.create(recursive: true);
+          await partial.writeAsBytes([0xff, 0xd8, 0xff, 0xd9]);
+          entered.complete();
+          await resume.future;
+          await partial.rename(source.path);
+          return source.path;
+        }
+
+        final gateway = _GeneratingImageGateway(generate);
+        final library = LibraryService();
+        addTearDown(library.dispose);
+        final store = CoverArtworkStore(
+          persistentDirectory: () async => support,
+        );
+        await store.initialize();
+        final resolver = CoverArtworkSourceResolver(
+          libraryService: library,
+          fileCacheGateway: gateway,
+          artworkStore: store,
+          isClearingPersistentCache: () => false,
+        );
+        final track = MusicTrack(
+          path: '${workspace.path}/voice.mp3',
+          displayName: 'voice',
+          groupKey: '',
+          groupTitle: '',
+          groupSubtitle: '',
+          isSingle: true,
+        );
+        final resolution = kind == 'directory'
+            ? resolver
+                  .discoverFolderImageReferences('content://library/work')
+                  .then((images) => images.single.displayPath)
+            : kind == 'video'
+            ? resolver.resolveVideoFramePathForTrack(track)
+            : resolver.resolveEmbeddedCoverForPath(track.path);
+        await entered.future;
+        await AppCacheService.setMaxCacheBytes(1);
+        await AppCacheService.clearTemporaryCaches();
+        expect(await partial.exists(), isTrue);
+        resume.complete();
+        final durable = await resolution;
+        expect(durable, isNotNull);
+        expect(PathMatcher.equalsNormalized(durable!, source.path), isFalse);
+        await AppCacheService.enforceLimit();
+        expect(await source.exists(), isFalse);
+        expect(await File(durable).readAsBytes(), [0xff, 0xd8, 0xff, 0xd9]);
+      },
+    );
+  }
+
   test('scoped invalidation retires only affected image discoveries', () async {
     final affected = Completer<List<String>>();
     final unrelated = Completer<List<String>>();
@@ -186,9 +261,11 @@ void main() {
           final root = contentUri ? 'content://library/work' : 'C:\\音乐库\\Work';
           final image = contentUri ? '/cache/cover.jpg' : '$root\\cover.jpg';
           final pending = Completer<List<String>>();
+          final started = Completer<void>();
           final requests = <bool>[];
           Future<List<String>> scan(String _, bool recursive) {
             requests.add(recursive);
+            if (!started.isCompleted) started.complete();
             return pending.future;
           }
 
@@ -207,6 +284,7 @@ void main() {
             root,
             recursive: recursive,
           );
+          await started.future;
           expect(requests, [recursive]);
           pending.complete([image]);
           expect(await first, [image]);
@@ -393,4 +471,35 @@ class _ImageGateway extends FileCachePlatformGateway {
             sourcePath: '$path/cover.jpg',
           ),
       ];
+}
+
+class _GeneratingImageGateway extends FileCachePlatformGateway {
+  _GeneratingImageGateway(this.generate);
+  final Future<String?> Function() generate;
+
+  @override
+  Future<String?> resolveTrackCover({
+    required String path,
+    String? groupKey,
+    String? rootFolder,
+  }) => generate();
+
+  @override
+  Future<String?> resolveVideoFrame({
+    required String path,
+    int? modifiedAtMs,
+  }) => generate();
+
+  @override
+  Future<List<CoverImageReference>> discoverRootImages({
+    required String path,
+    String? groupKey,
+    String? rootFolder,
+    bool recursive = true,
+  }) async => [
+    CoverImageReference(
+      displayPath: (await generate())!,
+      sourcePath: '$path/cover.jpg',
+    ),
+  ];
 }

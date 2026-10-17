@@ -1,6 +1,5 @@
 package com.doujin.audio.storage
 
-import com.doujin.audio.common.*
 import com.doujin.audio.metadata.*
 import com.doujin.audio.scanner.*
 import com.doujin.audio.subtitle.*
@@ -13,13 +12,9 @@ import android.os.StatFs
 internal class FileCacheOperations(context: Context) {
     internal val documentStorage = DocumentStorageOperations(context)
     private val folderScan = FolderScanOperations(context, documentStorage)
-    private val cachePolicy = ApplicationCachePolicy(context)
-    private val mediaMetadata = MediaMetadataOperations(context, documentStorage, cachePolicy)
+    private val mediaMetadata = MediaMetadataOperations(context, documentStorage)
     private val subtitles = SubtitleOperations(context, documentStorage)
-    private val covers = CoverArtworkOperations(context, documentStorage, mediaMetadata, cachePolicy)
-
-    val defaultMaxApplicationCacheBytes: Long
-        get() = ApplicationCachePolicy.DEFAULT_MAX_BYTES
+    private val covers = CoverArtworkOperations(context, documentStorage, mediaMetadata)
 
     fun cacheFromUri(uri: String, name: String, index: Int): String =
         documentStorage.cacheFromUri(uri, name, index)
@@ -138,22 +133,11 @@ internal class FileCacheOperations(context: Context) {
     ): List<Map<String, String>> =
         covers.discover(path, groupKey, rootFolder, recursive)
 
-    fun maxApplicationCacheBytes(): Long = cachePolicy.maxBytes()
-
-    fun setMaxApplicationCacheBytes(maxBytes: Long) =
-        cachePolicy.setMaxBytes(maxBytes)
-
-    fun clearApplicationCache(): Long = cachePolicy.clear()
-
-    fun enforceApplicationCacheLimit(maxBytes: Long = maxApplicationCacheBytes()) =
-        cachePolicy.enforceLimit(maxBytes)
-
     fun storageUsage(): HashMap<String, Long> {
         val stats = StatFs(Environment.getExternalStorageDirectory().absolutePath)
         return hashMapOf(
             "totalBytes" to stats.totalBytes,
             "availableBytes" to stats.availableBytes,
-            "cacheBytes" to cachePolicy.sizeBytes(),
         )
     }
 

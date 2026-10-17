@@ -69,7 +69,9 @@ final class RemoteCoverCache {
 
   Future<String?> resolve(String url) {
     final key = remoteCoverSearchKey(url);
-    if (_disposed || key == null) return Future<String?>.value();
+    if (_disposed || _isClearing() || key == null) {
+      return Future<String?>.value();
+    }
     final warm = _readResolvedCover(key)?.future;
     if (warm != null) return warm;
     final inFlight = _pending[key];
@@ -80,7 +82,8 @@ final class RemoteCoverCache {
     }
     final remoteUrl = normalizedRemoteUrlFromKey(key);
     Future<String?>? lookup;
-    bool isCurrent() => !_disposed && identical(_pending[key], lookup);
+    bool isCurrent() =>
+        !_disposed && !_isClearing() && identical(_pending[key], lookup);
     final task = lookup = () async {
       try {
         final previous = _resolved[key]?.path;

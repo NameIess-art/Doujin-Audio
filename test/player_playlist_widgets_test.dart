@@ -49,6 +49,7 @@ import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -4851,6 +4852,20 @@ void main() {
     expect(confirmRect.left, greaterThan(cancelRect.right));
     expect(confirmRect.center.dy, closeTo(cancelRect.center.dy, 0.01));
     expect(confirmRect.width, lessThan(120));
+    final sortControls = find.byWidgetPredicate(
+      (widget) => widget is SegmentedButton,
+    );
+    void expectSortIcon(IconData icon, Matcher matches) {
+      expect(
+        find.descendant(of: sortControls, matching: find.byIcon(icon)),
+        matches,
+      );
+    }
+
+    expectSortIcon(Icons.library_music_rounded, findsOneWidget);
+    expectSortIcon(Icons.arrow_upward_rounded, findsNothing);
+    expectSortIcon(Icons.arrow_downward_rounded, findsOneWidget);
+    expectSortIcon(Icons.check, findsOneWidget);
     await tester.ensureVisible(
       find.text(languageProvider.tr('sort_descending')),
     );
@@ -4863,6 +4878,10 @@ void main() {
     await tester.pump();
     await tester.tap(find.text(languageProvider.tr('sort_group_by_library')));
     await tester.pump();
+    expectSortIcon(Icons.library_music_rounded, findsNothing);
+    expectSortIcon(Icons.arrow_upward_rounded, findsOneWidget);
+    expectSortIcon(Icons.arrow_downward_rounded, findsNothing);
+    expectSortIcon(Icons.check, findsNWidgets(2));
     tester
         .widget<RadioGroup<PlaylistSortCriterion>>(
           find.byType(RadioGroup<PlaylistSortCriterion>),
@@ -7078,6 +7097,23 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        final exit = find.byKey(const ValueKey('fullscreen_video_exit'));
+        expect(
+          tester.getCenter(exit),
+          Offset(
+            AppPageHeaderMetrics.padding.left +
+                AppPageHeaderMetrics.buttonSize / 2,
+            AppPageHeaderMetrics.padding.top +
+                AppPageHeaderMetrics.buttonSize / 2,
+          ),
+        );
+        expect(tester.getSize(exit), const Size.square(48));
+        expect(tester.widget<IconButton>(exit).color, Colors.white);
+        expect(
+          find.ancestor(of: exit, matching: find.byType(HeaderFloatingButton)),
+          findsNothing,
+        );
+
         final progress = find.byKey(
           const ValueKey<String>('fullscreen_video_progress'),
         );
@@ -7492,6 +7528,15 @@ void main() {
     (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      // A normal portrait page has already observed the visible status bar.
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(padding: EdgeInsets.only(top: 24)),
+            child: TopPageHeader(leading: BackButton()),
+          ),
+        ),
+      );
       final track = testMusicTrack(
         name: 'Video',
         path: '/videos/rotation.mp4',
@@ -7513,6 +7558,10 @@ void main() {
           ),
         ],
       );
+      tester.view.viewPadding = const FakeViewPadding(top: 72);
+      tester.view.padding = const FakeViewPadding(top: 72);
+      addTearDown(tester.view.resetViewPadding);
+      addTearDown(tester.view.resetPadding);
       final session = setup.session
         ..loadedPath = track.path
         ..setOptimisticState(playing: true);
@@ -7539,6 +7588,8 @@ void main() {
       await tester.tap(find.byIcon(Icons.fullscreen_rounded));
       await tester.pumpAndSettle();
       expect(find.byType(SessionVideoFullscreenPage), findsOneWidget);
+      final exit = find.byKey(const ValueKey('fullscreen_video_exit'));
+      final portraitExitCenter = tester.getCenter(exit);
       expect(
         find.byType(NativeSessionVideoSurface, skipOffstage: false),
         findsOneWidget,
@@ -7546,6 +7597,15 @@ void main() {
 
       tester.view.physicalSize = const Size(3840, 2880);
       await tester.pumpAndSettle();
+      expect(tester.getCenter(exit), portraitExitCenter);
+      // Android can report the rotated viewport before immersive system bars
+      // disappear, and reveal them again on a later edge swipe.
+      for (final systemBarTop in [0.0, 72.0, 0.0]) {
+        tester.view.viewPadding = FakeViewPadding(top: systemBarTop);
+        tester.view.padding = FakeViewPadding(top: systemBarTop);
+        await tester.pump();
+        expect(tester.getCenter(exit), portraitExitCenter);
+      }
       expect(tester.state(inlineViewport), same(originalState));
       expect(
         find.descendant(

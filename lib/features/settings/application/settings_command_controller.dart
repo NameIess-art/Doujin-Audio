@@ -23,7 +23,7 @@ final class SettingsCommandController {
        _clearBrowseCaches = clearBrowseCaches,
        _waitForRuntime = waitForRuntime,
        _clearApplicationCacheFiles =
-           clearApplicationCacheFiles ?? AppCacheService.clearAllCaches;
+           clearApplicationCacheFiles ?? AppCacheService.clearTemporaryCaches;
 
   final SettingsRepository _settings;
   final PlaybackFacade _playback;
@@ -63,10 +63,13 @@ final class SettingsCommandController {
 
   Future<int> clearApplicationCache() async {
     await _waitForRuntime?.call();
-    await _library?.coverArtworkCacheService.prepareManualCoversForCacheClear();
     await _clearBrowseCaches?.call();
-    final deletedBytes = await _clearApplicationCacheFiles();
-    await _library?.coverArtworkCacheService.clearPersistentCache();
+    final covers = _library?.coverArtworkCacheService;
+    final deletedBytes = covers == null
+        ? await _clearApplicationCacheFiles()
+        : await covers.clearPersistentCache(
+            clearTemporaryCaches: _clearApplicationCacheFiles,
+          );
     applyCoverImageCachePolicy(_settings.coverImageResolution, clear: true);
     PaintingBinding.instance.imageCache.clearLiveImages();
     _library?.invalidateCoverArtwork();

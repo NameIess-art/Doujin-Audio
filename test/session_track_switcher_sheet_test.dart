@@ -27,6 +27,7 @@ PlaybackSessionSnapshot _session(
   PlaybackQueueDefinition? queue,
   int currentQueueIndex = 0,
   String? currentPath,
+  bool isPlaying = false,
 }) {
   final session = PlaybackSession(
     id: 'test',
@@ -40,6 +41,7 @@ PlaybackSessionSnapshot _session(
     playbackQueue: queue,
   );
   addTearDown(session.shutdown);
+  if (isPlaying) session.setOptimisticState(playing: true);
   return PlaybackSessionSnapshot.fromRuntime(session);
 }
 
@@ -50,6 +52,7 @@ Future<void> _pumpSheet(
   int currentQueueIndex = 0,
   String? currentPath,
   bool reduceAnimations = false,
+  bool isPlaying = false,
   ValueChanged<SessionTrackSelection>? onSelected,
 }) async {
   SharedPreferences.setMockInitialValues({});
@@ -76,6 +79,7 @@ Future<void> _pumpSheet(
               queue: queue,
               currentQueueIndex: currentQueueIndex,
               currentPath: currentPath,
+              isPlaying: isPlaying,
             ),
             workRoot: '/work',
             resolveTrack: (_) => null,
@@ -103,6 +107,39 @@ Future<void> _jumpToEnd(WidgetTester tester, ScrollPosition position) async {
 }
 
 void main() {
+  for (final isPlaying in [false, true]) {
+    testWidgets(
+      'video entries keep the shared video icon while selected or playing ($isPlaying)',
+      (tester) async {
+        final tracks = [
+          _track('Selected.mp4').copyWith(isVideo: true),
+          _track('Other.mkv').copyWith(isVideo: true),
+          _track('Audio.mp3'),
+        ];
+        await _pumpSheet(tester, tracks, isPlaying: isPlaying);
+        for (final track in tracks) {
+          final row = find.ancestor(
+            of: find.text(track.displayName),
+            matching: find.byType(FileTreeRow),
+          );
+          final leading = tester.widget<FileTreeRow>(row).leading as Icon;
+          expect(
+            leading.icon,
+            track.isVideo
+                ? Icons.videocam_outlined
+                : AppDesignTokens.audioFileIcon,
+          );
+          expect(leading.size, AppDesignTokens.fileEntryIconSize);
+        }
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets(
     'switcher keeps 44 pixel rows and centers one or two name lines',
     (tester) async {

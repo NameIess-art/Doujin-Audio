@@ -28,7 +28,7 @@ class DiagnosticReportService {
            appVersionProvider ??
            (appUpdateService ?? AppUpdateService()).currentAppVersion,
        _cacheBytesProvider =
-           cacheBytesProvider ?? AppCacheService.estimateDartCacheBytes,
+           cacheBytesProvider ?? AppCacheService.estimateCacheBytes,
        _logFilesProvider = logFilesProvider ?? _defaultLogFiles,
        _backgroundRunDiagnosticsProvider =
            backgroundRunDiagnosticsProvider ??
@@ -56,7 +56,7 @@ class DiagnosticReportService {
       'platform': _platformName,
       'platformVersion': _platformVersion,
       'databaseSchemaVersion': AppDatabase.schemaVersion,
-      'dartVisibleCacheBytes': cacheBytes,
+      'applicationCacheBytes': cacheBytes,
       'permissions': permissions.toJson(),
       if (backgroundRunDiagnostics != null)
         'backgroundRun': backgroundRunDiagnostics.toJson(),

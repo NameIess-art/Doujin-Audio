@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:doujin_audio/core/cache/app_cache_service.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'support/test_persistence_repository.dart';
@@ -33,6 +34,254 @@ void main() {
 
   tearDown(() async {
     await fixture.dispose(currentGraph: runtimeGraph);
+  });
+
+  group('playback cache leases', () {
+    late Directory temporaryDirectory;
+    late Directory cacheDirectory;
+
+    setUp(() async {
+      temporaryDirectory = await Directory.systemTemp.createTemp(
+        'playback_cache_lease_',
+      );
+      cacheDirectory = await Directory(
+        '${temporaryDirectory.path}/asmr_playback_cache',
+      ).create();
+      AppCacheService.resetForTest(
+        temporaryDirectories: () async => [temporaryDirectory],
+      );
+      AppCacheService.scheduledEnforceEnabled = false;
+    });
+
+    tearDown(() async {
+      await temporaryDirectory.delete(recursive: true);
+    });
+
+    Future<(MusicTrack, File)> cachedTrack(String name) async {
+      final file = await File(
+        PathMatcher.normalize('${cacheDirectory.path}/$name.mp3'),
+      ).writeAsBytes([1, 2, 3]);
+      final track = testMusicTrack(
+        name: name,
+        path: 'https://example.com/audio/$name.mp3',
+        groupKey: 'cached-work',
+        groupTitle: 'Cached work',
+        isSingle: true,
+      );
+      runtimeGraph.playback.rememberRetargetedPath(track.path, file.path);
+      return (track, file);
+    }
+
+    Map<String, Object?> nativeSuccess(MethodCall call) {
+      if (![
+        NativePlaybackMethod.play,
+        NativePlaybackMethod.pause,
+      ].contains(call.method)) {
+        return {'ok': true, 'value': null};
+      }
+      final arguments = call.arguments as Map<Object?, Object?>;
+      final sessionId = arguments['sessionId']! as String;
+      final session = runtimeGraph.playback.sessions[sessionId]!;
+      final sourcePath = runtimeGraph.playback.resolveRetargetedPath(
+        arguments['path'] as String? ?? session.loadedPath!,
+      );
+      final playing = call.method == NativePlaybackMethod.play;
+      return {
+        'ok': true,
+        'value': {
+          'sessionId': sessionId,
+          'path': sourcePath,
+          'uri': Uri.file(sourcePath).toString(),
+          'playing': playing,
+          'playWhenReady': playing,
+          'processingState': 'ready',
+          'positionMs': 0,
+          'bufferedPositionMs': 0,
+          'volume': 1.0,
+          'channelSwap': false,
+          if (arguments['transportCommandId'] != null)
+            'transportCommandId': arguments['transportCommandId'],
+        },
+      };
+    }
+
+    test(
+      'aliased cache survives preparation, pause and shared sessions',
+      () async {
+        final (track, cached) = await cachedTrack('shared');
+        final unused = await File(
+          '${cacheDirectory.path}/unused.mp3',
+        ).writeAsBytes([4]);
+        final started = Completer<void>();
+        final release = Completer<void>();
+        addTearDown(() {
+          if (!release.isCompleted) release.complete();
+        });
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession &&
+                  !started.isCompleted) {
+                started.complete();
+                await release.future;
+              }
+              return nativeSuccess(call);
+            });
+        final first = runtimeGraph.playback.createTrackSession(
+          track,
+          customQueueTracks: [track],
+        );
+        final preparation = runtimeGraph.playbackCommands.prepareSession(
+          first,
+          nextPath: track.path,
+          showLoading: false,
+        );
+        await started.future;
+
+        expect(first.pendingNativeTrackPath, cached.path);
+        await AppCacheService.clearTemporaryCaches();
+        expect(await cached.exists(), isTrue);
+        expect(await unused.exists(), isFalse);
+        release.complete();
+        expect(await preparation, isTrue);
+        expect(await runtimeGraph.playbackCommands.pauseSession(first), isTrue);
+        expect(
+          runtimeGraph.playback.resolveRetargetedPath(first.loadedPath!),
+          cached.path,
+        );
+        expect(first.playbackRequested, isFalse);
+        await AppCacheService.clearTemporaryCaches();
+        expect(await cached.exists(), isTrue);
+
+        final second = runtimeGraph.playback.createTrackSession(
+          track,
+          customQueueTracks: [track],
+        );
+        expect(
+          await runtimeGraph.playbackCommands.prepareSession(
+            second,
+            nextPath: track.path,
+          ),
+          isTrue,
+        );
+        expect(
+          await runtimeGraph.playbackCommands.pauseSession(second),
+          isTrue,
+        );
+        expect(await runtimeGraph.playback.removeSession(first.id), isTrue);
+        await AppCacheService.clearTemporaryCaches();
+        expect(await cached.exists(), isTrue);
+        expect(await runtimeGraph.playback.removeSession(second.id), isTrue);
+        await AppCacheService.clearTemporaryCaches();
+        expect(await cached.exists(), isFalse);
+      },
+    );
+
+    test(
+      'failed switch protects both sources and then releases only its target',
+      () async {
+        final (oldTrack, oldCache) = await cachedTrack('old');
+        final (nextTrack, nextCache) = await cachedTrack('next');
+        final session = runtimeGraph.playback.createTrackSession(
+          oldTrack,
+          customQueueTracks: [oldTrack, nextTrack],
+        );
+        final started = Completer<void>();
+        final release = Completer<void>();
+        var failedAttempts = 0;
+        addTearDown(() {
+          if (!release.isCompleted) release.complete();
+        });
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession &&
+                  (call.arguments as Map)['path'] == nextCache.path) {
+                failedAttempts++;
+                if (!started.isCompleted) started.complete();
+                await release.future;
+                return {'ok': false, 'error': 'Cannot prepare cached target.'};
+              }
+              return nativeSuccess(call);
+            });
+        expect(
+          await runtimeGraph.playbackCommands.prepareSession(
+            session,
+            nextPath: oldTrack.path,
+          ),
+          isTrue,
+        );
+        expect(
+          await runtimeGraph.playbackCommands.pauseSession(session),
+          isTrue,
+        );
+        final switching = runtimeGraph.playbackCommands.prepareSession(
+          session,
+          nextPath: nextTrack.path,
+          showLoading: false,
+        );
+        await started.future;
+
+        expect(
+          runtimeGraph.playback.resolveRetargetedPath(session.loadedPath!),
+          oldCache.path,
+        );
+        expect(session.pendingNativeTrackPath, nextCache.path);
+        await AppCacheService.clearTemporaryCaches();
+        expect(await oldCache.exists(), isTrue);
+        expect(await nextCache.exists(), isTrue);
+        release.complete();
+        expect(await switching, isFalse);
+        expect(failedAttempts, 2);
+        expect(
+          runtimeGraph.playback.resolveRetargetedPath(session.loadedPath!),
+          oldCache.path,
+        );
+        expect(session.pendingNativeTrackPath, isNull);
+        expect(session.playbackRequested, isFalse);
+        await AppCacheService.clearTemporaryCaches();
+        expect(await oldCache.exists(), isTrue);
+        expect(await nextCache.exists(), isFalse);
+        expect(await runtimeGraph.playback.removeSession(session.id), isTrue);
+        await AppCacheService.clearTemporaryCaches();
+        expect(await oldCache.exists(), isFalse);
+      },
+    );
+
+    test('failed cold preparation releases its pending cache lease', () async {
+      final (track, cached) = await cachedTrack('failed');
+      final session = runtimeGraph.playback.createTrackSession(
+        track,
+        customQueueTracks: [track],
+      );
+      final started = Completer<void>();
+      final release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == NativePlaybackMethod.prepareSession) {
+              if (!started.isCompleted) started.complete();
+              await release.future;
+              return {'ok': false, 'error': 'Cannot prepare cached source.'};
+            }
+            return nativeSuccess(call);
+          });
+      final preparation = runtimeGraph.playbackCommands.prepareSession(
+        session,
+        nextPath: track.path,
+        showLoading: false,
+      );
+      await started.future;
+      await AppCacheService.clearTemporaryCaches();
+      expect(await cached.exists(), isTrue);
+      release.complete();
+      expect(await preparation, isFalse);
+      expect(session.loadedPath, isNull);
+      expect(session.pendingNativeTrackPath, isNull);
+      expect(session.playbackRequested, isFalse);
+      await AppCacheService.clearTemporaryCaches();
+      expect(await cached.exists(), isFalse);
+    });
   });
 
   group('multi-session playback stability', () {

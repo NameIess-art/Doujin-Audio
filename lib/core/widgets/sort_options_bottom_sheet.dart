@@ -177,14 +177,17 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
                             segments: [
                               ButtonSegment<_SortControl>(
                                 value: _SortControl.groupByLibrary,
+                                icon: const Icon(Icons.library_music_rounded),
                                 label: Text(widget.groupByLibraryLabel),
                               ),
                               ButtonSegment<_SortControl>(
                                 value: _SortControl.ascending,
+                                icon: const Icon(Icons.arrow_upward_rounded),
                                 label: Text(widget.ascendingLabel),
                               ),
                               ButtonSegment<_SortControl>(
                                 value: _SortControl.descending,
+                                icon: const Icon(Icons.arrow_downward_rounded),
                                 label: Text(widget.descendingLabel),
                               ),
                             ],

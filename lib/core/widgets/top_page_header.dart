@@ -630,7 +630,7 @@ class HeaderFloatingButton extends StatelessWidget {
   const HeaderFloatingButton({
     super.key,
     required this.child,
-    this.size = 38,
+    this.size = AppPageHeaderMetrics.buttonSize,
     this.backgroundOpacity = 1,
   });
 

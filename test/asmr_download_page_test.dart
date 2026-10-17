@@ -4,6 +4,7 @@ import 'package:doujin_audio/app/application/app_runtime_lifecycle.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -167,6 +168,10 @@ void main() {
         expect(find.byType(AsmrDownloadSelectionList), findsNothing);
         await tester.pump(const Duration(milliseconds: 100));
         expect(find.byType(AsmrDownloadSelectionList), findsNothing);
+        expect(
+          find.byType(FileTreeSkeleton, skipOffstage: false),
+          findsOneWidget,
+        );
         final navigator = Navigator.of(
           tester.element(find.byType(AsmrDownloadPage)),
         );

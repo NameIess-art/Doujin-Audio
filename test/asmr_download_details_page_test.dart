@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 
 void main() {
   final interaction = UiInteractionCoordinator.instance;
@@ -59,8 +60,13 @@ void main() {
         expect(find.byType(CustomScrollView), findsNothing);
         await tester.pump(const Duration(milliseconds: 100));
         expect(find.byType(CustomScrollView), findsNothing);
+        expect(
+          find.byType(FileTreeSkeleton, skipOffstage: false),
+          findsOneWidget,
+        );
         await tester.pumpAndSettle();
         final list = tester.element(find.byType(CustomScrollView));
+        expect(find.byType(FileTreeSkeleton), findsNothing);
         expect(find.text('File000.mp3'), findsOneWidget);
         expect(find.text('File499.mp3'), findsNothing);
         await tester.tap(find.text('Folder'));
@@ -116,7 +122,7 @@ void main() {
     expect(find.text('Download task not found'), findsNothing);
   });
 
-  testWidgets('folder tile uses rounded rectangle shape', (tester) async {
+  testWidgets('folder tile uses the shared file tree style', (tester) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     final languageProvider = AppLanguageProvider();
     addTearDown(languageProvider.dispose);
@@ -142,14 +148,16 @@ void main() {
     await tester.pumpWidget(_downloadDetailsApp(languageProvider, task));
     await tester.pumpAndSettle();
 
-    final expansionTile = tester.widget<ExpansionTile>(
-      find.byType(ExpansionTile),
+    final material = tester.widget<Material>(
+      find
+          .descendant(
+            of: find.byType(FileTreeRow),
+            matching: find.byType(Material),
+          )
+          .first,
     );
-    expect(expansionTile.shape, isA<RoundedRectangleBorder>());
-    expect(expansionTile.collapsedShape, isA<RoundedRectangleBorder>());
-    final shape = expansionTile.shape as RoundedRectangleBorder;
-    expect(shape.borderRadius, isA<BorderRadius>());
-    expect((shape.borderRadius as BorderRadius).topLeft.x, greaterThan(0));
+    expect(material.borderRadius, FileTreeRow.borderRadius);
+    expect(material.clipBehavior, Clip.antiAlias);
     final emptyFolder = find.text(
       languageProvider.tr('asmr_download_empty_folder'),
     );
@@ -252,6 +260,98 @@ void main() {
     expect(find.text('128 B / 1.0 KB'), findsNWidgets(2));
   });
 
+  for (final textScale in [1.0, 2.0]) {
+    testWidgets(
+      'file rows keep one title line and one progress line at scale $textScale',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(320, 800);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final language = AppLanguageProvider();
+        addTearDown(language.dispose);
+        final name = '${'A long file name with many words ' * 8}.mp3';
+        final task = _downloadTask().copyWith(
+          selectedRoots: [_downloadNode(name)],
+        );
+        await tester.pumpWidget(
+          _downloadDetailsApp(language, task, textScale: textScale),
+        );
+        await tester.pumpAndSettle();
+
+        final row = find.byType(FileTreeRow);
+        final title = find.text(name);
+        final progress = find.byType(LinearProgressIndicator);
+        final text = tester.widget<Text>(title);
+        expect(text.maxLines, 1);
+        expect(text.overflow, TextOverflow.ellipsis);
+        final titleRect = tester.getRect(title);
+        final progressRect = tester.getRect(progress);
+        final rowRect = tester.getRect(row);
+        expect(progressRect.top, greaterThanOrEqualTo(titleRect.bottom));
+        expect(progressRect.left, titleRect.left);
+        expect(titleRect.right, lessThanOrEqualTo(rowRect.right));
+        expect(tester.widget<FileTreeRow>(row).trailing, isNull);
+        expect(
+          rowRect.height,
+          FileTreeRow.layoutHeight(
+            tester.element(row),
+            minHeight: 52,
+            reserveSubtitleSpace: true,
+          ),
+        );
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  testWidgets(
+    'file rows omit trailing status icons in every task state',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      final base = _downloadTask();
+      final row = find.byType(FileTreeRow);
+      for (final status in AsmrDownloadTaskStatus.values) {
+        await tester.pumpWidget(
+          _downloadDetailsApp(language, base.copyWith(status: status)),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.widget<FileTreeRow>(row).trailing, isNull);
+        expect(
+          find.descendant(
+            of: row,
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.descendant(of: row, matching: find.byType(IconButton)),
+          findsNothing,
+        );
+      }
+
+      await tester.pumpWidget(
+        _downloadDetailsApp(
+          language,
+          base.copyWith(completedFilePaths: const {'Track.mp3'}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<FileTreeRow>(row).trailing, isNull);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('download work title supports up to three lines', (tester) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     final languageProvider = AppLanguageProvider();
@@ -281,7 +381,7 @@ void main() {
     );
   });
 
-  testWidgets('failed file exposes a manual retry action and progress state', (
+  testWidgets('failed file disables its retry button while retrying', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -334,13 +434,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(retryButton, findsNothing);
-    expect(
-      find.byKey(
-        const ValueKey<String>('asmr_download_manual_retry_progress_Track.mp3'),
-      ),
-      findsOneWidget,
-    );
+    expect(retryButton, findsOneWidget);
+    expect(tester.widget<IconButton>(retryButton).onPressed, isNull);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
 
     await tester.pumpWidget(
       _downloadDetailsApp(
@@ -453,8 +549,8 @@ void main() {
       progressFor('Folder/File001.mp3'),
     );
     final titleBefore = tester.widget<Text>(find.text('Work'));
-    final folderBefore = tester.widget<ExpansionTile>(
-      find.byType(ExpansionTile),
+    final folderBefore = tester.widget<FileTreeExpansionArrow>(
+      find.byType(FileTreeExpansionArrow),
     );
     final totalsFinder = find.byKey(
       const ValueKey<String>('asmr_download_total_bytes'),
@@ -482,7 +578,9 @@ void main() {
     );
     expect(tester.widget<Text>(find.text('Work')), same(titleBefore));
     expect(
-      tester.widget<ExpansionTile>(find.byType(ExpansionTile)),
+      tester.widget<FileTreeExpansionArrow>(
+        find.byType(FileTreeExpansionArrow),
+      ),
       same(folderBefore),
     );
     expect(tester.widget<Text>(totalsFinder).data, isNot(totalsBefore.data));
@@ -544,6 +642,7 @@ Widget _downloadDetailsApp(
   AsmrDownloadTaskSnapshot task, {
   AsmrDownloadManager? manager,
   bool coreReady = true,
+  double textScale = 1,
 }) {
   return ProviderScope(
     overrides: [
@@ -553,7 +652,15 @@ Widget _downloadDetailsApp(
       if (manager != null)
         asmrDownloadManagerProvider.overrideWithValue(manager),
     ],
-    child: const MaterialApp(home: AsmrDownloadDetailsPage(workId: 1)),
+    child: MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child!,
+      ),
+      home: const AsmrDownloadDetailsPage(workId: 1),
+    ),
   );
 }
 

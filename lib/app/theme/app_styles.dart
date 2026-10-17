@@ -33,6 +33,7 @@ class AppRadius {
 
 abstract final class AppPageHeaderMetrics {
   static const double contentHeight = 44;
+  static const double buttonSize = 38;
   static const EdgeInsets padding = EdgeInsets.fromLTRB(
     AppSpacing.md,
     6,

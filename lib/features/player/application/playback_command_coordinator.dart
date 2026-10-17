@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart'
-    show compute, defaultTargetPlatform, TargetPlatform;
+    show compute, defaultTargetPlatform, setEquals, TargetPlatform;
 import 'package:path/path.dart' as path;
 
 import '../../../core/immutable_collections.dart';
@@ -104,7 +104,7 @@ final class PlaybackCommandCoordinator
       );
 
   final Map<String, CachePathLease> _activePlaybackCacheLeases = {};
-  final Map<String, String> _activePlaybackCachePaths = {};
+  final Map<String, Set<String>> _activePlaybackCachePaths = {};
 
   void releaseSessionResources(String sessionId) {
     unawaited(_timerFacade.clearTimerPauseForManualStop(sessionId));
@@ -122,21 +122,27 @@ final class PlaybackCommandCoordinator
   }
 
   void _syncActivePlaybackCacheLease(PlaybackSession session) {
-    final candidate = session.currentTrackPath;
-    final path =
-        session.playbackRequested &&
-            candidate.isNotEmpty &&
-            !candidate.contains('://')
-        ? candidate
-        : null;
-    if (_activePlaybackCachePaths[session.id] == path) return;
+    final paths = <String, String>{};
+    for (final candidate in <String?>[
+      session.loadedPath,
+      session.pendingNativeTrackPath,
+      if (session.playbackRequested) session.currentTrackPath,
+    ]) {
+      if (candidate == null || candidate.isEmpty) continue;
+      final resolved = _playbackFacade.resolveRetargetedPath(candidate);
+      if (resolved.contains('://')) continue;
+      paths[PathMatcher.equivalenceKey(resolved)] = resolved;
+    }
+    final keys = paths.keys.toSet();
+    if (setEquals(_activePlaybackCachePaths[session.id], keys)) return;
+    final replacement = paths.isEmpty
+        ? null
+        : AppCacheService.protectPaths(paths.values);
     _activePlaybackCacheLeases.remove(session.id)?.release();
     _activePlaybackCachePaths.remove(session.id);
-    if (path != null) {
-      _activePlaybackCachePaths[session.id] = path;
-      _activePlaybackCacheLeases[session.id] = AppCacheService.protectPaths({
-        path,
-      });
+    if (replacement != null) {
+      _activePlaybackCachePaths[session.id] = keys;
+      _activePlaybackCacheLeases[session.id] = replacement;
     }
   }
 

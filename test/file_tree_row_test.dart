@@ -1,9 +1,64 @@
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
+import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'file tree skeleton preserves directory row geometry and page padding on $platform',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(320, 640);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: Scaffold(
+              body: FileTreeSkeleton(
+                padding: EdgeInsets.fromLTRB(16, 120, 16, 80),
+              ),
+            ),
+          ),
+        );
+        final blocks = find.byType(ShimmerContainer);
+        final icon = tester.getRect(blocks.at(0));
+        final title = tester.getRect(blocks.at(1));
+        final action = tester.getRect(blocks.at(2));
+        expect(icon.size, const Size.square(22));
+        expect(icon.top, 133);
+        expect(icon.left, 32);
+        expect(title.height, 12);
+        expect(title.left - icon.right, 18);
+        expect(action.size, const Size.square(16));
+        expect(action.center.dy, icon.center.dy);
+        expect(tester.getRect(blocks.at(3)).top - icon.top, 48);
+        expect(blocks, findsNWidgets(30));
+        expect(find.byType(Card), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'file tree skeleton keeps explicit directory viewport height on $platform',
+      (tester) async {
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: FileTreeSkeleton(viewportHeight: 145),
+              ),
+            ),
+          ),
+        );
+        expect(tester.getSize(find.byType(FileTreeSkeleton)).height, 192);
+        expect(find.byType(ShimmerContainer), findsNWidgets(12));
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     for (final textScale in [1.0, 2.0]) {
       testWidgets(
         'folder and file rows have equal heights and gaps ($textScale) on $platform',

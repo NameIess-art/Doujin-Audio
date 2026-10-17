@@ -300,6 +300,7 @@ void main() {
       const root = 'content://library/work';
       const source = '$root/cover.jpg';
       final pending = Completer<List<CoverImageReference>>();
+      final discoveryStarted = Completer<void>();
       var scans = 0;
       final library = LibraryService();
       final store = CoverArtworkStore(persistentDirectory: () async => support);
@@ -310,6 +311,7 @@ void main() {
           coversByPath: {},
           discoveredImages: (_) {
             scans++;
+            if (!discoveryStarted.isCompleted) discoveryStarted.complete();
             return pending.future;
           },
         ),
@@ -319,6 +321,7 @@ void main() {
       await cache.initialize();
       final stale = cache.discoverCoverImageReferencesInFolder(root);
       final staleFailure = expectLater(stale, throwsStateError);
+      await discoveryStarted.future;
       expect(scans, 1);
       await cache.clearPersistentCache();
       expect(pending.isCompleted, isFalse);
@@ -597,6 +600,135 @@ void main() {
       expect(selected, contains('portable_card_covers'));
       expect(await File(selected!).readAsBytes(), [0xff, 0xd8, 0xff, 0xd9]);
       expect(await File(source).exists(), isFalse);
+    },
+  );
+
+  test(
+    'concurrent clear protects manual covers once and counts both caches',
+    () async {
+      final support = await Directory.systemTemp.createTemp(
+        'cover_clear_manual_',
+      );
+      addTearDown(() => support.delete(recursive: true));
+      final store = CoverArtworkStore(persistentDirectory: () async => support);
+      final selected = await store.putBytes(
+        logicalKey: 'selected',
+        bytes: [0xff, 0xd8, 0xff, 0xd9],
+      );
+      final track = _track(
+        path: '${support.path}/library/voice.flac',
+        groupKey: '',
+        isSingle: true,
+        manualCoverPath: selected,
+      );
+      final library = LibraryService()
+        ..addOrReplaceTracks([track], persist: false);
+      final saving = Completer<void>();
+      final releaseSave = Completer<void>();
+      addTearDown(() {
+        if (!releaseSave.isCompleted) releaseSave.complete();
+      });
+      var saves = 0;
+      var clears = 0;
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        artworkStore: store,
+        persistRetargetedManualCovers: (tracks) async {
+          saves++;
+          saving.complete();
+          await releaseSave.future;
+          library.addOrReplaceTracks(
+            tracks
+                .map(
+                  (item) =>
+                      item.original.copyWith(manualCoverPath: item.savedPath),
+                )
+                .toList(),
+            persist: false,
+            mergeExistingState: false,
+          );
+        },
+      );
+      addTearDown(cache.dispose);
+      addTearDown(library.dispose);
+      final first = cache.clearPersistentCache(
+        clearTemporaryCaches: () async {
+          clears++;
+          final path = library.trackByPath(track.path)!.manualCoverPath!;
+          expect(path, contains('portable_card_covers'));
+          expect(await File(path).exists(), isTrue);
+          return 11;
+        },
+      );
+      await saving.future;
+      final second = cache.clearPersistentCache(
+        clearTemporaryCaches: () async {
+          fail('A concurrent clear must reuse the original operation.');
+        },
+      );
+      expect(second, same(first));
+      expect(clears, 0);
+      releaseSave.complete();
+      expect(await first, 15);
+      expect(await second, 15);
+      expect(saves, 1);
+      expect(clears, 1);
+      expect(await File(selected!).exists(), isFalse);
+      final preserved = library.trackByPath(track.path)!.manualCoverPath!;
+      expect(await File(preserved).readAsBytes(), [0xff, 0xd8, 0xff, 0xd9]);
+      expect(
+        await cache.futureForTrack(library.trackByPath(track.path)),
+        preserved,
+      );
+    },
+  );
+
+  test(
+    'failed temporary clear releases the gate and permits a fresh clear',
+    () async {
+      final support = await Directory.systemTemp.createTemp(
+        'cover_clear_retry_',
+      );
+      addTearDown(() => support.delete(recursive: true));
+      final store = CoverArtworkStore(persistentDirectory: () async => support);
+      final cover = await store.putBytes(
+        logicalKey: 'generated',
+        bytes: [1, 2, 3],
+      );
+      final library = LibraryService();
+      var downloads = 0;
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        artworkStore: store,
+        remoteCoverDownloader: (_) async {
+          downloads++;
+          return cover;
+        },
+      );
+      addTearDown(cache.dispose);
+      addTearDown(library.dispose);
+      await expectLater(
+        cache.clearPersistentCache(
+          clearTemporaryCaches: () async =>
+              throw StateError('temporary_clear_failed'),
+        ),
+        throwsStateError,
+      );
+      expect(await File(cover!).exists(), isTrue);
+      expect(
+        await cache.futureForRemoteCover('https://example.com/retry.jpg'),
+        cover,
+      );
+      expect(downloads, 1);
+      expect(
+        await cache.clearPersistentCache(clearTemporaryCaches: () async => 5),
+        8,
+      );
+      expect(await File(cover).exists(), isFalse);
+      expect(
+        cache.resolvedForRemoteCover('https://example.com/retry.jpg'),
+        isNull,
+      );
     },
   );
 

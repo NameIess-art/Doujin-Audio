@@ -51,7 +51,7 @@ void main() {
       archive.findFile('logs/doujin_audio.log')!.content as List<int>,
     );
     expect(report['appVersion'], '1.2.3+4');
-    expect(report['dartVisibleCacheBytes'], 42);
+    expect(report['applicationCacheBytes'], 42);
     expect(
       (report['backgroundRun']
           as Map<String, dynamic>)['cleanerForceStopDetected'],

@@ -35,8 +35,55 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 12', () {
-    expect(AppDatabase.schemaVersion, 12);
+  test('schema starts from version 13', () {
+    expect(AppDatabase.schemaVersion, 13);
+  });
+
+  test('version 13 removes only duplicate constraint indexes', () async {
+    await repository.seedSessions([_playbackSession('kept')]);
+    await appDatabase.saveAppSetting('user_setting', 'keep');
+    const redundant = {
+      'idx_session_playback_session': 'session_playback_state(session_id)',
+      'idx_playback_queue_tracks_entry':
+          'playback_queue_entry_tracks(session_id, entry_id, sort_order)',
+      'idx_audio_details_target': 'audio_details(target_type, target_path)',
+    };
+    final freshIndexes = (await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'index'",
+    )).map((row) => row['name']).toSet();
+    expect(freshIndexes.intersection(redundant.keys.toSet()), isEmpty);
+    for (final index in redundant.entries) {
+      await db.execute('CREATE INDEX ${index.key} ON ${index.value}');
+    }
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+    );
+    final before = <String, List<Map<String, Object?>>>{
+      for (final table in tables)
+        table['name']! as String: await db.query(table['name']! as String),
+    };
+
+    await AppDatabase.upgradeSchemaForTest(db, 12, 13);
+
+    final indexes = (await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'index'",
+    )).map((row) => row['name']).toSet();
+    expect(indexes, freshIndexes);
+    for (final table in before.entries) {
+      expect(await db.query(table.key), table.value, reason: table.key);
+    }
+    for (final query in [
+      "SELECT * FROM session_playback_state WHERE session_id = 'kept'",
+      "SELECT * FROM playback_queue_entry_tracks "
+          "WHERE session_id = 'kept' AND entry_id = 'entry' ORDER BY sort_order",
+      "SELECT * FROM audio_details "
+          "WHERE target_type = 'track' AND target_path = '/audio/one.mp3'",
+    ]) {
+      final plan = await db.rawQuery('EXPLAIN QUERY PLAN $query');
+      final details = plan.map((row) => row['detail']).join();
+      expect(details, contains('sqlite_autoindex_'));
+      expect(details, isNot(contains('USE TEMP B-TREE')));
+    }
   });
 
   MusicTrack catalogTrack(
@@ -241,8 +288,16 @@ void main() {
     await seedDeferredTrack(firstPath);
     await seedDeferredTrack(secondPath);
     await repository.upsertLibraryEntries([
-      LibraryEntry.track(libraryPath: '/library', track: catalogTrack(firstPath), state: LibraryEntryState.active),
-      LibraryEntry.track(libraryPath: '/library', track: catalogTrack(secondPath), state: LibraryEntryState.excluded),
+      LibraryEntry.track(
+        libraryPath: '/library',
+        track: catalogTrack(firstPath),
+        state: LibraryEntryState.active,
+      ),
+      LibraryEntry.track(
+        libraryPath: '/library',
+        track: catalogTrack(secondPath),
+        state: LibraryEntryState.excluded,
+      ),
     ]);
     final tables = [
       'tracks',
@@ -276,13 +331,34 @@ void main() {
     const second = '/library/second.mp3';
     await repository.insertTracks([catalogTrack(first), catalogTrack(second)]);
     await repository.upsertLibraryEntries([
-      LibraryEntry.track(libraryPath: '/library', track: catalogTrack(first), state: LibraryEntryState.active),
-      LibraryEntry.track(libraryPath: '/library', track: catalogTrack(second), state: LibraryEntryState.excluded),
+      LibraryEntry.track(
+        libraryPath: '/library',
+        track: catalogTrack(first),
+        state: LibraryEntryState.active,
+      ),
+      LibraryEntry.track(
+        libraryPath: '/library',
+        track: catalogTrack(second),
+        state: LibraryEntryState.excluded,
+      ),
     ]);
-    await repository.replaceTrackPaths({first: catalogTrack(second), second: catalogTrack(first)});
+    await repository.replaceTrackPaths({
+      first: catalogTrack(second),
+      second: catalogTrack(first),
+    });
     final entries = await repository.loadLibraryEntries('/library');
-    expect(entries.singleWhere((entry) => entry.path == PathMatcher.normalize(first)).state, LibraryEntryState.excluded);
-    expect(entries.singleWhere((entry) => entry.path == PathMatcher.normalize(second)).state, LibraryEntryState.active);
+    expect(
+      entries
+          .singleWhere((entry) => entry.path == PathMatcher.normalize(first))
+          .state,
+      LibraryEntryState.excluded,
+    );
+    expect(
+      entries
+          .singleWhere((entry) => entry.path == PathMatcher.normalize(second))
+          .state,
+      LibraryEntryState.active,
+    );
   });
 
   test(
@@ -660,6 +736,69 @@ void main() {
       await restored.close();
     },
   );
+
+  for (final version in [12, AppDatabase.schemaVersion]) {
+    for (final defect in [
+      'missing EQ table',
+      'missing queue tracks table',
+      'missing column',
+      'missing primary key',
+      'missing unique constraint',
+    ]) {
+      test('schema $version restore rejects $defect before migration', () async {
+        final directory = await Directory.systemTemp.createTemp(
+          'invalid_restore_schema_',
+        );
+        addTearDown(() => directory.delete(recursive: true));
+        await repository.seedSessions([_playbackSession('kept')]);
+        await appDatabase.saveAppSetting('user_setting', 'keep');
+        final sourceSessions = await db.query('sessions');
+        final candidate = await appDatabase.createPortableSnapshot(
+          '${directory.path}/candidate.db',
+        );
+        final damaged = await databaseFactoryFfi.openDatabase(candidate.path);
+        switch (defect) {
+          case 'missing EQ table':
+            await damaged.execute('DROP TABLE session_eq_bands');
+          case 'missing queue tracks table':
+            await damaged.execute('DROP TABLE playback_queue_entry_tracks');
+          case 'missing column':
+            await damaged.execute('ALTER TABLE tracks DROP COLUMN duration_ms');
+          case 'missing primary key':
+          case 'missing unique constraint':
+            final primaryKey = defect == 'missing primary key';
+            final table = primaryKey ? 'session_eq_bands' : 'audio_details';
+            final schema =
+                (await damaged.rawQuery(
+                      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+                      [table],
+                    )).single['sql']!
+                    as String;
+            await damaged.execute('DROP TABLE $table');
+            await damaged.execute(
+              schema.replaceFirst(
+                primaryKey
+                    ? 'PRIMARY KEY(session_id, frequency_hz)'
+                    : 'UNIQUE(target_type, target_path)',
+                'CHECK(1)',
+              ),
+            );
+        }
+        await damaged.setVersion(version);
+        await damaged.close();
+        final candidateBefore = await candidate.readAsBytes();
+
+        await expectLater(
+          appDatabase.validateAndMigrateRestoreCandidate(candidate.path),
+          throwsFormatException,
+        );
+
+        expect(await candidate.readAsBytes(), candidateBefore);
+        expect(await db.query('sessions'), sourceSessions);
+        expect(await appDatabase.loadAppSetting('user_setting'), 'keep');
+      });
+    }
+  }
 
   test('version 3 migration adds audio detail duration', () async {
     await db.execute('DROP TABLE audio_details');
@@ -2638,14 +2777,22 @@ void main() {
     expect(await repository.load(secondTarget), isNull);
   });
 
-  test('schema creates audio detail target index', () async {
+  test('audio detail target uniqueness supplies its lookup index', () async {
     final indexes = await db.rawQuery('PRAGMA index_list(audio_details)');
     final indexNames = indexes
         .map((row) => row['name'] as String?)
         .whereType<String>()
         .toSet();
 
-    expect(indexNames, contains('idx_audio_details_target'));
+    expect(indexNames, isNot(contains('idx_audio_details_target')));
+    expect(indexes.where((row) => row['unique'] == 1), hasLength(1));
+    final name = indexes.singleWhere((row) => row['unique'] == 1)['name'];
+    expect(
+      (await db.rawQuery(
+        'PRAGMA index_info("$name")',
+      )).map((row) => row['name']),
+      ['target_type', 'target_path'],
+    );
   });
 
   test('time segment labels round-trip sort and delete by id', () async {

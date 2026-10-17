@@ -9,6 +9,7 @@ import 'package:path/path.dart' as path;
 import '../../core/cache/app_cache_service.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../features/data_support/application/data_backup_service.dart';
+import '../../features/library/application/cover_artwork_store.dart';
 import '../../features/player/application/native_playback_repository.dart';
 
 Future<void> initializePlatformRuntime() async {
@@ -45,7 +46,8 @@ Future<StartupRestoreOutcome?> initializeAudioPlayerStartup({
     } finally {
       await nativePlayback.dispose();
     }
-    await AppCacheService.clearAllCaches();
+    await AppCacheService.clearTemporaryCaches();
+    await CoverArtworkStore().clear();
     AppLogService.info('backup_restore_applied');
   } else if (restoreOutcome != null) {
     AppLogService.warning(

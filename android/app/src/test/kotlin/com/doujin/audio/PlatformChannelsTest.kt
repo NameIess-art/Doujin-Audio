@@ -25,13 +25,11 @@ class PlatformChannelsTest {
     fun `file cache method names stay unique after handler extraction`() {
         val methods = listOf(
             FileCacheMethods.CACHE_FROM_URI,
-            FileCacheMethods.CLEAR_APPLICATION_CACHE,
             FileCacheMethods.COPY_FILE_TO_FOLDER,
             FileCacheMethods.DELETE_DOCUMENT_PATH,
             FileCacheMethods.DELETE_JSON_DOCUMENT,
             FileCacheMethods.DISCOVER_ROOT_IMAGES,
             FileCacheMethods.DOCUMENT_PATH_EXISTS,
-            FileCacheMethods.ENFORCE_APPLICATION_CACHE_LIMIT,
             FileCacheMethods.GET_STORAGE_USAGE,
             FileCacheMethods.ENSURE_FOLDER_PATH,
             FileCacheMethods.EXPORT_FILE,
@@ -49,7 +47,6 @@ class PlatformChannelsTest {
             FileCacheMethods.START_FOLDER_SCAN,
             FileCacheMethods.CANCEL_FOLDER_SCAN,
             FileCacheMethods.ACKNOWLEDGE_FOLDER_SCAN_CHUNK,
-            FileCacheMethods.SET_APPLICATION_CACHE_LIMIT,
             FileCacheMethods.WRITE_JSON_DOCUMENT,
             FileCacheMethods.WRITE_FILE_BYTES_TO_FOLDER,
         )

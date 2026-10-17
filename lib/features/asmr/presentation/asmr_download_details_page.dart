@@ -13,8 +13,8 @@ import '../domain/asmr_models.dart';
 import '../application/asmr_download_models.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/page_header_inset.dart';
-import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
 
 class AsmrDownloadDetailsPage extends ConsumerStatefulWidget {
@@ -152,8 +152,7 @@ class _AsmrDownloadDetailsPageState
           children: [
             Positioned.fill(
               child: AppPageContentTransition.deferred(
-                placeholder: OperationSkeletonList(
-                  showHeader: false,
+                placeholder: FileTreeSkeleton(
                   padding: EdgeInsets.fromLTRB(
                     16,
                     listTopPadding,
@@ -192,22 +191,15 @@ class _AsmrDownloadDetailsPageState
                                 'asmr_download_${row.emptyFolder ? "empty" : "node"}_row_${node.relativePath}',
                               );
                               if (row.emptyFolder) {
-                                return Padding(
+                                return FileTreeRow(
                                   key: rowKey,
-                                  padding: EdgeInsetsDirectional.only(
-                                    start: row.depth * 12 + 16,
-                                    end: 8,
-                                    bottom: 8,
+                                  title: i18n.tr('asmr_download_empty_folder'),
+                                  depth: row.depth,
+                                  minHeight: 28,
+                                  leading: const SizedBox(
+                                    width: AppDesignTokens.fileEntryIconSize,
                                   ),
-                                  child: Text(
-                                    i18n.tr('asmr_download_empty_folder'),
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: cs.onSurfaceVariant.withValues(
-                                            alpha: 0.7,
-                                          ),
-                                        ),
-                                  ),
+                                  titleColor: cs.onSurfaceVariant,
                                 );
                               }
                               if (node.isFolder) {
@@ -217,42 +209,17 @@ class _AsmrDownloadDetailsPageState
                                 final accent = AppDesignTokens.of(
                                   context,
                                 ).asmrAccent;
-                                final shape = RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    AppDesignTokens.of(context).radiusSmall,
-                                  ),
-                                );
-                                return Theme(
+                                return Semantics(
                                   key: rowKey,
-                                  data: Theme.of(
-                                    context,
-                                  ).copyWith(dividerColor: Colors.transparent),
-                                  // Descendants belong to the lazy sliver, not
-                                  // this header's eager expansion body.
-                                  child: ExpansionTile(
-                                    expansionAnimationStyle:
-                                        appExpansionAnimationStyle(context),
-                                    initiallyExpanded: expanded,
-                                    onExpansionChanged: (value) =>
-                                        _toggleFolder(node.relativePath, value),
-                                    shape: shape,
-                                    collapsedShape: shape,
-                                    tilePadding: EdgeInsetsDirectional.only(
-                                      start: row.depth * 12 + 16,
-                                      end: 16,
-                                    ),
-                                    minTileHeight: 44,
-                                    iconColor: accent,
-                                    collapsedIconColor: cs.onSurfaceVariant,
-                                    title: Text(
-                                      node.title,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleSmall
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                            color: expanded ? accent : null,
-                                          ),
+                                  expanded: expanded,
+                                  child: FileTreeRow(
+                                    title: node.title,
+                                    titleMaxLines: 2,
+                                    depth: row.depth,
+                                    isFolder: true,
+                                    onTap: () => _toggleFolder(
+                                      node.relativePath,
+                                      !expanded,
                                     ),
                                     leading: Icon(
                                       expanded
@@ -260,6 +227,12 @@ class _AsmrDownloadDetailsPageState
                                           : AppDesignTokens.folderIcon,
                                       color: AppDesignTokens.folderIconColor,
                                       size: AppDesignTokens.fileEntryIconSize,
+                                    ),
+                                    trailing: FileTreeExpansionArrow(
+                                      expanded: expanded,
+                                      color: expanded
+                                          ? accent
+                                          : cs.onSurfaceVariant,
                                     ),
                                   ),
                                 );
@@ -362,12 +335,14 @@ class _AsmrDownloadDetailsTotals extends ConsumerWidget {
       children: [
         Icon(Icons.sd_storage_rounded, size: 15, color: cs.onSurfaceVariant),
         const SizedBox(width: 6),
-        Text(
-          '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadSize(totals.total)}',
-          key: const ValueKey<String>('asmr_download_total_bytes'),
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: cs.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
+        Expanded(
+          child: Text(
+            '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadSize(totals.total)}',
+            key: const ValueKey<String>('asmr_download_total_bytes'),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],
@@ -423,7 +398,8 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
     final retryAttempt = state.retryAttempt;
     final isFileFailed = state.failed;
     final isManualRetrying = state.retrying;
-    final canRetryFile = onRetryFile != null && state.canRetry;
+    final canRetryFile =
+        onRetryFile != null && state.canRetry && !isManualRetrying;
     final cs = Theme.of(context).colorScheme;
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     double progress = 0.0;
@@ -431,121 +407,76 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
       progress = (downloaded / total).clamp(0.0, 1.0);
     }
 
-    final contentStart = depth == 0 ? 16.0 : depth * 12.0 + 8;
-    return Padding(
-      padding: EdgeInsetsDirectional.only(
-        start: contentStart,
-        end: 16,
-        top: 4,
-        bottom: 4,
-      ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerHigh.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(16),
+    return FileTreeRow(
+      title: node.title,
+      minHeight: 52,
+      depth: depth,
+      leading: Icon(
+        asmrDownloadFileIcon(node),
+        size: AppDesignTokens.fileEntryIconSize,
+        color: asmrDownloadFileColor(
+          node,
+          audioColor: asmrBlue,
+          fallbackColor: cs.onSurfaceVariant,
         ),
-        child: Row(
-          children: [
-            Icon(
-              asmrDownloadFileIcon(node),
-              size: AppDesignTokens.fileEntryIconSize,
-              color: asmrDownloadFileColor(
-                node,
-                audioColor: asmrBlue,
-                fallbackColor: cs.onSurfaceVariant,
+      ),
+      subtitleWidget: Row(
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                color: asmrBlue,
+                backgroundColor: asmrBlue.withValues(alpha: 0.2),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    node.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            flex: 2,
+            child: Text(
+              retryAttempt == null
+                  ? '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadSize(total)}'
+                  : i18n.tr('asmr_download_status_retrying', {
+                      'attempt': retryAttempt,
+                      'max': state.retryMaximum,
+                    }),
+              key: retryAttempt == null
+                  ? null
+                  : ValueKey<String>(
+                      'asmr_download_retry_${node.relativePath}',
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: progress,
-                            minHeight: 4,
-                            color: asmrBlue,
-                            backgroundColor: asmrBlue.withValues(alpha: 0.2),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        retryAttempt == null
-                            ? '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadSize(total)}'
-                            : i18n.tr('asmr_download_status_retrying', {
-                                'attempt': retryAttempt,
-                                'max': state.retryMaximum,
-                              }),
-                        key: retryAttempt == null
-                            ? null
-                            : ValueKey<String>(
-                                'asmr_download_retry_${node.relativePath}',
-                              ),
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
               ),
             ),
-            if (isFileFailed || isManualRetrying) ...[
-              const SizedBox(width: 4),
-              SizedBox.square(
-                dimension: 44,
-                child: isManualRetrying
-                    ? Center(
-                        child: SizedBox.square(
-                          key: ValueKey<String>(
-                            'asmr_download_manual_retry_progress_'
-                            '${node.relativePath}',
-                          ),
-                          dimension: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.2,
-                            color: asmrBlue,
-                          ),
-                        ),
-                      )
-                    : IconButton(
-                        key: ValueKey<String>(
-                          'asmr_download_manual_retry_'
-                          '${node.relativePath}',
-                        ),
-                        padding: EdgeInsets.zero,
-                        icon: const Icon(Icons.refresh_rounded),
-                        iconSize: 22,
-                        color: asmrBlue,
-                        tooltip: i18n.tr('retry'),
-                        onPressed: canRetryFile
-                            ? () => unawaited(onRetryFile!(node.relativePath))
-                            : null,
-                      ),
-              ),
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
+      trailing: isFileFailed || isManualRetrying
+          ? SizedBox.square(
+              dimension: 44,
+              child: IconButton(
+                key: ValueKey<String>(
+                  'asmr_download_manual_retry_${node.relativePath}',
+                ),
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.refresh_rounded),
+                iconSize: 22,
+                color: asmrBlue,
+                tooltip: i18n.tr('retry'),
+                onPressed: canRetryFile
+                    ? () => unawaited(onRetryFile!(node.relativePath))
+                    : null,
+              ),
+            )
+          : null,
     );
   }
 }

@@ -35,23 +35,20 @@ class StorageUsageService {
   const StorageUsageService({
     required FileCachePlatformGateway fileCacheGateway,
     required List<MusicTrack> Function() libraryTracks,
-    Future<int> Function()? persistentCoverCacheBytes,
+    Future<int> Function()? cacheBytes,
   }) : _fileCacheGateway = fileCacheGateway,
        _libraryTracks = libraryTracks,
-       _persistentCoverCacheBytes =
-           persistentCoverCacheBytes ??
-           AppCacheService.estimatePersistentCoverCacheBytes;
+       _cacheBytes = cacheBytes ?? AppCacheService.estimateCacheBytes;
 
   final FileCachePlatformGateway _fileCacheGateway;
   final List<MusicTrack> Function() _libraryTracks;
-  final Future<int> Function() _persistentCoverCacheBytes;
+  final Future<int> Function() _cacheBytes;
 
   Future<StorageUsageSnapshot> load() async {
     final platformUsage = await _fileCacheGateway.readStorageUsage();
     if (platformUsage == null ||
         platformUsage.totalBytes <= 0 ||
-        platformUsage.availableBytes < 0 ||
-        platformUsage.cacheBytes < 0) {
+        platformUsage.availableBytes < 0) {
       return const StorageUsageSnapshot.unavailable();
     }
 
@@ -60,12 +57,10 @@ class StorageUsageService {
     final usedBytes = totalBytes - availableBytes;
     final audioLibraryBytes = _sumLocalAudioBytes().clamp(0, usedBytes);
     final remainingAfterAudio = usedBytes - audioLibraryBytes;
-    final persistentCoverBytes = await _persistentCoverCacheBytes();
-    final applicationCacheBytes =
-        (platformUsage.cacheBytes + persistentCoverBytes).clamp(
-          0,
-          remainingAfterAudio,
-        );
+    final applicationCacheBytes = (await _cacheBytes()).clamp(
+      0,
+      remainingAfterAudio,
+    );
     final otherUsedBytes =
         usedBytes - audioLibraryBytes - applicationCacheBytes;
 

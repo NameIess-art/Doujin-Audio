@@ -6,14 +6,36 @@ extension _MainScreenLayout on _MainScreenState {
     required bool isDesktop,
     required bool isLandscapeLayout,
     required double bottomInset,
+    required bool tinyMode,
   }) {
     final body = _buildBody(
       context,
       isDesktop: isDesktop,
       isLandscapeLayout: isLandscapeLayout,
     );
+    // Secondary routes cover and reveal this same dock with their page motion.
+    final mainPage = isDesktop
+        ? body
+        : Stack(
+            fit: StackFit.expand,
+            children: [
+              body,
+              Consumer(
+                builder: (context, ref, _) => _buildMobileBottomDock(
+                  context,
+                  i18n: ref.read(appLanguageProviderInstanceProvider),
+                  overlaySessions: ref.watch(
+                    mainOverlayUiProvider.select(
+                      (state) => state.overlaySessions,
+                    ),
+                  ),
+                  tinyMode: tinyMode,
+                ),
+              ),
+            ],
+          );
     final navigation = WorkDetailNavigationScope.maybeOf(context);
-    if (navigation == null) return body;
+    if (navigation == null) return mainPage;
     return MainContentNavigator(
       navigation: navigation,
       isLandscape: isLandscapeLayout,
@@ -23,7 +45,7 @@ extension _MainScreenLayout on _MainScreenState {
         bottomInset: bottomInset,
         menuOverlayKey: _mainMenuOverlayKey,
         menuDismiss: navigation.menuDismiss,
-        child: body,
+        child: mainPage,
       ),
     );
   }

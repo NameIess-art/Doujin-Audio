@@ -23,24 +23,28 @@ extension AppDatabaseBackup on AppDatabase {
         await target.transaction((targetTxn) async {
           for (final row in targetTables) {
             final table = row['name'] as String;
-            var offset = 0;
+            // Every application table is a rowid table, including tables with
+            // text/composite primary keys. Seek instead of rescanning OFFSET
+            // rows on each page; the first page must also include negative IDs.
+            int? lastRowId;
             while (true) {
-              final values = await sourceTxn.query(
-                table,
-                limit: 500,
-                offset: offset,
+              final values = await sourceTxn.rawQuery(
+                'SELECT rowid AS __snapshot_rowid, * FROM "$table" '
+                '${lastRowId == null ? '' : 'WHERE rowid > ? '}'
+                'ORDER BY rowid LIMIT 500',
+                lastRowId == null ? null : [lastRowId],
               );
               if (values.isEmpty) break;
               final batch = targetTxn.batch();
               for (final value in values) {
                 batch.insert(
                   table,
-                  value,
+                  Map<String, Object?>.of(value)..remove('__snapshot_rowid'),
                   conflictAlgorithm: ConflictAlgorithm.replace,
                 );
               }
               await batch.commit(noResult: true);
-              offset += values.length;
+              lastRowId = values.last['__snapshot_rowid']! as int;
             }
           }
           await targetTxn.update('track_assets', <String, Object?>{
@@ -80,6 +84,9 @@ extension AppDatabaseBackup on AppDatabase {
       if (sourceVersion < 1 || sourceVersion > AppDatabase.schemaVersion) {
         throw const FormatException('unsupported_database_schema');
       }
+      // Version 12 already has the current tables and columns. Inspect it
+      // before onUpgrade can recreate a missing table and hide data loss.
+      if (sourceVersion >= 12) await _validateRestoreSchema(inspection);
     } finally {
       await inspection.close();
     }
@@ -95,20 +102,7 @@ extension AppDatabaseBackup on AppDatabase {
       if (integrity.singleOrNull?['integrity_check'] != 'ok') {
         throw const FormatException('invalid_database');
       }
-      final tables = (await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type = 'table'",
-      )).map((row) => row['name']).whereType<String>().toSet();
-      const requiredTables = <String>{
-        'tracks',
-        'sessions',
-        'audio_details',
-        'library_entries',
-        'app_kv_settings',
-        'asmr_works',
-      };
-      if (!tables.containsAll(requiredTables)) {
-        throw const FormatException('missing_database_tables');
-      }
+      if (sourceVersion < 12) await _validateRestoreSchema(db);
       await db.update('track_assets', <String, Object?>{
         'cover_cache_path': null,
       });
@@ -125,4 +119,84 @@ extension AppDatabaseBackup on AppDatabase {
       await db.close();
     }
   }
+}
+
+Future<void> _validateRestoreSchema(Database candidate) async {
+  // Derive requirements from the production schema so new persistence tables
+  // and constraints cannot silently be omitted from restore validation.
+  final reference = await openDatabase(
+    inMemoryDatabasePath,
+    version: AppDatabase.schemaVersion,
+    singleInstance: false,
+    onCreate: _onCreate,
+  );
+  try {
+    final requiredTables = await reference.rawQuery(
+      "SELECT name FROM sqlite_master "
+      "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+    );
+    final candidateTables = (await candidate.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table'",
+    )).map((row) => row['name']).toSet();
+    for (final table in requiredTables) {
+      final name = table['name']! as String;
+      if (!candidateTables.contains(name)) {
+        throw const FormatException('missing_database_tables');
+      }
+      final requiredColumns = await reference.rawQuery(
+        'PRAGMA table_info("$name")',
+      );
+      final actualColumns = await candidate.rawQuery(
+        'PRAGMA table_info("$name")',
+      );
+      final actualByName = {
+        for (final column in actualColumns) column['name']: column,
+      };
+      for (final required in requiredColumns) {
+        final actual = actualByName[required['name']];
+        // Defaults can differ after ALTER TABLE migrations, but column types,
+        // nullability and primary-key positions must preserve the contract.
+        if (actual == null ||
+            actual['type'] != required['type'] ||
+            actual['notnull'] != required['notnull'] ||
+            actual['pk'] != required['pk']) {
+          throw const FormatException('invalid_database_columns');
+        }
+      }
+      final requiredPrimaryKey = requiredColumns
+          .where((column) => (column['pk']! as int) > 0)
+          .length;
+      final actualPrimaryKey = actualColumns
+          .where((column) => (column['pk']! as int) > 0)
+          .length;
+      if (requiredPrimaryKey != actualPrimaryKey) {
+        throw const FormatException('invalid_database_primary_key');
+      }
+      final requiredUniqueKeys = await _restoreUniqueKeys(reference, name);
+      final actualUniqueKeys = await _restoreUniqueKeys(candidate, name);
+      if (!actualUniqueKeys.containsAll(requiredUniqueKeys)) {
+        throw const FormatException('invalid_database_unique_constraints');
+      }
+    }
+  } finally {
+    await reference.close();
+  }
+}
+
+Future<Set<String>> _restoreUniqueKeys(Database db, String table) async {
+  final indexes = await db.rawQuery('PRAGMA index_list("$table")');
+  final keys = <String>{};
+  for (final index in indexes) {
+    if (index['unique'] != 1 || index['partial'] != 0) continue;
+    final name = (index['name']! as String).replaceAll('"', '""');
+    final columns = await db.rawQuery('PRAGMA index_xinfo("$name")');
+    keys.add(
+      jsonEncode([
+        for (final column in columns)
+          if (column['key'] == 1)
+            [column['name'], column['desc'], column['coll']],
+      ]),
+    );
+  }
+  return keys;
 }

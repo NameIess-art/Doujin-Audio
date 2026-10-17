@@ -163,7 +163,125 @@ void main() {
     },
   );
 
-  for (final schemaVersion in [8, AppDatabase.schemaVersion]) {
+  test(
+    'paged backup restores sparse rowids and all primary key shapes',
+    () async {
+      final rowIds = [
+        -9223372036854775808,
+        for (var index = 0; index < 1001; index++) (index - 500) * 7,
+        9223372036854775807,
+      ];
+      await sourceDatabase.transaction((txn) async {
+        final batch = txn.batch();
+        for (var index = 0; index < rowIds.length; index++) {
+          // Integer primary keys alias rowid; the other two tables exercise
+          // independent rowids with text and composite primary keys.
+          batch.insert('asmr_works', {
+            'id': rowIds[index],
+            'title': 'Work $index',
+          });
+          batch.insert('track_tags', {
+            'rowid': rowIds[index],
+            'path': '/audio/$index.mp3',
+            'tag': 'Tag $index',
+            'sort_order': index,
+          });
+          if (index < 500) {
+            batch.insert('app_kv_settings', {
+              'rowid': rowIds[index],
+              'key': 'setting_$index',
+              'value': 'Value $index',
+            });
+          }
+        }
+        await batch.commit(noResult: true);
+      });
+      await sourceDatabase.insert('track_assets', {
+        'path': '/audio/0.mp3',
+        'cover_cache_path': '/automatic/cover.jpg',
+        'manual_cover_path': '/user/cover.jpg',
+      });
+      final expected = <String, List<Map<String, Object?>>>{
+        for (final entry in {
+          'asmr_works': 'id',
+          'track_tags': 'path, tag',
+          'app_kv_settings': 'key',
+        }.entries)
+          entry.key: await sourceDatabase.query(
+            entry.key,
+            orderBy: entry.value,
+          ),
+      };
+      final service = DataBackupService(
+        database: appDatabase,
+        accountStore: accountStore,
+        appUpdateService: _FakeAppUpdateService(),
+        supportDirectoryProvider: () async => temporaryDirectory,
+        databasesPathProvider: () async => databaseDirectory.path,
+        platformName: 'test-platform',
+      );
+
+      final backup = await service.exportBackup(
+        '${temporaryDirectory.path}/paged.dabackup',
+      );
+      await service.inspectAndStageRestore(backup.path);
+      // Staging cannot rewrite live rows; applying at startup closes this DB.
+      for (final entry in {
+        'asmr_works': 'id',
+        'track_tags': 'path, tag',
+        'app_kv_settings': 'key',
+      }.entries) {
+        expect(
+          await sourceDatabase.query(entry.key, orderBy: entry.value),
+          expected[entry.key],
+          reason: entry.key,
+        );
+      }
+      final outcome = await service.applyAtStartup();
+
+      expect(outcome?.succeeded, isTrue);
+      final restored = await databaseFactoryFfi.openDatabase(
+        '${databaseDirectory.path}/${AppDatabase.fileName}',
+      );
+      addTearDown(restored.close);
+      for (final entry in {
+        'asmr_works': 'id',
+        'track_tags': 'path, tag',
+      }.entries) {
+        expect(
+          await restored.query(entry.key, orderBy: entry.value),
+          expected[entry.key],
+          reason: entry.key,
+        );
+      }
+      expect(
+        await restored.query(
+          'app_kv_settings',
+          where: 'key LIKE ?',
+          whereArgs: ['setting_%'],
+          orderBy: 'key',
+        ),
+        expected['app_kv_settings'],
+      );
+      final assets = (await restored.query('track_assets')).single;
+      expect(assets['cover_cache_path'], isNull);
+      expect(assets['manual_cover_path'], '/user/cover.jpg');
+      final restoredSettings = {
+        for (final row in await restored.query('app_kv_settings'))
+          row['key']: row['value'],
+      };
+      expect(restoredSettings['backup_restore_authoritative_v1'], '1');
+      expect(
+        restoredSettings['audio_detail_document_read_only_import_v3'],
+        '1',
+      );
+      expect(await restored.rawQuery('PRAGMA integrity_check'), [
+        {'integrity_check': 'ok'},
+      ]);
+    },
+  );
+
+  for (final schemaVersion in [8, 12, AppDatabase.schemaVersion]) {
     test(
       'staged schema $schemaVersion backup restores database, preferences, and account',
       () async {
@@ -190,21 +308,35 @@ void main() {
           '${temporaryDirectory.path}/restore-source.dabackup',
         );
         final exported = ZipDecoder().decodeBytes(await backup.readAsBytes());
-        if (schemaVersion == 8) {
-          final legacyDatabaseFile = File('${temporaryDirectory.path}/v8.db');
+        if (schemaVersion < AppDatabase.schemaVersion) {
+          final legacyDatabaseFile = File(
+            '${temporaryDirectory.path}/v$schemaVersion.db',
+          );
           await legacyDatabaseFile.writeAsBytes(
             exported.find('database.sqlite')!.content as List<int>,
           );
           final legacyDatabase = await databaseFactoryFfi.openDatabase(
             legacyDatabaseFile.path,
           );
-          await legacyDatabase.setVersion(8);
-          for (final entry in {
-            'idx_track_scan_generation': 'track_scan_info(scan_generation)',
-            'idx_track_playback_last_played':
-                'track_playback_state(last_played_at_ms)',
-            'idx_track_playback_favorite': 'track_playback_state(is_favorite)',
-          }.entries) {
+          await legacyDatabase.setVersion(schemaVersion);
+          final legacyIndexes = schemaVersion == 8
+              ? {
+                  'idx_track_scan_generation':
+                      'track_scan_info(scan_generation)',
+                  'idx_track_playback_last_played':
+                      'track_playback_state(last_played_at_ms)',
+                  'idx_track_playback_favorite':
+                      'track_playback_state(is_favorite)',
+                }
+              : {
+                  'idx_session_playback_session':
+                      'session_playback_state(session_id)',
+                  'idx_playback_queue_tracks_entry':
+                      'playback_queue_entry_tracks(session_id, entry_id, sort_order)',
+                  'idx_audio_details_target':
+                      'audio_details(target_type, target_path)',
+                };
+          for (final entry in legacyIndexes.entries) {
             await legacyDatabase.execute(
               'CREATE INDEX ${entry.key} ON ${entry.value}',
             );
@@ -218,7 +350,7 @@ void main() {
                     ),
                   )
                   as Map<String, dynamic>;
-          manifest['databaseSchemaVersion'] = 8;
+          manifest['databaseSchemaVersion'] = schemaVersion;
           (manifest['files'] as Map<String, dynamic>)['database.sqlite'] = {
             'length': bytes.length,
             'sha256': sha256.convert(bytes).toString(),
@@ -304,6 +436,9 @@ void main() {
             'idx_track_scan_generation',
             'idx_track_playback_last_played',
             'idx_track_playback_favorite',
+            'idx_session_playback_session',
+            'idx_playback_queue_tracks_entry',
+            'idx_audio_details_target',
           }),
           isEmpty,
         );
@@ -324,6 +459,99 @@ void main() {
         });
       },
     );
+  }
+
+  for (final defect in ['table', 'column', 'unique constraint']) {
+    test('invalid restore $defect leaves all current data intact', () async {
+      await appDatabase.saveAppSetting('existing_setting', 'keep');
+      final service = DataBackupService(
+        database: appDatabase,
+        accountStore: accountStore,
+        appUpdateService: _FakeAppUpdateService(),
+        supportDirectoryProvider: () async => temporaryDirectory,
+        databasesPathProvider: () async => databaseDirectory.path,
+        platformName: 'test-platform',
+      );
+      final backup = await service.exportBackup(
+        '${temporaryDirectory.path}/backup.dabackup',
+      );
+      final archive = ZipDecoder().decodeBytes(await backup.readAsBytes());
+      final damagedFile = File('${temporaryDirectory.path}/damaged.db');
+      await damagedFile.writeAsBytes(
+        archive.find('database.sqlite')!.content as List<int>,
+      );
+      final damaged = await databaseFactoryFfi.openDatabase(damagedFile.path);
+      switch (defect) {
+        case 'table':
+          await damaged.execute('DROP TABLE session_eq_bands');
+        case 'column':
+          await damaged.execute('ALTER TABLE tracks DROP COLUMN duration_ms');
+        case 'unique constraint':
+          final schema =
+              (await damaged.rawQuery(
+                    "SELECT sql FROM sqlite_master WHERE name = 'audio_details'",
+                  )).single['sql']!
+                  as String;
+          await damaged.execute('DROP TABLE audio_details');
+          await damaged.execute(
+            schema.replaceFirst('UNIQUE(target_type, target_path)', 'CHECK(1)'),
+          );
+      }
+      await damaged.setVersion(12);
+      await damaged.close();
+      final damagedBytes = await damagedFile.readAsBytes();
+      final manifest =
+          jsonDecode(
+                utf8.decode(
+                  archive.find('manifest.json')!.content as List<int>,
+                ),
+              )
+              as Map<String, dynamic>;
+      manifest['databaseSchemaVersion'] = 12;
+      (manifest['files'] as Map<String, dynamic>)['database.sqlite'] = {
+        'length': damagedBytes.length,
+        'sha256': sha256.convert(damagedBytes).toString(),
+      };
+      final malformed = Archive();
+      for (final entry in archive.files) {
+        final bytes = switch (entry.name) {
+          'manifest.json' => utf8.encode(jsonEncode(manifest)),
+          'database.sqlite' => damagedBytes,
+          _ => entry.content as List<int>,
+        };
+        malformed.addFile(ArchiveFile(entry.name, bytes.length, bytes));
+      }
+      await backup.writeAsBytes(ZipEncoder().encode(malformed));
+      await databaseDirectory.create();
+      final current = await appDatabase.createPortableSnapshot(
+        '${databaseDirectory.path}/${AppDatabase.fileName}',
+      );
+      final currentBefore = await current.readAsBytes();
+
+      await expectLater(
+        service.inspectAndStageRestore(backup.path),
+        throwsFormatException,
+      );
+      final restoreDirectory = Directory(
+        '${temporaryDirectory.path}/backup_restore',
+      );
+      expect(restoreDirectory.existsSync(), isFalse);
+
+      // A pending archive can also become damaged between staging and restart.
+      await restoreDirectory.create();
+      await backup.copy('${restoreDirectory.path}/pending.dabackup');
+      final outcome = await service.applyAtStartup();
+
+      expect(outcome?.errorCode, 'restore_validation_failed');
+      expect(await current.readAsBytes(), currentBefore);
+      expect(await appDatabase.loadAppSetting('existing_setting'), 'keep');
+      expect(await AppPreferences.getString('themeMode'), 'dark');
+      expect(await accountStore.readToken(), 'account-token');
+      expect(await accountStore.readCredentials(), {
+        'name': 'account-name',
+        'password': 'account-password',
+      });
+    });
   }
 }
 

@@ -199,6 +199,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
 
       if (shouldPrepareNativeTrack) {
         session.markNativePreparation(generation, target.resolvedPath);
+        _syncActivePlaybackCacheLease(session);
         final nativeResult = await _prepareNativeTrackWithRetry(
           session,
           target,
@@ -292,6 +293,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           autoPlay: autoPlay,
           error: preparationError,
         );
+        _syncActivePlaybackCacheLease(session);
         _syncNotificationState();
         if (prepared || preparationError != null) {
           _playbackFacade.scheduleSessionStatePersistence(

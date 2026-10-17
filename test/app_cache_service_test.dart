@@ -1,408 +1,365 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:doujin_audio/core/media/cover_image_format.dart';
+import 'package:path/path.dart' as path;
 import 'package:doujin_audio/core/cache/app_cache_service.dart';
-import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
-import 'package:doujin_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/core/media/cover_image_format.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  const channel = MethodChannel('plugins.flutter.io/path_provider');
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  late Directory workspace;
+  late Directory temporary;
+  late Directory external;
+  late Directory support;
 
-  group('Android cache limit initialization', () {
-    const channel = MethodChannel('test/application_cache');
-    final messenger =
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    late List<String> calls;
-    var failSetter = false;
+  setUp(() async {
+    workspace = await Directory.systemTemp.createTemp('application_cache_');
+    temporary = await Directory(path.join(workspace.path, 'temp')).create();
+    external = await Directory(path.join(workspace.path, 'external')).create();
+    support = await Directory(path.join(workspace.path, 'support')).create();
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'getTemporaryDirectory') return temporary.path;
+      if (call.method == 'getApplicationSupportDirectory') return support.path;
+      return null;
+    });
+    AppCacheService.resetForTest(
+      temporaryDirectories: () async => [temporary, external, temporary],
+    );
+  });
 
-    setUp(() {
-      calls = <String>[];
-      failSetter = false;
+  tearDown(() async {
+    await AppCacheService.enforceLimit();
+    AppCacheService.resetForTest();
+    messenger.setMockMethodCallHandler(channel, null);
+    await workspace.delete(recursive: true);
+  });
+
+  Future<File> file(Directory parent, String relative, int bytes) async {
+    final result = File(path.join(parent.path, relative));
+    await result.parent.create(recursive: true);
+    await result.writeAsBytes(List<int>.filled(bytes, 1));
+    return result;
+  }
+
+  test(
+    'concurrent usage estimates share one scan without retaining results',
+    () async {
+      final cached = await file(temporary, 'exports/cache.bin', 7);
+      final entered = Completer<void>();
+      final resume = Completer<void>();
+      var scans = 0;
       AppCacheService.resetForTest(
-        isAndroid: true,
-        fileCache: FileCachePlatformGateway(
-          channel: channel,
-          isAndroid: () => true,
+        temporaryDirectories: () async {
+          scans++;
+          if (scans == 1) {
+            entered.complete();
+            await resume.future;
+          }
+          return [temporary];
+        },
+      );
+      final first = AppCacheService.estimateCacheBytes();
+      await entered.future;
+      final concurrent = List.generate(
+        10,
+        (_) => AppCacheService.estimateCacheBytes(),
+      );
+      resume.complete();
+      expect(await first, 7);
+      expect(await Future.wait(concurrent), everyElement(7));
+      expect(scans, 1);
+      await cached.writeAsBytes(List.filled(11, 1));
+      expect(await AppCacheService.estimateCacheBytes(), 11);
+      expect(scans, 2);
+    },
+  );
+
+  test('usage requested after clear cannot join the pre-clear scan', () async {
+    await file(temporary, 'exports/cache.bin', 12);
+    final scanEntered = Completer<void>();
+    final resumeScan = Completer<void>();
+    final deleteEntered = Completer<void>();
+    final resumeDelete = Completer<void>();
+    var rootRequests = 0;
+    AppCacheService.resetForTest(
+      temporaryDirectories: () async {
+        if (++rootRequests == 1) {
+          scanEntered.complete();
+          await resumeScan.future;
+        }
+        return [temporary];
+      },
+      beforeDelete: (_) async {
+        deleteEntered.complete();
+        await resumeDelete.future;
+      },
+    );
+    final beforeClear = AppCacheService.estimateCacheBytes();
+    await scanEntered.future;
+    final clear = AppCacheService.clearTemporaryCaches();
+    await deleteEntered.future;
+    final afterClear = AppCacheService.estimateCacheBytes();
+    resumeScan.complete();
+    expect(await beforeClear, 12);
+    resumeDelete.complete();
+    expect(await clear, 12);
+    expect(await afterClear, 0);
+    expect(rootRequests, 3);
+  });
+
+  test(
+    'counts shared managed roots once and keeps unregistered data',
+    () async {
+      await file(temporary, 'page_translations/cache.json', 7);
+      await file(external, 'asmr_subtitles/remote.srt', 11);
+      final source = await file(temporary, 'source.txt', 13);
+      final authored = await file(support, 'imported_subtitles/user.srt', 17);
+      expect(await AppCacheService.estimateCacheBytes(), 18);
+      expect(await AppCacheService.clearTemporaryCaches(), 18);
+      expect(await source.exists(), isTrue);
+      expect(await authored.exists(), isTrue);
+    },
+  );
+
+  test(
+    'persistent artwork is counted but never deleted by temporary maintenance',
+    () async {
+      final legacy = await file(
+        support,
+        '$legacyRemoteCoverCacheDirectoryName/cover.image',
+        12,
+      );
+      final artwork = await file(
+        support,
+        '$coverArtworkStoreDirectoryName/generated/cover.image',
+        13,
+      );
+      await AppCacheService.setMaxCacheBytes(5);
+      await AppCacheService.clearTemporaryCaches();
+      expect(await legacy.exists(), isTrue);
+      expect(await artwork.exists(), isTrue);
+      expect(await AppCacheService.estimateCacheBytes(), 25);
+    },
+  );
+
+  test('one oversized unprotected file is evicted', () async {
+    final large = await file(temporary, 'video_frames/large.jpg', 12);
+    await AppCacheService.setMaxCacheBytes(5);
+    expect(await large.exists(), isFalse);
+    expect(await AppCacheService.estimateCacheBytes(), 0);
+  });
+
+  test('evicts oldest first and leaves ten percent capacity', () async {
+    final oldest = await file(temporary, 'exports/old.zip', 6);
+    final newer = await file(temporary, 'exports/new.zip', 4);
+    final newest = await file(temporary, 'exports/newest.zip', 2);
+    await oldest.setLastModified(DateTime(2020));
+    await newer.setLastModified(DateTime(2021));
+    await newest.setLastModified(DateTime(2022));
+    await AppCacheService.setMaxCacheBytes(10);
+    expect(await oldest.exists(), isFalse);
+    expect(await newer.exists(), isTrue);
+    expect(await newest.exists(), isTrue);
+    expect(await AppCacheService.estimateCacheBytes(), 6);
+  });
+
+  test('lease acquired after scan is checked again before deleting', () async {
+    final active = await file(temporary, 'asmr_playback_cache/active.flac', 12);
+    CachePathLease? lease;
+    AppCacheService.resetForTest(
+      temporaryDirectories: () async => [temporary],
+      beforeDelete: (candidate) async {
+        if (PathMatcher.equalsNormalized(candidate, active.path)) {
+          lease ??= AppCacheService.protectPaths([candidate]);
+        }
+      },
+    );
+    await AppCacheService.setMaxCacheBytes(5);
+    expect(await active.exists(), isTrue);
+    lease!.release();
+    AppCacheService.resetForTest(temporaryDirectories: () async => [temporary]);
+    expect(await AppCacheService.clearTemporaryCaches(), 12);
+  });
+
+  test(
+    'protected bytes count toward the limit without entering eviction',
+    () async {
+      final active = await file(
+        temporary,
+        'asmr_playback_cache/active.flac',
+        8,
+      );
+      final first = await file(temporary, 'exports/first.bin', 4);
+      final second = await file(temporary, 'exports/second.bin', 4);
+      final deletedCandidates = <String>[];
+      AppCacheService.resetForTest(
+        temporaryDirectories: () async => [temporary],
+        beforeDelete: (candidate) async => deletedCandidates.add(candidate),
+      );
+      final lease = AppCacheService.protectPaths([active.path]);
+      await AppCacheService.setMaxCacheBytes(10);
+      expect(await active.exists(), isTrue);
+      expect(await first.exists(), isFalse);
+      expect(await second.exists(), isFalse);
+      expect(
+        deletedCandidates.map(PathMatcher.equivalenceKey),
+        unorderedEquals(
+          [first, second].map((file) => PathMatcher.equivalenceKey(file.path)),
         ),
       );
-      messenger.setMockMethodCallHandler(channel, (call) async {
-        calls.add(call.method);
-        if (failSetter &&
-            call.method == FileCacheMethod.setApplicationCacheLimit) {
-          return <String, Object?>{
-            'ok': false,
-            'code': 'cache_failure',
-            'message': 'Cannot trim cache',
-          };
-        }
-        return <String, Object?>{'ok': true, 'value': null};
-      });
-    });
-
-    tearDown(() {
-      AppCacheService.resetForTest();
-      messenger.setMockMethodCallHandler(channel, null);
-    });
-
-    test(
-      'successful setter trims once and cancels pending enforcement',
-      () async {
-        AppCacheService.scheduleEnforce(
-          idleDelay: const Duration(milliseconds: 10),
-        );
-        await AppCacheService.setMaxCacheBytes(100);
-        await Future<void>.delayed(const Duration(milliseconds: 30));
-        expect(calls, <String>[FileCacheMethod.setApplicationCacheLimit]);
-      },
-    );
-
-    test(
-      'startup configuration waits for scheduled cache maintenance',
-      () async {
-        await AppCacheService.setMaxCacheBytes(100, enforceImmediately: false);
-        expect(AppCacheService.maxCacheBytes, 100);
-        expect(calls, isEmpty);
-        AppCacheService.scheduleEnforce(
-          idleDelay: const Duration(milliseconds: 10),
-        );
-        await Future<void>.delayed(const Duration(milliseconds: 30));
-        expect(calls, [FileCacheMethod.enforceApplicationCacheLimit]);
-      },
-    );
-
-    test('failed native setter retains the enforcement retry', () async {
-      failSetter = true;
-      await AppCacheService.setMaxCacheBytes(100);
-      expect(calls, <String>[
-        FileCacheMethod.setApplicationCacheLimit,
-        FileCacheMethod.enforceApplicationCacheLimit,
-      ]);
-    });
-
-    test('active lease defers native trimming until release', () async {
-      final lease = AppCacheService.protectPaths(<String>['/active/cache']);
-      await AppCacheService.setMaxCacheBytes(
-        AppCacheService.defaultMaxCacheBytes,
-      );
-      expect(calls, isEmpty);
+      expect(await AppCacheService.estimateCacheBytes(), 8);
       lease.release();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-      expect(calls, <String>[FileCacheMethod.enforceApplicationCacheLimit]);
-    });
-
-    test('short leases retain scheduled enforcement debounce', () async {
-      for (var index = 0; index < 3; index++) {
-        final lease = AppCacheService.protectPaths(['/active/$index']);
-        AppCacheService.scheduleEnforce(
-          idleDelay: const Duration(milliseconds: 100),
-          maxDelay: const Duration(seconds: 1),
-        );
-        lease.release();
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        expect(calls, isEmpty);
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 130));
-      expect(calls, [FileCacheMethod.enforceApplicationCacheLimit]);
-    });
-
-    test('a new lease preserves the scheduled maximum delay', () async {
-      AppCacheService.scheduleEnforce(
-        idleDelay: const Duration(seconds: 1),
-        maxDelay: const Duration(milliseconds: 40),
-      );
-      final lease = AppCacheService.protectPaths(['/active/cache']);
-      await Future<void>.delayed(const Duration(milliseconds: 60));
-      expect(calls, isEmpty);
-      lease.release();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-      expect(calls, [FileCacheMethod.enforceApplicationCacheLimit]);
-    });
-
-    test(
-      'explicit enforcement supersedes a deferred scheduled request',
-      () async {
-        final lease = AppCacheService.protectPaths(['/active/cache']);
-        AppCacheService.scheduleEnforce();
-        await AppCacheService.enforceLimit();
-        expect(calls, isEmpty);
-        lease.release();
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-        expect(calls, [FileCacheMethod.enforceApplicationCacheLimit]);
-      },
-    );
-  });
-
-  test(
-    'orphaned persistent imports are deleted without removing live files',
-    () async {
-      final directory = await Directory.systemTemp.createTemp(
-        'persistent_import_cleanup_',
-      );
-      addTearDown(() async {
-        if (await directory.exists()) await directory.delete(recursive: true);
-      });
-      final retained = File(
-        '${directory.path}${Platform.pathSeparator}live.flac',
-      );
-      final orphan = File(
-        '${directory.path}${Platform.pathSeparator}orphan.flac',
-      );
-      await retained.writeAsBytes(<int>[1, 2, 3]);
-      await orphan.writeAsBytes(<int>[4, 5, 6, 7]);
-
-      final deletedBytes =
-          await AppCacheService.cleanupOrphanedPersistentImports(<String>[
-            retained.path,
-          ], importDirectory: directory);
-
-      expect(deletedBytes, 4);
-      expect(await retained.exists(), isTrue);
-      expect(await orphan.exists(), isFalse);
     },
   );
 
-  test('cache clearing skips files protected by an active lease', () async {
-    const channel = MethodChannel('plugins.flutter.io/path_provider');
-    final tempDirectory = await Directory.systemTemp.createTemp(
-      'protected_cache_cleanup_',
-    );
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          if (call.method == 'getTemporaryDirectory') {
-            return tempDirectory.path;
-          }
-          return null;
-        });
-    addTearDown(() async {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
-      if (await tempDirectory.exists()) {
-        await tempDirectory.delete(recursive: true);
-      }
-    });
-
-    final cacheDirectory = Directory(
-      '${tempDirectory.path}${Platform.pathSeparator}asmr_downloads',
-    );
-    await cacheDirectory.create(recursive: true);
-    final protected = File(
-      '${cacheDirectory.path}${Platform.pathSeparator}active.part',
-    );
-    final orphan = File(
-      '${cacheDirectory.path}${Platform.pathSeparator}orphan.part',
-    );
-    await protected.writeAsBytes(<int>[1, 2, 3]);
-    await orphan.writeAsBytes(<int>[4, 5]);
-    final lease = AppCacheService.protectPaths(<String>[protected.path]);
-
-    try {
-      await AppCacheService.clearAllCaches();
-      expect(await protected.exists(), isTrue);
-      expect(await orphan.exists(), isFalse);
-    } finally {
-      lease.release();
-    }
-  });
-
   test(
-    'translation cache is counted and cleared without deleting source files',
+    'lease released during eviction schedules skipped files for retry',
     () async {
-      const channel = MethodChannel('plugins.flutter.io/path_provider');
-      final tempDirectory = await Directory.systemTemp.createTemp(
-        'translation_cache_cleanup_',
+      final active = await file(
+        temporary,
+        'asmr_playback_cache/active.flac',
+        8,
       );
-      final messenger =
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(channel, (call) async {
-        if (call.method == 'getTemporaryDirectory') return tempDirectory.path;
-        return null;
-      });
-      addTearDown(() async {
-        messenger.setMockMethodCallHandler(channel, null);
-        if (await tempDirectory.exists()) {
-          await tempDirectory.delete(recursive: true);
-        }
-      });
-      final cacheDirectory = Directory(
-        '${tempDirectory.path}${Platform.pathSeparator}page_translations',
-      );
-      await cacheDirectory.create();
-      final cache = File(
-        '${cacheDirectory.path}${Platform.pathSeparator}cache.json',
-      );
-      await cache.writeAsBytes(List<int>.filled(23, 1));
-      final source = File(
-        '${tempDirectory.path}${Platform.pathSeparator}source.txt',
-      );
-      await source.writeAsString('source');
-
-      expect(await AppCacheService.estimateDartCacheBytes(), 23);
-      await AppCacheService.clearAllCaches();
-
-      expect(await cache.exists(), isFalse);
-      expect(await AppCacheService.estimateDartCacheBytes(), 0);
-      expect(await source.readAsString(), 'source');
-    },
-  );
-
-  test('scheduled cache enforcement coalesces repeated requests', () async {
-    const channel = MethodChannel('plugins.flutter.io/path_provider');
-    final tempDirectory = await Directory.systemTemp.createTemp(
-      'scheduled_cache_enforcement_',
-    );
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          if (call.method == 'getTemporaryDirectory') {
-            return tempDirectory.path;
+      final orphan = await file(temporary, 'exports/orphan.bin', 4);
+      final activeDeleteEntered = Completer<void>();
+      late CachePathLease lease;
+      AppCacheService.resetForTest(
+        temporaryDirectories: () async => [temporary],
+        beforeDelete: (candidate) async {
+          if (PathMatcher.equalsNormalized(candidate, orphan.path)) {
+            lease.release();
+          } else if (PathMatcher.equalsNormalized(candidate, active.path)) {
+            activeDeleteEntered.complete();
           }
-          return null;
-        });
-    addTearDown(() async {
-      await AppCacheService.setMaxCacheBytes(
-        AppCacheService.defaultMaxCacheBytes,
+        },
       );
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
-      if (await tempDirectory.exists()) {
-        await tempDirectory.delete(recursive: true);
-      }
-    });
-    await AppCacheService.setMaxCacheBytes(5);
-    final cacheDirectory = Directory(
-      '${tempDirectory.path}${Platform.pathSeparator}video_frames',
-    );
-    await cacheDirectory.create(recursive: true);
-    for (var index = 0; index < 3; index++) {
-      await File(
-        '${cacheDirectory.path}${Platform.pathSeparator}$index.jpg',
-      ).writeAsBytes(List<int>.filled(4, index));
-    }
-
-    for (var index = 0; index < 10; index++) {
-      AppCacheService.scheduleEnforce(
-        idleDelay: const Duration(milliseconds: 10),
-        maxDelay: const Duration(milliseconds: 40),
-      );
-    }
-    final activeLease = AppCacheService.protectPaths(<String>[
-      '${cacheDirectory.path}${Platform.pathSeparator}0.jpg',
-    ]);
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-    expect(await AppCacheService.estimateDartCacheBytes(), 12);
-    activeLease.release();
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-
-    expect(
-      await AppCacheService.estimateDartCacheBytes(),
-      lessThanOrEqualTo(4),
-    );
-  });
-
-  test('enforces cache limit when one file alone is oversized', () async {
-    const channel = MethodChannel('plugins.flutter.io/path_provider');
-    final tempDirectory = await Directory.systemTemp.createTemp(
-      'single_oversized_cache_',
-    );
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          if (call.method == 'getTemporaryDirectory') {
-            return tempDirectory.path;
-          }
-          return null;
-        });
-    addTearDown(() async {
-      await AppCacheService.setMaxCacheBytes(
-        AppCacheService.defaultMaxCacheBytes,
-      );
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
-      if (await tempDirectory.exists()) {
-        await tempDirectory.delete(recursive: true);
-      }
-    });
-
-    await AppCacheService.setMaxCacheBytes(5);
-    final cacheDirectory = Directory(
-      '${tempDirectory.path}${Platform.pathSeparator}video_frames',
-    );
-    await cacheDirectory.create(recursive: true);
-    final oversized = File(
-      '${cacheDirectory.path}${Platform.pathSeparator}oversized.jpg',
-    );
-    await oversized.writeAsBytes(List<int>.filled(12, 1));
-
-    await AppCacheService.enforceLimit();
-
-    expect(await oversized.exists(), isFalse);
-    expect(await AppCacheService.estimateDartCacheBytes(), 0);
-  });
-
-  test(
-    'persistent covers are excluded from limits and removed by manual clear',
-    () async {
-      const channel = MethodChannel('plugins.flutter.io/path_provider');
-      final tempDirectory = await Directory.systemTemp.createTemp(
-        'persistent_cover_temp_',
-      );
-      final supportDirectory = await Directory.systemTemp.createTemp(
-        'persistent_cover_support_',
-      );
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (call) async {
-            if (call.method == 'getTemporaryDirectory') {
-              return tempDirectory.path;
-            }
-            if (call.method == 'getApplicationSupportDirectory') {
-              return supportDirectory.path;
-            }
-            return null;
-          });
-      addTearDown(() async {
-        await AppCacheService.setMaxCacheBytes(
-          AppCacheService.defaultMaxCacheBytes,
-        );
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(channel, null);
-        if (await tempDirectory.exists()) {
-          await tempDirectory.delete(recursive: true);
-        }
-        if (await supportDirectory.exists()) {
-          await supportDirectory.delete(recursive: true);
-        }
-      });
+      lease = AppCacheService.protectPaths([active.path]);
       await AppCacheService.setMaxCacheBytes(5);
-      final coverDirectory = Directory(
-        '${supportDirectory.path}${Platform.pathSeparator}'
-        '$legacyRemoteCoverCacheDirectoryName',
-      );
-      await coverDirectory.create(recursive: true);
-      final cover = File(
-        '${coverDirectory.path}${Platform.pathSeparator}cover.image',
-      );
-      await cover.writeAsBytes(List<int>.filled(12, 1));
-      final storeDirectory = Directory(
-        '${supportDirectory.path}${Platform.pathSeparator}'
-        '$coverArtworkStoreDirectoryName${Platform.pathSeparator}generated',
-      );
-      await storeDirectory.create(recursive: true);
-      final persistedCover = File(
-        '${storeDirectory.path}${Platform.pathSeparator}cover.image',
-      );
-      await persistedCover.writeAsBytes(List<int>.filled(13, 1));
-
+      expect(await orphan.exists(), isFalse);
+      await activeDeleteEntered.future.timeout(const Duration(seconds: 5));
       await AppCacheService.enforceLimit();
-
-      expect(await cover.exists(), isTrue);
-      expect(await persistedCover.exists(), isTrue);
-      expect(await AppCacheService.estimateDartCacheBytes(), 25);
-      expect(await AppCacheService.estimatePersistentCoverCacheBytes(), 13);
-
-      await AppCacheService.clearAllCaches();
-
-      expect(await cover.exists(), isFalse);
-      expect(await persistedCover.exists(), isFalse);
+      expect(await active.exists(), isFalse);
     },
   );
+
+  test(
+    'overlapping and shared leases survive clear until every owner releases',
+    () async {
+      final active = await file(temporary, 'asmr_downloads/active.part', 3);
+      final orphan = await file(temporary, 'asmr_downloads/orphan.part', 5);
+      final directoryLease = AppCacheService.protectPaths([active.parent.path]);
+      final first = AppCacheService.protectPaths([active.path]);
+      final second = AppCacheService.protectPaths([
+        Platform.isWindows ? active.path.toUpperCase() : active.path,
+      ]);
+      await AppCacheService.clearTemporaryCaches();
+      expect(await active.exists(), isTrue);
+      directoryLease.release();
+      first.release();
+      first.release();
+      expect(await AppCacheService.clearTemporaryCaches(), 5);
+      expect(await orphan.exists(), isFalse);
+      expect(await active.exists(), isTrue);
+      second.release();
+      expect(await AppCacheService.clearTemporaryCaches(), 3);
+    },
+  );
+
+  test('clear requests coalesce and serialize with enforcement', () async {
+    final entry = await file(temporary, 'updates/update.part', 12);
+    final entered = Completer<void>();
+    final resume = Completer<void>();
+    var deletions = 0;
+    AppCacheService.resetForTest(
+      temporaryDirectories: () async => [temporary],
+      beforeDelete: (_) async {
+        deletions++;
+        entered.complete();
+        await resume.future;
+      },
+    );
+    final first = AppCacheService.clearTemporaryCaches();
+    final second = AppCacheService.clearTemporaryCaches();
+    expect(identical(first, second), isTrue);
+    await entered.future;
+    final enforce = AppCacheService.enforceLimit();
+    resume.complete();
+    expect(await first, 12);
+    await enforce;
+    expect(deletions, 1);
+    expect(await entry.exists(), isFalse);
+  });
+
+  test(
+    'scheduled enforcement runs during a lease and preserves only protected files',
+    () async {
+      await AppCacheService.setMaxCacheBytes(5, enforceImmediately: false);
+      final active = await file(temporary, 'asmr_downloads/active.part', 4);
+      final orphan = await file(temporary, 'asmr_downloads/orphan.part', 4);
+      final lease = AppCacheService.protectPaths([active.path]);
+      final deleted = Completer<void>();
+      AppCacheService.resetForTest(
+        temporaryDirectories: () async => [temporary],
+        beforeDelete: (candidate) async {
+          if (PathMatcher.equalsNormalized(candidate, orphan.path) &&
+              !deleted.isCompleted) {
+            deleted.complete();
+          }
+        },
+      );
+      lease.release();
+      final activeLease = AppCacheService.protectPaths([active.path]);
+      await AppCacheService.setMaxCacheBytes(5, enforceImmediately: false);
+      for (var i = 0; i < 10; i++) {
+        AppCacheService.scheduleEnforce(
+          idleDelay: const Duration(milliseconds: 10),
+        );
+      }
+      await deleted.future.timeout(const Duration(seconds: 5));
+      await AppCacheService.enforceLimit();
+      expect(await active.exists(), isTrue);
+      expect(await orphan.exists(), isFalse);
+      activeLease.release();
+    },
+  );
+
+  test('orphan import cleanup preserves retained files', () async {
+    final imports = await Directory(
+      path.join(support.path, 'imports'),
+    ).create();
+    final retained = await file(imports, 'live.flac', 3);
+    final orphan = await file(imports, 'old.flac', 4);
+    expect(
+      await AppCacheService.cleanupOrphanedPersistentImports([
+        retained.path,
+      ], importDirectory: imports),
+      4,
+    );
+    expect(await retained.exists(), isTrue);
+    expect(await orphan.exists(), isFalse);
+  });
+
+  test('directory links are not scanned or followed by cleanup', () async {
+    final outside = await Directory(
+      path.join(workspace.path, 'outside'),
+    ).create();
+    final original = await file(outside, 'original.bin', 9);
+    final root = await Directory(path.join(temporary.path, 'exports')).create();
+    final link = Link(path.join(root.path, 'linked'));
+    try {
+      await link.create(outside.path);
+    } on FileSystemException {
+      // Windows requires Developer Mode or elevated rights to create links.
+      return;
+    }
+    expect(await AppCacheService.estimateCacheBytes(), 0);
+    await AppCacheService.clearTemporaryCaches();
+    expect(await original.exists(), isTrue);
+  });
 }

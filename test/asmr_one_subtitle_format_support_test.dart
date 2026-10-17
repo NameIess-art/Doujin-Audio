@@ -29,7 +29,7 @@ void main() {
       final tracks = <String, MusicTrack>{};
       final subtitles = PlaybackSubtitleService(
         trackResolver: (path) => tracks[path],
-        subtitlesDirectoryResolver: () async => directory,
+        remoteSubtitlesDirectoryResolver: () async => directory,
       );
 
       for (final format in <String>['vtt', 'srt', 'ass', 'ssa']) {

@@ -98,6 +98,15 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
       whereArgs: ['browse_page_state_v1'],
     );
   }
+  if (oldVersion < 13 && newVersion >= 13) {
+    for (final name in [
+      'idx_session_playback_session',
+      'idx_playback_queue_tracks_entry',
+      'idx_audio_details_target',
+    ]) {
+      await db.execute('DROP INDEX IF EXISTS $name');
+    }
+  }
 }
 
 Future<void> _addColumnIfMissing(
@@ -276,16 +285,8 @@ Future<void> _createSessionDetailTables(Database db) async {
     'ON sessions(sort_order)',
   );
   await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_session_playback_session '
-    'ON session_playback_state(session_id)',
-  );
-  await db.execute(
     'CREATE INDEX IF NOT EXISTS idx_playback_queue_entries_order '
     'ON playback_queue_entries(session_id, sort_order)',
-  );
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_playback_queue_tracks_entry '
-    'ON playback_queue_entry_tracks(session_id, entry_id, sort_order)',
   );
 }
 
@@ -409,10 +410,6 @@ Future<void> _createAudioDetailsTable(Database db) async {
         UNIQUE(target_type, target_path)
       )
     ''');
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_audio_details_target '
-    'ON audio_details(target_type, target_path)',
-  );
   await _createAudioDetailValueTables(db);
 }
 
@@ -496,10 +493,6 @@ Future<void> _migrateAudioDetailsToV6(Database db) async {
       FROM audio_details_v5
     ''');
   await db.execute('DROP TABLE audio_details_v5');
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_audio_details_target '
-    'ON audio_details(target_type, target_path)',
-  );
   await db.execute('DROP TABLE IF EXISTS audio_detail_backup_sync');
 }
 

@@ -6,6 +6,7 @@
 #include <flutter/standard_method_codec.h>
 #include <flutter/method_result_functions.h>
 #include <shellapi.h>
+#include <shlobj.h>
 #include <dwmapi.h>
 #include <filesystem>
 #include <iostream>
@@ -182,18 +183,14 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
   channels_.push_back(std::move(power));
   add("doujin_audio/file_cache",[](const auto& call, Result& result) {
     if (call.method_name() != "getStorageUsage") { result.NotImplemented(); return; }
-    const auto cache = std::filesystem::path(winrt::to_hstring(RequiredText(Arguments(call),"cachePath")).c_str());
-    if (!cache.is_absolute()) throw std::invalid_argument("cachePath");
+    PWSTR directory = nullptr;
+    winrt::check_hresult(SHGetKnownFolderPath(FOLDERID_LocalAppData,0,nullptr,&directory));
+    const std::filesystem::path app_data(directory);
+    CoTaskMemFree(directory);
     ULARGE_INTEGER available{},total{},free{};
-    if (!GetDiskFreeSpaceExW(cache.root_path().c_str(),&available,&total,&free)) winrt::throw_last_error();
-    uint64_t bytes = 0;
-    std::error_code error;
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(cache,std::filesystem::directory_options::skip_permission_denied,error)) {
-      if (entry.is_regular_file(error)) { auto size = entry.file_size(error); if (!error) bytes += size; }
-    }
+    if (!GetDiskFreeSpaceExW(app_data.c_str(),&available,&total,&free)) winrt::throw_last_error();
     Success(result,Value(Map{{Value("totalBytes"),Value(static_cast<int64_t>(total.QuadPart))},
-      {Value("availableBytes"),Value(static_cast<int64_t>(available.QuadPart))},
-      {Value("cacheBytes"),Value(static_cast<int64_t>(bytes))}}));
+      {Value("availableBytes"),Value(static_cast<int64_t>(available.QuadPart))}}));
   });
   AddTray();
 }

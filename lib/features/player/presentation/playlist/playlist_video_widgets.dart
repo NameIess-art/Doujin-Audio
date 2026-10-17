@@ -14,6 +14,7 @@ import '../../../../app/presentation/app_orientation_controller.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/media/time_text_formatters.dart';
@@ -810,6 +811,9 @@ class _SessionVideoFullscreenPageState
         ? AppDesignTokens.of(context).onAsmrAccent
         : cs.onPrimary;
     final showPauseIcon = detail?.showPauseIcon ?? playing;
+    const exitButtonSize = 48.0;
+    const exitButtonOffset =
+        (AppPageHeaderMetrics.buttonSize - exitButtonSize) / 2;
     return AnimatedOpacity(
       key: const ValueKey<String>('fullscreen_video_controls'),
       opacity: _controlsVisible ? 1 : 0,
@@ -836,9 +840,16 @@ class _SessionVideoFullscreenPageState
                       ],
                     ),
                   ),
-                  child: SafeArea(
-                    minimum: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                    bottom: false,
+                  // Immersive system bars can report a transient top inset
+                  // during rotation or an edge swipe. Keep the exit anchored
+                  // to the fullscreen viewport instead of following that inset.
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left:
+                          AppPageHeaderMetrics.padding.left + exitButtonOffset,
+                      top: AppPageHeaderMetrics.padding.top + exitButtonOffset,
+                      bottom: 8,
+                    ),
                     child: Align(
                       alignment: Alignment.topLeft,
                       child: IconButton(
@@ -847,8 +858,8 @@ class _SessionVideoFullscreenPageState
                         onPressed: _requestExit,
                         color: Colors.white,
                         constraints: const BoxConstraints.tightFor(
-                          width: 48,
-                          height: 48,
+                          width: exitButtonSize,
+                          height: exitButtonSize,
                         ),
                         icon: const Icon(Icons.arrow_back_rounded),
                       ),

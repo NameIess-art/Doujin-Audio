@@ -37,6 +37,7 @@ void main() {
   StorageUsageService storageService({
     bool Function()? isAndroid,
     List<MusicTrack> Function()? libraryTracks,
+    Future<int> Function()? cacheBytes,
   }) {
     return StorageUsageService(
       fileCacheGateway: FileCachePlatformGateway(
@@ -45,7 +46,7 @@ void main() {
         isAndroid: isAndroid ?? () => true,
       ),
       libraryTracks: libraryTracks ?? () => const <MusicTrack>[],
-      persistentCoverCacheBytes: () async => 0,
+      cacheBytes: cacheBytes ?? () async => 128 * 1024 * 1024,
     );
   }
 
@@ -59,7 +60,6 @@ void main() {
         'value': <String, Object?>{
           'totalBytes': 1024 * 1024 * 1024,
           'availableBytes': 512 * 1024 * 1024,
-          'cacheBytes': 128 * 1024 * 1024,
         },
       };
     });
@@ -300,7 +300,6 @@ void main() {
       'value': <String, Object?>{
         'totalBytes': 1024,
         'availableBytes': 512,
-        'cacheBytes': 128,
       },
     });
     await tester.pump();
@@ -360,7 +359,6 @@ void main() {
         'value': <String, Object?>{
           'totalBytes': 1024,
           'availableBytes': 512,
-          'cacheBytes': 128,
         },
       };
     });
@@ -484,20 +482,25 @@ void main() {
       'value': <String, Object?>{
         'totalBytes': 1024,
         'availableBytes': 512,
-        'cacheBytes': 128,
       },
     });
     await tester.pump();
     await tester.pump();
     expect(loading, findsOneWidget);
-    expect(find.byKey(const ValueKey('data-support-storage-card')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('data-support-storage-card')),
+      findsOneWidget,
+    );
 
     await tester.pump(const Duration(milliseconds: 150));
     final fadingPlaceholder = find.ancestor(
       of: loading,
       matching: find.byType(FadeTransition),
     );
-    final opacity = tester.widget<FadeTransition>(fadingPlaceholder.first).opacity.value;
+    final opacity = tester
+        .widget<FadeTransition>(fadingPlaceholder.first)
+        .opacity
+        .value;
     expect(opacity, greaterThan(0));
     expect(opacity, lessThan(1));
 
@@ -637,7 +640,6 @@ void main() {
         'value': <String, Object?>{
           'totalBytes': 1024 * 1024 * 1024,
           'availableBytes': 512 * 1024 * 1024,
-          'cacheBytes': cacheBytes,
         },
       };
     });
@@ -650,7 +652,7 @@ void main() {
           ),
           uiOperationServiceProvider.overrideWithValue(operationService),
           dataSupportStorageUsageServiceProvider.overrideWithValue(
-            storageService(),
+            storageService(cacheBytes: () async => cacheBytes),
           ),
         ],
         child: const MaterialApp(home: StorageUsageCard()),

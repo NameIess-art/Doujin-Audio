@@ -77,7 +77,10 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
     required int? expectedBytes,
   }) async {
     final temp = File('${target.path}.part');
-    final lease = AppCacheService.protectPaths(<String>[temp.path]);
+    final lease = AppCacheService.protectPaths(<String>[
+      temp.path,
+      target.path,
+    ]);
     try {
       if (_disposed) return null;
       await root.create(recursive: true);

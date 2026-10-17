@@ -208,13 +208,20 @@ void main() {
     'remote choices include cached original and all independent versions',
     () async {
       const remoteAudio = 'https://example.com/audio/voice.mp3';
-      final cachedOriginal = File(
+      HttpOverrides.global = null;
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((request) async {
+        request.response.write(_srt('Remote original'));
+        await request.response.close();
+      });
+      final legacyOriginal = File(
         path.join(
           directory.path,
           '${md5.convert(utf8.encode(remoteAudio))}-remote.srt',
         ),
       );
-      await cachedOriginal.writeAsString(_srt('Remote original'));
+      await legacyOriginal.writeAsString(_srt('Legacy original'));
       PlaybackSubtitleService remoteService() {
         final result = PlaybackSubtitleService(
           trackResolver: (_) => MusicTrack(
@@ -225,22 +232,25 @@ void main() {
             groupSubtitle: 'ASMR',
             isSingle: false,
             remoteMetadataKind: 'asmr.one',
-            remoteMetadata: const {
-              'subtitleUrl': 'https://example.com/subtitle.srt',
+            remoteMetadata: {
+              'subtitleUrl':
+                  'http://${server.address.host}:${server.port}/subtitle.srt',
               'subtitleExtension': '.srt',
             },
           ),
           subtitlesDirectoryResolver: () async => directory,
+          remoteSubtitlesDirectoryResolver: () async =>
+              Directory(path.join(directory.path, 'asmr_subtitles')),
         );
         addTearDown(result.dispose);
         return result;
       }
 
       final subtitles = remoteService();
-      expect(
-        (await subtitles.load(remoteAudio))?.sourcePath,
-        cachedOriginal.path,
+      final cachedOriginal = File(
+        (await subtitles.load(remoteAudio))!.sourcePath,
       );
+      expect(await cachedOriginal.readAsString(), _srt('Remote original'));
       final chinese = await subtitles.saveDraft(remoteAudio, _draft('Chinese'));
       final english = await subtitles.saveDraft(
         remoteAudio,
@@ -270,6 +280,7 @@ void main() {
         cachedOriginal.path,
       );
       expect(await cachedOriginal.readAsString(), _srt('Remote original'));
+      expect(await legacyOriginal.readAsString(), _srt('Legacy original'));
       expect(
         await File(chinese.sourcePath).readAsString(),
         contains('Chinese'),

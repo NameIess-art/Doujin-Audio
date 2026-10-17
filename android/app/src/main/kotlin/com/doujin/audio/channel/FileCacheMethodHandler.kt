@@ -132,24 +132,6 @@ internal class FileCacheMethodHandler(
                     operations.cacheFromUri(uriString, name, index)
                 }
             }
-            FileCacheMethods.CLEAR_APPLICATION_CACHE -> runAsync(result) {
-                operations.clearApplicationCache()
-            }
-            FileCacheMethods.SET_APPLICATION_CACHE_LIMIT -> {
-                val maxBytes = arguments.requiredLong("maxBytes")
-                operations.setMaxApplicationCacheBytes(maxBytes)
-                runAsync(result) {
-                    operations.enforceApplicationCacheLimit(maxBytes)
-                    null
-                }
-            }
-            FileCacheMethods.ENFORCE_APPLICATION_CACHE_LIMIT -> {
-                val maxBytes = arguments.requiredLong("maxBytes")
-                runAsync(result) {
-                    operations.enforceApplicationCacheLimit(maxBytes)
-                    null
-                }
-            }
             FileCacheMethods.GET_STORAGE_USAGE -> runAsync(
                 result,
                 errorCode = { "storage_usage_failed" }

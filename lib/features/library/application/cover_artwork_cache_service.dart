@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../core/media/music_track.dart';
+import '../../../core/cache/app_cache_service.dart';
 import '../../../core/state/audio_state_slice.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/logging/app_log_service.dart';
@@ -172,11 +173,15 @@ class CoverArtworkCacheService {
   Future<int> migrateLegacyCaches({bool Function()? shouldCancel}) =>
       _artworkStore.migrateLegacyCaches(shouldCancel: shouldCancel);
 
-  Future<int> clearPersistentCache() =>
-      _clearPersistentCacheFuture ??= _clearPersistentCache();
+  Future<int> clearPersistentCache({
+    Future<int> Function()? clearTemporaryCaches,
+  }) => _clearPersistentCacheFuture ??= _clearPersistentCache(
+    clearTemporaryCaches,
+  );
 
-  Future<int> _clearPersistentCache() async {
-    await prepareManualCoversForCacheClear();
+  Future<int> _clearPersistentCache(
+    Future<int> Function()? clearTemporaryCaches,
+  ) async {
     _isClearingPersistentCache = true;
     final pending = <Future<String?>>{
       ..._trackCoverFutures.values,
@@ -184,14 +189,17 @@ class CoverArtworkCacheService {
       ..._remoteCovers.pending,
       ..._sourceResolver.pendingPlatformCovers,
     };
-    invalidateAll();
     try {
+      invalidateAll();
+      await prepareManualCoversForCacheClear();
       await Future.wait<void>(
         pending.map((future) => future.then<void>((_) {}, onError: (_, _) {})),
       );
       invalidateAll();
-      return await _artworkStore.clear();
+      final temporaryBytes = await clearTemporaryCaches?.call() ?? 0;
+      return temporaryBytes + await _artworkStore.clear();
     } finally {
+      invalidateAll();
       _isClearingPersistentCache = false;
       _clearPersistentCacheFuture = null;
     }
@@ -598,20 +606,25 @@ class CoverArtworkCacheService {
     );
     Future<String> preserve(AudioDetailTarget target, String value) async {
       final source = _artworkStore.resolveStoredPath(value) ?? value;
-      if (!await _artworkStore.isRebuildablePath(source)) return value;
-      final original = AudioDetail.empty(
-        target,
-      ).copyWith(cardCoverPath: source, cardCoverSelected: true);
-      final fields = await coverStore.documentFields(original);
-      final restored = await coverStore.restore(
-        AudioDetail.empty(target),
-        fields,
-      );
-      final saved = restored.cardCoverPath;
-      if (saved == null || await _artworkStore.isRebuildablePath(saved)) {
-        throw StateError('Unable to preserve selected cover: $source');
+      final lease = AppCacheService.protectPaths([source]);
+      try {
+        if (!await _artworkStore.isRebuildablePath(source)) return value;
+        final original = AudioDetail.empty(
+          target,
+        ).copyWith(cardCoverPath: source, cardCoverSelected: true);
+        final fields = await coverStore.documentFields(original);
+        final restored = await coverStore.restore(
+          AudioDetail.empty(target),
+          fields,
+        );
+        final saved = restored.cardCoverPath;
+        if (saved == null || await _artworkStore.isRebuildablePath(saved)) {
+          throw StateError('Unable to preserve selected cover: $source');
+        }
+        return saved;
+      } finally {
+        lease.release();
       }
-      return saved;
     }
 
     final folders = <String>{

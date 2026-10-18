@@ -10,7 +10,6 @@ import 'async_cover_image.dart';
 import 'marquee_text.dart';
 import 'search_highlight.dart';
 import 'shimmer_loading.dart';
-import 'horizontal_edge_fade_scroll.dart';
 import 'page_translation_scope.dart';
 
 const _libraryLikeInfoLineHeight = LibraryLikeCardMetrics.contentHeight / 5;
@@ -18,7 +17,6 @@ const _libraryLikeInfoLineHeight = LibraryLikeCardMetrics.contentHeight / 5;
 const double kResponsiveLibraryCardMinWidth = 420;
 const double kResponsiveLibraryCardSpacing = 8;
 const String kLibraryLikeTagSeparator = '   ';
-
 
 int responsiveLibraryCardColumnCount(double availableWidth) {
   if (!availableWidth.isFinite || availableWidth <= 0) return 1;
@@ -359,7 +357,7 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
           constraints: const BoxConstraints(
             minHeight: _libraryLikeInfoLineHeight,
           ),
-          child: LibraryLikeScrollableText(
+          child: LibraryLikeCardText(
             text: title,
             style: _libraryLikeFixedLineStyle(titleStyle),
           ),
@@ -532,8 +530,8 @@ class LibraryLikeCardActions extends StatelessWidget {
   }
 }
 
-class LibraryLikeScrollableText extends StatefulWidget {
-  const LibraryLikeScrollableText({
+class LibraryLikeCardText extends StatelessWidget {
+  const LibraryLikeCardText({
     super.key,
     required this.text,
     required this.style,
@@ -543,76 +541,29 @@ class LibraryLikeScrollableText extends StatefulWidget {
   final TextStyle style;
 
   @override
-  State<LibraryLikeScrollableText> createState() =>
-      _LibraryLikeScrollableTextState();
-}
-
-class _LibraryLikeScrollableTextState extends State<LibraryLikeScrollableText> {
-  final _textPainter = TextPainter(maxLines: 1);
-
-  @override
-  void dispose() {
-    _textPainter.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final normalizedText = widget.text.replaceAll(RegExp(r'[\r\n]+'), ' ');
-    final style = widget.style;
+    final normalizedText = text.replaceAll(RegExp(r'[\r\n]+'), ' ');
+    final animate =
+        defaultTargetPlatform == TargetPlatform.windows &&
+        !MarqueePauseScope.isPausedOf(context) &&
+        !MediaQuery.disableAnimationsOf(context);
     final child = SearchHighlightedText(
       text: normalizedText,
       style: style,
       maxLines: 1,
       softWrap: false,
-      overflow: TextOverflow.visible,
       strutStyle: _libraryLikeFixedLineStrut(style),
     );
-    Widget scrollableText() {
-      if (defaultTargetPlatform == TargetPlatform.windows) {
-        return MarqueeText(
-          text: normalizedText,
-          style: style,
-          pauseDuration: const Duration(seconds: 1),
-          edgePadding: 0,
-          allowManualScroll: true,
-          child: child,
-        );
-      }
-      return HorizontalEdgeFadeScroll(
-        deferDragAtEdges: true,
-        builder: (controller) => SingleChildScrollView(
-          controller: controller,
-          scrollDirection: Axis.horizontal,
-          // Empty space belongs to the enclosing card's swipe gesture.
-          hitTestBehavior: HitTestBehavior.deferToChild,
-          child: child,
-        ),
-      );
-    }
-
-    // Highlighted spans use a heavier font. Keep their actual scroll layout
-    // rather than estimating overflow from the unhighlighted text.
-    if (SearchHighlightScope.termsOf(context).isNotEmpty) {
-      return scrollableText();
-    }
-    var effectiveStyle = DefaultTextStyle.of(context).style.merge(style);
-    if (MediaQuery.boldTextOf(context)) {
-      effectiveStyle = effectiveStyle.merge(
-        const TextStyle(fontWeight: FontWeight.bold),
-      );
-    }
-    _textPainter
-      ..text = TextSpan(text: normalizedText, style: effectiveStyle)
-      ..textDirection = Directionality.of(context)
-      ..textScaler = MediaQuery.textScalerOf(context)
-      ..locale = Localizations.maybeLocaleOf(context);
-    // TextPainter reuses its layout across width changes and scroll rebuilds.
-    // Short metadata needs no controller, horizontal viewport or gesture arena.
-    _textPainter.layout();
-    return LayoutBuilder(
-      builder: (context, constraints) =>
-          _textPainter.width <= constraints.maxWidth ? child : scrollableText(),
+    if (!animate) return child;
+    // Hover belongs to the whole card; wheel and drag must reach its parent.
+    return IgnorePointer(
+      child: MarqueeText(
+        text: normalizedText,
+        style: style,
+        pauseDuration: const Duration(seconds: 1),
+        edgePadding: 0,
+        child: child,
+      ),
     );
   }
 }
@@ -655,10 +606,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final parts = textTranslationText(title, fileName: titleFileName);
     return WorkPageTranslationBuilder(
-      texts: [
-        parts.source,
-        if (!loading) ...metadata.tags,
-      ],
+      texts: [parts.source, if (!loading) ...metadata.tags],
       builder: (context, translate, _) => LibraryLikeWorkCardContent(
         title: '${translate(parts.source)}${parts.suffix}',
         lines: loading
@@ -754,7 +702,7 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
                         children: [
                           ?titleLeading,
                           Expanded(
-                            child: LibraryLikeScrollableText(
+                            child: LibraryLikeCardText(
                               text: title,
                               style: _libraryLikeFixedLineStyle(titleStyle),
                             ),
@@ -848,7 +796,7 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
             lines: lineCount,
             enableMarquee: enableMarquee,
           )
-        : LibraryLikeScrollableText(text: value, style: fixedStyle);
+        : LibraryLikeCardText(text: value, style: fixedStyle);
 
     final content = Row(
       crossAxisAlignment: CrossAxisAlignment.start,

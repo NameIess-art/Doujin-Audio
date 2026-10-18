@@ -529,6 +529,7 @@ class _DeferredPageContent extends StatefulWidget {
 class _DeferredPageContentState extends State<_DeferredPageContent> {
   final _coordinator = UiInteractionCoordinator.instance;
   late final _commitKey = 'page_content_${identityHashCode(this)}';
+  late Builder _content;
   Animation<double>? _routeAnimation;
   bool _firstFrameBuilt = false;
   bool _active = false;
@@ -538,6 +539,9 @@ class _DeferredPageContentState extends State<_DeferredPageContent> {
   @override
   void initState() {
     super.initState();
+    // Motion changes reuse this element; its own inherited dependencies still
+    // rebuild the body when theme or layout inputs change.
+    _content = Builder(builder: widget.builder);
     if (widget.prepared && widget.isReady) {
       _ready = true;
       return;
@@ -572,6 +576,9 @@ class _DeferredPageContentState extends State<_DeferredPageContent> {
   @override
   void didUpdateWidget(_DeferredPageContent oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.builder != widget.builder) {
+      _content = Builder(builder: widget.builder);
+    }
     if (oldWidget.isReady != widget.isReady) _scheduleContent();
   }
 
@@ -650,7 +657,7 @@ class _DeferredPageContentState extends State<_DeferredPageContent> {
       content: _ready
           ? KeyedSubtree(
               key: const ValueKey('deferred_content'),
-              child: widget.builder(context),
+              child: _content,
             )
           : const SizedBox.shrink(),
     );
@@ -711,7 +718,8 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
 
   bool get _isInteractive =>
       widget.animation.status == AnimationStatus.completed &&
-      widget.secondaryAnimation.status == AnimationStatus.dismissed;
+      (_routeSecondaryAnimation ?? widget.secondaryAnimation).status ==
+          AnimationStatus.dismissed;
 
   @override
   void initState() {
@@ -787,7 +795,13 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     // MaterialPageRoute replaces the original secondary animation with a
     // dismissed proxy when it delegates transitions to the incoming route.
     // Read the route's real animation so its header still fades when covered.
-    _routeSecondaryAnimation = ModalRoute.of(context)?.secondaryAnimation;
+    final secondaryAnimation = ModalRoute.of(context)?.secondaryAnimation;
+    if (!identical(secondaryAnimation, _routeSecondaryAnimation)) {
+      _routeSecondaryAnimation?.removeStatusListener(_handleStatusChanged);
+      _routeSecondaryAnimation = secondaryAnimation;
+      _routeSecondaryAnimation?.addStatusListener(_handleStatusChanged);
+    }
+    _interactive = _isInteractive;
     _headerAnimation = Listenable.merge([
       widget.animation,
       _routeSecondaryAnimation ?? widget.secondaryAnimation,
@@ -798,6 +812,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   @override
   void dispose() {
     _stopListeningToStatus(widget);
+    _routeSecondaryAnimation?.removeStatusListener(_handleStatusChanged);
     _motion?.dispose();
     _pageChild.dispose();
     super.dispose();
@@ -1963,20 +1978,16 @@ class _RenderAppPageOffstage extends RenderOffstage {
   }
 }
 
-// A stable delegate identity lets app routes retain their own secondary
-// animation, so their stationary headers fade once when covered or revealed.
+// Keep the delegate transparent: adding activity wrappers here reparents the
+// entire Material route when Flutter installs/removes its received transition.
+// The existing page transition observes the real secondary animation instead.
 Widget _coveredPageTransition(
   BuildContext context,
   Animation<double> animation,
   Animation<double> secondaryAnimation,
   bool allowSnapshotting,
   Widget? child,
-) => _buildPageActivity(
-  child!,
-  interactive:
-      animation.status == AnimationStatus.completed &&
-      secondaryAnimation.status == AnimationStatus.dismissed,
-);
+) => child!;
 
 class AppPageTransitionsBuilder extends PageTransitionsBuilder {
   const AppPageTransitionsBuilder();
@@ -2061,8 +2072,7 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
   bool _disposed = false;
   Timer? _exitCompletionTimer;
 
-  // Material routes require a delegated transition to follow a custom route's
-  // secondary animation. Keep their content still and pause it while covered.
+  // Match the theme delegate without introducing a second activity subtree.
   @override
   DelegatedTransitionBuilder get delegatedTransition => _coveredPageTransition;
 

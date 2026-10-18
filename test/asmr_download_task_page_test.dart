@@ -24,7 +24,7 @@ void main() {
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
 
-  testWidgets('slow task recovery crossfades from skeleton to data', (
+  testWidgets('task recovery directly shows actual data without skeleton', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
@@ -50,34 +50,10 @@ void main() {
         child: const MaterialApp(home: AsmrDownloadTaskPage()),
       ),
     );
-    await tester.pump(const Duration(milliseconds: 600));
-    expect(find.byType(OperationSkeletonList), findsOneWidget);
-    expect(find.text('No download tasks'), findsNothing);
-    restored.complete();
-    for (
-      var i = 0;
-      i < 20 && find.text('No download tasks').evaluate().isEmpty;
-      i++
-    ) {
-      await tester.pump(const Duration(milliseconds: 16));
-    }
-    // The data layer has mounted, while the outer deferred reveal owns the fade.
-    expect(find.byType(OperationSkeletonList), findsOneWidget);
-    final reveal = tester
-        .widget<FadeTransition>(
-          find
-              .ancestor(
-                of: find.byKey(const ValueKey('deferred_content')),
-                matching: find.byType(FadeTransition),
-              )
-              .first,
-        )
-        .opacity;
-    expect(reveal.value, 0);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(reveal.value, closeTo(kAppFadeCurve.transform(0.5), 0.001));
-    expect(find.byType(OperationSkeletonList), findsOneWidget);
+    expect(find.byType(OperationSkeletonList), findsNothing);
+    expect(find.text('No download tasks'), findsOneWidget);
+    restored.complete();
     await tester.pumpAndSettle();
     expect(find.byType(OperationSkeletonList), findsNothing);
     expect(find.text('No download tasks'), findsOneWidget);
@@ -121,15 +97,14 @@ void main() {
             child: const MaterialApp(home: AsmrDownloadTaskPage()),
           ),
         );
-        await tester.pump(const Duration(milliseconds: 600));
-        expect(find.byType(OperationSkeletonList), findsWidgets);
-        expect(find.text('No download tasks'), findsNothing);
-        expect(taskReads, 0);
+        await tester.pump();
+        expect(find.byType(OperationSkeletonList), findsNothing);
+        expect(find.text('No download tasks'), findsOneWidget);
+        expect(taskReads, 1);
 
         read.completeError(StateError('read_failed'));
         await tester.pumpAndSettle();
         expect(find.byType(OperationStatusBanner), findsOneWidget);
-        expect(taskReads, 0);
         await tester.tap(find.byTooltip('Retry'));
         await tester.pumpAndSettle();
         expect(reads, 2);
@@ -147,7 +122,7 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'download tasks defer subscriptions during entrance and retain cards on $platform',
+      'download tasks display directly during entrance and retain cards on $platform',
       (tester) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         final language = AppLanguageProvider();
@@ -192,11 +167,9 @@ void main() {
           find.text('Download tasks', skipOffstage: false),
           findsOneWidget,
         );
-        expect(taskReads, 0);
-        await tester.pump(const Duration(milliseconds: 100));
-        expect(taskReads, 0);
-        await tester.pumpAndSettle();
         expect(taskReads, 1);
+        await tester.pumpAndSettle();
+        expect(find.byType(OperationSkeletonList), findsNothing);
         final taskCard = tester.widget<AsmrDownloadTaskCard>(
           find.byType(AsmrDownloadTaskCard),
         );

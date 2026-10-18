@@ -85,6 +85,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _pageStackKey = GlobalKey();
   final GlobalKey _loadingSkeletonKey = GlobalKey();
+  ModalRoute<dynamic>? _route;
   late final AnimationController _directoryFade;
   late final CurvedAnimation _directoryOpacity;
   bool? _directoryWasLoading;
@@ -365,7 +366,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         if (!mounted || request != _directoryRequest) return;
         if (_directoryWasLoading == false &&
             !MediaQuery.disableAnimationsOf(context) &&
-            (ModalRoute.of(context)?.isCurrent ?? true)) {
+            (_route?.isCurrent ?? true)) {
           final previousIds = {
             for (final entry in _currentEntries)
               '${entry.type.name}:${entry.relativePath}',
@@ -430,7 +431,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
   void _updateDirectoryMotion(bool isLoading) {
     if (MediaQuery.disableAnimationsOf(context) ||
-        ModalRoute.isCurrentOf(context) == false) {
+        _route?.isCurrent == false) {
       _directoryFade.value = 1;
       _departingSkeletonRect = null;
       for (final controller in _entryLoadBatches.keys) {
@@ -479,13 +480,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     }
     try {
       await controller.initializeForVisiblePage();
-      if (!mounted || ModalRoute.of(context)?.isActive == false) return;
+      if (!mounted || _route?.isActive == false) return;
       if (UiInteractionCoordinator.instance.isInteracting ||
           UiInteractionCoordinator.instance.isVisualUpdateDeferred) {
         UiInteractionCoordinator.instance.scheduleCommit(
           key: _filesCommitKey,
           commit: () {
-            if (mounted && ModalRoute.of(context)?.isActive != false) {
+            if (mounted && _route?.isActive != false) {
               unawaited(_loadAsmrData());
             }
           },
@@ -1076,8 +1077,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   }
 
   @override
-  Widget build(BuildContext context) =>
-      WorkPageTranslationHost(child: _buildPage(context));
+  Widget build(BuildContext context) {
+    final page = WorkPageTranslationHost(child: _buildPage(context));
+    return Builder(
+      builder: (routeContext) {
+        // Retained entry animations pause through TickerMode while covered.
+        _route = ModalRoute.of(routeContext);
+        return page;
+      },
+    );
+  }
 
   Object? _directoryVisibilityKey(WidgetRef ref) {
     final Object? visibilityKey;
@@ -1275,34 +1284,46 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               _directory == null) &&
           currentEntries.isEmpty;
       _updateDirectoryMotion(isLoading);
-      return Stack(
-        key: _pageStackKey,
-        children: [
-          ScrollConfiguration(
-            behavior: ScrollConfiguration.of(
-              context,
-            ).copyWith(scrollbars: false),
-            child: CustomScrollView(
-              controller: _scrollController,
-              slivers: [
-                // 1. Collapsible Sticky Header
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: WorkDetailHeaderDelegate(
-                    topSafeArea: topSafeArea,
-                    coverMaxHeight: coverMaxHeight,
-                    coverMinHeight: coverMinHeight,
-                    rjBarHeight: rjBarHeight,
-                    title: displayTitle,
-                    rjCode: displayRj,
-                    circleName: displayCircle,
-                    subtitleStatus: subtitleStatus,
-                    coverWidget: buildCover(context, ref),
-                    accentColor: widget.isAsmr ? asmrBlue : cs.primary,
-                    surfaceColor: cs.surface,
-                    onCopyMetadata: (value) => _copyText(context, value),
-                  ),
-                ),
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final isLandscape =
+              WorkDetailNavigationScope.isLandscapeOf(context) ||
+              MediaQuery.orientationOf(context) == Orientation.landscape;
+          final pageWidth = constraints.maxWidth;
+          final headerTopSafeArea = isLandscape ? 0.0 : topSafeArea;
+          final coverMax = isLandscape
+              ? (pageWidth / kStandardCoverAspectRatio)
+              : coverMaxHeight;
+          final coverMin = isLandscape ? coverMax : coverMinHeight;
+
+          return Stack(
+            key: _pageStackKey,
+            children: [
+              ScrollConfiguration(
+                behavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(scrollbars: false),
+                child: CustomScrollView(
+                  controller: _scrollController,
+                  slivers: [
+                    // 1. Collapsible Sticky Header
+                    SliverPersistentHeader(
+                      pinned: !isLandscape,
+                      delegate: WorkDetailHeaderDelegate(
+                        topSafeArea: headerTopSafeArea,
+                        coverMaxHeight: coverMax,
+                        coverMinHeight: coverMin,
+                        rjBarHeight: rjBarHeight,
+                        title: displayTitle,
+                        rjCode: displayRj,
+                        circleName: displayCircle,
+                        subtitleStatus: subtitleStatus,
+                        coverWidget: buildCover(context, ref),
+                        accentColor: widget.isAsmr ? asmrBlue : cs.primary,
+                        surfaceColor: cs.surface,
+                        onCopyMetadata: (value) => _copyText(context, value),
+                      ),
+                    ),
 
                 // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
                 SliverToBoxAdapter(
@@ -1472,7 +1493,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                       child: child!,
                     ),
             ),
-        ],
+            ],
+          );
+        },
       );
     }
 

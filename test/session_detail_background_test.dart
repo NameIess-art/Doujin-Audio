@@ -215,17 +215,29 @@ void main() {
       );
       final detailContext = tester.element(find.byType(SessionDetailScaffold));
       final navigator = Navigator.of(detailContext);
-      unawaited(
-        navigator.push(
-          buildAppPageRoute<void>(
-            context: detailContext,
-            child: const Scaffold(body: Text('Cover session detail')),
-          ),
-        ),
+      final content = tester.widget<SessionDetailContent>(
+        find.byType(SessionDetailContent),
       );
-      await tester.pumpAndSettle();
-      navigator.pop();
-      await tester.pumpAndSettle();
+      for (var round = 0; round < 2; round++) {
+        unawaited(
+          navigator.push(
+            buildAppPageRoute<void>(
+              context: detailContext,
+              child: const Scaffold(body: Text('Cover session detail')),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<SessionDetailContent>(
+            find.byType(SessionDetailContent, skipOffstage: false),
+          ),
+          same(content),
+        );
+        navigator.pop();
+        await tester.pumpAndSettle();
+        expect(tester.widget(find.byType(SessionDetailContent)), same(content));
+      }
       expect(
         tester.state<SessionDetailContentState>(
           find.byType(SessionDetailContent),

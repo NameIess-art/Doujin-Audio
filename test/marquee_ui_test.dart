@@ -75,24 +75,6 @@ Future<void> _pumpMarqueeFrames(WidgetTester tester, int milliseconds) async {
   }
 }
 
-ScrollPosition _cardTextPosition(
-  WidgetTester tester,
-  Finder card,
-  String text,
-) {
-  final line = find.descendant(
-    of: card,
-    matching: find.byWidgetPredicate(
-      (widget) => widget is LibraryLikeScrollableText && widget.text == text,
-    ),
-  );
-  return tester
-      .state<ScrollableState>(
-        find.descendant(of: line, matching: find.byType(Scrollable)),
-      )
-      .position;
-}
-
 void main() {
   testWidgets(
     'fitting card text creates no horizontal scrollable',
@@ -101,7 +83,7 @@ void main() {
         _buildApp(
           const SizedBox(
             width: 300,
-            child: LibraryLikeScrollableText(
+            child: LibraryLikeCardText(
               text: 'Short metadata',
               style: TextStyle(fontSize: 14),
             ),
@@ -113,7 +95,6 @@ void main() {
       expect(find.text('Short metadata'), findsOneWidget);
       expect(find.byType(Scrollable), findsNothing);
       expect(find.byType(HorizontalEdgeFadeScroll), findsNothing);
-      expect(find.byType(MarqueeText), findsNothing);
       expect(tester.takeException(), isNull);
     },
     variant: const TargetPlatformVariant({
@@ -123,7 +104,7 @@ void main() {
   );
 
   testWidgets(
-    'card text remains draggable after narrowing or increasing text scale',
+    'card text stays truncated after narrowing or increasing text scale',
     (tester) async {
       var width = 600.0;
       var scale = 1.0;
@@ -143,7 +124,7 @@ void main() {
                     alignment: Alignment.topLeft,
                     child: SizedBox(
                       width: width,
-                      child: const LibraryLikeScrollableText(
+                      child: const LibraryLikeCardText(
                         text: 'An accessible metadata title',
                         style: TextStyle(fontSize: 14),
                       ),
@@ -164,17 +145,26 @@ void main() {
           scale = dimensions.$2;
         });
         await tester.pumpAndSettle();
-        final position = tester
-            .state<ScrollableState>(find.byType(Scrollable))
-            .position;
-        expect(position.axis, Axis.horizontal);
-        expect(position.maxScrollExtent, greaterThan(0));
+        expect(find.byType(Scrollable), findsNothing);
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.byType(LibraryLikeCardText),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(paragraph.didExceedMaxLines, isTrue);
+        final before = tester.getTopLeft(
+          find.text('An accessible metadata title'),
+        );
         await tester.drag(
-          find.byType(SingleChildScrollView),
+          find.byType(LibraryLikeCardText),
           const Offset(-60, 0),
         );
         await tester.pumpAndSettle();
-        expect(position.pixels, greaterThan(0));
+        expect(
+          tester.getTopLeft(find.text('An accessible metadata title')),
+          before,
+        );
       }
 
       update(() {
@@ -274,7 +264,7 @@ void main() {
     (scale: 1.0, rows: 4),
   ]) {
     testWidgets(
-      'work card keeps metadata within its cover and scrolls text (${sample.scale}, ${sample.rows} rows)',
+      'work card keeps metadata within its cover and truncates text (${sample.scale}, ${sample.rows} rows)',
       (tester) async {
         final title = 'A long overflowing work title ' * 12;
         await tester.pumpWidget(
@@ -319,11 +309,17 @@ void main() {
         }
         final footer = tester.getRect(find.text('2026-10-09'));
         expect(footer.bottom, closeTo(bounds.bottom, 0.01));
-        final position = _cardTextPosition(tester, card, title);
-        expect(position.maxScrollExtent, greaterThan(0));
-        position.jumpTo(position.maxScrollExtent);
-        await tester.pump();
-        expect(position.pixels, position.maxScrollExtent);
+        expect(
+          find.descendant(of: card, matching: find.byType(Scrollable)),
+          findsNothing,
+        );
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.text(title),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(paragraph.didExceedMaxLines, isTrue);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       },
@@ -434,20 +430,12 @@ void main() {
       verticalController.jumpTo(1000);
       await tester.pump();
       await tester.pump();
-      final rows = find.byType(LibraryLikeScrollableText);
+      final rows = find.byType(LibraryLikeCardText);
       expect(rows, findsWidgets);
-      for (final row in rows.evaluate()) {
-        final position = tester
-            .state<ScrollableState>(
-              find.descendant(
-                of: find.byElementPredicate((e) => e == row),
-                matching: find.byType(Scrollable),
-              ),
-            )
-            .position;
-        expect(position.maxScrollExtent, greaterThan(0));
-        expect(position.pixels, 0);
-      }
+      expect(
+        find.descendant(of: rows, matching: find.byType(Scrollable)),
+        findsNothing,
+      );
       expect(verticalController.offset, 1000);
       expect(tester.takeException(), isNull);
     },
@@ -457,162 +445,121 @@ void main() {
     }),
   );
 
-  testWidgets(
-    'Windows cover hover starts only that work card and exit resets every row',
-    (tester) async {
-      const values = [
-        'A very long title that extends beyond the visible card width',
-        'Voice actor one and voice actor two with a long display name',
-        '#ASMR #Sleep #A_very_long_tag #Another_very_long_tag',
-      ];
-      Widget card(int index) => SizedBox(
-        width: 260,
-        child: LibraryLikeWorkCardContent(
-          key: ValueKey('hover-card-$index'),
-          title: values[0],
-          lines: [
-            LibraryLikeInfoLineData(
-              'Voice',
-              values[1],
-              icon: Icons.record_voice_over_rounded,
-            ),
-            LibraryLikeInfoLineData(
-              'Tags',
-              values[2],
-              icon: Icons.local_offer_rounded,
-            ),
-          ],
-          coverBuilder: (width) => SizedBox(
-            key: ValueKey('hover-cover-$index'),
-            width: width,
-            height: 90,
-            child: const ColoredBox(color: Colors.blue),
+  for (final singleAudio in [false, true]) {
+    testWidgets(
+      '${singleAudio ? 'audio' : 'work'} card hovers on Windows without manual text scrolling',
+      (tester) async {
+        const title =
+            'A long title that extends far beyond the visible card width';
+        const voice =
+            'A voice actor display name that is far wider than the row';
+        const lines = [
+          LibraryLikeInfoLineData(
+            'Voice',
+            voice,
+            icon: Icons.record_voice_over_rounded,
           ),
-        ),
-      );
-      await tester.pumpWidget(_buildApp(Row(children: [card(0), card(1)])));
-      await tester.pump();
-      final first = find.byKey(const ValueKey('hover-card-0'));
-      final second = find.byKey(const ValueKey('hover-card-1'));
-      for (final marquee in tester.widgetList<MarqueeText>(
-        find.descendant(of: first, matching: find.byType(MarqueeText)),
-      )) {
-        expect(marquee.pauseDuration, const Duration(seconds: 1));
-        expect(marquee.scrollSpeed, 30);
-      }
-      await _pumpMarqueeFrames(tester, 4000);
-      for (final value in values) {
-        expect(_cardTextPosition(tester, first, value).pixels, 0);
-        expect(_cardTextPosition(tester, second, value).pixels, 0);
-      }
-      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await mouse.addPointer(location: const Offset(700, 500));
-      await mouse.moveTo(
-        tester.getCenter(find.byKey(const ValueKey('hover-cover-0'))),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 16));
-      await tester.pump(const Duration(milliseconds: 16));
-      for (final value in values) {
-        expect(_cardTextPosition(tester, first, value).pixels, greaterThan(0));
-        expect(_cardTextPosition(tester, second, value).pixels, 0);
-      }
-      await _pumpMarqueeFrames(tester, 2300);
-      for (final value in values) {
-        expect(_cardTextPosition(tester, first, value).pixels, greaterThan(0));
-        expect(_cardTextPosition(tester, second, value).pixels, 0);
-      }
-      final beforeMovingInside = _cardTextPosition(
-        tester,
-        first,
-        values[0],
-      ).pixels;
-      await mouse.moveTo(
-        tester.getCenter(
-          find.descendant(
-            of: first,
-            matching: find.byWidgetPredicate(
-              (widget) =>
-                  widget is LibraryLikeScrollableText &&
-                  widget.text == values[0],
-            ),
-          ),
-        ),
-      );
-      await _pumpMarqueeFrames(tester, 500);
-      expect(
-        _cardTextPosition(tester, first, values[0]).pixels,
-        greaterThan(beforeMovingInside),
-      );
-      await mouse.moveTo(
-        tester.getCenter(find.byKey(const ValueKey('hover-cover-1'))),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 16));
-      await tester.pump(const Duration(milliseconds: 16));
-      for (final value in values) {
-        expect(_cardTextPosition(tester, first, value).pixels, 0);
-        expect(_cardTextPosition(tester, second, value).pixels, greaterThan(0));
-      }
-      await mouse.moveTo(const Offset(700, 500));
-      await tester.pump();
-      await _pumpMarqueeFrames(tester, 3000);
-      for (final value in values) {
-        expect(_cardTextPosition(tester, second, value).pixels, 0);
-      }
-      await mouse.removePointer();
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(const Duration(seconds: 2));
-      expect(tester.takeException(), isNull);
-      expect(tester.binding.transientCallbackCount, 0);
-    },
-    variant: const TargetPlatformVariant({TargetPlatform.windows}),
-  );
-
-  testWidgets(
-    'Windows audio card hover starts title and metadata then exit resets both',
-    (tester) async {
-      const title =
-          'A single audio title that is far wider than its visible row';
-      const voice = 'A voice actor display name that is far wider than the row';
-      await tester.pumpWidget(
-        _buildApp(
-          const SizedBox(
-            width: 220,
-            child: LibraryLikeSingleAudioCardContent(
-              title: title,
-              lines: [
-                LibraryLikeInfoLineData(
-                  'Voice',
-                  voice,
-                  icon: Icons.record_voice_over_rounded,
+        ];
+        final ticking = ValueNotifier(true);
+        addTearDown(ticking.dispose);
+        await tester.pumpWidget(
+          _buildApp(
+            ValueListenableBuilder<bool>(
+              valueListenable: ticking,
+              builder: (context, enabled, child) =>
+                  TickerMode(enabled: enabled, child: child!),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: 260,
+                  child: singleAudio
+                      ? const LibraryLikeSingleAudioCardContent(
+                          title: title,
+                          lines: lines,
+                        )
+                      : LibraryLikeWorkCardContent(
+                          title: title,
+                          lines: lines,
+                          coverBuilder: (width) =>
+                              SizedBox(width: width, height: 90),
+                        ),
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      );
-      await tester.pump();
-      final card = find.byType(LibraryLikeSingleAudioCardContent);
-      await _pumpMarqueeFrames(tester, 3000);
-      expect(_cardTextPosition(tester, card, title).pixels, 0);
-      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await mouse.addPointer(location: const Offset(700, 500));
-      await mouse.moveTo(tester.getCenter(card));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 16));
-      await tester.pump(const Duration(milliseconds: 16));
-      expect(_cardTextPosition(tester, card, title).pixels, greaterThan(0));
-      expect(_cardTextPosition(tester, card, voice).pixels, greaterThan(0));
-      await mouse.moveTo(const Offset(700, 500));
-      await tester.pump();
-      expect(_cardTextPosition(tester, card, title).pixels, 0);
-      expect(_cardTextPosition(tester, card, voice).pixels, 0);
-      await mouse.removePointer();
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-    variant: const TargetPlatformVariant({TargetPlatform.windows}),
-  );
+        );
+        await tester.pumpAndSettle();
+        final card = find.byType(
+          singleAudio
+              ? LibraryLikeSingleAudioCardContent
+              : LibraryLikeWorkCardContent,
+        );
+        final before = tester.getTopLeft(find.text(title));
+        expect(find.byType(Scrollable), findsNothing);
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: const Offset(700, 500));
+        await mouse.moveTo(tester.getTopLeft(card) + const Offset(10, 10));
+        await tester.pump();
+        await _pumpMarqueeFrames(tester, 500);
+        if (defaultTargetPlatform == TargetPlatform.windows) {
+          final positions = tester
+              .stateList<ScrollableState>(find.byType(Scrollable))
+              .map((state) => state.position)
+              .toList();
+          expect(positions.length, 2);
+          for (final position in positions) {
+            expect(position.pixels, greaterThan(0));
+          }
+          // Freeze animation to measure input independently of ticker progress.
+          ticking.value = false;
+          await tester.pump();
+          await tester.pump();
+          final frozen = tester
+              .stateList<ScrollableState>(find.byType(Scrollable))
+              .map((state) => state.position)
+              .toList();
+          expect(frozen.length, 2);
+          final offsets = frozen.map((position) => position.pixels).toList();
+          final line = find.byType(LibraryLikeCardText).first;
+          await tester.dragFrom(tester.getCenter(line), const Offset(-70, 0));
+          await tester.sendEventToBinding(
+            PointerScrollEvent(
+              position: tester.getCenter(line),
+              scrollDelta: const Offset(0, 60),
+            ),
+          );
+          await tester.pump();
+          expect(frozen.map((position) => position.pixels).toList(), offsets);
+        } else {
+          await tester.drag(find.text(title), const Offset(-70, 0));
+          await tester.pumpAndSettle();
+          expect(tester.getTopLeft(find.text(title)), before);
+          expect(find.byType(Scrollable), findsNothing);
+        }
+        await mouse.moveTo(const Offset(700, 500));
+        await tester.pumpAndSettle();
+        expect(find.byType(Scrollable), findsNothing);
+        expect(find.byType(MarqueeText), findsNothing);
+        for (final text in [title, voice]) {
+          final paragraph = tester.renderObject<RenderParagraph>(
+            find.descendant(
+              of: find.text(text),
+              matching: find.byType(RichText),
+            ),
+          );
+          expect(paragraph.didExceedMaxLines, isTrue);
+          expect(paragraph.overflow, TextOverflow.ellipsis);
+        }
+        await mouse.removePointer();
+        expect(tester.takeException(), isNull);
+        expect(tester.binding.transientCallbackCount, 0);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   testWidgets(
     'Windows marquee moves forward at 30px per second then pauses and jumps back',
@@ -1192,7 +1139,7 @@ void main() {
   });
 
   testWidgets(
-    'card text stays idle until hover and supports dragging on both platforms',
+    'card title and metadata only show the available range on both platforms',
     (tester) async {
       const title =
           'A very long work title\nthat extends far beyond the cover card';
@@ -1237,98 +1184,30 @@ void main() {
       await tester.pump();
       for (final value in [title, voice, circle, tags]) {
         final line = find.byWidgetPredicate(
-          (widget) =>
-              widget is LibraryLikeScrollableText && widget.text == value,
+          (widget) => widget is LibraryLikeCardText && widget.text == value,
         );
-        final view = find.descendant(
-          of: line,
-          matching: find.byType(SingleChildScrollView),
+        expect(
+          find.descendant(of: line, matching: find.byType(Scrollable)),
+          findsNothing,
         );
-        final scrollable = tester.state<ScrollableState>(
-          find.descendant(of: view, matching: find.byType(Scrollable)),
-        );
-        expect(scrollable.position.maxScrollExtent, greaterThan(0));
-        expect(scrollable.position.pixels, 0);
-        final mouse = defaultTargetPlatform == TargetPlatform.windows
-            ? await tester.createGesture(kind: PointerDeviceKind.mouse)
-            : null;
-        if (mouse != null) {
-          final start = tester.getCenter(view) + const Offset(40, 0);
-          await mouse.addPointer(location: start);
-          await tester.pump();
-          await mouse.down(start);
-          await mouse.moveBy(const Offset(-70, 0));
-          await mouse.up();
-        } else {
-          await tester.drag(view, const Offset(-70, 0));
-        }
+        final before = tester.getTopLeft(line);
+        await tester.drag(line, const Offset(-70, 0));
         await tester.pumpAndSettle();
-        final forwardOffset = scrollable.position.pixels;
-        expect(forwardOffset, greaterThan(0));
-        if (mouse != null) {
-          final start = tester.getCenter(view) - const Offset(40, 0);
-          await mouse.moveTo(start);
-          await mouse.down(start);
-          await mouse.moveBy(const Offset(70, 0));
-          await mouse.up();
-        } else {
-          await tester.drag(view, const Offset(70, 0));
-        }
-        await tester.pumpAndSettle();
-        expect(scrollable.position.pixels, lessThan(forwardOffset));
-        if (mouse != null) {
-          await mouse.removePointer();
-          await tester.pump();
-        }
+        expect(tester.getTopLeft(line), before);
         final text = tester.widget<Text>(
           find.text(value.replaceAll('\n', ' ')),
         );
         expect(text.maxLines, 1);
         expect(text.softWrap, isFalse);
-        expect(text.overflow, TextOverflow.visible);
+        expect(text.overflow, TextOverflow.ellipsis);
       }
-      expect(
-        find.byType(MarqueeText),
-        defaultTargetPlatform == TargetPlatform.windows
-            ? findsNWidgets(4)
-            : findsNothing,
-      );
+      expect(find.byType(MarqueeText), findsNothing);
       expect(tester.takeException(), isNull);
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,
       TargetPlatform.windows,
     }),
-  );
-
-  testWidgets(
-    'Windows card text accepts mouse wheel scrolling',
-    (tester) async {
-      const title =
-          'A very long work title that extends far beyond the cover card';
-      await tester.pumpWidget(
-        _buildApp(
-          const SizedBox(
-            width: 120,
-            child: LibraryLikeScrollableText(
-              text: title,
-              style: TextStyle(fontSize: 14),
-            ),
-          ),
-        ),
-      );
-      final view = find.byType(SingleChildScrollView);
-      final scrollable = tester.state<ScrollableState>(find.byType(Scrollable));
-      await tester.sendEventToBinding(
-        PointerScrollEvent(
-          position: tester.getCenter(view),
-          scrollDelta: const Offset(0, 60),
-        ),
-      );
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(scrollable.position.pixels, greaterThan(0));
-    },
-    variant: const TargetPlatformVariant({TargetPlatform.windows}),
   );
 
   testWidgets('windows marquee resumes after vertical scrolling becomes idle', (

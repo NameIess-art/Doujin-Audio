@@ -853,7 +853,7 @@ void main() {
     expect(find.byType(IconButton), findsNothing);
     final titleText = tester.widget<Text>(find.text(title));
     expect(titleText.maxLines, 1);
-    expect(titleText.overflow, TextOverflow.visible);
+    expect(titleText.overflow, TextOverflow.ellipsis);
     expect(titleText.softWrap, isFalse);
   });
 
@@ -1186,8 +1186,7 @@ void main() {
     expect(tile.right - content.right, AppSpacing.xs);
     final title = tester.getRect(
       find.byWidgetPredicate(
-        (widget) =>
-            widget is LibraryLikeScrollableText && widget.text == 'Work',
+        (widget) => widget is LibraryLikeCardText && widget.text == 'Work',
       ),
     );
     expect(title.top, content.top);
@@ -1251,9 +1250,7 @@ void main() {
     }),
   );
 
-  testWidgets('ASMR-style cards show a single scrollable title', (
-    tester,
-  ) async {
+  testWidgets('ASMR-style cards show a single truncated title', (tester) async {
     const coverKey = ValueKey('asmr-cover');
     const title = '#羊娘めめ 20260326 nico【限定ASMR｜睡眠導入】ゆっくりはむちゅ';
 
@@ -1292,7 +1289,7 @@ void main() {
 
     final titleText = tester.widget<Text>(find.text(title));
     expect(titleText.maxLines, 1);
-    expect(titleText.overflow, TextOverflow.visible);
+    expect(titleText.overflow, TextOverflow.ellipsis);
   });
 
   testWidgets('short tag values do not reserve empty configured rows', (

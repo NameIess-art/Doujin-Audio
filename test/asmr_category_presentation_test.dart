@@ -43,6 +43,118 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
+      'ASMR route transitions retain cards while data theme and width stay reactive on $platform',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(450, 650);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final controller = _PresentationController(createTestAsmrServices())
+          ..workCount = 30;
+        final fixture = AppRuntimeWidgetTestFixture();
+        final dark = ValueNotifier(false);
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        addTearDown(dark.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            ValueListenableBuilder<bool>(
+              valueListenable: dark,
+              builder: (context, value, child) => Theme(
+                data: Theme.of(context).copyWith(
+                  brightness: value ? Brightness.dark : Brightness.light,
+                  colorScheme: value
+                      ? ThemeData.dark().colorScheme
+                      : ThemeData.light().colorScheme,
+                ),
+                child: child!,
+              ),
+              child: const AsmrTab(),
+            ),
+            navigatorObservers: [UiInteractionNavigatorObserver()],
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
+        final cards = find.byType(LibraryLikeMetadataWorkCardContent);
+        expect(cards, findsWidgets);
+        final width = tester.getSize(cards.first).width;
+        var cardBuilds = 0;
+        final previous = debugOnRebuildDirtyWidget;
+        debugOnRebuildDirtyWidget = (element, builtOnce) {
+          previous?.call(element, builtOnce);
+          if (element.widget is LibraryLikeMetadataWorkCardContent) cardBuilds++;
+        };
+        addTearDown(() => debugOnRebuildDirtyWidget = previous);
+        for (var round = 0; round < 2; round++) {
+          final context = tester.element(find.byType(AsmrTab));
+          final navigator = Navigator.of(context);
+          unawaited(
+            navigator.push<void>(
+              buildAppPageRoute(
+                context: context,
+                child: const Scaffold(body: Text('Cover ASMR')),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          navigator.pop();
+          await tester.pumpAndSettle();
+        }
+        expect(cardBuilds, 0);
+
+        final context = tester.element(find.byType(AsmrTab));
+        final navigator = Navigator.of(context);
+        unawaited(
+          navigator.push<void>(
+            buildAppPageRoute(
+              context: context,
+              child: const Scaffold(body: Text('Cover changed ASMR')),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        controller.publish('Updated while covered');
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Updated while covered', skipOffstage: false),
+          findsNothing,
+        );
+        navigator.pop();
+        await pumpUntilFound(tester, find.text('Updated while covered'));
+        await tester.pumpAndSettle();
+
+        dark.value = true;
+        await tester.pumpAndSettle();
+        expect(
+          Theme.of(tester.element(cards.first)).brightness,
+          Brightness.dark,
+        );
+        expect(
+          tester
+              .widget<SwipeRevealCard>(find.byType(SwipeRevealCard).first)
+              .closedColor,
+          ThemeData.dark().colorScheme.surface,
+        );
+        tester.view.physicalSize = const Size(1280, 650);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(cards.first).width, isNot(width));
+        controller.publish('Updated work');
+        await pumpUntilFound(tester, find.text('Updated work'));
+        expect(find.text('Published work'), findsNothing);
+        expect(cardBuilds, greaterThan(0));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
       'ASMR cached category opens in its preparation frame on $platform',
       (tester) async {
         final controller = _PresentationController(createTestAsmrServices());

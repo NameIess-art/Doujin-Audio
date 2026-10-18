@@ -197,6 +197,8 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   int _presentedProjectionVersion = -1;
   bool _uniformRoots = true;
   bool _tickerModeEnabled = true;
+  ValueListenable<TickerModeData>? _tickerModeNotifier;
+  ModalRoute<dynamic>? _route;
   Object? _projectionError;
   VoidCallback? _pendingProjectionCommit;
   late final String _projectionCommitKey =
@@ -236,22 +238,34 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    final notifier = TickerMode.getValuesNotifier(context);
+    if (!identical(notifier, _tickerModeNotifier)) {
+      _tickerModeNotifier?.removeListener(_handleActivityChanged);
+      _tickerModeNotifier = notifier;
+      notifier.addListener(_handleActivityChanged);
+    }
+    _handleActivityChanged();
+  }
+
+  void _handleActivityChanged() {
+    _tickerModeEnabled = _tickerModeNotifier?.value.enabled ?? true;
     _scheduleFolderCommit();
     _scheduleProjectionCommit();
+    _prepareVisibleItems();
     if (_tickerModeEnabled &&
         _presentedProjectionVersion == _visibleItemsVersion) {
       for (final entry in _cardExpansionMotions.entries) {
         _scheduleExpansionEnd(entry.key, entry.value);
       }
     }
-    if (TickerMode.valuesOf(context).enabled && _removalMotionActive) {
+    if (_tickerModeEnabled && _removalMotionActive) {
       _scheduleRemovalMotionEnd();
     }
   }
 
   @override
   void dispose() {
+    _tickerModeNotifier?.removeListener(_handleActivityChanged);
     UiInteractionCoordinator.instance.cancelCommit(_projectionCommitKey);
     UiInteractionCoordinator.instance.cancelCommit(_folderCommitKey);
     _pendingProjectionCommit = null;
@@ -383,7 +397,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         revision: revision,
         animate:
             _tickerModeEnabled &&
-            ModalRoute.isCurrentOf(context) != false &&
+            _route?.isCurrent != false &&
             !MediaQuery.disableAnimationsOf(context),
       );
       _scheduleFolderCommit();
@@ -463,7 +477,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
     if (folder == null) return;
     if (folder.children.isNotEmpty &&
         _expandedCardPaths.contains(normalizedPath) &&
-        ModalRoute.isCurrentOf(context) != false &&
+        _route?.isCurrent != false &&
         !MediaQuery.disableAnimationsOf(context) &&
         widget.tree.whereType<FolderNode>().any(
           (root) =>
@@ -920,7 +934,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         );
       },
     );
-    return errorBanner == null
+    final content = errorBanner == null
         ? list
         : Column(
             children: [
@@ -928,5 +942,11 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
               Expanded(child: list),
             ],
           );
+    return Builder(
+      builder: (context) {
+        _route = ModalRoute.of(context);
+        return content;
+      },
+    );
   }
 }

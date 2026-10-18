@@ -68,11 +68,15 @@ class _CountingTextService extends WorkTextService {
 class _PreparedTextService extends WorkTextService {
   _PreparedTextService(this.document);
   final PreparedWorkText document;
+  int reads = 0;
   @override
   Future<PreparedWorkText> readPreparedDocument(
     WorkTextFile file, {
     WorkTextEncoding? encodingOverride,
-  }) async => document;
+  }) async {
+    reads++;
+    return document;
+  }
 }
 
 void main() {
@@ -92,6 +96,90 @@ void main() {
     name: 'readme.txt',
     relativePath: 'readme.txt',
     path: '/works/RJ123/readme.txt',
+  );
+
+  testWidgets(
+    'covering loaded text retains blocks and accepts real updates',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      final service = _PreparedTextService(
+        PreparedWorkText(
+          encoding: WorkTextEncoding.utf8,
+          textBlocks: const ['Loaded text'],
+          markdownNodes: const [],
+        ),
+      );
+      addTearDown(service.dispose);
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.resetForTest();
+      addTearDown(interaction.resetForTest);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            workTextServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => Navigator.of(context).push<void>(
+                  buildAppPageRoute<void>(
+                    context: context,
+                    child: const WorkTextViewerPage(files: [file1, file2]),
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      final navigator = Navigator.of(
+        tester.element(find.byType(WorkTextViewerPage)),
+      );
+      final blocks = tester.widget<SliverList>(find.byType(SliverList));
+      for (var round = 0; round < 2; round++) {
+        unawaited(
+          navigator.push<void>(
+            buildAppPageRoute<void>(
+              context: navigator.context,
+              child: const Scaffold(body: Text('cover')),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget(find.byType(SliverList, skipOffstage: false)),
+          same(blocks),
+        );
+        navigator.pop();
+        await tester.pumpAndSettle();
+        expect(tester.widget(find.byType(SliverList)), same(blocks));
+      }
+      expect(service.reads, 1);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(500, 800));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byType(WorkTextViewerPage)),
+        const Size(500, 800),
+      );
+      await tester.tap(find.byTooltip(language.tr('next_text_file')));
+      await tester.pumpAndSettle();
+      expect(service.reads, 2);
+      expect(find.text('2/2'), findsOneWidget);
+      expect(find.text(file2.displayName), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {

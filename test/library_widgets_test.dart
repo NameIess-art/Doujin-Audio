@@ -165,6 +165,128 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
+      'library transitions retain cards while data theme and width stay reactive on $platform',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(450, 650);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: _NoCoverArtworkCacheService(),
+        );
+        final active = ValueNotifier(0);
+        final dark = ValueNotifier(false);
+        addTearDown(fixture.dispose);
+        addTearDown(active.dispose);
+        addTearDown(dark.dispose);
+        fixture.library.addTracks([
+          for (var i = 0; i < 30; i++)
+            testMusicTrack(
+              name: 'Retained track $i',
+              path: '/retained/$i.mp3',
+              groupKey: '/retained/$i.mp3',
+              groupTitle: '',
+              isSingle: true,
+            ),
+        ], persist: false);
+        fixture.library.syncPresentationState(isInitialized: true);
+        await tester.pumpWidget(
+          fixture.build(
+            ValueListenableBuilder<bool>(
+              valueListenable: dark,
+              builder: (context, value, child) => Theme(
+                data: Theme.of(context).copyWith(
+                  brightness: value ? Brightness.dark : Brightness.light,
+                  colorScheme: value
+                      ? ThemeData.dark().colorScheme
+                      : ThemeData.light().colorScheme,
+                ),
+                child: child!,
+              ),
+              child: AppFadeThroughIndexedStack.lazy(
+                indexListenable: active,
+                separateHeader: true,
+                itemCount: 2,
+                itemBuilder: (_, i) => i == 0
+                    ? LibraryTab(tabIndex: 0, activeTabIndexListenable: active)
+                    : const SizedBox.shrink(),
+              ),
+            ),
+            navigatorObservers: [UiInteractionNavigatorObserver()],
+          ),
+        );
+        await pumpUntilLibraryTreeReady(tester, fixture.library);
+        await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+        await tester.pumpAndSettle();
+        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+        await tester.pumpAndSettle();
+        final cards = find.byType(LibraryTreeItem);
+        expect(cards, findsWidgets);
+        final width = tester.getSize(cards.first).width;
+        var cardBuilds = 0;
+        final previous = debugOnRebuildDirtyWidget;
+        debugOnRebuildDirtyWidget = (element, builtOnce) {
+          previous?.call(element, builtOnce);
+          if (element.widget is LibraryTreeItem) cardBuilds++;
+        };
+        addTearDown(() => debugOnRebuildDirtyWidget = previous);
+        for (var round = 0; round < 2; round++) {
+          active.value = 1;
+          await tester.pumpAndSettle();
+          active.value = 0;
+          await tester.pumpAndSettle();
+          final context = tester.element(find.byType(LibraryTab));
+          final navigator = Navigator.of(context);
+          unawaited(
+            navigator.push<void>(
+              buildAppPageRoute(
+                context: context,
+                child: const Scaffold(body: Text('Cover library')),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          navigator.pop();
+          await tester.pumpAndSettle();
+        }
+        expect(cardBuilds, 0);
+
+        dark.value = true;
+        await tester.pumpAndSettle();
+        expect(
+          Theme.of(tester.element(cards.first)).brightness,
+          Brightness.dark,
+        );
+        expect(
+          tester
+              .widget<SwipeRevealCard>(find.byType(SwipeRevealCard).first)
+              .closedColor,
+          ThemeData.dark().colorScheme.surface,
+        );
+        tester.view.physicalSize = const Size(1280, 650);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(cards.first).width, isNot(width));
+        fixture.library.addTracks([
+          testMusicTrack(
+            name: '000 Newly published track',
+            path: '/retained/new.mp3',
+            groupKey: '/retained/new.mp3',
+            groupTitle: '',
+            isSingle: true,
+          ),
+        ], persist: false);
+        await pumpUntilFound(
+          tester,
+          find.text('000 Newly published track', findRichText: true),
+        );
+        expect(cardBuilds, greaterThan(0));
+        expect(tester.takeException(), isNull);
+        await finishLibraryTest(tester, fixture);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
       'library search opens cached results without a placeholder frame on $platform',
       (tester) async {
         SharedPreferences.setMockInitialValues({});
@@ -4058,6 +4180,88 @@ void main() {
       expect(tester.widget<FadeTransition>(contentFade).opacity.value, 1);
       expect(find.byType(CircularProgressIndicator), findsNothing);
       expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'library edit retains rows across coverage and updates live inputs',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      const root = '/retained-edit';
+      final service = _QueuedEntryEditorService([
+        Future.value(
+          LibraryEntryDiskSnapshot(
+            audioFilePaths: const ['$root/First.mp3', '$root/Second.mp3'],
+            scannedFolderPaths: const {},
+            authoritative: true,
+          ),
+        ),
+      ]);
+      await tester.pumpWidget(
+        fixture.build(const Scaffold()),
+      );
+      final navigator = Navigator.of(
+        tester.element(find.byType(Scaffold).first),
+      );
+      unawaited(
+        navigator.push(
+          buildAppPageRoute<void>(
+            context: navigator.context,
+            child: LibraryEditPage(
+              libraryPath: root,
+              entryEditorService: service,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      var rowBuilds = 0;
+      final previousCallback = debugOnRebuildDirtyWidget;
+      debugOnRebuildDirtyWidget = (element, builtOnce) {
+        previousCallback?.call(element, builtOnce);
+        if (element.widget is FileTreeRow) rowBuilds++;
+      };
+      addTearDown(() => debugOnRebuildDirtyWidget = previousCallback);
+      for (var visit = 0; visit < 2; visit++) {
+        unawaited(
+          navigator.push(
+            buildAppPageRoute<void>(
+              context: navigator.context,
+              child: const Scaffold(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        navigator.pop();
+        await tester.pumpAndSettle();
+        expect(rowBuilds, 0);
+      }
+      expect(service.responses, isEmpty);
+      await tester.enterText(find.byType(TextField), 'First');
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pumpAndSettle();
+      expect(tester.widget<FileTreeRow>(find.byType(FileTreeRow)).title, 'First');
+      expect(find.text('Second', findRichText: true), findsNothing);
+      expect(rowBuilds, greaterThan(0));
+
+      tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+      await tester.pumpAndSettle();
+      final row = find.byType(FileTreeRow);
+      expect(Theme.of(tester.element(row)).brightness, Brightness.dark);
+      final originalWidth = tester.getSize(row).width;
+      await tester.binding.setSurfaceSize(const Size(600, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(row).width, isNot(originalWidth));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      UiInteractionCoordinator.instance.resetForTest();
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,

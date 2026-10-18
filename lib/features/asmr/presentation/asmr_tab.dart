@@ -331,6 +331,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       _scrollControllers[_selectedCategory]!;
 
   late bool _wasSelected;
+  ModalRoute<dynamic>? _route;
 
   bool get _isSelected =>
       (widget.activeTabIndexListenable == null ||
@@ -338,11 +339,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       (widget.activeSectionListenable == null ||
           widget.activeSectionListenable!.value == widget.sectionIndex);
 
-  bool get _isActive {
-    final route = ModalRoute.of(context);
-    final isRouteCurrent = route == null || route.isCurrent;
-    return isRouteCurrent && _isSelected;
-  }
+  bool get _isActive => (_route?.isCurrent ?? true) && _isSelected;
 
   @override
   bool get handlesScrollToTop => _isActive;
@@ -407,6 +404,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final selected = _isSelected;
     if (selected == _wasSelected) return;
     _wasSelected = selected;
+    _handleActivityChanged();
+  }
+
+  void _handleActivityChanged() {
     if (!_isActive) {
       UiInteractionCoordinator.instance.cancelCommit(_categoryLoadCommitKey);
       UiInteractionCoordinator.instance.cancelCommit(_activationCommitKey);
@@ -1124,7 +1125,14 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         ],
       ),
     );
-    return WorkPageTranslationHost(child: page);
+    final content = WorkPageTranslationHost(child: page);
+    return Builder(
+      builder: (context) {
+        _route = ModalRoute.of(context);
+        _handleActivityChanged();
+        return content;
+      },
+    );
   }
 
   void _schedulePageLanguageSync(AppLanguage language) {

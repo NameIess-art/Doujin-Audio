@@ -579,6 +579,126 @@ void main() {
     }),
   );
 
+  for (final prepared in [false, true]) {
+    testWidgets(
+      'deferred body survives tab transition boundaries, prepared=$prepared',
+      (tester) async {
+        final index = ValueNotifier(0);
+        addTearDown(index.dispose);
+        var builds = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AppFadeThroughIndexedStack.lazy(
+              indexListenable: index,
+              itemCount: 2,
+              separateHeader: true,
+              itemBuilder: (_, page) => page == 1
+                  ? const Text('other page')
+                  : Column(
+                      children: [
+                        const AppPageHeaderTransition(child: Text('header')),
+                        Expanded(
+                          child: AppPageContentTransition.deferred(
+                            prepared: prepared,
+                            placeholder: const Text('waiting'),
+                            builder: (_) {
+                              builds++;
+                              return const _StateProbe(label: 'loaded body');
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(builds, 1);
+        final state = tester.state(find.byType(_StateProbe));
+        for (var round = 0; round < 2; round++) {
+          index.value = 1;
+          await tester.pump();
+          expect(builds, 1, reason: 'leave start, round $round');
+          await tester.pumpAndSettle();
+          expect(builds, 1, reason: 'leave end, round $round');
+          index.value = 0;
+          await tester.pump();
+          expect(builds, 1, reason: 'return start, round $round');
+          await tester.pumpAndSettle();
+          expect(builds, 1, reason: 'return end, round $round');
+          expect(tester.state(find.byType(_StateProbe)), same(state));
+        }
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  testWidgets(
+    'deferred body retains inherited, provider and parent input updates',
+    (tester) async {
+      final updates = StreamController<int>.broadcast();
+      addTearDown(updates.close);
+      final valueProvider = StreamProvider<int>((_) => updates.stream);
+      var builds = 0;
+      WidgetBuilder body(int input) => (context) {
+        builds++;
+        final brightness = Theme.of(context).brightness.name;
+        final width = MediaQuery.sizeOf(context).width.toInt();
+        return Consumer(
+          builder: (_, ref, _) => Text(
+            '$brightness width=$width input=$input '
+            'value=${ref.watch(valueProvider).value ?? 0}',
+          ),
+        );
+      };
+
+      final initialBuilder = body(0);
+      Widget host({
+        bool dark = false,
+        double width = 300,
+        WidgetBuilder? builder,
+      }) => ProviderScope(
+        child: MaterialApp(
+          theme: dark ? ThemeData.dark() : ThemeData.light(),
+          home: MediaQuery(
+            data: MediaQueryData(size: Size(width, 600)),
+            child: AppPageContentTransition.deferred(
+              placeholder: const Text('waiting'),
+              builder: builder ?? initialBuilder,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(host());
+      await tester.pumpAndSettle();
+      expect(find.text('light width=300 input=0 value=0'), findsOneWidget);
+      await tester.pumpWidget(host(dark: true));
+      await tester.pumpAndSettle();
+      expect(find.text('dark width=300 input=0 value=0'), findsOneWidget);
+      await tester.pumpWidget(host(dark: true, width: 420));
+      await tester.pumpAndSettle();
+      expect(find.text('dark width=420 input=0 value=0'), findsOneWidget);
+      final inheritedBuilds = builds;
+      updates.add(7);
+      await tester.pumpAndSettle();
+      expect(find.text('dark width=420 input=0 value=7'), findsOneWidget);
+      expect(builds, inheritedBuilds);
+      await tester.pumpWidget(host(dark: true, width: 420, builder: body(1)));
+      await tester.pumpAndSettle();
+      expect(find.text('dark width=420 input=1 value=7'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final dispose in [false, true]) {
     testWidgets(
       'deferred fade releases visual protection when leaving, dispose=$dispose',

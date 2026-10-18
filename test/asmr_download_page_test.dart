@@ -25,6 +25,72 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
+      'ready download keeps rows across route motion and updates live inputs on $platform',
+      (tester) async {
+        await _openReadyDownload(tester);
+        final navigator = Navigator.of(
+          tester.element(find.byType(AsmrDownloadPage)),
+        );
+        var rowBuilds = 0;
+        final previousCallback = debugOnRebuildDirtyWidget;
+        debugOnRebuildDirtyWidget = (element, builtOnce) {
+          previousCallback?.call(element, builtOnce);
+          if (element.widget is AsmrDownloadSelectionList ||
+              element.widget is AsmrDownloadNodeTile) {
+            rowBuilds++;
+          }
+        };
+        addTearDown(() => debugOnRebuildDirtyWidget = previousCallback);
+        for (var visit = 0; visit < 2; visit++) {
+          unawaited(
+            navigator.push(
+              buildAppPageRoute<void>(
+                context: navigator.context,
+                child: const Scaffold(),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          navigator.pop();
+          await tester.pumpAndSettle();
+          expect(rowBuilds, 0);
+        }
+        final file = find.byType(AsmrDownloadNodeTile).last;
+        final tile = tester.widget<AsmrDownloadNodeTile>(file);
+        expect(
+          tile.selection.stateForPath(tile.node.track.relativePath),
+          isTrue,
+        );
+        await tester.tap(find.text('Track.mp3'));
+        await tester.pumpAndSettle();
+        expect(rowBuilds, greaterThan(0));
+        expect(
+          tile.selection.stateForPath(tile.node.track.relativePath),
+          isFalse,
+        );
+
+        tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+        addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+        await tester.pumpAndSettle();
+        expect(Theme.of(tester.element(file)).brightness, Brightness.dark);
+        final originalWidth = tester.getSize(file).width;
+        await tester.binding.setSurfaceSize(const Size(600, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpAndSettle();
+        expect(tester.getSize(file).width, isNot(originalWidth));
+
+        rowBuilds = 0;
+        navigator.pop();
+        await tester.pumpAndSettle();
+        expect(rowBuilds, 0);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        interaction.resetForTest();
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
       'download responds immediately and checks the destination once on $platform',
       (tester) async {
         final manager = await _openReadyDownload(tester);

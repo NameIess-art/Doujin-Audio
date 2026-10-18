@@ -135,7 +135,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       widget.isActive() &&
       (widget.isPageActive?.call() ?? true) &&
       (_tickerModeNotifier?.value.enabled ?? true) &&
-      ModalRoute.of(context)?.isCurrent != false;
+      _route?.isCurrent != false;
+
+  ModalRoute<dynamic>? _route;
 
   @override
   void didChangeDependencies() {
@@ -630,7 +632,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         ),
       ),
     );
-    return Theme(
+    final page = Theme(
       data: theme.copyWith(
         scrollbarTheme: theme.scrollbarTheme.copyWith(
           thumbColor: WidgetStateProperty.resolveWith((states) {
@@ -651,6 +653,13 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               anchorIds: _anchorIds,
               child: content,
             ),
+    );
+    return Builder(
+      builder: (context) {
+        _route = ModalRoute.of(context);
+        _handleActivityChanged();
+        return page;
+      },
     );
   }
 

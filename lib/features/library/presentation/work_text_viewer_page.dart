@@ -36,6 +36,7 @@ class WorkTextViewerPage extends ConsumerStatefulWidget {
 class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   late int _currentIndex;
   final ScrollController _scrollController = ScrollController();
+  ModalRoute<dynamic>? _route;
 
   bool _loading = true;
   PreparedWorkText? _document;
@@ -113,7 +114,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         if (!mounted ||
             gen != _loadGeneration ||
             !_loadPending ||
-            ModalRoute.of(context)?.isCurrent == false) {
+            _route?.isCurrent == false) {
           return;
         }
         _loadPending = false;
@@ -261,7 +262,18 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         ),
       ),
     );
-    return WorkPageTranslationHost(key: ValueKey(_loadGeneration), child: page);
+    final content = WorkPageTranslationHost(
+      key: ValueKey(_loadGeneration),
+      child: page,
+    );
+    return Builder(
+      builder: (routeContext) {
+        // Resuming a pending read must not rebuild an already loaded document.
+        _route = ModalRoute.of(routeContext);
+        if (_loadPending) _scheduleFileRead();
+        return content;
+      },
+    );
   }
 
   Widget _buildContent(

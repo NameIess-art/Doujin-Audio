@@ -73,6 +73,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   double get defaultHeaderHeight => AppPageHeaderMetrics.expandedToolbarHeight;
 
   late bool _wasSelected;
+  ModalRoute<dynamic>? _route;
 
   bool get _isSelected =>
       (widget.activeTabIndexListenable == null ||
@@ -80,11 +81,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       (widget.activeSectionListenable == null ||
           widget.activeSectionListenable!.value == widget.sectionIndex);
 
-  bool get _isActive {
-    final route = ModalRoute.of(context);
-    final isRouteCurrent = route == null || route.isCurrent;
-    return isRouteCurrent && _isSelected;
-  }
+  bool get _isActive => (_route?.isCurrent ?? true) && _isSelected;
 
   @override
   bool get handlesScrollToTop => _isActive;
@@ -94,6 +91,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final selected = _isSelected;
     if (selected == _wasSelected) return;
     _wasSelected = selected;
+    _handleActivityChanged();
+  }
+
+  void _handleActivityChanged() {
     if (_isActive) {
       final listState = ref.read(libraryListUiProvider);
       if (listState.isInitialized) {
@@ -976,12 +977,19 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         ),
       ),
     );
-    return WorkPageTranslationHost(
+    final content = WorkPageTranslationHost(
       child: BrowsePageScroll(
         pageKey: 'library',
         controller: _scrollController,
         child: page,
       ),
+    );
+    return Builder(
+      builder: (context) {
+        _route = ModalRoute.of(context);
+        _handleActivityChanged();
+        return content;
+      },
     );
   }
 

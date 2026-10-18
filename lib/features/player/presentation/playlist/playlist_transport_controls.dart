@@ -144,6 +144,7 @@ class _PlaybackControlPanel extends StatelessWidget {
           paths: paths,
           showPauseIcon: showPauseIcon,
           isLoading: isLoading,
+          isLandscape: isLandscape,
         ),
         if (isLandscape || !segmentPanelExpanded)
           AnimatedSwitcher(
@@ -186,6 +187,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     required this.paths,
     required this.showPauseIcon,
     required this.isLoading,
+    this.isLandscape = false,
   });
 
   final PlaybackSessionSnapshot session;
@@ -193,6 +195,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
   final AudioPathCoordinator paths;
   final bool showPauseIcon;
   final bool isLoading;
+  final bool isLandscape;
 
   @override
   Widget build(BuildContext context) {
@@ -219,7 +222,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
         enabled && (session.position.inSeconds > 3 || hasPrevious);
     final canNext = enabled && hasNext;
 
-    return SizedBox(
+    final primaryRow = SizedBox(
       height: 92,
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -342,6 +345,20 @@ class _PlaybackPrimaryControls extends StatelessWidget {
         },
       ),
     );
+
+    if (isLandscape) {
+      return ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: _kPlaybackSecondaryControlsWidth,
+        ),
+        child: SizedBox(
+          width: _kPlaybackSecondaryControlsWidth,
+          child: primaryRow,
+        ),
+      );
+    }
+
+    return primaryRow;
   }
 }
 

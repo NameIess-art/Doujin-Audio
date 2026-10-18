@@ -52,6 +52,7 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
   int _diskSnapshotGeneration = 0;
   int _diskSnapshotRevision = 0;
   bool _diskRefreshNeeded = true;
+  ModalRoute<dynamic>? _route;
   late final _diskLoadKey = 'library_edit_load_${identityHashCode(this)}';
   late final _diskResultKey = 'library_edit_result_${identityHashCode(this)}';
   Timer? _searchDebounceTimer;
@@ -77,14 +78,6 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_diskRefreshNeeded && (ModalRoute.of(context)?.isCurrent ?? true)) {
-      _requestDiskSnapshotRefresh();
-    }
-  }
-
-  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _requestDiskSnapshotRefresh();
@@ -94,7 +87,7 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
   void _requestDiskSnapshotRefresh() {
     _diskRefreshNeeded = true;
     void load() {
-      if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+      if (!mounted || _route?.isCurrent == false) return;
       _diskRefreshNeeded = false;
       unawaited(_loadDiskLibrarySnapshot());
     }
@@ -297,7 +290,7 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
     final snapshotError = _diskSnapshotError;
 
     final headerTopInset = MediaQuery.paddingOf(context).top + 98;
-    return SearchHighlightScope(
+    final content = SearchHighlightScope(
       query: _searchQuery,
       child: PageHeaderInset(
         topInset: headerTopInset,
@@ -380,6 +373,16 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
           ],
         ),
       ),
+    );
+    // Covering a route must not rebuild an unchanged editor tree.
+    return Builder(
+      builder: (context) {
+        _route = ModalRoute.of(context);
+        if (_diskRefreshNeeded && _route?.isCurrent != false) {
+          _requestDiskSnapshotRefresh();
+        }
+        return content;
+      },
     );
   }
 

@@ -23,12 +23,11 @@ void main() {
 
   for (final singleAudio in [false, true]) {
     for (final direction in [-1.0, 1.0]) {
-      for (final target in ['blank', 'short', 'start', 'end', 'middle']) {
+      for (final target in ['blank', 'short', 'long']) {
         testWidgets(
           '$target information area drags ${singleAudio ? 'audio' : 'work'} card in direction $direction',
           (tester) async {
-            final longText =
-                target == 'start' || target == 'end' || target == 'middle';
+            final longText = target == 'long';
             final text = longText
                 ? 'A long voice actor name that exceeds the visible row ' * 8
                 : 'Actor';
@@ -77,59 +76,24 @@ void main() {
             );
             await tester.pump();
             final row = find.byWidgetPredicate(
-              (widget) =>
-                  widget is LibraryLikeScrollableText && widget.text == text,
+              (widget) => widget is LibraryLikeCardText && widget.text == text,
             );
             final horizontalScroll = find.descendant(
               of: row,
               matching: find.byType(Scrollable),
             );
-            expect(horizontalScroll, longText ? findsOneWidget : findsNothing);
-            final position = longText
-                ? tester.state<ScrollableState>(horizontalScroll).position
-                : null;
-            if (target == 'end') position!.jumpTo(position.maxScrollExtent);
-            if (target == 'middle') {
-              position!.jumpTo(position.maxScrollExtent / 2);
-            }
-            await tester.pump();
-            final before = position?.pixels;
+            expect(horizontalScroll, findsNothing);
             final rect = tester.getRect(row);
             final start = target == 'blank'
                 ? Offset(rect.right - 24, rect.center.dy)
                 : tester.getCenter(find.text(text));
-            // Long text is wider than the viewport, so start within its visible part.
             final visibleStart = longText ? rect.center : start;
             await tester.dragFrom(visibleStart, Offset(direction * 180, 0));
             await tester.pumpAndSettle();
-            final shouldSwipe =
-                !longText ||
-                (target == 'start' && direction > 0) ||
-                (target == 'end' && direction < 0);
             expect(
               find.byTooltip(direction < 0 ? 'Remove' : 'Pin'),
-              shouldSwipe ? findsOneWidget : findsNothing,
+              findsOneWidget,
             );
-            if (shouldSwipe && position != null) {
-              expect(position.pixels, before);
-            } else if (!shouldSwipe) {
-              expect(
-                position!.pixels,
-                direction < 0 ? greaterThan(before!) : lessThan(before!),
-              );
-            }
-            if (target == 'middle') {
-              final gesture = await tester.startGesture(rect.center);
-              await gesture.moveBy(const Offset(-50, 0));
-              await tester.pump();
-              await gesture.cancel();
-              await tester.pumpAndSettle();
-              final removingGesture = await tester.startGesture(rect.center);
-              await removingGesture.moveBy(const Offset(-50, 0));
-              await tester.pumpWidget(const SizedBox.shrink());
-              await removingGesture.cancel();
-              await tester.pumpAndSettle();
-            }
             expect(tester.takeException(), isNull);
           },
           variant: const TargetPlatformVariant({TargetPlatform.android}),

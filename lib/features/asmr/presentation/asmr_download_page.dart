@@ -3,6 +3,7 @@ import 'asmr_theme.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -58,6 +59,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   bool _starting = false;
   Object? _bootstrapError;
   VoidCallback? _pendingBootstrapCommit;
+  ModalRoute<dynamic>? _route;
+  ValueListenable<TickerModeData>? _tickerMode;
   late final String _bootstrapCommitKey =
       'asmr_download_bootstrap_${identityHashCode(this)}';
 
@@ -70,16 +73,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     });
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _scheduleBootstrapCommit();
-  }
-
   void _scheduleBootstrapCommit() {
     if (_pendingBootstrapCommit == null ||
-        !TickerMode.valuesOf(context).enabled ||
-        ModalRoute.isCurrentOf(context) == false) {
+        _tickerMode?.value.enabled != true ||
+        _route?.isCurrent == false) {
       return;
     }
     UiInteractionCoordinator.instance.scheduleCommit(
@@ -87,8 +84,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
       allowDuringScroll: true,
       commit: () {
         if (!mounted ||
-            !TickerMode.valuesOf(context).enabled ||
-            ModalRoute.isCurrentOf(context) == false) {
+            _tickerMode?.value.enabled != true ||
+            _route?.isCurrent == false) {
           return;
         }
         final commit = _pendingBootstrapCommit;
@@ -226,7 +223,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   }
 
   Future<void> _chooseDestination() async {
-    final route = ModalRoute.of(context);
+    final route = _route;
     final downloadManager = ref.read(asmrDownloadManagerProvider);
     if (downloadManager == null) return;
     final settings = ref.read(settingsRepositoryProvider);
@@ -257,7 +254,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final selection = _selection;
     if (work == null || selection == null) return;
     if (_starting) return;
-    final route = ModalRoute.of(context);
+    final route = _route;
 
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final downloadManager = ref.read(asmrDownloadManagerProvider);
@@ -423,7 +420,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         : defaultHeaderHeight;
     final listTopPadding = effectiveHeaderHeight + 8;
 
-    return Scaffold(
+    final page = Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: PageHeaderInset(
         topInset: listTopPadding,
@@ -643,6 +640,16 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
           ],
         ),
       ),
+    );
+    // Route activity only retries pending commits; it does not change the list.
+    return Builder(
+      builder: (context) {
+        _route = ModalRoute.of(context);
+        _tickerMode = TickerMode.getValuesNotifier(context);
+        TickerMode.valuesOf(context);
+        _scheduleBootstrapCommit();
+        return page;
+      },
     );
   }
 }

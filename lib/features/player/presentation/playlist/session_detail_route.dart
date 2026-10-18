@@ -19,6 +19,7 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
             SessionDetailPage(
               sessionId: sessionId,
               revealBehindNotifier: _revealBehindNotifier,
+              routeAnimation: animation,
             ),
         transitionsBuilder: (_, animation, secondaryAnimation, child) => child,
       ) {

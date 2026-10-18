@@ -10075,6 +10075,39 @@ void main() {
   );
 
   testWidgets(
+    'landscape session detail primary skip buttons stay within secondary controls bounds',
+    (tester) async {
+      await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+        physicalSize: const Size(2400, 1080),
+      );
+
+      final secondaryControlsFinder = find.byKey(
+        const ValueKey('playback_secondary_controls'),
+      );
+      expect(secondaryControlsFinder, findsOneWidget);
+
+      final prevButtonFinder = find.byIcon(Icons.skip_previous_rounded);
+      final nextButtonFinder = find.byIcon(Icons.skip_next_rounded);
+      expect(prevButtonFinder, findsOneWidget);
+      expect(nextButtonFinder, findsOneWidget);
+
+      final secondaryRect = tester.getRect(secondaryControlsFinder);
+      final prevRect = tester.getRect(prevButtonFinder);
+      final nextRect = tester.getRect(nextButtonFinder);
+
+      expect(prevRect.left, greaterThanOrEqualTo(secondaryRect.left));
+      expect(nextRect.right, lessThanOrEqualTo(secondaryRect.right));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'portrait session detail hides secondary controls when feature menu is open',
     (tester) async {
       await _pumpSubtitleDetail(

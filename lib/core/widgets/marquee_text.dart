@@ -76,7 +76,6 @@ class MarqueeText extends StatefulWidget {
     this.scrollSpeed = 30.0,
     this.edgePadding = 8.0,
     this.forceMarquee = false,
-    this.allowManualScroll = false,
     this.child,
   });
 
@@ -86,7 +85,6 @@ class MarqueeText extends StatefulWidget {
   final double scrollSpeed;
   final double edgePadding;
   final bool forceMarquee;
-  final bool allowManualScroll;
   final Widget? child;
 
   @override
@@ -216,10 +214,9 @@ class _MarqueeTextState extends State<MarqueeText>
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        var needsMarquee = widget.forceMarquee || widget.allowManualScroll;
+        var needsMarquee = widget.forceMarquee;
         var displayText = widget.text;
-        if (constraints.hasBoundedWidth &&
-            (!needsMarquee || widget.forceMarquee)) {
+        if (constraints.hasBoundedWidth) {
           final painter = TextPainter(
             text: TextSpan(text: widget.text, style: widget.style),
             textDirection: Directionality.of(context),
@@ -278,9 +275,7 @@ class _MarqueeTextState extends State<MarqueeText>
                       child: SingleChildScrollView(
                         controller: controller,
                         scrollDirection: Axis.horizontal,
-                        physics: widget.allowManualScroll
-                            ? null
-                            : const NeverScrollableScrollPhysics(),
+                        physics: const NeverScrollableScrollPhysics(),
                         padding: EdgeInsets.symmetric(
                           horizontal: widget.edgePadding,
                         ),

@@ -55,11 +55,6 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
       16,
       MediaQuery.paddingOf(context).bottom + 16,
     );
-    final placeholder = OperationSkeletonList(
-      showHeader: false,
-      padding: listPadding,
-    );
-
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: PageHeaderInset(
@@ -75,76 +70,64 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
                 final failed =
                     snapshot.connectionState == ConnectionState.done &&
                     snapshot.hasError;
-                final waiting = recovering && !failed;
-                return AppPageContentTransition.deferred(
-                  isReady: !waiting,
-                  placeholder: placeholder,
-                  builder: (context) {
-                    final Widget content;
-                    if (waiting) {
-                      content = const SizedBox.shrink();
-                    } else if (recovering && failed) {
-                      content = Padding(
-                        padding: listPadding,
-                        child: OperationStatusBanner(
-                          label: i18n.tr('asmr_detail_load_failed'),
-                          error: snapshot.error,
-                          retryTooltip: i18n.tr('retry'),
-                          onRetry: () => setState(_initialize),
-                        ),
+                if (recovering && failed) {
+                  return AppPageContentTransition(
+                    child: Padding(
+                      padding: listPadding,
+                      child: OperationStatusBanner(
+                        label: i18n.tr('asmr_detail_load_failed'),
+                        error: snapshot.error,
+                        retryTooltip: i18n.tr('retry'),
+                        onRetry: () => setState(_initialize),
+                      ),
+                    ),
+                  );
+                }
+                return AppPageContentTransition(
+                  child: Consumer(
+                    builder: (context, ref, _) {
+                      final state = ref
+                          .watch(asmrDownloadTaskIdsProvider)
+                          .value;
+                      final removalState = ref.watch(
+                        undoableRemovalStateProvider,
                       );
-                    } else {
-                      content = Consumer(
-                        builder: (context, ref, _) {
-                          final state = ref
-                              .watch(asmrDownloadTaskIdsProvider)
-                              .value;
-                          final removalState = ref.watch(
-                            undoableRemovalStateProvider,
-                          );
-                          final taskIds =
-                              (state ??
-                                      ref
-                                          .read(asmrDownloadManagerProvider)
-                                          ?.taskIds ??
-                                      const <int>[])
-                                  .where(
-                                    (workId) => !removalState.isHidden(
-                                      _asmrDownloadTaskRemovalKey(workId),
+                      final taskIds =
+                          (state ??
+                                  ref
+                                      .read(asmrDownloadManagerProvider)
+                                      ?.taskIds ??
+                                  const <int>[])
+                              .where(
+                                (workId) => !removalState.isHidden(
+                                  _asmrDownloadTaskRemovalKey(workId),
+                                ),
+                              )
+                              .toList(growable: false);
+                      return taskIds.isEmpty
+                          ? Center(
+                              child: Text(
+                                i18n.tr('asmr_download_no_tasks'),
+                                style: Theme.of(context).textTheme.bodyLarge
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
                                     ),
-                                  )
-                                  .toList(growable: false);
-                          return taskIds.isEmpty
-                              ? Center(
-                                  child: Text(
-                                    i18n.tr('asmr_download_no_tasks'),
-                                    style: Theme.of(context).textTheme.bodyLarge
-                                        ?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                        ),
-                                  ),
-                                )
-                              : ListView.builder(
-                                  padding: listPadding,
-                                  physics: const ClampingScrollPhysics(),
-                                  itemCount: taskIds.length,
-                                  itemBuilder: (context, index) {
-                                    return _DownloadTaskItem(
-                                      workId: taskIds[index],
-                                    );
-                                  },
+                              ),
+                            )
+                          : ListView.builder(
+                              padding: listPadding,
+                              physics: const ClampingScrollPhysics(),
+                              itemCount: taskIds.length,
+                              itemBuilder: (context, index) {
+                                return _DownloadTaskItem(
+                                  workId: taskIds[index],
                                 );
-                        },
-                      );
-                    }
-                    return PlaceholderContentTransition(
-                      showPlaceholder: waiting,
-                      placeholder: placeholder,
-                      content: content,
-                    );
-                  },
+                              },
+                            );
+                    },
+                  ),
                 );
               },
             ),

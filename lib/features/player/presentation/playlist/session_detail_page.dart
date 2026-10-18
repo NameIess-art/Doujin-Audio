@@ -24,10 +24,12 @@ class SessionDetailPage extends ConsumerStatefulWidget {
     super.key,
     required this.sessionId,
     required this.revealBehindNotifier,
+    this.routeAnimation,
   });
 
   final String sessionId;
   final ValueNotifier<bool> revealBehindNotifier;
+  final Animation<double>? routeAnimation;
 
   @override
   ConsumerState<SessionDetailPage> createState() => _SessionDetailPageState();
@@ -118,9 +120,21 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _syncRouteAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant SessionDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.routeAnimation, widget.routeAnimation)) {
+      _syncRouteAnimation();
+    }
+  }
+
+  void _syncRouteAnimation() {
     final animation = MediaQuery.disableAnimationsOf(context)
         ? null
-        : ModalRoute.of(context)?.animation;
+        : widget.routeAnimation;
     if (!identical(animation, _routeAnimation)) {
       _routeAnimation?.removeStatusListener(_handleEnterStatus);
       _routeAnimation = animation;

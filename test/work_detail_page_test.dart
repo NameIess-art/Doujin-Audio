@@ -271,6 +271,139 @@ void main() {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
 
+  for (final remote in [false, true]) {
+    testWidgets(
+      'covering work details retains loaded rows, remote=$remote',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(450, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        SharedPreferences.setMockInitialValues({});
+        final interaction = UiInteractionCoordinator.instance;
+        interaction.resetForTest();
+        addTearDown(interaction.resetForTest);
+        final covers = _ControlledWorkDetailCoverService()
+          ..images.complete([])
+          ..cover.complete(null);
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: covers,
+          asmrMetadataService: _WorkDetailAsmrMetadataService(),
+        );
+        addTearDown(fixture.dispose);
+        const folder = 'C:/works/route-cache';
+        final target = AudioDetailTarget.libraryRootFolder(folder);
+        final tree = List.generate(
+          30,
+          (index) => AsmrTrackFile.fromJson({
+            'type': 'audio',
+            'title': 'Audio $index',
+            'mediaStreamUrl': 'https://example.test/$index.mp3',
+          }),
+        );
+        final controller = _DeferredDetailAsmrController(tree, cached: true);
+        addTearDown(controller.dispose);
+        await tester.runAsync(() async {
+          if (remote) {
+            await WorkDirectoryInput.asmr(tree).load();
+          } else {
+            fixture.library.addWatchedFolder(folder, notify: false);
+            fixture.library.addTracks(
+              List.generate(
+                30,
+                (index) => testMusicTrack(
+                  name: 'Track $index',
+                  path: '$folder/$index.mp3',
+                  groupKey: folder,
+                  groupTitle: 'Work',
+                ),
+              ),
+              persist: false,
+            );
+            await fixture.library.flushPendingPersistence();
+            await fixture.library.loadLibraryFolderTree(folder);
+            await _prewarmDirectory(fixture, folder);
+          }
+        });
+        await tester.pumpWidget(
+          fixture.build(
+            const Text('home'),
+            overrides: [
+              if (remote)
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        final navigator = Navigator.of(tester.element(find.text('home')));
+        unawaited(
+          navigator.push<void>(
+            buildAppPageRoute<void>(
+              context: navigator.context,
+              workDetailTransition: true,
+              child: remote
+                  ? WorkDetailPage.forAsmr(
+                      work: AsmrWork.fromJson(const {'id': 123456, 'title': 'Work'}),
+                    )
+                  : WorkDetailPage.forLocal(
+                      target: target,
+                      initialDetail: AudioDetail.empty(target),
+                    ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await _settleDetail(tester);
+        interaction.finishInteractionsForTest();
+        await tester.pump(interaction.idleDelay + const Duration(seconds: 1));
+        await _settleDetail(tester);
+        // Cached rows precede the independent SQLite and file discoveries.
+        for (var pass = 0; pass < 3; pass++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 100)),
+          );
+          await tester.pump(const Duration(seconds: 1));
+          await _settleDetail(tester);
+        }
+        final rows = tester.widget<SliverList>(find.byType(SliverList));
+        for (var round = 0; round < 2; round++) {
+          unawaited(
+            navigator.push<void>(
+              buildAppPageRoute<void>(
+                context: navigator.context,
+                child: const Scaffold(body: Text('cover')),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            tester.widget(find.byType(SliverList, skipOffstage: false)),
+            same(rows),
+          );
+          navigator.pop();
+          await tester.pumpAndSettle();
+          expect(tester.widget(find.byType(SliverList)), same(rows));
+        }
+        tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+        addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+        await _settleDetail(tester);
+        expect(
+          Theme.of(tester.element(find.byType(WorkDetailPage))).brightness,
+          Brightness.dark,
+        );
+        final themedRows = tester.widget<SliverList>(find.byType(SliverList));
+        await tester.binding.setSurfaceSize(const Size(500, 800));
+        await _settleDetail(tester);
+        expect(tester.widget(find.byType(SliverList)), isNot(same(themedRows)));
+        expect(find.byType(WorkDetailEntryTile), findsWidgets);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await _settleDetail(tester);
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets(
     'work scrolling defers discovered files and reuses row menus',
     (tester) async {

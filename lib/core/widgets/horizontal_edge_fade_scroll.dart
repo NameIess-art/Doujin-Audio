@@ -10,12 +10,10 @@ class HorizontalEdgeFadeScroll extends StatefulWidget {
     super.key,
     required this.builder,
     this.controller,
-    this.deferDragAtEdges = false,
   });
 
   final Widget Function(ScrollController controller) builder;
   final ScrollController? controller;
-  final bool deferDragAtEdges;
 
   @override
   State<HorizontalEdgeFadeScroll> createState() =>
@@ -30,25 +28,6 @@ class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
       (_ownedController ??= ScrollController(keepScrollOffset: false));
   bool _fadeLeft = false;
   bool _fadeRight = false;
-  Drag? _drag;
-  ScrollHoldController? _hold;
-
-  bool _canDrag(double delta) {
-    if (!_controller.hasClients) return false;
-    final position = _controller.position;
-    final scrollDelta = position.axisDirection == AxisDirection.left
-        ? delta
-        : -delta;
-    return scrollDelta > 0
-        ? position.extentAfter > 0
-        : scrollDelta < 0 && position.extentBefore > 0;
-  }
-
-  void _cancelDrag() {
-    _hold?.cancel();
-    _drag?.cancel();
-  }
-
   @override
   void dispose() {
     _ownedController?.dispose();
@@ -73,9 +52,7 @@ class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
   Widget build(BuildContext context) {
     Widget buildContent(ScrollController controller) => ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(
-        dragDevices: widget.deferDragAtEdges
-            ? const <PointerDeviceKind>{}
-            : PointerDeviceKind.values.toSet(),
+        dragDevices: PointerDeviceKind.values.toSet(),
         scrollbars: false,
       ),
       child: NotificationListener<ScrollMetricsNotification>(
@@ -106,45 +83,12 @@ class _HorizontalEdgeFadeScrollState extends State<HorizontalEdgeFadeScroll> {
         ),
       ),
     );
-    final content = defaultTargetPlatform == TargetPlatform.windows
+    return defaultTargetPlatform == TargetPlatform.windows
         ? WindowsHorizontalWheelScroll(
             controller: _controller,
             builder: buildContent,
           )
         : buildContent(_controller);
-    if (!widget.deferDragAtEdges) return content;
-    return RawGestureDetector(
-      gestures: {
-        _EdgeAwareHorizontalDragGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<
-              _EdgeAwareHorizontalDragGestureRecognizer
-            >(
-              () => _EdgeAwareHorizontalDragGestureRecognizer(debugOwner: this),
-              (recognizer) => recognizer
-                ..gestureSettings = MediaQuery.maybeGestureSettingsOf(context)
-                ..onlyAcceptDragOnThreshold = true
-                ..canDrag = _canDrag
-                ..onDown = (_) {
-                  _hold = _controller.position.hold(() => _hold = null);
-                }
-                ..onStart = (details) {
-                  _drag = _controller.position.drag(
-                    details,
-                    () => _drag = null,
-                  );
-                  _hold = null;
-                }
-                ..onUpdate = (details) {
-                  _drag?.update(details);
-                }
-                ..onEnd = (details) {
-                  _drag?.end(details);
-                }
-                ..onCancel = _cancelDrag,
-            ),
-      },
-      child: content,
-    );
   }
 }
 
@@ -205,44 +149,4 @@ class _RenderHorizontalEdgeMask extends RenderShaderMask {
       if (child != null) context.paintChild(child!, offset);
     }
   }
-}
-
-// Only accept a drag when it can move the text in that direction.
-// The enclosing card can then win outward drags at either edge.
-class _EdgeAwareHorizontalDragGestureRecognizer
-    extends HorizontalDragGestureRecognizer {
-  _EdgeAwareHorizontalDragGestureRecognizer({super.debugOwner});
-
-  bool Function(double delta)? canDrag;
-  double _delta = 0;
-
-  @override
-  void addAllowedPointer(PointerDownEvent event) {
-    _delta = 0;
-    super.addAllowedPointer(event);
-  }
-
-  @override
-  void addAllowedPointerPanZoom(PointerPanZoomStartEvent event) {
-    _delta = 0;
-    super.addAllowedPointerPanZoom(event);
-  }
-
-  @override
-  void handleEvent(PointerEvent event) {
-    if (event is PointerMoveEvent) _delta += event.localDelta.dx;
-    if (event is PointerPanZoomUpdateEvent) _delta += event.localPanDelta.dx;
-    super.handleEvent(event);
-  }
-
-  @override
-  bool hasSufficientGlobalDistanceToAccept(
-    PointerDeviceKind pointerDeviceKind,
-    double? deviceTouchSlop,
-  ) =>
-      super.hasSufficientGlobalDistanceToAccept(
-        pointerDeviceKind,
-        deviceTouchSlop,
-      ) &&
-      canDrag!(_delta);
 }

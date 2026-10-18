@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree_projection.dart';
 
 void main() {
@@ -63,5 +64,45 @@ void main() {
     expect(work.folderPath, '$root::Work');
     expect(disc.folderPath, '$root::Work/Disc1');
     expect(disc.children.single.pathValue, track);
+  });
+
+  test('included counts visit each track once across nested folders', () {
+    const projection = LibraryEditTreeProjection('/library');
+    final tree = projection.buildEditTree(
+      [
+        '/library/Work/01.mp3',
+        '/library/Work/Disc/02.mp3',
+        '/library/Work/Disc/03.mp3',
+      ],
+      ['/library/Empty'],
+      [],
+    );
+    final visits = <String, int>{};
+    final counts = projection.includedTrackCounts(tree, (track) {
+      visits.update(track, (count) => count + 1, ifAbsent: () => 1);
+      return !track.endsWith('02.mp3');
+    });
+    expect(visits.values, everyElement(1));
+    expect(visits, hasLength(3));
+    expect(counts[PathMatcher.normalize('/library/Work')], 2);
+    expect(counts[PathMatcher.normalize('/library/Work/Disc')], 1);
+    expect(counts[PathMatcher.normalize('/library/Empty')], 0);
+
+    final filtered = projection.filterEditTree(
+      tree,
+      '03',
+      (track, query) => track.contains(query),
+    );
+    expect(projection.includedTrackCounts(filtered, (_) => true), {
+      PathMatcher.normalize('/library/Work'): 1,
+      PathMatcher.normalize('/library/Work/Disc'): 1,
+    });
+    expect(
+      projection.includedTrackCounts(
+        tree,
+        (_) => true,
+      )[PathMatcher.normalize('/library/Work')],
+      3,
+    );
   });
 }

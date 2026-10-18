@@ -81,6 +81,9 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
   late final Future<SubtitleSettingsState> Function() _loadState;
   int _loadRevision = 0;
   bool _disposed = false;
+  bool _editingAppearance = false;
+  final Map<String, String?> _pendingAppearanceWrites = {};
+  Future<void> _appearancePersistence = Future<void>.value();
   SubtitleSettingsState? _standaloneState;
   final StreamController<SubtitleSettingsState> _streamController =
       StreamController<SubtitleSettingsState>.broadcast();
@@ -110,6 +113,7 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
   }
 
   void dispose() {
+    unawaited(endAppearanceEdit());
     _disposed = true;
     _loadRevision++;
     _streamController.close();
@@ -205,8 +209,40 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
 
   @override
   Future<void> reloadPersistedState() {
+    _pendingAppearanceWrites.clear();
+    _editingAppearance = false;
     _loadRevision++;
     return _load();
+  }
+
+  void beginAppearanceEdit() => _editingAppearance = true;
+
+  Future<void> endAppearanceEdit() {
+    _editingAppearance = false;
+    return flushAppearancePersistence();
+  }
+
+  Future<void> flushAppearancePersistence() {
+    if (_pendingAppearanceWrites.isEmpty) return _appearancePersistence;
+    final pending = Map<String, String?>.of(_pendingAppearanceWrites);
+    _pendingAppearanceWrites.clear();
+    // Keep live preview synchronous. Only the final value of each slider is
+    // written, in order with any earlier preference write still in flight.
+    return _appearancePersistence = _appearancePersistence.then((_) async {
+      for (final entry in pending.entries) {
+        final value = entry.value;
+        if (value == null) {
+          await AppPreferences.remove(entry.key);
+        } else {
+          await AppPreferences.setString(entry.key, value);
+        }
+      }
+    });
+  }
+
+  void _persistAppearance(String key, String? value) {
+    _pendingAppearanceWrites[key] = value;
+    if (!_editingAppearance) unawaited(flushAppearancePersistence());
   }
 
   void _invalidatePendingLoad() {
@@ -338,17 +374,17 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
   void setFontFamily(String fontFamily) {
     _invalidatePendingLoad();
     state = state.copyWith(fontFamily: fontFamily);
-    AppPreferences.setString('subtitle_font_family', fontFamily);
+    _persistAppearance('subtitle_font_family', fontFamily);
   }
 
   void setFontColor(Color? color) {
     _invalidatePendingLoad();
     if (color == null) {
       state = state.copyWith(clearFontColor: true);
-      AppPreferences.remove('subtitle_font_color');
+      _persistAppearance('subtitle_font_color', null);
     } else {
       state = state.copyWith(fontColor: color);
-      AppPreferences.setString(
+      _persistAppearance(
         'subtitle_font_color',
         color.toARGB32().toRadixString(16).padLeft(8, '0'),
       );
@@ -358,29 +394,29 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
   void setBackgroundOpacity(double opacity) {
     _invalidatePendingLoad();
     state = state.copyWith(backgroundOpacity: opacity);
-    AppPreferences.setString('subtitle_background_opacity', opacity.toString());
+    _persistAppearance('subtitle_background_opacity', opacity.toString());
   }
 
   void setFontSize(double fontSize) {
     _invalidatePendingLoad();
     state = state.copyWith(fontSize: fontSize);
-    AppPreferences.setString('subtitle_font_size', fontSize.toString());
+    _persistAppearance('subtitle_font_size', fontSize.toString());
   }
 
   void setBorderDepth(double depth) {
     _invalidatePendingLoad();
     state = state.copyWith(borderDepth: depth);
-    AppPreferences.setString('subtitle_border_depth', depth.toString());
+    _persistAppearance('subtitle_border_depth', depth.toString());
   }
 
   void setBackgroundColor(Color? color) {
     _invalidatePendingLoad();
     if (color == null) {
       state = state.copyWith(clearBackgroundColor: true);
-      AppPreferences.remove('subtitle_background_color');
+      _persistAppearance('subtitle_background_color', null);
     } else {
       state = state.copyWith(backgroundColor: color);
-      AppPreferences.setString(
+      _persistAppearance(
         'subtitle_background_color',
         color.toARGB32().toRadixString(16).padLeft(8, '0'),
       );

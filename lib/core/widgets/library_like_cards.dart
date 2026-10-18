@@ -532,7 +532,7 @@ class LibraryLikeCardActions extends StatelessWidget {
   }
 }
 
-class LibraryLikeScrollableText extends StatelessWidget {
+class LibraryLikeScrollableText extends StatefulWidget {
   const LibraryLikeScrollableText({
     super.key,
     required this.text,
@@ -543,8 +543,23 @@ class LibraryLikeScrollableText extends StatelessWidget {
   final TextStyle style;
 
   @override
+  State<LibraryLikeScrollableText> createState() =>
+      _LibraryLikeScrollableTextState();
+}
+
+class _LibraryLikeScrollableTextState extends State<LibraryLikeScrollableText> {
+  final _textPainter = TextPainter(maxLines: 1);
+
+  @override
+  void dispose() {
+    _textPainter.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final normalizedText = text.replaceAll(RegExp(r'[\r\n]+'), ' ');
+    final normalizedText = widget.text.replaceAll(RegExp(r'[\r\n]+'), ' ');
+    final style = widget.style;
     final child = SearchHighlightedText(
       text: normalizedText,
       style: style,
@@ -553,25 +568,51 @@ class LibraryLikeScrollableText extends StatelessWidget {
       overflow: TextOverflow.visible,
       strutStyle: _libraryLikeFixedLineStrut(style),
     );
-    if (defaultTargetPlatform == TargetPlatform.windows) {
-      return MarqueeText(
-        text: normalizedText,
-        style: style,
-        pauseDuration: const Duration(seconds: 1),
-        edgePadding: 0,
-        allowManualScroll: true,
-        child: child,
+    Widget scrollableText() {
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        return MarqueeText(
+          text: normalizedText,
+          style: style,
+          pauseDuration: const Duration(seconds: 1),
+          edgePadding: 0,
+          allowManualScroll: true,
+          child: child,
+        );
+      }
+      return HorizontalEdgeFadeScroll(
+        deferDragAtEdges: true,
+        builder: (controller) => SingleChildScrollView(
+          controller: controller,
+          scrollDirection: Axis.horizontal,
+          // Empty space belongs to the enclosing card's swipe gesture.
+          hitTestBehavior: HitTestBehavior.deferToChild,
+          child: child,
+        ),
       );
     }
-    return HorizontalEdgeFadeScroll(
-      deferDragAtEdges: true,
-      builder: (controller) => SingleChildScrollView(
-        controller: controller,
-        scrollDirection: Axis.horizontal,
-        // Empty space belongs to the enclosing card's swipe gesture.
-        hitTestBehavior: HitTestBehavior.deferToChild,
-        child: child,
-      ),
+
+    // Highlighted spans use a heavier font. Keep their actual scroll layout
+    // rather than estimating overflow from the unhighlighted text.
+    if (SearchHighlightScope.termsOf(context).isNotEmpty) {
+      return scrollableText();
+    }
+    var effectiveStyle = DefaultTextStyle.of(context).style.merge(style);
+    if (MediaQuery.boldTextOf(context)) {
+      effectiveStyle = effectiveStyle.merge(
+        const TextStyle(fontWeight: FontWeight.bold),
+      );
+    }
+    _textPainter
+      ..text = TextSpan(text: normalizedText, style: effectiveStyle)
+      ..textDirection = Directionality.of(context)
+      ..textScaler = MediaQuery.textScalerOf(context)
+      ..locale = Localizations.maybeLocaleOf(context);
+    // TextPainter reuses its layout across width changes and scroll rebuilds.
+    // Short metadata needs no controller, horizontal viewport or gesture arena.
+    _textPainter.layout();
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _textPainter.width <= constraints.maxWidth ? child : scrollableText(),
     );
   }
 }

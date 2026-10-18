@@ -243,22 +243,28 @@ class _SessionVideoFullscreenPageState
           )) {
         return;
       }
-      setState(() => _controlsVisible = false);
+      _setControlsVisible(false);
     });
+  }
+
+  void _setControlsVisible(bool visible) {
+    if (_controlsVisible == visible) return;
+    setState(() => _controlsVisible = visible);
+    // The gate retains the latest position for gestures without rebuilding
+    // hidden controls, then publishes it immediately when controls return.
+    _positionGate?.tickerModeEnabled = visible;
   }
 
   void _showControls() {
     _controlsTimer?.cancel();
-    if (!_controlsVisible) setState(() => _controlsVisible = true);
+    _setControlsVisible(true);
     _scheduleControlsHide();
   }
 
   void _toggleControls() {
     _controlsTimer?.cancel();
-    setState(
-      () => _controlsVisible = sessionVideoControlsVisibleAfterBlankTap(
-        _controlsVisible,
-      ),
+    _setControlsVisible(
+      sessionVideoControlsVisibleAfterBlankTap(_controlsVisible),
     );
     if (_controlsVisible) _scheduleControlsHide();
   }
@@ -549,7 +555,7 @@ class _SessionVideoFullscreenPageState
   void _beginControlInteraction() {
     _sliderInteracting = true;
     _controlsTimer?.cancel();
-    if (!_controlsVisible) setState(() => _controlsVisible = true);
+    _setControlsVisible(true);
   }
 
   void _endProgressInteraction(double value) {
@@ -585,6 +591,14 @@ class _SessionVideoFullscreenPageState
   @override
   Widget build(BuildContext context) {
     final detail = ref.watch(sessionDetailTransportProvider(widget.sessionId));
+    ref.watch(
+      playbackSessionProvider(widget.sessionId).select(
+        (session) => (session?.queueVersion, session?.currentQueueIndex),
+      ),
+    );
+    ref.watch(
+      libraryStateProvider.select((state) => state.value?.contentRevision),
+    );
     final paths = ref.read(audioPathCoordinatorProvider);
     final allowVideoPlayback = ref.watch(
       settingsStateProvider.select(
@@ -813,6 +827,14 @@ class _SessionVideoFullscreenPageState
         ? AppDesignTokens.of(context).onAsmrAccent
         : cs.onPrimary;
     final showPauseIcon = detail?.showPauseIcon ?? playing;
+    final hasPrevious = _playback.hasSessionAdjacentTrack(
+      widget.sessionId,
+      forward: false,
+    );
+    final hasNext = _playback.hasSessionAdjacentTrack(
+      widget.sessionId,
+      forward: true,
+    );
     const exitButtonSize = 48.0;
     const exitButtonOffset =
         (AppPageHeaderMetrics.buttonSize - exitButtonSize) / 2;
@@ -916,14 +938,6 @@ class _SessionVideoFullscreenPageState
                               .toDouble();
                       final displayVolume = sessionVolumeDisplayValueFromGain(
                         volumeGain,
-                      );
-                      final hasPrevious = _playback.hasSessionAdjacentTrack(
-                        widget.sessionId,
-                        forward: false,
-                      );
-                      final hasNext = _playback.hasSessionAdjacentTrack(
-                        widget.sessionId,
-                        forward: true,
                       );
                       final canPrevious =
                           (snapshot != null &&

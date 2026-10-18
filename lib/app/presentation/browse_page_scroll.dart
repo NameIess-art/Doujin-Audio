@@ -304,7 +304,11 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
         },
         child: NotificationListener<ScrollNotification>(
           onNotification: (notification) {
-            if (notification.depth != 0) return false;
+            // Loading placeholders may scroll before this page's controller
+            // attaches. Their gestures must not cancel the pending restoration.
+            if (notification.depth != 0 || !widget.controller.hasClients) {
+              return false;
+            }
             if (notification is ScrollStartNotification && !_applyingRestore) {
               if (widget.controller.position.isScrollingNotifier.value) {
                 // A fresh interaction after clearing begins a new snapshot.
@@ -317,7 +321,7 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
           },
           child: Listener(
             onPointerDown: (_) {
-              if (!widget.restoreReady) {
+              if (!widget.restoreReady && widget.controller.hasClients) {
                 _restored = _anchorRestored = true;
               }
             },

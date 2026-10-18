@@ -4160,6 +4160,113 @@ void main() {
   );
 
   testWidgets(
+    'landscape playlist keeps forty sessions within a bounded scroll window',
+    (tester) async {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        notificationsChannel,
+        (_) async => <String, Object?>{'ok': true, 'value': null},
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+      );
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1280, 800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final covers = _RecordingPlaybackCoverCacheService();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: covers,
+      );
+      addTearDown(fixture.dispose);
+      final tracks = List.generate(
+        40,
+        (index) => testMusicTrack(
+          name: 'Scroll session $index',
+          path: '/playlist-scroll/track-$index.mp3',
+          groupKey: '/playlist-scroll',
+          groupTitle: 'Scroll work',
+        ),
+      );
+      fixture.runtimeGraph.library.addTracks(tracks, persist: false);
+      final sessions = tracks.map((track) {
+        final session = fixture.runtimeGraph.playback.createTrackSession(track);
+        addTearDown(session.shutdown);
+        return session;
+      }).toList();
+      fixture.playbackService.syncSlice(
+        activeSessions: sessions,
+        playingSessionCount: 0,
+        focusedSessionId: sessions.first.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      // Windows notifications resolve all session artwork after their debounce.
+      // Drain that work before measuring the list's own lazy cover requests.
+      await tester.pump(const Duration(milliseconds: 120));
+      await tester.pumpAndSettle();
+      covers.requestedPaths.clear();
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pumpAndSettle();
+      final list = find.byKey(const PageStorageKey<String>('playlist_list'));
+      final controller = tester.widget<ListView>(list).controller!;
+      final viewportHeight = tester.getSize(list).height;
+      final initialLimit = ((viewportHeight + 320) / 64).ceil() + 1;
+      final scrollingLimit = ((viewportHeight + 640) / 64).ceil() + 1;
+      expect(
+        find.byType(SessionListCard).evaluate().length,
+        inInclusiveRange(1, initialLimit),
+      );
+      expect(
+        covers.requestedPaths.toSet().length,
+        lessThanOrEqualTo(initialLimit),
+      );
+
+      await tester.drag(list, const Offset(0, -500));
+      await tester.pumpAndSettle();
+      expect(controller.offset, greaterThan(0));
+      expect(
+        find.byType(SessionListCard).evaluate().length,
+        inInclusiveRange(1, scrollingLimit),
+      );
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(PlaylistTab)),
+      );
+      final lastId = container
+          .read(playlistSortedEntriesUiProvider)
+          .last
+          .sessionId;
+      for (
+        var attempt = 0;
+        attempt < 10 && controller.position.extentAfter > 0.5;
+        attempt++
+      ) {
+        await tester.drag(list, const Offset(0, -400));
+        await tester.pumpAndSettle();
+        expect(
+          find.byType(SessionListCard).evaluate().length,
+          lessThanOrEqualTo(scrollingLimit),
+        );
+      }
+      expect(controller.position.extentAfter, lessThanOrEqualTo(0.5));
+      expect(
+        find.byWidgetPredicate(
+          (widget) => widget is SessionListCard && widget.sessionId == lastId,
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'playlist cards render circular covers without duration overlays',
     (WidgetTester tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
@@ -7084,6 +7191,21 @@ void main() {
             fullscreenLease: lease,
           ),
         );
+        var adjacencyQueries = 0;
+        final commands = setup.fixture.runtimeGraph.playbackCommands;
+        setup.fixture.playback.detachCommandPort();
+        setup.fixture.playback.attachPlaybackCommands(
+          prepareSession: commands.prepareSession,
+          pauseSession: (session) async {
+            await commands.pauseSession(session);
+          },
+          startSession: commands.startSession,
+          resolveAdvance: commands.resolveAdvance,
+          hasAdjacent: (session, {required forward}) {
+            adjacencyQueries++;
+            return commands.hasAdjacent(session, forward: forward);
+          },
+        );
         final session = setup.session
           ..loadedPath = track.path
           ..setOptimisticDuration(const Duration(minutes: 2))
@@ -7127,6 +7249,7 @@ void main() {
         final cover = tester.widget<AsyncLocalCoverImage>(
           find.byType(AsyncLocalCoverImage),
         );
+        final initialAdjacencyQueries = adjacencyQueries;
         expect(tester.widget<Slider>(progress).value, 10000);
         tester.widget<Slider>(progress).onChangeStart!(10000);
         for (final value in [30000.0, 45000.0]) {
@@ -7155,10 +7278,43 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
         expect(session.position, const Duration(seconds: 45));
         expect(tester.widget<Slider>(progress).value, 45000);
+        final previous = find.byKey(
+          const ValueKey<String>('fullscreen_video_previous'),
+        );
+        session.setOptimisticPosition(const Duration(seconds: 2));
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump();
+        expect(tester.widget<PrimaryTransportButton>(previous).enabled, isFalse);
         session.setOptimisticPosition(const Duration(seconds: 46));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
         expect(tester.widget<Slider>(progress).value, 46000);
+        expect(tester.widget<PrimaryTransportButton>(previous).enabled, isTrue);
+        expect(adjacencyQueries, initialAdjacencyQueries);
+        final next = find.byKey(const ValueKey<String>('fullscreen_video_next'));
+        expect(tester.widget<PrimaryTransportButton>(next).enabled, isFalse);
+        final nextTrack = testMusicTrack(
+          name: 'Next video',
+          path: '/videos/next.mp4',
+          groupKey: '/videos',
+          groupTitle: 'Videos',
+        ).copyWith(isVideo: true);
+        session.playbackQueue = session.playbackQueue!.copyWith(
+          entries: [
+            ...session.playbackQueue!.entries,
+            PlaybackQueueEntry(
+              id: 'next-video',
+              kind: PlaybackQueueEntryKind.track,
+              title: 'Next video',
+              tracks: [nextTrack],
+            ),
+          ],
+        );
+        session.customQueueTracks = session.playbackQueue!.expandedTracks;
+        setup.fixture.playback.publishSessionState(session.id);
+        await tester.pumpAndSettle();
+        expect(tester.widget<PrimaryTransportButton>(next).enabled, isTrue);
+        expect(adjacencyQueries, greaterThan(initialAdjacencyQueries));
         tester.view.physicalSize = const Size(1080, 2400);
         await tester.pump();
         expect(
@@ -7184,11 +7340,18 @@ void main() {
         tester.widget<Slider>(progress).onChangeEnd!(60000);
         await tester.pump(const Duration(seconds: 3));
         expect(tester.widget<AnimatedOpacity>(controls).opacity, 0);
+        await tester.pump(kAppFadeDuration);
+        final hiddenProgress = tester.widget<Slider>(progress);
+        session.setOptimisticPosition(const Duration(seconds: 75));
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump();
+        expect(tester.widget<Slider>(progress), same(hiddenProgress));
         await tester.tap(
           find.byKey(const ValueKey('fullscreen_video_gesture_surface')),
         );
         await tester.pump(kDoubleTapTimeout);
         expect(tester.widget<AnimatedOpacity>(controls).opacity, 1);
+        expect(tester.widget<Slider>(progress).value, 75000);
         await tester.pump(const Duration(seconds: 2));
         session.setOptimisticState(playing: false);
         setup.fixture.playback.publishSessionState(session.id);

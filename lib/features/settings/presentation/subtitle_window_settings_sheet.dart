@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,8 +12,39 @@ import '../../../app/state/subtitle_settings_provider.dart';
 import 'subtitle_window_preview_card.dart';
 import 'subtitle_rgb_controls.dart';
 
-class SubtitleWindowSettingsSheet extends StatelessWidget {
+class SubtitleWindowSettingsSheet extends ConsumerStatefulWidget {
   const SubtitleWindowSettingsSheet({super.key});
+
+  @override
+  ConsumerState<SubtitleWindowSettingsSheet> createState() =>
+      _SubtitleWindowSettingsSheetState();
+}
+
+class _SubtitleWindowSettingsSheetState
+    extends ConsumerState<SubtitleWindowSettingsSheet>
+    with WidgetsBindingObserver {
+  late final SubtitleSettingsNotifier _notifier;
+
+  @override
+  void initState() {
+    super.initState();
+    _notifier = ref.read(subtitleSettingsProvider.notifier);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  void _endAppearanceEdit() => unawaited(_notifier.endAppearanceEdit());
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _endAppearanceEdit();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _endAppearanceEdit();
+    super.dispose();
+  }
 
   static const _fontFamilies = <String>[
     '',
@@ -152,7 +185,10 @@ class SubtitleWindowSettingsSheet extends StatelessWidget {
                                   min: 12,
                                   max: 32,
                                   divisions: 20,
+                                  onChangeStart: (_) =>
+                                      notifier.beginAppearanceEdit(),
                                   onChanged: (v) => notifier.setFontSize(v),
+                                  onChangeEnd: (_) => _endAppearanceEdit(),
                                 ),
                               ],
                             ),
@@ -167,6 +203,8 @@ class SubtitleWindowSettingsSheet extends StatelessWidget {
                               cs: cs,
                               labelStyle: labelStyle,
                               onChanged: (c) => notifier.setFontColor(c),
+                              onChangeStart: notifier.beginAppearanceEdit,
+                              onChangeEnd: _endAppearanceEdit,
                               onReset: () => notifier.setFontColor(null),
                             ),
                           ),
@@ -203,8 +241,11 @@ class SubtitleWindowSettingsSheet extends StatelessWidget {
                                 Slider(
                                   value: 1.0 - settings.backgroundOpacity,
                                   divisions: 100,
+                                  onChangeStart: (_) =>
+                                      notifier.beginAppearanceEdit(),
                                   onChanged: (v) =>
                                       notifier.setBackgroundOpacity(1.0 - v),
+                                  onChangeEnd: (_) => _endAppearanceEdit(),
                                 ),
                               ],
                             ),
@@ -219,6 +260,8 @@ class SubtitleWindowSettingsSheet extends StatelessWidget {
                               cs: cs,
                               labelStyle: labelStyle,
                               onChanged: (c) => notifier.setBackgroundColor(c),
+                              onChangeStart: notifier.beginAppearanceEdit,
+                              onChangeEnd: _endAppearanceEdit,
                               onReset: () => notifier.setBackgroundColor(null),
                             ),
                           ),
@@ -251,7 +294,10 @@ class SubtitleWindowSettingsSheet extends StatelessWidget {
                                 Slider(
                                   value: settings.borderDepth,
                                   divisions: 100,
+                                  onChangeStart: (_) =>
+                                      notifier.beginAppearanceEdit(),
                                   onChanged: (v) => notifier.setBorderDepth(v),
+                                  onChangeEnd: (_) => _endAppearanceEdit(),
                                 ),
                               ],
                             ),

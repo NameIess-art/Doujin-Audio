@@ -41,6 +41,31 @@ class LibraryEditTrackTreeNode extends LibraryEditTreeNode {
 class LibraryEditTreeProjection {
   const LibraryEditTreeProjection(this.libraryPath);
   final String libraryPath;
+
+  Map<String, int> includedTrackCounts(
+    List<LibraryEditTreeNode> nodes,
+    bool Function(String) isTrackIncluded,
+  ) {
+    final counts = <String, int>{};
+    int count(LibraryEditTreeNode node) {
+      if (node is LibraryEditTrackTreeNode) {
+        return isTrackIncluded(node.trackPath) ? 1 : 0;
+      }
+      final folder = node as LibraryEditFolderTreeNode;
+      final included = folder.children.fold<int>(
+        0,
+        (total, child) => total + count(child),
+      );
+      counts[folder.folderPath] = included;
+      return included;
+    }
+
+    for (final node in nodes) {
+      count(node);
+    }
+    return counts;
+  }
+
   List<LibraryEditTreeNode> buildEditTree(
     List<String> trackPaths,
     List<String> persistentFolderPaths,

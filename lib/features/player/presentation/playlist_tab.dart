@@ -350,17 +350,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final listBottomInset = MobileOverlayInset.of(context);
-    final isLandscape =
-        defaultTargetPlatform == TargetPlatform.windows ||
-        MediaQuery.orientationOf(context) == Orientation.landscape;
     final effectiveHeaderHeight = headerHeight > defaultHeaderHeight
         ? headerHeight
         : _minimumExpandedHeaderHeight(context);
-    final listCacheExtent = playlistListCacheExtent(
-      headerHeight: effectiveHeaderHeight,
-      viewportWidth: MediaQuery.sizeOf(context).width,
-      isLandscape: isLandscape,
-    );
     final topPadding = effectiveHeaderHeight + 4.0;
     final bottomPadding = listBottomInset + 16.0;
     final sessionsInitialized = ref.watch(
@@ -386,7 +378,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   contentRef,
                   topPadding: topPadding,
                   bottomPadding: bottomPadding,
-                  listCacheExtent: listCacheExtent,
                 ),
               ),
             ),
@@ -631,7 +622,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     WidgetRef ref, {
     required double topPadding,
     required double bottomPadding,
-    required double listCacheExtent,
   }) {
     final library = ref.read(libraryFacadeProvider);
     final paths = ref.read(audioPathCoordinatorProvider);
@@ -776,7 +766,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     playlistListHorizontalPadding,
                     bottomPadding,
                   ),
-                  cacheExtent: listCacheExtent,
+                  // Match the library's small prefetch window. A wide viewport
+                  // already lays out more cards without another screen of cache.
+                  cacheExtent: 320,
                   clipBehavior: Clip.none,
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,

@@ -32,7 +32,7 @@ void retainCoverImage(
     return;
   }
 
-  final cover = _RetainedCover();
+  final cover = _RetainedCover(sourceKey: _fileSourceKey(provider));
   _retainedCovers[provider] = cover;
   _trimRetainedCovers();
   unawaited(
@@ -93,23 +93,15 @@ void restoreRetainedCoverImage(ImageProvider<Object> provider) {
   if (_retainedCovers[requested]?.handle != null) {
     return (provider: requested, isAdequate: true);
   }
-  final source = _fileSource(requested);
-  if (source == null) return null;
+  final sourceKey = _fileSourceKey(requested);
+  if (sourceKey == null) return null;
   ImageProvider<Object>? selected;
   _RetainedCover? selectedCover;
   var selectedIsAdequate = false;
   for (final entry in _retainedCovers.entries) {
     final cover = entry.value;
     if (cover.handle == null) continue;
-    final candidateSource = _fileSource(entry.key);
-    if (candidateSource == null ||
-        candidateSource.scale != source.scale ||
-        !PathMatcher.equalsNormalized(
-          candidateSource.file.path,
-          source.file.path,
-        )) {
-      continue;
-    }
+    if (cover.sourceKey != sourceKey) continue;
     final adequate =
         entry.key is FileImage ||
         (requested is ResizeImage &&
@@ -140,6 +132,13 @@ FileImage? _fileSource(ImageProvider<Object> provider) {
   return null;
 }
 
+(String, double)? _fileSourceKey(ImageProvider<Object> provider) {
+  final source = _fileSource(provider);
+  return source == null
+      ? null
+      : (PathMatcher.equivalenceKey(source.file.path), source.scale);
+}
+
 void releaseRetainedCoverImages() {
   for (final provider in _retainedCovers.keys.toList(growable: false)) {
     _removeRetainedCover(provider);
@@ -166,6 +165,10 @@ void _removeRetainedCover(ImageProvider<Object> provider) {
 }
 
 final class _RetainedCover {
+  _RetainedCover({required this.sourceKey});
+
+  // Normalize once on retention, rather than for every candidate during scroll.
+  final (String, double)? sourceKey;
   Object? key;
   ImageStream? stream;
   ImageStreamListener? listener;

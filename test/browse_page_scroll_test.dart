@@ -17,6 +17,7 @@ void main() {
     bool restoreReady = true,
     int columns = 1,
     bool fixedExtent = true,
+    ScrollController? placeholderController,
   }) => ProviderScope(
     overrides: [browsePageStateStoreProvider.overrideWithValue(store)],
     child: MaterialApp(
@@ -35,7 +36,7 @@ void main() {
                 rowExtent: extent,
               );
               return ListView.builder(
-                controller: controller,
+                controller: placeholderController ?? controller,
                 itemExtent: fixedExtent ? extent : null,
                 itemCount: (count / columns).ceil(),
                 itemBuilder: (_, row) => columns == 1 && fixedExtent
@@ -105,6 +106,42 @@ void main() {
       controller.dispose();
     },
   );
+
+  for (final restoreReady in [false, true]) {
+    testWidgets(
+      'scrolling a placeholder preserves pending restoration when ready=$restoreReady',
+      (tester) async {
+        final store = BrowsePageStateStore();
+        store.update('page', {'offset': 1800.0});
+        final controller = ScrollController();
+        final placeholderController = ScrollController();
+        addTearDown(controller.dispose);
+        addTearDown(placeholderController.dispose);
+
+        await tester.pumpWidget(
+          page(
+            store,
+            controller,
+            restoreReady: restoreReady,
+            placeholderController: placeholderController,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(controller.hasClients, isFalse);
+        await tester.drag(find.byType(ListView), const Offset(0, -240));
+        await tester.pumpAndSettle();
+        expect(placeholderController.offset, greaterThan(0));
+        expect(tester.takeException(), isNull);
+        expect(store.stateFor('page')['offset'], 1800.0);
+
+        await tester.pumpWidget(page(store, controller));
+        await tester.pumpAndSettle();
+        expect(controller.offset, 1800.0);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
 
   testWidgets(
     'incomplete short content preserves the saved offset until restoration is ready',

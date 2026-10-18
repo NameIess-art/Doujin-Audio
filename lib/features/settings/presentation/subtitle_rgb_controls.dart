@@ -8,6 +8,8 @@ class SubtitleRgbControls extends StatelessWidget {
     required this.currentColor,
     required this.defaultColor,
     required this.onChanged,
+    required this.onChangeStart,
+    required this.onChangeEnd,
     required this.onReset,
     required this.cs,
     required this.labelStyle,
@@ -17,6 +19,8 @@ class SubtitleRgbControls extends StatelessWidget {
   final Color? currentColor;
   final Color defaultColor;
   final ValueChanged<Color> onChanged;
+  final VoidCallback onChangeStart;
+  final VoidCallback onChangeEnd;
   final VoidCallback onReset;
   final ColorScheme cs;
   final TextStyle? labelStyle;
@@ -59,6 +63,8 @@ class SubtitleRgbControls extends StatelessWidget {
         const SizedBox(height: 4),
         _RgbSliderRow(
           label: 'R',
+          onChangeStart: onChangeStart,
+          onChangeEnd: onChangeEnd,
           value: r,
           cs: cs,
           onChanged: (v) {
@@ -67,6 +73,8 @@ class SubtitleRgbControls extends StatelessWidget {
         ),
         _RgbSliderRow(
           label: 'G',
+          onChangeStart: onChangeStart,
+          onChangeEnd: onChangeEnd,
           value: g,
           cs: cs,
           onChanged: (v) {
@@ -75,6 +83,8 @@ class SubtitleRgbControls extends StatelessWidget {
         ),
         _RgbSliderRow(
           label: 'B',
+          onChangeStart: onChangeStart,
+          onChangeEnd: onChangeEnd,
           value: b,
           cs: cs,
           onChanged: (v) {
@@ -92,12 +102,16 @@ class _RgbSliderRow extends StatefulWidget {
     required this.value,
     required this.cs,
     required this.onChanged,
+    required this.onChangeStart,
+    required this.onChangeEnd,
   });
 
   final String label;
   final int value;
   final ColorScheme cs;
   final ValueChanged<double> onChanged;
+  final VoidCallback onChangeStart;
+  final VoidCallback onChangeEnd;
 
   @override
   State<_RgbSliderRow> createState() => _RgbSliderRowState();
@@ -157,7 +171,9 @@ class _RgbSliderRowState extends State<_RgbSliderRow> {
             value: widget.value.toDouble(),
             max: 255,
             divisions: 255,
+            onChangeStart: (_) => widget.onChangeStart(),
             onChanged: widget.onChanged,
+            onChangeEnd: (_) => widget.onChangeEnd(),
           ),
         ),
         SizedBox(

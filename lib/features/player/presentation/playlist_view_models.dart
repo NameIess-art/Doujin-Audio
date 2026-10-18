@@ -426,15 +426,6 @@ String buildSessionCoverPrecacheKey({
   return '$sessionId|$trackPath|$widthKey|$heightKey|$coverGeneration';
 }
 
-double playlistListCacheExtent({
-  required double headerHeight,
-  required double viewportWidth,
-  required bool isLandscape,
-}) {
-  if (!isLandscape && viewportWidth < 760) return 320;
-  return (headerHeight + 800).clamp(headerHeight + 4, 1600.0).toDouble();
-}
-
 SessionDetailViewState sessionDetailViewStateFromSession(
   PlaybackSessionSnapshot session,
 ) => SessionDetailViewState(

@@ -342,33 +342,6 @@ void main() {
     },
   );
 
-  test('playlist cache extent uses a smaller mobile portrait budget', () {
-    expect(
-      playlistListCacheExtent(
-        headerHeight: 96,
-        viewportWidth: 430,
-        isLandscape: false,
-      ),
-      320,
-    );
-    expect(
-      playlistListCacheExtent(
-        headerHeight: 96,
-        viewportWidth: 900,
-        isLandscape: false,
-      ),
-      896,
-    );
-    expect(
-      playlistListCacheExtent(
-        headerHeight: 96,
-        viewportWidth: 430,
-        isLandscape: true,
-      ),
-      896,
-    );
-  });
-
   test('overlay catalog removes ordinary sessions when paused', () {
     final paused = session(id: 'paused', path: '/tracks/a.mp3');
     final playing = session(

@@ -962,6 +962,81 @@ void main() {
     expect(cache.statusForKey(second).tracked, isFalse);
   });
 
+  testWidgets('retained covers match equivalent paths at the same scale', (
+    tester,
+  ) async {
+    addTearDown(() {
+      releaseRetainedCoverImages();
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+    });
+    for (final paths in [
+      (r'C:\媒体\封面\..\shared-cover.png', 'c:/媒体/shared-cover.png'),
+      ('covers/sub/../shared-cover.png', 'covers/shared-cover.png'),
+    ]) {
+      final controller = _ControlledImageProvider()
+        ..complete(await _createTestImage());
+      final retained = _ControlledFileImage(File(paths.$1), controller);
+      retainCoverImage(retained, ImageConfiguration.empty);
+      await tester.pump();
+
+      final requested = ResizeImage(FileImage(File(paths.$2)), width: 1);
+      expect(retainedCoverImageFor(requested), (
+        provider: retained,
+        isAdequate: true,
+      ));
+      expect(
+        retainedCoverImageFor(
+          ResizeImage(FileImage(File(paths.$2), scale: 2), width: 1),
+        ),
+        isNull,
+      );
+      releaseRetainedCoverImage(retained);
+      expect(retainedCoverImageFor(requested), isNull);
+    }
+  });
+
+  testWidgets('retained path matching follows LRU budget eviction', (
+    tester,
+  ) async {
+    addTearDown(() {
+      releaseRetainedCoverImages();
+      configureRetainedCoverBudget(
+        maximumSize: 200,
+        maximumSizeBytes: 50 * 1024 * 1024,
+      );
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+    });
+    configureRetainedCoverBudget(maximumSize: 2, maximumSizeBytes: 48);
+    final providers = <FileImage>[];
+    for (final name in ['first', 'second', 'third']) {
+      final controller = _ControlledImageProvider()
+        ..complete(await _createTestImage());
+      final provider = _ControlledFileImage(
+        File('covers/$name.png'),
+        controller,
+      );
+      if (providers.length == 2) {
+        retainCoverImage(providers.first, ImageConfiguration.empty);
+      }
+      providers.add(provider);
+      retainCoverImage(provider, ImageConfiguration.empty);
+      await tester.pump();
+    }
+    ImageProvider<Object> request(String name) =>
+        ResizeImage(FileImage(File('covers/sub/../$name.png')), width: 1);
+
+    expect(retainedCoverImageFor(request('first'))?.provider, providers.first);
+    expect(retainedCoverImageFor(request('second')), isNull);
+    expect(retainedCoverImageFor(request('third'))?.provider, providers.last);
+    releaseRetainedCoverImages();
+    expect(retainedCoverImageFor(request('first')), isNull);
+    expect(retainedCoverImageFor(request('third')), isNull);
+  });
+
   for (final synchronous in [false, true]) {
     testWidgets(
       'retention releases ${synchronous ? 'synchronous' : 'asynchronous'} callback image handles',

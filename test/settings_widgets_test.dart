@@ -14,6 +14,7 @@ import 'package:doujin_audio/core/widgets/subtitle_window_visual.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
+import 'package:doujin_audio/features/settings/presentation/subtitle_window_settings_sheet.dart';
 import 'package:doujin_audio/features/settings/presentation/asmr_download_folder_name_settings_sheet.dart';
 import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
@@ -1151,6 +1152,74 @@ void main() {
       findsOneWidget,
     );
   });
+
+  for (final finish in ['release', 'close', 'background']) {
+    testWidgets(
+      'subtitle slider previews immediately and saves on $finish',
+      (tester) async {
+        final harness = AppRuntimeWidgetTestFixture();
+        addTearDown(harness.dispose);
+        final visible = ValueNotifier(true);
+        addTearDown(visible.dispose);
+        await tester.pumpWidget(
+          harness.build(
+            ValueListenableBuilder<bool>(
+              valueListenable: visible,
+              builder: (_, show, _) => show
+                  ? const SubtitleWindowSettingsSheet()
+                  : const SizedBox.shrink(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(SubtitleWindowSettingsSheet)),
+          listen: false,
+        );
+        final notifier = container.read(subtitleSettingsProvider.notifier);
+        final preferences = await SharedPreferences.getInstance();
+        final slider = find.byType(Slider).first;
+        final gesture = await tester.startGesture(tester.getCenter(slider));
+        await gesture.moveBy(const Offset(100, 0));
+        await tester.pump();
+        final fontSize = container.read(subtitleSettingsProvider).fontSize;
+        expect(fontSize, isNot(16));
+        final preview = tester.widget<Text>(
+          find.text(harness.languageProvider.tr('subtitle_preview_sample')),
+        );
+        expect(preview.style?.fontSize, fontSize);
+        expect(preferences.getString('subtitle_font_size'), isNull);
+
+        switch (finish) {
+          case 'release':
+            await gesture.up();
+          case 'close':
+            visible.value = false;
+            await tester.pump();
+            await gesture.up();
+          case 'background':
+            tester.binding.handleAppLifecycleStateChanged(
+              AppLifecycleState.inactive,
+            );
+            await tester.pump();
+            await gesture.up();
+            tester.binding.handleAppLifecycleStateChanged(
+              AppLifecycleState.resumed,
+            );
+        }
+        await notifier.flushAppearancePersistence();
+        expect(
+          preferences.getString('subtitle_font_size'),
+          fontSize.toString(),
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   testWidgets('subtitle window preview omits the explanatory hint', (
     tester,

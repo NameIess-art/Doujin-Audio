@@ -6,8 +6,117 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
+
+class _CountingPreferences extends InMemorySharedPreferencesStore {
+  _CountingPreferences() : super.empty();
+
+  final writes = <(String, Object)>[];
+  Future<void> Function()? beforeWrite;
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    writes.add((key, value));
+    await beforeWrite?.call();
+    return super.setValue(valueType, key, value);
+  }
+}
 
 void main() {
+  test(
+    'slider preview stays live while persistence keeps only final values',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final store = _CountingPreferences();
+      SharedPreferencesStorePlatform.instance = store;
+      await AppPreferences.init();
+      final notifier = SubtitleSettingsNotifier();
+      addTearDown(notifier.dispose);
+      await Future<void>.delayed(Duration.zero);
+      var events = 0;
+      final subscription = notifier.stream.listen((_) => events++);
+      addTearDown(subscription.cancel);
+
+      notifier.beginAppearanceEdit();
+      for (var step = 0; step < 100; step++) {
+        notifier.setBackgroundOpacity(step / 100);
+        expect(notifier.state.backgroundOpacity, step / 100);
+      }
+      notifier.setFontColor(const Color(0xFF123456));
+      notifier.setFontColor(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(events, 102);
+      expect(store.writes, isEmpty);
+
+      await notifier.endAppearanceEdit();
+      expect(store.writes, [('flutter.subtitle_background_opacity', '0.99')]);
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.containsKey('subtitle_font_color'), isFalse);
+      notifier.setFontSize(24);
+      await notifier.flushAppearancePersistence();
+      expect(store.writes.last, ('flutter.subtitle_font_size', '24.0'));
+    },
+  );
+
+  test(
+    'appearance saves are ordered when a previous write is delayed',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final store = _CountingPreferences();
+      SharedPreferencesStorePlatform.instance = store;
+      await AppPreferences.init();
+      final notifier = SubtitleSettingsNotifier();
+      addTearDown(notifier.dispose);
+      await Future<void>.delayed(Duration.zero);
+      final pending = Completer<void>();
+      store.beforeWrite = () => pending.future;
+      notifier.setFontSize(20);
+      await Future<void>.delayed(Duration.zero);
+      notifier.beginAppearanceEdit();
+      notifier.setFontSize(22);
+      notifier.setFontSize(24);
+      final saved = notifier.endAppearanceEdit();
+      expect(store.writes, [('flutter.subtitle_font_size', '20.0')]);
+      pending.complete();
+      await saved;
+      expect(store.writes, [
+        ('flutter.subtitle_font_size', '20.0'),
+        ('flutter.subtitle_font_size', '24.0'),
+      ]);
+      expect(
+        (await SharedPreferences.getInstance()).getString('subtitle_font_size'),
+        '24.0',
+      );
+    },
+  );
+
+  test(
+    'disposal saves a pending edit and reload discards stale edits',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      await AppPreferences.init();
+      final notifier = SubtitleSettingsNotifier();
+      await Future<void>.delayed(Duration.zero);
+      notifier.beginAppearanceEdit();
+      notifier.setFontSize(26);
+      notifier.dispose();
+      await notifier.flushAppearancePersistence();
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getString('subtitle_font_size'), '26.0');
+
+      final reloaded = SubtitleSettingsNotifier();
+      addTearDown(reloaded.dispose);
+      await Future<void>.delayed(Duration.zero);
+      reloaded.beginAppearanceEdit();
+      reloaded.setFontSize(30);
+      await reloaded.reloadPersistedState();
+      await reloaded.endAppearanceEdit();
+      expect(reloaded.state.fontSize, 26);
+      expect(preferences.getString('subtitle_font_size'), '26.0');
+    },
+  );
+
   test('provider attachment starts only one persisted subtitle load', () async {
     final pending = Completer<SubtitleSettingsState>();
     var loads = 0;

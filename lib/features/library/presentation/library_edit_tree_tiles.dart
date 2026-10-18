@@ -7,7 +7,6 @@ import '../../../core/media/path_display.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_row.dart';
 import '../../../core/widgets/shimmer_loading.dart';
-import '../application/library_facade.dart';
 import 'library_providers.dart';
 
 import 'library_edit_tree_projection.dart';
@@ -94,25 +93,7 @@ class _LibraryEditTrackViewState {
       Object.hash(title, explicitExcluded, muted, inheritedExcluded);
 }
 
-int _includedEditTrackCount(
-  LibraryEditFolderTreeNode folder,
-  LibraryFacade libraryService,
-  String libraryPath,
-) {
-  var count = 0;
-  for (final child in folder.children) {
-    if (child is LibraryEditTrackTreeNode) {
-      if (!libraryService.isLibraryPathExcluded(libraryPath, child.trackPath)) {
-        count++;
-      }
-    } else if (child is LibraryEditFolderTreeNode) {
-      count += _includedEditTrackCount(child, libraryService, libraryPath);
-    }
-  }
-  return count;
-}
-
-class LibraryEditTreeList extends StatefulWidget {
+class LibraryEditTreeList extends ConsumerStatefulWidget {
   const LibraryEditTreeList({
     super.key,
     required this.libraryPath,
@@ -133,10 +114,11 @@ class LibraryEditTreeList extends StatefulWidget {
   final Widget? empty;
 
   @override
-  State<LibraryEditTreeList> createState() => _LibraryEditTreeListState();
+  ConsumerState<LibraryEditTreeList> createState() =>
+      _LibraryEditTreeListState();
 }
 
-class _LibraryEditTreeListState extends State<LibraryEditTreeList>
+class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
     with SingleTickerProviderStateMixin {
   final _expandedPaths = <String>{};
   final _rowIndices = <String, int>{};
@@ -147,6 +129,9 @@ class _LibraryEditTreeListState extends State<LibraryEditTreeList>
   String? _animatingPath;
   int _animationStart = 0;
   int _animationCount = 0;
+  List<LibraryEditTreeNode>? _countedNodes;
+  int? _countedContentRevision;
+  Map<String, int> _includedTrackCounts = const {};
 
   @override
   void initState() {
@@ -169,7 +154,10 @@ class _LibraryEditTreeListState extends State<LibraryEditTreeList>
   @override
   void didUpdateWidget(covariant LibraryEditTreeList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.libraryPath != widget.libraryPath) _restoreExpansion();
+    if (oldWidget.libraryPath != widget.libraryPath) {
+      _restoreExpansion();
+      _countedNodes = null;
+    }
     if (oldWidget.libraryPath != widget.libraryPath ||
         !identical(oldWidget.nodes, widget.nodes) ||
         oldWidget.initiallyExpanded != widget.initiallyExpanded) {
@@ -295,6 +283,26 @@ class _LibraryEditTreeListState extends State<LibraryEditTreeList>
 
   @override
   Widget build(BuildContext context) {
+    final library = ref.read(libraryFacadeProvider);
+    final contentRevision = ref.watch(
+      libraryStateProvider.select(
+        (value) =>
+            value.value?.contentRevision ?? library.state.contentRevision,
+      ),
+    );
+    // Folder expansion only changes visible rows. Count each track once per
+    // projection or exclusion change, including the filtered search projection.
+    if (!identical(_countedNodes, widget.nodes) ||
+        _countedContentRevision != contentRevision) {
+      _includedTrackCounts = LibraryEditTreeProjection(widget.libraryPath)
+          .includedTrackCounts(
+            widget.nodes,
+            (trackPath) =>
+                !library.isLibraryPathExcluded(widget.libraryPath, trackPath),
+          );
+      _countedNodes = widget.nodes;
+      _countedContentRevision = contentRevision;
+    }
     final offset = widget.leading == null ? 0 : 1;
     return ListView.builder(
       padding: widget.padding,
@@ -330,6 +338,7 @@ class _LibraryEditTreeListState extends State<LibraryEditTreeList>
                     ? _LibraryEditFolderTreeTile(
                         libraryPath: widget.libraryPath,
                         folder: node,
+                        includedCount: _includedTrackCounts[node.folderPath]!,
                         expanded: _expandedPaths.contains(node.pathValue),
                         onToggle: () => _toggleFolder(node),
                         onRememberFolder: widget.onRememberFolder,
@@ -352,6 +361,7 @@ class _LibraryEditFolderTreeTile extends ConsumerWidget {
   const _LibraryEditFolderTreeTile({
     required this.libraryPath,
     required this.folder,
+    required this.includedCount,
     required this.expanded,
     required this.onToggle,
     required this.onRememberFolder,
@@ -359,6 +369,7 @@ class _LibraryEditFolderTreeTile extends ConsumerWidget {
 
   final String libraryPath;
   final LibraryEditFolderTreeNode folder;
+  final int includedCount;
   final bool expanded;
   final VoidCallback onToggle;
   final void Function(String, LibraryEditFolderTreeNode) onRememberFolder;
@@ -385,11 +396,6 @@ class _LibraryEditFolderTreeTile extends ConsumerWidget {
       folderPath,
     );
     final muted = libraryService.isLibraryPathExcluded(libraryPath, folderPath);
-    final includedCount = _includedEditTrackCount(
-      folder,
-      libraryService,
-      libraryPath,
-    );
     return Semantics(
       expanded: expanded,
       child: FileTreeRow(

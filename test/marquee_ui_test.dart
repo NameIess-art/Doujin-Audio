@@ -94,6 +94,180 @@ ScrollPosition _cardTextPosition(
 }
 
 void main() {
+  testWidgets(
+    'fitting card text creates no horizontal scrollable',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildApp(
+          const SizedBox(
+            width: 300,
+            child: LibraryLikeScrollableText(
+              text: 'Short metadata',
+              style: TextStyle(fontSize: 14),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Short metadata'), findsOneWidget);
+      expect(find.byType(Scrollable), findsNothing);
+      expect(find.byType(HorizontalEdgeFadeScroll), findsNothing);
+      expect(find.byType(MarqueeText), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'card text remains draggable after narrowing or increasing text scale',
+    (tester) async {
+      var width = 600.0;
+      var scale = 1.0;
+      late StateSetter update;
+      await tester.pumpWidget(
+        _buildApp(
+          StatefulBuilder(
+            builder: (context, setState) {
+              update = setState;
+              return MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: TextScaler.linear(scale)),
+                child: MarqueePauseScope(
+                  isPaused: true,
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: SizedBox(
+                      width: width,
+                      child: const LibraryLikeScrollableText(
+                        text: 'An accessible metadata title',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(Scrollable), findsNothing);
+
+      for (final dimensions in [(120.0, 1.0), (600.0, 3.0)]) {
+        update(() {
+          width = dimensions.$1;
+          scale = dimensions.$2;
+        });
+        await tester.pumpAndSettle();
+        final position = tester
+            .state<ScrollableState>(find.byType(Scrollable))
+            .position;
+        expect(position.axis, Axis.horizontal);
+        expect(position.maxScrollExtent, greaterThan(0));
+        await tester.drag(
+          find.byType(SingleChildScrollView),
+          const Offset(-60, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(position.pixels, greaterThan(0));
+      }
+
+      update(() {
+        width = 600;
+        scale = 1;
+      });
+      await tester.pumpAndSettle();
+      expect(find.byType(Scrollable), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'scrolling forty cards creates no horizontal viewports for short metadata',
+    (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        _buildApp(
+          ScrollActivityGate(
+            child: ListView.builder(
+              controller: controller,
+              cacheExtent: 120,
+              itemExtent: LibraryLikeCardMetrics.rootTileHeight,
+              itemCount: 40,
+              itemBuilder: (context, index) => Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: 500,
+                  child: LibraryLikeWorkCardContent(
+                    key: ValueKey('short-card-$index'),
+                    title: 'Work $index',
+                    lines: const [
+                      LibraryLikeInfoLineData(
+                        'Voice',
+                        'Voice',
+                        icon: Icons.record_voice_over_rounded,
+                      ),
+                      LibraryLikeInfoLineData(
+                        'Circle',
+                        'Circle',
+                        icon: Icons.storefront_outlined,
+                      ),
+                      LibraryLikeInfoLineData(
+                        'Tags',
+                        '#ASMR',
+                        icon: Icons.local_offer_rounded,
+                      ),
+                    ],
+                    coverBuilder: (width) => SizedBox(width: width, height: 90),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      void expectOnlyVerticalScrolling() {
+        expect(find.byType(Scrollable), findsOneWidget);
+        expect(
+          tester.state<ScrollableState>(find.byType(Scrollable)).position.axis,
+          Axis.vertical,
+        );
+        final cards = find.byType(LibraryLikeWorkCardContent);
+        expect(cards, findsWidgets);
+        expect(cards.evaluate().length, lessThan(40));
+      }
+
+      expectOnlyVerticalScrolling();
+      for (final delta in [-600.0, -1200.0, 900.0]) {
+        final previousOffset = controller.offset;
+        await tester.drag(find.byType(ListView), Offset(0, delta));
+        await tester.pumpAndSettle();
+        expect(
+          controller.offset,
+          delta < 0 ? greaterThan(previousOffset) : lessThan(previousOffset),
+        );
+        expectOnlyVerticalScrolling();
+      }
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final sample in [
     (scale: 1.0, rows: 3),
     (scale: 2.0, rows: 3),

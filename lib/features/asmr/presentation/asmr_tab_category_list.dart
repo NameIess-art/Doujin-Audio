@@ -468,7 +468,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   return workList = ListView.builder(
                     key: PageStorageKey(widget.category),
                     controller: widget.scrollController,
-                    cacheExtent: widget.searchSession ? 120 : 520,
+                    cacheExtent: widget.searchSession ? 120 : 320,
                     physics: AlwaysScrollableScrollPhysics(
                       parent: GlassRefreshIndicatorScrollPhysics(
                         isIndicatorVisible: () =>

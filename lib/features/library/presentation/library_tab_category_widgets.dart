@@ -1,3 +1,4 @@
+import 'work_detail_actions.dart';
 import 'library_download_actions.dart';
 import 'library_providers.dart';
 import 'library_removal_feedback.dart';
@@ -584,6 +585,13 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
 
     Widget buildEntryCard(bool useFeaturedCard) {
       return SwipeRevealCard(
+        onTertiaryAction: defaultTargetPlatform == TargetPlatform.windows
+            ? () =>
+                  unawaited(openLocalContainingFolder(context, ref, entry.path))
+            : null,
+        tertiaryActionLabel: i18n.tr('open_containing_folder'),
+        tertiaryActionTooltip: i18n.tr('open_containing_folder'),
+        tertiaryActionIcon: Icons.folder_open_rounded,
         shape: cardShape,
         enabled: !isSelectionMode,
         closedColor: cs.surface,

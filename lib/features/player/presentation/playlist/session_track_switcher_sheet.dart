@@ -564,9 +564,7 @@ class _QueueTrackLeaf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final accentColor = track.usesAsmrVisualTheme
-        ? AppDesignTokens.of(context).asmrAccent
-        : cs.primary;
+    final accentColor = cs.primary;
     return FileTreeRow(
       surfaceKey: ValueKey<String>('queue_switcher_track_${track.path}'),
       title: track.displayName,

@@ -1632,79 +1632,109 @@ void main() {
     expect(find.text('loading'), findsOneWidget);
   });
 
-  testWidgets(
-    'cold covers resume one per frame and discard replaced navigation requests',
-    (tester) async {
-      final providers = List.generate(4, (_) => _ControlledImageProvider());
-      final interaction = UiInteractionCoordinator.instance;
-      addTearDown(() async {
-        for (final provider in providers) {
-          await provider.evict();
-        }
-      });
-      Widget page(List<_ControlledImageProvider> visible) => MaterialApp(
-        home: ScrollActivityGate(
-          child: Column(
-            key: const ValueKey('cover-slots'),
-            children: [
-              for (var index = 0; index < visible.length; index++)
-                SizedBox(
-                  height: 90,
-                  child: RetryingImage(
-                    key: ValueKey(index),
-                    retryKey: visible[index],
-                    imageProviderBuilder: () => visible[index],
-                    loadingBuilder: (_) => const Text('waiting'),
-                    fallbackBuilder: (_) => const Text('decoding'),
+  for (final foregroundProtection in [false, true]) {
+    testWidgets(
+      'cold covers resume one per frame and discard replaced ${foregroundProtection ? 'foreground' : 'navigation'} requests',
+      (tester) async {
+        final providers = List.generate(4, (_) => _ControlledImageProvider());
+        final interaction = UiInteractionCoordinator.instance;
+        addTearDown(() async {
+          for (final provider in providers) {
+            await provider.evict();
+          }
+        });
+        Widget page(List<_ControlledImageProvider> visible) => MaterialApp(
+          home: ScrollActivityGate(
+            child: Column(
+              key: const ValueKey('cover-slots'),
+              children: [
+                for (var index = 0; index < visible.length; index++)
+                  SizedBox(
+                    height: 90,
+                    child: RetryingImage(
+                      key: ValueKey(index),
+                      retryKey: visible[index],
+                      imageProviderBuilder: () => visible[index],
+                      loadingBuilder: (_) => const Text('waiting'),
+                      fallbackBuilder: (_) => const Text('decoding'),
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
-      );
-      int loadCount() =>
-          providers.fold(0, (count, provider) => count + provider.loadCount);
+        );
+        int loadCount() =>
+            providers.fold(0, (count, provider) => count + provider.loadCount);
 
-      final navigation = Object();
-      interaction.beginNavigation(navigation);
-      await tester.pumpWidget(page([]));
-      await tester.pump();
-      await tester.pumpWidget(page(providers.take(3).toList()));
-      expect(loadCount(), 0);
-      await tester.pumpWidget(page([providers[3], providers[1], providers[2]]));
-      expect(loadCount(), 0);
-      interaction.cancelNavigation(navigation);
-      // A second navigation before scheduled loads run keeps them deferred.
-      interaction.beginNavigation(navigation);
-      await tester.pump();
-      expect(loadCount(), 0);
-      await tester.pump(const Duration(seconds: 1));
-      expect(loadCount(), 0);
-      interaction.cancelNavigation(navigation);
-      await tester.pump();
-      // Navigation resumes cold covers through structural commits.
-      expect(loadCount(), lessThanOrEqualTo(1));
-      while (loadCount() < 3) {
-        final previous = loadCount();
+        final protection = Object();
+        void beginProtection() {
+          if (foregroundProtection) {
+            interaction.beginInteraction(protection, deferVisualUpdates: true);
+          } else {
+            interaction.beginNavigation(protection);
+          }
+        }
+
+        void cancelProtection() {
+          if (foregroundProtection) {
+            interaction.cancelInteraction(protection);
+          } else {
+            interaction.cancelNavigation(protection);
+          }
+        }
+
+        beginProtection();
+        await tester.pumpWidget(page([]));
         await tester.pump();
-        expect(loadCount(), previous + 1);
-      }
-      expect(providers.first.loadCount, 0);
-      for (final provider in providers.skip(1)) {
-        provider.complete(await _createTestImage());
-      }
-      await tester.pumpAndSettle();
-      final displayed = tester.widgetList<RawImage>(find.byType(RawImage));
-      expect(displayed.where((image) => image.image != null), hasLength(3));
-      await tester.pumpWidget(const SizedBox.shrink());
-      expect(interaction.pendingCommitCount, 0);
-      expect(tester.takeException(), isNull);
-    },
-    variant: const TargetPlatformVariant({
-      TargetPlatform.android,
-      TargetPlatform.windows,
-    }),
-  );
+        await tester.pumpWidget(page(providers.take(3).toList()));
+        expect(loadCount(), 0);
+        await tester.pumpWidget(
+          page([providers[3], providers[1], providers[2]]),
+        );
+        expect(loadCount(), 0);
+        cancelProtection();
+        // Renewed protection before scheduled loads run keeps them deferred.
+        beginProtection();
+        await tester.pump();
+        expect(loadCount(), 0);
+        await tester.pump(const Duration(seconds: 1));
+        expect(loadCount(), 0);
+        final scrolling = Object();
+        if (foregroundProtection) {
+          interaction.beginInteraction(scrolling);
+          interaction.endInteraction(protection);
+          await tester.pump(interaction.idleDelay);
+          expect(interaction.isInteracting, isTrue);
+          expect(interaction.isVisualUpdateDeferred, isFalse);
+        } else {
+          cancelProtection();
+          await tester.pump();
+        }
+        // Protection releases cold covers through structural commits.
+        expect(loadCount(), lessThanOrEqualTo(1));
+        while (loadCount() < 3) {
+          final previous = loadCount();
+          await tester.pump();
+          expect(loadCount(), previous + 1);
+        }
+        expect(providers.first.loadCount, 0);
+        for (final provider in providers.skip(1)) {
+          provider.complete(await _createTestImage());
+        }
+        await tester.pumpAndSettle();
+        final displayed = tester.widgetList<RawImage>(find.byType(RawImage));
+        expect(displayed.where((image) => image.image != null), hasLength(3));
+        interaction.cancelInteraction(scrolling);
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(interaction.pendingCommitCount, 0);
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   testWidgets('RetryingImage retries an image error during interaction', (
     tester,
@@ -1794,54 +1824,63 @@ void main() {
     },
   );
 
-  testWidgets(
-    'RetryingImage shows cached cover immediately after card recreation',
-    (tester) async {
-      final interactionSource = Object();
-      final provider = _ControlledImageProvider();
+  for (final foregroundProtection in [false, true]) {
+    testWidgets(
+      'RetryingImage shows cached cover immediately during ${foregroundProtection ? 'foreground' : 'navigation'} protection after card recreation',
+      (tester) async {
+        final interactionSource = Object();
+        final provider = _ControlledImageProvider();
 
-      Widget buildCover() {
-        return MaterialApp(
-          home: SizedBox(
-            width: 120,
-            height: 90,
-            child: RetryingImage(
-              retryKey: 'cached-cover',
-              imageProviderBuilder: () => provider,
-              fallbackBuilder: (_) => const Text('fallback'),
-              loadingBuilder: (_) => const Text('loading'),
+        Widget buildCover() {
+          return MaterialApp(
+            home: SizedBox(
+              width: 120,
+              height: 90,
+              child: RetryingImage(
+                retryKey: 'cached-cover',
+                imageProviderBuilder: () => provider,
+                fallbackBuilder: (_) => const Text('fallback'),
+                loadingBuilder: (_) => const Text('loading'),
+              ),
             ),
-          ),
-        );
-      }
+          );
+        }
 
-      await tester.pumpWidget(buildCover());
-      expect(provider.loadCount, 1);
+        await tester.pumpWidget(buildCover());
+        expect(provider.loadCount, 1);
 
-      final image = await _createTestImage();
-      addTearDown(provider.evict);
-      provider.complete(image);
-      await tester.pump();
-      await tester.pump();
+        final image = await _createTestImage();
+        addTearDown(provider.evict);
+        provider.complete(image);
+        await tester.pump();
+        await tester.pump();
 
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump();
-      UiInteractionCoordinator.instance.beginNavigation(interactionSource);
-      await tester.pumpWidget(buildCover());
-      await tester.pump();
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        if (foregroundProtection) {
+          UiInteractionCoordinator.instance.beginInteraction(
+            interactionSource,
+            deferVisualUpdates: true,
+          );
+        } else {
+          UiInteractionCoordinator.instance.beginNavigation(interactionSource);
+        }
+        await tester.pumpWidget(buildCover());
+        await tester.pump();
 
-      expect(find.byType(Image), findsOneWidget);
-      expect(find.text('loading'), findsNothing);
-      expect(provider.loadCount, 1);
-      expect(find.text('fallback'), findsNothing);
-      expect(find.byType(PlaceholderContentTransition), findsNothing);
+        expect(find.byType(Image), findsOneWidget);
+        expect(find.text('loading'), findsNothing);
+        expect(provider.loadCount, 1);
+        expect(find.text('fallback'), findsNothing);
+        expect(find.byType(PlaceholderContentTransition), findsNothing);
 
-      await tester.pumpWidget(buildCover());
-      expect(provider.loadCount, 1);
-      expect(find.text('fallback'), findsNothing);
-      expect(find.byType(PlaceholderContentTransition), findsNothing);
-    },
-  );
+        await tester.pumpWidget(buildCover());
+        expect(provider.loadCount, 1);
+        expect(find.text('fallback'), findsNothing);
+        expect(find.byType(PlaceholderContentTransition), findsNothing);
+      },
+    );
+  }
 
   testWidgets('RetryingImage crossfades the placeholder over 300ms', (
     tester,

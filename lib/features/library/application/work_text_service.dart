@@ -4,9 +4,11 @@ import 'dart:typed_data';
 import 'package:charset/charset.dart';
 import 'package:flutter/foundation.dart';
 import 'package:markdown/markdown.dart' as md;
+import 'package:path/path.dart' as paths;
 
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/media/subtitle_parser.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 
 enum WorkTextEncoding {
@@ -110,6 +112,14 @@ class WorkTextFile {
 
   bool get isPdf => docType == WorkDocType.pdf;
   bool get isMarkdown => docType == WorkDocType.markdown;
+
+  bool get isSubtitle {
+    final extension = paths.extension(name).toLowerCase();
+    // Plain TXT scripts are also accepted by the parser, but their extension
+    // alone does not establish that a work contains subtitles.
+    return extension != '.txt' &&
+        supportedSubtitleExtensions.contains(extension);
+  }
 
   String get displayName {
     final dotIndex = name.lastIndexOf('.');

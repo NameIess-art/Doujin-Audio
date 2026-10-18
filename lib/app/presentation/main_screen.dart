@@ -207,7 +207,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void initState() {
     super.initState();
-    _protectForegroundFrame();
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    _appInForeground =
+        lifecycle != AppLifecycleState.hidden &&
+        lifecycle != AppLifecycleState.paused;
+    if (_appInForeground) {
+      _protectForegroundFrame();
+    } else {
+      unawaited(ref.read(audioRuntimeCoordinatorProvider).enterBackground());
+    }
     _subtitleOverlay = ref.read(subtitleOverlayControllerProvider);
     _subtitleOverlay.attachRuntime(
       enabled: () =>

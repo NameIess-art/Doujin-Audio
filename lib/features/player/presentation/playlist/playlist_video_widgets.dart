@@ -13,7 +13,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/presentation/app_orientation_controller.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
-import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/path_matcher.dart';
@@ -108,8 +107,9 @@ class _SessionVideoFullscreenPageState
   late final PlaybackFacade _playback;
   PlaybackSessionSnapshot? _initialSession;
   PlaybackPositionUiGate? _positionGate;
-  Future<String?>? _coverFuture;
+  late Future<String?> _coverFuture;
   late String _activeTrackPath;
+  late int _activeCoverGeneration;
   Timer? _controlsTimer;
   Timer? _feedbackTimer;
   bool _controlsVisible = true;
@@ -158,6 +158,7 @@ class _SessionVideoFullscreenPageState
     final paths = ref.read(audioPathCoordinatorProvider);
     final track = paths.trackByPath(widget.trackPath);
     _activeTrackPath = widget.trackPath;
+    _activeCoverGeneration = ref.read(coverGenerationProvider);
     _coverFuture = ref
         .read(libraryFacadeProvider)
         .playbackCoverPathFutureForTrack(track);
@@ -599,6 +600,7 @@ class _SessionVideoFullscreenPageState
     ref.watch(
       libraryStateProvider.select((state) => state.value?.contentRevision),
     );
+    final coverGeneration = ref.watch(coverGenerationProvider);
     final paths = ref.read(audioPathCoordinatorProvider);
     final allowVideoPlayback = ref.watch(
       settingsStateProvider.select(
@@ -619,11 +621,13 @@ class _SessionVideoFullscreenPageState
       _exitAfterBuild();
       return const ColoredBox(color: Colors.black);
     }
-    if (!PathMatcher.equalsNormalized(
-      activeSession.currentTrackPath,
-      _activeTrackPath,
-    )) {
+    if (coverGeneration != _activeCoverGeneration ||
+        !PathMatcher.equalsNormalized(
+          activeSession.currentTrackPath,
+          _activeTrackPath,
+        )) {
       _activeTrackPath = activeSession.currentTrackPath;
+      _activeCoverGeneration = coverGeneration;
       _coverFuture = ref
           .read(libraryFacadeProvider)
           .playbackCoverPathFutureForTrack(track);
@@ -640,117 +644,121 @@ class _SessionVideoFullscreenPageState
       ),
     );
     final baseControlTheme = ref.read(themeProviderInstanceProvider).darkTheme;
-    final tokens =
-        baseControlTheme.extension<AppDesignTokens>() ?? AppDesignTokens.dark;
-    final queueColor = activeSession.playbackQueue?.colorValue;
-    final controlTheme = queueColor != null
-        ? createPlaybackQueueSessionDetailTheme(
-            baseControlTheme,
-            Color(queueColor),
-          )
-        : track?.usesAsmrVisualTheme == true
-        ? createAsmrSessionDetailTheme(baseControlTheme, tokens)
-        : baseControlTheme;
 
-    return PopScope<void>(
-      canPop: _allowPop,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) unawaited(_requestExit());
-      },
-      child: CallbackShortcuts(
-        bindings: <ShortcutActivator, VoidCallback>{
-          const SingleActivator(LogicalKeyboardKey.escape): () {
-            unawaited(_requestExit());
+    return Theme(
+      data: baseControlTheme,
+      child: SessionDetailTheme(
+        coverPathFuture: _coverFuture,
+        initialCoverPath: library.resolvedPlaybackCoverPathForTrack(track),
+        requestKey: activeSession.currentTrackPath,
+        coverGeneration: coverGeneration,
+        isAsmr: track?.usesAsmrVisualTheme == true,
+        queueColorValue: activeSession.playbackQueue?.colorValue,
+        child: PopScope<void>(
+          canPop: _allowPop,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) unawaited(_requestExit());
           },
-        },
-        child: Focus(
-          autofocus: true,
-          child: Scaffold(
-            backgroundColor: Colors.black,
-            body: AppPageContentTransition(child: MouseRegion(
-              onHover: (_) => _showControls(),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final viewportSize = constraints.biggest;
-                  final gestureRect = sessionVideoFullscreenGestureRect(
-                    viewportSize: viewportSize,
-                    controlsVisible: _controlsVisible,
-                    controlBarHeight: _controlBarHeight(context),
-                  );
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      RepaintBoundary(
-                        child: SessionVideoBlurredBackdrop(
-                          child: AsyncLocalCoverImage(
-                            onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
-                            future: _coverFuture ?? Future<String?>.value(),
-                            requestKey: 'fullscreen:${widget.sessionId}',
-                            initialPath:
-                                library.resolvedPlaybackCoverPathForTrack(
-                                  track,
+          child: CallbackShortcuts(
+            bindings: <ShortcutActivator, VoidCallback>{
+              const SingleActivator(LogicalKeyboardKey.escape): () {
+                unawaited(_requestExit());
+              },
+            },
+            child: Focus(
+              autofocus: true,
+              child: Scaffold(
+                backgroundColor: Colors.black,
+                body: AppPageContentTransition(
+                  child: MouseRegion(
+                    onHover: (_) => _showControls(),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final viewportSize = constraints.biggest;
+                        final gestureRect = sessionVideoFullscreenGestureRect(
+                          viewportSize: viewportSize,
+                          controlsVisible: _controlsVisible,
+                          controlBarHeight: _controlBarHeight(context),
+                        );
+                        return Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            RepaintBoundary(
+                              child: SessionVideoBlurredBackdrop(
+                                child: AsyncLocalCoverImage(
+                                  onImageError: library
+                                      .coverArtworkCacheService
+                                      .reportArtworkReadFailure,
+                                  future: _coverFuture,
+                                  requestKey: (
+                                    activeSession.currentTrackPath,
+                                    coverGeneration,
+                                  ),
+                                  initialPath: library
+                                      .resolvedPlaybackCoverPathForTrack(track),
+                                  retryFutureBuilder: () => library
+                                      .playbackCoverPathFutureForTrack(track),
+                                  cacheWidth: coverCacheWidth,
+                                  useDefaultCacheWidth: coverCacheWidth != null,
+                                  fit: BoxFit.cover,
                                 ),
-                            retryFutureBuilder: () =>
-                                library.playbackCoverPathFutureForTrack(track),
-                            cacheWidth: coverCacheWidth,
-                            useDefaultCacheWidth: coverCacheWidth != null,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                      if (isSessionVideoReady(activeSession, track))
-                        NativeSessionVideoSurface(
-                          sessionId: widget.sessionId,
-                          nativeRepository: ref
-                              .read(playbackFacadeProvider)
-                              .nativeRepository,
-                        ),
-                      Positioned.fromRect(
-                        rect: gestureRect,
-                        child: GestureDetector(
-                          key: const ValueKey<String>(
-                            'fullscreen_video_gesture_surface',
-                          ),
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _toggleControls,
-                          onDoubleTapDown: (details) =>
-                              _doubleTapPosition = details.localPosition,
-                          onDoubleTap: _handleDoubleTap,
-                          onLongPressStart: (_) =>
-                              unawaited(_startTemporarySpeed()),
-                          onLongPressEnd: (_) =>
-                              unawaited(_restoreTemporarySpeed()),
-                          onLongPressCancel: () =>
-                              unawaited(_restoreTemporarySpeed()),
-                          onPanStart: (details) => _handlePanStart(
-                            details,
-                            Size(
-                              max(1, gestureRect.width),
-                              max(1, gestureRect.height),
+                              ),
                             ),
-                          ),
-                          onPanUpdate: _handlePanUpdate,
-                          onPanEnd: (_) => _handlePanEnd(cancelled: false),
-                          onPanCancel: () => _handlePanEnd(cancelled: true),
-                        ),
-                      ),
-                      _buildFeedback(),
-                      Theme(
-                        data: controlTheme,
-                        child: Builder(
-                          builder: (context) => _buildControls(
-                            context,
-                            activeSession,
-                            detail,
-                            playing,
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
+                            if (isSessionVideoReady(activeSession, track))
+                              NativeSessionVideoSurface(
+                                sessionId: widget.sessionId,
+                                nativeRepository: ref
+                                    .read(playbackFacadeProvider)
+                                    .nativeRepository,
+                              ),
+                            Positioned.fromRect(
+                              rect: gestureRect,
+                              child: GestureDetector(
+                                key: const ValueKey<String>(
+                                  'fullscreen_video_gesture_surface',
+                                ),
+                                behavior: HitTestBehavior.opaque,
+                                onTap: _toggleControls,
+                                onDoubleTapDown: (details) =>
+                                    _doubleTapPosition = details.localPosition,
+                                onDoubleTap: _handleDoubleTap,
+                                onLongPressStart: (_) =>
+                                    unawaited(_startTemporarySpeed()),
+                                onLongPressEnd: (_) =>
+                                    unawaited(_restoreTemporarySpeed()),
+                                onLongPressCancel: () =>
+                                    unawaited(_restoreTemporarySpeed()),
+                                onPanStart: (details) => _handlePanStart(
+                                  details,
+                                  Size(
+                                    max(1, gestureRect.width),
+                                    max(1, gestureRect.height),
+                                  ),
+                                ),
+                                onPanUpdate: _handlePanUpdate,
+                                onPanEnd: (_) =>
+                                    _handlePanEnd(cancelled: false),
+                                onPanCancel: () =>
+                                    _handlePanEnd(cancelled: true),
+                              ),
+                            ),
+                            _buildFeedback(),
+                            Builder(
+                              builder: (context) => _buildControls(
+                                context,
+                                activeSession,
+                                detail,
+                                playing,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
               ),
-            )),
+            ),
           ),
         ),
       ),
@@ -816,16 +824,8 @@ class _SessionVideoFullscreenPageState
   ) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final track = ref
-        .read(audioPathCoordinatorProvider)
-        .trackByPath(session.currentTrackPath);
-    final isAsmr = track?.usesAsmrVisualTheme == true;
-    final primaryColor = isAsmr
-        ? AppDesignTokens.of(context).asmrAccent
-        : cs.primary;
-    final onPrimaryColor = isAsmr
-        ? AppDesignTokens.of(context).onAsmrAccent
-        : cs.onPrimary;
+    final primaryColor = cs.primary;
+    final onPrimaryColor = cs.onPrimary;
     final showPauseIcon = detail?.showPauseIcon ?? playing;
     final hasPrevious = _playback.hasSessionAdjacentTrack(
       widget.sessionId,

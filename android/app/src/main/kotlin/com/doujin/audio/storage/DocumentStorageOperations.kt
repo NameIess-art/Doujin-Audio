@@ -274,10 +274,12 @@ internal class DocumentStorageOperations(
         folderPath: String,
         relativePath: String,
         overwrite: Boolean
-    ): Boolean {
-        val folder = ensureDocumentFileForFolderPath(folderPath, relativePath, overwrite)
-            ?: return false
-        return folder.exists()
+    ): String? {
+        val root = resolveDocumentFileForFolderPath(folderPath) ?: return null
+        val actualSegments = mutableListOf<String>()
+        val folder = ensureRelativeDocumentDirectory(root, relativePath, overwrite, actualSegments)
+            ?: return null
+        return if (folder.exists()) actualSegments.joinToString("/") else null
     }
 
     fun documentPathExists(targetPath: String): Boolean {
@@ -423,19 +425,11 @@ internal class DocumentStorageOperations(
         return DocumentFile.fromTreeUri(context, uri)?.delete() == true
     }
 
-    private fun ensureDocumentFileForFolderPath(
-        folderPath: String,
-        relativePath: String,
-        overwrite: Boolean
-    ): DocumentFile? {
-        val folder = resolveDocumentFileForFolderPath(folderPath) ?: return null
-        return ensureRelativeDocumentDirectory(folder, relativePath, overwrite)
-    }
-
     private fun ensureRelativeDocumentDirectory(
         root: DocumentFile,
         relativeDirectory: String,
-        overwrite: Boolean
+        overwrite: Boolean,
+        actualSegments: MutableList<String>? = null
     ): DocumentFile? {
         if (relativeDirectory.isBlank()) return root
         var current: DocumentFile? = root
@@ -455,6 +449,10 @@ internal class DocumentStorageOperations(
                 }
                 else -> return null
             } ?: return null
+            // Providers may shorten or otherwise change a requested display name.
+            if (actualSegments != null) {
+                actualSegments.add(current.name?.takeIf { it.isNotBlank() } ?: return null)
+            }
         }
         return current
     }

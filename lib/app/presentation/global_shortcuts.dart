@@ -135,7 +135,7 @@ class GlobalShortcuts extends ConsumerWidget {
         (key == LogicalKeyboardKey.arrowLeft ||
             key == LogicalKeyboardKey.arrowRight);
     final volume =
-        alt &&
+        !alt &&
         !control &&
         (key == LogicalKeyboardKey.arrowUp ||
             key == LogicalKeyboardKey.arrowDown);

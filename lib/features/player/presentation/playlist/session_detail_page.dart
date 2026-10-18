@@ -16,6 +16,8 @@ import '../../application/playback_session_snapshot.dart';
 import 'playlist_shared_helpers.dart';
 
 import 'session_detail_scaffold.dart';
+import 'session_detail_route.dart';
+import 'session_detail_theme.dart';
 export 'session_detail_route.dart'
     show SessionDetailRoute, buildSessionDetailRoute;
 
@@ -93,6 +95,11 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   String get _coverCommitKey =>
       'session_detail_${identityHashCode(this)}_cover';
   late final ActiveSessionDetailIdsNotifier _activeSessionDetailIdsNotifier;
+
+  SessionDetailRoute? get _detailRoute {
+    final route = ModalRoute.of(context);
+    return route is SessionDetailRoute ? route : null;
+  }
 
   @override
   void initState() {
@@ -182,7 +189,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     UiInteractionCoordinator.instance.beginInteraction(
       _dismissInteractionSource,
     );
-    _setRevealBehind(true);
+    _setRevealBehind(_detailRoute?.requiresPortraitRestore != true);
   }
 
   void _endDismissInteraction() {
@@ -199,6 +206,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   }
 
   void _resetInterruptedDismiss() {
+    if (_detailRoute?.preparingForExit == true) return;
     if (!_dismissInteractionActive && !_closing) return;
     _dismissOperation++;
     _closing = false;
@@ -209,7 +217,11 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   }
 
   @override
-  void didChangeMetrics() => _resetInterruptedDismiss();
+  void didChangeMetrics() {
+    final route = _detailRoute;
+    route?.didChangeMetrics();
+    _resetInterruptedDismiss();
+  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -293,9 +305,16 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     ref
         .read(playlistUiControllerProvider)
         .requestCarouselSnap(widget.sessionId);
-    final prepareBehind = !_dismissInteractionActive;
-    _beginDismissInteraction();
     try {
+      final route = _detailRoute;
+      if (route?.requiresPortraitRestore == true) {
+        _dismissController.value = 0;
+        await route!.prepareForExit();
+        if (!mounted || operation != _dismissOperation) return;
+      }
+      final prepareBehind = !_dismissInteractionActive;
+      _beginDismissInteraction();
+      _setRevealBehind(true);
       // Reveal and lay out the cached underlying page before the spring starts.
       if (prepareBehind) await WidgetsBinding.instance.endOfFrame;
       if (!mounted || operation != _dismissOperation) return;
@@ -334,156 +353,176 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       return const Scaffold(body: SizedBox.shrink());
     }
 
+    final trackPath = session.currentTrackPath;
+    if (_cachedCoverFuture == null ||
+        _cachedTrackPath != trackPath ||
+        _cachedCoverGeneration != coverGen) {
+      _cachedTrackPath = trackPath;
+      _cachedCoverGeneration = coverGen;
+      final detailTrack = paths.trackByPath(trackPath);
+      _cachedCoverFuture = coverFutureForTrack(
+        ref.read(libraryFacadeProvider),
+        detailTrack,
+        cachedOnly: true,
+      );
+      // Display indexed artwork first; discovery and extraction must
+      // not compete with the route's moving first frames.
+      UiInteractionCoordinator.instance.scheduleCommit(
+        key: _coverCommitKey,
+        commit: () {
+          if (!mounted) return;
+          final coverFuture = coverFutureForTrack(
+            ref.read(libraryFacadeProvider),
+            detailTrack,
+          );
+          setState(() {
+            _cachedCoverFuture = coverFuture;
+          });
+        },
+      );
+    }
+    final coverPathFuture = _cachedCoverFuture!;
+    final detailTrack = paths.trackByPath(trackPath);
+
     final routeAnimation = MediaQuery.disableAnimationsOf(context)
         ? null
         : _routeAnimation;
-    return Material(
-      color: Colors.transparent,
-      child: AnimatedBuilder(
-        animation: _motion,
-        builder: (context, child) {
-          final rawEnterProgress = (routeAnimation?.value ?? 1).clamp(0.0, 1.0);
-          final enterProgress = Curves.easeOutCubic.transform(rawEnterProgress);
-          final dismissProgress = _dismissController.value.clamp(0.0, 1.0);
-          final screenHeight = MediaQuery.sizeOf(context).height;
-          final dragDistance = screenHeight * dismissProgress;
-          final enterOffset = (1 - enterProgress) * screenHeight;
-          final revealProgress = (dismissProgress * 3).clamp(0.0, 1.0);
-          final backdropOpacity = 1 - revealProgress;
-          final backdropProgress = backdropOpacity * backdropOpacity;
-          final showBackdrop = dismissProgress > 0.01 && backdropProgress > 0;
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              const Positioned.fill(
-                child: ModalBarrier(
-                  dismissible: false,
-                  color: Colors.transparent,
-                ),
-              ),
-              Positioned.fill(
-                child: Transform.translate(
-                  offset: Offset(0, enterOffset),
-                  child: IgnorePointer(
-                    child: Opacity(
-                      key: const ValueKey<String>(
-                        'session_detail_backdrop_paint_gate',
-                      ),
-                      opacity: showBackdrop ? 1 : 0,
-                      child: showBackdrop
-                          ? _SessionDetailBackdrop(progress: backdropProgress)
-                          : const _SessionDetailBackdrop(),
-                    ),
+    return SessionDetailTheme(
+      coverPathFuture: coverPathFuture,
+      initialCoverPath: ref
+          .read(libraryFacadeProvider)
+          .resolvedPlaybackCoverPathForTrack(detailTrack),
+      requestKey: (session.id, trackPath),
+      coverGeneration: coverGen,
+      isAsmr: detailTrack?.usesAsmrVisualTheme ?? false,
+      queueColorValue: session.playbackQueue?.colorValue,
+      transitionActive: _transitionActive,
+      child: Material(
+        color: Colors.transparent,
+        child: AnimatedBuilder(
+          animation: _motion,
+          builder: (context, child) {
+            final rawEnterProgress = (routeAnimation?.value ?? 1).clamp(
+              0.0,
+              1.0,
+            );
+            final enterProgress = Curves.easeOutCubic.transform(
+              rawEnterProgress,
+            );
+            final dismissProgress = _dismissController.value.clamp(0.0, 1.0);
+            final screenHeight = MediaQuery.sizeOf(context).height;
+            final dragDistance = screenHeight * dismissProgress;
+            final enterOffset = (1 - enterProgress) * screenHeight;
+            final revealProgress = (dismissProgress * 3).clamp(0.0, 1.0);
+            final backdropOpacity = 1 - revealProgress;
+            final backdropProgress = backdropOpacity * backdropOpacity;
+            final showBackdrop = dismissProgress > 0.01 && backdropProgress > 0;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                if (_detailRoute?.requiresPortraitRestore == true)
+                  ColoredBox(color: Theme.of(context).colorScheme.surface),
+                const Positioned.fill(
+                  child: ModalBarrier(
+                    dismissible: false,
+                    color: Colors.transparent,
                   ),
                 ),
-              ),
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: FractionallySizedBox(
-                  heightFactor: 1.0,
+                Positioned.fill(
                   child: Transform.translate(
-                    offset: Offset(0, enterOffset + dragDistance),
-                    child: Transform.scale(
-                      scale: 1 - (0.03 * revealProgress),
-                      alignment: Alignment.topCenter,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(24 * revealProgress),
+                    offset: Offset(0, enterOffset),
+                    child: IgnorePointer(
+                      child: Opacity(
+                        key: const ValueKey<String>(
+                          'session_detail_backdrop_paint_gate',
                         ),
-                        child: child!,
+                        opacity: showBackdrop ? 1 : 0,
+                        child: showBackdrop
+                            ? _SessionDetailBackdrop(progress: backdropProgress)
+                            : const _SessionDetailBackdrop(),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
-        child: ValueListenableBuilder<bool>(
-          valueListenable: _transitionActive,
-          builder: (context, isTransitioning, child) {
-            return TickerMode(
-              enabled: !isTransitioning,
-              child: MarqueePauseScope(
-                isPaused: isTransitioning,
-                child: child!,
-              ),
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: FractionallySizedBox(
+                    heightFactor: 1.0,
+                    child: Transform.translate(
+                      offset: Offset(0, enterOffset + dragDistance),
+                      child: Transform.scale(
+                        scale: 1 - (0.03 * revealProgress),
+                        alignment: Alignment.topCenter,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(24 * revealProgress),
+                          ),
+                          child: child!,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             );
           },
-          child: RepaintBoundary(
-            key: const ValueKey('session_detail_content_cache'),
-            child: Builder(
-              builder: (context) {
-                final pageSession = playback.sessionSnapshotById(
-                  widget.sessionId,
-                );
-                if (pageSession == null) {
-                  return const SizedBox.shrink();
-                }
-                final trackPath = pageSession.currentTrackPath;
-                if (_cachedCoverFuture == null ||
-                    _cachedTrackPath != trackPath ||
-                    _cachedCoverGeneration != coverGen) {
-                  _cachedTrackPath = trackPath;
-                  _cachedCoverGeneration = coverGen;
-                  final detailTrack = paths.trackByPath(trackPath);
-                  _cachedCoverFuture = coverFutureForTrack(
-                    ref.read(libraryFacadeProvider),
-                    detailTrack,
-                    cachedOnly: true,
+          child: ValueListenableBuilder<bool>(
+            valueListenable: _transitionActive,
+            builder: (context, isTransitioning, child) {
+              return TickerMode(
+                enabled: !isTransitioning,
+                child: MarqueePauseScope(
+                  isPaused: isTransitioning,
+                  child: child!,
+                ),
+              );
+            },
+            child: RepaintBoundary(
+              key: const ValueKey('session_detail_content_cache'),
+              child: Builder(
+                builder: (context) {
+                  final pageSession = playback.sessionSnapshotById(
+                    widget.sessionId,
                   );
-                  // Display indexed artwork first; discovery and extraction must
-                  // not compete with the route's moving first frames.
-                  UiInteractionCoordinator.instance.scheduleCommit(
-                    key: _coverCommitKey,
-                    commit: () {
-                      if (!mounted) return;
-                      final coverFuture = coverFutureForTrack(
-                        ref.read(libraryFacadeProvider),
-                        detailTrack,
-                      );
-                      setState(() {
-                        _cachedCoverFuture = coverFuture;
-                      });
+                  if (pageSession == null) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return SessionDetailScaffold(
+                    session: pageSession,
+                    coverPathFuture: coverPathFuture,
+                    transitionActive: _transitionActive,
+                    dismissAnimation: _dismissController,
+                    segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
+                    onClose: () =>
+                        _dismissAndPop(navigator: Navigator.of(context)),
+                    onVerticalDragUpdate: (delta) {
+                      if (_closing) return;
+                      if (_dismissController.isAnimating) {
+                        _dismissOperation++;
+                        _dismissController.stop();
+                      }
+                      final screenHeight = MediaQuery.sizeOf(context).height;
+                      if (screenHeight <= 0) return;
+                      final nextValue =
+                          _dismissController.value + (delta / screenHeight);
+                      if (nextValue > 0.001) {
+                        _beginDismissInteraction();
+                      }
+                      _dismissController.value = nextValue.clamp(0.0, 1.0);
+                    },
+                    onVerticalDragEnd: (details) =>
+                        _handleVerticalDragEnd(details, context),
+                    onVerticalDragCancel: () {
+                      if (_dismissController.value <= 0.001) {
+                        _endDismissInteraction();
+                        return;
+                      }
+                      unawaited(_returnFromDismiss());
                     },
                   );
-                }
-                final coverPathFuture = _cachedCoverFuture!;
-
-                return SessionDetailScaffold(
-                  session: pageSession,
-                  coverPathFuture: coverPathFuture,
-                  transitionActive: _transitionActive,
-                  dismissAnimation: _dismissController,
-                  segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
-                  onClose: () =>
-                      _dismissAndPop(navigator: Navigator.of(context)),
-                  onVerticalDragUpdate: (delta) {
-                    if (_closing) return;
-                    if (_dismissController.isAnimating) {
-                      _dismissOperation++;
-                      _dismissController.stop();
-                    }
-                    final screenHeight = MediaQuery.sizeOf(context).height;
-                    if (screenHeight <= 0) return;
-                    final nextValue =
-                        _dismissController.value + (delta / screenHeight);
-                    if (nextValue > 0.001) {
-                      _beginDismissInteraction();
-                    }
-                    _dismissController.value = nextValue.clamp(0.0, 1.0);
-                  },
-                  onVerticalDragEnd: (details) =>
-                      _handleVerticalDragEnd(details, context),
-                  onVerticalDragCancel: () {
-                    if (_dismissController.value <= 0.001) {
-                      _endDismissInteraction();
-                      return;
-                    }
-                    unawaited(_returnFromDismiss());
-                  },
-                );
-              },
+                },
+              ),
             ),
           ),
         ),

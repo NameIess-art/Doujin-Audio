@@ -673,13 +673,14 @@ class _RetryingImageState extends State<RetryingImage> {
 
   bool get _canStartLoad =>
       !widget.deferLoadDuringInteraction ||
-      _interaction.navigationAllowed.value;
+      !_interaction.isVisualUpdateDeferred;
 
   @override
   void initState() {
     super.initState();
     _loadEnabled = _canStartLoad;
     _interaction.navigationAllowed.addListener(_scheduleLoadWhenAllowed);
+    _interaction.addListener(_scheduleLoadWhenAllowed);
   }
 
   @override
@@ -708,6 +709,7 @@ class _RetryingImageState extends State<RetryingImage> {
   void dispose() {
     _retryTimer?.cancel();
     _interaction.navigationAllowed.removeListener(_scheduleLoadWhenAllowed);
+    _interaction.removeListener(_scheduleLoadWhenAllowed);
     _interaction.cancelCommit(_retryCommitKey);
     _interaction.cancelCommit(_loadCommitKey);
     super.dispose();

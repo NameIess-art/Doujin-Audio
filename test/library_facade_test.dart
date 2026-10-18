@@ -2,11 +2,13 @@ import 'package:doujin_audio/features/player/domain/playback_persistence_reposit
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/application/audio_path_coordinator.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/core/persistence/json_document_store.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_document_repository.dart';
@@ -17,6 +19,7 @@ import 'package:doujin_audio/features/library/application/library_scan_coordinat
 import 'package:doujin_audio/features/library/application/library_scan_data_source.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/library_metadata_coordinator.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
@@ -48,6 +51,40 @@ void main() {
 
   tearDown(() async {
     await fixture.dispose(currentGraph: runtimeGraph);
+  });
+
+  test(
+    'startup maintenance waits for foreground and interaction idle',
+    () async {
+      final library = runtimeGraph.library;
+      final repository = TestPersistenceRepository(
+        database: AppDatabase.test(db),
+      );
+      const migration = 'audio_detail_document_read_only_import_v3';
+      // Keep this lifecycle test away from the host's legacy artwork caches.
+      await repository.saveAppSetting('cover_artwork_cache_migration_v1', '1');
+      library.setBackgroundMode(true);
+      library.schedulePostStartupMaintenance();
+      await Future<void>.delayed(const Duration(milliseconds: 3300));
+      expect(await repository.loadAppSetting(migration), isNull);
+
+      library.setInteractionPaused(true);
+      library.setBackgroundMode(false);
+      await Future<void>.delayed(const Duration(milliseconds: 3300));
+      expect(await repository.loadAppSetting(migration), isNull);
+
+      library.setInteractionPaused(false);
+      await _waitForLibrarySetting(repository, migration, '1');
+    },
+  );
+
+  test('persistence reset cancels maintenance waiting in background', () async {
+    final library = runtimeGraph.library;
+    library.setBackgroundMode(true);
+    library.schedulePostStartupMaintenance();
+    await library.prepareForPersistedStateReset().timeout(
+      const Duration(seconds: 1),
+    );
   });
 
   for (final kind in ['media', 'folder', 'detail']) {
@@ -2146,6 +2183,124 @@ void main() {
   );
 
   test(
+    'repeated duration backfill reuses synchronized detail documents',
+    () async {
+      final repository = _CountingTestPersistenceRepository(
+        AppDatabase.test(db),
+      );
+      final documents = _CountingJsonDocumentStore();
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        jsonDocumentStore: documents,
+      )..configurePersistence(enabled: false);
+      addTearDown(library.dispose);
+      const folder = '/library/complete';
+      final track = _localDurationTrack(
+        folder,
+      ).copyWith(duration: const Duration(minutes: 2));
+      final target = AudioDetailTarget.libraryRootFolder(folder);
+      await repository.upsert(
+        AudioDetail.empty(
+          target,
+        ).copyWith(duration: const Duration(minutes: 3)),
+      );
+      library.addWatchedFolder(folder, notify: false);
+      library.addTracks([track], persist: false);
+      expect(library.audioDetailTargetForTrack(track), target);
+      await library.backfillMissingLibraryDurations();
+      expect(repository.detailBatchLoadCount, 1);
+      expect(repository.detailLoadCount, 0);
+      expect(repository.labelLoadCount, 1);
+      expect(documents.readCount, 1);
+      expect(documents.writeCount, 1);
+
+      await library.backfillMissingLibraryDurations();
+      expect(repository.detailBatchLoadCount, 1);
+      expect(repository.detailLoadCount, 0);
+      expect(repository.labelLoadCount, 1);
+      expect(documents.readCount, 1);
+      expect(documents.writeCount, 1);
+
+      library.detailCacheService.clear();
+      await library.backfillMissingLibraryDurations();
+      expect(repository.detailBatchLoadCount, 2);
+      expect(repository.detailLoadCount, 0);
+      expect(repository.labelLoadCount, 1);
+      expect(documents.readCount, 2);
+      expect(documents.writeCount, 1);
+    },
+  );
+
+  for (final importing in [false, true]) {
+    test(
+      'duration maintenance yields between ${importing ? 'import batches' : 'documents'}',
+      () async {
+        final repository = _CountingTestPersistenceRepository(
+          AppDatabase.test(db),
+        );
+        final documents = _CountingJsonDocumentStore();
+        final service = LibraryService();
+        final library = LibraryFacade.create(
+          databaseRepository: repository,
+          jsonDocumentStore: documents,
+          service: service,
+        )..configurePersistence(enabled: false);
+        addTearDown(library.dispose);
+        for (var index = 0; index < (importing ? 33 : 2); index++) {
+          final folder = '/library/checkpoint_$index';
+          final track = _localDurationTrack(
+            folder,
+          ).copyWith(duration: const Duration(minutes: 2));
+          await repository.upsert(
+            AudioDetail.empty(
+              AudioDetailTarget.libraryRootFolder(folder),
+            ).copyWith(workTitle: 'Work', duration: const Duration(minutes: 2)),
+          );
+          library.addWatchedFolder(folder, notify: false);
+          library.addTracks([track], persist: false);
+        }
+        final metadata = LibraryMetadataCoordinator(
+          databaseRepository: repository,
+          detailCacheService: library.detailCacheService,
+          metadataService: library.metadataService,
+          asmrMetadataService: null,
+          service: service,
+          snapshotCacheService: library.snapshotCacheService,
+          coverArtwork: () => library.coverArtworkCacheService,
+          syncState: () {},
+          notifyCoverChanged: () {},
+        );
+        addTearDown(metadata.dispose);
+        final paused = Completer<void>();
+        final release = Completer<bool>();
+        final expectedReads = importing ? 32 : 1;
+        Future<bool> waitForIdle() async {
+          if (documents.readCount < expectedReads) return true;
+          if (!paused.isCompleted) paused.complete();
+          return release.future;
+        }
+
+        final operation = importing
+            ? metadata.importBackups(waitForIdle: waitForIdle)
+            : metadata.backfillMissingDurations(waitForIdle: waitForIdle);
+        await paused.future.timeout(const Duration(seconds: 2));
+        expect(documents.readCount, expectedReads);
+        await Future<void>.delayed(Duration.zero);
+        expect(documents.readCount, expectedReads);
+        release.complete(false);
+        await operation;
+        expect(documents.readCount, expectedReads);
+        if (importing) {
+          expect(
+            await repository.loadAppSetting('backup_restore_authoritative_v1'),
+            isNull,
+          );
+        }
+      },
+    );
+  }
+
+  test(
     'missing-only detail import skips JSON when database detail exists',
     () async {
       final workDir = await Directory.systemTemp.createTemp(
@@ -3794,6 +3949,29 @@ class _CountingTestPersistenceRepository extends TestPersistenceRepository {
   int updateDurationsCallCount = 0;
   final updatedDurationTrackPaths = <String>[];
   String? failingDetailPath;
+  int detailLoadCount = 0;
+  int detailBatchLoadCount = 0;
+  int labelLoadCount = 0;
+
+  @override
+  Future<AudioDetail?> load(AudioDetailTarget target) {
+    detailLoadCount++;
+    return super.load(target);
+  }
+
+  @override
+  Future<List<AudioDetail>> loadMany(Iterable<AudioDetailTarget> targets) {
+    detailBatchLoadCount++;
+    return super.loadMany(targets);
+  }
+
+  @override
+  Future<List<TimeSegmentLabel>> loadTimeSegmentLabelsForTarget(
+    AudioDetailTarget target,
+  ) {
+    labelLoadCount++;
+    return super.loadTimeSegmentLabelsForTarget(target);
+  }
 
   @override
   Future<void> updateTrackDurations(Map<String, Duration> durations) {
@@ -3848,6 +4026,41 @@ class _CountingTestPersistenceRepository extends TestPersistenceRepository {
 
   @override
   Future<void> deleteSessions(List<String> sessionIds) async {}
+}
+
+final class _CountingJsonDocumentStore implements JsonDocumentStore {
+  final _delegate = TestJsonDocumentStore();
+  int readCount = 0;
+  int writeCount = 0;
+
+  @override
+  Future<JsonDocumentReadResult> read(JsonDocumentLocation location) {
+    readCount++;
+    return _delegate.read(location);
+  }
+
+  @override
+  Future<JsonDocumentWriteResult> write({
+    required JsonDocumentLocation location,
+    required Uint8List bytes,
+    required JsonDocumentWriteMode mode,
+    String? expectedRevision,
+  }) {
+    writeCount++;
+    return _delegate.write(
+      location: location,
+      bytes: bytes,
+      mode: mode,
+      expectedRevision: expectedRevision,
+    );
+  }
+
+  @override
+  Future<JsonDocumentDeleteResult> delete({
+    required JsonDocumentLocation location,
+    required String expectedRevision,
+  }) =>
+      _delegate.delete(location: location, expectedRevision: expectedRevision);
 }
 
 class _BlockingDeletionTestPersistenceRepository

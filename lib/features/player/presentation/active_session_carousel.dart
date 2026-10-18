@@ -382,6 +382,113 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         widget.presentation == ActiveSessionCarouselPresentation.embedded;
     final dockPresentation = requestsCircularCover || embedded;
 
+    Widget buildSessionCard(int page, {bool dockCollapsed = false}) {
+      final sessionIndex = _sessionIndexForPage(page, visibleSessions.length);
+      final session = visibleSessions[sessionIndex];
+      final track = ref
+          .read(audioPathCoordinatorProvider)
+          .sessionTrackForPath(session.id, session.currentTrackPath);
+      return RepaintBoundary(
+        child: _ActiveSessionCard(
+          session: session,
+          position: sessionIndex,
+          count: visibleSessions.length,
+          coverPathFuture: _sessionCoverFutureForTrack(library, track),
+          compact: compact,
+          embedded: embedded,
+          dockCollapsed: dockCollapsed,
+          circularCover: requestsCircularCover,
+          onOpen: () => _openSessionDetail(context, session),
+        ),
+      );
+    }
+
+    // Width animation changes layout, not session data or the paging delegate.
+    final roundCard = ValueListenableBuilder<double>(
+      valueListenable: _pageNotifier,
+      builder: (context, page, _) =>
+          buildSessionCard(page.round(), dockCollapsed: embedded),
+    );
+    final pages = Listener(
+      onPointerSignal: (signal) {
+        if (signal is PointerScrollEvent && visibleSessions.length > 1) {
+          final currentPage = _pageNotifier.value.round();
+          final delta = signal.scrollDelta.dy > 0
+              ? 1
+              : signal.scrollDelta.dy < 0
+              ? -1
+              : 0;
+          if (delta != 0) {
+            _moveToPage(
+              currentPage + delta,
+              duration: const Duration(milliseconds: 250),
+            );
+          }
+        }
+      },
+      child: ScrollActivityGate(
+        child: PageView.builder(
+          controller: _pageController,
+          scrollBehavior: ScrollConfiguration.of(context).copyWith(
+            dragDevices: {
+              PointerDeviceKind.touch,
+              PointerDeviceKind.mouse,
+              PointerDeviceKind.trackpad,
+            },
+          ),
+          physics: visibleSessions.length == 1
+              ? const NeverScrollableScrollPhysics()
+              : const BouncingScrollPhysics(),
+          itemBuilder: (context, index) {
+            return _ActiveSessionPageTransform(
+              pageListenable: _pageNotifier,
+              index: index,
+              enabled: visibleSessions.length > 1 && !embedded,
+              child: buildSessionCard(index),
+            );
+          },
+        ),
+      ),
+    );
+    final indicator = visibleSessions.length > 1 && !compact
+        ? IgnorePointer(
+            child: ValueListenableBuilder<int>(
+              valueListenable: _indicatorIndex,
+              builder: (context, activePage, child) {
+                return Semantics(
+                  key: const ValueKey('active_session_indicator'),
+                  label: '${activePage + 1} / ${visibleSessions.length}',
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (
+                        var index = 0;
+                        index < visibleSessions.length;
+                        index++
+                      )
+                        AnimatedContainer(
+                          duration: MediaQuery.disableAnimationsOf(context)
+                              ? Duration.zero
+                              : const Duration(milliseconds: 150),
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          width: index == activePage ? 12 : 5,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: index == activePage
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.onSurfaceVariant
+                                      .withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          )
+        : null;
+
     return SizedBox(
       height: dockPresentation
           ? kActiveSessionCarouselDockHeight
@@ -389,138 +496,23 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final totalWidth = constraints.maxWidth;
-          final circularCover = requestsCircularCover;
-          final dockCollapsed = embedded && totalWidth < 160;
-          Widget buildSessionCard(int page) {
-            final sessionIndex = _sessionIndexForPage(
-              page,
-              visibleSessions.length,
-            );
-            final session = visibleSessions[sessionIndex];
-            final track = ref
-                .read(audioPathCoordinatorProvider)
-                .sessionTrackForPath(session.id, session.currentTrackPath);
-            return RepaintBoundary(
-              child: _ActiveSessionCard(
-                session: session,
-                position: sessionIndex,
-                count: visibleSessions.length,
-                coverPathFuture: _sessionCoverFutureForTrack(library, track),
-                compact: compact,
-                embedded: embedded,
-                dockCollapsed: dockCollapsed,
-                circularCover: circularCover,
-                onOpen: () => _openSessionDetail(context, session),
-              ),
-            );
-          }
-
-          // A round dock has no paging surface. Only the capsule animates its
-          // position; session focus replaces the card at that fixed position.
-          if (circularCover || dockCollapsed) {
-            return ValueListenableBuilder<double>(
-              valueListenable: _pageNotifier,
-              builder: (context, page, _) => buildSessionCard(page.round()),
-            );
+          // A round dock has no moving viewport; preserve its focused session.
+          if (requestsCircularCover || (embedded && totalWidth < 160)) {
+            return roundCard;
           }
           final cardRightInset =
               ((totalWidth * (1.0 - viewportFraction) / 2) + 2.0).clamp(
                 0.0,
                 totalWidth,
               );
-          final indicatorRight = cardRightInset + 16.0;
-          const indicatorBottom = 4.0;
-
           return Stack(
             children: [
-              Listener(
-                onPointerSignal: (signal) {
-                  if (signal is PointerScrollEvent &&
-                      visibleSessions.length > 1) {
-                    final currentPage = _pageNotifier.value.round();
-                    final delta = signal.scrollDelta.dy > 0
-                        ? 1
-                        : signal.scrollDelta.dy < 0
-                        ? -1
-                        : 0;
-                    if (delta != 0) {
-                      _moveToPage(
-                        currentPage + delta,
-                        duration: const Duration(milliseconds: 250),
-                      );
-                    }
-                  }
-                },
-                child: ScrollActivityGate(
-                  child: PageView.builder(
-                    controller: _pageController,
-                    scrollBehavior: ScrollConfiguration.of(context).copyWith(
-                      dragDevices: {
-                        PointerDeviceKind.touch,
-                        PointerDeviceKind.mouse,
-                        PointerDeviceKind.trackpad,
-                      },
-                    ),
-                    physics: visibleSessions.length == 1
-                        ? const NeverScrollableScrollPhysics()
-                        : const BouncingScrollPhysics(),
-                    itemBuilder: (context, index) {
-                      return _ActiveSessionPageTransform(
-                        pageListenable: _pageNotifier,
-                        index: index,
-                        enabled: visibleSessions.length > 1 && !embedded,
-                        child: buildSessionCard(index),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              if (visibleSessions.length > 1 && !compact)
+              pages,
+              if (indicator != null)
                 Positioned(
-                  right: indicatorRight,
-                  bottom: indicatorBottom,
-                  child: IgnorePointer(
-                    child: ValueListenableBuilder<int>(
-                      valueListenable: _indicatorIndex,
-                      builder: (context, activePage, child) {
-                        return Semantics(
-                          key: const ValueKey('active_session_indicator'),
-                          label:
-                              '${activePage + 1} / ${visibleSessions.length}',
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              for (
-                                var index = 0;
-                                index < visibleSessions.length;
-                                index++
-                              )
-                                AnimatedContainer(
-                                  duration:
-                                      MediaQuery.disableAnimationsOf(context)
-                                      ? Duration.zero
-                                      : const Duration(milliseconds: 150),
-                                  margin: const EdgeInsets.symmetric(
-                                    horizontal: 2,
-                                  ),
-                                  width: index == activePage ? 12 : 5,
-                                  height: 5,
-                                  decoration: BoxDecoration(
-                                    color: index == activePage
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant
-                                              .withValues(alpha: 0.55),
-                                    borderRadius: BorderRadius.circular(3),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                  right: cardRightInset + 16,
+                  bottom: 4,
+                  child: indicator,
                 ),
             ],
           );

@@ -9,9 +9,13 @@ import '../data/audio_detail_cover_store.dart';
 import 'audio_detail_document_repository.dart';
 
 class AudioDetailLoadResult {
-  const AudioDetailLoadResult({required this.detail});
+  const AudioDetailLoadResult({
+    required this.detail,
+    this.durationDocumentSynchronized = false,
+  });
 
   final AudioDetail detail;
+  final bool durationDocumentSynchronized;
 }
 
 class AudioDetailSaveResult {
@@ -192,13 +196,17 @@ class AudioDetailRepository {
 
   Future<AudioDetailSaveResult> saveMissingDuration(
     AudioDetailTarget target,
-    Duration duration,
-  ) async {
+    Duration duration, {
+    AudioDetail? cachedDetail,
+  }) async {
     if (duration.inMilliseconds <= 0) {
       throw ArgumentError.value(duration, 'duration', 'Must be positive');
     }
     final normalizedTarget = _normalizeTarget(target);
+    // Only the cache owner's serialized target operation supplies a snapshot,
+    // after preceding edits have completed.
     final current =
+        cachedDetail ??
         await _store.load(normalizedTarget) ??
         AudioDetail.empty(normalizedTarget);
     final detail = current
@@ -209,9 +217,8 @@ class AudioDetailRepository {
     _ensureCanCommit();
     final document = await _documents.saveMissingDuration(
       detail,
-      timeSegmentLabels: await _store.loadTimeSegmentLabelsForTarget(
-        normalizedTarget,
-      ),
+      loadTimeSegmentLabels: () =>
+          _store.loadTimeSegmentLabelsForTarget(normalizedTarget),
       beforeCommit: _ensureCanCommit,
     );
     return AudioDetailSaveResult(

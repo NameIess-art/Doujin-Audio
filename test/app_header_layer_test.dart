@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/app/presentation/routed_playback_dock_host.dart';
 import 'support/app_runtime_test_fixture.dart';
 import 'package:flutter/material.dart';
@@ -55,6 +56,116 @@ Future<List<Color>> _pixels(
 }))!;
 
 void main() {
+  for (final (platform, reducedMotion) in [
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows])
+      for (final reducedMotion in [false, true]) (platform, reducedMotion),
+  ]) {
+    testWidgets(
+      'instant search header fades behind work details on $platform (reduced: $reducedMotion)',
+      (tester) async {
+        final navigator = GlobalKey<NavigatorState>();
+        final surface = GlobalKey();
+        final controller = TextEditingController();
+        final focus = FocusNode();
+        final tab = ValueNotifier(0);
+        addTearDown(controller.dispose);
+        addTearDown(focus.dispose);
+        addTearDown(tab.dispose);
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: surface,
+            child: MaterialApp(
+              navigatorKey: navigator,
+              theme: ThemeData(
+                platform: platform,
+                pageTransitionsTheme: const PageTransitionsTheme(
+                  builders: {
+                    TargetPlatform.android: AppPageTransitionsBuilder(),
+                    TargetPlatform.windows: AppPageTransitionsBuilder(),
+                  },
+                ),
+              ),
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(disableAnimations: reducedMotion),
+                child: AppPageTransitionHost(
+                  child: AppFadeThroughIndexedStack.lazy(
+                    indexListenable: tab,
+                    itemCount: 1,
+                    separateHeader: true,
+                    itemBuilder: (_, _) => child!,
+                  ),
+                ),
+              ),
+              home: _page('home', Colors.red, _oldHeader),
+            ),
+          ),
+        );
+        unawaited(
+          navigator.currentState!.push(
+            buildAppPageRoute<void>(
+              context: navigator.currentContext!,
+              duration: Duration.zero,
+              child: AppSearchPageScaffold<int>(
+                controller: controller,
+                focusNode: focus,
+                hintText: 'Search',
+                categories: const [AppSearchCategory(value: 0, label: 'All')],
+                selectedCategory: 0,
+                onCategorySelected: (_) {},
+                onChanged: (_) {},
+                onSubmitted: (_) {},
+                onCloseOrClear: () {},
+                controlsOverlay: const SizedBox(
+                  height: 88,
+                  child: ColoredBox(color: _oldHeader),
+                ),
+                body: const ColoredBox(color: Colors.red),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final detail = buildAppPageRoute<void>(
+          context: navigator.currentContext!,
+          workDetailTransition: true,
+          child: _page('detail', Colors.blue, _newHeader),
+        );
+        unawaited(navigator.currentState!.push(detail));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        final pixel = (await _pixels(tester, surface, [
+          const Offset(790, 50),
+        ])).single;
+        final incoming = kAppFadeCurve.transform(detail.animation!.value);
+        final expected = Color.alphaBlend(
+          _newHeader.withValues(alpha: incoming),
+          Color.alphaBlend(
+            _oldHeader.withValues(alpha: 1 - incoming),
+            Colors.blue,
+          ),
+        );
+        expect(pixel.g, closeTo(expected.g, 0.02));
+        expect(pixel.b, closeTo(expected.b, 0.02));
+        await tester.pumpAndSettle();
+        // This area belongs only to the search header, outside the detail header.
+        expect(
+          (await _pixels(tester, surface, [const Offset(790, 10)])).single,
+          const Color(0xff2196f3),
+        );
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(
+          (await _pixels(tester, surface, [const Offset(790, 50)])).single,
+          _oldHeader,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
+
   testWidgets('header opacity recovers after hiding and repeated resizes', (
     tester,
   ) async {

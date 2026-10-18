@@ -20,6 +20,7 @@ class AsmrDownloadTaskSnapshot {
     required this.work,
     required this.destinationRoot,
     required this.workFolderName,
+    String? requestedWorkFolderName,
     required this.conflictPolicy,
     this.saveMetadata = true,
     this.saveCover = false,
@@ -44,7 +45,8 @@ class AsmrDownloadTaskSnapshot {
     Set<String> failedFilePaths = const {},
     Set<String> manuallyRetryingFilePaths = const {},
     List<AsmrTrackFile> selectedRoots = const [],
-  }) : fileDownloadedBytes = immutableMap(fileDownloadedBytes),
+  }) : requestedWorkFolderName = requestedWorkFolderName ?? workFolderName,
+       fileDownloadedBytes = immutableMap(fileDownloadedBytes),
        fileTotalBytes = immutableMap(fileTotalBytes),
        fileRetryAttempts = immutableMap(fileRetryAttempts),
        fileEntityTags = immutableMap(fileEntityTags),
@@ -56,6 +58,7 @@ class AsmrDownloadTaskSnapshot {
   final AsmrWork work;
   final String destinationRoot;
   final String workFolderName;
+  final String requestedWorkFolderName;
   final AsmrDownloadConflictPolicy conflictPolicy;
   final bool saveMetadata;
   final bool saveCover;
@@ -112,6 +115,7 @@ class AsmrDownloadTaskSnapshot {
   }
 
   AsmrDownloadTaskSnapshot copyWith({
+    String? workFolderName,
     AsmrDownloadTaskStatus? status,
     AsmrDownloadConflictPolicy? conflictPolicy,
     int? totalFiles,
@@ -136,7 +140,8 @@ class AsmrDownloadTaskSnapshot {
     return AsmrDownloadTaskSnapshot(
       work: work,
       destinationRoot: destinationRoot,
-      workFolderName: workFolderName,
+      workFolderName: workFolderName ?? this.workFolderName,
+      requestedWorkFolderName: requestedWorkFolderName,
       conflictPolicy: conflictPolicy ?? this.conflictPolicy,
       saveMetadata: saveMetadata,
       saveCover: saveCover,

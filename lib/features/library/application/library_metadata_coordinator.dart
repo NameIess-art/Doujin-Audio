@@ -155,6 +155,7 @@ final class LibraryMetadataCoordinator {
 
   Future<AudioDetailBackupImportResult> importBackups({
     bool onlyMissing = false,
+    Future<bool> Function()? waitForIdle,
   }) async {
     final epoch = _epoch;
     final targetsByKey = <String, AudioDetailTarget>{};
@@ -178,9 +179,14 @@ final class LibraryMetadataCoordinator {
     final changedDetails = <AudioDetail>[];
     var importedCount = 0;
     var failureCount = 0;
+    var cancelled = false;
     const batchSize = 32;
     for (var start = 0; start < targets.length; start += batchSize) {
       await Future<void>.delayed(Duration.zero);
+      if (!(await waitForIdle?.call() ?? true)) {
+        cancelled = true;
+        break;
+      }
       if (!_isCurrent(epoch)) throw const AudioDetailOperationCancelled();
       var batch = targets.sublist(
         start,
@@ -200,11 +206,13 @@ final class LibraryMetadataCoordinator {
       importedCount += result.importedCount;
       failureCount += result.failureCount;
     }
-    await _databaseRepository.saveAppSetting(
-      _backupRestoreAuthoritativeKey,
-      '0',
-    );
-    if (changedDetails.isNotEmpty) {
+    if (!cancelled) {
+      await _databaseRepository.saveAppSetting(
+        _backupRestoreAuthoritativeKey,
+        '0',
+      );
+    }
+    if (changedDetails.isNotEmpty && _isCurrent(epoch)) {
       _snapshotCacheService.markDetailChanged();
       _syncState();
     }
@@ -268,6 +276,7 @@ final class LibraryMetadataCoordinator {
 
   Future<void> backfillMissingDurations({
     Future<Duration?> Function(String path)? durationReader,
+    Future<bool> Function()? waitForIdle,
   }) {
     final inFlight = _missingDurationBackfill;
     if (inFlight != null) {
@@ -278,7 +287,11 @@ final class LibraryMetadataCoordinator {
     final task = () async {
       do {
         _backfillRequestedAgain = false;
-        await _backfillDurations(epoch: epoch, durationReader: durationReader);
+        await _backfillDurations(
+          epoch: epoch,
+          durationReader: durationReader,
+          waitForIdle: waitForIdle,
+        );
       } while (_backfillRequestedAgain && !_disposed && epoch == _epoch);
     }();
     _missingDurationBackfill = task;
@@ -300,7 +313,11 @@ final class LibraryMetadataCoordinator {
   Future<void> _backfillDurations({
     required int epoch,
     Future<Duration?> Function(String path)? durationReader,
+    Future<bool> Function()? waitForIdle,
   }) async {
+    Future<bool> checkpoint() async =>
+        (await waitForIdle?.call() ?? true) && _isCurrent(epoch);
+    if (!await checkpoint()) return;
     final targetsByKey = <String, AudioDetailTarget>{};
     final tracks = List<MusicTrack>.of(_service.library);
     for (final track in tracks) {
@@ -310,31 +327,59 @@ final class LibraryMetadataCoordinator {
     }
     if (targetsByKey.isEmpty) return;
     final targets = targetsByKey.values.toList(growable: false);
-    var loadResults = await _detailCacheService.loadMany(targets);
+    final loadResults = <AudioDetailLoadResult>[];
+    for (var start = 0; start < targets.length; start += 64) {
+      if (!await checkpoint()) return;
+      loadResults.addAll(
+        await _detailCacheService.loadMany(targets.skip(start).take(64)),
+      );
+    }
     if (!_isCurrent(epoch)) return;
     final missing = <AudioDetailTarget>[
       for (var index = 0; index < loadResults.length; index++)
-        if (loadResults[index].detail.isEmpty) targets[index],
+        if (loadResults[index].detail.isEmpty &&
+            loadResults[index].detail.duration == null)
+          targets[index],
     ];
     if (missing.isNotEmpty) {
+      if (!await checkpoint()) return;
       final databaseIsAuthoritative =
           await _databaseRepository.loadAppSetting(
             _backupRestoreAuthoritativeKey,
           ) ==
           '1';
-      final imported = databaseIsAuthoritative
-          ? const AudioDetailBackupImportResult()
-          : await _detailCacheService.importBackupsMany(missing);
-      if (imported.changedDetails.isNotEmpty) {
-        _snapshotCacheService.markDetailChanged();
-        _syncState();
+      if (!databaseIsAuthoritative) {
+        for (var start = 0; start < missing.length; start += 64) {
+          if (!await checkpoint()) return;
+          final imported = await _detailCacheService.importBackupsMany(
+            missing.skip(start).take(64),
+          );
+          if (imported.changedDetails.isNotEmpty) {
+            _snapshotCacheService.markDetailChanged();
+            _syncState();
+          }
+        }
       }
       if (!_isCurrent(epoch)) return;
-      loadResults = await _detailCacheService.loadMany(targets);
+      for (var start = 0; start < targets.length; start += 64) {
+        if (!await checkpoint()) return;
+        final end = (start + 64).clamp(0, targets.length);
+        loadResults.replaceRange(
+          start,
+          end,
+          await _detailCacheService.loadMany(targets.sublist(start, end)),
+        );
+      }
       if (!_isCurrent(epoch)) return;
     }
     try {
-      final probe = await _probeDurations(tracks, durationReader, epoch: epoch);
+      final probe = await _probeDurations(
+        tracks,
+        durationReader,
+        epoch: epoch,
+        waitForIdle: waitForIdle,
+      );
+      if (!await checkpoint()) return;
       if (!await _commitDurations(probe.updatedTracks, epoch, notify: false)) {
         return;
       }
@@ -344,7 +389,7 @@ final class LibraryMetadataCoordinator {
         tracksByTargetKey.putIfAbsent(key, () => <MusicTrack>[]).add(track);
       }
       for (var index = 0; index < targets.length; index++) {
-        if (!_isCurrent(epoch)) return;
+        if (!await checkpoint()) return;
         final detail = loadResults[index].detail;
         final targetKey = _targetKey(detail.target);
         final currentTracks = <MusicTrack>[
@@ -369,6 +414,7 @@ final class LibraryMetadataCoordinator {
             latest.target,
             duration,
             deferCategoryUpdate: true,
+            skipSynchronizedDocument: true,
           );
         }
       }
@@ -381,6 +427,7 @@ final class LibraryMetadataCoordinator {
     AudioDetailTarget target,
     Duration duration, {
     bool deferCategoryUpdate = false,
+    bool skipSynchronizedDocument = false,
   }) async {
     final epoch = _epoch;
     if (!_isCurrent(epoch)) throw const AudioDetailOperationCancelled();
@@ -389,6 +436,7 @@ final class LibraryMetadataCoordinator {
     final result = await _detailCacheService.saveMissingDuration(
       canonical,
       duration,
+      skipSynchronizedDocument: skipSynchronizedDocument,
     );
     if (!_isCurrent(epoch)) throw const AudioDetailOperationCancelled();
     if (previous?.duration != result.detail.duration) {
@@ -455,6 +503,7 @@ final class LibraryMetadataCoordinator {
     List<MusicTrack> tracks,
     Future<Duration?> Function(String path)? durationReader, {
     required int epoch,
+    Future<bool> Function()? waitForIdle,
   }) async {
     if (tracks.isEmpty || !_isCurrent(epoch)) {
       return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
@@ -488,6 +537,9 @@ final class LibraryMetadataCoordinator {
     final updated = <MusicTrack>[];
     const concurrency = 2;
     for (var start = 0; start < missing.length; start += concurrency) {
+      if (!(await waitForIdle?.call() ?? true) || !_isCurrent(epoch)) {
+        return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
+      }
       final chunk = missing.sublist(
         start,
         (start + concurrency).clamp(0, missing.length),

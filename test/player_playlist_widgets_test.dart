@@ -47,6 +47,7 @@ import 'package:doujin_audio/core/widgets/duration_overlay.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
+import 'package:doujin_audio/core/widgets/horizontal_edge_fade_scroll.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
@@ -526,32 +527,43 @@ void main() {
         expect(TickerMode.valuesOf(tester.element(content)).enabled, isTrue);
 
         final drag = tester.widget<GestureDetector>(
-          find
-              .descendant(
-                of: find.byType(SessionDetailPage),
-                matching: find.byWidgetPredicate(
-                  (widget) =>
-                      widget is GestureDetector &&
-                      widget.onVerticalDragUpdate != null,
-                ),
-              )
-              .first,
+          find.byKey(const ValueKey('session_detail_dismiss_gesture')),
         );
-        drag.onVerticalDragStart!(DragStartDetails());
-        drag.onVerticalDragUpdate!(
-          DragUpdateDetails(
-            globalPosition: Offset.zero,
-            delta: const Offset(0, 60),
-            primaryDelta: 60,
-          ),
-        );
-        await tester.pump();
-        expect(TickerMode.valuesOf(tester.element(content)).enabled, isFalse);
-        drag.onVerticalDragCancel!();
+        if (platform == TargetPlatform.windows) {
+          expect(drag.onVerticalDragStart, isNull);
+          expect(drag.onVerticalDragUpdate, isNull);
+          expect(drag.onVerticalDragEnd, isNull);
+          expect(drag.onVerticalDragCancel, isNull);
+          final beforeDrag = tester.getTopLeft(content);
+          await tester.dragFrom(
+            beforeDrag + const Offset(100, 150),
+            const Offset(0, 320),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(SessionDetailPage), findsOneWidget);
+          expect(tester.getTopLeft(content), beforeDrag);
+          expect(TickerMode.valuesOf(tester.element(content)).enabled, isTrue);
+          await tester.tap(
+            find.byKey(const ValueKey('session_detail_close_button')),
+          );
+        } else {
+          drag.onVerticalDragStart!(DragStartDetails());
+          drag.onVerticalDragUpdate!(
+            DragUpdateDetails(
+              globalPosition: Offset.zero,
+              delta: const Offset(0, 60),
+              primaryDelta: 60,
+            ),
+          );
+          await tester.pump();
+          expect(TickerMode.valuesOf(tester.element(content)).enabled, isFalse);
+          drag.onVerticalDragCancel!();
+          await tester.pumpAndSettle();
+          expect(TickerMode.valuesOf(tester.element(content)).enabled, isTrue);
+          navigator.pop();
+        }
         await tester.pumpAndSettle();
-        expect(TickerMode.valuesOf(tester.element(content)).enabled, isTrue);
-        navigator.pop();
-        await tester.pumpAndSettle();
+        expect(find.byType(SessionDetailPage), findsNothing);
         expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
         expect(tester.takeException(), isNull);
       },
@@ -1403,7 +1415,6 @@ void main() {
               child: SessionProgressBar(
                 session: PlaybackSessionSnapshot.fromRuntime(session),
                 playback: fixture.runtimeGraph.playback,
-                paths: fixture.runtimeGraph.audioPaths,
               ),
             ),
           ),
@@ -1484,7 +1495,6 @@ void main() {
           SessionProgressBar(
             session: PlaybackSessionSnapshot.fromRuntime(session),
             playback: fixture.runtimeGraph.playback,
-            paths: fixture.runtimeGraph.audioPaths,
           ),
         ),
       );
@@ -1545,7 +1555,6 @@ void main() {
               child: SessionProgressBar(
                 session: PlaybackSessionSnapshot.fromRuntime(session),
                 playback: fixture.runtimeGraph.playback,
-                paths: fixture.runtimeGraph.audioPaths,
                 timeSegmentLabels: labels,
               ),
             ),
@@ -1623,7 +1632,6 @@ void main() {
             child: SessionProgressBar(
               session: PlaybackSessionSnapshot.fromRuntime(session),
               playback: fixture.runtimeGraph.playback,
-              paths: fixture.runtimeGraph.audioPaths,
               timeSegmentLabels: labels,
             ),
           ),
@@ -1709,7 +1717,6 @@ void main() {
               progress: SessionProgressBar(
                 session: PlaybackSessionSnapshot.fromRuntime(session),
                 playback: fixture.runtimeGraph.playback,
-                paths: fixture.runtimeGraph.audioPaths,
                 timeSegmentLabels: [label],
               ),
               transport: const SizedBox.shrink(),
@@ -10263,4 +10270,116 @@ void main() {
     expect(formatSpeedValue(1.25), '1.25x');
     expect(formatSpeedValue(0.75), '0.75x');
   });
+
+  testWidgets(
+    'playlist item work title scrolls marquee on hover in Windows',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      final persistenceRepository = fixture.persistenceRepository;
+      final nativePlaybackRepository = fixture.nativePlaybackRepository;
+      const playbackCommandRunner =
+          AppRuntimeWidgetTestFixture.playbackCommandRunner;
+      final libraryService = fixture.libraryService;
+      final playbackService = fixture.playbackService;
+      final timerService = fixture.timerService;
+      final notificationCoordinatorService =
+          fixture.notificationCoordinatorService;
+      final settingsRepository = fixture.settings;
+      final languageProvider = fixture.languageProvider;
+
+      tester.view.physicalSize = const Size(360, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      const longWorkTitle =
+          'Very Long Work Title That Exceeds The Maximum Allowed Width For A Playlist Item Card In Desktop';
+      final track = testMusicTrack(
+        name: 'Track 1',
+        path: '/library/$longWorkTitle/track1.mp3',
+        groupKey: '/library/$longWorkTitle',
+        groupTitle: longWorkTitle,
+      );
+      runtimeGraph.library.addTracks(<MusicTrack>[track], persist: false);
+      final session = PlaybackSession(
+        id: 'session-hover-test',
+        currentTrackPath: track.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      );
+      addTearDown(session.shutdown);
+      playbackService.registerSession(session);
+      playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        buildAppRuntimeTestApp(
+          runtimeGraph: runtimeGraph,
+          persistenceRepository: persistenceRepository,
+          nativePlaybackRepository: nativePlaybackRepository,
+          playbackCommandRunner: playbackCommandRunner,
+          libraryService: libraryService,
+          playbackService: playbackService,
+          timerService: timerService,
+          notificationCoordinatorService: notificationCoordinatorService,
+          settingsRepository: settingsRepository,
+          languageProvider: languageProvider,
+          child: const PlaylistTab(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final card = find.byType(SessionListCard);
+      expect(card, findsOneWidget);
+
+      final horizontalScroll = find.descendant(
+        of: card,
+        matching: find.byType(HorizontalEdgeFadeScroll),
+      );
+
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        expect(horizontalScroll, findsOneWidget);
+        final scrollable = find.descendant(
+          of: horizontalScroll,
+          matching: find.byType(Scrollable),
+        );
+        expect(tester.state<ScrollableState>(scrollable).position.pixels, 0.0);
+
+        final mouse = await tester.createGesture(
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await mouse.addPointer(location: const Offset(800, 800));
+        await mouse.moveTo(tester.getCenter(card));
+        await tester.pump();
+        for (var i = 0; i < 5; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+
+        expect(
+          tester.state<ScrollableState>(scrollable).position.pixels,
+          greaterThan(0.0),
+        );
+
+        await mouse.moveTo(const Offset(800, 800));
+        await tester.pumpAndSettle();
+        expect(tester.state<ScrollableState>(scrollable).position.pixels, 0.0);
+      } else {
+        expect(horizontalScroll, findsNothing);
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 }

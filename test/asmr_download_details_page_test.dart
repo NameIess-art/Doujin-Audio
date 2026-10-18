@@ -118,7 +118,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('ダウンロード詳細'), findsOneWidget);
-    expect(find.text('ダウンロードタスクが見つかりません'), findsOneWidget);
+    expect(find.text('ダウンロードが見つかりません'), findsOneWidget);
     expect(find.text('Download task not found'), findsNothing);
   });
 

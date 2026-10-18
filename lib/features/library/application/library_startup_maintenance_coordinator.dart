@@ -9,11 +9,12 @@ import 'dart:async';
 import '../../../core/logging/app_log_service.dart';
 
 typedef LibraryMaintenanceIdleWaiter =
-    Future<bool> Function(Duration quietWindow);
+    Future<bool> Function(Duration quietWindow, bool Function() shouldCancel);
 typedef LibraryPersistentImportCleanup =
     Future<void> Function(List<String> retainedPaths);
 typedef LibraryEntryMaintenance = Future<void> Function(int epoch);
-typedef LibraryDurationMaintenance = Future<void> Function();
+typedef LibraryDurationMaintenance =
+    Future<void> Function({Future<bool> Function()? waitForIdle});
 typedef LibraryCoverCacheMigration = Future<void> Function(int epoch);
 
 /// Coordinates deferred startup maintenance so it cannot race with restore or
@@ -109,20 +110,25 @@ final class LibraryStartupMaintenanceCoordinator {
 
   Future<void> _run(int epoch, List<String> retainedPaths) async {
     try {
-      if (!await _waitForUiIdle(_quietWindow) || !_isCurrent(epoch)) return;
+      if (!await _waitForUiIdle(_quietWindow, () => !_isCurrent(epoch)) ||
+          !_isCurrent(epoch)) {
+        return;
+      }
       await AppLogService.measureAsync(
         'library_post_startup_maintenance',
         () async {
           if (!_isCurrent(epoch)) return;
           await _cleanupOrphanedImports(retainedPaths);
-          if (!_isCurrent(epoch)) return;
+          if (!await _waitForIdle(epoch)) return;
           await _migrateCoverCache?.call(epoch);
-          if (!_isCurrent(epoch)) return;
+          if (!await _waitForIdle(epoch)) return;
           await _ensureEntries(epoch);
-          if (!_isCurrent(epoch)) return;
+          if (!await _waitForIdle(epoch)) return;
           await _migrateAudioDetails?.call(epoch);
-          if (!_isCurrent(epoch)) return;
-          await _backfillDurations?.call();
+          if (!await _waitForIdle(epoch)) return;
+          await _backfillDurations?.call(
+            waitForIdle: () => _waitForIdle(epoch),
+          );
         },
         details: <String, Object?>{'tracks': retainedPaths.length},
       );
@@ -136,6 +142,13 @@ final class LibraryStartupMaintenanceCoordinator {
   }
 
   bool _isCurrent(int epoch) => !_disposed && epoch == _epoch;
+
+  Future<bool> _waitForIdle(int epoch) async {
+    if (!_isCurrent(epoch)) return false;
+    return await _waitForUiIdle(Duration.zero, () => !_isCurrent(epoch)) &&
+        _isCurrent(epoch);
+  }
+
   Future<void> _ensureEntriesForLoadedTracks(
     int epoch,
     LibraryService libraryService,
@@ -178,7 +191,9 @@ final class LibraryStartupMaintenanceCoordinator {
       _audioDetailDocumentImportKey,
     );
     if (completed == '1') return;
-    final result = await metadataCoordinator.importBackups();
+    final result = await metadataCoordinator.importBackups(
+      waitForIdle: () => _waitForIdle(epoch),
+    );
     if (!_isCurrent(epoch) || result.failureCount > 0) return;
     await repository.saveAppSetting(_audioDetailDocumentImportKey, '1');
   }

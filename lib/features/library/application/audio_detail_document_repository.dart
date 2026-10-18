@@ -75,6 +75,7 @@ final class AudioDetailDocumentRepository {
     AudioDetail detail, {
     AudioDetailTarget? previousTarget,
     List<TimeSegmentLabel>? timeSegmentLabels,
+    Future<List<TimeSegmentLabel>> Function()? loadTimeSegmentLabels,
     bool onlyTimeSegments = false,
     bool onlyMissingDuration = false,
     void Function()? beforeCommit,
@@ -90,6 +91,7 @@ final class AudioDetailDocumentRepository {
         detail,
         previousTarget: previousTarget,
         timeSegmentLabels: timeSegmentLabels,
+        loadTimeSegmentLabels: loadTimeSegmentLabels,
         onlyTimeSegments: onlyTimeSegments,
         onlyMissingDuration: onlyMissingDuration,
         beforeCommit: beforeCommit,
@@ -105,10 +107,12 @@ final class AudioDetailDocumentRepository {
   Future<JsonDocumentWriteResult> saveMissingDuration(
     AudioDetail detail, {
     List<TimeSegmentLabel>? timeSegmentLabels,
+    Future<List<TimeSegmentLabel>> Function()? loadTimeSegmentLabels,
     void Function()? beforeCommit,
   }) => saveExplicit(
     detail,
     timeSegmentLabels: timeSegmentLabels,
+    loadTimeSegmentLabels: loadTimeSegmentLabels,
     onlyMissingDuration: true,
     beforeCommit: beforeCommit,
   );
@@ -117,20 +121,45 @@ final class AudioDetailDocumentRepository {
     AudioDetail detail, {
     AudioDetailTarget? previousTarget,
     List<TimeSegmentLabel>? timeSegmentLabels,
+    Future<List<TimeSegmentLabel>> Function()? loadTimeSegmentLabels,
     required bool onlyTimeSegments,
     required bool onlyMissingDuration,
     void Function()? beforeCommit,
   }) async {
     final location = locationFor(detail.target);
     final codec = _codec;
-    final coverFields = <String, Object?>{
-      ...await _coverStore.documentFields(detail),
-      if (timeSegmentLabels != null)
-        ..._codec.timeSegmentFields(detail.target, timeSegmentLabels),
-    };
+    Map<String, Object?>? preparedFields;
     for (var attempt = 0; attempt < 2; attempt++) {
       final current = await _store.read(location);
+      beforeCommit?.call();
       final snapshot = current.snapshot;
+      // Complete duration documents need no cover preparation or label query.
+      // Still validate the source so corrupt documents remain retryable.
+      if (onlyMissingDuration && snapshot != null) {
+        try {
+          final patch = await Isolate.run(
+            () => codec.mergeMissingDuration(snapshot.bytes, detail),
+          );
+          if (patch == null) {
+            return const JsonDocumentWriteResult(
+              status: JsonDocumentWriteStatus.preserved,
+            );
+          }
+        } on FormatException catch (error) {
+          return JsonDocumentWriteResult(
+            status: JsonDocumentWriteStatus.conflict,
+            error: error.toString(),
+          );
+        }
+      }
+      if (preparedFields == null) {
+        final labels = timeSegmentLabels ?? await loadTimeSegmentLabels?.call();
+        preparedFields = <String, Object?>{
+          ...await _coverStore.documentFields(detail),
+          if (labels != null) ...codec.timeSegmentFields(detail.target, labels),
+        };
+      }
+      final coverFields = preparedFields;
       if (current.status == JsonDocumentReadStatus.missing) {
         final bytes = await Isolate.run(
           () => codec.encodeNew(detail, additionalFields: coverFields),

@@ -86,7 +86,7 @@ internal class FileCacheOperations(context: Context) {
         return mapOf("path" to cachedPath, "sourcePath" to savedUri)
     }
 
-    fun ensureFolderPath(folder: String, relativePath: String, overwrite: Boolean): Boolean =
+    fun ensureFolderPath(folder: String, relativePath: String, overwrite: Boolean): String? =
         documentStorage.ensureFolderPath(folder, relativePath, overwrite)
 
     fun documentPathExists(path: String): Boolean = documentStorage.documentPathExists(path)

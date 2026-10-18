@@ -124,6 +124,7 @@ abstract final class FileCacheMethod {
   static const String deleteJsonDocument = 'deleteJsonDocument';
   static const String writeFileBytesToFolder = 'writeFileBytesToFolder';
   static const String documentPathExists = 'documentPathExists';
+  static const String openContainingFolder = 'openContainingFolder';
   static const String resolveDocumentFileSystemPath =
       'resolveDocumentFileSystemPath';
   static const String ensureFolderPath = 'ensureFolderPath';

@@ -30,7 +30,7 @@ class AsmrDownloadOutputStore {
   static const _audioDetailJsonCodec = AudioDetailJsonCodec();
   JsonDocumentStore get jsonDocuments => _jsonDocumentStore;
   FileCachePlatformGateway get gateway => _fileCacheGateway;
-  Future<void> prepareTask(AsmrDownloadTaskSnapshot task) async {
+  Future<String> prepareTask(AsmrDownloadTaskSnapshot task) async {
     final workId = task.work.id;
     final normalizedDestination = task.destinationRoot;
     final workFolderName = task.workFolderName;
@@ -40,14 +40,21 @@ class AsmrDownloadOutputStore {
       workId,
       () => <String, CreatedDownloadJsonDocument>{},
     );
-    final rootReady = await ensureFolderPath(
+    if (PathMatcher.isContentUri(normalizedDestination)) {
+      final actualName = await _fileCacheGateway.ensureFolderPath(
+        folder: normalizedDestination,
+        relativePath: workFolderName,
+        overwrite: conflictPolicy == AsmrDownloadConflictPolicy.overwrite,
+      );
+      if (actualName != null && actualName.isNotEmpty) return actualName;
+    } else if (await ensureFolderPath(
       basePath: normalizedDestination,
       relativePath: workFolderName,
       overwrite: conflictPolicy == AsmrDownloadConflictPolicy.overwrite,
-    );
-    if (!rootReady) {
-      throw const FileSystemException('Unable to create download folder.');
+    )) {
+      return workFolderName;
     }
+    throw const FileSystemException('Unable to create download folder.');
   }
 
   Future<bool> saveTaskMetadata(
@@ -297,11 +304,12 @@ class AsmrDownloadOutputStore {
     final normalized = _planner.validatedDownloadRelativePath(relativePath);
 
     if (PathMatcher.isContentUri(basePath)) {
-      return _fileCacheGateway.ensureFolderPath(
-        folder: basePath,
-        relativePath: normalized,
-        overwrite: overwrite,
-      );
+      return await _fileCacheGateway.ensureFolderPath(
+            folder: basePath,
+            relativePath: normalized,
+            overwrite: overwrite,
+          ) !=
+          null;
     }
 
     final folder = Directory(

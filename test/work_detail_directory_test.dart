@@ -55,6 +55,40 @@ AsmrTrackFile _remote(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  for (final name in [
+    'translation.SRT',
+    'translation.lrc',
+    'translation.vtt',
+    'translation.webvtt',
+    'translation.ass',
+    'translation.ssa',
+    'readme.txt',
+    'readme.md',
+    'manual.pdf',
+  ]) {
+    test(
+      'local subtitle status includes nested $name without audio matching',
+      () {
+        final file = WorkTextFile(
+          name: name,
+          relativePath: 'Extras/字幕/$name',
+          path: 'content://provider/document/123',
+        );
+        final snapshot = buildWorkDirectorySnapshot(
+          WorkDirectoryInput.local(
+            root: null,
+            texts: [file],
+            images: const [],
+            folderPath: 'C:/作品',
+          ),
+        );
+        final isSubtitle = name.startsWith('translation.');
+        expect(snapshot.hasSubtitle, isSubtitle);
+        expect(snapshot.entriesAt(['Extras', '字幕']).length, isSubtitle ? 0 : 1);
+      },
+    );
+  }
+
   test('local index sorts once and includes file-only nested directories', () {
     final root = FolderNode('作品', 'C:/作品')
       ..addChild(TrackNode(_track('Track10.mp3')))
@@ -77,6 +111,7 @@ void main() {
       folderPath: 'C:/作品',
     );
     final snapshot = buildWorkDirectorySnapshot(input);
+    expect(snapshot.hasSubtitle, isFalse);
     expect(snapshot.entriesAt([]).map((entry) => entry.name), [
       'Extras',
       'Track2.mp3',

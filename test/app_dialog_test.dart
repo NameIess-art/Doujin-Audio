@@ -7,6 +7,69 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 void main() {
+  testWidgets('dialog preserves the opening local theme across its route', (
+    tester,
+  ) async {
+    final appScheme = ColorScheme.fromSeed(seedColor: Colors.blue);
+    final localScheme = ColorScheme.fromSeed(seedColor: Colors.red);
+    final localTheme = ThemeData(
+      colorScheme: localScheme,
+      inputDecorationTheme: InputDecorationTheme(
+        focusedBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: localScheme.primary, width: 1.4),
+        ),
+      ),
+    );
+    ThemeData? builderTheme;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(colorScheme: appScheme),
+        home: Theme(
+          data: localTheme,
+          child: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showAppDialog<void>(
+                  context: context,
+                  builder: (dialogContext) {
+                    builderTheme = Theme.of(dialogContext);
+                    return const AppDialog(
+                      title: 'Cover theme',
+                      content: TextField(autofocus: true),
+                    );
+                  },
+                ),
+                child: const Text('Open local dialog'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open local dialog'));
+    await tester.pumpAndSettle();
+
+    expect(builderTheme!.colorScheme, localScheme);
+    expect(
+      Theme.of(tester.element(find.byType(TextField))).colorScheme,
+      localScheme,
+    );
+    final decoration = tester.widget<InputDecorator>(
+      find.byType(InputDecorator),
+    );
+    expect(decoration.isFocused, isTrue);
+    expect(
+      decoration.decoration.focusedBorder!.borderSide.color,
+      localScheme.primary,
+    );
+    expect(
+      Theme.of(
+        tester.element(find.byKey(const ValueKey('app_dialog_scrim'))),
+      ).colorScheme,
+      localScheme,
+    );
+  });
+
   testWidgets('overlay ink background fades with the panel on dismissal', (
     tester,
   ) async {

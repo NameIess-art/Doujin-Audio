@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
-import '../../core/widgets/app_transitions.dart';
 import '../localization/app_language_provider.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
@@ -29,10 +28,9 @@ class MobileDockCapsuleContent extends StatefulWidget {
   final Widget Function(
     BuildContext context, {
     required bool isPlaybackExpanded,
-    required double anchorProgress,
-    required double stackProgress,
-    required double fadeProgress,
-    required double expandedWidth,
+    required Animation<double> appearance,
+    required Animation<double> expansion,
+    required double availableWidth,
     required VoidCallback onCurrentTap,
   })
   buildBottomBar;
@@ -188,20 +186,22 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
       builder: (context, constraints) {
         final availableWidth = constraints.maxWidth;
         final playbackChild = _buildPlaybackChild(context);
+        final navigationChild = ClipRect(
+          child: widget.buildBottomBar(
+            context,
+            isPlaybackExpanded: widget.isPlaybackExpanded,
+            appearance: _appearanceCurve,
+            expansion: _expandController,
+            availableWidth: availableWidth,
+            onCurrentTap: widget.onShowDestinations,
+          ),
+        );
 
         return AnimatedBuilder(
           animation: _animationListenable,
           builder: (context, _) {
             final appearance = _appearanceCurve.value;
             final expand = _expandController.value;
-            // Move the first icon first, then gather the others behind it.
-            final anchorProgress = Curves.easeInOut.transform(
-              (expand / 0.2).clamp(0.0, 1.0),
-            );
-            final stackProgress = Curves.easeInOut.transform(
-              ((expand - 0.2) / 0.45).clamp(0.0, 1.0),
-            );
-            final fadeProgress = kAppFadeCurve.transform(expand);
             final layoutProgress = Curves.easeInOut.transform(
               ((expand - 0.25) / 0.5).clamp(0.0, 1.0),
             );
@@ -216,13 +216,6 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
                   0.0,
                   availableWidth,
                 );
-            final navigationChild = _buildNavigationChild(
-              context,
-              anchorProgress: anchorProgress,
-              stackProgress: stackProgress,
-              fadeProgress: fadeProgress,
-              expandedWidth: availableWidth - compactWidth * appearance,
-            );
 
             return Stack(
               children: [
@@ -268,26 +261,6 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
           },
         );
       },
-    );
-  }
-
-  Widget _buildNavigationChild(
-    BuildContext context, {
-    required double anchorProgress,
-    required double stackProgress,
-    required double fadeProgress,
-    required double expandedWidth,
-  }) {
-    return ClipRect(
-      child: widget.buildBottomBar(
-        context,
-        isPlaybackExpanded: widget.isPlaybackExpanded,
-        anchorProgress: anchorProgress,
-        stackProgress: stackProgress,
-        fadeProgress: fadeProgress,
-        expandedWidth: expandedWidth,
-        onCurrentTap: widget.onShowDestinations,
-      ),
     );
   }
 

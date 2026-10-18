@@ -2216,6 +2216,103 @@ void main() {
     },
   );
 
+  for (final saveMetadata in [false, true]) {
+    test(
+      'SAF follows the actual long work folder name through transfer and restore '
+      '(metadata: $saveMetadata)',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp('saf_long_name_');
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final longTitle = List.filled(87, '名').join();
+        final actualName =
+            '${longTitle.substring(0, 42)}...'
+            '${longTitle.substring(45)}';
+        const destination = 'content://downloads/tree/root';
+        final actualRoot = '$destination::$actualName';
+        final gateway = _StatefulSafGateway(
+          resolveFolderName: (name) => name == longTitle ? actualName : name,
+        );
+        final documents = _CompletionMetadataStore(
+          tempDir.path,
+          requiredFolder: actualRoot,
+        )..releaseWrite.complete();
+        final manager = AsmrDownloadManager(
+          fileCacheGateway: gateway,
+          jsonDocumentStore: documents,
+          persistTasks: false,
+          stagingDirectoryProvider: () async => tempDir,
+        );
+        server.listen((request) async {
+          if (saveMetadata) {
+            expect(documents.location?.basePath, actualRoot);
+          }
+          request.response
+            ..contentLength = 1
+            ..add([7]);
+          await request.response.close();
+        });
+        try {
+          expect(utf8.encode(longTitle), hasLength(261));
+          expect(utf8.encode(actualName), hasLength(255));
+          await manager.startDownload(
+            work: _work(id: 1716098, title: longTitle, sourceId: 'RJ01716098'),
+            selectedRoots: [
+              _file(
+                downloadUrl:
+                    'http://${server.address.host}:${server.port}/track.mp3',
+              ),
+            ],
+            destinationRoot: destination,
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+            saveMetadata: saveMetadata,
+          );
+          await _waitForTaskStatus(
+            manager,
+            1716098,
+            AsmrDownloadTaskStatus.completed,
+          );
+          final task = manager.getTask(1716098)!;
+          expect(task.workFolderName, actualName);
+          expect(task.requestedWorkFolderName, longTitle);
+          expect(task.workRootPath, actualRoot);
+          expect(gateway.copiedFolders, [actualRoot]);
+          expect(task.work.title, longTitle);
+          if (saveMetadata) {
+            final metadata =
+                jsonDecode(
+                      await File(
+                        path.join(tempDir.path, 'doujin-audio.json'),
+                      ).readAsString(),
+                    )
+                    as Map<String, dynamic>;
+            expect(metadata['workTitle'], longTitle);
+          }
+          final restored = downloadTaskFromJson(
+            downloadTaskToJson(
+              task,
+              createdOutputPaths: const {},
+              createdJsonDocuments: const {},
+            ),
+          ).task;
+          expect(restored.workRootPath, actualRoot);
+          expect(restored.requestedWorkFolderName, longTitle);
+          expect(
+            restored
+                .copyWith(status: AsmrDownloadTaskStatus.paused)
+                .workFolderName,
+            actualName,
+          );
+          await manager.deleteTask(1716098);
+          expect(gateway.deletedPaths, contains('$actualRoot/Track.mp3'));
+        } finally {
+          await manager.shutdown();
+          await server.close(force: true);
+          await tempDir.delete(recursive: true);
+        }
+      },
+    );
+  }
+
   for (final usesSaf in [false, true]) {
     test(
       'metadata commits before files and blocks transfers on write failure '
@@ -2237,8 +2334,16 @@ void main() {
             ..add([7]);
           await request.response.close();
         });
-        final gateway = _StatefulSafGateway();
-        final documents = _CompletionMetadataStore(tempDir.path);
+        final gateway = _StatefulSafGateway(
+          resolveFolderName: (name) =>
+              usesSaf && name == 'Work' ? 'Provider Work' : name,
+        );
+        final documents = _CompletionMetadataStore(
+          tempDir.path,
+          requiredFolder: usesSaf
+              ? 'content://downloads/tree/root::Provider Work'
+              : null,
+        );
         final manager = AsmrDownloadManager(
           fileCacheGateway: gateway,
           jsonDocumentStore: documents,
@@ -2307,7 +2412,18 @@ void main() {
           expect(completions, isEmpty);
 
           documents.rejectWrite = false;
-          await manager.resumeTask(1);
+          final startedAt = manager.getTask(1)!.startedAt;
+          await manager.startDownload(
+            work: _work(),
+            selectedRoots: [
+              _file(
+                downloadUrl:
+                    'http://${server.address.host}:${server.port}/track.mp3',
+              ),
+            ],
+            destinationRoot: destination,
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          );
           await _waitForTaskStatus(
             manager,
             1,
@@ -2317,6 +2433,7 @@ void main() {
           expect(completions, hasLength(1));
           expect(requests, 1);
           expect(titleAtFirstRequest, 'Work');
+          expect(manager.getTask(1)!.startedAt, startedAt);
           expect(manager.getTask(1)?.completedFiles, 2);
           expect(
             manager.getTask(1)?.downloadedBytes,
@@ -5268,9 +5385,10 @@ AsmrDownloadTaskSnapshot _failedTaskSnapshot(
 }
 
 final class _CompletionMetadataStore implements JsonDocumentStore {
-  _CompletionMetadataStore(this.folder);
+  _CompletionMetadataStore(this.folder, {this.requiredFolder});
 
   final String folder;
+  final String? requiredFolder;
   final _delegate = DefaultJsonDocumentStore();
   final writeStarted = Completer<void>();
   final releaseWrite = Completer<void>();
@@ -5294,7 +5412,8 @@ final class _CompletionMetadataStore implements JsonDocumentStore {
     this.location = location;
     if (!writeStarted.isCompleted) writeStarted.complete();
     await releaseWrite.future;
-    if (rejectWrite) {
+    if (rejectWrite ||
+        (requiredFolder != null && location.basePath != requiredFolder)) {
       return const JsonDocumentWriteResult(
         status: JsonDocumentWriteStatus.conflict,
         error: 'metadata_write_failed',
@@ -5332,14 +5451,14 @@ final class _ExistingJsonSafGateway extends FileCachePlatformGateway {
   Future<bool?> documentPathExistence(String path) async => true;
 
   @override
-  Future<bool> ensureFolderPath({
+  Future<String?> ensureFolderPath({
     required String folder,
     required String relativePath,
     required bool overwrite,
   }) async {
     ensureFolderCount++;
     ensuredRelativePaths.add(relativePath);
-    return true;
+    return relativePath;
   }
 
   @override
@@ -5365,13 +5484,13 @@ final class _RecordingSafGateway extends FileCachePlatformGateway {
   Future<bool> documentPathExists(String path) async => false;
 
   @override
-  Future<bool> ensureFolderPath({
+  Future<String?> ensureFolderPath({
     required String folder,
     required String relativePath,
     required bool overwrite,
   }) async {
     ensuredRelativePaths.add(relativePath);
-    return true;
+    return relativePath;
   }
 
   @override
@@ -5393,12 +5512,15 @@ final class _RecordingSafGateway extends FileCachePlatformGateway {
 }
 
 final class _StatefulSafGateway extends FileCachePlatformGateway {
-  _StatefulSafGateway({this.beforeCopy}) : super(isAndroid: () => true);
+  _StatefulSafGateway({this.beforeCopy, this.resolveFolderName})
+    : super(isAndroid: () => true);
 
   final Future<void> Function(String)? beforeCopy;
+  final String Function(String)? resolveFolderName;
 
   final Set<String> existingPaths = <String>{};
   final List<String> copiedRelativePaths = <String>[];
+  final List<String> copiedFolders = <String>[];
   final List<String> checkedPaths = <String>[];
   final List<String> deletedPaths = <String>[];
 
@@ -5409,11 +5531,11 @@ final class _StatefulSafGateway extends FileCachePlatformGateway {
   }
 
   @override
-  Future<bool> ensureFolderPath({
+  Future<String?> ensureFolderPath({
     required String folder,
     required String relativePath,
     required bool overwrite,
-  }) async => true;
+  }) async => resolveFolderName?.call(relativePath) ?? relativePath;
 
   @override
   Future<bool> copyFileToFolder({
@@ -5423,6 +5545,7 @@ final class _StatefulSafGateway extends FileCachePlatformGateway {
     required bool overwrite,
   }) async {
     await beforeCopy?.call(relativePath);
+    copiedFolders.add(folder);
     copiedRelativePaths.add(relativePath);
     final targetPath = folder.contains('::')
         ? '${folder.replaceAll(RegExp(r'/+$'), '')}/$relativePath'
@@ -5452,11 +5575,11 @@ final class _UnknownExistingRootSafGateway extends FileCachePlatformGateway {
   Future<bool?> documentPathExistence(String path) async => null;
 
   @override
-  Future<bool> ensureFolderPath({
+  Future<String?> ensureFolderPath({
     required String folder,
     required String relativePath,
     required bool overwrite,
-  }) async => true;
+  }) async => relativePath;
 
   @override
   Future<bool> deleteDocumentPath(String path) async {

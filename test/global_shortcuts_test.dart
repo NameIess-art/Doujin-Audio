@@ -4,6 +4,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
@@ -151,9 +152,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pump(const Duration(milliseconds: 200));
       expect(native.seeks, [('primary', const Duration(seconds: 5))]);
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
       await tester.pump(const Duration(milliseconds: 200));
       expect(native.volumes, [('primary', 0.45)]);
       playback.sessionById('primary')!.setOptimisticPosition(Duration.zero);
@@ -186,6 +185,8 @@ void main() {
         );
         await tester.pump();
         await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
         await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
         await tester.sendKeyEvent(LogicalKeyboardKey.space);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
@@ -193,6 +194,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 200));
         expect(resumed, isEmpty);
         expect(native.seeks, isEmpty);
+        expect(playback.sessionById('primary')!.volume, 1);
         await tester.pumpWidget(const SizedBox.shrink());
       }
     },
@@ -340,19 +342,22 @@ void main() {
   );
 
   testWidgets(
-    'text editing preserves space and Ctrl arrow shortcuts',
+    'text editing preserves space and arrow shortcuts',
     (tester) async {
       await tester.pumpWidget(
         app(const TextField(autofocus: true), focusedCardSessionId: 'primary'),
       );
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pump();
       expect(resumed, isEmpty);
+      expect(playback.sessionById('primary')!.volume, 1);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
@@ -440,11 +445,148 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pump(const Duration(milliseconds: 200));
       expect(native.seeks.last, ('primary', Duration.zero));
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pump(const Duration(seconds: 1));
       expect(native.volumes, [('primary', 0.0)]);
       expect(playback.sessionById('first')!.volume, 1);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'plain up and down adjust only the focused session and clamp volume',
+    (tester) async {
+      for (final id in ['first', 'primary']) {
+        playback.sessionById(id)!
+          ..loadedPath = '/$id.mp3'
+          ..volume = 0.5;
+      }
+      await tester.pumpWidget(app(const SizedBox()));
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      expect(native.volumes, isEmpty);
+
+      await tester.pumpWidget(
+        app(const SizedBox(), focusedCardSessionId: 'primary'),
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.volumes.last, ('primary', 0.55));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.volumes.last, ('primary', 0.5));
+
+      await tester.pumpWidget(
+        app(
+          const SizedBox(),
+          focusedCardSessionId: 'primary',
+          focusedDetailSessionId: 'first',
+        ),
+      );
+      await tester.pump();
+      playback.sessionById('first')!.volume =
+          PlaybackFacade.maxSessionVolume - 0.02;
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.volumes.last, ('first', PlaybackFacade.maxSessionVolume));
+      playback.sessionById('first')!.volume = 0.02;
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.volumes.last, ('first', 0.0));
+      expect(playback.sessionById('primary')!.volume, 0.5);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'modified up and down no longer change session volume',
+    (tester) async {
+      playback.sessionById('primary')!
+        ..loadedPath = '/primary.mp3'
+        ..volume = 0.5;
+      await tester.pumpWidget(
+        app(const SizedBox(), focusedCardSessionId: 'primary'),
+      );
+      await tester.pump();
+      for (final modifier in [
+        LogicalKeyboardKey.altLeft,
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.shiftLeft,
+        LogicalKeyboardKey.metaLeft,
+      ]) {
+        await tester.sendKeyDownEvent(modifier);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.sendKeyUpEvent(modifier);
+      }
+      expect(native.volumes, isEmpty);
+      expect(playback.sessionById('primary')!.volume, 0.5);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'focused slider keeps up and down for its own value',
+    (tester) async {
+      var sliderValue = 0.4;
+      await tester.pumpWidget(
+        app(
+          StatefulBuilder(
+            builder: (context, setState) => Slider(
+              autofocus: true,
+              value: sliderValue,
+              divisions: 10,
+              onChanged: (value) => setState(() => sliderValue = value),
+            ),
+          ),
+          focusedCardSessionId: 'primary',
+        ),
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(sliderValue, closeTo(0.5, 0.001));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(sliderValue, closeTo(0.4, 0.001));
+      expect(native.volumes, isEmpty);
+      expect(playback.sessionById('primary')!.volume, 1);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'popup menu keeps up and down for menu selection',
+    (tester) async {
+      String? selected;
+      await tester.pumpWidget(
+        app(
+          UnifiedPopupMenuButton<String>(
+            icon: Icons.more_vert,
+            tooltip: 'Options',
+            onSelected: (value) => selected = value,
+            entries: const [
+              UnifiedMenuEntry.action(value: 'first', label: 'First option'),
+              UnifiedMenuEntry.action(value: 'second', label: 'Second option'),
+            ],
+          ),
+          focusedCardSessionId: 'primary',
+        ),
+      );
+      await tester.tap(find.byTooltip('Options'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(selected, 'first');
+      expect(native.volumes, isEmpty);
+      expect(playback.sessionById('primary')!.volume, 1);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );

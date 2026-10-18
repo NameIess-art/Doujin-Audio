@@ -13,7 +13,16 @@ import 'work_image_viewer_page.dart';
 
 enum WorkEntryType { folder, audio, text, image }
 
-enum WorkEntryAction { open, play, add, remove, rename, setCover, copy }
+enum WorkEntryAction {
+  open,
+  play,
+  add,
+  remove,
+  rename,
+  setCover,
+  copy,
+  openContainingFolder,
+}
 
 class WorkEntryItem {
   const WorkEntryItem({
@@ -275,6 +284,10 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
   } else {
     if (input.root != null) localTree(input.root!, '');
     for (final text in input.texts) {
+      if (text.isSubtitle) {
+        hasSubtitle = true;
+        continue;
+      }
       fileParent(text.relativePath).add(
         WorkEntryItem(
           name: text.name,

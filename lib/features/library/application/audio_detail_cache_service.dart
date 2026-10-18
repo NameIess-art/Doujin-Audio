@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/persistence/json_document_store.dart';
 import 'audio_detail_repository.dart';
 
 class AudioDetailCacheChange {
@@ -283,16 +284,32 @@ class AudioDetailCacheService {
 
   Future<AudioDetailSaveResult> saveMissingDuration(
     AudioDetailTarget target,
-    Duration duration,
-  ) {
+    Duration duration, {
+    bool skipSynchronizedDocument = false,
+  }) {
     final epoch = _cacheEpoch;
     return _runSerialized<AudioDetailSaveResult>([target], () async {
-      final previousDuration = resolvedDetail(target)?.duration;
-      final result = await _repository.saveMissingDuration(target, duration);
+      final cached = _takeResolved(AudioLibraryDetailKey.forTarget(target));
+      if (skipSynchronizedDocument &&
+          cached?.durationDocumentSynchronized == true) {
+        return AudioDetailSaveResult(
+          detail: cached!.detail,
+          documentStatus: JsonDocumentWriteStatus.preserved,
+        );
+      }
+      final previousDuration = cached?.detail.duration;
+      final result = await _repository.saveMissingDuration(
+        target,
+        duration,
+        cachedDetail: cached?.detail,
+      );
       if (epoch != _cacheEpoch) {
         throw const AudioDetailOperationCancelled();
       }
-      _store(result.detail);
+      _store(
+        result.detail,
+        durationDocumentSynchronized: !result.documentFailed,
+      );
       if (previousDuration != result.detail.duration) {
         _bumpRevision([result.detail.target]);
       }
@@ -497,14 +514,19 @@ class AudioDetailCacheService {
     return future;
   }
 
-  void _store(AudioDetail detail) {
+  void _store(AudioDetail detail, {bool durationDocumentSynchronized = false}) {
     final previous = resolvedDetail(detail.target);
     if (previous?.workTitle != detail.workTitle) _workTitleRevision++;
     if (!listEquals(previous?.voiceActors, detail.voiceActors)) {
       _voiceActorRevision++;
     }
     if (previous?.releaseDate != detail.releaseDate) _releaseDateRevision++;
-    _storeLoadResult(AudioDetailLoadResult(detail: detail));
+    _storeLoadResult(
+      AudioDetailLoadResult(
+        detail: detail,
+        durationDocumentSynchronized: durationDocumentSynchronized,
+      ),
+    );
   }
 
   void _storeLoadResult(AudioDetailLoadResult loadResult) {

@@ -182,6 +182,17 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
   });
   channels_.push_back(std::move(power));
   add("doujin_audio/file_cache",[](const auto& call, Result& result) {
+    if (call.method_name() == "openContainingFolder") {
+      const auto target = RequiredText(Arguments(call),"path");
+      if (target.find('\0') != std::string::npos) throw std::invalid_argument("path");
+      const std::filesystem::path path(winrt::to_hstring(target).c_str());
+      if (!path.is_absolute() || !std::filesystem::exists(path)) throw std::invalid_argument("path");
+      const bool is_directory = std::filesystem::is_directory(path);
+      if (!is_directory && !std::filesystem::is_regular_file(path)) throw std::invalid_argument("path");
+      Launch((is_directory ? path : path.parent_path()).wstring());
+      Success(result,Value(true));
+      return;
+    }
     if (call.method_name() != "getStorageUsage") { result.NotImplemented(); return; }
     PWSTR directory = nullptr;
     winrt::check_hresult(SHGetKnownFolderPath(FOLDERID_LocalAppData,0,nullptr,&directory));

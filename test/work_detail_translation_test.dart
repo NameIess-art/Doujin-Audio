@@ -293,6 +293,8 @@ void main() {
         service.calls.single.complete();
         await _batch(tester);
         expect(find.text('zh-CN:Original title'), findsOneWidget);
+        await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
+        await _batch(tester);
         expect(find.text('Voice actor'), findsOneWidget);
         expect(find.text('Original circle'), findsOneWidget);
         expect(find.text('zh-CN:Original circle'), findsNothing);
@@ -397,6 +399,8 @@ void main() {
         service.calls.single.complete(overrides: {'Online title': longTitle});
         await _batch(tester);
         expect(find.text(longTitle), findsOneWidget);
+        await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
+        await _batch(tester);
         expect(find.text('Online circle'), findsOneWidget);
         expect(find.text('Voice actor'), findsOneWidget);
         expect(find.text('zh-CN:Online circle'), findsNothing);

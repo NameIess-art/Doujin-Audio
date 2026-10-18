@@ -43,6 +43,7 @@ import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/features/library/presentation/library_removal_feedback.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
@@ -1514,6 +1515,66 @@ void main() {
     expect(topGap, greaterThanOrEqualTo(0));
     expect(topGap, closeTo(bottomGap + 4, 1));
   });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final mountedInBackground in [false, true]) {
+      testWidgets(
+        'library startup refresh waits for foreground idle on $platform '
+        '(mounted in background: $mountedInBackground)',
+        (tester) async {
+          final fixture = AppRuntimeWidgetTestFixture();
+          addTearDown(fixture.dispose);
+          final binding = tester.binding;
+          binding.handleAppLifecycleStateChanged(
+            mountedInBackground
+                ? AppLifecycleState.paused
+                : AppLifecycleState.resumed,
+          );
+          addTearDown(() {
+            binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+          });
+          fixture.library.syncPresentationState(isInitialized: true);
+          await tester.pumpWidget(fixture.build(const LibraryTab()));
+          await tester.pump(const Duration(milliseconds: 300));
+          binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+          await tester.pump(const Duration(seconds: 3));
+          final operations = fixture.uiOperationService;
+          int refreshId() => operations
+              .operationFor(UiOperationScope.libraryRefresh)
+              .operationId;
+          expect(refreshId(), 0);
+
+          final interaction = UiInteractionCoordinator.instance;
+          final source = Object();
+          interaction.beginInteraction(source);
+          interaction.endInteraction(source);
+          await tester.pump(const Duration(seconds: 3));
+          expect(refreshId(), 0);
+
+          interaction.beginInteraction(source);
+          binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+          await tester.pump(const Duration(seconds: 3));
+          expect(refreshId(), 0);
+          interaction.endInteraction(source);
+          await tester.pump(interaction.idleDelay);
+          await tester.pump(const Duration(milliseconds: 499));
+          expect(refreshId(), 0);
+          await tester.pump(const Duration(milliseconds: 1));
+          await tester.pump();
+          final completedRefreshId = refreshId();
+          expect(completedRefreshId, greaterThan(0));
+          expect(operations.isBusy(UiOperationScope.libraryRefresh), isFalse);
+
+          binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+          binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+          await tester.pump(const Duration(seconds: 3));
+          expect(refreshId(), completedRefreshId);
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: TargetPlatformVariant.only(platform),
+      );
+    }
+  }
 
   testWidgets('library shows persisted cards before startup scan completes', (
     WidgetTester tester,

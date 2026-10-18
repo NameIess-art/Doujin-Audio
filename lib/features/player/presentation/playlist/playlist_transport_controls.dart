@@ -4,10 +4,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/application/audio_path_coordinator.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
-import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_dialog.dart';
@@ -28,7 +26,6 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
     super.key,
     required this.session,
     required this.playback,
-    required this.paths,
     required this.hasSiblings,
     required this.segmentPanelExpanded,
     required this.hasSubtitle,
@@ -45,7 +42,6 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
-  final AudioPathCoordinator paths;
   final bool hasSiblings;
   final bool segmentPanelExpanded;
   final bool hasSubtitle;
@@ -74,7 +70,6 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
     return _PlaybackControlPanel(
       session: session,
       playback: playback,
-      paths: paths,
       showPauseIcon: transport.$1 ?? session.playbackRequested,
       isLoading:
           transport.$2 ??
@@ -99,7 +94,6 @@ class _PlaybackControlPanel extends StatelessWidget {
   const _PlaybackControlPanel({
     required this.session,
     required this.playback,
-    required this.paths,
     required this.showPauseIcon,
     required this.isLoading,
     required this.hasSiblings,
@@ -118,7 +112,6 @@ class _PlaybackControlPanel extends StatelessWidget {
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
-  final AudioPathCoordinator paths;
   final bool showPauseIcon;
   final bool isLoading;
   final bool hasSiblings;
@@ -141,7 +134,6 @@ class _PlaybackControlPanel extends StatelessWidget {
         _PlaybackPrimaryControls(
           session: session,
           playback: playback,
-          paths: paths,
           showPauseIcon: showPauseIcon,
           isLoading: isLoading,
           isLandscape: isLandscape,
@@ -184,7 +176,6 @@ class _PlaybackPrimaryControls extends StatelessWidget {
   const _PlaybackPrimaryControls({
     required this.session,
     required this.playback,
-    required this.paths,
     required this.showPauseIcon,
     required this.isLoading,
     this.isLandscape = false,
@@ -192,7 +183,6 @@ class _PlaybackPrimaryControls extends StatelessWidget {
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
-  final AudioPathCoordinator paths;
   final bool showPauseIcon;
   final bool isLoading;
   final bool isLandscape;
@@ -205,14 +195,8 @@ class _PlaybackPrimaryControls extends StatelessWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final enabled = session.currentTrackPath.isNotEmpty;
-    final track = paths.trackByPath(session.currentTrackPath);
-    final isAsmr = track?.usesAsmrVisualTheme ?? false;
-    final primaryColor = isAsmr
-        ? AppDesignTokens.of(context).asmrAccent
-        : cs.primary;
-    final onPrimaryColor = isAsmr
-        ? AppDesignTokens.of(context).onAsmrAccent
-        : cs.onPrimary;
+    final primaryColor = cs.primary;
+    final onPrimaryColor = cs.onPrimary;
     final hasPrevious = playback.hasSessionAdjacentTrack(
       session.id,
       forward: false,

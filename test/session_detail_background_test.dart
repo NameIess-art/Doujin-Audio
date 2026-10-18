@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
 
+import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -11,6 +14,8 @@ import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_scaffold.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_menu_sheet.dart';
+import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -19,17 +24,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 class _ResolvedCoverCache extends CoverArtworkCacheService {
-  _ResolvedCoverCache() : super(libraryService: LibraryService());
+  _ResolvedCoverCache([this.path = '/covers/detail.png'])
+    : super(libraryService: LibraryService());
+
+  final String path;
 
   @override
   String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) =>
-      '/covers/detail.png';
+      path;
 
   @override
   Future<String?> futureForPlaybackTrack(
     MusicTrack? track, {
     String? trackPath,
-  }) => SynchronousFuture<String?>('/covers/detail.png');
+  }) => SynchronousFuture<String?>(path);
 }
 
 class _SubtitlePresenceService extends PlaybackSubtitleService {
@@ -54,6 +62,180 @@ class _SubtitlePresenceService extends PlaybackSubtitleService {
 }
 
 void main() {
+  for (final kind in ['normal', 'asmr', 'queue', 'fullscreen']) {
+    testWidgets(
+      'cover palette reaches detail background controls and menu for $kind',
+      (tester) async {
+        UiInteractionCoordinator.instance.resetForTest();
+        addTearDown(UiInteractionCoordinator.instance.resetForTest);
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final cover = (await tester.runAsync(() async {
+          final directory = await Directory.systemTemp.createTemp('detail-ui-');
+          addTearDown(() => directory.delete(recursive: true));
+          final recorder = ui.PictureRecorder();
+          ui.Canvas(recorder).drawColor(Colors.red, ui.BlendMode.src);
+          final picture = recorder.endRecording();
+          final image = await picture.toImage(16, 16);
+          final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          image.dispose();
+          picture.dispose();
+          return File('${directory.path}/cover.png')
+            ..writeAsBytesSync(bytes!.buffer.asUint8List());
+        }))!;
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: _ResolvedCoverCache(cover.path),
+        );
+        addTearDown(fixture.dispose);
+        final track = MusicTrack(
+          path:
+              '/library/palette-${kind == 'fullscreen' ? 'video.mp4' : '$kind.mp3'}',
+          displayName: 'Palette',
+          groupKey: '__single_files__',
+          groupTitle: 'Imported files',
+          groupSubtitle: '',
+          isSingle: true,
+          isVideo: kind == 'fullscreen',
+          remoteMetadataKind: kind == 'asmr'
+              ? MusicTrack.remoteMetadataKindAsmrOne
+              : null,
+        );
+        fixture.library.addTracks([track], persist: false);
+        final session = fixture.playback.createTrackSession(track);
+        addTearDown(session.shutdown);
+        if (kind == 'queue') {
+          session.playbackQueue = PlaybackQueueDefinition(
+            name: 'Colored queue',
+            colorValue: Colors.green.toARGB32(),
+            entries: [
+              PlaybackQueueEntry(
+                id: 'track',
+                kind: PlaybackQueueEntryKind.track,
+                title: track.displayName,
+                tracks: [track],
+              ),
+            ],
+          );
+        }
+        fixture.playbackService.syncSlice(
+          activeSessions: [session],
+          playingSessionCount: 0,
+          focusedSessionId: session.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        if (kind == 'fullscreen') {
+          final orientation = AppOrientationController(
+            setPreferredOrientations: (_) async {},
+            setSystemUiMode: (_) async {},
+          );
+          final lease = await orientation.enterVideoFullscreen();
+          addTearDown(lease.release);
+          await tester.pumpWidget(
+            fixture.build(
+              SessionVideoFullscreenPage(
+                sessionId: session.id,
+                trackPath: track.path,
+                fullscreenLease: lease,
+              ),
+            ),
+          );
+        } else {
+          await tester.pumpWidget(fixture.build(const PlaylistTab()));
+          unawaited(
+            Navigator.of(
+              tester.element(find.byType(PlaylistTab)),
+            ).push(buildSessionDetailRoute(sessionId: session.id)),
+          );
+        }
+        await tester.pumpAndSettle();
+        final detail = kind == 'fullscreen'
+            ? find.byKey(const ValueKey('fullscreen_video_play_pause'))
+            : find.byType(SessionDetailScaffold);
+        final brightness = Theme.of(tester.element(detail)).brightness;
+        final expected = (await tester.runAsync(
+          () => ColorScheme.fromImageProvider(
+            provider: FileImage(cover),
+            brightness: brightness,
+          ),
+        ))!;
+        for (var attempt = 0; attempt < 100; attempt++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 50));
+          if (Theme.of(tester.element(detail)).colorScheme == expected) break;
+        }
+        await tester.pumpAndSettle();
+        expect(Theme.of(tester.element(detail)).colorScheme, expected);
+        final slider = kind == 'fullscreen'
+            ? find.byKey(const ValueKey('fullscreen_video_progress'))
+            : find.descendant(
+                of: find.byKey(ValueKey('progress_${session.id}')),
+                matching: find.byType(Slider),
+              );
+        expect(
+          SliderTheme.of(tester.element(slider)).activeTrackColor,
+          expected.primary,
+        );
+        final play = kind == 'fullscreen'
+            ? detail
+            : find
+                  .ancestor(
+                    of: find.byIcon(Icons.play_arrow_rounded).last,
+                    matching: find.byType(IconButton),
+                  )
+                  .first;
+        final decoration =
+            tester
+                    .widget<DecoratedBox>(
+                      find
+                          .ancestor(
+                            of: play,
+                            matching: find.byType(DecoratedBox),
+                          )
+                          .first,
+                    )
+                    .decoration
+                as BoxDecoration;
+        expect(decoration.color, expected.primary);
+        if (kind == 'fullscreen') {
+          final scaffold = tester.widget<Scaffold>(
+            find.descendant(
+              of: find.byType(SessionVideoFullscreenPage),
+              matching: find.byType(Scaffold),
+            ),
+          );
+          expect(scaffold.backgroundColor, Colors.black);
+        } else {
+          final material = tester.widget<Material>(
+            find.descendant(of: detail, matching: find.byType(Material)).first,
+          );
+          expect(material.color, expected.surface);
+          await tester.tap(
+            find.byKey(const ValueKey('session_subtitle_menu_button')),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            Theme.of(
+              tester.element(find.byType(SubtitleMenuSheet)),
+            ).colorScheme,
+            expected,
+          );
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 6));
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets(
     'detail ignores unrelated subtitle notifications and defers presence changes',
     (tester) async {
@@ -152,10 +334,9 @@ void main() {
         groupSubtitle: '',
         isSingle: true,
       );
-      fixture.runtimeGraph.library.addTracks(
-        <MusicTrack>[track],
-        persist: false,
-      );
+      fixture.runtimeGraph.library.addTracks(<MusicTrack>[
+        track,
+      ], persist: false);
       final session = fixture.runtimeGraph.playback.createTrackSession(track);
       addTearDown(session.shutdown);
       fixture.playbackService.syncSlice(
@@ -250,24 +431,24 @@ void main() {
       );
 
       final dismissGesture = tester.widget<GestureDetector>(
-        find.byWidgetPredicate(
-          (widget) =>
-              widget is GestureDetector && widget.onVerticalDragUpdate != null,
-        ),
+        find.byKey(const ValueKey('session_detail_dismiss_gesture')),
       );
-      dismissGesture.onVerticalDragStart!(DragStartDetails());
-      dismissGesture.onVerticalDragUpdate!(
-        DragUpdateDetails(
-          globalPosition: Offset.zero,
-          delta: const Offset(0, 80),
-          primaryDelta: 80,
-        ),
-      );
-      await tester.pump();
-      expect(tester.widget<Opacity>(backdropGate).opacity, 1);
-
-      dismissGesture.onVerticalDragEnd!(DragEndDetails(primaryVelocity: 0));
-      await tester.pumpAndSettle();
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        dismissGesture.onVerticalDragStart!(DragStartDetails());
+        dismissGesture.onVerticalDragUpdate!(
+          DragUpdateDetails(
+            globalPosition: Offset.zero,
+            delta: const Offset(0, 80),
+            primaryDelta: 80,
+          ),
+        );
+        await tester.pump();
+        expect(tester.widget<Opacity>(backdropGate).opacity, 1);
+        dismissGesture.onVerticalDragEnd!(DragEndDetails(primaryVelocity: 0));
+        await tester.pumpAndSettle();
+      } else {
+        expect(dismissGesture.onVerticalDragUpdate, isNull);
+      }
       expect(tester.widget<Opacity>(backdropGate).opacity, 0);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 6));

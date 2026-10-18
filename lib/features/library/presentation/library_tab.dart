@@ -66,7 +66,7 @@ class LibraryTab extends ConsumerStatefulWidget {
 }
 
 class _LibraryTabState extends ConsumerState<LibraryTab>
-    with MainTabStateMixin<LibraryTab> {
+    with WidgetsBindingObserver, MainTabStateMixin<LibraryTab> {
   final _scanCoordinator = LibraryScanCoordinator();
 
   @override
@@ -82,6 +82,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           widget.activeSectionListenable!.value == widget.sectionIndex);
 
   bool get _isActive => (_route?.isCurrent ?? true) && _isSelected;
+
+  bool get _canStartStartupRefresh {
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    return _isActive &&
+        (lifecycle == null || lifecycle == AppLifecycleState.resumed);
+  }
 
   @override
   bool get handlesScrollToTop => _isActive;
@@ -409,6 +415,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _wasSelected = _isSelected;
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     widget.activeSectionListenable?.addListener(_handleActiveTabChanged);
@@ -437,8 +444,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     _handleActiveTabChanged();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _ensureStartupRefreshStarted();
+    }
+    _handleStartupRefreshInteractionChanged();
+  }
+
   void _ensureStartupRefreshStarted() {
-    if (!_isActive ||
+    if (!_canStartStartupRefresh ||
         _startupRefreshStarted ||
         !ref.read(coreRuntimeReadyProvider)) {
       return;
@@ -457,17 +472,20 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     if (!_startupRefreshWaiting || !mounted) return;
     _startupRefreshIdleTimer?.cancel();
     _startupRefreshIdleTimer = null;
-    if (_isActive && !UiInteractionCoordinator.instance.isInteracting) {
+    if (_canStartStartupRefresh &&
+        !UiInteractionCoordinator.instance.isInteracting) {
       _scheduleStartupRefreshAfter(const Duration(milliseconds: 500));
     }
   }
 
   void _scheduleStartupRefreshAfter(Duration quietWindow) {
     _startupRefreshIdleTimer?.cancel();
+    _startupRefreshIdleTimer = null;
+    if (!_canStartStartupRefresh) return;
     _startupRefreshIdleTimer = Timer(quietWindow, () {
       _startupRefreshIdleTimer = null;
       if (!mounted ||
-          !_isActive ||
+          !_canStartStartupRefresh ||
           UiInteractionCoordinator.instance.isInteracting) {
         return;
       }
@@ -558,6 +576,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     UiInteractionCoordinator.instance.cancelCommit(_cardSnapshotCommitKey);
     widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
     widget.activeSectionListenable?.removeListener(_handleActiveTabChanged);

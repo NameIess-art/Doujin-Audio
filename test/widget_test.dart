@@ -18,6 +18,7 @@ import 'package:doujin_audio/main.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
+import 'package:doujin_audio/app/presentation/mobile_dock_capsule_content.dart';
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
@@ -500,6 +501,60 @@ void main() {
     );
   });
 
+  for (final lifecycle in [AppLifecycleState.hidden, AppLifecycleState.paused]) {
+    testWidgets(
+      'main screen mounted $lifecycle defers maintenance until foreground',
+      (tester) async {
+        final repository = _StartupMaintenanceCountingRepository();
+        final fixture = AppRuntimeWidgetTestFixture(
+          providedPersistenceRepository: repository,
+          providedNativePlaybackRepository: _AppShellNativePlaybackRepository(),
+        );
+        addTearDown(fixture.dispose);
+        final binding = tester.binding;
+        binding.handleAppLifecycleStateChanged(lifecycle);
+        addTearDown(() {
+          binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+        });
+        await tester.pumpWidget(
+          fixture.build(
+            const MainScreen(),
+            overrides: [coreRuntimeReadyProvider.overrideWithValue(false)],
+          ),
+        );
+        // Finish an already requested frame after the app became hidden.
+        binding.scheduleForcedFrame();
+        await tester.pump();
+        expect(find.byType(MainScreen), findsOneWidget);
+        final coordinator = UiInteractionCoordinator.instance;
+        expect(coordinator.isVisualUpdateDeferred, isFalse);
+        await tester.runAsync(fixture.runtimeGraph.runtime.start);
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 3200)),
+        );
+        await tester.pump(const Duration(seconds: 4));
+        expect(repository.maintenanceReads, 0);
+
+        binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+        expect(coordinator.isVisualUpdateDeferred, isTrue);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 161));
+        await _pumpMainScreenAnimations(tester);
+        await pumpUntilUiIdle(tester);
+        expect(coordinator.isVisualUpdateDeferred, isFalse);
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 3200)),
+        );
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pump();
+        expect(repository.maintenanceReads, greaterThan(0));
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+    );
+  }
+
   testWidgets(
     'foreground restore defers presentation work past cached first frame',
     (tester) async {
@@ -633,6 +688,58 @@ void main() {
     }),
   );
 
+  testWidgets('capsule dock motion keeps static content out of frame rebuilds', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(390, 800));
+    await _pumpAppShell(tester);
+    final rebuilds = <String, int>{};
+    final previous = debugOnRebuildDirtyWidget;
+    addTearDown(() => debugOnRebuildDirtyWidget = previous);
+    debugOnRebuildDirtyWidget = (element, builtOnce) {
+      previous?.call(element, builtOnce);
+      if (element.findAncestorWidgetOfExactType<MobileDockCapsuleContent>() ==
+          null) {
+        return;
+      }
+      final type = element.widget.runtimeType.toString();
+      rebuilds.update(type, (count) => count + 1, ifAbsent: () => 1);
+    };
+    for (final expanding in [true, false]) {
+      rebuilds.clear();
+      await tester.tap(
+        find.byKey(
+          expanding
+              ? const ValueKey<String>(
+                  'active_session_card_orientation_session',
+                )
+              : const ValueKey<String>('main_destination_ink_music_library'),
+        ),
+      );
+      await tester.pump();
+      for (var frame = 0; frame < 22; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      // Allow the collapsed/expanded branch change, but no per-frame rebuilds
+      // of the icons, paging delegate, cover or playback text.
+      for (final type in [
+        'Icon',
+        'PageView',
+        '_ActiveSessionCard',
+        '_ActiveSessionCover',
+        '_ActiveSessionTitleSubtitle',
+      ]) {
+        expect(
+          rebuilds[type] ?? 0,
+          lessThanOrEqualTo(8),
+          reason: '$type rebuilt on animation frames (expanding: $expanding)',
+        );
+      }
+    }
+    debugOnRebuildDirtyWidget = previous;
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('capsule dock toggles between page icons and embedded playback', (
     tester,
   ) async {
@@ -747,6 +854,26 @@ void main() {
     final expandedFocusX = tester.getCenter(focusedDestination).dx;
     final expandedAnchorX = tester.getCenter(anchorDestination).dx;
     final expandedTrailingX = tester.getCenter(trailingDestination).dx;
+    final navigationRect = tester.getRect(navigation);
+    final firstIndicator = tester.getRect(find.byKey(
+      const ValueKey<String>('main_destination_indicator_show_asmr_one'),
+    ));
+    final lastIndicator = tester.getRect(find.byKey(
+      const ValueKey<String>('main_destination_indicator_nav_settings'),
+    ));
+    final selectedIndicator = find.byKey(
+      const ValueKey<String>('main_destination_indicator_music_library'),
+    );
+    final expandedIndicatorWidth = tester.getSize(selectedIndicator).width;
+    expect(expandedIndicatorWidth, greaterThan(44));
+    expect(
+      firstIndicator.left + firstIndicator.height / 2,
+      closeTo(navigationRect.left + navigationRect.height / 2, 0.01),
+    );
+    expect(
+      lastIndicator.right - lastIndicator.height / 2,
+      closeTo(navigationRect.right - navigationRect.height / 2, 0.01),
+    );
 
     final collapsedCoverCenter = tester.getCenter(playbackCover);
     expect(
@@ -760,7 +887,10 @@ void main() {
     await tester.tap(playbackCard);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(tester.getCenter(anchorDestination).dx, lessThan(expandedAnchorX));
+    expect(
+      tester.getCenter(anchorDestination).dx,
+      closeTo(expandedAnchorX, 0.01),
+    );
     expect(
       tester.getCenter(focusedDestination).dx,
       closeTo(expandedFocusX, 0.1),
@@ -770,6 +900,9 @@ void main() {
       closeTo(expandedTrailingX, 0.1),
     );
     await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.getSize(selectedIndicator).height, 44);
+    expect(tester.getSize(selectedIndicator).width,
+        inExclusiveRange(44, expandedIndicatorWidth));
     expect(
       find.byKey(
         const ValueKey<String>(
@@ -797,6 +930,7 @@ void main() {
       greaterThan(tester.getRect(menuSurface).left + 72),
     );
     await tester.pump(const Duration(milliseconds: 210));
+    expect(tester.getSize(selectedIndicator), const Size.square(44));
     expect(tester.getSize(navigation).width, closeTo(56, 0.1));
     expect(tester.getSize(playback).width, greaterThan(200));
     expect(tester.getRect(playbackCard).top, tester.getRect(menuSurface).top);
@@ -1715,6 +1849,44 @@ void main() {
           .height,
       kActiveSessionCarouselDockHeight,
     );
+    for (final width in [360.0, 430.0]) {
+      tester.view.physicalSize = Size(width * 3, 2400);
+      await tester.pump();
+      final capsule = tester.getRect(
+        find.byKey(const ValueKey<String>('mobile_bottom_capsule_surface')),
+      );
+      final centers = [
+        for (final destination in [
+          'show_asmr_one',
+          'music_library',
+          'nav_sessions',
+          'nav_settings',
+        ])
+          tester.getCenter(
+            find.byKey(ValueKey<String>('main_destination_$destination')),
+          ),
+      ];
+      final firstPill = tester.getRect(find.byKey(
+        const ValueKey<String>('main_destination_indicator_show_asmr_one'),
+      ));
+      final lastPill = tester.getRect(find.byKey(
+        const ValueKey<String>('main_destination_indicator_nav_settings'),
+      ));
+      expect(firstPill.width, greaterThan(firstPill.height));
+      expect(firstPill.height, 44);
+      expect(firstPill.left + firstPill.height / 2,
+          closeTo(capsule.left + capsule.height / 2, 0.01));
+      expect(lastPill.right - lastPill.height / 2,
+          closeTo(capsule.right - capsule.height / 2, 0.01));
+      final spacing = (centers.last.dx - centers.first.dx) / 3;
+      for (var index = 1; index < centers.length; index++) {
+        expect(centers[index].dy, capsule.center.dy);
+        expect(
+          centers[index].dx - centers[index - 1].dx,
+          closeTo(spacing, 0.01),
+        );
+      }
+    }
   });
 
   testWidgets('work detail dock starts from the main dock cover position', (
@@ -6760,6 +6932,21 @@ final class _AppShellTestPersistenceRepository
   @override
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {
     return const <TimeSegmentLabel>[];
+  }
+}
+
+final class _StartupMaintenanceCountingRepository
+    extends _AppShellTestPersistenceRepository {
+  int maintenanceReads = 0;
+
+  @override
+  Future<String?> loadAppSetting(String key) async {
+    if (key == 'cover_artwork_cache_migration_v1' ||
+        key == 'audio_detail_document_read_only_import_v3') {
+      maintenanceReads++;
+      return '1';
+    }
+    return super.loadAppSetting(key);
   }
 }
 

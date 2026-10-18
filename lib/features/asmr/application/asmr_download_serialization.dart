@@ -64,6 +64,7 @@ Map<String, Object?> downloadTaskToJson(
   'work': task.work.toJson(),
   'destinationRoot': task.destinationRoot,
   'workFolderName': task.workFolderName,
+  'requestedWorkFolderName': task.requestedWorkFolderName,
   'conflictPolicy': task.conflictPolicy.name,
   'saveMetadata': task.saveMetadata,
   'saveCover': task.saveCover,
@@ -111,6 +112,7 @@ PersistedDownloadTask downloadTaskFromJson(Map<String, dynamic> json) {
       work: work,
       destinationRoot: json['destinationRoot'] as String? ?? '',
       workFolderName: json['workFolderName'] as String? ?? '',
+      requestedWorkFolderName: json['requestedWorkFolderName'] as String?,
       conflictPolicy: _enumByName(
         AsmrDownloadConflictPolicy.values,
         json['conflictPolicy'],

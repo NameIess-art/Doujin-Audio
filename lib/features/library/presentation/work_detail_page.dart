@@ -8,9 +8,11 @@ import 'work_detail_header.dart';
 import 'dart:async';
 import '../application/library_facade.dart' show AudioDetailRenameException;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as path;
 
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/work_detail_navigation.dart';
@@ -704,6 +706,24 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           await _renameLocalEntry(item);
         case WorkEntryAction.setCover:
           await _setLocalImageAsCover(item.fullPathOrUrl);
+        case WorkEntryAction.openContainingFolder:
+          if (widget.isLocal &&
+              defaultTargetPlatform == TargetPlatform.windows) {
+            final sourcePath = item.type == WorkEntryType.image
+                ? ref
+                      .read(workTextServiceProvider)
+                      .sourcePathForWorkImage(
+                        _localTarget!.targetPath,
+                        item.fullPathOrUrl,
+                      )
+                : item.fullPathOrUrl;
+            final targetPath =
+                item.type == WorkEntryType.folder &&
+                    !path.windows.isAbsolute(sourcePath)
+                ? path.windows.join(_localTarget!.targetPath, item.relativePath)
+                : sourcePath;
+            await openLocalContainingFolder(context, ref, targetPath);
+          }
         case WorkEntryAction.copy:
           _copyText(context, item.name);
       }
@@ -794,7 +814,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
   List<UnifiedMenuEntry<WorkEntryAction>> _entryMenuItems(WorkEntryType type) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    return switch (type) {
+    final entries = switch (type) {
       WorkEntryType.folder => [
         UnifiedMenuEntry<WorkEntryAction>.action(
           value: WorkEntryAction.open,
@@ -884,13 +904,25 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         ],
       ],
     };
+    if (widget.isLocal && defaultTargetPlatform == TargetPlatform.windows) {
+      entries.add(
+        UnifiedMenuEntry<WorkEntryAction>.action(
+          value: WorkEntryAction.openContainingFolder,
+          icon: Icons.folder_open_rounded,
+          label: i18n.tr('open_containing_folder'),
+        ),
+      );
+    }
+    return entries;
   }
 
   // Open text file
   Future<void> _openTextFile(WorkEntryItem item) async {
     List<WorkTextFile> allTexts = const [];
     if (widget.isLocal) {
-      allTexts = _localTextFiles;
+      allTexts = _localTextFiles
+          .where((file) => !file.isSubtitle)
+          .toList(growable: false);
     } else {
       allTexts = collectAsmrWorkTextFiles(_asmrTree ?? const []);
       if (allTexts.isEmpty && item.asmrNode != null) {
@@ -1141,6 +1173,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           : folderName;
       displayRj = detail?.rjCode ?? '';
       displayCircle = detail?.circleName ?? '';
+      hasSubtitle = _directory?.hasSubtitle;
       displayVoiceActors = detail?.voiceActors ?? const [];
       displayTags = detail?.tags ?? const [];
       coverPath = _localManualCover ?? detail?.cardCoverPath;
@@ -1157,10 +1190,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
     final topSafeArea = MediaQuery.paddingOf(context).top;
     final bottomOverlayInset = MobileOverlayInset.of(context);
-    const coverMaxHeight = 240.0;
-    const coverMinHeight = 120.0; // Collapses by half!
     const rjBarHeight = 44.0;
 
+    final subtitleAccent = widget.isAsmr ? asmrBlue : cs.primary;
     final subtitleStatus = hasSubtitle == null
         ? null
         : Row(
@@ -1172,7 +1204,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                     ? Icons.subtitles_rounded
                     : Icons.subtitles_off_rounded,
                 size: 16,
-                color: hasSubtitle ? asmrBlue : cs.onSurfaceVariant,
+                color: hasSubtitle ? subtitleAccent : cs.onSurfaceVariant,
               ),
               const SizedBox(width: 5),
               ConstrainedBox(
@@ -1185,7 +1217,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: hasSubtitle ? asmrBlue : cs.onSurfaceVariant,
+                    color: hasSubtitle ? subtitleAccent : cs.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -1273,7 +1305,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       }
     }
 
-    Widget buildBody(BuildContext context, WidgetRef ref) {
+    Widget buildBody(BuildContext context, WidgetRef ref, double width) {
+      // The image includes the top safe area; size it from this pane's actual
+      // width so the fully expanded cover, including that area, stays 4:3.
+      final coverMaxHeight = (width * 3 / 4 - topSafeArea).clamp(
+        0.0,
+        double.infinity,
+      );
+      final coverMinHeight = coverMaxHeight.clamp(0.0, 120.0);
       final entryMenus =
           <WorkEntryType, List<UnifiedMenuEntry<WorkEntryAction>>>{};
       final moreLabel = i18n.tr('more_actions');
@@ -1284,46 +1323,34 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               _directory == null) &&
           currentEntries.isEmpty;
       _updateDirectoryMotion(isLoading);
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          final isLandscape =
-              WorkDetailNavigationScope.isLandscapeOf(context) ||
-              MediaQuery.orientationOf(context) == Orientation.landscape;
-          final pageWidth = constraints.maxWidth;
-          final headerTopSafeArea = isLandscape ? 0.0 : topSafeArea;
-          final coverMax = isLandscape
-              ? (pageWidth / kStandardCoverAspectRatio)
-              : coverMaxHeight;
-          final coverMin = isLandscape ? coverMax : coverMinHeight;
-
-          return Stack(
-            key: _pageStackKey,
-            children: [
-              ScrollConfiguration(
-                behavior: ScrollConfiguration.of(
-                  context,
-                ).copyWith(scrollbars: false),
-                child: CustomScrollView(
-                  controller: _scrollController,
-                  slivers: [
-                    // 1. Collapsible Sticky Header
-                    SliverPersistentHeader(
-                      pinned: !isLandscape,
-                      delegate: WorkDetailHeaderDelegate(
-                        topSafeArea: headerTopSafeArea,
-                        coverMaxHeight: coverMax,
-                        coverMinHeight: coverMin,
-                        rjBarHeight: rjBarHeight,
-                        title: displayTitle,
-                        rjCode: displayRj,
-                        circleName: displayCircle,
-                        subtitleStatus: subtitleStatus,
-                        coverWidget: buildCover(context, ref),
-                        accentColor: widget.isAsmr ? asmrBlue : cs.primary,
-                        surfaceColor: cs.surface,
-                        onCopyMetadata: (value) => _copyText(context, value),
-                      ),
-                    ),
+      return Stack(
+        key: _pageStackKey,
+        children: [
+          ScrollConfiguration(
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(scrollbars: false),
+            child: CustomScrollView(
+              controller: _scrollController,
+              slivers: [
+                // 1. Collapsible Sticky Header
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: WorkDetailHeaderDelegate(
+                    topSafeArea: topSafeArea,
+                    coverMaxHeight: coverMaxHeight,
+                    coverMinHeight: coverMinHeight,
+                    rjBarHeight: rjBarHeight,
+                    title: displayTitle,
+                    rjCode: displayRj,
+                    circleName: displayCircle,
+                    subtitleStatus: subtitleStatus,
+                    coverWidget: buildCover(context, ref),
+                    accentColor: widget.isAsmr ? asmrBlue : cs.primary,
+                    surfaceColor: cs.surface,
+                    onCopyMetadata: (value) => _copyText(context, value),
+                  ),
+                ),
 
                 // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
                 SliverToBoxAdapter(
@@ -1493,9 +1520,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                       child: child!,
                     ),
             ),
-            ],
-          );
-        },
+        ],
       );
     }
 
@@ -1506,8 +1531,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           AppPageContentTransition(
             backgroundColor: cs.surface,
             child: ScrollActivityGate(
-              child: Consumer(
-                builder: (context, ref, _) => buildBody(context, ref),
+              child: LayoutBuilder(
+                builder: (context, constraints) => Consumer(
+                  builder: (context, ref, _) =>
+                      buildBody(context, ref, constraints.maxWidth),
+                ),
               ),
             ),
           ),

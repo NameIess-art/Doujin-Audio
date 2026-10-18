@@ -149,6 +149,10 @@ Future<T?> showAppDialog<T>({
   bool barrierDismissible = true,
   double maxWidth = 420,
 }) {
+  final capturedThemes = InheritedTheme.capture(
+    from: context,
+    to: Navigator.of(context, rootNavigator: true).context,
+  );
   return showGeneralDialog<T>(
     context: context,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
@@ -157,44 +161,48 @@ Future<T?> showAppDialog<T>({
     transitionDuration: MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : kSecondaryOverlayConfig.transitionDuration,
-    pageBuilder: (dialogContext, animation, secondaryAnimation) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: barrierDismissible
-                  ? () => Navigator.of(dialogContext).maybePop()
-                  : null,
-              child: _AppAnimatedScrim(
-                animation: animation,
-                scrimKey: const ValueKey('app_dialog_scrim'),
-              ),
-            ),
-          ),
-          SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.xl,
-                  vertical: AppSpacing.xl,
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: buildAppScaleFadeTransition(
-                    context: dialogContext,
+    pageBuilder: (_, animation, secondaryAnimation) {
+      return capturedThemes.wrap(
+        Builder(
+          builder: (dialogContext) => Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: barrierDismissible
+                      ? () => Navigator.of(dialogContext).maybePop()
+                      : null,
+                  child: _AppAnimatedScrim(
                     animation: animation,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: builder(dialogContext),
+                    scrimKey: const ValueKey('app_dialog_scrim'),
+                  ),
+                ),
+              ),
+              SafeArea(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xl,
+                      vertical: AppSpacing.xl,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: maxWidth),
+                      child: buildAppScaleFadeTransition(
+                        context: dialogContext,
+                        animation: animation,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: builder(dialogContext),
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       );
     },
     transitionBuilder: (context, animation, secondaryAnimation, child) => child,

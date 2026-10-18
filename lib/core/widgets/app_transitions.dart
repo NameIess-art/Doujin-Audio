@@ -692,6 +692,7 @@ class _CoveringPageTransition extends StatefulWidget {
     required this.animation,
     required this.secondaryAnimation,
     this.workDetailTransition = false,
+    this.animatePage = true,
     required this.child,
   });
 
@@ -699,6 +700,7 @@ class _CoveringPageTransition extends StatefulWidget {
   final Animation<double> animation;
   final Animation<double> secondaryAnimation;
   final bool workDetailTransition;
+  final bool animatePage;
   final Widget child;
 
   @override
@@ -775,6 +777,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
       _transition = null;
     }
     if (oldWidget.workDetailTransition != widget.workDetailTransition ||
+        oldWidget.animatePage != widget.animatePage ||
         oldWidget.contentKey != widget.contentKey) {
       _transition = null;
     }
@@ -827,6 +830,8 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   );
 
   Widget _buildPage(BuildContext context, BoxConstraints constraints) {
+    final animatePage =
+        widget.animatePage && !MediaQuery.disableAnimationsOf(context);
     final page = _AppPageMotionScope(
       key: widget.contentKey,
       headerAnimation: _headerAnimation,
@@ -836,8 +841,10 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
         widget.secondaryAnimation,
         constraints.maxWidth,
         widget.workDetailTransition,
+        animatePage,
       ),
-      contentBuilder: (context, content) => widget.workDetailTransition
+      contentBuilder: (context, content) =>
+          widget.workDetailTransition && animatePage
           ? AnimatedBuilder(
               animation: _position,
               child: RepaintBoundary(child: content),
@@ -861,7 +868,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
             opacity: incoming * (1 - outgoing),
             child: header,
           );
-          if (widget.workDetailTransition) return fadedHeader;
+          if (widget.workDetailTransition || !animatePage) return fadedHeader;
           // Generic routes translate the whole page; cancel that motion
           // for headers narrower than the page so menus change in place.
           return Transform.translate(
@@ -877,7 +884,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     );
     // Keep header fades out of the moving content's recording/cache layer.
     // Every detail region moves in route coordinates, including overlays.
-    return widget.workDetailTransition
+    return widget.workDetailTransition || !animatePage
         ? page
         : SlideTransition(
             position: _position,
@@ -887,7 +894,6 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
 
   @override
   Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) return widget.child;
     // Route builders run on every tick. Reuse the region tree and animations;
     // only its transform/fade render objects need to observe animation values.
     return _transition ??= _buildTransition();
@@ -2041,13 +2047,13 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     deferExitFinalization: workDetailTransition,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
-      if (duration == Duration.zero) return routedChild;
-      if (MediaQuery.disableAnimationsOf(context)) return routedChild;
+      // Instant pages still own their header fade when another route covers them.
       return _CoveringPageTransition(
         contentKey: contentKey,
         animation: animation,
         secondaryAnimation: secondaryAnimation,
         workDetailTransition: workDetailTransition,
+        animatePage: duration != Duration.zero,
         child: routedChild,
       );
     },

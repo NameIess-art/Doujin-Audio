@@ -448,7 +448,10 @@ class AsmrDownloadManager {
         final existingFiles = _planner.collectTaskFiles(existingTask);
         final sameConfiguration =
             PathMatcher.equalsNormalized(
-              existingTask.workRootPath,
+              _planner.joinFolderPath(
+                existingTask.destinationRoot,
+                existingTask.requestedWorkFolderName,
+              ),
               workRootPath,
             ) &&
             existingTask.conflictPolicy == conflictPolicy &&
@@ -548,12 +551,13 @@ class AsmrDownloadManager {
       _activeTasks.remove(workId);
       return;
     }
-    final taskSnapshot = _store[workId];
-    if (taskSnapshot == null) {
+    final initialTask = _store[workId];
+    if (initialTask == null) {
       _activeTasks.remove(workId);
       _processQueue();
       return;
     }
+    var taskSnapshot = initialTask;
     final manualRetryPaths = _manualRetryOnlyPaths.remove(workId);
     final isManualRetryRun = manualRetryPaths?.isNotEmpty ?? false;
 
@@ -565,14 +569,6 @@ class AsmrDownloadManager {
     );
     _store.notifyTaskChanged();
 
-    final workRootPath = taskSnapshot.workRootPath;
-
-    final backup = taskSnapshot.saveMetadata
-        ? _planner.buildBackupDetail(taskSnapshot.work, workRootPath)
-        : null;
-    final backupBytes = backup == null
-        ? 0
-        : _audioDetailJsonCodec.encodeNew(backup).length;
     // Restored tasks may already include metadata in their aggregate counters.
     final metadataAccounted =
         taskSnapshot.completedFiles + taskSnapshot.skippedFiles >
@@ -587,8 +583,26 @@ class AsmrDownloadManager {
         _planner.collectTaskFiles(taskSnapshot),
         saveMetadata: taskSnapshot.saveMetadata,
       );
-      await _outputs.prepareTask(taskSnapshot);
+      final actualFolderName = await _outputs.prepareTask(taskSnapshot);
+      if (actualFolderName != taskSnapshot.workFolderName) {
+        // SAF providers may shorten long names or otherwise rename on creation.
+        // Persist the real name before resolving metadata or starting transfers.
+        taskSnapshot = _store[workId]!.copyWith(
+          workFolderName: actualFolderName,
+        );
+        _store[workId] = taskSnapshot;
+        _store.notifyTaskChanged();
+        await flushPersistence();
+      }
       _transfers.throwIfCancelled(workId);
+
+      final workRootPath = taskSnapshot.workRootPath;
+      final backup = taskSnapshot.saveMetadata
+          ? _planner.buildBackupDetail(taskSnapshot.work, workRootPath)
+          : null;
+      final backupBytes = backup == null
+          ? 0
+          : _audioDetailJsonCodec.encodeNew(backup).length;
 
       final resumedTask = _store[workId]!;
       var completed = resumedTask.completedFiles;

@@ -341,7 +341,11 @@ class FileCachePlatformGateway {
 
   Future<List<Map<String, String>>> discoverWorkTexts(String folderPath) async {
     if (_isWindows() && !_isAndroid()) {
-      const supportedExtensions = {'.txt', '.md', '.pdf'};
+      const supportedExtensions = {
+        ...supportedSubtitleExtensions,
+        '.md',
+        '.pdf',
+      };
       final texts = <Map<String, String>>[];
       final directory = Directory(folderPath);
       if (!await directory.exists()) {
@@ -781,6 +785,17 @@ class FileCachePlatformGateway {
   Future<bool> documentPathExists(String path) async =>
       (await documentPathExistence(path)) ?? false;
 
+  Future<bool> openContainingFolder(String targetPath) async {
+    if (!_isWindows() || _isAndroid()) return false;
+    final result = await _client.invoke<bool>(
+      FileCacheMethod.openContainingFolder,
+      arguments: <String, Object?>{'path': targetPath},
+      decode: (value) => value as bool,
+    );
+    _logOptionalFailure(FileCacheMethod.openContainingFolder, result);
+    return result.valueOrNull ?? false;
+  }
+
   Future<String?> resolveDocumentFileSystemPath(String path) async {
     final result = await _client.invoke<String?>(
       FileCacheMethod.resolveDocumentFileSystemPath,
@@ -791,21 +806,22 @@ class FileCachePlatformGateway {
     return resolved == null || resolved.isEmpty ? null : resolved;
   }
 
-  Future<bool> ensureFolderPath({
+  /// Returns the provider's actual relative path, which may differ from the request.
+  Future<String?> ensureFolderPath({
     required String folder,
     required String relativePath,
     required bool overwrite,
   }) async {
-    final result = await _client.invoke<bool>(
+    final result = await _client.invoke<String?>(
       FileCacheMethod.ensureFolderPath,
       arguments: <String, Object?>{
         'folder': folder,
         'relativePath': relativePath,
         'overwrite': overwrite,
       },
-      decode: (value) => value as bool,
+      decode: (value) => value as String?,
     );
-    return result.valueOrNull ?? false;
+    return result.valueOrNull;
   }
 
   Future<bool> copyFileToFolder({

@@ -46,6 +46,23 @@ class WorkTextDocumentReaderTest {
     }
 
     @Test
+    fun `nested subtitle formats are discovered without matching audio names`() {
+        val root = temporary.newFolder("作品 字幕")
+        val folder = File(root, "Extras/字幕").apply { mkdirs() }
+        val extensions = listOf("SRT", "lrc", "vtt", "webvtt", "ass", "ssa")
+        extensions.forEach { File(folder, "translation.$it").writeText("subtitle") }
+        File(folder, "cover.jpg").writeText("image")
+
+        val result = discoverLocalWorkTexts(root.absolutePath)
+
+        assertEquals(extensions.size, result.size)
+        assertEquals(
+            extensions.map { "Extras/字幕/translation.$it" }.toSet(),
+            result.map { it["relativePath"] }.toSet()
+        )
+    }
+
+    @Test
     fun `empty document retains zero file size`() {
         val root = temporary.newFolder("empty document")
         File(root, "台本.txt").writeBytes(byteArrayOf())

@@ -1,9 +1,11 @@
+import 'work_detail_actions.dart';
 import 'library_download_actions.dart';
 import 'library_providers.dart';
 import 'library_removal_feedback.dart';
 import '../../player/presentation/playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -632,6 +634,14 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
         : content;
 
     final swipeCard = SwipeRevealCard(
+      onTertiaryAction: defaultTargetPlatform == TargetPlatform.windows
+          ? () => unawaited(
+              openLocalContainingFolder(context, ref, widget.folder.path),
+            )
+          : null,
+      tertiaryActionLabel: i18n.tr('open_containing_folder'),
+      tertiaryActionTooltip: i18n.tr('open_containing_folder'),
+      tertiaryActionIcon: Icons.folder_open_rounded,
       shape: folderShape,
       enabled: !widget.isSelectionMode,
       closedColor: cs.surface,
@@ -803,6 +813,13 @@ class _TrackNodeWidget extends ConsumerWidget {
 
     Widget buildSingleTrackCard(bool useFeaturedCard) {
       return SwipeRevealCard(
+        onTertiaryAction: defaultTargetPlatform == TargetPlatform.windows
+            ? () =>
+                  unawaited(openLocalContainingFolder(context, ref, track.path))
+            : null,
+        tertiaryActionLabel: i18n.tr('open_containing_folder'),
+        tertiaryActionTooltip: i18n.tr('open_containing_folder'),
+        tertiaryActionIcon: Icons.folder_open_rounded,
         shape: cardShape,
         enabled: !isSelectionMode,
         closedColor: cs.surface,
@@ -895,6 +912,14 @@ class _TrackNodeWidget extends ConsumerWidget {
     final result = track.isSingle
         ? buildSingleTrackCard(useFeaturedSingleCard)
         : SwipeRevealCard(
+            onTertiaryAction: defaultTargetPlatform == TargetPlatform.windows
+                ? () => unawaited(
+                    openLocalContainingFolder(context, ref, track.path),
+                  )
+                : null,
+            tertiaryActionLabel: i18n.tr('open_containing_folder'),
+            tertiaryActionTooltip: i18n.tr('open_containing_folder'),
+            tertiaryActionIcon: Icons.folder_open_rounded,
             shape: cardShape,
             actionLabel: i18n.tr('remove'),
             removeTooltip: i18n.tr('remove_audio'),

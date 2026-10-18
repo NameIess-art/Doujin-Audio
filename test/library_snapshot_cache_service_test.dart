@@ -1317,8 +1317,9 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   @override
   Future<AudioDetailSaveResult> saveMissingDuration(
     AudioDetailTarget target,
-    Duration duration,
-  ) async {
+    Duration duration, {
+    AudioDetail? cachedDetail,
+  }) async {
     return AudioDetailSaveResult(
       detail: AudioDetail.empty(target).copyWith(duration: duration),
       documentStatus: JsonDocumentWriteStatus.preserved,

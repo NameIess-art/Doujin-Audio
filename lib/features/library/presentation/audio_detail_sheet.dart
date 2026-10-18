@@ -479,7 +479,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
         : (PathMatcher.parentPath(_target.targetPath) ??
             path.dirname(_target.targetPath));
     final service = ref.read(workTextServiceProvider);
-    final files = await service.findWorkTextFiles(folderPath);
+    final files = (await service.findWorkTextFiles(
+      folderPath,
+    )).where((file) => !file.isSubtitle).toList(growable: false);
     if (!mounted) return;
     if (files.isEmpty) {
       final i18n = ProviderScope.containerOf(context, listen: false)

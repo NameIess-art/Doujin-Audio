@@ -7,6 +7,7 @@ import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entries.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entry_tile.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -16,6 +17,96 @@ void main() {
   final coordinator = UiInteractionCoordinator.instance;
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
+
+  for (final localOverlay in [false, true]) {
+    testWidgets(
+      'context menu starts without row focus and supports hover and keyboard (local: $localOverlay)',
+      (tester) async {
+        final overlayKey = GlobalKey<OverlayState>();
+        int? selected;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: TargetPlatform.windows),
+            home: Scaffold(
+              body: MobileOverlayInset(
+                bottomInset: 0,
+                menuOverlayKey: localOverlay ? overlayKey : null,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Builder(
+                      builder: (context) => GestureDetector(
+                        onSecondaryTapDown: (event) async {
+                          selected = await showUnifiedContextMenu<int>(
+                            context: context,
+                            globalPosition: event.globalPosition,
+                            entries: const [
+                              UnifiedMenuEntry.action(value: 1, label: 'First'),
+                              UnifiedMenuEntry.action(
+                                value: 2,
+                                label: 'Second',
+                              ),
+                            ],
+                          );
+                        },
+                        child: const ColoredBox(color: Colors.white),
+                      ),
+                    ),
+                    if (localOverlay) Overlay(key: overlayKey),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        final mouse = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+          buttons: kSecondaryMouseButton,
+        );
+        addTearDown(mouse.removePointer);
+        await mouse.addPointer(location: const Offset(200, 200));
+        await mouse.down(const Offset(200, 200));
+        await mouse.up();
+        await tester.pumpAndSettle();
+        final first = find.text('First');
+        final second = find.text('Second');
+        expect(Focus.of(tester.element(first)).hasFocus, isFalse);
+        expect(Focus.of(tester.element(second)).hasFocus, isFalse);
+        final dynamic material = Material.of(tester.element(first));
+        expect(material.debugInkFeatures, anyOf(isNull, isEmpty));
+
+        await mouse.moveTo(tester.getCenter(first));
+        await tester.pumpAndSettle();
+        expect(material.debugInkFeatures, isNotEmpty);
+        await mouse.moveTo(const Offset(10, 10));
+        await tester.pumpAndSettle();
+        expect(material.debugInkFeatures, anyOf(isNull, isEmpty));
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(Focus.of(tester.element(first)).hasFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(Focus.of(tester.element(second)).hasFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(Focus.of(tester.element(first)).hasFocus, isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(selected, 1);
+        expect(first, findsNothing);
+
+        await mouse.moveTo(const Offset(200, 200));
+        await mouse.down(const Offset(200, 200));
+        await mouse.up();
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(selected, isNull);
+        expect(first, findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   for (final width in [190.0, 360.0]) {
     for (final contextMenu in [false, true]) {

@@ -556,6 +556,97 @@ void main() {
 
   group('WorkDetailPage', () {
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      for (final local in [false, true]) {
+        testWidgets(
+          'expanded work cover stays 4:3 on pane resize, local=$local on $platform',
+          (tester) async {
+            tester.view.physicalSize = const Size(1280, 1000);
+            tester.view.devicePixelRatio = 1;
+            tester.view.padding = const FakeViewPadding(top: 24);
+            addTearDown(tester.view.reset);
+            final covers = _ControlledWorkDetailCoverService()
+              ..images.complete([])
+              ..cover.complete(null);
+            final fixture = AppRuntimeWidgetTestFixture(
+              coverArtworkCacheService: covers,
+              asmrMetadataService: _WorkDetailAsmrMetadataService(),
+            );
+            addTearDown(fixture.dispose);
+            const folder = 'C:/works/cover-ratio';
+            fixture.library.addWatchedFolder(folder, notify: false);
+            fixture.library.addTracks([
+              MusicTrack(
+                path: '$folder/audio.mp3',
+                displayName: 'Audio',
+                groupKey: folder,
+                groupTitle: 'Work',
+                groupSubtitle: '',
+                isSingle: false,
+              ),
+            ], persist: false);
+            final width = ValueNotifier(320.0);
+            addTearDown(width.dispose);
+            await tester.pumpWidget(
+              fixture.build(
+                Align(
+                  alignment: Alignment.topRight,
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: width,
+                    child: local
+                        ? WorkDetailPage.forLocal(
+                            target: AudioDetailTarget.libraryRootFolder(folder),
+                          )
+                        : WorkDetailPage.forAsmr(
+                            work: AsmrWork.fromJson(const {
+                              'id': 123456,
+                              'title': 'Work',
+                            }),
+                          ),
+                    builder: (_, value, child) =>
+                        SizedBox(width: value, child: child),
+                  ),
+                ),
+              ),
+            );
+            await _settleDetail(tester);
+            final cover = find.byKey(
+              const ValueKey('work_detail_cover_bounds'),
+            );
+            final scroll = tester
+                .widget<CustomScrollView>(find.byType(CustomScrollView))
+                .controller!;
+            for (final value in [320.0, 560.0, 800.0, 390.0]) {
+              scroll.jumpTo(0);
+              width.value = value;
+              await tester.pump();
+              await tester.pump();
+              final size = tester.getSize(cover);
+              expect(size.width, value);
+              expect(size.height, closeTo(value * 3 / 4, 0.001));
+              expect(size.aspectRatio, closeTo(4 / 3, 0.001));
+              expect(tester.getTopLeft(cover).dx, closeTo(1280 - value, 0.001));
+            }
+            scroll.jumpTo(40);
+            await tester.pump();
+            expect(
+              tester.getSize(cover).height,
+              closeTo(390 * 3 / 4 - 40, 0.001),
+            );
+            scroll.jumpTo(1000);
+            await tester.pump();
+            expect(
+              tester.getSize(cover).height,
+              closeTo(24 + 120, 0.001),
+            );
+            expect(tester.takeException(), isNull);
+            await tester.pumpWidget(const SizedBox.shrink());
+          },
+          variant: TargetPlatformVariant.only(platform),
+        );
+      }
+    }
+
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       for (final cached in [false, true]) {
         for (final local in [false, true]) {
           testWidgets(
@@ -2255,6 +2346,8 @@ void main() {
         expect(find.text('Test Circle'), findsOneWidget);
 
         // CVs & Tags
+        await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
+        await _settleDetail(tester);
         expect(find.text('CV Alice'), findsOneWidget);
         expect(find.text('CV Bob'), findsOneWidget);
         expect(find.text('#ASMR'), findsOneWidget);
@@ -2378,6 +2471,89 @@ void main() {
         expect(find.text('Fetched work title'), findsOneWidget);
       },
     );
+
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      for (final hasSubtitle in [false, true]) {
+        testWidgets(
+          'local work subtitle status reflects all subfolders, subtitles=$hasSubtitle on $platform',
+          (tester) async {
+            final covers = _ControlledWorkDetailCoverService()
+              ..images.complete([])
+              ..cover.complete(null);
+            final fixture = AppRuntimeWidgetTestFixture(
+              coverArtworkCacheService: covers,
+            );
+            addTearDown(fixture.dispose);
+            const folder = 'C:/作品/字幕状态';
+            final target = AudioDetailTarget.libraryRootFolder(folder);
+            fixture.library.addWatchedFolder(folder, notify: false);
+            fixture.library.addTracks([
+              MusicTrack(
+                path: '$folder/audio.mp3',
+                displayName: 'Audio',
+                groupKey: folder,
+                groupTitle: 'Work',
+                groupSubtitle: '',
+                isSingle: false,
+              ),
+            ], persist: false);
+            final textService = WorkTextService(
+              platformGateway: _NestedWorkDetailFileGateway([
+                {
+                  'name': 'notes.txt',
+                  'relativePath': 'notes.txt',
+                  'path': '$folder/notes.txt',
+                },
+                if (hasSubtitle)
+                  {
+                    'name': 'translation.SRT',
+                    'relativePath': 'Extras/字幕/translation.SRT',
+                    'path': 'content://provider/document/123',
+                  },
+              ]),
+              discoverImages: (_) async => const [],
+            );
+            addTearDown(textService.dispose);
+            await tester.pumpWidget(
+              fixture.build(
+                WorkDetailPage.forLocal(target: target),
+                overrides: [
+                  workTextServiceProvider.overrideWithValue(textService),
+                ],
+              ),
+            );
+            await _settleDetail(tester);
+            final status = find.byKey(
+              const ValueKey('work_detail_subtitle_status'),
+            );
+            expect(status, findsOneWidget);
+            expect(
+              find.descendant(
+                of: status,
+                matching: find.text(
+                  fixture.languageProvider.tr(
+                    hasSubtitle ? 'asmr_has_subtitle' : 'asmr_no_subtitle',
+                  ),
+                ),
+              ),
+              findsOneWidget,
+            );
+            expect(
+              find.byIcon(
+                hasSubtitle
+                    ? Icons.subtitles_rounded
+                    : Icons.subtitles_off_rounded,
+              ),
+              findsOneWidget,
+            );
+            expect(find.text('translation'), findsNothing);
+            expect(tester.takeException(), isNull);
+            await tester.pumpWidget(const SizedBox.shrink());
+          },
+          variant: TargetPlatformVariant.only(platform),
+        );
+      }
+    }
 
     testWidgets('renders ASMR.ONE work detail header and actions', (
       tester,
@@ -2776,6 +2952,172 @@ void main() {
   });
 
   group('WorkImageViewerPage', () {
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      testWidgets(
+        'fullscreen fills the window and preserves paging and zoom on $platform',
+        (tester) async {
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = const Size(1280, 800);
+          addTearDown(tester.view.reset);
+          final fixture = AppRuntimeWidgetTestFixture();
+          addTearDown(fixture.dispose);
+          final pane = GlobalKey<NavigatorState>();
+          await tester.pumpWidget(
+            fixture.build(
+              Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: 480,
+                  child: MediaQuery(
+                    data: const MediaQueryData(size: Size(480, 800)),
+                    child: ClipRect(
+                      child: Navigator(
+                        key: pane,
+                        onGenerateRoute: (_) => MaterialPageRoute<void>(
+                          builder: (_) =>
+                              const Scaffold(body: Text('Work detail')),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          unawaited(
+            pane.currentState!.push(
+              buildAppPageRoute<void>(
+                context: pane.currentContext!,
+                child: const WorkImageViewerPage(
+                  initialIndex: 1,
+                  images: [
+                    WorkImageItem(name: '1.jpg', path: '/covers/1.jpg'),
+                    WorkImageItem(name: '2.jpg', path: '/covers/2.jpg'),
+                    WorkImageItem(name: '3.jpg', path: '/covers/3.jpg'),
+                  ],
+                ),
+              ),
+            ),
+          );
+          for (var frame = 0; frame < 6; frame++) {
+            await tester.pump(const Duration(milliseconds: 100));
+          }
+          final viewport = find.byKey(const ValueKey('work_image_viewport'));
+          final fullscreen = find.byKey(
+            const ValueKey('image_viewer_fullscreen_button'),
+          );
+          Rect viewerRect() => tester.getRect(
+            find.ancestor(of: viewport, matching: find.byType(Scaffold)).first,
+          );
+          final originalRect = viewerRect();
+          expect(originalRect, const Rect.fromLTWH(800, 0, 480, 800));
+          expect(
+            tester.getCenter(fullscreen).dx,
+            lessThan(originalRect.left + 80),
+          );
+          expect(tester.getCenter(fullscreen).dy, greaterThan(700));
+          expect(find.text('2 / 3'), findsOneWidget);
+          final viewportElement = tester.element(viewport);
+          final image = find
+              .descendant(
+                of: viewport,
+                matching: find.byType(InteractiveViewer),
+              )
+              .hitTestable()
+              .first;
+          final imageState = tester.state(image);
+          final transform = tester
+              .widget<InteractiveViewer>(image)
+              .transformationController!;
+          transform.value = Matrix4.diagonal3Values(2, 2, 1);
+          await tester.pump();
+          await tester.tap(fullscreen);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(viewerRect(), const Rect.fromLTWH(0, 0, 1280, 800));
+          expect(find.byIcon(Icons.fullscreen_exit_rounded), findsOneWidget);
+          expect(tester.element(viewport), same(viewportElement));
+          expect(tester.state(image), same(imageState));
+          expect(transform.value.getMaxScaleOnAxis(), 2);
+          await tester.tap(fullscreen);
+          await tester.pump();
+          expect(viewerRect(), originalRect);
+          expect(tester.element(viewport), same(viewportElement));
+          expect(transform.value.getMaxScaleOnAxis(), 2);
+          await tester.tap(fullscreen);
+          await tester.pump();
+          await tester.tap(
+            find.byKey(const ValueKey('image_viewer_next_button')),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(find.text('3 / 3'), findsOneWidget);
+          await pane.currentState!.maybePop();
+          await tester.pump();
+          expect(viewerRect(), originalRect);
+          expect(find.text('3 / 3'), findsOneWidget);
+          expect(pane.currentState!.canPop(), isTrue);
+          await tester.tap(fullscreen);
+          await tester.pump();
+          // Destroying the owning route also removes the full-window overlay.
+          pane.currentState!.pop();
+          for (var frame = 0; frame < 6; frame++) {
+            await tester.pump(const Duration(milliseconds: 100));
+          }
+          expect(
+            find.byKey(const ValueKey('work_image_viewport')),
+            findsNothing,
+          );
+          expect(find.text('Work detail'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: TargetPlatformVariant.only(platform),
+      );
+    }
+
+    testWidgets(
+      'portrait hides fullscreen and rotation restores the original region',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(390, 820);
+        addTearDown(tester.view.reset);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const WorkImageViewerPage(
+              images: [WorkImageItem(name: '1.jpg', path: '/covers/1.jpg')],
+            ),
+          ),
+        );
+        await tester.pump();
+        final fullscreen = find.byKey(
+          const ValueKey('image_viewer_fullscreen_button'),
+        );
+        expect(fullscreen, findsNothing);
+        tester.view.physicalSize = const Size(820, 390);
+        await tester.pump();
+        await tester.tap(fullscreen);
+        await tester.pump();
+        expect(find.byIcon(Icons.fullscreen_exit_rounded), findsOneWidget);
+        tester.view.physicalSize = const Size(390, 820);
+        await tester.pump();
+        await tester.pump();
+        expect(fullscreen, findsNothing);
+        expect(
+          find.byKey(const ValueKey('work_image_viewport')),
+          findsOneWidget,
+        );
+        tester.view.physicalSize = const Size(820, 390);
+        await tester.pump();
+        expect(find.byIcon(Icons.fullscreen_rounded), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+    );
+
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       for (final reduceMotion in [false, true]) {
         testWidgets(

@@ -158,6 +158,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   Completer<void>? _scanCompletion;
   int _pathMutationCount = 0;
   bool _interactionPaused = false;
+  bool _background = false;
   void Function()? _coverChangeHandler;
   late final LibraryStartupMaintenanceCoordinator
   _startupMaintenanceCoordinator =
@@ -542,6 +543,10 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   void setInteractionPaused(bool paused) {
     if (_interactionPaused == paused) return;
     _interactionPaused = paused;
+  }
+
+  void setBackgroundMode(bool value) {
+    _background = value;
   }
 
   String? libraryEntryDisplayNameForPath(
@@ -1024,10 +1029,13 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     _startupMaintenanceCoordinator.schedule(retainedPaths);
   }
 
-  Future<bool> _waitForContinuousUiIdle(Duration quietWindow) async {
+  Future<bool> _waitForContinuousUiIdle(
+    Duration quietWindow,
+    bool Function() shouldCancel,
+  ) async {
     DateTime? idleSince;
-    while (!_disposed) {
-      if (_interactionPaused) {
+    while (!_disposed && !shouldCancel()) {
+      if (_background || _interactionPaused) {
         idleSince = null;
       } else {
         idleSince ??= DateTime.now();

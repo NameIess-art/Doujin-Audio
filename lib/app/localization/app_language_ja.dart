@@ -1,7 +1,8 @@
 const Map<String, String> appLanguageJa = {
+  'open_containing_folder': '保存先フォルダーを開く',
   'keyboard_shortcuts_title': 'ショートカット',
   'keyboard_shortcuts_local':
-      'アプリ内\nSpace / Ctrl + Space：再生 / 一時停止\nCtrl + ← / →：前 / 次の曲\n← / →：5秒戻る / 進む\nAlt + ↑ / ↓：音量 +5% / −5%\nCtrl + 1–4：ライブラリ / 再生 / ASMR / 設定\nTab / Shift + Tab：次 / 前の項目\nEnter / Space：選択項目を実行\n矢印キー：値調整・項目選択\nEsc：戻る・閉じる\nF1：ヘルプ\n文字入力中は編集操作を優先。',
+      'アプリ内\nSpace / Ctrl + Space：再生 / 一時停止\nCtrl + ← / →：前 / 次の曲\n← / →：5秒戻る / 進む\n↑ / ↓：音量 +5% / −5%\nCtrl + 1–4：ライブラリ / 再生 / ASMR / 設定\nTab / Shift + Tab：次 / 前の項目\nEnter / Space：選択項目を実行\n矢印キー：値調整・項目選択\nEsc：戻る・閉じる\nF1：ヘルプ\n文字入力中は編集操作を優先。',
   'keyboard_shortcuts_global':
       'アプリ外でも有効\nCtrl + Alt + Space：再生 / 一時停止\nCtrl + Alt + ← / →：前 / 次の曲\nCtrl + Alt + ↑：ウィンドウを表示',
   'keyboard_shortcuts_registered': '有効',

@@ -404,8 +404,9 @@ final class _FakeAudioDetailRepository implements AudioDetailRepository {
   @override
   Future<AudioDetailSaveResult> saveMissingDuration(
     AudioDetailTarget target,
-    Duration duration,
-  ) async {
+    Duration duration, {
+    AudioDetail? cachedDetail,
+  }) async {
     detail = detail.copyWith(
       target: target,
       duration: detail.duration ?? duration,

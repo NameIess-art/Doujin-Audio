@@ -3,8 +3,6 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../../../app/application/audio_path_coordinator.dart';
-import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../application/playback_facade.dart';
@@ -30,7 +28,6 @@ class SessionProgressBar extends StatelessWidget {
     super.key,
     required this.session,
     required this.playback,
-    required this.paths,
     this.timeSegmentLabels = const <TimeSegmentLabel>[],
     this.selectedSegmentId,
     this.onManualSeek,
@@ -38,7 +35,6 @@ class SessionProgressBar extends StatelessWidget {
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
-  final AudioPathCoordinator paths;
   final List<TimeSegmentLabel> timeSegmentLabels;
   final String? selectedSegmentId;
   final ValueChanged<Duration>? onManualSeek;
@@ -46,11 +42,7 @@ class SessionProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final track = paths.trackByPath(session.currentTrackPath);
-    final isAsmr = track?.usesAsmrVisualTheme ?? false;
-    final primaryColor = isAsmr
-        ? AppDesignTokens.of(context).asmrAccent
-        : cs.primary;
+    final primaryColor = cs.primary;
     final staticLayer = _ProgressBarStaticLayer(
       session: session,
       labels: timeSegmentLabels,

@@ -7,7 +7,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import java.io.IOException
 
-private val supportedWorkDocExtensions = setOf("txt", "md", "pdf")
+private val supportedWorkDocExtensions = setOf("txt", "md", "pdf", "vtt", "webvtt", "lrc", "srt", "ass", "ssa")
 
 internal class WorkTextDocumentReader(
     private val context: Context,

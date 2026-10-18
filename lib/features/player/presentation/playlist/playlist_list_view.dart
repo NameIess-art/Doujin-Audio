@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
@@ -13,6 +14,7 @@ import '../../../../core/media/music_track.dart';
 import '../../../../core/widgets/animated_reorder.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/marquee_text.dart';
 import '../../../../core/widgets/playing_sound_wave_indicator.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
@@ -452,9 +454,12 @@ class SessionListCard extends ConsumerWidget {
       leadingActionTooltip: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
       leadingActionIcon: Icons.push_pin_rounded,
       leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: playlistRowHeight),
-        child: Material(
+      child: MarqueePauseScope(
+        isPaused: false,
+        hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: playlistRowHeight),
+          child: Material(
           color: Colors.transparent,
           child: Card(
             margin: EdgeInsets.zero,
@@ -539,16 +544,21 @@ class SessionListCard extends ConsumerWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Text(
-                                    folderName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: cs.onSurfaceVariant,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
-                                        ),
+                                  IgnorePointer(
+                                    child: MarqueeText(
+                                      key: ValueKey<String>(
+                                        'playlist_session_work_title_$sessionId',
+                                      ),
+                                      text: folderName,
+                                      edgePadding: 0,
+                                      pauseDuration: const Duration(seconds: 1),
+                                      style: Theme.of(context).textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
+                                          ),
+                                    ),
                                   ),
                                   const SizedBox(height: 3),
                                   Text.rich(
@@ -671,7 +681,8 @@ class SessionListCard extends ConsumerWidget {
           ),
         ),
       ),
-    );
-    return UndoableRemovalTransition(hidden: isHidden, child: swipeCard);
+    ),
+  );
+  return UndoableRemovalTransition(hidden: isHidden, child: swipeCard);
   }
 }

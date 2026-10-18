@@ -61,6 +61,53 @@ void main() {
     });
   });
 
+  test(
+    'ensureFolderPath returns the actual provider directory names',
+    () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return success('作品.../音声 (1)');
+      });
+
+      expect(
+        await gateway.ensureFolderPath(
+          folder: 'content://library',
+          relativePath: '作品の長いタイトル/音声',
+          overwrite: false,
+        ),
+        '作品.../音声 (1)',
+      );
+      expect(calls.single.method, FileCacheMethod.ensureFolderPath);
+      expect(calls.single.arguments, <String, Object?>{
+        'folder': 'content://library',
+        'relativePath': '作品の長いタイトル/音声',
+        'overwrite': false,
+      });
+    },
+  );
+
+  for (final response in <Map<String, Object?>>[
+    <String, Object?>{'ok': true, 'value': null},
+    <String, Object?>{
+      'ok': false,
+      'errorCode': 'folder_create_failed',
+      'error': 'Provider denied directory creation',
+    },
+  ]) {
+    test('ensureFolderPath preserves failure as null ($response)', () async {
+      messenger.setMockMethodCallHandler(channel, (_) async => response);
+
+      expect(
+        await gateway.ensureFolderPath(
+          folder: 'content://library',
+          relativePath: '作品',
+          overwrite: true,
+        ),
+        isNull,
+      );
+    });
+  }
+
   for (final windows in <bool>[false, true]) {
     test(
       'storage usage reads system capacity on ${windows ? 'Windows' : 'Android'}',
@@ -267,6 +314,32 @@ void main() {
       const Duration(milliseconds: 123456),
     );
   });
+
+  test(
+    'Windows work text discovery includes nested subtitle formats',
+    () async {
+      final root = await Directory.systemTemp.createTemp('作品 字幕 ');
+      addTearDown(() => root.delete(recursive: true));
+      final folder = await Directory(
+        '${root.path}/Extras/字幕',
+      ).create(recursive: true);
+      const extensions = ['SRT', 'lrc', 'vtt', 'webvtt', 'ass', 'ssa'];
+      for (final extension in extensions) {
+        await File(
+          '${folder.path}/translation.$extension',
+        ).writeAsString('subtitle');
+      }
+      await File('${folder.path}/cover.jpg').writeAsString('image');
+      final windows = FileCachePlatformGateway(
+        isAndroid: () => false,
+        isWindows: () => true,
+      );
+      final files = await windows.discoverWorkTexts(root.path);
+      expect(files.map((file) => file['relativePath']).toSet(), {
+        for (final extension in extensions) 'Extras/字幕/translation.$extension',
+      });
+    },
+  );
 
   test('Windows discovery includes source image and document sizes', () async {
     final folder = await Directory.systemTemp.createTemp('作品 文件大小 ');

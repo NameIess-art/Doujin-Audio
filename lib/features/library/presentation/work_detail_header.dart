@@ -209,6 +209,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
         children: [
           // Cover Image area with Gradient and Title
           Positioned(
+            key: const ValueKey('work_detail_cover_bounds'),
             top: 0,
             left: 0,
             right: 0,

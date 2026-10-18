@@ -1,8 +1,10 @@
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'dart:io';
 import 'dart:async';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
@@ -16,6 +18,7 @@ import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_task_card.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_download_details_page.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -122,7 +125,7 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'download tasks display directly during entrance and retain cards on $platform',
+      'download tasks retain cards and clear pressed feedback on return on $platform',
       (tester) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         final language = AppLanguageProvider();
@@ -134,6 +137,7 @@ void main() {
         addTearDown(manager.dispose);
         addTearDown(removals.dispose);
         final navigator = GlobalKey<NavigatorState>();
+        final surface = GlobalKey();
         var taskReads = 0;
         await tester.pumpWidget(
           ProviderScope(
@@ -147,10 +151,14 @@ void main() {
                 return Stream.value([1]);
               }),
             ],
-            child: MaterialApp(
-              navigatorKey: navigator,
-              navigatorObservers: [UiInteractionNavigatorObserver()],
-              home: const Scaffold(),
+            child: RepaintBoundary(
+              key: surface,
+              child: MaterialApp(
+                navigatorKey: navigator,
+                theme: ThemeData(splashFactory: InkRipple.splashFactory),
+                navigatorObservers: [UiInteractionNavigatorObserver()],
+                home: const Scaffold(),
+              ),
             ),
           ),
         );
@@ -177,16 +185,52 @@ void main() {
         expect(taskCard.onRemove, isNull);
         expect(taskCard.onOpen, isNotNull);
         final card = tester.element(find.byType(AsmrDownloadTaskCard));
-        unawaited(
-          navigator.currentState!.push(
-            MaterialPageRoute<void>(builder: (_) => const Scaffold()),
-          ),
-        );
+        final point =
+            tester.getTopLeft(find.byType(AsmrDownloadTaskCard)) +
+            const Offset(8, 60);
+        Future<Color> sample() async => (await tester.runAsync(() async {
+          final boundary = tester.renderObject<RenderRepaintBoundary>(
+            find.byKey(surface),
+          );
+          final image = await boundary.toImage();
+          final bytes = (await image.toByteData())!;
+          final index = (point.dy.floor() * image.width + point.dx.floor()) * 4;
+          final color = Color.fromARGB(
+            bytes.getUint8(index + 3),
+            bytes.getUint8(index),
+            bytes.getUint8(index + 1),
+            bytes.getUint8(index + 2),
+          );
+          image.dispose();
+          return color;
+        }))!;
+        final before = await sample();
+        final gesture = await tester.startGesture(point);
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(await sample(), isNot(before));
+        await gesture.up();
         await tester.pumpAndSettle();
+        expect(find.byType(AsmrDownloadDetailsPage), findsOneWidget);
         navigator.currentState!.pop();
         await tester.pump();
         expect(tester.element(find.byType(AsmrDownloadTaskCard)), same(card));
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(await sample(), before);
         await tester.pumpAndSettle();
+        if (platform == TargetPlatform.windows) {
+          final mouse = await tester.createGesture(
+            kind: PointerDeviceKind.mouse,
+          );
+          await mouse.addPointer(location: Offset.zero);
+          await mouse.moveTo(point);
+          await tester.pumpAndSettle();
+          expect(await sample(), isNot(before));
+          await mouse.removePointer();
+          await tester.pumpAndSettle();
+          expect(await sample(), before);
+        }
         expect(taskReads, 1);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());

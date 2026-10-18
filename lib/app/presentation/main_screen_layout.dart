@@ -187,10 +187,9 @@ extension _MainScreenLayout on _MainScreenState {
   Widget _buildBottomBar(
     BuildContext context, {
     required bool isPlaybackExpanded,
-    required double anchorProgress,
-    required double stackProgress,
-    required double fadeProgress,
-    required double expandedWidth,
+    required Animation<double> appearance,
+    required Animation<double> expansion,
+    required double availableWidth,
     required VoidCallback onCurrentTap,
   }) {
     final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
@@ -215,10 +214,9 @@ extension _MainScreenLayout on _MainScreenState {
         destinations,
         selectedIndex,
         isPlaybackExpanded: isPlaybackExpanded,
-        anchorProgress: anchorProgress,
-        stackProgress: stackProgress,
-        fadeProgress: fadeProgress,
-        expandedWidth: expandedWidth,
+        appearance: appearance,
+        expansion: expansion,
+        availableWidth: availableWidth,
         onCurrentTap: onCurrentTap,
       ),
     );
@@ -229,10 +227,9 @@ extension _MainScreenLayout on _MainScreenState {
     List<MainDestination> destinations,
     int selectedIndex, {
     required bool isPlaybackExpanded,
-    required double anchorProgress,
-    required double stackProgress,
-    required double fadeProgress,
-    required double expandedWidth,
+    required Animation<double> appearance,
+    required Animation<double> expansion,
+    required double availableWidth,
     required VoidCallback onCurrentTap,
   }) {
     final i18n = ProviderScope.containerOf(
@@ -245,9 +242,8 @@ extension _MainScreenLayout on _MainScreenState {
     final activeIndex = selectedIndex.clamp(0, destinations.length - 1);
     // Keep the active destination on top throughout collapsing and expanding,
     // smoothly folding inactive destinations beneath it.
-    final collapsed = fadeProgress == 1;
     final layeredEntries = [
-      if (!collapsed) ...entries.where((entry) => entry.key != activeIndex),
+      ...entries.where((entry) => entry.key != activeIndex),
       entries[activeIndex],
     ];
     final items = layeredEntries.map((entry) {
@@ -260,32 +256,29 @@ extension _MainScreenLayout on _MainScreenState {
       final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
 
       final activeColor = cs.primary;
-      final expandedLeft =
-          expandedWidth * (index + 0.5) / destinations.length -
-          kActiveSessionCarouselDockHeight / 2;
-      final progress = index == 0 ? anchorProgress : stackProgress;
-      final inactiveOpacity = selected
-          ? 1.0
-          : (1.0 - fadeProgress).clamp(0.0, 1.0);
-      final inactiveScale = selected
-          ? 1.0
-          : (1.0 - 0.15 * fadeProgress).clamp(0.0, 1.0);
 
       final iconStack = Stack(
         alignment: Alignment.center,
         children: [
-          AnimatedContainer(
-            duration: MediaQuery.disableAnimationsOf(context)
-                ? Duration.zero
-                : const Duration(milliseconds: 300),
-            curve: Curves.easeOutCubic,
-            width: selected ? 44 : 0,
-            height: selected ? 44 : 0,
-            decoration: BoxDecoration(
-              color: selected
-                  ? activeColor.withValues(alpha: 0.11)
-                  : Colors.transparent,
-              shape: BoxShape.circle,
+          Positioned.fill(
+            left: 6,
+            right: 6,
+            top: 6,
+            bottom: 6,
+            child: AnimatedContainer(
+              key: ValueKey<String>(
+                'main_destination_indicator_${item.labelKey}',
+              ),
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              decoration: BoxDecoration(
+                color: selected
+                    ? activeColor.withValues(alpha: 0.11)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(22),
+              ),
             ),
           ),
           AnimatedSwitcher(
@@ -314,18 +307,8 @@ extension _MainScreenLayout on _MainScreenState {
         ],
       );
 
-      final content = selected || fadeProgress == 0
-          ? iconStack
-          : Opacity(
-              opacity: inactiveOpacity,
-              child: Transform.scale(scale: inactiveScale, child: iconStack),
-            );
-
-      return Positioned(
-        left: expandedLeft * (1 - progress),
-        top: 0,
-        width: kActiveSessionCarouselDockHeight,
-        height: kActiveSessionCarouselDockHeight,
+      return AnimatedBuilder(
+        animation: Listenable.merge([appearance, expansion]),
         child: IgnorePointer(
           ignoring: isPlaybackExpanded && !selected,
           child: ExcludeSemantics(
@@ -344,12 +327,59 @@ extension _MainScreenLayout on _MainScreenState {
                   onTap: isPlaybackExpanded && selected
                       ? onCurrentTap
                       : () => _switchPage(index),
-                  child: content,
+                  child: RepaintBoundary(child: iconStack),
                 ),
               ),
             ),
           ),
         ),
+        builder: (context, child) {
+          final expand = expansion.value;
+          final fadeProgress = kAppFadeCurve.transform(expand);
+          if (!selected && fadeProgress == 1) {
+            return const SizedBox.shrink();
+          }
+          final progress = index == 0
+              ? Curves.easeInOut.transform((expand / 0.2).clamp(0.0, 1.0))
+              : Curves.easeInOut.transform(
+                  ((expand - 0.2) / 0.45).clamp(0.0, 1.0),
+                );
+          final expandedWidth =
+              availableWidth -
+              kActiveSessionCarouselDockHeight * appearance.value;
+          final indicatorWidth =
+              ((expandedWidth - 12 - 4 * (destinations.length - 1)) /
+                      destinations.length)
+                  .clamp(44.0, 68.0);
+          final shapeProgress = Curves.easeInOut.transform(
+            ((expand - 0.25) / 0.5).clamp(0.0, 1.0),
+          );
+          final buttonWidth =
+              12 + lerpDouble(indicatorWidth, 44, shapeProgress)!;
+          // Six pixels of inset put the 44px pill arcs on the 56px dock arcs.
+          final expandedLeft =
+              (expandedWidth - indicatorWidth - 12) *
+              index /
+              (destinations.length - 1);
+          return Positioned(
+            left: 0,
+            top: 0,
+            width: buttonWidth,
+            height: kActiveSessionCarouselDockHeight,
+            child: Transform.translate(
+              offset: Offset(expandedLeft * (1 - progress), 0),
+              child: selected
+                  ? child
+                  : Opacity(
+                      opacity: 1 - fadeProgress,
+                      child: Transform.scale(
+                        scale: 1 - 0.15 * fadeProgress,
+                        child: child,
+                      ),
+                    ),
+            ),
+          );
+        },
       );
     }).toList();
 

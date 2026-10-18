@@ -5,13 +5,73 @@ import 'package:doujin_audio/features/library/application/library_startup_mainte
 
 void main() {
   test(
+    'maintenance waits again when interaction starts between stages',
+    () async {
+      final idleRequested = Completer<void>();
+      final releaseIdle = Completer<bool>();
+      final completed = Completer<void>();
+      final calls = <String>[];
+      var interacting = false;
+      final coordinator = LibraryStartupMaintenanceCoordinator(
+        waitForUiIdle: (_, _) async {
+          if (!interacting) return true;
+          if (!idleRequested.isCompleted) idleRequested.complete();
+          return releaseIdle.future;
+        },
+        cleanupOrphanedImports: (_) async {
+          calls.add('cleanup');
+          interacting = true;
+        },
+        ensureEntries: (_) async => calls.add('entries'),
+        backfillDurations: ({waitForIdle}) async {
+          expect(await waitForIdle!(), isTrue);
+          calls.add('durations');
+          completed.complete();
+        },
+      );
+
+      coordinator.schedule(const ['/music/track.mp3']);
+      await idleRequested.future;
+      expect(calls, ['cleanup']);
+      interacting = false;
+      releaseIdle.complete(true);
+      await completed.future;
+      await coordinator.dispose();
+      expect(calls, ['cleanup', 'entries', 'durations']);
+    },
+  );
+
+  test('cancelling an idle wait prevents later maintenance stages', () async {
+    final waiting = Completer<void>();
+    final release = Completer<void>();
+    var entries = 0;
+    final coordinator = LibraryStartupMaintenanceCoordinator(
+      waitForUiIdle: (_, shouldCancel) async {
+        waiting.complete();
+        await release.future;
+        return !shouldCancel();
+      },
+      cleanupOrphanedImports: (_) async => fail('cancelled cleanup ran'),
+      ensureEntries: (_) async => entries++,
+    );
+
+    coordinator.schedule(const ['/music/track.mp3']);
+    await waiting.future;
+    final cancellation = coordinator.cancelAndWait();
+    release.complete();
+    await cancellation;
+    await coordinator.dispose();
+    expect(entries, 0);
+  });
+
+  test(
     'cancelAndWait waits for active cleanup and invalidates entry writes',
     () async {
       final cleanupStarted = Completer<void>();
       final releaseCleanup = Completer<void>();
       var ensuredEntries = 0;
       final coordinator = LibraryStartupMaintenanceCoordinator(
-        waitForUiIdle: (_) async => true,
+        waitForUiIdle: (_, _) async => true,
         cleanupOrphanedImports: (_) async {
           cleanupStarted.complete();
           await releaseCleanup.future;
@@ -46,7 +106,7 @@ void main() {
       var cleanupCalls = 0;
       var ensuredEntries = 0;
       final coordinator = LibraryStartupMaintenanceCoordinator(
-        waitForUiIdle: (_) async => true,
+        waitForUiIdle: (_, _) async => true,
         cleanupOrphanedImports: (_) async {
           cleanupCalls++;
           cleanupStarted.complete();
@@ -79,7 +139,7 @@ void main() {
 
   test('maintenance failure does not block disposal', () async {
     final coordinator = LibraryStartupMaintenanceCoordinator(
-      waitForUiIdle: (_) async => true,
+      waitForUiIdle: (_, _) async => true,
       cleanupOrphanedImports: (_) async => throw StateError('cleanup failed'),
       ensureEntries: (_) async {},
     );
@@ -95,12 +155,12 @@ void main() {
       final calls = <String>[];
       final completed = Completer<void>();
       final coordinator = LibraryStartupMaintenanceCoordinator(
-        waitForUiIdle: (_) async => true,
+        waitForUiIdle: (_, _) async => true,
         cleanupOrphanedImports: (_) async => calls.add('cleanup'),
         migrateCoverCache: (_) async => calls.add('covers'),
         ensureEntries: (_) async => calls.add('entries'),
         migrateAudioDetails: (_) async => calls.add('details'),
-        backfillDurations: () async {
+        backfillDurations: ({waitForIdle}) async {
           calls.add('durations');
           completed.complete();
         },

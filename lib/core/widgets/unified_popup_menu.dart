@@ -383,10 +383,12 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
     this.onTrailingSelected,
     this.compact = false,
     this.primaryIcons = false,
+    this.autofocusFirstEntry = true,
   });
 
   final bool compact;
   final bool primaryIcons;
+  final bool autofocusFirstEntry;
   final List<UnifiedMenuEntry<T>> entries;
   final ValueChanged<T> onSelected;
   final ValueChanged<T>? onTrailingSelected;
@@ -432,7 +434,9 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
                         entry: entry,
                         compact: compact,
                         primaryIcons: primaryIcons,
-                        autofocus: identical(entry, firstAutofocusEntry),
+                        autofocus:
+                            autofocusFirstEntry &&
+                            identical(entry, firstAutofocusEntry),
                         onSelected: onSelected,
                         onTrailingSelected: onTrailingSelected,
                       ),
@@ -615,6 +619,7 @@ Future<T?> showDockAwareMenu<T>({
   required RelativeRect position,
   required List<UnifiedMenuEntry<T>> entries,
   Listenable? dismissOn,
+  bool autofocusFirstEntry = true,
 }) async {
   final overlayState =
       MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
@@ -643,6 +648,7 @@ Future<T?> showDockAwareMenu<T>({
     builder: (_) => _DockMenuOverlay<T>(
       position: position,
       entries: entries,
+      autofocusFirstEntry: autofocusFirstEntry,
       themes: themes,
       reducedMotion: reducedMotion,
       interactionSource: interactionSource,
@@ -683,6 +689,7 @@ class _DockMenuOverlay<T> extends StatefulWidget {
     required this.interactionSource,
     required this.onResult,
     required this.externallyManagedDismiss,
+    required this.autofocusFirstEntry,
   });
 
   final RelativeRect position;
@@ -692,6 +699,7 @@ class _DockMenuOverlay<T> extends StatefulWidget {
   final Object interactionSource;
   final ValueChanged<T?> onResult;
   final bool externallyManagedDismiss;
+  final bool autofocusFirstEntry;
 
   @override
   State<_DockMenuOverlay<T>> createState() => _DockMenuOverlayState<T>();
@@ -810,6 +818,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                         child: IntrinsicWidth(
                           child: _UnifiedPopupMenuCard<T>(
                             entries: widget.entries,
+                            autofocusFirstEntry: widget.autofocusFirstEntry,
                             compact: true,
                             primaryIcons: true,
                             onSelected: (value) => _dismiss(value),
@@ -846,6 +855,8 @@ Future<T?> showUnifiedContextMenu<T>({
       context: context,
       position: position,
       entries: entries,
+      // Keep keyboard focus in the menu without preselecting a mouse action.
+      autofocusFirstEntry: false,
     );
   }
   return showMenu<T>(

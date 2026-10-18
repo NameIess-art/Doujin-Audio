@@ -53,12 +53,16 @@ class WorkImageViewerPage extends ConsumerStatefulWidget {
       _WorkImageViewerPageState();
 }
 
-class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
+class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
+    with WidgetsBindingObserver {
   static const int _loopPageSeed = 100000;
   static const double _imageHeaderGap = 24;
   static const double _imageSwitcherGap = 20;
   final GlobalKey _headerKey = GlobalKey();
   final GlobalKey _switcherKey = GlobalKey();
+  final GlobalKey _viewerKey = GlobalKey();
+  final OverlayPortalController _fullscreenController =
+      OverlayPortalController();
   double _headerHeight = 0;
   double _switcherHeight = 0;
   late int _currentIndex;
@@ -82,6 +86,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final count = widget.images.length;
     _currentIndex = widget.initialIndex.clamp(0, count == 0 ? 0 : count - 1);
     final initialPage = _pageForIndex(_currentIndex, count);
@@ -90,8 +95,18 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    final view = View.of(context);
+    if (view.physicalSize.width <= view.physicalSize.height &&
+        _fullscreenController.isShowing) {
+      _toggleFullscreen();
+    }
   }
 
   void _onPageChanged(int page) {
@@ -234,11 +249,48 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final windowMediaQuery = MediaQueryData.fromView(
+      View.of(context),
+      platformData: MediaQuery.of(context),
+    );
+    return PopScope<void>(
+      canPop: !_fullscreenController.isShowing,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _fullscreenController.isShowing) _toggleFullscreen();
+      },
+      child: OverlayPortal(
+        controller: _fullscreenController,
+        overlayLocation: OverlayChildLocation.rootOverlay,
+        overlayChildBuilder: (context) => Positioned.fill(
+          child: MediaQuery(
+            data: windowMediaQuery,
+            child: Builder(builder: _buildViewer),
+          ),
+        ),
+        child: _fullscreenController.isShowing
+            ? const SizedBox.expand()
+            : Builder(builder: _buildViewer),
+      ),
+    );
+  }
+
+  void _toggleFullscreen() {
+    setState(() {
+      if (_fullscreenController.isShowing) {
+        _fullscreenController.hide();
+      } else {
+        _fullscreenController.show();
+      }
+    });
+  }
+
+  Widget _buildViewer(BuildContext context) {
     final i18n = ref.watch(appLanguageProviderInstanceProvider);
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     if (widget.images.isEmpty) {
       return Scaffold(
+        key: _viewerKey,
         backgroundColor: cs.surface,
         appBar: PreferredSize(
           preferredSize: const Size.fromHeight(kToolbarHeight),
@@ -293,6 +345,8 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
         : bottomInset + 20.0;
 
     return Scaffold(
+      // Reparent this same subtree so paging and image zoom survive the toggle.
+      key: _viewerKey,
       backgroundColor: cs.surface,
       body: Stack(
         children: [
@@ -354,7 +408,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back_rounded),
                 tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-                onPressed: () => Navigator.of(context).maybePop(),
+                onPressed: () => Navigator.of(this.context).maybePop(),
               ),
               trailing: widget.onSetAsCover != null
                   ? HeaderFloatingSurface(
@@ -411,6 +465,29 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                   : null,
             ),
           ),
+          if (View.of(context).physicalSize.aspectRatio > 1)
+            Positioned(
+              left: MediaQuery.paddingOf(context).left + 16,
+              bottom: bottomInset + 20,
+              child: AppPageContentTransition(
+                child: HeaderFloatingButton(
+                  child: IconButton(
+                    key: const ValueKey('image_viewer_fullscreen_button'),
+                    icon: Icon(
+                      _fullscreenController.isShowing
+                          ? Icons.fullscreen_exit_rounded
+                          : Icons.fullscreen_rounded,
+                    ),
+                    tooltip: i18n.tr(
+                      _fullscreenController.isShowing
+                          ? 'exit_fullscreen'
+                          : 'fullscreen',
+                    ),
+                    onPressed: _toggleFullscreen,
+                  ),
+                ),
+              ),
+            ),
           // Bottom-right switcher capsule
           if (widget.images.length > 1)
             Positioned(

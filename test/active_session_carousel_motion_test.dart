@@ -193,10 +193,9 @@ void main() {
                       (
                         _, {
                         required isPlaybackExpanded,
-                        required anchorProgress,
-                        required stackProgress,
-                        required fadeProgress,
-                        required expandedWidth,
+                        required appearance,
+                        required expansion,
+                        required availableWidth,
                         required onCurrentTap,
                       }) => const SizedBox.expand(),
                 );

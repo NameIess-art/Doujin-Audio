@@ -1,5 +1,362 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../core/cache/app_cache_service.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
+
+typedef _CoverSchemeKey = ({
+  String path,
+  int generation,
+  Brightness brightness,
+  double contrast,
+});
+
+final _coverSchemes = <_CoverSchemeKey, ColorScheme>{};
+final _pendingCoverSchemes = <_CoverSchemeKey, Future<ColorScheme>>{};
+
+ColorScheme? _cachedCoverScheme(_CoverSchemeKey key) {
+  final scheme = _coverSchemes.remove(key);
+  if (scheme != null) _coverSchemes[key] = scheme;
+  return scheme;
+}
+
+Future<ColorScheme> _loadCoverScheme(_CoverSchemeKey key) {
+  final cached = _cachedCoverScheme(key);
+  if (cached != null) return SynchronousFuture(cached);
+  return _pendingCoverSchemes.putIfAbsent(key, () async {
+    final lease = AppCacheService.protectPaths([key.path]);
+    try {
+      final provider = ResizeImage(
+        FileImage(File(key.path)),
+        width: 112,
+        height: 112,
+        policy: ResizeImagePolicy.fit,
+      );
+      // Manual artwork can replace bytes at the same path. Invalidate only the
+      // small extraction image, leaving the displayed cover's cache untouched.
+      await provider.evict();
+      final scheme = await ColorScheme.fromImageProvider(
+        provider: provider,
+        brightness: key.brightness,
+        contrastLevel: key.contrast,
+      );
+      _coverSchemes[key] = scheme;
+      if (_coverSchemes.length > 32) {
+        _coverSchemes.remove(_coverSchemes.keys.first);
+      }
+      return scheme;
+    } finally {
+      lease.release();
+      unawaited(_pendingCoverSchemes.remove(key));
+    }
+  });
+}
+
+/// Shares artwork colors without owning artwork discovery or playback state.
+class SessionDetailTheme extends StatefulWidget {
+  const SessionDetailTheme({
+    super.key,
+    required this.coverPathFuture,
+    required this.initialCoverPath,
+    required this.requestKey,
+    required this.coverGeneration,
+    required this.isAsmr,
+    required this.queueColorValue,
+    required this.child,
+    this.transitionActive,
+  });
+
+  final Future<String?> coverPathFuture;
+  final String? initialCoverPath;
+  final Object requestKey;
+  final int coverGeneration;
+  final bool isAsmr;
+  final int? queueColorValue;
+  final ValueListenable<bool>? transitionActive;
+  final Widget child;
+
+  @override
+  State<SessionDetailTheme> createState() => _SessionDetailThemeState();
+}
+
+class _SessionDetailThemeState extends State<SessionDetailTheme> {
+  ColorScheme? _scheme;
+  (Brightness, double)? _appearance;
+  int _request = 0;
+  bool _snap = true;
+  late final _commitKey = 'detail_palette_${identityHashCode(this)}';
+
+  @override
+  void initState() {
+    super.initState();
+    widget.transitionActive?.addListener(_handleTransition);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final appearance = (
+      Theme.of(context).brightness,
+      MediaQuery.highContrastOf(context) ? 1.0 : 0.0,
+    );
+    if (_appearance != appearance) {
+      _appearance = appearance;
+      _scheme = null;
+      _updateRequest();
+    }
+  }
+
+  @override
+  void didUpdateWidget(SessionDetailTheme oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.transitionActive != widget.transitionActive) {
+      oldWidget.transitionActive?.removeListener(_handleTransition);
+      widget.transitionActive?.addListener(_handleTransition);
+    }
+    if (oldWidget.requestKey != widget.requestKey ||
+        oldWidget.coverGeneration != widget.coverGeneration ||
+        oldWidget.initialCoverPath != widget.initialCoverPath ||
+        oldWidget.coverPathFuture != widget.coverPathFuture) {
+      _updateRequest();
+    }
+    _handleTransition();
+  }
+
+  void _handleTransition() {
+    UiInteractionCoordinator.instance.scheduleCommitFrame();
+  }
+
+  _CoverSchemeKey _keyFor(String path) => (
+    path: path,
+    generation: widget.coverGeneration,
+    brightness: _appearance!.$1,
+    contrast: _appearance!.$2,
+  );
+
+  void _updateRequest() {
+    final request = ++_request;
+    final path = widget.initialCoverPath;
+    final cached = path == null ? null : _cachedCoverScheme(_keyFor(path));
+    if (cached != null) {
+      _scheme = cached;
+      _snap = true;
+    }
+    final future = widget.coverPathFuture;
+    final generation = widget.coverGeneration;
+    final appearance = _appearance!;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _commitKey,
+      canRun: () => widget.transitionActive?.value != true,
+      commit: () =>
+          unawaited(_resolve(request, future, generation, appearance)),
+    );
+  }
+
+  Future<void> _resolve(
+    int request,
+    Future<String?> future,
+    int generation,
+    (Brightness, double) appearance,
+  ) async {
+    ColorScheme? scheme;
+    try {
+      final path = await future;
+      if (!mounted || request != _request) return;
+      if (path != null && path.isNotEmpty) {
+        scheme = await _loadCoverScheme((
+          path: path,
+          generation: generation,
+          brightness: appearance.$1,
+          contrast: appearance.$2,
+        ));
+      }
+    } on Exception {
+      // Artwork is optional; unreadable artwork restores this track's fallback.
+      scheme = null;
+    }
+    if (!mounted || request != _request) return;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _commitKey,
+      canRun: () => widget.transitionActive?.value != true,
+      commit: () {
+        if (!mounted || request != _request || scheme == _scheme) return;
+        setState(() {
+          _scheme = scheme;
+          _snap = false;
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _request++;
+    widget.transitionActive?.removeListener(_handleTransition);
+    UiInteractionCoordinator.instance.cancelCommit(_commitKey);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final base = Theme.of(context);
+    final queueColor = widget.queueColorValue;
+    final fallback = queueColor != null
+        ? createPlaybackQueueSessionDetailTheme(base, Color(queueColor))
+        : widget.isAsmr
+        ? createAsmrSessionDetailTheme(base, AppDesignTokens.of(context))
+        : base;
+    return AnimatedTheme(
+      data: _scheme == null
+          ? fallback
+          : _applyDetailColorScheme(base, _scheme!),
+      duration: _snap || MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      child: widget.child,
+    );
+  }
+}
+
+ThemeData _applyDetailColorScheme(ThemeData base, ColorScheme scheme) {
+  InputBorder? inputBorder(InputBorder? border, Color color) =>
+      border?.copyWith(borderSide: border.borderSide.copyWith(color: color));
+  ShapeBorder? surfaceBorder(ShapeBorder? shape) => shape is OutlinedBorder
+      ? shape.copyWith(
+          side: shape.side.copyWith(
+            color: scheme.outlineVariant.withValues(alpha: shape.side.color.a),
+          ),
+        )
+      : shape;
+  return base.copyWith(
+    colorScheme: scheme,
+    scaffoldBackgroundColor: scheme.surface,
+    canvasColor: scheme.surface,
+    dividerColor: scheme.outlineVariant,
+    hoverColor: scheme.primary.withValues(alpha: 0.08),
+    focusColor: scheme.primary.withValues(alpha: 0.12),
+    highlightColor: scheme.primary.withValues(alpha: 0.12),
+    textTheme: base.textTheme.apply(
+      bodyColor: scheme.onSurface,
+      displayColor: scheme.onSurface,
+    ),
+    iconTheme: base.iconTheme.copyWith(color: scheme.onSurface),
+    appBarTheme: base.appBarTheme.copyWith(
+      backgroundColor: scheme.surface,
+      foregroundColor: scheme.onSurface,
+    ),
+    cardTheme: base.cardTheme.copyWith(
+      color: scheme.surfaceContainerLow,
+      shape: surfaceBorder(base.cardTheme.shape),
+    ),
+    bottomSheetTheme: base.bottomSheetTheme.copyWith(
+      backgroundColor: scheme.surfaceContainerLow,
+      modalBackgroundColor: scheme.surfaceContainerLow,
+      dragHandleColor: scheme.onSurfaceVariant.withValues(alpha: 0.42),
+      shape: surfaceBorder(base.bottomSheetTheme.shape),
+    ),
+    dialogTheme: base.dialogTheme.copyWith(
+      backgroundColor: scheme.surfaceContainerHigh,
+      shape: surfaceBorder(base.dialogTheme.shape),
+      titleTextStyle: base.textTheme.headlineSmall?.copyWith(
+        color: scheme.onSurface,
+      ),
+      contentTextStyle: base.textTheme.bodyMedium?.copyWith(
+        color: scheme.onSurface,
+      ),
+    ),
+    popupMenuTheme: base.popupMenuTheme.copyWith(
+      color: scheme.surfaceContainerHigh,
+      shape: surfaceBorder(base.popupMenuTheme.shape),
+    ),
+    snackBarTheme: base.snackBarTheme.copyWith(
+      backgroundColor: scheme.surfaceContainerLow,
+      contentTextStyle: base.snackBarTheme.contentTextStyle?.copyWith(
+        color: scheme.onSurface,
+      ),
+    ),
+    scrollbarTheme: base.scrollbarTheme.copyWith(
+      thumbColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.dragged)) return scheme.primary;
+        if (states.contains(WidgetState.hovered)) {
+          return scheme.primary.withValues(alpha: 0.7);
+        }
+        return scheme.outlineVariant.withValues(alpha: 0.5);
+      }),
+    ),
+    sliderTheme: base.sliderTheme.copyWith(
+      activeTrackColor: scheme.primary,
+      inactiveTrackColor: scheme.primary.withValues(alpha: 0.22),
+      thumbColor: scheme.primary,
+      overlayColor: scheme.primary.withValues(alpha: 0.15),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: (base.textButtonTheme.style ?? const ButtonStyle()).merge(
+        TextButton.styleFrom(
+          foregroundColor: scheme.primary,
+          disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.38),
+        ),
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: (base.filledButtonTheme.style ?? const ButtonStyle()).merge(
+        FilledButton.styleFrom(
+          backgroundColor: scheme.primary,
+          foregroundColor: scheme.onPrimary,
+          disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.38),
+          disabledBackgroundColor: scheme.onSurface.withValues(alpha: 0.12),
+        ),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: (base.outlinedButtonTheme.style ?? const ButtonStyle()).merge(
+        OutlinedButton.styleFrom(
+          side: BorderSide(color: scheme.outlineVariant),
+        ),
+      ),
+    ),
+    listTileTheme: base.listTileTheme.copyWith(
+      textColor: scheme.onSurface,
+      titleTextStyle: base.listTileTheme.titleTextStyle?.copyWith(
+        color: scheme.onSurface,
+      ),
+      subtitleTextStyle: base.listTileTheme.subtitleTextStyle?.copyWith(
+        color: scheme.onSurfaceVariant,
+      ),
+    ),
+    inputDecorationTheme: base.inputDecorationTheme.copyWith(
+      fillColor: scheme.surfaceContainer,
+      border: inputBorder(
+        base.inputDecorationTheme.border,
+        scheme.outlineVariant,
+      ),
+      enabledBorder: inputBorder(
+        base.inputDecorationTheme.enabledBorder,
+        scheme.outlineVariant,
+      ),
+      disabledBorder: inputBorder(
+        base.inputDecorationTheme.disabledBorder,
+        scheme.outlineVariant,
+      ),
+      focusedBorder: inputBorder(
+        base.inputDecorationTheme.focusedBorder,
+        scheme.primary,
+      ),
+      labelStyle: base.inputDecorationTheme.labelStyle?.copyWith(
+        color: scheme.onSurfaceVariant,
+      ),
+      hintStyle: base.inputDecorationTheme.hintStyle?.copyWith(
+        color: scheme.onSurfaceVariant,
+      ),
+      helperStyle: base.inputDecorationTheme.helperStyle?.copyWith(
+        color: scheme.onSurfaceVariant,
+      ),
+    ),
+  );
+}
 
 SliderThemeData sessionDetailProgressSliderTheme(
   BuildContext context,
@@ -62,23 +419,7 @@ ThemeData createAsmrSessionDetailTheme(ThemeData base, AppDesignTokens tokens) {
     secondaryContainer: tokens.asmrContainer,
     onSecondaryContainer: tokens.onAsmrContainer,
   );
-  return base.copyWith(
-    colorScheme: scheme,
-    sliderTheme: base.sliderTheme.copyWith(
-      activeTrackColor: tokens.asmrAccent,
-      thumbColor: tokens.asmrAccent,
-      overlayColor: tokens.asmrAccent.withValues(alpha: 0.15),
-    ),
-    textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(foregroundColor: tokens.asmrAccent),
-    ),
-    filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        backgroundColor: tokens.asmrAccent,
-        foregroundColor: tokens.onAsmrAccent,
-      ),
-    ),
-  );
+  return _applyDetailColorScheme(base, scheme);
 }
 
 ThemeData createPlaybackQueueSessionDetailTheme(
@@ -104,21 +445,5 @@ ThemeData createPlaybackQueueSessionDetailTheme(
     onSecondaryContainer: generated.onPrimaryContainer,
     surfaceTint: queueColor,
   );
-  return base.copyWith(
-    colorScheme: scheme,
-    sliderTheme: base.sliderTheme.copyWith(
-      activeTrackColor: queueColor,
-      thumbColor: queueColor,
-      overlayColor: queueColor.withValues(alpha: 0.15),
-    ),
-    textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(foregroundColor: queueColor),
-    ),
-    filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        backgroundColor: queueColor,
-        foregroundColor: onQueueColor,
-      ),
-    ),
-  );
+  return _applyDetailColorScheme(base, scheme);
 }

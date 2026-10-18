@@ -107,10 +107,16 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   Future<void> start() => _runtime.start();
 
   @override
-  Future<void> enterBackground() => _runtime.enterBackground();
+  Future<void> enterBackground() {
+    _library.setBackgroundMode(true);
+    return _runtime.enterBackground();
+  }
 
   @override
-  Future<void> resumeForeground() => _runtime.resumeForeground();
+  Future<void> resumeForeground() {
+    _library.setBackgroundMode(false);
+    return _runtime.resumeForeground();
+  }
 
   @override
   Future<void> handleMemoryPressure() => _runtime.handleMemoryPressure();

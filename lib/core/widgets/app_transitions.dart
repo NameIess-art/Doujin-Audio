@@ -14,6 +14,108 @@ const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
 
+/// Keeps the current badge until the preceding card motion has finished.
+class AppDeferredFade extends StatefulWidget {
+  const AppDeferredFade({
+    super.key,
+    required this.visible,
+    required this.child,
+    this.showDelay = Duration.zero,
+    this.waitFor,
+  });
+
+  final bool visible;
+  final Widget child;
+  final Duration showDelay;
+  final Animation<double>? waitFor;
+
+  @override
+  State<AppDeferredFade> createState() => _AppDeferredFadeState();
+}
+
+class _AppDeferredFadeState extends State<AppDeferredFade> {
+  late bool _visible;
+  bool _delayComplete = true;
+  bool _disableAnimations = false;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _visible = widget.visible && widget.waitFor?.isAnimating != true;
+    widget.waitFor?.addStatusListener(_handleMotionStatus);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _disableAnimations = MediaQuery.disableAnimationsOf(context);
+    if (_disableAnimations) {
+      _timer?.cancel();
+      _delayComplete = true;
+      _visible = widget.visible;
+    }
+  }
+
+  @override
+  void didUpdateWidget(AppDeferredFade oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.waitFor != widget.waitFor) {
+      oldWidget.waitFor?.removeStatusListener(_handleMotionStatus);
+      widget.waitFor?.addStatusListener(_handleMotionStatus);
+    }
+    if (oldWidget.visible != widget.visible) {
+      _timer?.cancel();
+      _delayComplete =
+          !widget.visible ||
+          _disableAnimations ||
+          widget.showDelay == Duration.zero;
+      if (_disableAnimations) {
+        _visible = widget.visible;
+      } else if (!_delayComplete) {
+        // Material's color transition owns the highlight; no badge ticker is
+        // needed while it is running. Cancelling selection cancels this wait.
+        _timer = Timer(widget.showDelay, () {
+          _delayComplete = true;
+          _updateWhenReady();
+        });
+      }
+    }
+    _updateWhenReady();
+  }
+
+  void _handleMotionStatus(AnimationStatus status) {
+    // Restarting a reorder passes through dismissed before moving forward.
+    if (status == AnimationStatus.completed) _updateWhenReady();
+  }
+
+  void _updateWhenReady() {
+    if (_visible != widget.visible &&
+        _delayComplete &&
+        (_disableAnimations || widget.waitFor?.isAnimating != true)) {
+      setState(() => _visible = widget.visible);
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    widget.waitFor?.removeStatusListener(_handleMotionStatus);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedSwitcher(
+    duration: _disableAnimations ? Duration.zero : kAppFadeDuration,
+    reverseDuration: _disableAnimations ? Duration.zero : kAppFadeDuration,
+    switchInCurve: kAppFadeCurve,
+    switchOutCurve: kAppFadeCurve,
+    transitionBuilder: (child, animation) =>
+        FadeTransition(opacity: animation, child: child),
+    child: _visible ? widget.child : const SizedBox.shrink(),
+  );
+}
+
 typedef _PageTransitionBuilder = Widget Function(BuildContext, Widget);
 
 class AppNavigationInputLock extends StatefulWidget {

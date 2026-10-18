@@ -11,9 +11,6 @@ class _AsmrSelectionIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : kAppFadeDuration;
     final surfaceBorderColor = isSelected
         ? Color.alphaBlend(
             cs.primaryContainer.withValues(alpha: 0.15),
@@ -22,41 +19,26 @@ class _AsmrSelectionIndicator extends StatelessWidget {
         : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
-        child: AnimatedSwitcher(
-          duration: duration,
-          reverseDuration: duration,
-          switchInCurve: kAppFadeCurve,
-          switchOutCurve: kAppFadeCurve,
-          transitionBuilder: (child, animation) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-          child: isSelected
-              ? Container(
-                  key: workId == null
-                      ? const ValueKey<String>('asmr_selection_indicator')
-                      : ValueKey<String>('asmr_selection_indicator_$workId'),
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _asmrSelectionCheckmarkColor,
-                    border: Border.all(color: surfaceBorderColor, width: 2),
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    size: 14,
-                    color: Colors.white,
-                  ),
-                )
-              : SizedBox.shrink(
-                  key: workId == null
-                      ? const ValueKey<String>(
-                          'asmr_selection_indicator_hidden',
-                        )
-                      : ValueKey<String>(
-                          'asmr_selection_indicator_hidden_$workId',
-                        ),
-                ),
+        child: AppDeferredFade(
+          visible: isSelected,
+          showDelay: kThemeChangeDuration,
+          child: Container(
+            key: workId == null
+                ? const ValueKey<String>('asmr_selection_indicator')
+                : ValueKey<String>('asmr_selection_indicator_$workId'),
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _asmrSelectionCheckmarkColor,
+              border: Border.all(color: surfaceBorderColor, width: 2),
+            ),
+            child: const Icon(
+              Icons.check_rounded,
+              size: 14,
+              color: Colors.white,
+            ),
+          ),
         ),
       ),
     );

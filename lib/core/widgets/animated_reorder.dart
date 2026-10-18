@@ -11,6 +11,10 @@ class AnimatedReorder extends StatefulWidget {
   final List<Object> order;
   final Widget child;
 
+  static Animation<double>? animationOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<_ReorderAnimationScope>()
+      ?.animation;
+
   @override
   State<AnimatedReorder> createState() => _AnimatedReorderState();
 }
@@ -30,15 +34,28 @@ class _AnimatedReorderState extends State<AnimatedReorder>
   }
 
   @override
-  Widget build(BuildContext context) => _ReorderViewport(
-    controller: _controller,
-    order: widget.order,
-    enabled:
-        !MediaQuery.disableAnimationsOf(context) &&
-        TickerMode.valuesOf(context).enabled &&
-        ModalRoute.isCurrentOf(context) != false,
-    child: widget.child,
+  Widget build(BuildContext context) => _ReorderAnimationScope(
+    animation: _controller,
+    child: _ReorderViewport(
+      controller: _controller,
+      order: widget.order,
+      enabled:
+          !MediaQuery.disableAnimationsOf(context) &&
+          TickerMode.valuesOf(context).enabled &&
+          ModalRoute.isCurrentOf(context) != false,
+      child: widget.child,
+    ),
   );
+}
+
+class _ReorderAnimationScope extends InheritedWidget {
+  const _ReorderAnimationScope({required this.animation, required super.child});
+
+  final Animation<double> animation;
+
+  @override
+  bool updateShouldNotify(_ReorderAnimationScope oldWidget) =>
+      animation != oldWidget.animation;
 }
 
 class _ReorderViewport extends SingleChildRenderObjectWidget {

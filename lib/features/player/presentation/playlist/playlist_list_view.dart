@@ -10,6 +10,7 @@ import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
+import '../../../../core/widgets/animated_reorder.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/playing_sound_wave_indicator.dart';
@@ -38,9 +39,6 @@ class PlaylistSelectionIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : kAppFadeDuration;
     final surfaceBorderColor = isSelected
         ? Color.alphaBlend(
             cs.primaryContainer.withValues(alpha: 0.15),
@@ -49,37 +47,24 @@ class PlaylistSelectionIndicator extends StatelessWidget {
         : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
-        child: AnimatedSwitcher(
-          duration: duration,
-          reverseDuration: duration,
-          switchInCurve: kAppFadeCurve,
-          switchOutCurve: kAppFadeCurve,
-          transitionBuilder: (child, animation) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-          child: isSelected
-              ? Container(
-                  key: ValueKey<String>(
-                    'playlist_selection_indicator_$sessionId',
-                  ),
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _playlistSelectionCheckmarkColor,
-                    border: Border.all(color: surfaceBorderColor, width: 2),
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    size: 14,
-                    color: Colors.white,
-                  ),
-                )
-              : SizedBox.shrink(
-                  key: ValueKey<String>(
-                    'playlist_selection_indicator_hidden_$sessionId',
-                  ),
-                ),
+        child: AppDeferredFade(
+          visible: isSelected,
+          showDelay: kThemeChangeDuration,
+          child: Container(
+            key: ValueKey<String>('playlist_selection_indicator_$sessionId'),
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _playlistSelectionCheckmarkColor,
+              border: Border.all(color: surfaceBorderColor, width: 2),
+            ),
+            child: const Icon(
+              Icons.check_rounded,
+              size: 14,
+              color: Colors.white,
+            ),
+          ),
         ),
       ),
     );
@@ -103,9 +88,6 @@ class PlaylistPinnedIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : kAppFadeDuration;
     final pinColor = color ?? cs.primary;
     final surfaceBorderColor = isSelected
         ? Color.alphaBlend(
@@ -115,28 +97,24 @@ class PlaylistPinnedIndicator extends StatelessWidget {
         : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
-        child: AnimatedSwitcher(
-          duration: duration,
-          reverseDuration: duration,
-          switchInCurve: kAppFadeCurve,
-          switchOutCurve: kAppFadeCurve,
-          child: isPinned
-              ? Container(
-                  key: ValueKey<String>('playlist_session_pinned_$sessionId'),
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: pinColor,
-                    border: Border.all(color: surfaceBorderColor, width: 2),
-                  ),
-                  child: const Icon(
-                    Icons.push_pin_rounded,
-                    size: 13,
-                    color: Colors.white,
-                  ),
-                )
-              : const SizedBox.shrink(),
+        child: AppDeferredFade(
+          visible: isPinned,
+          waitFor: AnimatedReorder.animationOf(context),
+          child: Container(
+            key: ValueKey<String>('playlist_session_pinned_$sessionId'),
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: pinColor,
+              border: Border.all(color: surfaceBorderColor, width: 2),
+            ),
+            child: const Icon(
+              Icons.push_pin_rounded,
+              size: 13,
+              color: Colors.white,
+            ),
+          ),
         ),
       ),
     );

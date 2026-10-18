@@ -2,6 +2,7 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/animated_reorder.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:flutter/material.dart';
@@ -108,14 +109,39 @@ void main() {
             final firstY = tester.getTopLeft(first).dy;
             final before = tester.getTopLeft(moved).dy;
             expect(before, greaterThan(firstY));
+            final pinBadge = find.descendant(
+              of: find.byWidgetPredicate(
+                (widget) => libraryPage
+                    ? widget is LibraryPinnedIndicator &&
+                          widget.path == tracks.last.path
+                    : widget is PlaylistPinnedIndicator &&
+                          widget.sessionId == sessions.last.id,
+              ),
+              matching: find.byIcon(Icons.push_pin_rounded),
+            );
             if (pin) {
-              if (libraryPage) {
-                await fixture.settingsRepository.toggleLibraryPathPinned(
-                  tracks.last.path,
+              if (platform == TargetPlatform.android) {
+                await tester.drag(moved, const Offset(180, 0));
+                await tester.pumpAndSettle();
+                await tester.tap(
+                  find.byTooltip(fixture.languageProvider.tr('pin_to_top')),
                 );
+                await tester.pump();
+                await tester.pump(const Duration(milliseconds: 110));
+                expect(tester.getTopLeft(moved).dy, before);
+                expect(pinBadge, findsNothing);
+                expect(
+                  libraryPage
+                      ? fixture.settings.pinnedLibraryPaths
+                      : fixture.settings.pinnedPlaylistSessionIds,
+                  isEmpty,
+                );
+                await tester.pump(const Duration(milliseconds: 111));
               } else {
-                await fixture.settingsRepository.togglePlaylistSessionPinned(
-                  sessions.last.id,
+                await tester.tap(moved, buttons: 2);
+                await tester.pumpAndSettle();
+                await tester.tap(
+                  find.text(fixture.languageProvider.tr('pin_to_top')),
                 );
               }
             } else if (libraryPage) {
@@ -153,12 +179,34 @@ void main() {
               movedId,
             );
             expect(tester.getTopLeft(moved).dy, closeTo(before, 0.01));
+            if (pin) expect(pinBadge, findsNothing);
             await tester.pump(kAppMotionSlow ~/ 2);
             final during = tester.getTopLeft(moved).dy;
             expect(during, lessThan(before));
             expect(during, greaterThan(firstY));
+            if (pin) expect(pinBadge, findsNothing);
             await tester.pump(kAppMotionSlow);
             expect(tester.getTopLeft(moved).dy, closeTo(firstY, 0.01));
+            if (pin) {
+              double pinOpacity() => tester
+                  .widgetList<FadeTransition>(
+                    find.ancestor(
+                      of: pinBadge,
+                      matching: find.byType(FadeTransition),
+                    ),
+                  )
+                  .fold(1.0, (value, fade) => value * fade.opacity.value);
+              expect(pinBadge, findsOneWidget);
+              expect(pinOpacity(), 0);
+              await tester.pump(kAppFadeDuration ~/ 2);
+              expect(
+                pinOpacity(),
+                closeTo(kAppFadeCurve.transform(0.5), 0.001),
+              );
+              expect(tester.getTopLeft(moved).dy, closeTo(firstY, 0.01));
+              await tester.pumpAndSettle();
+              expect(pinOpacity(), 1);
+            }
             expect(tester.takeException(), isNull);
             await tester.pumpWidget(const SizedBox.shrink());
             var drained = false;

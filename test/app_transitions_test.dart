@@ -110,6 +110,105 @@ class _ListenerCountingController extends AnimationController {
 void main() {
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  Widget deferredBadge(
+    bool visible, {
+    bool disableAnimations = false,
+    Animation<double>? waitFor,
+  }) => MaterialApp(
+    home: MediaQuery(
+      data: MediaQueryData(disableAnimations: disableAnimations),
+      child: AppDeferredFade(
+        visible: visible,
+        showDelay: kThemeChangeDuration,
+        waitFor: waitFor,
+        child: const Text('badge'),
+      ),
+    ),
+  );
+
+  testWidgets('cancelled selection and disposal cancel the pending badge', (
+    tester,
+  ) async {
+    await tester.pumpWidget(deferredBadge(false));
+    await tester.pumpWidget(deferredBadge(true));
+    await tester.pump(kThemeChangeDuration ~/ 2);
+    expect(find.text('badge'), findsNothing);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+    await tester.pumpWidget(deferredBadge(false));
+    await tester.pump(kThemeChangeDuration + kAppFadeDuration);
+    expect(find.text('badge'), findsNothing);
+    await tester.pumpWidget(deferredBadge(true));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(kThemeChangeDuration);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'existing badges stay visible and reduced motion skips the wait',
+    (tester) async {
+      await tester.pumpWidget(deferredBadge(true));
+      expect(find.text('badge'), findsOneWidget);
+      expect(
+        tester
+            .widget<FadeTransition>(
+              find
+                  .ancestor(
+                    of: find.text('badge'),
+                    matching: find.byType(FadeTransition),
+                  )
+                  .first,
+            )
+            .opacity
+            .value,
+        1,
+      );
+      await tester.pumpWidget(deferredBadge(false));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(deferredBadge(true));
+      await tester.pump(kThemeChangeDuration ~/ 2);
+      expect(find.text('badge'), findsNothing);
+      await tester.pumpWidget(deferredBadge(true, disableAnimations: true));
+      await tester.pumpAndSettle();
+      expect(find.text('badge'), findsOneWidget);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+    },
+  );
+
+  testWidgets('badge waits for restarted motion before fading in or out', (
+    tester,
+  ) async {
+    final motion = AnimationController(
+      vsync: tester,
+      duration: const Duration(milliseconds: 600),
+      value: 1,
+    );
+    addTearDown(motion.dispose);
+    await tester.pumpWidget(deferredBadge(false, waitFor: motion));
+    unawaited(motion.forward(from: 0));
+    await tester.pumpWidget(deferredBadge(true, waitFor: motion));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('badge'), findsNothing);
+    unawaited(motion.forward(from: 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('badge'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 201));
+    expect(find.text('badge'), findsOneWidget);
+    final fade = find
+        .ancestor(of: find.text('badge'), matching: find.byType(FadeTransition))
+        .first;
+    expect(tester.widget<FadeTransition>(fade).opacity.value, 0);
+    await tester.pump(kAppFadeDuration);
+    expect(tester.widget<FadeTransition>(fade).opacity.value, 1);
+    unawaited(motion.forward(from: 0));
+    await tester.pumpWidget(deferredBadge(false, waitFor: motion));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<FadeTransition>(fade).opacity.value, 1);
+    await tester.pumpAndSettle();
+    expect(find.text('badge'), findsNothing);
+  });
+
   testWidgets(
     'prepared cached content mounts during the route preparation frame',
     (tester) async {

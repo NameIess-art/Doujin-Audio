@@ -1187,6 +1187,18 @@ void main() {
         await tester.tap(find.text('收藏'));
         await tester.pumpAndSettle();
         await tester.longPress(find.text('Work 0'));
+        await tester.pump();
+        final badge = find.byKey(
+          ValueKey('asmr_selection_indicator_${_work(id: 0).rjCode}'),
+        );
+        await tester.pump(kThemeChangeDuration ~/ 2);
+        expect(badge, findsNothing);
+        await tester.pump(kThemeChangeDuration ~/ 2);
+        expect(badge, findsOneWidget);
+        final badgeFade = find
+            .ancestor(of: badge, matching: find.byType(FadeTransition))
+            .first;
+        expect(tester.widget<FadeTransition>(badgeFade).opacity.value, 0);
         await tester.pumpAndSettle();
 
         expect(find.text('已选择 1 项'), findsOneWidget);

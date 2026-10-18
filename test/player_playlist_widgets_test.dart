@@ -8579,6 +8579,19 @@ void main() {
 
       await tester.longPress(trackTitle);
 
+      final delayedCheck = find.byKey(
+        ValueKey<String>('playlist_selection_indicator_${trackSession.id}'),
+      );
+      await tester.pump();
+      await tester.pump(kThemeChangeDuration ~/ 2);
+      expect(delayedCheck, findsNothing);
+      await tester.pump(kThemeChangeDuration ~/ 2);
+      expect(delayedCheck, findsOneWidget);
+      final checkFade = find
+          .ancestor(of: delayedCheck, matching: find.byType(FadeTransition))
+          .first;
+      expect(tester.widget<FadeTransition>(checkFade).opacity.value, 0);
+
       final batchHeader = find.byKey(batchHeaderKey);
       expect(batchHeader, findsOneWidget);
       expect(

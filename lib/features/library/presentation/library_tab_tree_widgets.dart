@@ -16,6 +16,7 @@ import '../domain/library_node.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/animated_reorder.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/library_like_cards.dart';
@@ -45,9 +46,6 @@ class LibrarySelectionIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : kAppFadeDuration;
     final surfaceBorderColor = isSelected
         ? Color.alphaBlend(
             cs.primaryContainer.withValues(alpha: 0.15),
@@ -57,43 +55,28 @@ class LibrarySelectionIndicator extends StatelessWidget {
     final normalizedPath = path == null ? null : PathMatcher.normalize(path!);
     return IgnorePointer(
       child: ExcludeSemantics(
-        child: AnimatedSwitcher(
-          duration: duration,
-          reverseDuration: duration,
-          switchInCurve: kAppFadeCurve,
-          switchOutCurve: kAppFadeCurve,
-          transitionBuilder: (child, animation) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-          child: isSelected
-              ? Container(
-                  key: normalizedPath == null
-                      ? const ValueKey<String>('library_selection_indicator')
-                      : ValueKey<String>(
-                          'library_selection_indicator_$normalizedPath',
-                        ),
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _librarySelectionCheckmarkColor,
-                    border: Border.all(color: surfaceBorderColor, width: 2),
+        child: AppDeferredFade(
+          visible: isSelected,
+          showDelay: kThemeChangeDuration,
+          child: Container(
+            key: normalizedPath == null
+                ? const ValueKey<String>('library_selection_indicator')
+                : ValueKey<String>(
+                    'library_selection_indicator_$normalizedPath',
                   ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    size: 14,
-                    color: Colors.white,
-                  ),
-                )
-              : SizedBox.shrink(
-                  key: normalizedPath == null
-                      ? const ValueKey<String>(
-                          'library_selection_indicator_hidden',
-                        )
-                      : ValueKey<String>(
-                          'library_selection_indicator_hidden_$normalizedPath',
-                        ),
-                ),
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _librarySelectionCheckmarkColor,
+              border: Border.all(color: surfaceBorderColor, width: 2),
+            ),
+            child: const Icon(
+              Icons.check_rounded,
+              size: 14,
+              color: Colors.white,
+            ),
+          ),
         ),
       ),
     );
@@ -117,9 +100,6 @@ class LibraryPinnedIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : kAppFadeDuration;
     final pinColor = color ?? cs.primary;
     final normalizedPath = path == null ? null : PathMatcher.normalize(path!);
     final surfaceBorderColor = isSelected
@@ -130,30 +110,26 @@ class LibraryPinnedIndicator extends StatelessWidget {
         : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
-        child: AnimatedSwitcher(
-          duration: duration,
-          reverseDuration: duration,
-          switchInCurve: kAppFadeCurve,
-          switchOutCurve: kAppFadeCurve,
-          child: isPinned
-              ? Container(
-                  key: normalizedPath == null
-                      ? const ValueKey<String>('library_pinned')
-                      : ValueKey<String>('library_pinned_$normalizedPath'),
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: pinColor,
-                    border: Border.all(color: surfaceBorderColor, width: 2),
-                  ),
-                  child: const Icon(
-                    Icons.push_pin_rounded,
-                    size: 13,
-                    color: Colors.white,
-                  ),
-                )
-              : const SizedBox.shrink(),
+        child: AppDeferredFade(
+          visible: isPinned,
+          waitFor: AnimatedReorder.animationOf(context),
+          child: Container(
+            key: normalizedPath == null
+                ? const ValueKey<String>('library_pinned')
+                : ValueKey<String>('library_pinned_$normalizedPath'),
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: pinColor,
+              border: Border.all(color: surfaceBorderColor, width: 2),
+            ),
+            child: const Icon(
+              Icons.push_pin_rounded,
+              size: 13,
+              color: Colors.white,
+            ),
+          ),
         ),
       ),
     );

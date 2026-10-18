@@ -5525,15 +5525,25 @@ void main() {
           final trackFinder = find.text('single.mp3', findRichText: true);
           await tester.longPress(trackFinder);
           await tester.pump();
-          await tester.pump(const Duration(milliseconds: 300));
-
-          expect(trackFinder, findsOneWidget);
           final selectionBadge = find.byKey(
             ValueKey<String>(
               'library_selection_indicator_${PathMatcher.normalize(singleTrack.path)}',
             ),
           );
+          await tester.pump(kThemeChangeDuration ~/ 2);
+          expect(selectionBadge, findsNothing);
+          await tester.pump(kThemeChangeDuration ~/ 2);
           expect(selectionBadge, findsOneWidget);
+          final badgeFade = find
+              .ancestor(
+                of: selectionBadge,
+                matching: find.byType(FadeTransition),
+              )
+              .first;
+          expect(tester.widget<FadeTransition>(badgeFade).opacity.value, 0);
+          await tester.pump(kAppFadeDuration);
+          expect(tester.widget<FadeTransition>(badgeFade).opacity.value, 1);
+          expect(trackFinder, findsOneWidget);
           expect(pinBadge, pinned ? findsOneWidget : findsNothing);
           final cardFinder = find
               .ancestor(of: trackFinder, matching: find.byType(Card))

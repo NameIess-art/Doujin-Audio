@@ -1,6 +1,5 @@
 import '../../core/media/audio_detail.dart';
 import '../../core/media/music_track.dart';
-import '../../core/logging/app_log_service.dart';
 import '../../core/persistence/app_database.dart';
 import '../../core/persistence/persistence_records.dart';
 import '../../features/player/domain/time_segment_label.dart';
@@ -132,13 +131,9 @@ class SqliteLibraryRepository
       _database.saveAppSetting(key, value);
 
   @override
-  Future<List<LibraryEntry>> loadAllLibraryEntries() async {
+  Future<Iterable<LibraryEntry>> loadAllLibraryEntries() async {
     final records = await _database.loadAllLibraryEntries();
-    return AppLogService.measureSync(
-      'library_entry_domain_mapping',
-      () => records.map(_entryFromRecord).toList(growable: false),
-      details: {'entries': records.length},
-    );
+    return records.map(_entryFromRecord);
   }
 
   @override

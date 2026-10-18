@@ -1,11 +1,14 @@
 param(
     [string]$Device = '',
+    [ValidateSet('page-transitions', 'core', 'library-large', 'asmr-large', 'interaction-overlap')]
+    [string]$Scenario = 'page-transitions',
     [ValidateSet('baseline', 'idle', 'os-resume', 'resume', 'memory-pressure')]
     [string]$Condition = 'baseline',
     [ValidateRange(0, 2147483647)][int]$IdleSeconds = 60,
     [ValidateRange(1, 2147483647)][int]$Openings = 3,
     [switch]$Playing,
     [switch]$ProductionStartup,
+    [switch]$GeneratedCovers,
     [ValidateRange(1, 2147483647)][int]$LibraryItems = 100,
     [ValidateRange(1, 2147483647)][int]$AsmrItems = 100,
     [ValidateRange(0, 2147483647)][int]$AsmrTracks = 0,
@@ -18,8 +21,13 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 if ($Playing -and $ProductionStartup) { throw 'Choose either Playing or ProductionStartup.' }
+if (($Playing -or $ProductionStartup) -and $Scenario -ne 'page-transitions') { throw 'Playing and ProductionStartup require page-transitions.' }
+if ($Scenario -ne 'page-transitions' -and ($Condition -ne 'baseline' -or $Openings -ne 3)) { throw 'Scroll scenarios require baseline and Openings=3.' }
 if ($ProductionStartup -and ($Condition -ne 'baseline' -or $Openings -ne 1)) { throw 'Production startup requires baseline and Openings=1.' }
-if ($ProductionStartup) { $IdleSeconds = 0 }
+if ($ProductionStartup -or $Scenario -ne 'page-transitions') { $IdleSeconds = 0 }
+if (!$PSBoundParameters.ContainsKey('LibraryItems') -and $Scenario -eq 'library-large') { $LibraryItems = 10000 }
+if (!$PSBoundParameters.ContainsKey('AsmrItems') -and $Scenario -eq 'asmr-large') { $AsmrItems = 2000 }
+if (!$PSBoundParameters.ContainsKey('AsmrTracks') -and $Scenario -eq 'asmr-large') { $AsmrTracks = 2000 }
 $previousOutputs = @(Get-ChildItem -LiteralPath $OutputDirectory -File | Where-Object {
     ($_.Name -eq "$Label.json" -or $_.Name.StartsWith("$Label-")) -and
     $_.Extension -in @('.json', '.jsonl', '.txt') -and
@@ -32,10 +40,11 @@ if ($previousOutputs.Count) {
         Move-Item -LiteralPath $output.FullName -Destination (Join-Path $archiveDirectory $output.Name)
     }
 }
-$scenario = if ($ProductionStartup) { 'page-transitions-startup' } elseif ($Playing) { 'page-transitions-playing' } else { 'page-transitions' }
+$scenario = if ($ProductionStartup) { 'page-transitions-startup' } elseif ($Playing) { 'page-transitions-playing' } else { $Scenario }
 $package = 'com.doujin.audio.perf'
 $activity = "$package/com.doujin.audio.MainActivity"
-$manifest = if ($ProductionStartup) { '' } else { "/data/user/0/$package/cache/profile-covers/manifest.json" }
+$manifest = if ($ProductionStartup -or $GeneratedCovers) { '' } else { "/data/user/0/$package/cache/profile-covers/manifest.json" }
+$generatedCoverDefine = $GeneratedCovers.IsPresent.ToString().ToLowerInvariant()
 $traceReadyFile = "/data/user/0/$package/cache/navigation-profile-trace-ready"
 $traceDirectory = Join-Path $OutputDirectory "$Label-timelines-$([Guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $traceDirectory | Out-Null
@@ -54,10 +63,10 @@ if (!$Device) {
 Push-Location $projectRoot
 try {
     if (!$ApkPath) {
-        & flutter build apk --profile --no-pub --target=integration_test/ui_performance_test.dart --target-platform=android-arm64 "--dart-define=PERF_SCENARIO=$scenario" "--dart-define=PERF_TRANSITION_CONDITION=$Condition" "--dart-define=PERF_IDLE_SECONDS=$IdleSeconds" "--dart-define=PERF_OPENINGS=$Openings" "--dart-define=PERF_LIBRARY_ITEMS=$LibraryItems" "--dart-define=PERF_ASMR_ITEMS=$AsmrItems" "--dart-define=PERF_ASMR_TRACKS=$AsmrTracks" "--dart-define=PERF_COVER_MANIFEST=$manifest" "--dart-define=PERF_TRACE_READY_FILE=$traceReadyFile" *> "$OutputDirectory/$Label-build.txt"
+        & flutter build apk --profile --no-pub --target=integration_test/ui_performance_test.dart --target-platform=android-arm64 "--dart-define=PERF_SCENARIO=$scenario" "--dart-define=PERF_TRANSITION_CONDITION=$Condition" "--dart-define=PERF_IDLE_SECONDS=$IdleSeconds" "--dart-define=PERF_OPENINGS=$Openings" "--dart-define=PERF_LIBRARY_ITEMS=$LibraryItems" "--dart-define=PERF_ASMR_ITEMS=$AsmrItems" "--dart-define=PERF_ASMR_TRACKS=$AsmrTracks" "--dart-define=PERF_GENERATED_COVERS=$generatedCoverDefine" "--dart-define=PERF_COVER_MANIFEST=$manifest" "--dart-define=PERF_TRACE_READY_FILE=$traceReadyFile" *> "$OutputDirectory/$Label-build.txt"
         if ($LASTEXITCODE -ne 0) { throw 'Profile build failed.' }
         $ApkPath = Join-Path $projectRoot 'build/app/outputs/flutter-apk/app-profile.apk'
-        @{ scenario = $scenario; condition = $Condition; idleSeconds = $IdleSeconds; openings = $Openings; libraryItems = $LibraryItems; asmrItems = $AsmrItems; asmrTracks = $AsmrTracks; coverManifest = $manifest; traceReadyFile = $traceReadyFile; sha256 = (Get-FileHash -LiteralPath $ApkPath -Algorithm SHA256).Hash } | ConvertTo-Json | Set-Content "$ApkPath.profile.json"
+        @{ scenario = $scenario; condition = $Condition; idleSeconds = $IdleSeconds; openings = $Openings; libraryItems = $LibraryItems; asmrItems = $AsmrItems; asmrTracks = $AsmrTracks; generatedCovers = $GeneratedCovers.IsPresent; coverManifest = $manifest; traceReadyFile = $traceReadyFile; sha256 = (Get-FileHash -LiteralPath $ApkPath -Algorithm SHA256).Hash } | ConvertTo-Json | Set-Content "$ApkPath.profile.json"
     } else {
         $ApkPath = [IO.Path]::GetFullPath($ApkPath)
         $metadata = Get-Content -LiteralPath "$ApkPath.profile.json" -Raw | ConvertFrom-Json
@@ -67,12 +76,13 @@ try {
         if ($metadata.libraryItems -ne $LibraryItems -or $metadata.asmrItems -ne $AsmrItems -or $metadata.asmrTracks -ne $AsmrTracks) {
             throw 'APK datasets do not match the requested Profile configuration.'
         }
+        if ([bool]$metadata.generatedCovers -ne $GeneratedCovers.IsPresent) { throw 'APK generated-cover configuration does not match.' }
     }
     & adb -s $Device shell am force-stop $package | Out-Null
     # Profile is a separate debuggable package; preserve its fixture on baseline downgrade.
     & adb -s $Device install -r -d $ApkPath
     if ($LASTEXITCODE -ne 0) { throw 'Profile APK installation failed.' }
-    if (!$ProductionStartup) {
+    if (!$ProductionStartup -and !$GeneratedCovers) {
         & adb -s $Device shell run-as $package test -f cache/profile-covers/manifest.json
         if ($LASTEXITCODE -ne 0) { throw 'Install the cover fixture before profiling.' }
     }
@@ -86,7 +96,7 @@ try {
     $deadline = [DateTime]::UtcNow.AddSeconds(60)
     do {
         Start-Sleep -Seconds 1
-        $profilePid = ([string](& adb -s $Device shell pidof $package)).Trim()
+        $profilePid = (@(& adb -s $Device shell pidof -s $package) -join '').Trim()
         if ($profilePid) {
             $service = (& adb -s $Device logcat -d --pid=$profilePid -s flutter | Select-String 'The Dart VM service is listening on').Line
         }
@@ -176,7 +186,7 @@ try {
                 if ($started -gt $completed) {
                     $foreground = & adb -s $Device shell dumpsys activity activities
                     $top = ($foreground | Select-String 'topResumedActivity=' | Select-Object -First 1).Line
-                    $currentPid = ([string](& adb -s $Device shell pidof $package)).Trim()
+                    $currentPid = (@(& adb -s $Device shell pidof -s $package) -join '').Trim()
                     @{checkedAt=[DateTime]::UtcNow.ToString('o'); pid=$currentPid; topResumed=$top} | ConvertTo-Json -Compress | Add-Content "$OutputDirectory/$Label-foreground-checks.jsonl"
                     if ($currentPid -ne $profilePid -or $top -notmatch [Regex]::Escape("$package/")) {
                         @{reason='Foreground idle interrupted'; checkedAt=[DateTime]::UtcNow.ToString('o'); expectedPid=$profilePid; actualPid=$currentPid; topResumed=$top} | ConvertTo-Json | Set-Content "$OutputDirectory/$Label-condition-invalid.json"
@@ -193,7 +203,7 @@ try {
     }
     $env:PERF_DRIVER_TIMEOUT_SECONDS = [string](($IdleSeconds + 180) * $Openings + 600)
     $suffix = if ($ProductionStartup) { 'startup' } elseif ($Playing) { 'playing' } else { 'idle' }
-    $responsePath = "build/page_transitions_android_$suffix.json"
+    $responsePath = if ($scenario.StartsWith('page-transitions')) { "build/page_transitions_android_$suffix.json" } else { 'build/integration_response_data.json' }
     if (Test-Path -LiteralPath $responsePath) {
         Move-Item -LiteralPath $responsePath -Destination "$OutputDirectory/$Label-previous-report.json" -Force
     }
@@ -217,7 +227,13 @@ try {
     if ($report.scenario -ne $scenario -or $report.transitionCondition -ne $Condition -or $report.idleSeconds -ne $IdleSeconds -or $report.openings -ne $Openings) {
         throw 'Reported Profile configuration does not match the requested configuration.'
     }
-    $traceCount = @(Get-ChildItem -LiteralPath $traceDirectory -Filter '*.json').Count
+    $traceDeadline = [DateTime]::UtcNow.AddSeconds(60)
+    do {
+        $traceCount = @(Get-ChildItem -LiteralPath $traceDirectory -Filter '*.json').Count
+        if ($traceCount -eq $report.rounds.Count) { break }
+        if ($traceJob.State -eq 'Failed') { break }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $traceDeadline)
     if ($traceCount -ne $report.rounds.Count) { throw "Only $traceCount of $($report.rounds.Count) action timelines captured." }
     & adb -s $Device shell dumpsys display | Out-File "$OutputDirectory/$Label-display-end.txt"
     & adb -s $Device shell dumpsys meminfo $package | Out-File "$OutputDirectory/$Label-memory.txt"

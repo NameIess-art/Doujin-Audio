@@ -105,6 +105,22 @@ Set<String> _selectedSortControls(WidgetTester tester) {
       .toSet();
 }
 
+Future<void> _waitForLibraryProjection(
+  WidgetTester tester,
+  bool Function() isReady,
+) async {
+  // Isolate work requires real event-loop time. Keep the animation clock still
+  // so callers can verify the first installed frame and its full fade duration.
+  for (var attempt = 0; attempt < 1000; attempt++) {
+    await tester.pump();
+    if (isReady()) return;
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 5)),
+    );
+  }
+  fail('Library projection did not become ready');
+}
+
 void main() {
   AppRuntimeTestFixture.initialize();
   late Database testDatabase;
@@ -362,6 +378,10 @@ void main() {
             ],
           );
           await tester.pumpWidget(page());
+          await _waitForLibraryProjection(
+            tester,
+            () => libraryRow(nodes.first.path).evaluate().isNotEmpty,
+          );
           await tester.pumpAndSettle();
           expect(
             tester.widget<ListView>(find.byType(ListView)).itemExtent,
@@ -469,7 +489,10 @@ void main() {
               ],
             ),
           );
-          await tester.pump();
+          await _waitForLibraryProjection(
+            tester,
+            () => libraryRow(nodes.first.path).evaluate().isNotEmpty,
+          );
           await tester.pump(const Duration(milliseconds: 1));
         }
 
@@ -541,7 +564,10 @@ void main() {
           ],
         ),
       );
-      await tester.pump();
+      await _waitForLibraryProjection(
+        tester,
+        () => libraryRow(nodes.first.path).evaluate().isNotEmpty,
+      );
       expect(built.length, lessThan(15));
       expect(
         scroll.position.maxScrollExtent,
@@ -601,7 +627,10 @@ void main() {
         ],
       );
       await tester.pumpWidget(page());
-      await tester.pump();
+      await _waitForLibraryProjection(
+        tester,
+        () => libraryRow(nodes.first.path).evaluate().isNotEmpty,
+      );
       Finder transition() => find.descendant(
         of: libraryRow(nodes.first.path),
         matching: find.byType(UndoableRemovalTransition),
@@ -668,6 +697,12 @@ void main() {
       tree = nodes.skip(1).toList();
       revision++;
       await tester.pumpWidget(page());
+      await _waitForLibraryProjection(
+        tester,
+        () =>
+            tester.widget<ListView>(find.byType(ListView))
+                .childrenDelegate.estimatedChildCount == 2,
+      );
       expect(
         tester.widget<ListView>(find.byType(ListView)).itemExtent,
         LibraryLikeCardMetrics.rootTileHeight,
@@ -675,6 +710,10 @@ void main() {
       tree = nodes;
       revision++;
       await tester.pumpWidget(page());
+      await _waitForLibraryProjection(
+        tester,
+        () => libraryRow(nodes.first.path).evaluate().isNotEmpty,
+      );
       expect(
         tester.widget<AnimatedReorderItem>(libraryRow(nodes.first.path)).key,
         isNot(same(oldKey)),
@@ -738,7 +777,10 @@ void main() {
         ],
       );
       await tester.pumpWidget(page());
-      await tester.pump();
+      await _waitForLibraryProjection(
+        tester,
+        () => libraryRow(nodes.first.path).evaluate().isNotEmpty,
+      );
       scroll.jumpTo(700);
       await tester.pump();
       final row = libraryRow(nodes[8].path);
@@ -750,6 +792,15 @@ void main() {
       );
       tree = [...nodes.take(8), nodes[9], nodes[8], ...nodes.skip(10)];
       await tester.pumpWidget(page());
+      await _waitForLibraryProjection(
+        tester,
+        () => tester.widget<LibraryTreeItem>(
+          find.descendant(
+            of: libraryRow(nodes[8].path),
+            matching: find.byType(LibraryTreeItem),
+          ),
+        ).index == 9,
+      );
       await tester.pump(kAppMotionSlow);
       expect(
         tester.state(
@@ -772,8 +823,10 @@ void main() {
       final anchor = store.stateFor('library');
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpWidget(page());
-      await tester.pump();
-      await tester.pump();
+      await _waitForLibraryProjection(
+        tester,
+        () => libraryRow(nodes[8].path).evaluate().isNotEmpty,
+      );
       expect(
         scroll.offset,
         closeTo((anchor['offset'] as num).toDouble(), 0.01),
@@ -906,13 +959,15 @@ void main() {
         overrides: [browsePageStateStoreProvider.overrideWithValue(browseState)],
       );
       await tester.pumpWidget(buildList());
-      await tester.pump();
+      await _waitForLibraryProjection(tester, () => loads == 1);
       expect(loads, 1);
       expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
       expect(find.text('Batch track 0'), findsNothing);
       result.complete(loaded);
-      await tester.pump();
-      await tester.pump();
+      await _waitForLibraryProjection(
+        tester,
+        () => find.text('Batch track 0').evaluate().isNotEmpty,
+      );
       expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
       Finder rowFade() => find.descendant(
         of: find.byType(LibraryTreeList, skipOffstage: false),
@@ -954,7 +1009,7 @@ void main() {
       result = Completer<FolderNode?>();
       listKey = const ValueKey('covered-folder-load');
       await tester.pumpWidget(buildList());
-      await tester.pump();
+      await _waitForLibraryProjection(tester, () => loads == 2);
       expect(loads, 2);
       final navigator = Navigator.of(tester.element(find.byType(LibraryTreeList)));
       unawaited(navigator.push(MaterialPageRoute<void>(
@@ -966,6 +1021,11 @@ void main() {
       await tester.pump();
       navigator.pop();
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await _waitForLibraryProjection(
+        tester,
+        () => find.text('Batch track 0').evaluate().isNotEmpty,
+      );
       expectCompletedFade(rowFade());
       await tester.pump(const Duration(milliseconds: 350));
       expect(find.text('Batch track 0'), findsOneWidget);
@@ -1860,6 +1920,17 @@ void main() {
           useDefaultCacheWidth: card.useDefaultCacheWidth,
         );
         final cardKey = await cardProvider.obtainKey(ImageConfiguration.empty);
+        // The visible card may have started its decode in the test's fake
+        // zone. Keep pumping that zone before precacheImage awaits its stream.
+        await pumpUntilFound(
+          tester,
+          find.descendant(
+            of: cardSurface,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is RawImage && widget.image?.width == 256,
+            ),
+          ),
+        );
         await tester.runAsync(
           () => precacheImage(cardProvider, tester.element(cardSurface)),
         );
@@ -2044,7 +2115,7 @@ void main() {
           PaintingBinding.instance.imageCache.clear();
         }
         await tester.pumpWidget(fixture.build(const LibraryTab()));
-        await tester.pump();
+        await pumpUntilFound(tester, find.byType(AsyncLocalCoverImage));
         expect(
           find.descendant(
             of: find.byType(AsyncLocalCoverImage).first,
@@ -2147,7 +2218,7 @@ void main() {
     await tester.pumpWidget(fixture.build(const LibraryTab()));
     await tester.pump();
     await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
-    await tester.pump();
+    await pumpUntilFound(tester, find.byType(ListTile));
 
     expect(tester.takeException(), isNull);
     expect(find.byType(ListTile), findsOneWidget);
@@ -3145,6 +3216,7 @@ void main() {
       await tester.runAsync(fixture.library.ensureCardSnapshot);
       fixture.library.syncPresentationState(isInitialized: true);
       await pumpUntilFound(tester, find.byType(LibraryTreeList));
+      await pumpUntilFound(tester, find.text('Restored library track'));
       await tester.pumpAndSettle();
       expect(sorts, 1);
       expect(find.byType(LibraryLoadingSkeleton), findsNothing);
@@ -3365,11 +3437,7 @@ void main() {
     expect(find.text('Ocean Waves', findRichText: true), findsOneWidget);
     expect(tester.widget<TextField>(searchField).controller!.text, isEmpty);
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 30)),
-    );
-    await tester.pump();
+    await finishLibraryTest(tester, fixture);
   });
 
   testWidgets('expanding a library folder keeps its resolved cover visible', (

@@ -281,17 +281,6 @@ void main() {
       for (var index = 0; index < 1000; index++)
         track(tags: <String>['tag-${index % 12}']),
     ];
-    final request = AsmrRecommendationRankRequest(
-      candidates: candidates,
-      localTracks: localTracks,
-      favoriteWorks: const <AsmrWork>[],
-      historyWorks: const <AsmrWork>[],
-      refreshSeed: 7,
-      limit: 40,
-      explorationWorkIds: {for (var id = 1; id <= 60; id++) id},
-    );
-
-    expect(engine.usesBackgroundIsolate(request), isTrue);
     final synchronous = engine.rank(
       candidates: candidates,
       localTracks: localTracks,
@@ -317,17 +306,15 @@ void main() {
     );
   });
 
-  test('small recommendation inputs avoid isolate startup', () {
-    final request = AsmrRecommendationRankRequest(
-      candidates: <AsmrWork>[work(id: 1, title: 'Candidate')],
+  test('small recommendation inputs are also ranked asynchronously', () async {
+    final candidates = <AsmrWork>[work(id: 1, title: 'Candidate')];
+    final ranked = engine.rankAsync(
+      candidates: candidates,
       localTracks: const <MusicTrack>[],
       favoriteWorks: const <AsmrWork>[],
       historyWorks: const <AsmrWork>[],
-      refreshSeed: 0,
-      limit: null,
     );
-
-    expect(engine.usesBackgroundIsolate(request), isFalse);
+    expect((await ranked).map((work) => work.id), [1]);
   });
 }
 

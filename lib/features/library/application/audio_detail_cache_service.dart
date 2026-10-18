@@ -1,9 +1,22 @@
 import 'dart:async';
 import 'dart:collection';
 
+import 'package:flutter/foundation.dart';
+
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_matcher.dart';
 import 'audio_detail_repository.dart';
+
+class AudioDetailCacheChange {
+  const AudioDetailCacheChange({required this.revision, this.targetKeys});
+
+  final int revision;
+  // A null set invalidates every target after reset or replacement.
+  final Set<String>? targetKeys;
+
+  bool affects(AudioDetailTarget target) =>
+      targetKeys?.contains(AudioLibraryDetailKey.forTarget(target)) ?? true;
+}
 
 class AudioDetailCacheService {
   AudioDetailCacheService({
@@ -15,57 +28,90 @@ class AudioDetailCacheService {
 
   final AudioDetailRepository _repository;
   final int _maxResolvedEntries;
-  final Map<String, Future<AudioDetailLoadResult>> _loadFutures =
-      <String, Future<AudioDetailLoadResult>>{};
+  final Map<String, ({Future<AudioDetailLoadResult> result, Future<void> tail})>
+  _loadFutures = {};
+  final _pendingReads =
+      Queue<
+        ({
+          AudioDetailTarget target,
+          int epoch,
+          Completer<AudioDetailLoadResult> result,
+        })
+      >();
+  bool _reading = false;
+  final _changes = StreamController<AudioDetailCacheChange>.broadcast();
   final LinkedHashMap<String, AudioDetailLoadResult> _resolved =
       LinkedHashMap<String, AudioDetailLoadResult>();
   final Map<String, Future<void>> _operationTails = <String, Future<void>>{};
   int _revision = 0;
+  int _workTitleRevision = 0;
+  int _voiceActorRevision = 0;
+  int _releaseDateRevision = 0;
   int _cacheEpoch = 0;
   bool _suspended = false;
 
   int get revision => _revision;
+  int get workTitleRevision => _workTitleRevision;
+  int get voiceActorRevision => _voiceActorRevision;
+  int get releaseDateRevision => _releaseDateRevision;
+  Stream<AudioDetailCacheChange> get changes => _changes.stream;
+  List<AudioDetail> get resolvedDetails =>
+      _resolved.values.map((value) => value.detail).toList(growable: false);
 
   AudioDetail? resolvedDetail(AudioDetailTarget target) {
     return _resolved[AudioLibraryDetailKey.forTarget(target)]?.detail;
   }
 
   Future<AudioDetailLoadResult> load(AudioDetailTarget target) {
+    if (_suspended) {
+      return Future<AudioDetailLoadResult>.error(
+        const AudioDetailOperationCancelled(),
+      );
+    }
     final key = AudioLibraryDetailKey.forTarget(target);
-    final cached = _takeResolved(key);
+    final predecessor = _operationTails[key];
+    final cached = predecessor == null ? _takeResolved(key) : null;
     if (cached != null) return Future<AudioDetailLoadResult>.value(cached);
     final existing = _loadFutures[key];
-    if (existing != null) return existing;
+    if (existing != null && identical(existing.tail, predecessor)) {
+      return existing.result;
+    }
     final epoch = _cacheEpoch;
     late final Future<AudioDetailLoadResult> future;
     future = _runSerialized<AudioDetailLoadResult>(
       <AudioDetailTarget>[target],
       () async {
+        if (epoch != _cacheEpoch) {
+          throw const AudioDetailOperationCancelled();
+        }
         final resolved = _takeResolved(key);
         if (resolved != null) return resolved;
-        final result = await _repository.load(target);
+        final result = Completer<AudioDetailLoadResult>();
+        _pendingReads.add((target: target, epoch: epoch, result: result));
+        _scheduleReads();
+        final loaded = await result.future;
         if (epoch == _cacheEpoch) {
           final resultKey = AudioLibraryDetailKey.forTarget(
-            result.detail.target,
+            loaded.detail.target,
           );
-          _storeResolved(resultKey, result);
+          _storeResolved(resultKey, loaded);
           if (resultKey != key) {
-            _storeResolved(key, result);
+            _storeResolved(key, loaded);
           }
         }
-        return result;
+        return loaded;
       },
     );
-    _loadFutures[key] = future;
+    _loadFutures[key] = (result: future, tail: _operationTails[key]!);
     unawaited(
       future.then<void>(
         (_) {
-          if (identical(_loadFutures[key], future)) {
+          if (identical(_loadFutures[key]?.result, future)) {
             _loadFutures.remove(key);
           }
         },
         onError: (Object error, StackTrace stackTrace) {
-          if (identical(_loadFutures[key], future)) {
+          if (identical(_loadFutures[key]?.result, future)) {
             _loadFutures.remove(key);
           }
         },
@@ -76,71 +122,63 @@ class AudioDetailCacheService {
 
   Future<List<AudioDetailLoadResult>> loadMany(
     Iterable<AudioDetailTarget> targets,
-  ) async {
-    final epoch = _cacheEpoch;
-    final orderedTargets = targets.toList(growable: false);
-    if (orderedTargets.isEmpty) return const <AudioDetailLoadResult>[];
+  ) => Future.wait(targets.map(load));
 
-    final resolvedForRequest = <String, AudioDetailLoadResult>{};
-    final pendingForRequest = <String, Future<AudioDetailLoadResult>>{};
-    final batchTargetsByKey = <String, AudioDetailTarget>{};
-    for (final target in orderedTargets) {
-      final key = AudioLibraryDetailKey.forTarget(target);
-      final cached = _takeResolved(key);
-      if (cached != null) {
-        resolvedForRequest[key] = cached;
-        continue;
-      }
-      final pending = _loadFutures[key];
-      if (pending != null) {
-        pendingForRequest[key] = pending;
-        continue;
-      }
-      batchTargetsByKey.putIfAbsent(key, () => target);
-    }
-
-    if (batchTargetsByKey.isNotEmpty) {
-      final batchResults = await _runSerialized<List<AudioDetailLoadResult>>(
-        batchTargetsByKey.values,
-        () async {
-          final results = <AudioDetailLoadResult>[];
-          final missing = <AudioDetailTarget>[];
-          // A preceding batch or write can resolve targets while this read waits.
-          for (final entry in batchTargetsByKey.entries) {
-            final resolved = _takeResolved(entry.key);
-            if (resolved == null) {
-              missing.add(entry.value);
-            } else {
-              results.add(resolved);
+  void _scheduleReads() {
+    if (_reading) return;
+    _reading = true;
+    // Collect the visible rows together, yielding to input before each batch.
+    unawaited(
+      Future<void>(() async {
+        try {
+          while (_pendingReads.isNotEmpty) {
+            final count = _pendingReads.length.clamp(0, 64);
+            final batch = List.generate(
+              count,
+              (_) => _pendingReads.removeFirst(),
+              growable: false,
+            );
+            final active = batch
+                .where((read) => read.epoch == _cacheEpoch)
+                .toList();
+            for (final read in batch) {
+              if (read.epoch != _cacheEpoch) {
+                read.result.completeError(
+                  const AudioDetailOperationCancelled(),
+                );
+              }
             }
-          }
-          if (missing.isNotEmpty) {
-            results.addAll(await _repository.loadMany(missing));
-          }
-          if (epoch == _cacheEpoch) {
-            for (final result in results) {
-              _storeLoadResult(result);
+            if (active.isNotEmpty) {
+              try {
+                final results = await _repository.loadMany(
+                  active.map((read) => read.target),
+                );
+                for (var index = 0; index < active.length; index++) {
+                  final read = active[index];
+                  if (read.epoch != _cacheEpoch) {
+                    read.result.completeError(
+                      const AudioDetailOperationCancelled(),
+                    );
+                  } else {
+                    read.result.complete(results[index]);
+                  }
+                }
+              } catch (error, stackTrace) {
+                for (final read in active) {
+                  if (!read.result.isCompleted) {
+                    read.result.completeError(error, stackTrace);
+                  }
+                }
+              }
             }
+            await Future<void>.delayed(Duration.zero);
           }
-          return results;
-        },
-      );
-      for (final result in batchResults) {
-        resolvedForRequest[AudioLibraryDetailKey.forTarget(
-              result.detail.target,
-            )] =
-            result;
-      }
-    }
-
-    return Future.wait(<Future<AudioDetailLoadResult>>[
-      for (final target in orderedTargets)
-        _resultForRequest(
-          target,
-          resolvedForRequest: resolvedForRequest,
-          pendingForRequest: pendingForRequest,
-        ),
-    ]);
+        } finally {
+          _reading = false;
+          if (_pendingReads.isNotEmpty) _scheduleReads();
+        }
+      }),
+    );
   }
 
   Future<AudioDetailBackupImportResult> importBackupsMany(
@@ -162,23 +200,10 @@ class AudioDetailCacheService {
         for (final detail in result.changedDetails) {
           _store(detail);
         }
-        _bumpRevision();
+        _bumpRevision(result.changedDetails.map((detail) => detail.target));
       }
       return result;
     });
-  }
-
-  Future<AudioDetailLoadResult> _resultForRequest(
-    AudioDetailTarget target, {
-    required Map<String, AudioDetailLoadResult> resolvedForRequest,
-    required Map<String, Future<AudioDetailLoadResult>> pendingForRequest,
-  }) {
-    final key = AudioLibraryDetailKey.forTarget(target);
-    final resolved = resolvedForRequest[key];
-    if (resolved != null) return Future<AudioDetailLoadResult>.value(resolved);
-    final pending = pendingForRequest[key];
-    if (pending != null) return pending;
-    return load(target);
   }
 
   Future<AudioDetailSaveResult> save(
@@ -200,7 +225,7 @@ class AudioDetailCacheService {
           throw const AudioDetailOperationCancelled();
         }
         _store(result.detail);
-        _bumpRevision();
+        _bumpRevision([result.detail.target]);
         return result;
       },
     );
@@ -225,7 +250,7 @@ class AudioDetailCacheService {
         }
         _remove(previousTarget);
         _store(result.detail);
-        _bumpRevision();
+        _bumpRevision([previousTarget, result.detail.target]);
         return result;
       },
     );
@@ -251,7 +276,7 @@ class AudioDetailCacheService {
         throw const AudioDetailOperationCancelled();
       }
       _store(result);
-      _bumpRevision();
+      _bumpRevision([result.target]);
       return result;
     });
   }
@@ -268,7 +293,9 @@ class AudioDetailCacheService {
         throw const AudioDetailOperationCancelled();
       }
       _store(result.detail);
-      if (previousDuration != result.detail.duration) _bumpRevision();
+      if (previousDuration != result.detail.duration) {
+        _bumpRevision([result.detail.target]);
+      }
       return result;
     });
   }
@@ -317,7 +344,7 @@ class AudioDetailCacheService {
       if (current.cardCoverPath == nextPath &&
           current.cardCoverSelected == nextSelected) {
         _store(current);
-        if (imported.changedDetails.isNotEmpty) _bumpRevision();
+        if (imported.changedDetails.isNotEmpty) _bumpRevision([current.target]);
         return current.cardCoverPath;
       }
       final AudioDetail updated;
@@ -337,7 +364,7 @@ class AudioDetailCacheService {
       }
       if (epoch != _cacheEpoch) throw const AudioDetailOperationCancelled();
       _store(updated);
-      _bumpRevision();
+      _bumpRevision([updated.target]);
       return updated.cardCoverPath;
     });
   }
@@ -350,7 +377,7 @@ class AudioDetailCacheService {
         throw const AudioDetailOperationCancelled();
       }
       _remove(target);
-      _bumpRevision();
+      _bumpRevision([target]);
     });
   }
 
@@ -366,7 +393,7 @@ class AudioDetailCacheService {
       for (final target in values) {
         _remove(target);
       }
-      _bumpRevision();
+      _bumpRevision(values);
     });
   }
 
@@ -384,7 +411,7 @@ class AudioDetailCacheService {
         }
         if (result == null) return null;
         _store(result.detail);
-        _bumpRevision();
+        _bumpRevision([result.detail.target]);
         return result;
       },
     );
@@ -392,13 +419,16 @@ class AudioDetailCacheService {
 
   void markChanged(AudioDetail detail) {
     _store(detail);
-    _bumpRevision();
+    _bumpRevision([detail.target]);
   }
 
   void clear() {
     _cacheEpoch++;
     _loadFutures.clear();
     _resolved.clear();
+    _workTitleRevision++;
+    _voiceActorRevision++;
+    _releaseDateRevision++;
     _bumpRevision();
   }
 
@@ -468,14 +498,18 @@ class AudioDetailCacheService {
   }
 
   void _store(AudioDetail detail) {
+    final previous = resolvedDetail(detail.target);
+    if (previous?.workTitle != detail.workTitle) _workTitleRevision++;
+    if (!listEquals(previous?.voiceActors, detail.voiceActors)) {
+      _voiceActorRevision++;
+    }
+    if (previous?.releaseDate != detail.releaseDate) _releaseDateRevision++;
     _storeLoadResult(AudioDetailLoadResult(detail: detail));
-    _loadFutures.remove(AudioLibraryDetailKey.forTarget(detail.target));
   }
 
   void _storeLoadResult(AudioDetailLoadResult loadResult) {
     final key = AudioLibraryDetailKey.forTarget(loadResult.detail.target);
     _storeResolved(key, loadResult);
-    _loadFutures.remove(key);
   }
 
   void _storeResolved(String key, AudioDetailLoadResult loadResult) {
@@ -496,10 +530,28 @@ class AudioDetailCacheService {
     final key = AudioLibraryDetailKey.forTarget(target);
     _resolved.remove(key);
     _loadFutures.remove(key);
+    _workTitleRevision++;
+    _voiceActorRevision++;
+    _releaseDateRevision++;
   }
 
-  void _bumpRevision() {
+  void _bumpRevision([Iterable<AudioDetailTarget>? targets]) {
     _revision++;
+    _changes.add(
+      AudioDetailCacheChange(
+        revision: _revision,
+        targetKeys: targets == null
+            ? null
+            : Set<String>.unmodifiable(
+                targets.map(AudioLibraryDetailKey.forTarget),
+              ),
+      ),
+    );
+  }
+
+  Future<void> dispose() async {
+    await suspendAndWait();
+    await _changes.close();
   }
 }
 

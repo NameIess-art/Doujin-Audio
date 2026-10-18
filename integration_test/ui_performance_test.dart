@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:developer' show Timeline;
 import 'dart:io';
 import 'dart:ui';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -23,11 +24,16 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_store.dart';
+import 'package:doujin_audio/features/library/application/library_organizer.dart';
+import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
+import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/settings/presentation/about_page.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
@@ -80,13 +86,15 @@ const _semanticsEnabled = bool.fromEnvironment(
   defaultValue: _scenario != 'playback',
 );
 const _coverManifest = String.fromEnvironment('PERF_COVER_MANIFEST');
+const _generatedCovers = bool.fromEnvironment('PERF_GENERATED_COVERS');
 const _traceReadyFile = String.fromEnvironment('PERF_TRACE_READY_FILE');
 List<({String url, String path})> _profileCovers = const [];
+ScrollPosition? _profileScrollPosition;
 
 int get _libraryItemCount => _libraryItemOverride > 0
     ? _libraryItemOverride
     : _scenario == 'library-large' || _scenario == 'detail-compare'
-    ? 20000
+    ? 10000
     : 100;
 
 int get _asmrItemCount => _asmrItemOverride > 0
@@ -118,6 +126,7 @@ void main() {
         'core',
         'library-large',
         'asmr-large',
+        'interaction-overlap',
         'backup',
         'detail-compare',
         'playback',
@@ -149,7 +158,9 @@ void main() {
     SharedPreferences.setMockInitialValues(const <String, Object>{
       AppPreferences.onboardingCompletedKey: true,
     });
-    if (_coverManifest.isNotEmpty) {
+    if (_generatedCovers) {
+      _profileCovers = await _generateProfileCovers();
+    } else if (_coverManifest.isNotEmpty) {
       final entries =
           jsonDecode(await File(_coverManifest).readAsString()) as List;
       _profileCovers = entries
@@ -175,19 +186,32 @@ void main() {
     addTearDown(
       () => AppRuntimeTestFixture.disposeSharedDatabase(fixtureDatabase),
     );
-    final fixture = AppRuntimeWidgetTestFixture();
+    final overlap = _scenario == 'interaction-overlap'
+        ? await _InteractionOverlap.create()
+        : null;
+    final fixture = AppRuntimeWidgetTestFixture(
+      providedPersistenceRepository: overlap?.repository,
+      libraryTreeSnapshotBuilder: overlap?.buildTree,
+    );
     if (_profileCovers.isNotEmpty) {
       await fixture.library.coverArtworkCacheService.initialize();
     }
     final sessions = _seedRuntime(fixture, trackCount: _libraryItemCount);
     debugPrint('PERF_STAGE seed_ready libraryItems=$_libraryItemCount');
-    final asmrController = _ProfileAsmrController(
-      services: createTestAsmrServices(
-        persistenceRepository: fixture.persistenceRepository,
-      ),
-      works: _buildAsmrWorks(_asmrItemCount),
-      trackTree: _buildAsmrTrackTree(_asmrTrackCount),
-    );
+    final asmrController =
+        overlap?.controller ??
+        _ProfileAsmrController(
+          services: createTestAsmrServices(
+            persistenceRepository: fixture.persistenceRepository,
+          ),
+          works: _buildAsmrWorks(_asmrItemCount),
+          trackTree: _buildAsmrTrackTree(_asmrTrackCount),
+        );
+    if (overlap != null) {
+      await overlap.repository.upsertTracks(fixture.library.library);
+      await asmrController.initializeForVisiblePage();
+      await asmrController.ensureCategoryLoaded(AsmrCategoryType.collected);
+    }
     final backupFixture = _scenario == 'backup'
         ? await _BackupProfileFixture.create(_backupByteCount)
         : null;
@@ -196,6 +220,7 @@ void main() {
         await session.shutdown();
       }
       asmrController.dispose();
+      await overlap?.dispose();
       await backupFixture?.dispose();
       fixture.dispose();
       UiInteractionNavigatorObserver.instance.resetForTest();
@@ -265,27 +290,65 @@ void main() {
       return;
     }
 
-    // The first pass warms shaders, text and lazily-created list/card widgets.
-    await _runScenario(tester, sessions, _scenario, backupFixture);
-
+    await _waitForHostTimeline(tester);
+    // Keep the first opening: prewarming every page concealed cold-image and
+    // first-build costs in the old fixture. Rounds 2/3 are the warm comparison.
     final rounds = <Map<String, Object>>[];
     for (var round = 1; round <= 3; round++) {
       final timings = <FrameTiming>[];
+      final visibleFrameNumbers = <int>{};
+      final slideVisible = _observeTransitionSlide(tester, 'main_page_stack');
+      var sampling = true;
+      void observeVisibleFrame(Duration _) {
+        if (!sampling) return;
+        if (slideVisible() ||
+            (_profileScrollPosition?.isScrollingNotifier.value ?? false)) {
+          visibleFrameNumbers.add(
+            WidgetsBinding.instance.platformDispatcher.frameData.frameNumber,
+          );
+        }
+        WidgetsBinding.instance.addPostFrameCallback(observeVisibleFrame);
+      }
+
       void collect(List<FrameTiming> values) => timings.addAll(values);
       WidgetsBinding.instance.addTimingsCallback(collect);
       final started = DateTime.now().microsecondsSinceEpoch;
+      final timelineStarted = Timeline.now;
       late int finished;
       try {
-        await _runScenario(tester, sessions, _scenario, backupFixture);
+        WidgetsBinding.instance.addPostFrameCallback(observeVisibleFrame);
+        if (overlap != null) {
+          await overlap.run(tester, fixture, round);
+        } else {
+          await _runScenario(tester, sessions, _scenario, backupFixture);
+        }
         finished = DateTime.now().microsecondsSinceEpoch;
+        sampling = false;
+        if (_traceReadyFile.isNotEmpty) {
+          debugPrint(
+            'PAGE_TRANSITION_TIMELINE_READY ${jsonEncode({'transition': _scenario, 'opening': round, 'startUs': timelineStarted, 'endUs': Timeline.now})}',
+          );
+        }
         await Future<void>.delayed(const Duration(seconds: 2));
       } finally {
+        sampling = false;
         WidgetsBinding.instance.removeTimingsCallback(collect);
       }
       timings.retainWhere(
         (timing) => _frameStartedWithin(timing, started, finished),
       );
-      rounds.add(_summarizeRound(round, timings));
+      rounds.add({
+        ..._summarizeRound(round, timings),
+        'pass': round == 1 ? 'initial' : 'repeat',
+        'visibleAnimationFrames': _summarizeRound(
+          round,
+          timings
+              .where((t) => visibleFrameNumbers.contains(t.frameNumber))
+              .toList(),
+        ),
+        'visibleFrameNumbers': visibleFrameNumbers.toList(),
+        if (overlap != null) 'overlapEvents': overlap.takeEvents(),
+      });
     }
 
     final report = <String, Object>{
@@ -297,6 +360,18 @@ void main() {
         'playbackSessions': 12,
       },
       'scenario': _scenario,
+      'platform': Platform.operatingSystem,
+      'transitionCondition': _transitionCondition,
+      'idleSeconds': _idleSeconds,
+      'openings': 3,
+      'refreshRateHz': _refreshRate,
+      'framePolicy': binding.framePolicy.name,
+      'coverFixture': _generatedCovers
+          ? '80 generated 1200x900 PNGs'
+          : 'manifest or none',
+      'coverFixtureCount': _profileCovers.length,
+      'samplingLimits':
+          'Synthetic metadata and generated geometric covers; no real-photo or network-throughput measurement.',
       'mode': kProfileMode ? 'profile' : (kReleaseMode ? 'release' : 'debug'),
       'frameTimingDeliveryWaitMs': 2000,
       'frameSampleWindow':
@@ -310,6 +385,59 @@ void main() {
     // The default retains the baseline's semantics; the override isolates its cost.
     // ignore: avoid_redundant_argument_values
   }, semanticsEnabled: _semanticsEnabled);
+}
+
+Future<List<({String url, String path})>> _generateProfileCovers() async {
+  // Generated once, before frame sampling; never download or read user photos.
+  // The independent .perf package owns this store and all generated artifacts.
+  final store = CoverArtworkStore();
+  await store.initialize();
+  final covers = <({String url, String path})>[];
+  for (var index = 0; index < 80; index++) {
+    final url = 'https://profile.invalid/generated/cover_$index.png';
+    final key = 'remote-cover:$url';
+    var path = await store.validatedPath(key);
+    if (path == null) {
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
+      final color = Color(0xff000000 | ((index * 73913 + 0x376b91) & 0xffffff));
+      canvas.drawRect(
+        const Rect.fromLTWH(0, 0, 1200, 900),
+        Paint()
+          ..shader = ui.Gradient.linear(Offset.zero, const Offset(1200, 900), [
+            color,
+            const Color(0xffe5cfb0),
+          ]),
+      );
+      for (var shape = 0; shape < 32; shape++) {
+        canvas.drawCircle(
+          Offset(
+            ((shape * 197 + index * 47) % 1200).toDouble(),
+            ((shape * 131 + index * 83) % 900).toDouble(),
+          ),
+          (20 + shape % 7 * 17).toDouble(),
+          Paint()
+            ..color = Color(
+              0x60000000 | ((shape * 93187 + index * 7111) & 0xffffff),
+            ),
+        );
+      }
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(1200, 900);
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      picture.dispose();
+      path = await store.putBytes(
+        logicalKey: key,
+        bytes: bytes!.buffer.asUint8List(),
+        namespace: CoverArtworkNamespace.remote,
+      );
+    }
+    expect(path, isNotNull);
+    covers.add((url: url, path: path!));
+  }
+  debugPrint('PERF_STAGE generated_covers_ready count=${covers.length}');
+  return covers;
 }
 
 Future<void> _measureProductionStartup(
@@ -1942,6 +2070,299 @@ Future<void> _pumpUntilComplete(WidgetTester tester, Future<void> operation) =>
       }
     });
 
+// These gates delay delivery of real SQLite/HTTP/isolate results. Production
+// controllers and providers still decide when to publish them to their pages.
+final class _ProfileResultGate {
+  Completer<void>? _release;
+  Completer<void>? _ready;
+
+  void arm() {
+    _release = Completer<void>();
+    _ready = Completer<void>();
+  }
+
+  Future<void> get ready => _ready!.future.timeout(const Duration(seconds: 10));
+
+  Future<void> hold() async {
+    final release = _release;
+    if (release == null) return;
+    if (!_ready!.isCompleted) _ready!.complete();
+    await release.future;
+  }
+
+  void release() {
+    if (_release case final release? when !release.isCompleted) {
+      release.complete();
+    }
+  }
+}
+
+final class _OverlapPersistenceRepository extends TestPersistenceRepository {
+  final startup = _ProfileResultGate();
+  final details = _ProfileResultGate();
+
+  @override
+  Future<List<MusicTrack>> loadStartupTracks() async {
+    final result = await super.loadStartupTracks();
+    await startup.hold();
+    return result;
+  }
+
+  @override
+  Future<AudioDetail?> load(AudioDetailTarget target) async {
+    final result = await super.load(target);
+    await details.hold();
+    return result;
+  }
+
+  @override
+  Future<List<AudioDetail>> loadMany(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    final result = await super.loadMany(targets);
+    await details.hold();
+    return result;
+  }
+}
+
+LibraryTreeSnapshot _buildOverlapTree(LibraryDerivedSnapshotPayload payload) =>
+    const LibraryOrganizer().buildTree(
+      tracks: payload.tracks,
+      watchedFolders: payload.watchedFolders,
+      watchedLibraries: payload.watchedLibraries,
+    );
+
+final class _InteractionOverlap {
+  _InteractionOverlap(
+    this.server,
+    this.repository,
+    this.network,
+    this.controller,
+  );
+
+  final HttpServer server;
+  final _OverlapPersistenceRepository repository;
+  final _ProfileResultGate network;
+  final AsmrLibraryController controller;
+  final directory = _ProfileResultGate();
+  final _events = <Map<String, Object>>[];
+
+  static Future<_InteractionOverlap> create() async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final repository = _OverlapPersistenceRepository();
+    final network = _ProfileResultGate();
+    final works = _buildAsmrWorks(_asmrItemCount * 2);
+    // Encode before timing. A remote server would perform this work elsewhere.
+    final responses = <int, List<int>>{
+      for (var page = 1; page <= 2; page++)
+        page: utf8.encode(
+          jsonEncode({
+            'works': works
+                .skip((page - 1) * _asmrItemCount)
+                .take(_asmrItemCount)
+                .map((work) => work.toJson())
+                .toList(),
+            'pagination': {
+              'currentPage': page,
+              'pageSize': _asmrItemCount,
+              'totalCount': works.length,
+            },
+          }),
+        ),
+    };
+    server.listen((request) async {
+      if (request.uri.path != '/api/works') {
+        request.response.statusCode = HttpStatus.notFound;
+        await request.response.close();
+        return;
+      }
+      await network.hold();
+      final page = int.tryParse(request.uri.queryParameters['page'] ?? '') ?? 1;
+      request.response.headers.contentType = ContentType.json;
+      request.response.add(responses[page] ?? const <int>[]);
+      await request.response.close();
+    });
+    final services = createTestAsmrServices(
+      persistenceRepository: repository,
+      apiService: AsmrApiService(
+        baseUri: Uri.parse('http://127.0.0.1:${server.port}'),
+      ),
+    );
+    final controller = AsmrLibraryController(
+      preferencesStore: services.preferencesStore,
+      remoteCatalogService: services.remoteCatalogService,
+      accountSyncService: services.accountSyncService,
+    );
+    return _InteractionOverlap(server, repository, network, controller);
+  }
+
+  Future<LibraryTreeSnapshot> buildTree(
+    LibraryDerivedSnapshotPayload payload,
+  ) async {
+    final snapshot = await compute(_buildOverlapTree, payload);
+    await directory.hold();
+    return snapshot;
+  }
+
+  void _release(String source, _ProfileResultGate gate) {
+    expect(
+      UiInteractionCoordinator.instance.isInteracting,
+      true,
+      reason: '$source result must be delivered during an actual interaction.',
+    );
+    _recordEvent(source, 'result-delivery-released');
+    gate.release();
+  }
+
+  void _recordEvent(String source, String phase) {
+    _events.add({
+      'source': source,
+      'phase': phase,
+      'frameNumber':
+          WidgetsBinding.instance.platformDispatcher.frameData.frameNumber,
+      'interacting': UiInteractionCoordinator.instance.isInteracting,
+      'navigationAllowed':
+          UiInteractionCoordinator.instance.navigationAllowed.value,
+    });
+  }
+
+  Future<void> _trackCompletion(String source, Future<void> operation) async {
+    await operation;
+    // HTTP delivery can precede JSON/model and pagination preparation by many
+    // frames. Report the actual controller completion separately from release.
+    _recordEvent(source, 'operation-completed');
+  }
+
+  Future<void> run(
+    WidgetTester tester,
+    AppRuntimeWidgetTestFixture fixture,
+    int round,
+  ) async {
+    await _switchMainPage(tester, MainDestinationType.library);
+    repository.startup.arm();
+    repository.details.arm();
+    fixture.library.detailCacheService.clear();
+    fixture.libraryService.syncSlice(
+      isInitialized: false,
+      detailRevision: fixture.library.detailCacheService.revision,
+    );
+    final restore = _trackCompletion(
+      'sqlite-startup',
+      fixture.library.loadPersistedState(),
+    );
+    final detailTarget = AudioDetailTarget.singleAudioFile(
+      '/profile/audio_$round.mp3',
+    );
+    final detail = _trackCompletion(
+      'sqlite-detail',
+      fixture.library
+          .loadAudioDetail(detailTarget)
+          .then(
+            (_) => fixture.library.saveMissingLibraryDuration(
+              detailTarget,
+              Duration(minutes: 20 + round),
+            ),
+          )
+          .then<void>((_) {}),
+    );
+    await _pumpUntilComplete(
+      tester,
+      Future.wait([
+        repository.startup.ready,
+        repository.details.ready,
+      ]).then<void>((_) {}),
+    );
+    await _switchMainPage(
+      tester,
+      MainDestinationType.settings,
+      duringTransition: () {
+        _release('sqlite-startup', repository.startup);
+        _release('sqlite-detail', repository.details);
+      },
+    );
+    await _pumpUntilComplete(
+      tester,
+      Future.wait([restore, detail]).then<void>((_) {}),
+    );
+    await _switchMainPage(tester, MainDestinationType.library);
+
+    directory.arm();
+    fixture.library.addTracks([
+      testMusicTrack(
+        name: 'Overlap appended $round',
+        path: '/profile/overlap_$round.mp3',
+        groupKey: '/profile/overlap_$round.mp3',
+        groupTitle: 'Overlap appended $round',
+        isSingle: true,
+      ),
+    ], persist: false);
+    final tree = _trackCompletion(
+      'directory-isolate',
+      fixture.library.loadLibraryTree().then<void>((_) {}),
+    );
+    await _pumpUntilComplete(tester, directory.ready);
+    await _flingPageList<LibraryTab>(
+      tester,
+      duringDrag: () => _release('directory-isolate', directory),
+    );
+    await _pumpUntilComplete(tester, tree);
+
+    await _switchMainPage(tester, MainDestinationType.asmrOne);
+    // Refresh restores page 1 so each of the three rounds performs page 2 merge.
+    await _pumpUntilComplete(
+      tester,
+      controller.refreshCategory(AsmrCategoryType.collected),
+    );
+    network.arm();
+    final pagination = _trackCompletion(
+      'network-pagination',
+      controller.loadMoreCategory(AsmrCategoryType.collected),
+    );
+    await _pumpUntilComplete(tester, network.ready);
+    await _flingPageList<AsmrTab>(
+      tester,
+      duringDrag: () => _release('network-pagination', network),
+    );
+    await _pumpUntilComplete(tester, pagination);
+    expect(
+      controller.worksFor(AsmrCategoryType.collected).length,
+      _asmrItemCount * 2,
+    );
+
+    network.arm();
+    final refresh = _trackCompletion(
+      'network-hidden-page-refresh',
+      controller.refreshCategory(AsmrCategoryType.collected),
+    );
+    await _pumpUntilComplete(tester, network.ready);
+    await _switchMainPage(
+      tester,
+      MainDestinationType.library,
+      duringTransition: () => _release('network-hidden-page-refresh', network),
+    );
+    await _pumpUntilComplete(tester, refresh);
+    await _switchMainPage(tester, MainDestinationType.asmrOne);
+    expect(
+      controller.worksFor(AsmrCategoryType.collected).length,
+      _asmrItemCount,
+    );
+  }
+
+  List<Map<String, Object>> takeEvents() {
+    final events = List<Map<String, Object>>.of(_events);
+    _events.clear();
+    return events;
+  }
+
+  Future<void> dispose() async {
+    network.release();
+    directory.release();
+    repository.startup.release();
+    repository.details.release();
+    await server.close(force: true);
+  }
+}
+
 final class _BackupProfileFixture {
   _BackupProfileFixture({
     required this.directory,
@@ -2008,8 +2429,9 @@ final class _BackupProfileFixture {
 
 Future<void> _switchMainPage(
   WidgetTester tester,
-  MainDestinationType destination,
-) async {
+  MainDestinationType destination, {
+  VoidCallback? duringTransition,
+}) async {
   final index = switch (destination) {
     MainDestinationType.asmrOne => 0,
     MainDestinationType.library => 1,
@@ -2049,8 +2471,31 @@ Future<void> _switchMainPage(
   // Start the transition before advancing its duration. A single delayed pump
   // starts a newly built transition at the end of that delay.
   await tester.pump();
-  await tester.pump(const Duration(milliseconds: 900));
+  if (duringTransition == null) {
+    await tester.pump(const Duration(milliseconds: 900));
+  } else {
+    final visible = _observeTransitionSlide(tester, 'main_page_stack');
+    var released = false;
+    for (var frame = 0; frame < 56; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      if (!released && visible()) {
+        duringTransition();
+        released = true;
+      }
+    }
+    expect(released, true, reason: 'Result must overlap a visible transition.');
+  }
   await tester.pump();
+  final deadline = DateTime.now().add(const Duration(seconds: 10));
+  while (!UiInteractionCoordinator.instance.navigationAllowed.value &&
+      DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  expect(
+    UiInteractionCoordinator.instance.navigationAllowed.value,
+    true,
+    reason: 'A real drag requires the prepared page transition to finish.',
+  );
 }
 
 Future<void> _switchToAsmr(WidgetTester tester) async {
@@ -2061,7 +2506,10 @@ Future<void> _ensureLocalLibrary(WidgetTester tester) async {
   await _switchMainPage(tester, MainDestinationType.library);
 }
 
-Future<void> _flingPageList<T extends Widget>(WidgetTester tester) async {
+Future<void> _flingPageList<T extends Widget>(
+  WidgetTester tester, {
+  VoidCallback? duringDrag,
+}) async {
   ScrollPosition? currentPosition() {
     final scrollables = find.descendant(
       of: find.byType(T),
@@ -2079,25 +2527,51 @@ Future<void> _flingPageList<T extends Widget>(WidgetTester tester) async {
     return positions.first;
   }
 
-  Future<void> animateTo({required bool end}) async {
-    final position = currentPosition();
-    if (position == null ||
-        position.maxScrollExtent <= position.minScrollExtent) {
-      return;
-    }
-    final animation = position.animateTo(
-      end ? position.maxScrollExtent : position.minScrollExtent,
-      duration: const Duration(milliseconds: 480),
-      curve: Curves.easeOut,
+  final position = currentPosition();
+  expect(position, isNotNull, reason: '$T needs a real vertical Scrollable.');
+  expect(
+    position!.maxScrollExtent,
+    greaterThan(position.minScrollExtent),
+    reason: '$T fixture must contain enough rows to scroll.',
+  );
+  _profileScrollPosition = position;
+  final scrollable = find.byElementPredicate(
+    (element) =>
+        element is StatefulElement &&
+        element.state is ScrollableState &&
+        identical((element.state as ScrollableState).position, position),
+  );
+  final viewport = tester.getRect(scrollable);
+  final distance = (viewport.height * 0.55).clamp(100.0, 500.0);
+  final start = Offset(
+    viewport.center.dx,
+    viewport.top + viewport.height * 0.8,
+  );
+  final initialPixels = position.pixels;
+  final gesture = await tester.createGesture();
+  await gesture.down(start);
+  for (var step = 1; step <= 10; step++) {
+    await gesture.moveTo(
+      start - Offset(0, distance * step / 10),
+      timeStamp: Duration(milliseconds: step * 16),
     );
-    for (var frame = 0; frame < 32; frame++) {
-      await tester.pump(const Duration(milliseconds: 16));
-    }
-    await animation;
+    if (step == 3) duringDrag?.call();
+    await tester.pump(const Duration(milliseconds: 16));
   }
-
-  await animateTo(end: true);
-  await animateTo(end: false);
+  await gesture.up(timeStamp: const Duration(milliseconds: 176));
+  for (var frame = 0; frame < 45; frame++) {
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  expect(
+    position.pixels,
+    greaterThan(initialPixels),
+    reason: 'The drag must move actual content, not merely dispatch events.',
+  );
+  await tester.fling(scrollable, Offset(0, distance), 1800);
+  for (var frame = 0; frame < 60; frame++) {
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  _profileScrollPosition = null;
 }
 
 Future<void> _openAndCloseSessionDetail(WidgetTester tester) async {

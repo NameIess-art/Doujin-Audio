@@ -3,15 +3,11 @@ part of 'app_database.dart';
 extension AppDatabaseLibraryEntries on AppDatabase {
   // ---- Library entries ----
 
-  Future<List<LibraryEntryRecord>> loadAllLibraryEntries() async {
-    return _runDatabaseRead((db) async {
-      final rows = await db.query('library_entries');
-      return AppLogService.measureSync(
-        'library_entry_record_mapping',
-        () => rows.map(_libraryEntryFromRow).toList(),
-        details: {'entries': rows.length},
-      );
-    });
+  Future<Iterable<LibraryEntryRecord>> loadAllLibraryEntries() async {
+    final rows = await _runDatabaseRead((db) => db.query('library_entries'));
+    // Startup consumes this iterable in its snapshot worker, keeping record
+    // decoding, domain mapping and index preparation in one isolate task.
+    return rows.map(_libraryEntryFromRow);
   }
 
   Future<List<LibraryEntryRecord>> loadLibraryEntries(

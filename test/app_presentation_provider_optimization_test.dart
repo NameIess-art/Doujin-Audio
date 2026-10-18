@@ -23,6 +23,7 @@ class _WorkDetailRepository extends TestPersistenceRepository {
   final details = <String, AudioDetail>{};
   int singleReads = 0;
   int batchReads = 0;
+  int batchFailuresRemaining = 0;
 
   @override
   Future<AudioDetail?> load(AudioDetailTarget target) async {
@@ -39,6 +40,10 @@ class _WorkDetailRepository extends TestPersistenceRepository {
   ) async {
     batchReads++;
     await ready.future;
+    if (batchFailuresRemaining > 0) {
+      batchFailuresRemaining--;
+      throw StateError('Temporary detail query failure');
+    }
     return [
       for (final target in targets)
         if (details[PathMatcher.normalize(target.targetPath)]
@@ -48,12 +53,148 @@ class _WorkDetailRepository extends TestPersistenceRepository {
   }
 }
 
+Future<void> _waitForSort(WidgetTester tester, bool Function() ready) async {
+  for (var attempt = 0; attempt < 100; attempt++) {
+    await tester.pump(const Duration(milliseconds: 16));
+    if (ready()) return;
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+  }
+  fail('Asynchronous library sorting did not complete');
+}
+
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     UiInteractionCoordinator.instance.resetForTest();
   });
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  testWidgets('paused library sorting retains results until it resumes', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    fixture.settingsRepository.syncSlice(isInitialized: true);
+    fixture.library.addTracks([
+      for (final name in ['Beta', 'Alpha'])
+        testMusicTrack(
+          name: name,
+          path: '/music/$name.mp3',
+          groupKey: '/music/$name.mp3',
+          groupTitle: name,
+          isSingle: true,
+        ),
+    ], persist: false);
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+    await tester.runAsync(fixture.library.ensureCardSnapshot);
+    late ProviderContainer container;
+    await tester.pumpWidget(
+      fixture.build(
+        Builder(
+          builder: (context) {
+            container = ProviderScope.containerOf(context);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    final subscription = container.listen(
+      librarySortedSnapshotUiProvider,
+      (_, _) {},
+    );
+    addTearDown(subscription.close);
+    subscription.pause();
+    await tester.pump();
+    expect(container.read(librarySortedSnapshotUiProvider).nodes, isEmpty);
+    subscription.resume();
+    await _waitForSort(
+      tester,
+      () => container.read(librarySortedSnapshotUiProvider).nodes.length == 2,
+    );
+    final initial = container.read(librarySortedSnapshotUiProvider).nodes;
+    expect(initial.first.name, 'Alpha');
+    fixture.settingsRepository
+      ..librarySortAscending = false
+      ..syncSlice(isInitialized: true);
+    await tester.pump();
+    // Start preparation, then hide the consumer before the isolate replies.
+    UiInteractionCoordinator.instance.flushPendingCommitsForTest();
+    subscription.pause();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pump();
+    expect(
+      container.read(librarySortedSnapshotUiProvider).nodes,
+      same(initial),
+    );
+    subscription.resume();
+    await _waitForSort(
+      tester,
+      () =>
+          container.read(librarySortedSnapshotUiProvider).nodes.first.name ==
+          'Beta',
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+  testWidgets(
+    'detail changes refresh only their target and reset refreshes all',
+    (tester) async {
+      final repository = _WorkDetailRepository()..ready.complete();
+      final fixture = AppRuntimeWidgetTestFixture(
+        providedPersistenceRepository: repository,
+      );
+      addTearDown(fixture.dispose);
+      final first = AudioDetailTarget.libraryRootFolder('/library/one');
+      final second = AudioDetailTarget.libraryRootFolder('/library/two');
+      fixture.library.detailCacheService
+        ..markChanged(AudioDetail.empty(first).copyWith(workTitle: 'One'))
+        ..markChanged(AudioDetail.empty(second).copyWith(workTitle: 'Two'));
+      final container = ProviderContainer(
+        overrides: [libraryFacadeProvider.overrideWithValue(fixture.library)],
+      );
+      addTearDown(container.dispose);
+      final firstProvider = libraryDetailForTargetProvider(first);
+      final secondProvider = libraryDetailForTargetProvider(second);
+      final firstSubscription = container.listen(firstProvider, (_, _) {});
+      final secondSubscription = container.listen(secondProvider, (_, _) {});
+      addTearDown(firstSubscription.close);
+      addTearDown(secondSubscription.close);
+      await container.read(firstProvider.future);
+      await container.read(secondProvider.future);
+      await tester.pump();
+      final firstRead = container.read(firstProvider.future);
+      fixture.library.detailCacheService.markChanged(
+        AudioDetail.empty(second).copyWith(workTitle: 'Updated two'),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(container.read(firstProvider.future), same(firstRead));
+      expect(
+        (await container.read(secondProvider.future)).workTitle,
+        'Updated two',
+      );
+      fixture.library.detailCacheService.clear();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        identical(container.read(firstProvider.future), firstRead),
+        isFalse,
+      );
+      await _waitForSort(
+        tester,
+        () =>
+            !container.read(firstProvider).isLoading &&
+            !container.read(secondProvider).isLoading,
+      );
+      expect(container.read(firstProvider).hasValue, isTrue);
+      expect(container.read(secondProvider).hasValue, isTrue);
+      await tester.pump();
+    },
+  );
+
   test(
     'library scan progress publishes during motion without structural work',
     () async {
@@ -158,46 +299,49 @@ void main() {
   testWidgets(
     'scan progress and unrelated details do not re-sort the library',
     (tester) async {
-      final fixture = AppRuntimeWidgetTestFixture();
+      final repository = _WorkDetailRepository()..ready.complete();
+      final fixture = AppRuntimeWidgetTestFixture(
+        providedPersistenceRepository: repository,
+      );
       addTearDown(fixture.dispose);
       fixture.settingsRepository.syncSlice(isInitialized: true);
       fixture.library
         ..addWatchedFolder('/music/beta', notify: false)
         ..addWatchedFolder('/music/alpha', notify: false);
-      fixture.library.addTracks(
-        [
-          testMusicTrack(
-            name: 'Beta',
-            path: '/music/beta.mp3',
-            groupKey: '/music/beta',
-            groupTitle: 'Beta',
-            isSingle: true,
-          ),
-          testMusicTrack(
-            name: 'Alpha',
-            path: '/music/alpha.mp3',
-            groupKey: '/music/alpha',
-            groupTitle: 'Alpha',
-            isSingle: true,
-          ),
-        ],
-        persist: false,
-      );
+      fixture.library.addTracks([
+        testMusicTrack(
+          name: 'Beta',
+          path: '/music/beta.mp3',
+          groupKey: '/music/beta',
+          groupTitle: 'Beta',
+          isSingle: true,
+        ),
+        testMusicTrack(
+          name: 'Alpha',
+          path: '/music/alpha.mp3',
+          groupKey: '/music/alpha',
+          groupTitle: 'Alpha',
+          isSingle: true,
+        ),
+      ], persist: false);
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
       await tester.runAsync(fixture.library.ensureCardSnapshot);
 
       List<LibraryNode>? sorted;
+      Object? sortingError;
       await tester.pumpWidget(
         fixture.build(
           Consumer(
             builder: (context, ref, child) {
               sorted = ref.watch(librarySortedTreeUiProvider);
+              sortingError = ref.watch(librarySortedSnapshotUiProvider).error;
               return const SizedBox.shrink();
             },
           ),
         ),
       );
       await tester.pumpAndSettle();
+      await _waitForSort(tester, () => sorted?.length == 2);
       final initial = sorted;
       expect(initial, hasLength(2));
 
@@ -229,8 +373,14 @@ void main() {
         ..syncSlice(isInitialized: true);
       await tester.pump();
       await tester.pump();
+      await _waitForSort(tester, () {
+        expect(sortingError, isNull);
+        return !identical(sorted, initial);
+      });
       final detailSorted = sorted;
       expect(identical(detailSorted, initial), isFalse);
+      expect(repository.batchReads, 1);
+      expect(repository.singleReads, 0);
 
       fixture.libraryService.syncSlice(
         isInitialized: true,
@@ -240,118 +390,212 @@ void main() {
       );
       await tester.pump();
       await tester.pump();
-      expect(identical(sorted, detailSorted), isFalse);
+      expect(identical(sorted, detailSorted), isTrue);
     },
   );
 
-  testWidgets(
-    'library name sort reacts to loaded titles and display settings',
-    (tester) async {
-      final repository = _WorkDetailRepository();
-      addTearDown(() {
-        if (!repository.ready.isCompleted) repository.ready.complete();
-      });
-      final fixture = AppRuntimeWidgetTestFixture(
-        providedPersistenceRepository: repository,
-      );
-      addTearDown(fixture.dispose);
-      fixture.settingsRepository.syncSlice(isInitialized: true);
-      for (final (folder, title) in [('RJ100', 'Zulu'), ('RJ200', 'Alpha')]) {
-        final root = '/music/$folder';
-        repository.details[PathMatcher.normalize(root)] = AudioDetail.empty(
-          AudioDetailTarget.libraryRootFolder(root),
-        ).copyWith(workTitle: title);
-        fixture.library.addWatchedFolder(root, notify: false);
-        fixture.library.addTracks(
-          [
-            testMusicTrack(
-              name: 'Track',
-              path: '$root/track.mp3',
-              groupKey: root,
-              groupTitle: folder,
-            ),
-          ],
-          persist: false,
-        );
-      }
-      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
-      await tester.runAsync(fixture.library.ensureCardSnapshot);
-
-      List<LibraryNode>? sorted;
-      var builds = 0;
-      await tester.pumpWidget(
-        fixture.build(
-          Consumer(
-            builder: (context, ref, child) {
-              sorted = ref.watch(librarySortedTreeUiProvider);
-              builds++;
-              return const SizedBox.shrink();
-            },
-          ),
+  testWidgets('failed sorting details retain the list and retry as one batch', (
+    tester,
+  ) async {
+    final repository = _WorkDetailRepository()
+      ..ready.complete()
+      ..batchFailuresRemaining = 1;
+    final fixture = AppRuntimeWidgetTestFixture(
+      providedPersistenceRepository: repository,
+    );
+    addTearDown(fixture.dispose);
+    fixture.settingsRepository
+      ..workNameDisplay = WorkNameDisplay.folderName
+      ..syncSlice(isInitialized: true);
+    for (final (folder, title) in [('RJ100', 'Zulu'), ('RJ200', 'Alpha')]) {
+      final root = '/music/$folder';
+      repository.details[PathMatcher.normalize(root)] = AudioDetail.empty(
+        AudioDetailTarget.libraryRootFolder(root),
+      ).copyWith(workTitle: title);
+      fixture.library.addWatchedFolder(root, notify: false);
+      fixture.library.addTracks([
+        testMusicTrack(
+          name: 'Track',
+          path: '$root/track.mp3',
+          groupKey: root,
+          groupTitle: folder,
         ),
-      );
-      await tester.pumpAndSettle();
-      expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
-      expect(repository.singleReads, 0);
-      expect(repository.batchReads, 0);
-
-      final navigation = Object();
-      final interaction = UiInteractionCoordinator.instance;
-      interaction.beginNavigation(navigation);
-      final beforeBatch = sorted;
-      final buildsBeforeBatch = builds;
-      final snapshot = fixture.library.audioLibraryCategorySnapshot();
-      repository.ready.complete();
-      await tester.runAsync(() => snapshot);
-      await tester.pump();
-      expect(identical(sorted, beforeBatch), isTrue);
-      expect(builds, buildsBeforeBatch);
-      interaction.endNavigation(navigation);
-      await tester.pump(const Duration(milliseconds: 161));
-      await tester.pumpAndSettle();
-      expect(sorted!.map((node) => node.name), ['RJ200', 'RJ100']);
-      expect(builds, buildsBeforeBatch + 1);
-      expect(repository.batchReads, 1);
-
-      fixture.settingsRepository
-        ..workNameDisplay = WorkNameDisplay.folderName
-        ..syncSlice(isInitialized: true);
-      await tester.pumpAndSettle();
-      expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
-      final folderSorted = sorted;
-      fixture.library.detailCacheService.markChanged(
-        repository.details[PathMatcher.normalize('/music/RJ100')]!.copyWith(
-          workTitle: 'Aardvark',
+      ], persist: false);
+    }
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+    await tester.runAsync(fixture.library.ensureCardSnapshot);
+    late ProviderContainer container;
+    await tester.pumpWidget(
+      fixture.build(
+        Consumer(
+          builder: (context, ref, _) {
+            container = ProviderScope.containerOf(context);
+            ref.watch(librarySortedSnapshotUiProvider);
+            return const SizedBox.shrink();
+          },
         ),
-      );
-      fixture.library.syncPresentationState();
-      await tester.pumpAndSettle();
-      expect(identical(sorted, folderSorted), isTrue);
+      ),
+    );
+    await _waitForSort(
+      tester,
+      () => container.read(librarySortedSnapshotUiProvider).nodes.length == 2,
+    );
+    final previous = container.read(librarySortedSnapshotUiProvider).nodes;
+    expect(previous.map((node) => node.name), ['RJ100', 'RJ200']);
+    expect(repository.batchReads, 0);
+    fixture.settingsRepository
+      ..workNameDisplay = WorkNameDisplay.workTitle
+      ..syncSlice(isInitialized: true);
+    await _waitForSort(
+      tester,
+      () => container.read(librarySortedSnapshotUiProvider).error != null,
+    );
+    final failed = container.read(librarySortedSnapshotUiProvider);
+    expect(failed.nodes, same(previous));
+    expect(failed.error, isStateError);
+    expect(repository.batchReads, 1);
+    expect(repository.singleReads, 0);
+    expect(fixture.library.categorySnapshot, isNull);
 
-      fixture.settingsRepository
-        ..workNameDisplay = WorkNameDisplay.workTitle
-        ..syncSlice(isInitialized: true);
-      await tester.pumpAndSettle();
-      expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
+    container.invalidate(librarySortedSnapshotUiProvider);
+    await tester.pump();
+    expect(
+      container.read(librarySortedSnapshotUiProvider).nodes,
+      same(previous),
+    );
+    await _waitForSort(tester, () {
+      final state = container.read(librarySortedSnapshotUiProvider);
+      return state.error == null && state.nodes.first.name == 'RJ200';
+    });
+    expect(repository.batchReads, 2);
+    expect(repository.singleReads, 0);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(tester.takeException(), isNull);
+  });
 
-      fixture.library.detailCacheService.markChanged(
-        repository.details[PathMatcher.normalize('/music/RJ100')]!.copyWith(
-          workTitle: 'Zulu',
+  testWidgets('library name sort reacts to loaded titles and display settings', (
+    tester,
+  ) async {
+    final repository = _WorkDetailRepository();
+    addTearDown(() {
+      if (!repository.ready.isCompleted) repository.ready.complete();
+    });
+    final fixture = AppRuntimeWidgetTestFixture(
+      providedPersistenceRepository: repository,
+    );
+    addTearDown(fixture.dispose);
+    fixture.settingsRepository
+      ..workNameDisplay = WorkNameDisplay.folderName
+      ..syncSlice(isInitialized: true);
+    for (final (folder, title) in [('RJ100', 'Zulu'), ('RJ200', 'Alpha')]) {
+      final root = '/music/$folder';
+      repository.details[PathMatcher.normalize(root)] = AudioDetail.empty(
+        AudioDetailTarget.libraryRootFolder(root),
+      ).copyWith(workTitle: title);
+      fixture.library.addWatchedFolder(root, notify: false);
+      fixture.library.addTracks([
+        testMusicTrack(
+          name: 'Track',
+          path: '$root/track.mp3',
+          groupKey: root,
+          groupTitle: folder,
         ),
-      );
-      fixture.library.syncPresentationState();
-      await tester.pumpAndSettle();
-      expect(sorted!.map((node) => node.name), ['RJ200', 'RJ100']);
+      ], persist: false);
+    }
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+    await tester.runAsync(fixture.library.ensureCardSnapshot);
 
-      // The shared category snapshot retains titles after detail cache eviction.
-      fixture.library.detailCacheService.clear();
-      fixture.settingsRepository
-        ..librarySortAscending = false
-        ..syncSlice(isInitialized: true);
-      await tester.pumpAndSettle();
-      expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
-    },
-  );
+    List<LibraryNode>? sorted;
+    var builds = 0;
+    await tester.pumpWidget(
+      fixture.build(
+        Consumer(
+          builder: (context, ref, child) {
+            sorted = ref.watch(librarySortedTreeUiProvider);
+            builds++;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _waitForSort(tester, () => sorted?.firstOrNull?.name == 'RJ100');
+    expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
+    expect(repository.singleReads, 0);
+    expect(repository.batchReads, 0);
+
+    final navigation = Object();
+    final interaction = UiInteractionCoordinator.instance;
+    interaction.beginNavigation(navigation);
+    fixture.settingsRepository
+      ..workNameDisplay = WorkNameDisplay.workTitle
+      ..syncSlice(isInitialized: true);
+    await tester.pump();
+    final beforeBatch = sorted;
+    final buildsBeforeBatch = builds;
+    var snapshotReady = false;
+    final snapshot = fixture.library.audioLibraryCategorySnapshot().then((
+      value,
+    ) {
+      snapshotReady = true;
+      return value;
+    });
+    repository.ready.complete();
+    await _waitForSort(tester, () => snapshotReady);
+    await snapshot;
+    await tester.pump();
+    expect(identical(sorted, beforeBatch), isTrue);
+    expect(builds, buildsBeforeBatch);
+    interaction.endNavigation(navigation);
+    await tester.pump(const Duration(milliseconds: 161));
+    await tester.pumpAndSettle();
+    await _waitForSort(tester, () => sorted?.firstOrNull?.name == 'RJ200');
+    expect(sorted!.map((node) => node.name), ['RJ200', 'RJ100']);
+    expect(builds, buildsBeforeBatch + 1);
+    expect(repository.batchReads, 1);
+
+    fixture.settingsRepository
+      ..workNameDisplay = WorkNameDisplay.folderName
+      ..syncSlice(isInitialized: true);
+    await tester.pumpAndSettle();
+    await _waitForSort(tester, () => sorted?.firstOrNull?.name == 'RJ100');
+    expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
+    final folderSorted = sorted;
+    fixture.library.detailCacheService.markChanged(
+      repository.details[PathMatcher.normalize('/music/RJ100')]!.copyWith(
+        workTitle: 'Aardvark',
+      ),
+    );
+    fixture.library.syncPresentationState();
+    await tester.pumpAndSettle();
+    expect(identical(sorted, folderSorted), isTrue);
+
+    fixture.settingsRepository
+      ..workNameDisplay = WorkNameDisplay.workTitle
+      ..syncSlice(isInitialized: true);
+    await tester.pumpAndSettle();
+    await _waitForSort(tester, () => sorted?.firstOrNull?.name == 'RJ100');
+    expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
+
+    fixture.library.detailCacheService.markChanged(
+      repository.details[PathMatcher.normalize('/music/RJ100')]!.copyWith(
+        workTitle: 'Zulu',
+      ),
+    );
+    fixture.library.syncPresentationState();
+    await tester.pumpAndSettle();
+    await _waitForSort(tester, () => sorted?.firstOrNull?.name == 'RJ200');
+    expect(sorted!.map((node) => node.name), ['RJ200', 'RJ100']);
+
+    // The shared category snapshot retains titles after detail cache eviction.
+    fixture.library.detailCacheService.clear();
+    fixture.settingsRepository
+      ..librarySortAscending = false
+      ..syncSlice(isInitialized: true);
+    await tester.pumpAndSettle();
+    await _waitForSort(tester, () => sorted?.firstOrNull?.name == 'RJ100');
+    expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
+  });
 
   for (final disposeWhileHidden in [false, true]) {
     testWidgets(
@@ -373,17 +617,14 @@ void main() {
             AudioDetailTarget.libraryRootFolder(root),
           ).copyWith(workTitle: folder);
           fixture.library.addWatchedFolder(root, notify: false);
-          fixture.library.addTracks(
-            [
-              testMusicTrack(
-                name: 'Track',
-                path: '$root/track.mp3',
-                groupKey: root,
-                groupTitle: folder,
-              ),
-            ],
-            persist: false,
-          );
+          fixture.library.addTracks([
+            testMusicTrack(
+              name: 'Track',
+              path: '$root/track.mp3',
+              groupKey: root,
+              groupTitle: folder,
+            ),
+          ], persist: false);
         }
         fixture.libraryService.syncSlice(
           isInitialized: true,
@@ -428,7 +669,9 @@ void main() {
           // Finish it before settling frames; fake time alone cannot do that.
           await tester.pump(const Duration(seconds: 2));
           bool refreshBusy() =>
-              fixture.uiOperationService.isBusy(UiOperationScope.libraryRefresh) ||
+              fixture.uiOperationService.isBusy(
+                UiOperationScope.libraryRefresh,
+              ) ||
               fixture.library.state.isScanning;
           for (var i = 0; i < 100 && refreshBusy(); i++) {
             await tester.runAsync(

@@ -22,118 +22,109 @@ import 'support/test_persistence_repository.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test(
-    'computed path indexes retain equivalence and writable ownership',
-    () async {
-      const safRoot =
-          'content://com.android.externalstorage.documents/tree/primary%3A%E9%9F%B3%E9%A2%91';
-      final paths = <(String, String, String)>[
-        (
-          r'E:\音频 库\作品 A\Track.mp3',
-          'e:/音频 库/作品 a/./TRACK.mp3',
-          r'E:\音频 库\作品 A',
-        ),
-        (
-          r'\\Server\音频 库\作品 A\Track.mp3',
-          r'\\SERVER\音频 库\作品 a\TRACK.mp3',
-          r'\\Server\音频 库\作品 A',
-        ),
-        (
-          '/library/中文/Track.mp3',
-          '/library/中文/disc/../Track.mp3',
-          '/library/中文',
-        ),
-        (
-          '$safRoot/document/primary%3A%E9%9F%B3%E9%A2%91%2F%E4%BD%9C%E5%93%81%20A%2FTrack.mp3',
-          '$safRoot::作品 A/Track.mp3',
-          '$safRoot::作品 A',
-        ),
-      ];
-      final library = LibraryService()
-        ..library.addAll([
-          for (final pair in paths)
-            _track(path: pair.$1, groupKey: pair.$3),
-        ]);
-      addTearDown(library.dispose);
-      final service = LibrarySnapshotCacheService(
-        libraryService: library,
-        detailCacheService: AudioDetailCacheService(
-          repository: _FakeAudioDetailRepository(),
-        ),
-      );
-      // Exercise the real compute boundary, including the custom HashMap callbacks.
-      final snapshot = await service.buildDerivedSnapshot();
-      library
-        ..library = List<MusicTrack>.of(snapshot.library)
-        ..libraryByPath = snapshot.libraryByPath
-        ..libraryIndexByPath = snapshot.libraryIndexByPath
-        ..tracksByGroup = Map<String, List<MusicTrack>>.of(
-          snapshot.tracksByGroup,
-        );
-      for (var index = 0; index < paths.length; index++) {
-        final (original, equivalent, _) = paths[index];
-        expect(
-          PathMatcher.equivalenceKey(equivalent),
-          PathMatcher.equivalenceKey(original),
-        );
-        expect(library.trackByPath(equivalent)?.path, original);
-        expect(library.libraryIndexByPath[equivalent], index);
-        library.addOrReplaceTracks(
-          [
-            _track(
-              path: equivalent,
-              groupKey: library.trackByPath(original)!.groupKey,
-            ).copyWith(isFavorite: true),
-          ],
-          persist: false,
-          mergeExistingState: false,
-        );
-        expect(library.library[index].isFavorite, true);
-        expect(library.trackByPath(equivalent)?.isFavorite, true);
-      }
-      expect(library.library, hasLength(paths.length));
-      final added = _track(path: '/library/new.mp3', groupKey: '/library');
-      library.addTracks([added], persist: false);
-      expect(library.trackByPath(added.path), same(added));
-      expect(library.libraryIndexByPath[added.path], paths.length);
-      library.libraryByPath.remove(paths.first.$2);
-      expect(library.trackByPath(paths.first.$1), isNull);
-    },
-  );
-
-  test('disposed snapshots never restart a pending folder tree request', () async {
-    const root = '/library/work';
+  test('computed path indexes retain equivalence and writable ownership', () async {
+    const safRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3A%E9%9F%B3%E9%A2%91';
+    final paths = <(String, String, String)>[
+      (r'E:\音频 库\作品 A\Track.mp3', 'e:/音频 库/作品 a/./TRACK.mp3', r'E:\音频 库\作品 A'),
+      (
+        r'\\Server\音频 库\作品 A\Track.mp3',
+        r'\\SERVER\音频 库\作品 a\TRACK.mp3',
+        r'\\Server\音频 库\作品 A',
+      ),
+      ('/library/中文/Track.mp3', '/library/中文/disc/../Track.mp3', '/library/中文'),
+      (
+        '$safRoot/document/primary%3A%E9%9F%B3%E9%A2%91%2F%E4%BD%9C%E5%93%81%20A%2FTrack.mp3',
+        '$safRoot::作品 A/Track.mp3',
+        '$safRoot::作品 A',
+      ),
+    ];
     final library = LibraryService()
-      ..library.add(_track(path: '$root/01.mp3', groupKey: root))
-      ..watchedFolders.add(root);
+      ..library.addAll([
+        for (final pair in paths) _track(path: pair.$1, groupKey: pair.$3),
+      ]);
     addTearDown(library.dispose);
-    final result = Completer<LibraryTreeSnapshot>();
-    var builds = 0;
     final service = LibrarySnapshotCacheService(
       libraryService: library,
       detailCacheService: AudioDetailCacheService(
         repository: _FakeAudioDetailRepository(),
       ),
-      treeSnapshotBuilder: (_) {
-        builds++;
-        return result.future;
-      },
     );
-    final request = service.loadFolderTree(root);
-    await Future<void>.delayed(Duration.zero);
-    expect(builds, 1);
-    service.dispose();
-    result.complete(
-      const LibraryOrganizer().buildTree(
-        tracks: library.library,
-        watchedFolders: [root],
-      ),
-    );
-    expect(await request, isNull);
-    expect(await service.loadFolderTree(root), isNull);
-    expect(service.resolvedFolderTree(root), isNull);
-    expect(builds, 1);
+    // Exercise the real compute boundary, including the custom HashMap callbacks.
+    final snapshot = await service.buildDerivedSnapshot();
+    library
+      ..library = List<MusicTrack>.of(snapshot.library)
+      ..libraryByPath = snapshot.libraryByPath
+      ..libraryIndexByPath = snapshot.libraryIndexByPath
+      ..tracksByGroup = Map<String, List<MusicTrack>>.of(
+        snapshot.tracksByGroup,
+      );
+    for (var index = 0; index < paths.length; index++) {
+      final (original, equivalent, _) = paths[index];
+      expect(
+        PathMatcher.equivalenceKey(equivalent),
+        PathMatcher.equivalenceKey(original),
+      );
+      expect(library.trackByPath(equivalent)?.path, original);
+      expect(library.libraryIndexByPath[equivalent], index);
+      library.addOrReplaceTracks(
+        [
+          _track(
+            path: equivalent,
+            groupKey: library.trackByPath(original)!.groupKey,
+          ).copyWith(isFavorite: true),
+        ],
+        persist: false,
+        mergeExistingState: false,
+      );
+      expect(library.library[index].isFavorite, true);
+      expect(library.trackByPath(equivalent)?.isFavorite, true);
+    }
+    expect(library.library, hasLength(paths.length));
+    final added = _track(path: '/library/new.mp3', groupKey: '/library');
+    library.addTracks([added], persist: false);
+    expect(library.trackByPath(added.path), same(added));
+    expect(library.libraryIndexByPath[added.path], paths.length);
+    library.libraryByPath.remove(paths.first.$2);
+    expect(library.trackByPath(paths.first.$1), isNull);
   });
+
+  test(
+    'disposed snapshots never restart a pending folder tree request',
+    () async {
+      const root = '/library/work';
+      final library = LibraryService()
+        ..library.add(_track(path: '$root/01.mp3', groupKey: root))
+        ..watchedFolders.add(root);
+      addTearDown(library.dispose);
+      final result = Completer<LibraryTreeSnapshot>();
+      var builds = 0;
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+        treeSnapshotBuilder: (_) {
+          builds++;
+          return result.future;
+        },
+      );
+      final request = service.loadFolderTree(root);
+      await Future<void>.delayed(Duration.zero);
+      expect(builds, 1);
+      service.dispose();
+      result.complete(
+        const LibraryOrganizer().buildTree(
+          tracks: library.library,
+          watchedFolders: [root],
+        ),
+      );
+      expect(await request, isNull);
+      expect(await service.loadFolderTree(root), isNull);
+      expect(service.resolvedFolderTree(root), isNull);
+      expect(builds, 1);
+    },
+  );
 
   test('metadata roots refresh during batches and after reset', () {
     const parent = r'E:\音频 库';
@@ -551,7 +542,7 @@ void main() {
     },
   );
 
-  test('category detail batch failure falls back per work', () async {
+  test('category batch failure propagates without per-work retries', () async {
     final firstTarget = AudioDetailTarget.libraryRootFolder('/library/first');
     final secondTarget = AudioDetailTarget.libraryRootFolder('/library/second');
     final repository = _FakeAudioDetailRepository(
@@ -573,16 +564,13 @@ void main() {
       detailCacheService: AudioDetailCacheService(repository: repository),
     );
 
-    await service.categorySnapshot(onCommitted: () {});
-
-    expect(
-      service.categorySnapshotSync?.entries.map(
-        (entry) => entry.detail.workTitle,
-      ),
-      containsAll(<String>['First backup', 'Second backup']),
+    await expectLater(
+      service.categorySnapshot(onCommitted: () {}),
+      throwsStateError,
     );
+    expect(service.categorySnapshotSync, isNull);
     expect(repository.batchLoadCount, 1);
-    expect(repository.loadCount, 2);
+    expect(repository.loadCount, 0);
   });
 
   test('first category snapshot commits without a presentation gate', () async {
@@ -611,6 +599,49 @@ void main() {
     expect(repository.loadCount, 1);
     expect(committed, isTrue);
   });
+
+  for (final dispose in [false, true]) {
+    test(
+      'category completion cannot repopulate after ${dispose ? 'dispose' : 'clear'}',
+      () async {
+        final library = LibraryService()
+          ..watchedFolders.add('/library')
+          ..library.add(
+            _track(path: '/library/work/01.mp3', groupKey: '/library/work'),
+          )
+          ..markStructureChanged();
+        addTearDown(library.dispose);
+        final detailCache = AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        );
+        addTearDown(detailCache.dispose);
+        final ready = Completer<LibraryTreeSnapshot>();
+        final service = LibrarySnapshotCacheService(
+          libraryService: library,
+          detailCacheService: detailCache,
+          cardSnapshotBuilder: (_) => ready.future,
+        );
+        var committed = false;
+        final pending = service.categorySnapshot(
+          onCommitted: () => committed = true,
+        );
+        if (dispose) {
+          service.dispose();
+        } else {
+          service.clear();
+        }
+        ready.complete(
+          const LibraryOrganizer().buildCardTree(
+            tracks: library.library,
+            watchedFolders: library.watchedFolders,
+          ),
+        );
+        await pending;
+        expect(committed, isFalse);
+        expect(service.categorySnapshotSync, isNull);
+      },
+    );
+  }
 
   test('category detail loading completes all batches immediately', () async {
     final repository = _FakeAudioDetailRepository();

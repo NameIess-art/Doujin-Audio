@@ -336,7 +336,7 @@ void registerAsmrControllerStateTests({
         isContextCurrent: (_) => true,
         currentContext: () => context,
         localWorks: (_) => works,
-        decorateWork: (work) => work,
+        favoriteIds: () => const <int>{},
       );
       List<AsmrWork> filter(String query) => catalog.filteredWorksFor(
         AsmrCategoryType.favorites,
@@ -1286,11 +1286,7 @@ void registerAsmrControllerStateTests({
       final oldRefresh = controller.refreshCategory(AsmrCategoryType.release);
       await oldRequestStarted.future;
       await controller.loginAsmrAccount('alice', 'password');
-      final deadline = DateTime.now().add(const Duration(seconds: 1));
-      while (!api.fetchWorkTokens.contains('token-alice') &&
-          DateTime.now().isBefore(deadline)) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      await controller.ensureCategoryLoaded(AsmrCategoryType.release);
 
       expect(api.fetchWorkTokens, contains('token-alice'));
       expect(
@@ -1311,12 +1307,7 @@ void registerAsmrControllerStateTests({
       final aliceRefresh = controller.refreshCategory(AsmrCategoryType.release);
       await aliceRequestStarted.future;
       await controller.logoutAsmrAccount();
-      final logoutDeadline = DateTime.now().add(const Duration(seconds: 1));
-      while (api.fetchWorkTokens.isNotEmpty &&
-          api.fetchWorkTokens.last != null &&
-          DateTime.now().isBefore(logoutDeadline)) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      await controller.ensureCategoryLoaded(AsmrCategoryType.release);
 
       expect(api.fetchWorkTokens.last, isNull);
       expect(
@@ -1864,6 +1855,129 @@ void registerAsmrControllerStateTests({
     expect(controller.isLoadingMoreCategory(AsmrCategoryType.release), isFalse);
   });
 
+  test('page preparation preserves concurrent favorite changes', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService(largeRecommendationPool: true);
+    addTearDown(api.close);
+    final services = createTestAsmrServices(
+      preferencesStore: preferences,
+      persistenceRepository: persistenceRepository(),
+      apiService: api,
+    );
+    const context = (
+      authEpoch: 0,
+      token: null,
+      contentEpoch: 0,
+      language: AsmrContentLanguage.en,
+      scope: 'page-preparation-test',
+    );
+    var favorites = const <int>{};
+    Completer<void>? preparationStarted;
+    final catalog = AsmrCategoryCatalog(
+      remoteCatalogService: services.remoteCatalogService,
+      onChanged: () {},
+      isContextCurrent: (_) => true,
+      currentContext: () => context,
+      localWorks: (_) => const <AsmrWork>[],
+      favoriteIds: () {
+        final started = preparationStarted;
+        if (started != null && !started.isCompleted) started.complete();
+        return favorites;
+      },
+    );
+    await catalog.refresh(
+      AsmrCategoryType.release,
+      searchQuery: '',
+      context: context,
+    );
+    final untouched = catalog.worksFor(AsmrCategoryType.release)[1];
+    preparationStarted = Completer<void>();
+    final pagination = catalog.loadMore(
+      AsmrCategoryType.release,
+      searchQuery: '',
+      context: context,
+    );
+    await preparationStarted.future;
+    favorites = const <int>{3001, 3041};
+    catalog.updateFavorites({3001: true});
+    await pagination;
+
+    final works = catalog.worksFor(AsmrCategoryType.release);
+    expect(works, hasLength(80));
+    expect(works[1], same(untouched));
+    expect(works.where((work) => work.isFavorite).map((work) => work.id), [
+      3001,
+      3041,
+    ]);
+    expect(catalog.isLoadingMore(AsmrCategoryType.release), isFalse);
+  });
+
+  for (final append in [false, true]) {
+    test('cancellation during ${append ? "pagination" : "refresh"} preparation '
+        'retains the completed page and permits retry', () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService(largeRecommendationPool: true);
+      addTearDown(api.close);
+      final services = createTestAsmrServices(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      const context = (
+        authEpoch: 0,
+        token: null,
+        contentEpoch: 0,
+        language: AsmrContentLanguage.en,
+        scope: 'cancel-page-preparation-test',
+      );
+      Completer<void>? preparationStarted;
+      final catalog = AsmrCategoryCatalog(
+        remoteCatalogService: services.remoteCatalogService,
+        onChanged: () {},
+        isContextCurrent: (_) => true,
+        currentContext: () => context,
+        localWorks: (_) => const <AsmrWork>[],
+        favoriteIds: () {
+          final started = preparationStarted;
+          if (started != null && !started.isCompleted) started.complete();
+          return const <int>{};
+        },
+      );
+      Future<void> load() => append
+          ? catalog.loadMore(
+              AsmrCategoryType.release,
+              searchQuery: '',
+              context: context,
+            )
+          : catalog.refresh(
+              AsmrCategoryType.release,
+              searchQuery: '',
+              context: context,
+            );
+      await catalog.refresh(
+        AsmrCategoryType.release,
+        searchQuery: '',
+        context: context,
+      );
+      final before = catalog.worksFor(AsmrCategoryType.release);
+      preparationStarted = Completer<void>();
+      final pending = load();
+      await preparationStarted.future;
+      catalog.cancelRequests();
+      await pending;
+      expect(catalog.worksFor(AsmrCategoryType.release), same(before));
+      expect(catalog.isLoading(AsmrCategoryType.release), isFalse);
+      expect(catalog.isLoadingMore(AsmrCategoryType.release), isFalse);
+      expect(catalog.errorFor(AsmrCategoryType.release), isNull);
+
+      preparationStarted = null;
+      await load();
+      final after = catalog.worksFor(AsmrCategoryType.release);
+      expect(after, hasLength(append ? 80 : 40));
+      if (append) expect(after.first, same(before.first));
+    });
+  }
+
   test('category failures stay isolated across concurrent refreshes', () async {
     await resetPrefs();
     final releaseRequestStarted = Completer<void>();
@@ -2038,11 +2152,7 @@ void registerAsmrControllerStateTests({
       await oldRequestStarted.future;
       tokenStore.token = 'token-new';
       await controller.restoreAsmrAccountSession(force: true);
-      final deadline = DateTime.now().add(const Duration(seconds: 1));
-      while (!api.fetchWorkTokens.contains('token-new') &&
-          DateTime.now().isBefore(deadline)) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      await controller.ensureCategoryLoaded(AsmrCategoryType.release);
 
       expect(api.fetchWorkTokens, contains('token-new'));
       expect(

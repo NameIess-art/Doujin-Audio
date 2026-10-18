@@ -55,6 +55,81 @@ Future<List<Color>> _pixels(
 }))!;
 
 void main() {
+  testWidgets('header opacity recovers after hiding and repeated resizes', (
+    tester,
+  ) async {
+    final visible = ValueNotifier(true);
+    addTearDown(visible.dispose);
+    addTearDown(tester.view.resetPhysicalSize);
+    final surface = GlobalKey();
+    await tester.pumpWidget(
+      RepaintBoundary(
+        key: surface,
+        child: MaterialApp(
+          theme: ThemeData(
+            platform: TargetPlatform.android,
+            pageTransitionsTheme: const PageTransitionsTheme(
+              builders: {TargetPlatform.android: AppPageTransitionsBuilder()},
+            ),
+          ),
+          builder: (_, child) => AppPageTransitionHost(child: child!),
+          home: Scaffold(
+            body: Stack(
+              fit: StackFit.expand,
+              children: [
+                const ColoredBox(color: Color(0xffff0000)),
+                Positioned(
+                  top: 32,
+                  left: 0,
+                  right: 0,
+                  height: 56,
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: visible,
+                    child: const AppPageHeaderTransition(
+                      child: ColoredBox(color: _oldHeader),
+                    ),
+                    builder: (_, value, child) => AnimatedOpacity(
+                      opacity: value ? 1 : 0,
+                      duration: kAppFadeDuration,
+                      curve: kAppFadeCurve,
+                      child: child,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (var cycle = 0; cycle < 3; cycle++) {
+      visible.value = false;
+      await tester.pumpAndSettle();
+      tester.view.physicalSize = cycle.isEven
+          ? const Size(600, 800)
+          : const Size(800, 600);
+      await tester.pumpAndSettle();
+      expect(
+        (await _pixels(tester, surface, [const Offset(8, 50)])).single,
+        const Color(0xffff0000),
+      );
+      visible.value = true;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      final middle = (await _pixels(tester, surface, [
+        const Offset(8, 50),
+      ])).single;
+      expect(middle.g, closeTo(kAppFadeCurve.transform(0.5), 0.02));
+      await tester.pumpAndSettle();
+      expect(
+        (await _pixels(tester, surface, [const Offset(8, 50)])).single,
+        _oldHeader,
+      );
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final workDetail in [false, true]) {
       testWidgets(

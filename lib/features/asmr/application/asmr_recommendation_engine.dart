@@ -9,8 +9,6 @@ import '../../../core/media/music_track.dart';
 class AsmrRecommendationEngine {
   const AsmrRecommendationEngine();
 
-  static const int isolateThreshold = 1000;
-
   Future<List<AsmrWork>> rankAsync({
     required List<AsmrWork> candidates,
     required List<MusicTrack> localTracks,
@@ -29,14 +27,7 @@ class AsmrRecommendationEngine {
       limit: limit,
       explorationWorkIds: explorationWorkIds,
     );
-    if (!usesBackgroundIsolate(request)) {
-      return Future<List<AsmrWork>>.value(rankAsmrRecommendations(request));
-    }
     return compute(rankAsmrRecommendations, request);
-  }
-
-  bool usesBackgroundIsolate(AsmrRecommendationRankRequest request) {
-    return request.totalInputCount >= isolateThreshold;
   }
 
   List<AsmrWork> rank({
@@ -254,12 +245,6 @@ class AsmrRecommendationRankRequest {
   final int refreshSeed;
   final int? limit;
   final Set<int> explorationWorkIds;
-
-  int get totalInputCount =>
-      candidates.length +
-      localTracks.length +
-      favoriteWorks.length +
-      historyWorks.length;
 }
 
 List<AsmrWork> rankAsmrRecommendations(AsmrRecommendationRankRequest request) {

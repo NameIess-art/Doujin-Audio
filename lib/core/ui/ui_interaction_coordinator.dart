@@ -55,14 +55,14 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _navigationSources.remove(source);
     _navigationAllowed.value = _navigationSources.isEmpty;
     endInteraction(source);
-    _scheduleCommitFrame();
+    scheduleCommitFrame();
   }
 
   void cancelNavigation(Object source) {
     _navigationSources.remove(source);
     _navigationAllowed.value = _navigationSources.isEmpty;
     cancelInteraction(source);
-    _scheduleCommitFrame();
+    scheduleCommitFrame();
   }
 
   void beginInteraction(Object source, {bool deferVisualUpdates = false}) {
@@ -116,6 +116,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     bool allowDuringInteraction = false,
     bool allowDuringScroll = false,
     bool structural = false,
+    bool Function()? canRun,
     required VoidCallback commit,
   }) {
     _pendingCommits[key] = _PendingCommit(
@@ -125,9 +126,10 @@ class UiInteractionCoordinator extends ChangeNotifier {
       allowDuringInteraction: allowDuringInteraction,
       allowDuringScroll: allowDuringScroll,
       structural: structural,
+      canRun: canRun,
       commit: commit,
     );
-    _scheduleCommitFrame();
+    scheduleCommitFrame();
   }
 
   void cancelCommit(String key) {
@@ -176,10 +178,12 @@ class UiInteractionCoordinator extends ChangeNotifier {
     // Cover queries and scroll commits must resume when first-frame protection
     // ends, even if a separate scroll interaction remains active.
     notifyListeners();
-    _scheduleCommitFrame();
+    scheduleCommitFrame();
   }
 
-  void _scheduleCommitFrame() {
+  // Wake pending commits when a caller's canRun condition changes, such as
+  // a retained provider resuming after its page becomes visible.
+  void scheduleCommitFrame() {
     if (_frameScheduled || !_hasRunnableCommits) return;
     _frameScheduled = true;
     SchedulerBinding.instance.scheduleFrameCallback((_) {
@@ -209,13 +213,14 @@ class UiInteractionCoordinator extends ChangeNotifier {
       committedAny = true;
       committedStructure = committedStructure || pending.structural;
     }
-    if (_hasRunnableCommits) _scheduleCommitFrame();
+    if (_hasRunnableCommits) scheduleCommitFrame();
   }
 
   bool _canRunCommit(_PendingCommit commit) =>
-      !isInteracting ||
-      commit.allowDuringInteraction ||
-      (commit.allowDuringScroll && !isVisualUpdateDeferred);
+      (!isInteracting ||
+          commit.allowDuringInteraction ||
+          (commit.allowDuringScroll && !isVisualUpdateDeferred)) &&
+      (commit.canRun?.call() ?? true);
 
   bool get _hasRunnableCommits => _pendingCommits.values.any(_canRunCommit);
 
@@ -291,6 +296,7 @@ class _PendingCommit {
     required this.allowDuringInteraction,
     required this.allowDuringScroll,
     required this.structural,
+    required this.canRun,
     required this.commit,
   });
 
@@ -300,6 +306,7 @@ class _PendingCommit {
   final bool allowDuringInteraction;
   final bool allowDuringScroll;
   final bool structural;
+  final bool Function()? canRun;
   final VoidCallback commit;
 }
 

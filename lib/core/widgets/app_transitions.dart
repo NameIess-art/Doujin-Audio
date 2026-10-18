@@ -271,6 +271,7 @@ class _RenderPageTransitionHost extends RenderProxyBox {
     final orderedHeaders = headers.toList()..sort(_comparePaintOrder);
     for (final header in orderedHeaders) {
       if (!header.attached || !header.hasSize || header.child == null) continue;
+      header.updateAncestorAnimations();
       var visible = true;
       var opacity = 1.0;
       for (
@@ -340,6 +341,27 @@ class _RenderPageHeader extends RenderProxyBox {
   _RenderPageTransitionHost host;
   Listenable animation;
   GlobalKey viewport;
+  final Set<Animation<double>> _ancestorAnimations = {};
+
+  void updateAncestorAnimations() {
+    final animations = <Animation<double>>{};
+    for (
+      RenderObject? ancestor = parent;
+      ancestor != null && ancestor != host;
+      ancestor = ancestor.parent
+    ) {
+      if (ancestor is RenderAnimatedOpacity) animations.add(ancestor.opacity);
+    }
+    for (final animation in _ancestorAnimations.difference(animations)) {
+      animation.removeListener(host.markNeedsPaint);
+    }
+    for (final animation in animations.difference(_ancestorAnimations)) {
+      animation.addListener(host.markNeedsPaint);
+    }
+    _ancestorAnimations
+      ..clear()
+      ..addAll(animations);
+  }
 
   void update(
     _RenderPageTransitionHost nextHost,
@@ -349,6 +371,7 @@ class _RenderPageHeader extends RenderProxyBox {
     if (host == nextHost &&
         animation == nextAnimation &&
         viewport == nextViewport) {
+      if (attached) updateAncestorAnimations();
       return;
     }
     if (attached) _unregister();
@@ -362,10 +385,17 @@ class _RenderPageHeader extends RenderProxyBox {
   void _register() {
     host.headers.add(this);
     animation.addListener(host.markNeedsPaint);
+    // Ancestor fades normally update only their own composited opacity layer.
+    // Lifted headers paint outside that layer and must repaint on those ticks.
+    updateAncestorAnimations();
     host.markNeedsPaint();
   }
 
   void _unregister() {
+    for (final animation in _ancestorAnimations) {
+      animation.removeListener(host.markNeedsPaint);
+    }
+    _ancestorAnimations.clear();
     host.headers.remove(this);
     animation.removeListener(host.markNeedsPaint);
     host.markNeedsPaint();

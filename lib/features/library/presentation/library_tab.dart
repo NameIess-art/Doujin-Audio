@@ -11,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
-import '../../settings/application/settings_state.dart';
 import '../application/library_facade.dart';
 import '../domain/library_node.dart';
 import '../../../core/media/path_matcher.dart';
@@ -22,6 +21,7 @@ import '../application/library_catalog.dart';
 import '../application/library_scan_coordinator.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
@@ -108,7 +108,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         _scheduleStartupRefreshAfter(const Duration(milliseconds: 500));
       }
     } else {
-      _cancelSortingSnapshotPreparation();
       UiInteractionCoordinator.instance.cancelCommit(_cardSnapshotCommitKey);
       _cardSnapshotRequestRevision = null;
       _startupRefreshIdleTimer?.cancel();
@@ -126,9 +125,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey();
   int? _cardSnapshotRequestRevision;
-  (int, int)? _sortingSnapshotRequest;
-  String get _sortingSnapshotCommitKey =>
-      'library_sorting_snapshot_${identityHashCode(this)}';
   String get _cardSnapshotCommitKey =>
       'library_card_snapshot_${identityHashCode(this)}';
 
@@ -535,77 +531,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
   }
 
-  void _ensureSortingSnapshot(LibraryFacade library) {
-    final settings = ref.read(settingsStateProvider).value;
-    final criterion =
-        settings?.librarySortCriterion ?? LibrarySortCriterion.name;
-    final needsDetails =
-        criterion == LibrarySortCriterion.voiceActor ||
-        criterion == LibrarySortCriterion.releaseDate ||
-        (criterion == LibrarySortCriterion.name &&
-            (settings?.workNameDisplay ?? WorkNameDisplay.workTitle) ==
-                WorkNameDisplay.workTitle &&
-            library.libraryCards.any(
-              (node) => node is FolderNode && node.isModuleNode,
-            ));
-    if (!needsDetails) {
-      _cancelSortingSnapshotPreparation();
-      return;
-    }
-    final revision = (
-      library.structureRevision,
-      library.detailCacheService.revision,
-    );
-    final cached = library.categorySnapshot;
-    if ((cached?.structureRevision, cached?.detailRevision) == revision ||
-        _sortingSnapshotRequest == revision) {
-      return;
-    }
-    _sortingSnapshotRequest = revision;
-    UiInteractionCoordinator.instance.scheduleCommit(
-      key: _sortingSnapshotCommitKey,
-      priority: 30,
-      structural: true,
-      commit: () {
-        if (!mounted || !_isActive || _sortingSnapshotRequest != revision) {
-          if (_sortingSnapshotRequest == revision) {
-            _sortingSnapshotRequest = null;
-          }
-          return;
-        }
-        // Batch title reads after navigation; the existing library stream
-        // coalesces the completed snapshot if another transition has started.
-        unawaited(
-          library
-              .audioLibraryCategorySnapshot()
-              .then<void>(
-                (_) {},
-                onError: (Object error, StackTrace stackTrace) {
-                  AppLogService.error(
-                    'library_sorting_snapshot_failed',
-                    error: error,
-                    stackTrace: stackTrace,
-                  );
-                },
-              )
-              .whenComplete(() {
-                if (_sortingSnapshotRequest == revision) {
-                  _sortingSnapshotRequest = null;
-                }
-              }),
-        );
-      },
-    );
-  }
-
-  void _cancelSortingSnapshotPreparation() {
-    UiInteractionCoordinator.instance.cancelCommit(_sortingSnapshotCommitKey);
-    _sortingSnapshotRequest = null;
-  }
-
   @override
   void deactivate() {
-    _cancelSortingSnapshotPreparation();
     UiInteractionCoordinator.instance.cancelCommit(_cardSnapshotCommitKey);
     _cardSnapshotRequestRevision = null;
     // Sibling disposal can release an interaction before this tab is unmounted.
@@ -630,7 +557,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   @override
   void dispose() {
-    _cancelSortingSnapshotPreparation();
     UiInteractionCoordinator.instance.cancelCommit(_cardSnapshotCommitKey);
     widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
     widget.activeSectionListenable?.removeListener(_handleActiveTabChanged);
@@ -704,8 +630,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         libraryFacade: libraryFacade,
         snapshotRevision: listStateStructureRevision,
       );
-    } else {
-      _cancelSortingSnapshotPreparation();
     }
     final bottomInset = MobileOverlayInset.of(context);
 
@@ -783,59 +707,86 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               ),
               builder: (_) => Consumer(
                 builder: (context, ref, _) {
-                  if (_isActive && listStateIsInitialized) {
-                    _ensureSortingSnapshot(libraryFacade);
-                  }
                   final tree = ref.watch(librarySortedTreeUiProvider);
-                  return PlaceholderContentTransition(
-                    showPlaceholder: !listStateIsInitialized,
-                    placeholder: LibraryLoadingSkeleton(
-                      bottomInset: listBottomPadding,
-                      topInset: listTopPadding,
+                  final sortingError = ref.watch(
+                    librarySortedSnapshotUiProvider.select(
+                      (state) => state.error,
                     ),
-                    content: tree.isEmpty
-                        ? refreshableEmptyBody()
-                        : GlassRefreshIndicator(
-                            key: _refreshIndicatorKey,
-                            lockChildWhileRefreshing: true,
-                            color: Theme.of(context).colorScheme.primary,
-                            backgroundColor: Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainerHighest,
-                            onRefresh: _runLibraryPullRefresh,
-                            edgeOffset: listTopPadding,
-                            displacement: 32,
-                            triggerMode:
-                                GlassRefreshIndicatorTriggerMode.anywhere,
-                            child: LibraryTreeList(
-                              tree: tree,
-                              structureRevision: listStateStructureRevision,
-                              selectedPaths: _selectedLibraryPaths,
-                              isSelectionMode: _isSelectionMode,
-                              scrollController: _scrollController,
-                              i18n: i18n,
-                              topPadding: listTopPadding,
-                              bottomPadding: listBottomPadding,
-                              cacheExtent: listCacheExtent,
-                              physics: canPullRefresh
-                                  ? AlwaysScrollableScrollPhysics(
-                                      parent:
-                                          GlassRefreshIndicatorScrollPhysics(
-                                            isIndicatorVisible: () =>
-                                                _refreshIndicatorKey
-                                                    .currentState
-                                                    ?.isIndicatorVisible ??
-                                                false,
-                                          ),
-                                    )
-                                  : null,
-                              loadFolder: libraryFacade.loadLibraryFolderTree,
-                              currentStructureRevision: () =>
-                                  libraryFacade.structureRevision,
-                              onLongPress: _enterSelectionMode,
-                              onToggleSelect: _toggleLibrarySelection,
-                            ),
+                  );
+                  final emptyBody = sortingError == null
+                      ? refreshableEmptyBody()
+                      : const SizedBox.expand();
+                  return Stack(
+                    children: [
+                      PlaceholderContentTransition(
+                        showPlaceholder:
+                            !listStateIsInitialized ||
+                            (tree.isEmpty &&
+                                libraryFacade.libraryCards.isNotEmpty &&
+                                sortingError == null),
+                        placeholder: LibraryLoadingSkeleton(
+                          bottomInset: listBottomPadding,
+                          topInset: listTopPadding,
+                        ),
+                        content: tree.isEmpty
+                            ? emptyBody
+                            : GlassRefreshIndicator(
+                                key: _refreshIndicatorKey,
+                                lockChildWhileRefreshing: true,
+                                color: Theme.of(context).colorScheme.primary,
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
+                                onRefresh: _runLibraryPullRefresh,
+                                edgeOffset: listTopPadding,
+                                displacement: 32,
+                                triggerMode:
+                                    GlassRefreshIndicatorTriggerMode.anywhere,
+                                child: LibraryTreeList(
+                                  tree: tree,
+                                  structureRevision: listStateStructureRevision,
+                                  selectedPaths: _selectedLibraryPaths,
+                                  isSelectionMode: _isSelectionMode,
+                                  scrollController: _scrollController,
+                                  i18n: i18n,
+                                  topPadding: listTopPadding,
+                                  bottomPadding: listBottomPadding,
+                                  cacheExtent: listCacheExtent,
+                                  physics: canPullRefresh
+                                      ? AlwaysScrollableScrollPhysics(
+                                          parent:
+                                              GlassRefreshIndicatorScrollPhysics(
+                                                isIndicatorVisible: () =>
+                                                    _refreshIndicatorKey
+                                                        .currentState
+                                                        ?.isIndicatorVisible ??
+                                                    false,
+                                              ),
+                                        )
+                                      : null,
+                                  loadFolder:
+                                      libraryFacade.loadLibraryFolderTree,
+                                  currentStructureRevision: () =>
+                                      libraryFacade.structureRevision,
+                                  onLongPress: _enterSelectionMode,
+                                  onToggleSelect: _toggleLibrarySelection,
+                                ),
+                              ),
+                      ),
+                      if (sortingError != null)
+                        Positioned(
+                          top: listTopPadding + 16,
+                          left: 12,
+                          right: 12,
+                          child: OperationStatusBanner(
+                            label: i18n.tr('operation_failed_retry'),
+                            error: sortingError,
+                            retryTooltip: i18n.tr('retry'),
+                            onRetry: () =>
+                                ref.invalidate(librarySortedSnapshotUiProvider),
                           ),
+                        ),
+                    ],
                   );
                 },
               ),

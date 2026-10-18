@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 
+import 'package:flutter/foundation.dart';
+
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
@@ -13,21 +15,19 @@ import 'library_service.dart';
 final class LibraryPersistedState {
   const LibraryPersistedState({
     required this.tracks,
-    required this.entries,
+    required this.entriesByLibrary,
     required this.groupOrder,
     required this.watchedFolders,
     required this.watchedLibraries,
     required this.folderExclusions,
     required this.trackExclusions,
-    required this.legacyFolderExclusions,
   });
 
   final List<MusicTrack> tracks;
-  final List<LibraryEntry> entries;
+  final Map<String, Map<String, LibraryEntry>> entriesByLibrary;
   final List<String> groupOrder;
   final Map<String, Set<String>> folderExclusions;
   final Map<String, Set<String>> trackExclusions;
-  final Map<String, Set<String>> legacyFolderExclusions;
   final List<String> watchedFolders;
   final List<String> watchedLibraries;
 }
@@ -144,16 +144,14 @@ final class LibraryPersistenceCoordinator {
         loadGeneration: generation,
       );
     }
-    return LibraryPersistedState(
-      tracks: await tracksFuture,
-      entries: await entriesFuture,
-      groupOrder: catalogLists[0],
-      watchedFolders: catalogLists[1],
-      watchedLibraries: catalogLists[2],
-      folderExclusions: folderExclusions,
-      trackExclusions: trackExclusions,
-      legacyFolderExclusions: legacyRemovedFolders,
-    );
+    final tracks = await tracksFuture;
+    final entries = await entriesFuture;
+    return compute(_preparePersistedLibrary, (
+      tracks: tracks,
+      entries: entries,
+      catalogLists: catalogLists,
+      legacyRemovedFolders: legacyRemovedFolders,
+    ));
   }
 
   Future<void> prepareForReset() {
@@ -303,4 +301,60 @@ final class LibraryPersistenceCoordinator {
     }
     unawaited(_repository.upsertLibraryEntries(entries));
   }
+}
+
+LibraryPersistedState _preparePersistedLibrary(
+  ({
+    List<MusicTrack> tracks,
+    Iterable<LibraryEntry> entries,
+    List<List<String>> catalogLists,
+    Map<String, Set<String>> legacyRemovedFolders,
+  })
+  payload,
+) {
+  final (:tracks, :entries, :catalogLists, :legacyRemovedFolders) = payload;
+  final entriesByLibrary = <String, Map<String, LibraryEntry>>{};
+  final folderExclusions = <String, Set<String>>{};
+  final trackExclusions = <String, Set<String>>{};
+  for (final entry in entries) {
+    final root = PathMatcher.normalize(entry.libraryPath);
+    final path = PathMatcher.normalize(entry.path);
+    entriesByLibrary.putIfAbsent(root, () => <String, LibraryEntry>{})[path] =
+        entry;
+    if (!entry.isExcluded) continue;
+    final excluded = entry.isFolder ? folderExclusions : trackExclusions;
+    excluded.putIfAbsent(root, () => <String>{}).add(path);
+  }
+  for (final entry in legacyRemovedFolders.entries) {
+    folderExclusions
+        .putIfAbsent(entry.key, () => <String>{})
+        .addAll(entry.value);
+  }
+  final trackIndex = PathMembershipIndex(
+    trackExclusions.values.expand((paths) => paths),
+  );
+  final folderIndex = PathMembershipIndex(
+    folderExclusions.values.expand((paths) => paths),
+  );
+  final retained = tracks
+      .where(
+        (track) =>
+            !trackIndex.containsEquivalent(track.path) &&
+            !folderIndex.containsAncestorOrEqual(track.path) &&
+            !folderIndex.containsAncestorOrEqual(track.groupKey),
+      )
+      .toList();
+  final activeGroups = retained.map((track) => track.groupKey).toSet();
+  final order = catalogLists[0].where(activeGroups.contains).toList();
+  final ordered = order.toSet();
+  order.addAll(activeGroups.where(ordered.add));
+  return LibraryPersistedState(
+    tracks: retained,
+    entriesByLibrary: entriesByLibrary,
+    groupOrder: order,
+    watchedFolders: catalogLists[1],
+    watchedLibraries: catalogLists[2],
+    folderExclusions: folderExclusions,
+    trackExclusions: trackExclusions,
+  );
 }

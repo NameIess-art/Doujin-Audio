@@ -3,6 +3,17 @@ import 'dart:collection';
 import '../../../core/media/music_track.dart';
 import '../../../core/immutable_collections.dart';
 
+enum WorkNameDisplay { workTitle, folderName }
+
+enum LibrarySortCriterion {
+  name,
+  voiceActor,
+  duration,
+  releaseDate,
+  addedAt,
+  playbackTime,
+}
+
 abstract class LibraryNode {
   String get name;
   String get path;
@@ -28,6 +39,9 @@ class FolderNode extends LibraryNode {
   int? _cachedTotalTrackCount;
   int? _cachedLeafFolderCount;
   Duration? _cachedTotalDuration;
+  bool _trackDatesCached = false;
+  DateTime? _earliestScannedAt;
+  DateTime? _latestPlayedAt;
 
   bool get isModuleNode => depth == 0;
   List<LibraryNode> get children => _childrenView;
@@ -94,6 +108,34 @@ class FolderNode extends LibraryNode {
     return duration;
   }
 
+  DateTime? get earliestScannedAt {
+    _cacheTrackDates();
+    return _earliestScannedAt;
+  }
+
+  DateTime? get latestPlayedAt {
+    _cacheTrackDates();
+    return _latestPlayedAt;
+  }
+
+  void _cacheTrackDates() {
+    if (_trackDatesCached) return;
+    for (final track in allTracks) {
+      final scannedAt = track.scannedAt;
+      if (scannedAt != null &&
+          (_earliestScannedAt == null ||
+              scannedAt.isBefore(_earliestScannedAt!))) {
+        _earliestScannedAt = scannedAt;
+      }
+      final playedAt = track.lastPlayedAt;
+      if (playedAt != null &&
+          (_latestPlayedAt == null || playedAt.isAfter(_latestPlayedAt!))) {
+        _latestPlayedAt = playedAt;
+      }
+    }
+    _trackDatesCached = true;
+  }
+
   int get leafFolderCount {
     final cached = _cachedLeafFolderCount;
     if (cached != null) {
@@ -114,12 +156,18 @@ class FolderNode extends LibraryNode {
     required MusicTrack? firstTrack,
     Duration? totalDuration,
     List<MusicTrack>? allTracks,
+    bool trackDatesCached = false,
+    DateTime? earliestScannedAt,
+    DateTime? latestPlayedAt,
   }) {
     _cachedTotalTrackCount = totalTrackCount;
     _cachedLeafFolderCount = leafFolderCount;
     _firstTrackCache = firstTrack;
     _cachedTotalDuration = totalDuration;
     _allTracksCache = allTracks == null ? null : immutableList(allTracks);
+    _trackDatesCached = trackDatesCached;
+    _earliestScannedAt = earliestScannedAt;
+    _latestPlayedAt = latestPlayedAt;
   }
 
   void addChild(LibraryNode child) {
@@ -153,6 +201,9 @@ class FolderNode extends LibraryNode {
     _cachedTotalTrackCount = null;
     _cachedLeafFolderCount = null;
     _cachedTotalDuration = null;
+    _trackDatesCached = false;
+    _earliestScannedAt = null;
+    _latestPlayedAt = null;
     _parent?._invalidateMetrics();
   }
 }

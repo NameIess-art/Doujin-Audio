@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/list_sorting_utils.dart';
-import 'package:doujin_audio/features/library/presentation/library_sorting.dart';
+import 'package:doujin_audio/features/library/application/library_sorting.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_sorting.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 
@@ -8,7 +8,6 @@ void main() {
   group('library sorting values', () {
     final first = LibrarySortValue(
       name: 'Alpha 2',
-      libraryKey: '/library/a',
       voiceActor: 'Actor A',
       duration: const Duration(minutes: 2),
       releaseDate: DateTime(2024),
@@ -17,7 +16,6 @@ void main() {
     );
     final second = LibrarySortValue(
       name: 'Beta 10',
-      libraryKey: '/library/b',
       voiceActor: 'Actor B',
       duration: const Duration(minutes: 4),
       releaseDate: DateTime(2025),
@@ -64,7 +62,6 @@ void main() {
     test('unknown values sort after known values', () {
       const unknown = LibrarySortValue(
         name: 'Unknown',
-        libraryKey: null,
         voiceActor: null,
         duration: null,
         releaseDate: null,

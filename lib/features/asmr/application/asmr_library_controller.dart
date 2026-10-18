@@ -48,7 +48,7 @@ class AsmrLibraryController extends ChangeNotifier
         context.contentEpoch == _contentEpoch,
     localWorks: (category) =>
         category == AsmrCategoryType.favorites ? _favoriteWorks : _historyWorks,
-    decorateWork: _decorateWork,
+    favoriteIds: () => _favoriteIds,
     currentContext: () => _categoryRequestContext,
   );
 
@@ -99,11 +99,6 @@ class AsmrLibraryController extends ChangeNotifier
   void notifyListeners() {
     if (_disposed) return;
     super.notifyListeners();
-  }
-
-  void _commitPresentation(VoidCallback commit, {bool Function()? isCurrent}) {
-    if (isCurrent != null && !isCurrent()) return;
-    commit();
   }
 
   Future<T> _runStateMutation<T>(Future<T> Function() mutation) {
@@ -313,7 +308,7 @@ class AsmrLibraryController extends ChangeNotifier
     _catalog.updateLocalCounts();
     _initialized = true;
     _bumpGlobalRevision();
-    _commitPresentation(notifyListeners);
+    notifyListeners();
     if (restoreAccountSession) {
       unawaited(restoreAsmrAccountSession());
     }
@@ -332,12 +327,12 @@ class AsmrLibraryController extends ChangeNotifier
       if (identical(_authRestoreTask, task)) {
         _authRestoreTask = null;
         _bumpGlobalRevision();
-        _commitPresentation(notifyListeners);
+        notifyListeners();
       }
     });
     _authRestoreTask = task;
     _bumpGlobalRevision();
-    _commitPresentation(notifyListeners);
+    notifyListeners();
     return task;
   }
 
@@ -359,20 +354,13 @@ class AsmrLibraryController extends ChangeNotifier
       _applyAccountSnapshot(snapshot);
       _lastSyncError = null;
       _bumpGlobalRevision();
-      final appliedEpoch = _authEpoch;
-      _commitPresentation(
-        notifyListeners,
-        isCurrent: () => appliedEpoch == _authEpoch,
-      );
+      notifyListeners();
       _refreshLoadedCategoriesForCurrentAuth();
     } catch (error) {
       if (requestEpoch != _authEpoch) return;
       _lastSyncError = error;
       _bumpGlobalRevision();
-      _commitPresentation(
-        notifyListeners,
-        isCurrent: () => requestEpoch == _authEpoch,
-      );
+      notifyListeners();
     }
   }
 
@@ -721,10 +709,6 @@ class AsmrLibraryController extends ChangeNotifier
       searchSession: searchSession,
       context: _categoryRequestContext,
     );
-  }
-
-  AsmrWork _decorateWork(AsmrWork work) {
-    return work.copyWith(isFavorite: _favoriteIds.contains(work.id));
   }
 
   bool isTrackHidden(int workId, AsmrTrackFile node) =>

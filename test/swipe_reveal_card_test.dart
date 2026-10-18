@@ -80,17 +80,20 @@ void main() {
               (widget) =>
                   widget is LibraryLikeScrollableText && widget.text == text,
             );
-            final position = tester
-                .state<ScrollableState>(
-                  find.descendant(of: row, matching: find.byType(Scrollable)),
-                )
-                .position;
-            if (target == 'end') position.jumpTo(position.maxScrollExtent);
+            final horizontalScroll = find.descendant(
+              of: row,
+              matching: find.byType(Scrollable),
+            );
+            expect(horizontalScroll, longText ? findsOneWidget : findsNothing);
+            final position = longText
+                ? tester.state<ScrollableState>(horizontalScroll).position
+                : null;
+            if (target == 'end') position!.jumpTo(position.maxScrollExtent);
             if (target == 'middle') {
-              position.jumpTo(position.maxScrollExtent / 2);
+              position!.jumpTo(position.maxScrollExtent / 2);
             }
             await tester.pump();
-            final before = position.pixels;
+            final before = position?.pixels;
             final rect = tester.getRect(row);
             final start = target == 'blank'
                 ? Offset(rect.right - 24, rect.center.dy)
@@ -107,12 +110,12 @@ void main() {
               find.byTooltip(direction < 0 ? 'Remove' : 'Pin'),
               shouldSwipe ? findsOneWidget : findsNothing,
             );
-            if (shouldSwipe) {
+            if (shouldSwipe && position != null) {
               expect(position.pixels, before);
-            } else {
+            } else if (!shouldSwipe) {
               expect(
-                position.pixels,
-                direction < 0 ? greaterThan(before) : lessThan(before),
+                position!.pixels,
+                direction < 0 ? greaterThan(before!) : lessThan(before!),
               );
             }
             if (target == 'middle') {

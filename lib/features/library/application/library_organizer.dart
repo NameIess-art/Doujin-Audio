@@ -297,6 +297,18 @@ class LibraryOrganizer {
         ),
       );
       group.tracks.add(track);
+      final scannedAt = track.scannedAt;
+      if (scannedAt != null &&
+          (group.earliestScannedAt == null ||
+              scannedAt.isBefore(group.earliestScannedAt!))) {
+        group.earliestScannedAt = scannedAt;
+      }
+      final playedAt = track.lastPlayedAt;
+      if (playedAt != null &&
+          (group.latestPlayedAt == null ||
+              playedAt.isAfter(group.latestPlayedAt!))) {
+        group.latestPlayedAt = playedAt;
+      }
 
       final directoryPath = PathMatcher.isContentUri(track.path)
           ? track.groupKey
@@ -340,6 +352,9 @@ class LibraryOrganizer {
             (total, track) => total + track.duration,
           ),
           allTracks: immutableTracks,
+          trackDatesCached: true,
+          earliestScannedAt: group.earliestScannedAt,
+          latestPlayedAt: group.latestPlayedAt,
         );
       leafFolderCount += groupLeafFolderCount;
       topLevel.add(folder);
@@ -579,4 +594,6 @@ class _LibraryCardGroup {
   final List<MusicTrack> tracks = <MusicTrack>[];
   final Set<String> directories = <String>{};
   final Set<String> nonLeafDirectories = <String>{};
+  DateTime? earliestScannedAt;
+  DateTime? latestPlayedAt;
 }

@@ -7,6 +7,7 @@ import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter/services.dart';
@@ -4411,6 +4412,173 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
+  for (final hideBeforeRotation in [false, true]) {
+    testWidgets(
+      'fullscreen video exit retains system bar inset on first rotation '
+      'with bars hidden before rotation $hideBeforeRotation',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        _setLogicalTestViewSize(tester, const Size(800, 1400));
+        tester.view.padding = const FakeViewPadding(top: 32);
+        tester.view.viewPadding = const FakeViewPadding(top: 32);
+        addTearDown(() {
+          debugDefaultTargetPlatformOverride = null;
+          tester.view.resetPadding();
+          tester.view.resetViewPadding();
+        });
+        final orientation = AppOrientationController(
+          setPreferredOrientations: (_) async {},
+          setSystemUiMode: (_) async {},
+        );
+        final capture = GlobalKey();
+        await _pumpAppShell(
+          tester,
+          captureKey: capture,
+          playbackTrack: testMusicTrack(
+            name: 'Video',
+            path: '/videos/insets.mp4',
+            groupKey: '/videos',
+            groupTitle: 'Videos',
+          ).copyWith(isVideo: true),
+          orientationController: orientation,
+        );
+        final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+        final lease = await orientation.enterVideoFullscreen();
+        addTearDown(lease.release);
+        unawaited(
+          navigator.push<void>(
+            buildAppPageRoute<void>(
+              context: navigator.context,
+              fullscreenDialog: true,
+              child: SessionVideoFullscreenPage(
+                sessionId: 'orientation_session',
+                trackPath: '/videos/insets.mp4',
+                fullscreenLease: lease,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final exit = find.byKey(const ValueKey('fullscreen_video_exit'));
+        final headerCenterY =
+            AppPageHeaderMetrics.padding.top +
+            AppPageHeaderMetrics.buttonSize / 2;
+        expect(tester.getCenter(exit).dy, 32 + headerCenterY);
+
+        if (hideBeforeRotation) {
+          tester.view.padding = FakeViewPadding.zero;
+          tester.view.viewPadding = FakeViewPadding.zero;
+          await tester.pump();
+          expect(tester.getCenter(exit).dy, 32 + headerCenterY);
+        }
+        tester.view.physicalSize = const Size(1400, 800);
+        if (!hideBeforeRotation) {
+          tester.view.padding = const FakeViewPadding(top: 24);
+          tester.view.viewPadding = const FakeViewPadding(top: 24);
+        }
+        await tester.pumpAndSettle();
+        final landscapeInset = hideBeforeRotation ? 32.0 : 24.0;
+        expect(tester.getCenter(exit).dy, landscapeInset + headerCenterY);
+
+        tester.view.padding = FakeViewPadding.zero;
+        tester.view.viewPadding = FakeViewPadding.zero;
+        await tester.pump();
+        expect(tester.getCenter(exit).dy, landscapeInset + headerCenterY);
+        // Once reported, the actual landscape inset replaces the portrait fallback.
+        tester.view.padding = const FakeViewPadding(top: 24);
+        tester.view.viewPadding = const FakeViewPadding(top: 24);
+        await tester.pump();
+        expect(tester.getCenter(exit).dy, 24 + headerCenterY);
+        tester.view.padding = FakeViewPadding.zero;
+        tester.view.viewPadding = FakeViewPadding.zero;
+        await tester.pump();
+        expect(tester.getCenter(exit).dy, 24 + headerCenterY);
+
+        Future<int> exitWhitePixels() async {
+          final rect = tester.getRect(exit);
+          return (await tester.runAsync(() async {
+            final boundary = tester.renderObject<RenderRepaintBoundary>(
+              find.byKey(capture),
+            );
+            final image = await boundary.toImage();
+            final bytes = (await image.toByteData())!;
+            var count = 0;
+            for (var y = rect.top.ceil(); y < rect.bottom.floor(); y++) {
+              for (var x = rect.left.ceil(); x < rect.right.floor(); x++) {
+                final index = (y * image.width + x) * 4;
+                if (bytes.getUint8(index) > 200 &&
+                    bytes.getUint8(index + 1) > 200 &&
+                    bytes.getUint8(index + 2) > 200) {
+                  count++;
+                }
+              }
+            }
+            image.dispose();
+            return count;
+          }))!;
+        }
+
+        for (var cycle = 0; cycle < 3; cycle++) {
+          await tester.pump(const Duration(seconds: 3));
+          await tester.pumpAndSettle();
+          tester.view.physicalSize = cycle.isEven
+              ? const Size(800, 1400)
+              : const Size(1400, 800);
+          await tester.pumpAndSettle();
+          expect(await exitWhitePixels(), 0);
+          await tester.tap(
+            find.byKey(const ValueKey('fullscreen_video_gesture_surface')),
+          );
+          // Single taps wait for the double-tap recognition window.
+          await tester.pump(const Duration(milliseconds: 350));
+          await tester.pumpAndSettle();
+          expect(
+            tester.widget<AnimatedOpacity>(find.byKey(
+              const ValueKey('fullscreen_video_controls'),
+            )).opacity,
+            1,
+          );
+          expect(await exitWhitePixels(), greaterThan(10));
+        }
+        tester.view.physicalSize = const Size(1400, 800);
+        await tester.pumpAndSettle();
+        await tester.tap(exit);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(find.byType(SessionVideoFullscreenPage), findsNothing);
+        unawaited(
+          navigator.push<void>(
+            buildAppPageRoute<void>(
+              context: navigator.context,
+              child: const Scaffold(
+                body: TopPageHeader(
+                  title: 'Detail',
+                  leading: BackButton(key: ValueKey('reference_video_back')),
+                ),
+              ),
+            ),
+          ),
+        );
+        // The underlying session can keep a loading spinner ticking after the
+        // long rotation sequence; wait only for the finite route transitions.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(
+          tester
+              .getCenter(find.byKey(const ValueKey('reference_video_back')))
+              .dy,
+          24 + headerCenterY,
+        );
+        navigator.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pump(const Duration(milliseconds: 200));
+        debugDefaultTargetPlatformOverride = null;
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('landscape shell keeps its top inset when status bar hides', (
     tester,
   ) async {
@@ -7018,6 +7186,7 @@ void _setLogicalTestViewSize(WidgetTester tester, Size size) {
 
 Future<_AppShellHarness> _pumpAppShell(
   WidgetTester tester, {
+  GlobalKey? captureKey,
   bool includePlaybackSession = true,
   double playbackVolume = 1,
   MusicTrack? playbackTrack,
@@ -7096,27 +7265,28 @@ Future<_AppShellHarness> _pumpAppShell(
     playbackService.registerSession(session);
   }
 
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [
-        ..._testRuntimeOverrides(runtimeGraph),
-        themeProviderInstanceProvider.overrideWith((ref) => themeProvider),
-        appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
-        appOrientationControllerProvider.overrideWithValue(
-          orientationController ??
-              AppOrientationController(setPreferredOrientations: (_) async {}),
-        ),
-        appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
-        ...additionalOverrides,
-      ],
-      child: MusicPlayerApp(
-        shouldShowOnboarding: shouldShowOnboarding,
-        presentationInitializer: presentationInitializer,
-        runtimeInitializer: runtimeInitializer,
-        secondaryInitializer: secondaryInitializer,
-        onBootstrapSettled: onBootstrapSettled,
+  final app = ProviderScope(
+    overrides: [
+      ..._testRuntimeOverrides(runtimeGraph),
+      themeProviderInstanceProvider.overrideWith((ref) => themeProvider),
+      appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
+      appOrientationControllerProvider.overrideWithValue(
+        orientationController ??
+            AppOrientationController(setPreferredOrientations: (_) async {}),
       ),
+      appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
+      ...additionalOverrides,
+    ],
+    child: MusicPlayerApp(
+      shouldShowOnboarding: shouldShowOnboarding,
+      presentationInitializer: presentationInitializer,
+      runtimeInitializer: runtimeInitializer,
+      secondaryInitializer: secondaryInitializer,
+      onBootstrapSettled: onBootstrapSettled,
     ),
+  );
+  await tester.pumpWidget(
+    captureKey == null ? app : RepaintBoundary(key: captureKey, child: app),
   );
   if (waitForStartup) {
     await _pumpMainScreenAnimations(tester, startup: true);

@@ -395,7 +395,12 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
                   );
                 }
                 final stableTop = isAndroidLandscape
-                    ? _stableLandscapeTopPadding
+                    // The first landscape frame can arrive after immersive
+                    // mode has hidden both inset values. Retain the known
+                    // portrait height until Android reports a landscape inset.
+                    ? (_stableLandscapeTopPadding > 0
+                          ? _stableLandscapeTopPadding
+                          : _stablePortraitTopPadding)
                     : !isLandscape
                     ? _stablePortraitTopPadding
                     : 0.0;

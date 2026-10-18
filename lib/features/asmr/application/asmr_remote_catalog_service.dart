@@ -129,15 +129,6 @@ class AsmrRemoteCatalogService {
         await (cancellationToken?.waitFor(localTracksFuture) ??
             localTracksFuture);
     cancellationToken?.throwIfCancelled();
-    final request = AsmrRecommendationRankRequest(
-      candidates: candidateList,
-      localTracks: localTracks,
-      favoriteWorks: favoriteWorks,
-      historyWorks: historyWorks,
-      refreshSeed: refreshSeed,
-      limit: null,
-      explorationWorkIds: promotedIds,
-    );
     final ranking = AppLogService.measureAsync(
       'asmr_recommendation_rank',
       () => _recommendationEngine.rankAsync(
@@ -153,9 +144,7 @@ class AsmrRemoteCatalogService {
         'localTracks': localTracks.length,
         'favorites': favoriteWorks.length,
         'history': historyWorks.length,
-        'backgroundIsolate': _recommendationEngine.usesBackgroundIsolate(
-          request,
-        ),
+        'backgroundIsolate': true,
       },
     );
     return await (cancellationToken?.waitFor(ranking) ?? ranking);

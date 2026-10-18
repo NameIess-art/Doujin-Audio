@@ -41,7 +41,6 @@ import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.da
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/presentation/work_image_viewer_page.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_breadcrumbs.dart';
-import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/features/library/application/work_text_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_store.dart';

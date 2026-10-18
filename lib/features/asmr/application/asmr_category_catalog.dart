@@ -1,5 +1,7 @@
 import 'dart:collection';
 
+import 'package:flutter/foundation.dart';
+
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../domain/asmr_models.dart';
@@ -32,6 +34,7 @@ typedef _FilteredWorksKey = ({
 
 final class _CategoryState {
   List<AsmrWork>? works;
+  Set<int> workIds = const <int>{};
   bool isLoading = false;
   bool isLoadingMore = false;
   int page = 1;
@@ -65,19 +68,19 @@ final class AsmrCategoryCatalog {
     required bool Function(AsmrCategoryRequestContext) isContextCurrent,
     required AsmrCategoryRequestContext Function() currentContext,
     required List<AsmrWork> Function(AsmrCategoryType) localWorks,
-    required AsmrWork Function(AsmrWork) decorateWork,
+    required Set<int> Function() favoriteIds,
   }) : _remoteCatalogService = remoteCatalogService,
        _onChanged = onChanged,
        _isContextCurrent = isContextCurrent,
        _currentContext = currentContext,
        _localWorks = localWorks,
-       _decorateWork = decorateWork;
+       _favoriteIds = favoriteIds;
   final AsmrRemoteCatalogService _remoteCatalogService;
   final void Function() _onChanged;
   final bool Function(AsmrCategoryRequestContext) _isContextCurrent;
   final AsmrCategoryRequestContext Function() _currentContext;
   final List<AsmrWork> Function(AsmrCategoryType) _localWorks;
-  final AsmrWork Function(AsmrWork) _decorateWork;
+  final Set<int> Function() _favoriteIds;
   final Map<_CategoryKey, _CategoryState> _categories = {};
   int _searchEpoch = 1;
   int get searchEpoch => _searchEpoch;
@@ -483,11 +486,10 @@ final class AsmrCategoryCatalog {
         cancellationToken,
       );
       if (!_isCurrent(cacheKey, request)) return;
-      final ids = <int>{};
-      final frozen = immutableList(
-        result.works.where((work) => ids.add(work.id)).map(_decorateWork),
-      );
-      state.works = frozen;
+      final prepared = await _preparePage(state, result, cancellationToken);
+      if (!_isCurrent(cacheKey, request)) return;
+      state.works = prepared.additions;
+      state.workIds = prepared.ids;
       _applyPageResult(state, cacheKey.query, result);
       state.revision++;
       _onChanged();
@@ -579,15 +581,20 @@ final class AsmrCategoryCatalog {
         cancellationToken,
       );
       if (!_isCurrent(key, request)) return;
-      final ids = state.works!.map((work) => work.id).toSet();
-      final additions = result.works
-          .where((work) => ids.add(work.id))
-          .map(_decorateWork)
-          .toList();
-      state.works = immutableList([...state.works!, ...additions]);
+      final prepared = await _preparePage(
+        state,
+        result,
+        cancellationToken,
+        append: true,
+      );
+      if (!_isCurrent(key, request)) return;
+      // Retain existing model identities and any favorites changed while the
+      // worker prepared this page. Only the new page crosses the isolate back.
+      state.works = immutableList([...state.works!, ...prepared.additions]);
+      state.workIds = prepared.ids;
       state.revision++;
       _applyPageResult(state, query, result);
-      state.needsLoadMoreRetry = additions.isEmpty && state.hasMore;
+      state.needsLoadMoreRetry = prepared.additions.isEmpty && state.hasMore;
       _onChanged();
     } on AsmrRequestCancelled {
       // Retain completed pages so returning to this category can resume.
@@ -607,6 +614,27 @@ final class AsmrCategoryCatalog {
     }
   }
 
+  Future<_PreparedCategoryPage> _preparePage(
+    _CategoryState state,
+    AsmrWorkPage page,
+    AsmrRequestCancellationToken cancellationToken, {
+    bool append = false,
+  }) async {
+    while (true) {
+      cancellationToken.throwIfCancelled();
+      final favorites = _favoriteIds();
+      final prepared = await cancellationToken.waitFor(
+        compute(_prepareCategoryPage, (
+          existingIds: append ? state.workIds : const <int>{},
+          incoming: page.works,
+          favoriteIds: favorites,
+        )),
+      );
+      cancellationToken.throwIfCancelled();
+      if (identical(favorites, _favoriteIds())) return prepared;
+    }
+  }
+
   void _applyPageResult(
     _CategoryState state,
     String query,
@@ -618,4 +646,22 @@ final class AsmrCategoryCatalog {
     state.hasMore =
         result.hasMore && (state.works?.length ?? 0) < result.totalCount;
   }
+}
+
+typedef _PreparedCategoryPage = ({List<AsmrWork> additions, Set<int> ids});
+
+_PreparedCategoryPage _prepareCategoryPage(
+  ({Set<int> existingIds, List<AsmrWork> incoming, Set<int> favoriteIds})
+  request,
+) {
+  final ids = <int>{...request.existingIds};
+  final additions = <AsmrWork>[];
+  for (final work in request.incoming) {
+    if (!ids.add(work.id)) continue;
+    final favorite = request.favoriteIds.contains(work.id);
+    additions.add(
+      work.isFavorite == favorite ? work : work.copyWith(isFavorite: favorite),
+    );
+  }
+  return (additions: immutableList(additions), ids: immutableSet(ids));
 }

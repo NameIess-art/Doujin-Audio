@@ -7754,6 +7754,12 @@ void main() {
       final exit = find.byKey(const ValueKey('fullscreen_video_exit'));
       final portraitExitCenter = tester.getCenter(exit);
       expect(
+        portraitExitCenter.dy,
+        24 +
+            AppPageHeaderMetrics.padding.top +
+            AppPageHeaderMetrics.buttonSize / 2,
+      );
+      expect(
         find.byType(NativeSessionVideoSurface, skipOffstage: false),
         findsOneWidget,
       );
@@ -7761,13 +7767,19 @@ void main() {
       tester.view.physicalSize = const Size(3840, 2880);
       await tester.pumpAndSettle();
       expect(tester.getCenter(exit), portraitExitCenter);
-      // Android can report the rotated viewport before immersive system bars
-      // disappear, and reveal them again on a later edge swipe.
+      // This fixture has no app-level inset retention. The controls must honor
+      // its supplied inset; the real shell's rotation retention is tested there.
       for (final systemBarTop in [0.0, 72.0, 0.0]) {
         tester.view.viewPadding = FakeViewPadding(top: systemBarTop);
         tester.view.padding = FakeViewPadding(top: systemBarTop);
         await tester.pump();
-        expect(tester.getCenter(exit), portraitExitCenter);
+        expect(
+          tester.getCenter(exit),
+          Offset(
+            portraitExitCenter.dx,
+            portraitExitCenter.dy - 24 + systemBarTop / 3,
+          ),
+        );
       }
       expect(tester.state(inlineViewport), same(originalState));
       expect(

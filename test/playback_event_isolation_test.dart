@@ -42,6 +42,7 @@ void main() {
       await tester.runAsync(harness.graph.library.ensureCardSnapshot);
       await tester.pumpWidget(harness.build());
       await tester.pumpAndSettle();
+      await harness.waitForLibrarySnapshot(tester);
       final buildsBefore = Map<String, int>.of(harness.builds);
       final sortedBefore = harness.sorted;
       final readsBefore = second.positionReads;
@@ -155,6 +156,7 @@ void main() {
         await tester.runAsync(harness.graph.library.ensureCardSnapshot);
         await tester.pumpWidget(harness.build());
         await tester.pumpAndSettle();
+        await harness.waitForLibrarySnapshot(tester);
         final buildsBefore = Map<String, int>.of(harness.builds);
         final readsBefore = harness.sessions
             .map((s) => s.positionReads)
@@ -251,7 +253,24 @@ final class _PlaybackIsolationHarness {
   late final AudioRuntimeCoordinator runtime;
   MockStreamHandlerEventSink? events;
   Object? sorted;
+  int libraryCardCount = -1;
+  Object? librarySortingError;
   int nativeCalls = 0;
+
+  Future<void> waitForLibrarySnapshot(WidgetTester tester) async {
+    for (var attempt = 0; attempt < 100; attempt++) {
+      await tester.pump();
+      expect(librarySortingError, isNull);
+      if (libraryCardCount == graph.library.libraryCards.length) {
+        await tester.pumpAndSettle();
+        return;
+      }
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+    }
+    fail('Initial library projection did not finish before isolation sampling');
+  }
 
   Future<void> emit(Map<String, Object?> event) async {
     events!.success(event);
@@ -332,7 +351,10 @@ final class _PlaybackIsolationHarness {
           _observe('header', (ref) => ref.watch(playlistHeaderUiProvider)),
           _observe('overlay', (ref) => ref.watch(mainOverlayUiProvider)),
           _observe('library', (ref) {
-            ref.watch(librarySortedTreeUiProvider);
+            libraryCardCount = ref.watch(librarySortedTreeUiProvider).length;
+            librarySortingError = ref.watch(
+              librarySortedSnapshotUiProvider.select((state) => state.error),
+            );
             ref.watch(libraryHeaderUiProvider);
           }),
           _observe('settings', (ref) => ref.watch(settingsStateProvider)),

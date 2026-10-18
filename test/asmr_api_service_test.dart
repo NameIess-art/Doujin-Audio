@@ -179,6 +179,8 @@ void main() {
                   {
                     'id': 72,
                     'title': 'Fallback',
+                    'progress': 'marked',
+                    'updated_at': '2026-10-18T08:30:00Z',
                     'i18n': {
                       'zh-cn': {'title': '中文标题'},
                       'ja-jp': {'title': '日本語'},
@@ -215,8 +217,15 @@ void main() {
             sort: 'desc',
             language: language,
           );
+          final reviews = await service.fetchReviews(
+            token: 'token',
+            language: language,
+          );
           expect(page.works.single.title, title);
           expect(search.works.single.title, title);
+          expect(reviews.single.work.title, title);
+          expect(reviews.single.progress, 'marked');
+          expect(reviews.single.updatedAt, DateTime.utc(2026, 10, 18, 8, 30));
         }
         final tree = await service.fetchTrackTree(72);
         final track = tree.single.children.single;
@@ -226,6 +235,52 @@ void main() {
         expect(track.workId, 72);
         expect(track.sourceId, 'RJ123456');
         expect(track.streamUrl, 'https://example.test/voice.mp3');
+      } finally {
+        service.close();
+        await subscription.cancel();
+        await server.close(force: true);
+      }
+    },
+  );
+
+  test(
+    'page and review model errors do not trigger endpoint failover',
+    () async {
+      var payload = '[]';
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(payload);
+        await request.response.close();
+      });
+      final client = HttpClient();
+      final hosts = <String>[];
+      client.findProxy = (uri) {
+        hosts.add(uri.host);
+        return 'DIRECT';
+      };
+      final service = AsmrApiService(
+        httpClient: client,
+        baseUri: Uri.parse('http://${server.address.address}:${server.port}'),
+      );
+      try {
+        for (final request in <Future<Object> Function()>[
+          () => service.fetchWorks(order: 'release', sort: 'desc'),
+          () => service.searchWorks(
+            keyword: 'voice',
+            order: 'release',
+            sort: 'desc',
+          ),
+          () => service.fetchReviews(token: 'token'),
+        ]) {
+          payload = '[]';
+          await expectLater(request(), throwsA(isA<HttpException>()));
+          payload = '{"works":[{"id":1,"sourceId":42}]}';
+          await expectLater(request(), throwsA(isA<TypeError>()));
+          payload = '{"works":[{"title":"invalid duration","duration":1e400}]}';
+          await expectLater(request(), throwsA(isA<UnsupportedError>()));
+        }
+        expect(hosts, everyElement(server.address.address));
       } finally {
         service.close();
         await subscription.cancel();

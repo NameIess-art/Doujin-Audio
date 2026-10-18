@@ -87,6 +87,49 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   final Map<int, Animation<double>> _loadingWorkAnimations = {};
   final Set<AnimationController> _loadingBatchControllers = {};
   final Map<int, GlobalKey> _itemKeys = {};
+  List<AsmrWork>? _visibleWorksSource;
+  List<AsmrWork> _visibleWorksCache = const [];
+  Map<int, _CollapsingAsmrWork> _visibleCollapsing = const {};
+  List<String> _anchorIds = const [];
+  final Map<int, int> _workIndexById = {};
+  final Map<Key, int> _workKeyIndices = {};
+
+  List<AsmrWork> _prepareVisibleWorks(List<AsmrWork> works) {
+    if (identical(_visibleWorksSource, works) &&
+        _visibleCollapsing.length == _collapsingWorks.length &&
+        _collapsingWorks.entries.every(
+          (entry) => identical(_visibleCollapsing[entry.key], entry.value),
+        )) {
+      return _visibleWorksCache;
+    }
+    final visible = _collapsingWorks.isEmpty ? works : <AsmrWork>[...works];
+    if (_collapsingWorks.isNotEmpty) {
+      final collapsing = _collapsingWorks.values.toList()
+        ..sort((a, b) => a.originalIndex.compareTo(b.originalIndex));
+      for (final entry in collapsing) {
+        visible.insert(
+          entry.originalIndex.clamp(0, visible.length),
+          entry.work,
+        );
+      }
+    }
+    _visibleWorksSource = works;
+    _visibleCollapsing = Map.of(_collapsingWorks);
+    _visibleWorksCache = visible;
+    _workIndexById.clear();
+    _workKeyIndices.clear();
+    final anchors = <String>[];
+    for (var index = 0; index < visible.length; index++) {
+      final id = visible[index].id;
+      _workIndexById[id] = index;
+      anchors.add('$id');
+      final key = _itemKeys[id];
+      if (key != null) _workKeyIndices[key] = index;
+    }
+    _itemKeys.removeWhere((id, _) => !_workIndexById.containsKey(id));
+    _anchorIds = immutableList(anchors);
+    return visible;
+  }
 
   bool get _isActive =>
       widget.isActive() &&
@@ -311,19 +354,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _lastFavoritesRevision = state.revision;
     }
 
-    final visibleWorks = _collapsingWorks.isEmpty
-        ? works
-        : <AsmrWork>[...works];
-    if (_collapsingWorks.isNotEmpty) {
-      final sortedCollapsing = _collapsingWorks.values.toList()
-        ..sort((a, b) => a.originalIndex.compareTo(b.originalIndex));
-      for (final entry in sortedCollapsing) {
-        final insertIndex = entry.originalIndex.clamp(0, visibleWorks.length);
-        visibleWorks.insert(insertIndex, entry.work);
-      }
-    }
-    final visibleIds = visibleWorks.map((work) => work.id).toSet();
-    _itemKeys.removeWhere((id, _) => !visibleIds.contains(id));
+    final visibleWorks = _prepareVisibleWorks(works);
 
     Widget buildWorkCard(AsmrWork work) {
       final card = _AsmrWorkTreeCard(
@@ -364,10 +395,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       }
       // Rows regroup on resize; retain the complete card, including its
       // removal host and decoded cover, when it moves to another row.
-      return KeyedSubtree(
-        key: _itemKeys.putIfAbsent(work.id, GlobalKey.new),
-        child: workCard,
-      );
+      final key = _itemKeys.putIfAbsent(work.id, GlobalKey.new);
+      _workKeyIndices[key] = _workIndexById[work.id]!;
+      return KeyedSubtree(key: key, child: workCard);
     }
 
     final showPlaceholder =
@@ -449,7 +479,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   if (!widget.searchSession) {
                     BrowsePageScroll.setAnchorIds(
                       context,
-                      visibleWorks.map((work) => '${work.id}'),
+                      _anchorIds,
                       columnCount: _collapsingWorks.isEmpty
                           ? columnCount
                           : null,
@@ -459,12 +489,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   }
                   final rowCount = (visibleWorks.length / columnCount).ceil();
                   final hasLoadMore = state.isLoadingMore || state.hasMore;
-                  final workIndices = columnCount == 1
-                      ? <Key, int>{
-                          for (var i = 0; i < visibleWorks.length; i++)
-                            ?_itemKeys[visibleWorks[i].id]: i,
-                        }
-                      : const <Key, int>{};
                   return workList = ListView.builder(
                     key: PageStorageKey(widget.category),
                     controller: widget.scrollController,
@@ -491,7 +515,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         return rowCount;
                       }
                       if (columnCount != 1) return null;
-                      return workIndices[key];
+                      return _workKeyIndices[key];
                     },
                     itemBuilder: (context, rowIndex) {
                       if (visibleWorks.isEmpty) {
@@ -624,7 +648,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               pageKey:
                   'asmr_list:${ref.read(asmrLibraryControllerProvider)?.browseCacheScope ?? ''}:${widget.category.name}',
               controller: widget.scrollController,
-              anchorIds: visibleWorks.map((work) => '${work.id}').toList(),
+              anchorIds: _anchorIds,
               child: content,
             ),
     );

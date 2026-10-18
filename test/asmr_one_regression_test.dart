@@ -346,6 +346,7 @@ void main() {
       PlaybackSubtitleService createService() => PlaybackSubtitleService(
         trackResolver: (_) => track,
         subtitlesDirectoryResolver: () async => directory,
+        remoteSubtitlesDirectoryResolver: () async => directory,
       );
       final subtitleTrack = await createService().load(audioPath);
 

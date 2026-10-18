@@ -40,7 +40,7 @@ class LibraryService {
       <String, Set<String>>{};
   final Map<String, Set<String>> excludedLibraryTracks =
       <String, Set<String>>{};
-  final Map<String, Map<String, LibraryEntry>> libraryEntriesByLibrary =
+  Map<String, Map<String, LibraryEntry>> libraryEntriesByLibrary =
       <String, Map<String, LibraryEntry>>{};
   bool isScanning = false;
   bool isBackgroundScanning = false;

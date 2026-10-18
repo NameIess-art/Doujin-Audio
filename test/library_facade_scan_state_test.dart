@@ -405,6 +405,11 @@ final class _RecordingAudioDetailRepository extends AudioDetailRepository {
   }
 
   @override
+  Future<List<AudioDetailLoadResult>> loadMany(
+    Iterable<AudioDetailTarget> targets,
+  ) => Future.wait(targets.map(load));
+
+  @override
   Future<AudioDetailSaveResult> save(AudioDetail detail) async {
     savedTargets.add(detail.target);
     return AudioDetailSaveResult(

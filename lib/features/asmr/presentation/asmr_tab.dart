@@ -16,6 +16,7 @@ import '../application/asmr_download_models.dart';
 import '../application/asmr_api_service.dart';
 import '../application/asmr_library_controller.dart';
 import '../../../core/media/search_query_utils.dart';
+import '../../../core/immutable_collections.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/widgets/rj_code_overlay.dart';
 import '../../../core/logging/app_log_service.dart';

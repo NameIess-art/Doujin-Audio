@@ -4,13 +4,14 @@ import '../../../core/app_language.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/cover_image_resolution.dart';
 import '../../asmr/domain/asmr_download.dart';
+import '../../library/domain/library_node.dart';
 import '../../player/domain/audio_effects.dart';
 
 export '../../../core/media/cover_image_resolution.dart';
+export '../../library/domain/library_node.dart'
+    show LibrarySortCriterion, WorkNameDisplay;
 
 enum StartupPage { asmrOne, library, playlist }
-
-enum WorkNameDisplay { workTitle, folderName }
 
 enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
 
@@ -21,15 +22,6 @@ enum TransientAudioFocusLossBehavior { duck, pause }
 enum InterruptionResumeBehavior { stayPaused, resume }
 
 enum SleepModeAutoTrigger { manual, afterPlayback5min, afterCountdown5min }
-
-enum LibrarySortCriterion {
-  name,
-  voiceActor,
-  duration,
-  releaseDate,
-  addedAt,
-  playbackTime,
-}
 
 enum PlaylistSortCriterion {
   name,

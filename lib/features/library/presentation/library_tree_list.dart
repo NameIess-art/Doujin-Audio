@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
@@ -10,6 +11,7 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/undoable_removal_service.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/animated_reorder.dart';
 import '../../../core/widgets/library_like_cards.dart';
@@ -23,6 +25,113 @@ class _LoadedLibraryFolder {
 
   final FolderNode folder;
   final int revision;
+}
+
+typedef _ProjectionInput = ({
+  List<LibraryNode> tree,
+  Map<String, _LoadedLibraryFolder> loaded,
+  Set<String> expanded,
+  Map<String, bool> motions,
+  Set<String> errors,
+});
+
+typedef _LibraryProjection = ({
+  List<
+    ({List<int> indices, int depth, bool revealed, bool animate, bool error})
+  >
+  rows,
+  List<String> ids,
+  List<String> reorderIds,
+  Map<String, int> indices,
+  Set<String> nodeIds,
+  bool uniformRoots,
+});
+
+_LibraryProjection _buildLibraryProjection(_ProjectionInput input) {
+  final rows =
+      <
+        ({
+          List<int> indices,
+          int depth,
+          bool revealed,
+          bool animate,
+          bool error,
+        })
+      >[];
+  final ids = <String>[];
+  final reorderIds = <String>[];
+  final indicesById = <String, int>{};
+  var uniformRoots = true;
+  void addNode(
+    LibraryNode node,
+    int depth, {
+    required List<int> indices,
+    FolderNode? loaded,
+    bool revealed = true,
+    bool animate = false,
+  }) {
+    rows.add((
+      indices: indices,
+      depth: depth,
+      revealed: revealed,
+      animate: animate,
+      error: false,
+    ));
+    final id = PathMatcher.equivalenceKey(node.path);
+    indicesById[id] = rows.length - 1;
+    ids.add(id);
+    reorderIds.add(id);
+    uniformRoots = uniformRoots && depth == 0 && isSelectableLibraryNode(node);
+    if (node is! FolderNode) return;
+    final path = PathMatcher.normalize(node.path);
+    final expanded = input.expanded.contains(path);
+    final motion = input.motions[path];
+    if (!expanded && motion != false) return;
+    final showChildren = revealed && expanded;
+    final animateChildren = animate || (showChildren && motion == true);
+    final children = (loaded ?? node).children;
+    if (expanded && children.isEmpty && input.errors.contains(path)) {
+      rows.add((
+        indices: indices,
+        depth: depth + 1,
+        revealed: showChildren,
+        animate: animateChildren,
+        error: true,
+      ));
+      ids.add(id);
+      uniformRoots = false;
+    } else {
+      for (var index = 0; index < children.length; index++) {
+        addNode(
+          children[index],
+          depth + 1,
+          indices: [...indices, index],
+          revealed: showChildren,
+          animate: animateChildren,
+        );
+      }
+    }
+  }
+
+  for (var index = 0; index < input.tree.length; index++) {
+    final node = input.tree[index];
+    addNode(
+      node,
+      0,
+      indices: [index],
+      loaded: node is FolderNode
+          ? input.loaded[PathMatcher.normalize(node.path)]?.folder
+          : null,
+    );
+  }
+  return (
+    rows: List.unmodifiable(rows),
+    ids: immutableList(ids),
+    reorderIds: immutableList(reorderIds),
+    indices: Map.unmodifiable(indicesById),
+    nodeIds: reorderIds.toSet(),
+    uniformRoots: uniformRoots,
+  );
 }
 
 class LibraryTreeList extends ConsumerStatefulWidget {
@@ -75,14 +184,27 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
     ({AnimationController controller, Animation<double> opacity})
   >
   _folderLoadAnimations = {};
+  final Set<String> _pendingFolderReveals = {};
   List<VisibleLibraryItem> _visibleItemsCache = const <VisibleLibraryItem>[];
   List<String> _visibleItemIds = const [];
   List<String> _reorderItemIds = const [];
   Set<String> _visibleNodeIds = const {};
-  List<LibraryNode>? _visibleItemsSource;
-  int? _visibleItemsStructureRevision;
+  Map<String, int> _itemIndexById = const {};
+  final Map<Key, int> _itemKeyIndices = {};
   int _visibleItemsVersion = 0;
-  int _visibleItemsCacheVersion = -1;
+  (List<LibraryNode>, int, int)? _projectionRequest;
+  bool _projectionRunning = false;
+  int _presentedProjectionVersion = -1;
+  bool _uniformRoots = true;
+  bool _tickerModeEnabled = true;
+  Object? _projectionError;
+  VoidCallback? _pendingProjectionCommit;
+  late final String _projectionCommitKey =
+      'library_projection_${identityHashCode(this)}';
+  late final String _folderCommitKey =
+      'library_folders_${identityHashCode(this)}';
+  final Map<String, ({FolderNode? folder, int revision, bool animate})>
+  _pendingFolderResults = {};
   int _prunedFolderTreeRevision = -1;
   final Map<String, GlobalKey> _itemKeys = {};
   final Set<String> _removingItemIds = {};
@@ -114,6 +236,15 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    _scheduleFolderCommit();
+    _scheduleProjectionCommit();
+    if (_tickerModeEnabled &&
+        _presentedProjectionVersion == _visibleItemsVersion) {
+      for (final entry in _cardExpansionMotions.entries) {
+        _scheduleExpansionEnd(entry.key, entry.value);
+      }
+    }
     if (TickerMode.valuesOf(context).enabled && _removalMotionActive) {
       _scheduleRemovalMotionEnd();
     }
@@ -121,6 +252,10 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_projectionCommitKey);
+    UiInteractionCoordinator.instance.cancelCommit(_folderCommitKey);
+    _pendingProjectionCommit = null;
+    _pendingFolderResults.clear();
     _removalMotionTimer?.cancel();
     for (final timer in _cardExpansionMotionTimers.values) {
       timer.cancel();
@@ -210,97 +345,61 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
       }
       _visibleItemsVersion++;
     });
-    if (animate) {
-      _cardExpansionMotionTimers[normalizedPath] = Timer(
-        kAppMotionStandard,
-        () {
-          _cardExpansionMotionTimers.remove(normalizedPath);
-          if (!mounted || _cardExpansionMotions[normalizedPath] != expanded) {
-            return;
-          }
-          setState(() {
-            _cardExpansionMotions.remove(normalizedPath);
-            _visibleItemsVersion++;
-          });
-        },
-      );
-    }
     if (expanded && folder.depth == 0) {
       unawaited(_loadExpandedFolderTree(folderPath));
     }
+  }
+
+  void _scheduleExpansionEnd(String path, bool expanded) {
+    if (_cardExpansionMotionTimers.containsKey(path)) return;
+    // Preparation can wait behind scrolling or navigation. Preserve the full
+    // reveal duration from the frame that actually installs the new rows.
+    _cardExpansionMotionTimers[path] = Timer(kAppMotionStandard, () {
+      _cardExpansionMotionTimers.remove(path);
+      if (!mounted || _cardExpansionMotions[path] != expanded) return;
+      if (!_tickerModeEnabled) return;
+      setState(() {
+        _cardExpansionMotions.remove(path);
+        _visibleItemsVersion++;
+      });
+    });
   }
 
   Future<void> _loadExpandedFolderTree(String folderPath) async {
     final normalizedPath = PathMatcher.normalize(folderPath);
     final revision = widget.currentStructureRevision();
     if (_loadedFolderTrees[normalizedPath]?.revision == revision ||
-        _loadingFolderTreeRevisions[normalizedPath] == revision) {
+        _loadingFolderTreeRevisions[normalizedPath] == revision ||
+        _pendingFolderResults[normalizedPath]?.revision == revision) {
       return;
     }
     _loadingFolderTreeRevisions[normalizedPath] = revision;
     try {
       final folder = await widget.loadFolder(folderPath);
       if (!mounted) return;
-      if (folder == null || widget.currentStructureRevision() != revision) {
-        if (_folderTreeErrorPaths.add(normalizedPath)) {
-          setState(() {
-            _visibleItemsVersion++;
-          });
-        }
-        return;
-      }
-      _folderTreeErrorPaths.remove(normalizedPath);
-      if (_loadedFolderTrees[normalizedPath] == null &&
-          folder.children.isNotEmpty &&
-          _expandedCardPaths.contains(normalizedPath) &&
-          ModalRoute.isCurrentOf(context) != false &&
-          !MediaQuery.disableAnimationsOf(context) &&
-          widget.tree.whereType<FolderNode>().any(
-            (root) =>
-                PathMatcher.equalsNormalized(root.path, folderPath) &&
-                root.children.isEmpty,
-          )) {
-        final animation = AnimationController(
-          vsync: this,
-          duration: kAppFadeDuration,
-        );
-        _folderLoadAnimations[normalizedPath] = (
-          controller: animation,
-          opacity: animation.drive(CurveTween(curve: kAppFadeCurve)),
-        );
-        animation.addStatusListener((status) {
-          if (status != AnimationStatus.completed || !mounted) return;
-          setState(() => _folderLoadAnimations.remove(normalizedPath));
-          // Rows detach their FadeTransition listeners in this frame's build.
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => animation.dispose(),
-          );
-        });
-        unawaited(animation.forward());
-      }
-      setState(() {
-        final previousFolder = _loadedFolderTrees[normalizedPath]?.folder;
-        _loadedFolderTrees[normalizedPath] = _LoadedLibraryFolder(
-          folder: folder,
-          revision: revision,
-        );
-        if (previousFolder != null) {
-          _removeMissingExpandedFolderPaths(previousFolder, folder);
-        }
-        _visibleItemsVersion++;
-      });
+      if (widget.currentStructureRevision() != revision) return;
+      _pendingFolderResults[normalizedPath] = (
+        folder: folder,
+        revision: revision,
+        animate:
+            _tickerModeEnabled &&
+            ModalRoute.isCurrentOf(context) != false &&
+            !MediaQuery.disableAnimationsOf(context),
+      );
+      _scheduleFolderCommit();
     } catch (e, st) {
       AppLogService.warning(
         'Failed to load expanded folder tree: $folderPath',
         error: e,
         stackTrace: st,
       );
-      if (mounted) {
-        if (_folderTreeErrorPaths.add(normalizedPath)) {
-          setState(() {
-            _visibleItemsVersion++;
-          });
-        }
+      if (mounted && widget.currentStructureRevision() == revision) {
+        _pendingFolderResults[normalizedPath] = (
+          folder: null,
+          revision: revision,
+          animate: false,
+        );
+        _scheduleFolderCommit();
       }
     } finally {
       if (_loadingFolderTreeRevisions[normalizedPath] == revision) {
@@ -309,107 +408,235 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
     }
   }
 
-  List<VisibleLibraryItem> _visibleLibraryItems({
-    required List<LibraryNode> tree,
-    required int structureRevision,
-  }) {
-    _pruneFolderTreeCaches(tree, structureRevision);
-    if (identical(_visibleItemsSource, tree) &&
-        _visibleItemsStructureRevision == structureRevision &&
-        _visibleItemsCacheVersion == _visibleItemsVersion) {
-      return _visibleItemsCache;
-    }
-    final result = <VisibleLibraryItem>[];
+  void _scheduleFolderCommit() {
+    if (_pendingFolderResults.isEmpty) return;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _folderCommitKey,
+      structural: true,
+      canRun: () => mounted && _tickerModeEnabled,
+      commit: () {
+        if (!mounted) return;
+        final revision = widget.currentStructureRevision();
+        final results = Map.of(_pendingFolderResults);
+        _pendingFolderResults.clear();
+        for (final entry in results.entries) {
+          if (entry.value.revision != revision) continue;
+          final folder = entry.value.folder;
+          if (folder == null) {
+            _folderTreeErrorPaths.add(entry.key);
+          } else {
+            _applyLoadedFolder(
+              entry.key,
+              folder,
+              revision,
+              animate: entry.value.animate,
+            );
+          }
+        }
+        setState(() => _visibleItemsVersion++);
+      },
+    );
+  }
 
-    void addNode(
-      LibraryNode node,
-      int depth, {
-      FolderNode? expandedFolder,
-      bool revealed = true,
-      bool animateInitialReveal = false,
-    }) {
-      result.add(
-        VisibleLibraryItem(
-          node: node,
-          depth: depth,
-          revealed: revealed,
-          animateInitialReveal: animateInitialReveal,
-        ),
+  void _applyLoadedFolder(
+    String normalizedPath,
+    FolderNode folder,
+    int revision, {
+    required bool animate,
+  }) {
+    _folderTreeErrorPaths.remove(normalizedPath);
+    final previousFolder = _loadedFolderTrees[normalizedPath]?.folder;
+    if (animate && previousFolder == null && folder.children.isNotEmpty) {
+      _pendingFolderReveals.add(normalizedPath);
+    }
+    _loadedFolderTrees[normalizedPath] = _LoadedLibraryFolder(
+      folder: folder,
+      revision: revision,
+    );
+    if (previousFolder != null) {
+      _removeMissingExpandedFolderPaths(previousFolder, folder);
+    }
+  }
+
+  void _startFolderReveal(String normalizedPath) {
+    final folder = _loadedFolderTrees[normalizedPath]?.folder;
+    if (folder == null) return;
+    if (folder.children.isNotEmpty &&
+        _expandedCardPaths.contains(normalizedPath) &&
+        ModalRoute.isCurrentOf(context) != false &&
+        !MediaQuery.disableAnimationsOf(context) &&
+        widget.tree.whereType<FolderNode>().any(
+          (root) =>
+              PathMatcher.equalsNormalized(root.path, folder.path) &&
+              root.children.isEmpty,
+        )) {
+      final animation = AnimationController(
+        vsync: this,
+        duration: kAppFadeDuration,
       );
-      if (node is! FolderNode) {
+      _folderLoadAnimations[normalizedPath] = (
+        controller: animation,
+        opacity: animation.drive(CurveTween(curve: kAppFadeCurve)),
+      );
+      animation.addStatusListener((status) {
+        if (status != AnimationStatus.completed || !mounted) return;
+        setState(() => _folderLoadAnimations.remove(normalizedPath));
+        // Rows detach their FadeTransition listeners in this frame's build.
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => animation.dispose(),
+        );
+      });
+      unawaited(animation.forward());
+    }
+  }
+
+  void _prepareVisibleItems() {
+    if (!_tickerModeEnabled) return;
+    _pruneFolderTreeCaches(widget.tree, widget.structureRevision);
+    final request = (
+      widget.tree,
+      widget.structureRevision,
+      _visibleItemsVersion,
+    );
+    if (_projectionRequest == request || _projectionRunning) return;
+    _projectionRequest = request;
+    _projectionRunning = true;
+    final input = (
+      tree: widget.tree,
+      loaded: Map<String, _LoadedLibraryFolder>.of(_loadedFolderTrees),
+      expanded: Set<String>.of(_expandedCardPaths),
+      motions: Map<String, bool>.of(_cardExpansionMotions),
+      errors: Set<String>.of(_folderTreeErrorPaths),
+    );
+    unawaited(_prepareProjection(input, request));
+  }
+
+  Future<void> _prepareProjection(
+    _ProjectionInput input,
+    (List<LibraryNode>, int, int) request,
+  ) async {
+    try {
+      final projection = await compute(_buildLibraryProjection, input);
+      if (!mounted) return;
+      final current = (
+        widget.tree,
+        widget.structureRevision,
+        _visibleItemsVersion,
+      );
+      if (current != request) {
+        _projectionRequest = null;
         return;
       }
-      final normalizedPath = PathMatcher.normalize(node.path);
-      final expanded = _expandedCardPaths.contains(normalizedPath);
-      final motion = _cardExpansionMotions[normalizedPath];
-      if (!expanded && motion != false) return;
-      final revealChildren = revealed && expanded;
-      final animateChildren =
-          animateInitialReveal || (revealChildren && motion == true);
-      final children = (expandedFolder ?? node).children;
-      if (expanded &&
-          children.isEmpty &&
-          _folderTreeErrorPaths.contains(normalizedPath)) {
-        result.add(
+      // Workers return row locations, preserving the original node identities
+      // used by selection, undo and retained cards on the UI isolate.
+      final items = <VisibleLibraryItem>[];
+      final slice = Stopwatch()..start();
+      for (final row in projection.rows) {
+        var node = input.tree[row.indices.first];
+        if (row.indices.length > 1) {
+          node = input.loaded[PathMatcher.normalize(node.path)]?.folder ?? node;
+          for (final index in row.indices.skip(1)) {
+            node = (node as FolderNode).children[index];
+          }
+        }
+        items.add(
           VisibleLibraryItem(
             node: node,
-            depth: depth + 1,
-            revealed: revealChildren,
-            animateInitialReveal: animateChildren,
-            isFolderError: true,
-            errorFolderPath: node.path,
+            depth: row.depth,
+            revealed: row.revealed,
+            animateInitialReveal: row.animate,
+            isFolderError: row.error,
+            errorFolderPath: row.error ? node.path : null,
           ),
         );
-      } else {
-        for (final child in children) {
-          addNode(
-            child,
-            depth + 1,
-            revealed: revealChildren,
-            animateInitialReveal: animateChildren,
-          );
+        if (slice.elapsedMicroseconds >= 1000) {
+          await Future<void>.delayed(Duration.zero);
+          if (!mounted) return;
+          if ((widget.tree, widget.structureRevision, _visibleItemsVersion) !=
+              request) {
+            _projectionRequest = null;
+            return;
+          }
+          slice.reset();
         }
       }
+      _pendingProjectionCommit = () {
+        if ((widget.tree, widget.structureRevision, _visibleItemsVersion) !=
+            request) {
+          return;
+        }
+        for (final path in _pendingFolderReveals) {
+          _startFolderReveal(path);
+        }
+        _pendingFolderReveals.clear();
+        for (final entry in input.motions.entries) {
+          _scheduleExpansionEnd(entry.key, entry.value);
+        }
+        setState(() {
+          _projectionError = null;
+          _presentedProjectionVersion = request.$3;
+          _visibleItemsCache = List.unmodifiable(items);
+          _visibleItemIds = projection.ids;
+          _reorderItemIds = projection.reorderIds;
+          _visibleNodeIds = projection.nodeIds;
+          _itemIndexById = projection.indices;
+          _itemKeys.removeWhere((id, _) => !_itemIndexById.containsKey(id));
+          _itemKeyIndices
+            ..clear()
+            ..addEntries(
+              _itemKeys.entries.map(
+                (entry) => MapEntry(entry.value, _itemIndexById[entry.key]!),
+              ),
+            );
+          _uniformRoots = projection.uniformRoots;
+        });
+        for (final node in widget.tree.whereType<FolderNode>()) {
+          final path = PathMatcher.normalize(node.path);
+          if (_expandedCardPaths.contains(path) &&
+              _loadedFolderTrees[path]?.revision != widget.structureRevision &&
+              !_folderTreeErrorPaths.contains(path)) {
+            unawaited(_loadExpandedFolderTree(node.path));
+          }
+        }
+      };
+      _scheduleProjectionCommit();
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'Failed to prepare library rows',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        _pendingProjectionCommit = () {
+          if ((widget.tree, widget.structureRevision, _visibleItemsVersion) ==
+              request) {
+            setState(() => _projectionError = error);
+          }
+        };
+        _scheduleProjectionCommit();
+      }
+    } finally {
+      _projectionRunning = false;
+      if (mounted &&
+          (widget.tree, widget.structureRevision, _visibleItemsVersion) !=
+              request) {
+        _prepareVisibleItems();
+      }
     }
+  }
 
-    final staleExpandedFolders = <String>[];
-    for (final node in tree) {
-      if (node is! FolderNode) {
-        addNode(node, 0);
-        continue;
-      }
-      final normalizedPath = PathMatcher.normalize(node.path);
-      final loaded = _loadedFolderTrees[normalizedPath];
-      addNode(node, 0, expandedFolder: loaded?.folder);
-      if (_expandedCardPaths.contains(normalizedPath) &&
-          loaded?.revision != structureRevision &&
-          _loadingFolderTreeRevisions[normalizedPath] != structureRevision &&
-          !_folderTreeErrorPaths.contains(normalizedPath)) {
-        staleExpandedFolders.add(node.path);
-      }
-    }
-    if (staleExpandedFolders.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        for (final path in staleExpandedFolders) {
-          unawaited(_loadExpandedFolderTree(path));
-        }
-      });
-    }
-    _visibleItemsSource = tree;
-    _visibleItemsStructureRevision = structureRevision;
-    _visibleItemsCacheVersion = _visibleItemsVersion;
-    final ids = <String>[];
-    final reorderIds = <String>[];
-    for (final item in result) {
-      final id = PathMatcher.equivalenceKey(item.node.path);
-      ids.add(id);
-      if (!item.isFolderError) reorderIds.add(id);
-    }
-    _visibleItemIds = immutableList(ids);
-    _reorderItemIds = immutableList(reorderIds);
-    _visibleNodeIds = reorderIds.toSet();
-    return _visibleItemsCache = result;
+  void _scheduleProjectionCommit() {
+    if (_pendingProjectionCommit == null) return;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _projectionCommitKey,
+      structural: true,
+      canRun: () => mounted && _tickerModeEnabled,
+      commit: () {
+        final commit = _pendingProjectionCommit;
+        _pendingProjectionCommit = null;
+        commit?.call();
+      },
+    );
   }
 
   void _pruneFolderTreeCaches(List<LibraryNode> tree, int structureRevision) {
@@ -490,13 +717,29 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   @override
   Widget build(BuildContext context) {
     ref.listen(undoableRemovalStateProvider, _handleRemovalChanged);
-    final visibleItems = _visibleLibraryItems(
-      tree: widget.tree,
-      structureRevision: widget.structureRevision,
-    );
+    _prepareVisibleItems();
+    final visibleItems = _visibleItemsCache;
+    final errorBanner = _projectionError == null
+        ? null
+        : OperationStatusBanner(
+            label: widget.i18n.tr('operation_failed_retry'),
+            retryTooltip: widget.i18n.tr('retry'),
+            onRetry: () {
+              setState(() {
+                _projectionError = null;
+                _projectionRequest = null;
+              });
+            },
+          );
+    if (visibleItems.isEmpty && widget.tree.isNotEmpty) {
+      if (errorBanner != null) return errorBanner;
+      return LibrarySkeletonListView(
+        topInset: widget.topPadding,
+        bottomInset: widget.bottomPadding,
+      );
+    }
     final itemIds = _reorderItemIds;
     final currentIds = _visibleNodeIds;
-    _itemKeys.removeWhere((id, _) => !currentIds.contains(id));
     _removingItemIds.addAll(
       ref
           .read(undoableRemovalStateProvider)
@@ -524,15 +767,9 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         _removingItemIds.isEmpty &&
         _expandedCardPaths.isEmpty &&
         _cardExpansionMotions.isEmpty &&
-        visibleItems.every(
-          (item) =>
-              item.depth == 0 &&
-              !item.isFolderError &&
-              isSelectableLibraryNode(item.node),
-        );
+        _uniformRoots;
     final useFixedExtent =
         uniformRootRows && tilePadding <= LibraryLikeCardMetrics.coverDistance;
-    final itemIndices = <Key, int>{};
     Widget buildTopLevelLibraryItem(BuildContext context, int index) {
       final item = visibleItems[index];
       final node = item.node;
@@ -601,7 +838,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
       // The sliver changes when expanding/removing rows. Keep the card's State
       // (including its undo size animation) when it moves between those slivers.
       final itemKey = _itemKeys.putIfAbsent(id, GlobalKey.new);
-      itemIndices[itemKey] = index;
+      _itemKeyIndices[itemKey] = index;
       return AnimatedReorderItem(
         key: itemKey,
         id: id,
@@ -619,7 +856,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
       );
     }
 
-    return LayoutBuilder(
+    final list = LayoutBuilder(
       builder: (context, constraints) {
         final columnCount = responsiveLibraryCardColumnCount(
           constraints.maxWidth,
@@ -634,15 +871,6 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
           topPadding: widget.topPadding,
         );
         final rowCount = (visibleItems.length / columnCount).ceil();
-        itemIndices.clear();
-        if (columnCount == 1) {
-          for (var i = 0; i < visibleItems.length; i++) {
-            final key = _itemKeys[_visibleItemIds[i]];
-            if (!visibleItems[i].isFolderError && key != null) {
-              itemIndices[key] = i;
-            }
-          }
-        }
         return AnimatedReorder(
           order: itemIds,
           child: ListView.builder(
@@ -663,7 +891,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             itemCount: rowCount,
             findChildIndexCallback: columnCount == 1
-                ? (key) => itemIndices[key]
+                ? (key) => _itemKeyIndices[key]
                 : null,
             itemBuilder: (context, rowIndex) {
               if (columnCount == 1) {
@@ -692,5 +920,13 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         );
       },
     );
+    return errorBanner == null
+        ? list
+        : Column(
+            children: [
+              errorBanner,
+              Expanded(child: list),
+            ],
+          );
   }
 }

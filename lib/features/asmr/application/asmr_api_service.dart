@@ -140,17 +140,16 @@ class AsmrApiService {
     if (filter != null && filter.isNotEmpty) {
       query['filter'] = filter;
     }
-    final response = await _sendJsonRequest(
+    final response = await _send(
       method: 'GET',
       path: '/api/review',
       token: token,
       queryParameters: query,
+      decodeResponse: _reviewDecoder(language),
       cancellationToken: cancellationToken,
     );
-    return (response['works'] as List<dynamic>? ?? const <dynamic>[])
-        .whereType<Map<String, dynamic>>()
-        .map((json) => AsmrReviewRecord.fromJson(json, language: language))
-        .toList(growable: false);
+    if (response is List<AsmrReviewRecord>) return response;
+    throw const HttpException('Unexpected API response.');
   }
 
   Future<void> putReviewProgress({
@@ -194,14 +193,16 @@ class AsmrApiService {
       'pageSize': '$pageSize',
       'subtitle': '0',
     };
-    final response = await _sendJsonRequest(
+    final response = await _send(
       method: 'GET',
       path: '/api/works',
       queryParameters: query,
       token: token,
+      decodeResponse: _workPageDecoder(language),
       cancellationToken: cancellationToken,
     );
-    return AsmrWorkPage.fromJson(response, language: language);
+    if (response is AsmrWorkPage) return response;
+    throw const HttpException('Unexpected API response.');
   }
 
   Future<AsmrWorkPage> searchWorks({
@@ -214,10 +215,11 @@ class AsmrApiService {
     AsmrContentLanguage language = AsmrContentLanguage.zh,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
-    final response = await _sendJsonRequest(
+    final response = await _send(
       method: 'POST',
       path: '/api/search/',
       token: token,
+      decodeResponse: _workPageDecoder(language),
       cancellationToken: cancellationToken,
       body: <String, Object?>{
         'keyword': keyword,
@@ -229,7 +231,8 @@ class AsmrApiService {
         'includeTranslationWorks': true,
       },
     );
-    return AsmrWorkPage.fromJson(response, language: language);
+    if (response is AsmrWorkPage) return response;
+    throw const HttpException('Unexpected API response.');
   }
 
   Future<List<AsmrTrackFile>> fetchTrackTree(
@@ -370,8 +373,8 @@ class AsmrApiService {
         if (error is AsmrApiException && error.statusCode < 500) {
           rethrow;
         }
-        // Model field errors are not endpoint failures and previously escaped
-        // from fetchTrackTree after JSON decoding without retrying a domain.
+        // Model field errors are not endpoint failures; do not retry a domain
+        // when a valid response contains an invalid field.
         if (error is Error) rethrow;
       } finally {
         // A timeout also retires this attempt; it must not keep a socket alive
@@ -427,6 +430,29 @@ class AsmrApiService {
       await subscription.cancel();
     }
   }
+}
+
+// These top-level factories capture only the language, never the service's
+// HttpClient, so the complete model conversion can run in the decode isolate.
+ComputeCallback<String, Object?> _workPageDecoder(
+  AsmrContentLanguage language,
+) {
+  return (body) {
+    final response = jsonDecode(body);
+    if (response is! Map<String, dynamic>) return response;
+    return AsmrWorkPage.fromJson(response, language: language);
+  };
+}
+
+ComputeCallback<String, Object?> _reviewDecoder(AsmrContentLanguage language) {
+  return (body) {
+    final response = jsonDecode(body);
+    if (response is! Map<String, dynamic>) return response;
+    return (response['works'] as List<dynamic>? ?? const <dynamic>[])
+        .whereType<Map<String, dynamic>>()
+        .map((json) => AsmrReviewRecord.fromJson(json, language: language))
+        .toList(growable: false);
+  };
 }
 
 Object? _decodeTrackTree(String body) {

@@ -15,7 +15,9 @@ import '../../core/ui/ui_operation_service.dart';
 import '../../features/library/application/library_state_models.dart';
 import '../../features/library/presentation/library_cover_ui_controller.dart';
 import '../../features/library/domain/library_node.dart';
-import '../../features/library/presentation/library_sorting.dart';
+import '../../features/library/application/library_sorting.dart';
+import '../../core/ui/ui_interaction_coordinator.dart';
+import '../../core/logging/app_log_service.dart';
 import '../../features/player/presentation/playlist_sorting.dart';
 import '../../features/player/application/audio_state_services.dart';
 import '../../features/settings/application/settings_state.dart';
@@ -157,73 +159,164 @@ final libraryListUiProvider = Provider<LibraryListState>((ref) {
 });
 
 final librarySortedTreeUiProvider = Provider<List<LibraryNode>>((ref) {
-  final sortedInput = ref.watch(
-    libraryListUiProvider.select(
-      (state) => (nodes: state.rawTree, revision: state.structureRevision),
-    ),
+  return ref.watch(librarySortedSnapshotUiProvider).nodes;
+});
+
+final librarySortedSnapshotUiProvider =
+    NotifierProvider<LibrarySortedSnapshotNotifier, LibrarySortedSnapshotState>(
+      LibrarySortedSnapshotNotifier.new,
+    );
+
+typedef LibrarySortedSnapshotState = ({List<LibraryNode> nodes, Object? error});
+
+class LibrarySortedSnapshotNotifier
+    extends Notifier<LibrarySortedSnapshotState> {
+  LibrarySortedSnapshotState _retained = (
+    nodes: const <LibraryNode>[],
+    error: null,
   );
-  final criterion = ref.watch(
-    settingsStateProvider.select(
-      (state) => state.value?.librarySortCriterion ?? LibrarySortCriterion.name,
-    ),
-  );
-  final workNameDisplay = criterion == LibrarySortCriterion.name
-      ? ref.watch(
-          settingsStateProvider.select(
-            (state) =>
-                state.value?.workNameDisplay ?? WorkNameDisplay.workTitle,
-          ),
-        )
-      : WorkNameDisplay.folderName;
-  final ascending = ref.watch(
-    settingsStateProvider.select(
-      (state) => state.value?.librarySortAscending ?? true,
-    ),
-  );
-  final groupByLibrary = ref.watch(
-    settingsStateProvider.select(
-      (state) => state.value?.libraryGroupByLibrary ?? false,
-    ),
-  );
-  final pinnedPaths = ref
-      .watch(
-        settingsStateProvider.select(
-          (state) => state.value?.pinnedLibraryPaths ?? const <String>[],
-        ),
-      )
-      .toSet();
-  if (criterion == LibrarySortCriterion.voiceActor ||
-      criterion == LibrarySortCriterion.releaseDate ||
-      (workNameDisplay == WorkNameDisplay.workTitle &&
-          sortedInput.nodes.any(
-            (node) => node is FolderNode && node.isModuleNode,
-          ))) {
-    ref.watch(
-      libraryStateProvider.select(
-        (state) => (
-          state.value?.detailRevision,
-          state.value?.categorySnapshotRevision,
-        ),
+  int _request = 0;
+  String get _commitKey => 'library_sorted_snapshot_${identityHashCode(this)}';
+
+  @override
+  LibrarySortedSnapshotState build() {
+    final libraryFacade = ref.watch(libraryFacadeProvider);
+    final sortedInput = ref.watch(
+      libraryListUiProvider.select(
+        (state) => (nodes: state.rawTree, revision: state.structureRevision),
       ),
     );
-  }
-  if (criterion != LibrarySortCriterion.name) {
-    ref.watch(
-      libraryStateProvider.select((state) => state.value?.contentRevision),
+    final criterion = ref.watch(
+      settingsStateProvider.select(
+        (state) =>
+            state.value?.librarySortCriterion ?? LibrarySortCriterion.name,
+      ),
     );
-  }
-  final libraryFacade = ref.watch(libraryFacadeProvider);
+    final workNameDisplay = criterion == LibrarySortCriterion.name
+        ? ref.watch(
+            settingsStateProvider.select(
+              (state) =>
+                  state.value?.workNameDisplay ?? WorkNameDisplay.workTitle,
+            ),
+          )
+        : WorkNameDisplay.folderName;
+    final ascending = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.value?.librarySortAscending ?? true,
+      ),
+    );
+    final groupByLibrary = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.value?.libraryGroupByLibrary ?? false,
+      ),
+    );
+    final pinnedPaths = ref
+        .watch(
+          settingsStateProvider.select(
+            (state) => state.value?.pinnedLibraryPaths ?? const <String>[],
+          ),
+        )
+        .toSet();
+    final needsDetails =
+        criterion == LibrarySortCriterion.voiceActor ||
+        criterion == LibrarySortCriterion.releaseDate ||
+        (workNameDisplay == WorkNameDisplay.workTitle &&
+            sortedInput.nodes.any(
+              (node) => node is FolderNode && node.isModuleNode,
+            ));
+    if (needsDetails) {
+      ref.watch(
+        libraryStateProvider.select(
+          (state) => switch (criterion) {
+            LibrarySortCriterion.voiceActor =>
+              libraryFacade.detailCacheService.voiceActorRevision,
+            LibrarySortCriterion.releaseDate =>
+              libraryFacade.detailCacheService.releaseDateRevision,
+            _ => libraryFacade.detailCacheService.workTitleRevision,
+          },
+        ),
+      );
+    }
+    if (criterion != LibrarySortCriterion.name) {
+      ref.watch(
+        libraryStateProvider.select((state) => state.value?.contentRevision),
+      );
+    }
 
-  return sortLibraryNodes(
-    nodes: sortedInput.nodes,
-    criterion: criterion,
-    ascending: ascending,
-    groupByLibrary: groupByLibrary,
-    library: libraryFacade,
-    workNameDisplay: workNameDisplay,
-    pinnedPaths: pinnedPaths,
-  );
-});
+    final request = ++_request;
+    ref.onDispose(() {
+      _request++;
+      UiInteractionCoordinator.instance.cancelCommit(_commitKey);
+    });
+    ref.onResume(UiInteractionCoordinator.instance.scheduleCommitFrame);
+    if (sortedInput.nodes.isEmpty) {
+      return _retained = (nodes: const <LibraryNode>[], error: null);
+    }
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _commitKey,
+      priority: 25,
+      structural: true,
+      canRun: () => ref.mounted && !ref.isPaused,
+      commit: () async {
+        if (!ref.mounted || request != _request) return;
+        try {
+          final categorySnapshot = needsDetails
+              ? await libraryFacade.audioLibraryCategorySnapshot()
+              : null;
+          if (!ref.mounted || request != _request) return;
+          final input = LibrarySortRequest(
+            nodes: sortedInput.nodes,
+            criterion: criterion,
+            ascending: ascending,
+            groupByLibrary: groupByLibrary,
+            roots: [
+              ...libraryFacade.watchedLibraries,
+              ...libraryFacade.watchedFolders,
+            ],
+            details: libraryFacade.detailCacheService.resolvedDetails,
+            categorySnapshot: categorySnapshot,
+            workNameDisplay: workNameDisplay,
+            pinnedPaths: pinnedPaths,
+          );
+          final sorted = await libraryFacade.snapshotCacheService.sortedCards(
+            input,
+          );
+          if (!ref.mounted || request != _request) return;
+          UiInteractionCoordinator.instance.scheduleCommit(
+            key: _commitKey,
+            priority: 25,
+            structural: true,
+            canRun: () => ref.mounted && !ref.isPaused,
+            commit: () {
+              if (ref.mounted && request == _request) {
+                state = _retained = (nodes: sorted, error: null);
+              }
+            },
+          );
+        } catch (error, stackTrace) {
+          if (!ref.mounted || request != _request) return;
+          AppLogService.error(
+            'library_sorting_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          UiInteractionCoordinator.instance.scheduleCommit(
+            key: _commitKey,
+            priority: 25,
+            structural: true,
+            canRun: () => ref.mounted && !ref.isPaused,
+            commit: () {
+              if (ref.mounted && request == _request) {
+                state = _retained = (nodes: _retained.nodes, error: error);
+              }
+            },
+          );
+        }
+      },
+    );
+    return _retained;
+  }
+}
 
 final libraryScanUiProvider = Provider<LibraryScanUiState>((ref) {
   final serviceState = ref.watch(libraryFacadeProvider).state;
@@ -249,9 +342,13 @@ final libraryDetailRevisionProvider = Provider<int>((ref) {
 
 final libraryDetailForTargetProvider = FutureProvider.autoDispose
     .family<AudioDetail, AudioDetailTarget>((ref, target) async {
-      ref.watch(libraryDetailRevisionProvider);
       final facade = ref.read(libraryFacadeProvider);
       final canonicalTarget = facade.canonicalAudioDetailTarget(target);
+      ref.watch(
+        libraryDetailTargetRevisionProvider(
+          canonicalTarget,
+        ).select((state) => state.value ?? facade.detailCacheService.revision),
+      );
       final snapshot = facade.categorySnapshot;
       final detail =
           facade.resolvedAudioDetail(canonicalTarget) ??

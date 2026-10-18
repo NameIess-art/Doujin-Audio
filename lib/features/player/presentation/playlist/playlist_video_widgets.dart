@@ -865,14 +865,16 @@ class _SessionVideoFullscreenPageState
                       ],
                     ),
                   ),
-                  // Immersive system bars can report a transient top inset
-                  // during rotation or an edge swipe. Keep the exit anchored
-                  // to the fullscreen viewport instead of following that inset.
+                  // The app retains system-bar insets while immersive mode is
+                  // active, so use the same top origin as other page headers.
                   child: Padding(
                     padding: EdgeInsets.only(
                       left:
                           AppPageHeaderMetrics.padding.left + exitButtonOffset,
-                      top: AppPageHeaderMetrics.padding.top + exitButtonOffset,
+                      top:
+                          MediaQuery.paddingOf(context).top +
+                          AppPageHeaderMetrics.padding.top +
+                          exitButtonOffset,
                       bottom: 8,
                     ),
                     child: Align(

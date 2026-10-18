@@ -40,7 +40,6 @@ import '../../asmr/domain/asmr_models.dart';
 import '../../asmr/presentation/asmr_download_page.dart';
 import '../../asmr/presentation/asmr_providers.dart';
 import '../../player/presentation/playback_providers.dart';
-import '../../settings/application/settings_state.dart';
 import '../../settings/presentation/settings_providers.dart';
 import '../application/work_text_service.dart';
 import '../domain/library_node.dart';

@@ -36,7 +36,9 @@ abstract interface class LibraryPersistenceRepository {
 
   Future<String?> loadAppSetting(String key);
   Future<void> saveAppSetting(String key, String? value);
-  Future<List<LibraryEntry>> loadAllLibraryEntries();
+
+  /// The startup snapshot worker materializes this iterable, including mapping.
+  Future<Iterable<LibraryEntry>> loadAllLibraryEntries();
   Future<List<LibraryEntry>> loadLibraryEntries(String libraryPath);
   Future<void> upsertLibraryEntries(
     List<LibraryEntry> entries, {

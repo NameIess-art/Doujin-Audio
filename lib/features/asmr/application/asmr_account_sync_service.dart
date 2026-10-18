@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import '../../../core/immutable_collections.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_api_service.dart';
@@ -80,10 +82,10 @@ class AsmrAccountSyncService {
   AsmrAccountSnapshot get snapshot => _snapshot;
 
   Future<AsmrAccountSnapshot> initialize() async {
-    final normalized = _normalizeAccountWorks(
+    final normalized = await compute(_normalizeAccountWorks, (
       favoriteWorks: await _preferencesStore.loadFavoriteWorks(),
       historyWorks: await _preferencesStore.loadHistoryWorks(),
-    );
+    ));
     _snapshot = AsmrAccountSnapshot(
       favoriteWorks: normalized.favoriteWorks,
       historyWorks: normalized.historyWorks,
@@ -281,8 +283,10 @@ class AsmrAccountSyncService {
   ) async {
     do {
       token.throwIfCancelled();
-      final batch = _snapshot.pendingOperations.toList(growable: false)
-        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      final batch = await token.waitFor(
+        compute(_orderedOperations, _snapshot.pendingOperations),
+      );
+      token.throwIfCancelled();
       if (batch.any(
         (operation) =>
             operation.type == AsmrSyncOperationType.historyListening ||
@@ -291,22 +295,30 @@ class AsmrAccountSyncService {
         await _preflightProtectedProgress(session.token, language, token);
       }
       final uploaded = await _flushOperations(session.token, batch, token);
-      final records = await _fetchRemoteState(session.token, language, token);
+      final recordPages = await _fetchRemoteState(
+        session.token,
+        language,
+        token,
+      );
       token.throwIfCancelled();
       await _serialize(() async {
         token.throwIfCancelled();
-        final uploadedKeys = uploaded.map(_operationKey).toSet();
-        final operations = _snapshot.pendingOperations
-            .where((item) => !uploadedKeys.contains(_operationKey(item)))
-            .toList(growable: false);
-        final merged = _mergeRemoteState(_snapshot, records);
+        // Stay inside the mutation queue while preparing the snapshot so an
+        // intervening favorite/history action cannot be overwritten on return.
+        final merged = await token.waitFor(
+          compute(_prepareSyncedSnapshot, (
+            current: _snapshot,
+            recordPages: recordPages,
+            uploaded: uploaded,
+          )),
+        );
         token.throwIfCancelled();
         await _preferencesStore.saveAccountSyncState(
           favoriteWorks: merged.favoriteWorks,
           historyWorks: merged.historyWorks,
-          operations: operations,
+          operations: merged.pendingOperations,
         );
-        _snapshot = merged.copyWith(pendingOperations: operations);
+        _snapshot = merged;
         return _snapshot;
       });
     } while (_snapshot.pendingOperations.isNotEmpty);
@@ -401,19 +413,16 @@ class AsmrAccountSyncService {
       ),
     );
     token.throwIfCancelled();
-    _snapshot = _snapshot.copyWith(
-      remoteProgressByWorkId: <int, String>{
-        for (final record in pages.expand((records) => records))
-          record.work.id: record.progress,
-      },
-    );
+    final progress = await token.waitFor(compute(_progressByWorkId, pages));
+    token.throwIfCancelled();
+    _snapshot = _snapshot.copyWith(remoteProgressByWorkId: progress);
   }
 
-  Future<List<AsmrReviewRecord>> _fetchRemoteState(
+  Future<List<List<AsmrReviewRecord>>> _fetchRemoteState(
     String tokenValue,
     AsmrContentLanguage language,
     AsmrRequestCancellationToken token,
-  ) async {
+  ) {
     const filters = <String>[
       'marked',
       'listening',
@@ -421,12 +430,11 @@ class AsmrAccountSyncService {
       'replay',
       'postponed',
     ];
-    final pages = await Future.wait(
+    return Future.wait(
       filters.map(
         (filter) => _fetchReviews(tokenValue, filter, language, token),
       ),
     );
-    return pages.expand((records) => records).toList(growable: false);
   }
 
   Future<List<AsmrReviewRecord>> _fetchReviews(
@@ -452,7 +460,38 @@ class AsmrAccountSyncService {
     return records;
   }
 
-  AsmrAccountSnapshot _mergeRemoteState(
+  static List<AsmrSyncOperation> _orderedOperations(
+    List<AsmrSyncOperation> operations,
+  ) =>
+      operations.toList(growable: false)
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+  static Map<int, String> _progressByWorkId(
+    List<List<AsmrReviewRecord>> pages,
+  ) => immutableMap({
+    for (final records in pages)
+      for (final record in records) record.work.id: record.progress,
+  });
+
+  static AsmrAccountSnapshot _prepareSyncedSnapshot(
+    ({
+      AsmrAccountSnapshot current,
+      List<List<AsmrReviewRecord>> recordPages,
+      List<AsmrSyncOperation> uploaded,
+    })
+    request,
+  ) {
+    final uploadedKeys = request.uploaded.map(_operationKey).toSet();
+    final operations = request.current.pendingOperations
+        .where((item) => !uploadedKeys.contains(_operationKey(item)))
+        .toList(growable: false);
+    return _mergeRemoteState(
+      request.current,
+      request.recordPages.expand((records) => records).toList(growable: false),
+    ).copyWith(pendingOperations: operations);
+  }
+
+  static AsmrAccountSnapshot _mergeRemoteState(
     AsmrAccountSnapshot current,
     List<AsmrReviewRecord> records,
   ) {
@@ -489,10 +528,10 @@ class AsmrAccountSyncService {
     for (final record in remoteHistory) {
       if (seen.add(record.work.id)) history.add(record.work);
     }
-    final normalized = _normalizeAccountWorks(
+    final normalized = _normalizeAccountWorks((
       favoriteWorks: favoriteById.values.toList(growable: false),
       historyWorks: history.take(_historyLimit).toList(growable: false),
-    );
+    ));
     return current.copyWith(
       favoriteWorks: normalized.favoriteWorks,
       historyWorks: normalized.historyWorks,
@@ -502,18 +541,17 @@ class AsmrAccountSyncService {
     );
   }
 
-  ({List<AsmrWork> favoriteWorks, List<AsmrWork> historyWorks})
-  _normalizeAccountWorks({
-    required List<AsmrWork> favoriteWorks,
-    required List<AsmrWork> historyWorks,
-  }) {
+  static ({List<AsmrWork> favoriteWorks, List<AsmrWork> historyWorks})
+  _normalizeAccountWorks(
+    ({List<AsmrWork> favoriteWorks, List<AsmrWork> historyWorks}) works,
+  ) {
     final favoriteById = <int, AsmrWork>{};
-    for (final work in favoriteWorks) {
+    for (final work in works.favoriteWorks) {
       favoriteById.putIfAbsent(work.id, () => work.copyWith(isFavorite: true));
     }
     final normalizedHistory = <AsmrWork>[];
     final seenHistoryIds = <int>{};
-    for (final work in historyWorks) {
+    for (final work in works.historyWorks) {
       if (!seenHistoryIds.add(work.id)) continue;
       normalizedHistory.add(
         favoriteById[work.id] ?? work.copyWith(isFavorite: false),
@@ -598,15 +636,14 @@ class AsmrAccountSyncService {
         progress == 'postponed';
   }
 
-  ({AsmrSyncOperationType type, int workId, DateTime createdAt}) _operationKey(
-    AsmrSyncOperation operation,
-  ) => (
+  static ({AsmrSyncOperationType type, int workId, DateTime createdAt})
+  _operationKey(AsmrSyncOperation operation) => (
     type: operation.type,
     workId: operation.workId,
     createdAt: operation.createdAt,
   );
 
-  int _newestFirst(AsmrReviewRecord a, AsmrReviewRecord b) {
+  static int _newestFirst(AsmrReviewRecord a, AsmrReviewRecord b) {
     final left = a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
     final right = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
     final byTime = right.compareTo(left);

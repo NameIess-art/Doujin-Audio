@@ -8,6 +8,29 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('pending commits wake when their external condition resumes', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator();
+    addTearDown(coordinator.dispose);
+    var visible = false;
+    var commits = 0;
+    coordinator.scheduleCommit(
+      key: 'retained-page',
+      structural: true,
+      canRun: () => visible,
+      commit: () => commits++,
+    );
+    await tester.pump();
+    expect(commits, 0);
+    expect(coordinator.pendingCommitCount, 1);
+    visible = true;
+    coordinator.scheduleCommitFrame();
+    await tester.pump();
+    expect(commits, 1);
+    expect(coordinator.pendingCommitCount, 0);
+  });
+
   testWidgets('navigation blocks repeated clicks before the next frame', (
     tester,
   ) async {

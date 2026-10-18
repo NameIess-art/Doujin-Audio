@@ -15,6 +15,7 @@ import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.animation.ValueAnimator
+import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.drawable.ColorDrawable
@@ -57,6 +58,14 @@ open class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun getRenderMode(): RenderMode = RenderMode.surface
+
+    override fun onTrimMemory(level: Int) {
+        // UI_HIDDEN only reports leaving the foreground. Flutter treats its
+        // numeric value as memory pressure and clears decoded cover caches.
+        // Forward real pressure levels so bounded caches can still be freed.
+        if (level == ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) return
+        super.onTrimMemory(level)
+    }
 
     private fun applyStartupWindowTheme() {
         val preferences = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)

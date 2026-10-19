@@ -25,6 +25,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   final Set<int> _selectedWorkIds = <int>{};
   int _requestSerial = 0;
   bool _refreshPending = false;
+  ModalRoute<dynamic>? _route;
   late final String _refreshCommitKey =
       'asmr_search_refresh_${identityHashCode(this)}';
   late final AppLanguageProvider _languageProvider;
@@ -54,14 +55,6 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   void _handleLanguageChanged() {
     if (!mounted) return;
     _scheduleRefresh();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_refreshPending && ModalRoute.of(context)?.isCurrent != false) {
-      _scheduleRefresh(showSearchPlaceholder: _showSearchPlaceholder);
-    }
   }
 
   void _resetScroll() {
@@ -247,7 +240,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _refreshCommitKey,
       commit: () {
-        if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
+        if (!mounted || _route?.isCurrent == false) return;
         ref
             .read(asmrLibraryControllerProvider)
             ?.setPageLanguage(_languageProvider.language);
@@ -386,7 +379,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
         );
       },
     );
-    return ValueListenableBuilder<int>(
+    final page = ValueListenableBuilder<int>(
       valueListenable: _activeCategoryIndex,
       child: body,
       builder: (context, _, body) {
@@ -426,6 +419,20 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
               : null,
           body: body!,
         );
+      },
+    );
+    return Builder(
+      builder: (context) {
+        _route = ModalRoute.of(context);
+        if (_refreshPending && _route?.isCurrent != false) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !_refreshPending || _route?.isCurrent == false) {
+              return;
+            }
+            _scheduleRefresh(showSearchPlaceholder: _showSearchPlaceholder);
+          });
+        }
+        return page;
       },
     );
   }

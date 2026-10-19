@@ -42,13 +42,7 @@ class _PermissionSettingsControlsState
     WidgetsBinding.instance.addObserver(this);
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_refreshNeeded && (ModalRoute.of(context)?.isCurrent ?? true)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _refreshStatus());
-    }
-  }
+  ModalRoute<dynamic>? _route;
 
   @override
   void dispose() {
@@ -76,7 +70,7 @@ class _PermissionSettingsControlsState
     coordinator.scheduleCommit(
       key: _loadKey,
       commit: () {
-        if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+        if (!mounted || !(_route?.isCurrent ?? true)) return;
         _refreshNeeded = false;
         final request = _statusService.load();
         _statusRequest = request;
@@ -142,7 +136,7 @@ class _PermissionSettingsControlsState
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    return AppSettingsGroupCard(
+    final content = AppSettingsGroupCard(
       children: [
         _PermissionActionTile(
           title: i18n.tr('allow_background_run'),
@@ -206,6 +200,15 @@ class _PermissionSettingsControlsState
           ),
         ),
       ],
+    );
+    return Builder(
+      builder: (context) {
+        _route = ModalRoute.of(context);
+        if (_refreshNeeded && (_route?.isCurrent ?? true)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => _refreshStatus());
+        }
+        return content;
+      },
     );
   }
 

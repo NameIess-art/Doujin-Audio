@@ -467,7 +467,7 @@ void _showTopFeedback(
                 if (findCanvas(element)) element.visitChildren(visit);
               }
 
-              final routeContext = ModalRoute.of(
+              final routeContext = readAppRoute(
                 currentData.context,
               )?.subtreeContext;
               if (routeContext is Element) visit(routeContext);

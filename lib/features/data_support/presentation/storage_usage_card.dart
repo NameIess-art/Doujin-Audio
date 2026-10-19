@@ -24,13 +24,7 @@ class _StorageUsageCardState extends ConsumerState<StorageUsageCard> {
   late final _loadKey = 'storage_usage_load_${identityHashCode(this)}';
   late final _resultKey = 'storage_usage_result_${identityHashCode(this)}';
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_refreshNeeded && (ModalRoute.of(context)?.isCurrent ?? true)) {
-      _reloadStorageUsage();
-    }
-  }
+  ModalRoute<dynamic>? _route;
 
   void _loadStorageUsage() {
     final published = Completer<StorageUsageSnapshot>();
@@ -65,7 +59,7 @@ class _StorageUsageCardState extends ConsumerState<StorageUsageCard> {
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _loadKey,
       commit: () {
-        if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+        if (!mounted || !(_route?.isCurrent ?? true)) return;
         _refreshNeeded = false;
         setState(_loadStorageUsage);
       },
@@ -94,7 +88,7 @@ class _StorageUsageCardState extends ConsumerState<StorageUsageCard> {
         _reloadStorageUsage();
       }
     });
-    return FutureBuilder<StorageUsageSnapshot>(
+    final content = FutureBuilder<StorageUsageSnapshot>(
       key: const ValueKey('data-support-storage-usage'),
       future: _storageUsageFuture,
       builder: (context, snapshot) {
@@ -119,6 +113,15 @@ class _StorageUsageCardState extends ConsumerState<StorageUsageCard> {
           switchOutCurve: kAppFadeCurve,
           child: KeyedSubtree(key: ValueKey(phase), child: card),
         );
+      },
+    );
+    return Builder(
+      builder: (context) {
+        _route = ModalRoute.of(context);
+        if (_refreshNeeded && (_route?.isCurrent ?? true)) {
+          _reloadStorageUsage();
+        }
+        return content;
       },
     );
   }

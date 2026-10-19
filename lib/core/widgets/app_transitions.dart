@@ -1983,6 +1983,29 @@ Widget _coveredPageTransition(
   Widget? child,
 ) => child!;
 
+/// Reads route identity for event handlers without subscribing their page to
+/// isCurrent/canPop changes. Reactive visibility belongs in a local Builder.
+ModalRoute<dynamic>? readAppRoute(BuildContext context) {
+  final reference = context.getInheritedWidgetOfExactType<_AppRouteReference>();
+  // A popup or an unmanaged route in a nested Navigator must not borrow the
+  // surrounding Navigator's route. Its normal Flutter lookup remains valid.
+  if (reference != null &&
+      identical(reference.route.navigator, Navigator.maybeOf(context))) {
+    return reference.route;
+  }
+  return ModalRoute.of(context);
+}
+
+class _AppRouteReference extends InheritedWidget {
+  const _AppRouteReference({required this.route, required super.child});
+
+  final ModalRoute<dynamic> route;
+
+  @override
+  bool updateShouldNotify(_AppRouteReference oldWidget) =>
+      route != oldWidget.route;
+}
+
 class AppPageTransitionsBuilder extends PageTransitionsBuilder {
   const AppPageTransitionsBuilder();
 
@@ -2007,7 +2030,7 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
       contentKey: GlobalObjectKey(route),
       animation: animation,
       secondaryAnimation: secondaryAnimation,
-      child: child,
+      child: _AppRouteReference(route: route, child: child),
     );
   }
 }
@@ -2073,7 +2096,10 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (isActive) _prepared = true;
     });
-    return super.buildPage(context, animation, secondaryAnimation);
+    return _AppRouteReference(
+      route: this,
+      child: super.buildPage(context, animation, secondaryAnimation),
+    );
   }
 
   @override

@@ -10,6 +10,7 @@ import '../../../../app/application/audio_path_coordinator.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/logging/app_log_service.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_feedback.dart';
@@ -795,7 +796,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       if (current == null ||
           current.currentTrackPath != session.currentTrackPath ||
           current.queueVersion != session.queueVersion ||
-          ModalRoute.of(context)?.isCurrent == false) {
+          readAppRoute(context)?.isCurrent == false) {
         return;
       }
       if (tracks.isEmpty) return;
@@ -813,7 +814,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
             onSelected: (selectedNode) {
               if (selectionStarted) return;
               selectionStarted = true;
-              final route = ModalRoute.of(ctx)!;
+              final route = readAppRoute(ctx)!;
               unawaited(() async {
                 unawaited(
                   AppInteractionFeedback.trigger(

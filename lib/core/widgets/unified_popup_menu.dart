@@ -631,7 +631,7 @@ Future<T?> showDockAwareMenu<T>({
   final interactionSource = Object();
   final themes = InheritedTheme.capture(from: context, to: null);
   final reducedMotion = MediaQuery.disableAnimationsOf(context);
-  final hostRoute = ModalRoute.of(context);
+  final hostRoute = readAppRoute(context);
   final menuDismiss = MobileOverlayInset.menuDismissOf(context);
   late OverlayEntry entry;
   void cancelMenu() {

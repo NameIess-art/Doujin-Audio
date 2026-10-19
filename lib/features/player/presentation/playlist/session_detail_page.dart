@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/marquee_text.dart';
 import '../../application/playback_session_snapshot.dart';
 import 'playlist_shared_helpers.dart';
@@ -98,7 +99,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   late final ActiveSessionDetailIdsNotifier _activeSessionDetailIdsNotifier;
 
   SessionDetailRoute? get _detailRoute {
-    final route = ModalRoute.of(context);
+    final route = readAppRoute(context);
     return route is SessionDetailRoute ? route : null;
   }
 

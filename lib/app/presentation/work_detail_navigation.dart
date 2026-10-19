@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/ui/ui_interaction_coordinator.dart';
+import '../../core/widgets/app_transitions.dart';
 import 'main_screen.dart';
 import 'routed_playback_dock_host.dart';
 
@@ -40,7 +41,7 @@ class WorkDetailNavigation extends ChangeNotifier {
     bool returnToMain = false,
   }) async {
     final navigator = Navigator.of(context);
-    final origin = ModalRoute.of(context);
+    final origin = readAppRoute(context);
     await WidgetsBinding.instance.endOfFrame;
     if (!context.mounted || !navigator.mounted || origin?.isCurrent == false) {
       return;
@@ -75,9 +76,9 @@ class WorkDetailNavigation extends ChangeNotifier {
     return originNavigator == navigatorKey.currentState ||
         (originNavigator == contentNavigatorKey.currentState &&
             (WorkDetailNavigationScope.isLandscapeOf(context) ||
-                ModalRoute.of(context)?.isFirst == true)) ||
+                readAppRoute(context)?.isFirst == true)) ||
         (originNavigator == rootNavigatorKey.currentState &&
-            ModalRoute.of(context)?.isFirst == true);
+            readAppRoute(context)?.isFirst == true);
   }
 
   void updateIdentity(Object current, Object next) {

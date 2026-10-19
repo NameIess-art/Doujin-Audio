@@ -239,7 +239,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       widget.activeTabIndexListenable!.value == tabIndex;
 
   bool get _isActive {
-    final route = ModalRoute.of(context);
+    final route = readAppRoute(context);
     final isRouteCurrent = route == null || route.isCurrent;
     return isRouteCurrent && _isSelected;
   }

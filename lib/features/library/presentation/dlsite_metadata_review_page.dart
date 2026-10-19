@@ -447,7 +447,7 @@ class _DlsiteMetadataReviewPageState
                   missingOnly: widget.missingOnly,
                 ),
           );
-      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+      if (!mounted || readAppRoute(context)?.isCurrent != true) return;
       if (result.coverFailed) {
         showAppSnackBar(
           context,
@@ -459,7 +459,7 @@ class _DlsiteMetadataReviewPageState
       }
       _finish(DlsiteMetadataReviewResult.applied(result.detail, _saveCover));
     } catch (_) {
-      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+      if (!mounted || readAppRoute(context)?.isCurrent != true) return;
       setState(() {
         _saving = false;
       });
@@ -510,7 +510,7 @@ class _DlsiteMetadataReviewPageState
           preserveExistingDuration: !_durationEdited,
         ),
       );
-      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+      if (!mounted || readAppRoute(context)?.isCurrent != true) return;
       if (backupFailed || saveResult.documentFailed) {
         showAppSnackBar(
           context,
@@ -522,7 +522,7 @@ class _DlsiteMetadataReviewPageState
       }
       _finish(DlsiteMetadataReviewResult.applied(saveResult.detail, false));
     } catch (_) {
-      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+      if (!mounted || readAppRoute(context)?.isCurrent != true) return;
       setState(() => _saving = false);
       showAppSnackBar(
         context,
@@ -560,7 +560,7 @@ class _DlsiteMetadataReviewPageState
       onCompleted(result);
       return;
     }
-    if (ModalRoute.of(context)?.isCurrent == true) {
+    if (readAppRoute(context)?.isCurrent == true) {
       Navigator.of(context).pop(result);
     }
   }

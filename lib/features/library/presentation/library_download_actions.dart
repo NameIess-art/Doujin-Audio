@@ -15,7 +15,7 @@ Future<void> downloadAudioTargetFromAsmr({
   required WidgetRef ref,
   required AudioDetailTarget target,
 }) async {
-  final origin = ModalRoute.of(context);
+  final origin = readAppRoute(context);
   final i18n = ProviderScope.containerOf(
     context,
     listen: false,

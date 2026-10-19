@@ -117,7 +117,7 @@ Future<DlsiteMetadataReviewResult?> showAudioDetailEditor(
   AudioDetailTarget target,
 ) async {
   final navigator = Navigator.of(context);
-  final origin = ModalRoute.of(context);
+  final origin = readAppRoute(context);
   try {
     final result = await ref
         .read(libraryFacadeProvider)

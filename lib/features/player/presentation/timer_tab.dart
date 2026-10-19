@@ -76,14 +76,7 @@ class _TimerTabState extends ConsumerState<TimerTab>
     _showCompactDetail = widget.initialCompactDetail;
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_reliabilityRefreshNeeded &&
-        (ModalRoute.of(context)?.isCurrent ?? true)) {
-      _scheduleReliabilityRefresh();
-    }
-  }
+  ModalRoute<dynamic>? _route;
 
   @override
   void dispose() {
@@ -112,7 +105,7 @@ class _TimerTabState extends ConsumerState<TimerTab>
       commit: () {
         if (!mounted ||
             !_reliabilityRefreshNeeded ||
-            !(ModalRoute.of(context)?.isCurrent ?? true)) {
+            !(_route?.isCurrent ?? true)) {
           return;
         }
         _reliabilityRefreshNeeded = false;
@@ -263,7 +256,18 @@ class _TimerTabState extends ConsumerState<TimerTab>
   }
 
   @override
-  Widget build(BuildContext context) => _buildTimerTab(context);
+  Widget build(BuildContext context) {
+    final page = _buildTimerTab(context);
+    return Builder(
+      builder: (context) {
+        _route = ModalRoute.of(context);
+        if (_reliabilityRefreshNeeded && (_route?.isCurrent ?? true)) {
+          _scheduleReliabilityRefresh();
+        }
+        return page;
+      },
+    );
+  }
 }
 
 class _TimerReliabilityStatus {

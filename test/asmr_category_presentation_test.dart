@@ -1296,6 +1296,94 @@ void main() {
     );
 
     testWidgets(
+      'ASMR visible removals keep their neighbors when earlier offscreen works are removed on $platform',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(400, 1000);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final works = [
+          for (var id = 1; id <= 40; id++)
+            AsmrWork.fromJson({'id': id, 'title': 'Work $id'}),
+        ];
+        final controller = _PresentationController(createTestAsmrServices())
+          ..publishedWorks = works;
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Work 1'));
+        await tester.pumpAndSettle();
+        tester
+            .widget<HeaderSegmentedCategoryBar<AsmrCategoryType>>(
+              find.byType(HeaderSegmentedCategoryBar<AsmrCategoryType>),
+            )
+            .onSelected(AsmrCategoryType.favorites);
+        await tester.pumpAndSettle();
+        final list = find.byKey(
+          const PageStorageKey(AsmrCategoryType.favorites),
+        );
+        tester.widget<ListView>(list).controller!.jumpTo(1800);
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
+
+        Finder card(int id) => find.byKey(ValueKey<String>('asmr-work-$id'));
+        expect(card(1), findsNothing);
+        final viewport = tester.getRect(list);
+        final retiring = works.firstWhere((work) {
+          final candidate = card(work.id);
+          if (candidate.evaluate().isEmpty) return false;
+          final center = tester.getCenter(candidate).dy;
+          return center > viewport.center.dy && center < viewport.bottom - 100;
+        });
+        final previous = card(retiring.id - 1);
+        final next = card(retiring.id + 1);
+        final retiringCard = card(retiring.id);
+        expect(previous, findsOneWidget);
+        expect(next, findsOneWidget);
+
+        controller
+          ..publishedWorks = works
+              .where((work) => work.id != 1 && work.id != retiring.id)
+              .toList()
+          ..publish('Removed offscreen and visible works');
+        await tester.pump();
+        await tester.pump(interaction.idleDelay);
+        await tester.pump();
+
+        expect(
+          tester.getTopLeft(retiringCard).dy,
+          greaterThan(tester.getTopLeft(previous).dy),
+        );
+        expect(
+          tester.getTopLeft(retiringCard).dy,
+          lessThan(tester.getTopLeft(next).dy),
+          reason: 'The visible retiring work must stay before its next work.',
+        );
+        final collapse = tester.widget<SizeTransition>(
+          find.ancestor(
+            of: retiringCard,
+            matching: find.byType(SizeTransition),
+          ),
+        );
+        expect(collapse.sizeFactor.value, greaterThan(0));
+        await tester.pumpAndSettle();
+        expect(retiringCard, findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
       'ASMR repeat switches retain category projections on $platform',
       (tester) async {
         final controller = _PresentationController(createTestAsmrServices());

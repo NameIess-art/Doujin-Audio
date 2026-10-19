@@ -1235,9 +1235,27 @@ void main() {
         expect(find.text('Work 1'), findsOneWidget);
         expect(find.text('Work ${count - 1}'), findsNothing);
 
+        final mountedCardCount = find
+            .byType(SwipeRevealCard, skipOffstage: false)
+            .evaluate()
+            .length;
         controller.updateFavorites(<AsmrWork>[
           _work(id: count, title: 'New work'),
         ]);
+        await tester.pump();
+        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+        await tester.pump();
+        final retiringList = tester.widget<ListView>(
+          find.byKey(const PageStorageKey(AsmrCategoryType.favorites)),
+        );
+        expect(
+          (retiringList.childrenDelegate as SliverChildBuilderDelegate)
+              .childCount,
+          lessThanOrEqualTo(mountedCardCount + 2),
+          reason:
+              'Only mounted cards, the new work and footer stay in the list '
+              'while removed cards collapse.',
+        );
         await tester.pumpAndSettle();
         expect(find.text('New work'), findsOneWidget);
         await tester.pumpWidget(const SizedBox.shrink());

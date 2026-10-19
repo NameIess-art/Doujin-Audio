@@ -1641,6 +1641,8 @@ void main() {
       find.byKey(const ValueKey<String>('mobile_bottom_capsule_surface')),
       findsOneWidget,
     );
+    // Navigation releases its idle protection after the final route frame.
+    await tester.pump(const Duration(milliseconds: 200));
   });
 
   testWidgets(
@@ -4764,6 +4766,8 @@ void main() {
         await tester.tap(exit);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 500));
+        // Prepared routes finalize after their last painted exit frame.
+        await tester.pump(Duration.zero);
         expect(find.byType(SessionVideoFullscreenPage), findsNothing);
         unawaited(
           navigator.push<void>(
@@ -5078,6 +5082,7 @@ void main() {
     expect(tester.getRect(routeDock), initialDetailDockRect);
     await routeFuture;
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(Duration.zero);
     expect(routeDock, findsNothing);
     UiInteractionCoordinator.instance.finishInteractionsForTest();
     await tester.pump(const Duration(milliseconds: 200));
@@ -5147,6 +5152,7 @@ void main() {
     expect(exitingRect.width, greaterThan(collapsedRect.width));
     await routeFuture;
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(Duration.zero);
     expect(routeDock, findsNothing);
     UiInteractionCoordinator.instance.finishInteractionsForTest();
     await tester.pump(const Duration(milliseconds: 200));

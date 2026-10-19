@@ -331,24 +331,33 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
           }
           return false;
         });
+        var skippedRemovals = 0;
         for (var i = 0; i < _lastFavoritesWorks!.length; i++) {
           final previousWork = _lastFavoritesWorks![i];
-          if (!currentWorkIds.contains(previousWork.id) &&
-              !_collapsingWorks.containsKey(previousWork.id)) {
-            final workId = previousWork.id;
-            _collapsingWorks[workId] = _CollapsingAsmrWork(
-              work: previousWork,
-              originalIndex: i,
-              vsync: this,
-              onComplete: () {
-                if (!mounted) return;
-                setState(() {
-                  final entry = _collapsingWorks.remove(workId);
-                  entry?.dispose();
-                });
-              },
-            );
+          if (currentWorkIds.contains(previousWork.id) ||
+              _collapsingWorks.containsKey(previousWork.id)) {
+            continue;
           }
+          // Zero-height retiring rows make a lazy list build further rows to
+          // fill its viewport. Retaining offscreen removals would build the
+          // entire old collection on the final animation frame.
+          if (_itemKeys[previousWork.id]?.currentContext == null) {
+            skippedRemovals++;
+            continue;
+          }
+          final workId = previousWork.id;
+          _collapsingWorks[workId] = _CollapsingAsmrWork(
+            work: previousWork,
+            originalIndex: i - skippedRemovals,
+            vsync: this,
+            onComplete: () {
+              if (!mounted) return;
+              setState(() {
+                final entry = _collapsingWorks.remove(workId);
+                entry?.dispose();
+              });
+            },
+          );
         }
       }
       _lastFavoritesWorks = works;

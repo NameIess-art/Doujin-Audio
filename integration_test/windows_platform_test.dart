@@ -129,6 +129,43 @@ void main() {
         final directory = await Directory.systemTemp.createTemp(
           'doujin_windows_playback_',
         );
+        const fileCache = MethodChannel('doujin_audio/file_cache');
+        final invalidFolderPath = throwsA(
+          isA<PlatformException>().having(
+            (error) => error.code,
+            'code',
+            'invalid_argument',
+          ),
+        );
+        for (final path in [
+          null,
+          '',
+          'relative.wav',
+          '${directory.path}\u0000',
+        ]) {
+          await expectLater(
+            fileCache.invokeMethod<Object?>('openContainingFolder', {
+              'path': ?path,
+            }),
+            invalidFolderPath,
+          );
+        }
+        // Missing absolute targets are rejected by the filesystem worker. Each
+        // concurrent request must reply exactly once and preserve its error code.
+        await Future.wait([
+          for (var index = 0; index < 8; index++)
+            expectLater(
+              fileCache.invokeMethod<Object?>('openContainingFolder', {
+                'path': '${directory.path}/missing-$index.wav',
+              }),
+              invalidFolderPath,
+            ),
+          desktop.invokeMapMethod<String, bool>('getHotkeyStatus').then((
+            value,
+          ) {
+            expect(value?.keys, contains('toggle'));
+          }),
+        ]).timeout(const Duration(seconds: 5));
         final track = File('${directory.path}/音声 test.wav');
         const rate = 48000, seconds = 10;
         final bytes = ByteData(44 + rate * seconds * 2);

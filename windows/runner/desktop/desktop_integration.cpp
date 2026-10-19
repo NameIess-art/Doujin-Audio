@@ -10,8 +10,11 @@
 #include <dwmapi.h>
 #include <filesystem>
 #include <iostream>
+#include <mutex>
 #include <set>
 #include <stdexcept>
+#include <system_error>
+#include <thread>
 #include <winrt/base.h>
 
 namespace {
@@ -22,6 +25,7 @@ void Success(Result& result, const Value& value = Value()) {
   result.Success(Value(Map{{Value("ok"),Value(true)},{Value("value"),value}}));
 }
 constexpr UINT kTray = WM_APP + 42;
+constexpr UINT kFolderOpenReply = WM_APP + 46;
 const UINT kTaskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
 #ifdef _DEBUG
 constexpr auto kSettingsKey = L"Software\\DoujinAudio\\Debug";
@@ -54,7 +58,21 @@ void Launch(const std::wstring& path) {
 }
 }
 
+struct DesktopIntegration::FolderOpenState {
+  struct Request {
+    std::unique_ptr<Result> result;
+    std::string error;
+    std::string error_code = "windows_error";
+    bool completed = false;
+  };
+  std::mutex mutex;
+  HWND window = nullptr;
+  std::vector<std::shared_ptr<Request>> pending;
+};
+
 DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* messenger) : window_(window) {
+  folder_opens_ = std::make_shared<FolderOpenState>();
+  folder_opens_->window = window;
   WINDOWPLACEMENT saved{sizeof(WINDOWPLACEMENT)};
   DWORD bytes = sizeof(saved);
   if (RegGetValueW(HKEY_CURRENT_USER,kSettingsKey,L"WindowPlacement",RRF_RT_REG_BINARY,nullptr,&saved,&bytes) == ERROR_SUCCESS && bytes == sizeof(saved)) {
@@ -181,35 +199,132 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
       catch (const std::exception& e) { result->Error("windows_error",e.what()); }
   });
   channels_.push_back(std::move(power));
-  add("doujin_audio/file_cache",[](const auto& call, Result& result) {
+  auto file_cache = std::make_unique<Channel>(messenger,"doujin_audio/file_cache",&flutter::StandardMethodCodec::GetInstance());
+  file_cache->SetMethodCallHandler([this](const auto& call, auto result) {
+    try {
     if (call.method_name() == "openContainingFolder") {
-      const auto target = RequiredText(Arguments(call),"path");
-      if (target.find('\0') != std::string::npos) throw std::invalid_argument("path");
-      const std::filesystem::path path(winrt::to_hstring(target).c_str());
-      if (!path.is_absolute() || !std::filesystem::exists(path)) throw std::invalid_argument("path");
-      const bool is_directory = std::filesystem::is_directory(path);
-      if (!is_directory && !std::filesystem::is_regular_file(path)) throw std::invalid_argument("path");
-      Launch((is_directory ? path : path.parent_path()).wstring());
-      Success(result,Value(true));
+      OpenContainingFolder(Arguments(call),result);
       return;
     }
-    if (call.method_name() != "getStorageUsage") { result.NotImplemented(); return; }
+    if (call.method_name() != "getStorageUsage") { result->NotImplemented(); return; }
     PWSTR directory = nullptr;
     winrt::check_hresult(SHGetKnownFolderPath(FOLDERID_LocalAppData,0,nullptr,&directory));
     const std::filesystem::path app_data(directory);
     CoTaskMemFree(directory);
     ULARGE_INTEGER available{},total{},free{};
     if (!GetDiskFreeSpaceExW(app_data.c_str(),&available,&total,&free)) winrt::throw_last_error();
-    Success(result,Value(Map{{Value("totalBytes"),Value(static_cast<int64_t>(total.QuadPart))},
+    Success(*result,Value(Map{{Value("totalBytes"),Value(static_cast<int64_t>(total.QuadPart))},
       {Value("availableBytes"),Value(static_cast<int64_t>(available.QuadPart))}}));
+    } catch (const std::invalid_argument& e) { result->Error("invalid_argument",e.what()); }
+      catch (const winrt::hresult_error& e) { result->Error("windows_error",winrt::to_string(e.message())); }
+      catch (const std::exception& e) { result->Error("windows_error",e.what()); }
   });
+  channels_.push_back(std::move(file_cache));
   AddTray();
 }
 DesktopIntegration::~DesktopIntegration() {
+  std::vector<std::shared_ptr<FolderOpenState::Request>> pending;
+  {
+    std::lock_guard<std::mutex> lock(folder_opens_->mutex);
+    folder_opens_->window = nullptr;
+    pending.swap(folder_opens_->pending);
+  }
+  // Network filesystem calls cannot be cancelled reliably. Complete replies on
+  // the platform thread without waiting for those workers during engine teardown.
+  for (const auto& request : pending) {
+    request->result->Error("windows_error","Window closed before folder operation completed");
+    request->result.reset();
+  }
   scheduled_tasks_.reset();
   NOTIFYICONDATAW icon{}; icon.cbSize = sizeof(icon); icon.hWnd = window_; icon.uID = 1;
   Shell_NotifyIconW(NIM_DELETE,&icon);
   SetThreadExecutionState(ES_CONTINUOUS);
+}
+void DesktopIntegration::OpenContainingFolder(const Map& args,
+    std::unique_ptr<Result>& result) {
+  const auto target = RequiredText(args,"path");
+  if (target.find('\0') != std::string::npos) throw std::invalid_argument("path");
+  std::filesystem::path path(winrt::to_hstring(target).c_str());
+  if (!path.is_absolute()) throw std::invalid_argument("path");
+  const auto state = folder_opens_;
+  const auto request = std::make_shared<FolderOpenState::Request>();
+  {
+    std::lock_guard<std::mutex> lock(state->mutex);
+    state->pending.push_back(request);
+  }
+  request->result = std::move(result);
+  try {
+    std::thread([state,request,path = std::move(path)] {
+      std::string error, error_code = "windows_error";
+      const auto apartment = CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+      try {
+        winrt::check_hresult(apartment);
+        const auto status = std::filesystem::status(path);
+        const bool directory = std::filesystem::is_directory(status);
+        if (!directory && !std::filesystem::is_regular_file(status)) throw std::invalid_argument("path");
+        bool active;
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          active = state->window != nullptr;
+        }
+        if (active) {
+          const auto folder = (directory ? path : path.parent_path()).wstring();
+          SHELLEXECUTEINFOW execute{sizeof(SHELLEXECUTEINFOW)};
+          // The worker has no message loop, so Shell activation must finish here
+          // before its STA is released. Slow disk/Shell calls stay off the window.
+          execute.fMask = SEE_MASK_NOASYNC;
+          execute.lpVerb = L"open";
+          execute.lpFile = folder.c_str();
+          execute.nShow = SW_SHOWNORMAL;
+          if (!ShellExecuteExW(&execute)) winrt::throw_last_error();
+        }
+      } catch (const std::invalid_argument& e) {
+        error = e.what(); error_code = "invalid_argument";
+      } catch (const winrt::hresult_error& e) {
+        error = winrt::to_string(e.message());
+      } catch (const std::exception& e) {
+        error = e.what();
+      }
+      if (SUCCEEDED(apartment)) CoUninitialize();
+      {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        if (!state->window) return;
+        request->error = std::move(error);
+        request->error_code = std::move(error_code);
+        request->completed = true;
+      }
+      for (;;) {
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          if (!state->window) return;
+          if (PostMessage(state->window,kFolderOpenReply,0,0)) return;
+        }
+        // A full window queue must not strand the channel result. Back off
+        // without holding the teardown mutex, and stop once the window closes.
+        Sleep(10);
+      }
+    }).detach();
+  } catch (const std::system_error& e) {
+    request->error = e.what();
+    request->completed = true;
+    ReplyFolderOpens();
+  }
+}
+void DesktopIntegration::ReplyFolderOpens() {
+  std::vector<std::shared_ptr<FolderOpenState::Request>> replies;
+  {
+    std::lock_guard<std::mutex> lock(folder_opens_->mutex);
+    auto& pending = folder_opens_->pending;
+    for (auto it = pending.begin(); it != pending.end();) {
+      if ((*it)->completed) { replies.push_back(*it); it = pending.erase(it); }
+      else ++it;
+    }
+  }
+  for (const auto& reply : replies) {
+    if (reply->error.empty()) Success(*reply->result,Value(true));
+    else reply->result->Error(reply->error_code,reply->error);
+    reply->result.reset();
+  }
 }
 void DesktopIntegration::AddTray() {
   NOTIFYICONDATAW icon{}; icon.cbSize = sizeof(icon); icon.hWnd = window_; icon.uID = 1;
@@ -317,6 +432,7 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
   if (message == WM_DWMCOLORIZATIONCOLORCHANGED) { UpdateTheme(); return 0; }
   if (message == WM_SETTINGCHANGE && theme_mode_ == "system") UpdateTheme();
   if (message == ScheduledTasks::kReply) { scheduled_tasks_->Reply(); return 0; }
+  if (message == kFolderOpenReply) { ReplyFolderOpens(); return 0; }
   if (auto action = media_->HandleMessage(message, wp)) {
     if (*action == "showWindow") Show();
     else if (!action->empty()) Action(*action);

@@ -1709,7 +1709,8 @@ void main() {
         ),
       ]) {
         await tester.tap(menuButton);
-        await tester.pumpAndSettle();
+        await pumpUntilFound(tester, find.byType(BottomSheet));
+        await pumpAndSettleWithAsync(tester);
         expect(find.byType(BottomSheet), findsOneWidget);
         expect(dock, findsOneWidget);
         final opacity = find.ancestor(
@@ -3487,13 +3488,16 @@ void main() {
     await _waitForAsmrContent(tester);
 
     await tester.tap(find.text('Loaded work', findRichText: true));
-    for (var i = 0; i < 30 && find.text('Disc 1').evaluate().isEmpty; i++) {
+    final folder = find.text('Disc 1', skipOffstage: false);
+    for (var i = 0; i < 30 && folder.evaluate().isEmpty; i++) {
       await tester.pump(const Duration(milliseconds: 50));
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 10)),
       );
     }
 
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(folder);
     await tester.pumpAndSettle();
     expect(find.text('Disc 1'), findsOneWidget);
     expect(find.text('Nested track'), findsNothing);

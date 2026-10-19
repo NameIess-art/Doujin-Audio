@@ -1,20 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/media/music_track.dart';
-import '../../../../core/media/natural_sort.dart';
-import '../../../../core/media/path_display.dart';
-import '../../../../core/media/path_matcher.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/file_tree_row.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/playing_sound_wave_indicator.dart';
 import '../../application/playback_session_snapshot.dart';
-import '../../domain/playback_queue.dart';
-import 'playlist_shared_helpers.dart';
+import '../../application/session_switcher_tree.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
 
 class SessionTrackSelection {
   const SessionTrackSelection({required this.track, required this.queueIndex});
@@ -46,14 +45,18 @@ class SessionTrackSwitcherSheet extends StatefulWidget {
 
 class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet>
     with SingleTickerProviderStateMixin {
-  final Set<String> _expandedFolders = <String>{};
+  Set<String> _expandedFolders = <String>{};
   Key _listKey = UniqueKey();
-  List<_QueueTreeNode> _tree = const [];
-  List<({_QueueTreeNode node, int depth, String key})> _rows = const [];
-  final Map<String, int> _rowIndices = {};
+  List<SessionSwitcherNode> _tree = const [];
+  List<({SessionSwitcherNode node, int depth, String key})> _rows = const [];
+  Map<String, int> _rowIndices = {};
   late final AnimationController _expansionController;
   late final Animation<double> _opacity;
   late final Animation<double> _sizeFactor;
+  int _treeRequest = 0;
+  bool _loading = true;
+  Object? _treeError;
+  String get _treeCommitKey => 'switcher_tree_${identityHashCode(this)}';
   String? _animatingKey;
   int _animationStart = 0;
   int _animationCount = 0;
@@ -91,38 +94,59 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet>
   }
 
   void _rebuildTree({required bool expandSelected}) {
+    final request = ++_treeRequest;
+    _loading = true;
+    _treeError = null;
     _expansionController.stop();
     _animatingKey = null;
-    _listKey = UniqueKey();
-    _tree = _buildQueueTree(
-      widget.tracks,
-      session: widget.session,
-      workRoot: widget.workRoot,
-      currentPath: widget.session.currentTrackPath,
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _treeCommitKey,
+      commit: () => unawaited(_loadTree(request, expandSelected)),
     );
-    final folderKeys = <String>{};
-    bool visit(_QueueTreeNode node) {
-      var selected = node.selected;
-      for (final child in node.children) {
-        if (visit(child)) selected = true;
-      }
-      if (node.isFolder) {
-        folderKeys.add(node.key);
-        if (expandSelected && selected) _expandedFolders.add(node.key);
-      }
-      return selected;
-    }
+  }
 
-    for (final node in _tree) {
-      visit(node);
+  Future<void> _loadTree(int request, bool expandSelected) async {
+    try {
+      final tree = await prepareSessionSwitcherTree(
+        tracks: widget.tracks,
+        queue: widget.session.playbackQueue,
+        customQueueTracks: widget.session.customQueueTracks,
+        currentPath: widget.session.currentTrackPath,
+        currentQueueIndex: widget.session.currentQueueIndex,
+        workRoot: widget.workRoot,
+        resolveTrack: widget.resolveTrack,
+        workRootForTrack: widget.workRootForTrack,
+        expanded: Set.of(_expandedFolders),
+        expandSelected: expandSelected,
+      );
+      if (!mounted || request != _treeRequest) return;
+      UiInteractionCoordinator.instance.scheduleCommit(
+        key: _treeCommitKey,
+        structural: true,
+        commit: () {
+          if (!mounted || request != _treeRequest) return;
+          setState(() {
+            _tree = tree.roots;
+            _rows = tree.rows;
+            _rowIndices = tree.indices;
+            _expandedFolders = tree.expanded;
+            _listKey = UniqueKey();
+            _loading = false;
+          });
+        },
+      );
+    } catch (error) {
+      if (!mounted || request != _treeRequest) return;
+      setState(() {
+        _treeError = error;
+        _loading = false;
+      });
     }
-    _expandedFolders.retainAll(folderKeys);
-    _projectRows();
   }
 
   void _projectRows() {
-    final rows = <({_QueueTreeNode node, int depth, String key})>[];
-    void visit(_QueueTreeNode node, int depth) {
+    final rows = <({SessionSwitcherNode node, int depth, String key})>[];
+    void visit(SessionSwitcherNode node, int depth) {
       rows.add((node: node, depth: depth, key: node.key));
       if (_expandedFolders.contains(node.key)) {
         for (final child in node.children) {
@@ -195,6 +219,8 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet>
 
   @override
   void dispose() {
+    _treeRequest++;
+    UiInteractionCoordinator.instance.cancelCommit(_treeCommitKey);
     _expansionController.dispose();
     super.dispose();
   }
@@ -240,6 +266,24 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet>
 
   @override
   Widget build(BuildContext context) {
+    if (_loading || _treeError != null) {
+      final i18n = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appLanguageProviderInstanceProvider);
+      return SizedBox(
+        height: 160,
+        child: Center(
+          child: _treeError == null
+              ? const CircularProgressIndicator()
+              : TextButton(
+                  onPressed: () =>
+                      setState(() => _rebuildTree(expandSelected: true)),
+                  child: Text(i18n.tr('retry')),
+                ),
+        ),
+      );
+    }
     return SizedBox(
       width: double.infinity,
       child: ListView.builder(
@@ -265,152 +309,6 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet>
         },
       ),
     );
-  }
-
-  List<_QueueTreeNode> _buildQueueTree(
-    List<MusicTrack> tracks, {
-    required PlaybackSessionSnapshot session,
-    required String? workRoot,
-    required String currentPath,
-  }) {
-    final root = _QueueTreeNode.folder('');
-    final queueTracks = session.isPlaybackQueue
-        ? tracks
-        : session.customQueueTracks;
-    final selectedTrack = resolveSessionSwitcherSelectedTrack(
-      displayedTracks: tracks,
-      queueTracks: queueTracks,
-      currentPath: currentPath,
-      currentQueueIndex: session.currentQueueIndex,
-    );
-    if (session.isPlaybackQueue) {
-      final playbackTracks = session.playbackQueue!.expandedTracks;
-      final preferredIndex = session.currentQueueIndex;
-      final selectedQueueIndex =
-          preferredIndex >= 0 &&
-              preferredIndex < playbackTracks.length &&
-              selectedTrack != null &&
-              sameSessionSwitcherTrack(
-                playbackTracks[preferredIndex],
-                selectedTrack,
-              )
-          ? preferredIndex
-          : playbackTracks.indexWhere(
-              (track) => identical(track, selectedTrack),
-            );
-      var queueIndex = 0;
-      final resolvedTracks = <String, MusicTrack?>{};
-      for (final entry in session.playbackQueue!.entries) {
-        final firstTrack = entry.tracks.firstOrNull;
-        final isAsmrEntry = firstTrack?.isRemoteAsmr ?? false;
-        final fallbackRoot = entry.workRootPath != null || firstTrack == null
-            ? null
-            : widget.workRootForTrack(firstTrack.path);
-        final groupRoot = firstTrack?.groupKey.trim();
-        final entryWorkRoot =
-            entry.workRootPath ??
-            fallbackRoot ??
-            ((groupRoot == null ||
-                    groupRoot.isEmpty ||
-                    groupRoot == '__single_files__')
-                ? null
-                : PathMatcher.normalize(groupRoot));
-        final showWorkRoot =
-            firstTrack?.isSingle != true &&
-            (entry.kind == PlaybackQueueEntryKind.work || isAsmrEntry);
-        final parent = showWorkRoot
-            ? _QueueTreeNode.folder(
-                isAsmrEntry
-                    ? (firstTrack!.groupTitle.trim().isEmpty
-                          ? entry.title
-                          : firstTrack.groupTitle)
-                    : entryWorkRoot == null
-                    ? entry.title
-                    : PathDisplay.folderName(entryWorkRoot),
-                key: 'queue:${entry.id}',
-              )
-            : root;
-        if (!identical(parent, root)) {
-          root.children.add(parent);
-        }
-        for (final track in entry.tracks) {
-          final latestTrack = resolvedTracks.putIfAbsent(
-            track.path,
-            () => widget.resolveTrack(track.path),
-          );
-          final displayTrack =
-              latestTrack != null && latestTrack.duration > Duration.zero
-              ? latestTrack
-              : track;
-          var trackParent = parent;
-          if (showWorkRoot) {
-            for (final folder in _queueFolderSegments(
-              track,
-              workRoot: entryWorkRoot,
-            )) {
-              trackParent = trackParent.folderChild(folder);
-            }
-          }
-          trackParent.children.add(
-            _QueueTreeNode.track(
-              displayTrack,
-              selected: queueIndex == selectedQueueIndex,
-              queueIndex: queueIndex,
-            ),
-          );
-          queueIndex++;
-        }
-        if (!identical(parent, root)) {
-          parent.sortChildrenNaturally();
-        }
-      }
-      return root.children;
-    }
-    for (var index = 0; index < tracks.length; index++) {
-      final track = tracks[index];
-      var parent = root;
-      for (final folder in _queueFolderSegments(track, workRoot: workRoot)) {
-        parent = parent.folderChild(folder);
-      }
-      parent.children.add(
-        _QueueTreeNode.track(
-          track,
-          selected: identical(track, selectedTrack),
-          queueIndex: index,
-        ),
-      );
-    }
-    if (session.customQueueTracks == null ||
-        tracks.every((track) => track.isRemoteAsmr)) {
-      root.sortChildrenNaturally();
-    }
-    return root.children;
-  }
-
-  List<String> _queueFolderSegments(
-    MusicTrack track, {
-    required String? workRoot,
-  }) {
-    final remoteRelativePath = track.remoteMetadata?['trackRelativePath']
-        ?.toString()
-        .trim();
-    final relativePath = remoteRelativePath?.isNotEmpty == true
-        ? remoteRelativePath!
-        : workRoot == null
-        ? PathMatcher.relativeWithin(track.path, track.groupKey)
-        : PathMatcher.relativeWithin(track.path, workRoot);
-    if (relativePath == null || relativePath.isEmpty) {
-      return const <String>[];
-    }
-    final displayPath = PathDisplay.displayPathFor(relativePath);
-    final segments = displayPath
-        .replaceAll('\\', '/')
-        .split('/')
-        .map((segment) => segment.trim())
-        .where((segment) => segment.isNotEmpty)
-        .toList();
-    if (segments.length <= 1) return const <String>[];
-    return segments.take(segments.length - 1).toList(growable: false);
   }
 }
 
@@ -441,60 +339,6 @@ class _QueueSheetHeader extends StatelessWidget {
   }
 }
 
-class _QueueTreeNode {
-  _QueueTreeNode.folder(this.title, {this.key = ''})
-    : track = null,
-      selected = false,
-      queueIndex = -1;
-
-  _QueueTreeNode.track(
-    this.track, {
-    required this.selected,
-    required this.queueIndex,
-  }) : title = track!.displayName,
-       key = 'track:$queueIndex:${track.path}';
-
-  final String title;
-  final String key;
-  final MusicTrack? track;
-  final bool selected;
-  final int queueIndex;
-  final List<_QueueTreeNode> children = <_QueueTreeNode>[];
-
-  bool get isFolder => track == null;
-  Map<String, _QueueTreeNode>? _foldersByName;
-
-  _QueueTreeNode folderChild(String name) {
-    return (_foldersByName ??= <String, _QueueTreeNode>{}).putIfAbsent(
-      name,
-      () {
-        final folder = _QueueTreeNode.folder(
-          name,
-          key: '$key/${Uri.encodeComponent(name)}',
-        );
-        children.add(folder);
-        return folder;
-      },
-    );
-  }
-
-  void sortChildrenNaturally() {
-    for (final child in children) {
-      child.sortChildrenNaturally();
-    }
-    children.sort(
-      (left, right) => compareNaturalTreeEntries(
-        leftIsFolder: left.isFolder,
-        leftName: left.title,
-        leftPath: left.track?.path ?? left.title,
-        rightIsFolder: right.isFolder,
-        rightName: right.title,
-        rightPath: right.track?.path ?? right.title,
-      ),
-    );
-  }
-}
-
 class _QueueTreeNodeTile extends StatelessWidget {
   const _QueueTreeNodeTile({
     required this.node,
@@ -505,12 +349,12 @@ class _QueueTreeNodeTile extends StatelessWidget {
     required this.onTrackTap,
   });
 
-  final _QueueTreeNode node;
+  final SessionSwitcherNode node;
   final int depth;
   final bool expanded;
   final bool isPlaying;
   final VoidCallback onToggleExpansion;
-  final ValueChanged<_QueueTreeNode> onTrackTap;
+  final ValueChanged<SessionSwitcherNode> onTrackTap;
 
   @override
   Widget build(BuildContext context) {

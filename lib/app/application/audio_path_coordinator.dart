@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart';
+
 import '../../core/media/audio_detail.dart';
 import '../../core/media/music_track.dart';
 import '../../core/media/path_display.dart';
 import '../../core/media/path_matcher.dart';
 import '../../features/library/application/library_facade.dart';
+import '../../features/library/application/library_organizer.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_track_resolver.dart';
 
@@ -197,12 +200,55 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     _workTracksCache.clear();
   }
 
-  List<MusicTrack> tracksForSessionSwitcher(String sessionId) {
+  Future<List<MusicTrack>> tracksForSessionSwitcher(String sessionId) async {
     final session = _playback.sessionById(sessionId);
     if (session == null) return const <MusicTrack>[];
     final customQueue = session.customQueueTracks;
     if (customQueue != null && customQueue.isNotEmpty) return customQueue;
-    return tracksInSameWork(session.currentTrackPath);
+    final track = trackByPath(session.currentTrackPath);
+    if (track == null) return const <MusicTrack>[];
+    if (track.isSingle) return [track];
+    final root = workRootForTrack(track.path);
+    if (track.isRemoteAsmr ||
+        PathMatcher.isRemoteUri(track.path) ||
+        root == null) {
+      return tracksInSameGroup(track.path);
+    }
+    final cached = _cachedWork(root)?.tracks;
+    if (cached != null) return cached;
+    final revision = _library.structureRevision;
+    final source = _library.library;
+    final indices = await compute(_workSwitcherIndices, (
+      tracks: source,
+      root: root,
+    ));
+    if (revision != _library.structureRevision) {
+      return tracksForSessionSwitcher(sessionId);
+    }
+    final tracks = <MusicTrack>[];
+    final budget = Stopwatch()..start();
+    for (final index in indices) {
+      // The read-only view can change while a previous slice yields to a scan.
+      if (revision != _library.structureRevision) {
+        return tracksForSessionSwitcher(sessionId);
+      }
+      tracks.add(source[index]);
+      if (budget.elapsedMicroseconds >= 1000) {
+        await Future<void>.delayed(Duration.zero);
+        budget.reset();
+      }
+    }
+    if (revision != _library.structureRevision) {
+      return tracksForSessionSwitcher(sessionId);
+    }
+    final result = List<MusicTrack>.unmodifiable(
+      tracks.isEmpty ? tracksInSameGroup(track.path) : tracks,
+    );
+    _cacheWork(
+      root,
+      _WorkTracksCache(hasSiblings: result.length > 1, tracks: result),
+    );
+    return result;
   }
 
   @override
@@ -343,4 +389,20 @@ final class _WorkTracksCache {
 
   final bool hasSiblings;
   final List<MusicTrack>? tracks;
+}
+
+List<int> _workSwitcherIndices(
+  ({List<MusicTrack> tracks, String root}) request,
+) {
+  final indices = <int>[
+    for (var i = 0; i < request.tracks.length; i++)
+      if (PathMatcher.isWithinOrEqual(request.tracks[i].path, request.root) ||
+          PathMatcher.isWithinOrEqual(request.tracks[i].groupKey, request.root))
+        i,
+  ];
+  const organizer = LibraryOrganizer();
+  indices.sort(
+    (a, b) => organizer.compareTracks(request.tracks[a], request.tracks[b]),
+  );
+  return indices;
 }

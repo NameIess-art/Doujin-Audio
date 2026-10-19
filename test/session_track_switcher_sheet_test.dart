@@ -90,7 +90,22 @@ Future<void> _pumpSheet(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  await _waitForTree(tester);
+}
+
+Future<void> _waitForTree(WidgetTester tester) async {
+  for (var attempt = 0; attempt < 200; attempt++) {
+    await tester.pump(const Duration(milliseconds: 16));
+    if (find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      return;
+    }
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+  }
+  fail('Switcher background tree did not complete');
 }
 
 Finder _trackRows() => find.byWidgetPredicate(
@@ -191,7 +206,7 @@ void main() {
     }),
   );
 
-  testWidgets('switcher icons use local and ASMR work accents', (tester) async {
+  testWidgets('switcher audio icons follow the detail theme', (tester) async {
     final tracks = [
       _track('local.mp3'),
       _track(
@@ -207,7 +222,7 @@ void main() {
     final expected = {
       'disc': AppDesignTokens.folderIconColor,
       'local.mp3': primary,
-      'remote.mp3': AppDesignTokens.light.asmrAccent,
+      'remote.mp3': primary,
     };
     for (final entry in expected.entries) {
       final row = find.ancestor(

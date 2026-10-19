@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -55,6 +57,15 @@ class _FixedCategorySnapshotCache extends LibrarySnapshotCacheService {
        );
 
   AudioLibraryCategorySnapshot snapshot;
+  Future<LibraryCategoryFilterResult> Function(LibraryCategoryFilterRequest)?
+  filter;
+
+  @override
+  Future<LibraryCategoryFilterResult> filterCategoryEntries(
+    LibraryCategoryFilterRequest request,
+  ) async => filter == null
+      ? filterLibraryCategoryEntries(request)
+      : await filter!(request);
 
   @override
   AudioLibraryCategorySnapshot get categorySnapshotSync => snapshot;
@@ -67,6 +78,146 @@ class _FixedCategorySnapshotCache extends LibrarySnapshotCacheService {
 
 void main() {
   AppRuntimeTestFixture.initialize();
+  test(
+    'worker filters with AND terms and stably promotes normalized paths',
+    () async {
+      final entries = [
+        for (var i = 0; i < 5; i++)
+          _createEntry(
+            title: 'Work $i',
+            path: 'C:/Work/$i',
+            tags: i == 4 ? ['ASMR'] : ['ASMR', 'Sleep'],
+            voiceActors: ['Voice'],
+            circleName: 'Circle',
+          ),
+      ];
+      final snapshot = AudioLibraryCategorySnapshot(
+        entries: entries,
+        structureRevision: 1,
+        detailRevision: 1,
+      );
+      final request = (
+        snapshot: snapshot,
+        category: AudioLibraryCategoryType.tags,
+        queryTerms: ['work'],
+        termKeywords: ['sl'],
+        selectedTerms: {'ASMR', 'Sleep'},
+        pinnedPaths: {r'C:\Work\3', 'C:/Work/1/'},
+      );
+      final result = await compute(filterLibraryCategoryEntries, request);
+      expect(result.entries.map((entry) => entry.title), [
+        'Work 1',
+        'Work 3',
+        'Work 0',
+        'Work 2',
+      ]);
+      expect(result.terms, ['Sleep']);
+      expect(snapshot.entries, entries);
+    },
+  );
+
+  testWidgets(
+    'category filtering keeps old rows and rejects stale results and errors',
+    (tester) async {
+      UiInteractionCoordinator.instance.resetForTest();
+      addTearDown(UiInteractionCoordinator.instance.resetForTest);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final snapshot = AudioLibraryCategorySnapshot(
+        entries: [
+          for (final title in ['Alpha', 'Beta'])
+            _createEntry(
+              title: title,
+              path: '/$title',
+              tags: ['ASMR'],
+              voiceActors: ['Voice'],
+              circleName: 'Circle',
+            ),
+        ],
+        structureRevision: fixture.libraryService.structureRevision,
+        detailRevision: fixture.library.detailCacheService.revision,
+      );
+      final cache = _FixedCategorySnapshotCache(
+        libraryService: fixture.libraryService,
+        detailCacheService: fixture.library.detailCacheService,
+        snapshot: snapshot,
+      );
+      final library = LibraryFacade.create(
+        databaseRepository: fixture.persistenceRepository,
+        service: fixture.libraryService,
+        detailCacheService: fixture.library.detailCacheService,
+        snapshotCacheService: cache,
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          const LibrarySearchPage(),
+          overrides: [libraryFacadeProvider.overrideWithValue(library)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey('app_search_category_AudioLibraryCategoryType.tags'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final requests = <LibraryCategoryFilterRequest>[];
+      final pending = <Completer<LibraryCategoryFilterResult>>[];
+      cache.filter = (request) {
+        requests.add(request);
+        final completer = Completer<LibraryCategoryFilterResult>();
+        pending.add(completer);
+        return completer.future;
+      };
+      Future<void> search(String text) async {
+        await tester.enterText(
+          find.byKey(const ValueKey('app_search_field')),
+          text,
+        );
+        await tester.pump(const Duration(milliseconds: 250));
+        await tester.pump();
+      }
+
+      await search('Alpha');
+      expect(find.byKey(const ValueKey('category_/Beta')), findsOneWidget);
+      await search('Beta');
+      final interaction = Object();
+      UiInteractionCoordinator.instance.beginInteraction(interaction);
+      pending[1].complete(filterLibraryCategoryEntries(requests[1]));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('category_/Alpha')), findsOneWidget);
+      UiInteractionCoordinator.instance.cancelInteraction(interaction);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('category_/Alpha')), findsNothing);
+      expect(find.byKey(const ValueKey('category_/Beta')), findsOneWidget);
+      pending[0].completeError(StateError('obsolete'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('library_category_error_tags')),
+        findsNothing,
+      );
+      await search('Alpha');
+      // Returning to the last committed input must also cancel the pending result.
+      await search('Beta');
+      pending[2].complete(filterLibraryCategoryEntries(requests[2]));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('category_/Alpha')), findsNothing);
+      expect(find.byKey(const ValueKey('category_/Beta')), findsOneWidget);
+      await search('Alpha');
+      pending[3].completeError(StateError('current'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('library_category_error_tags')),
+        findsOneWidget,
+      );
+      cache.filter = null;
+      await tester.tap(find.text('重试'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('category_/Alpha')), findsOneWidget);
+      expect(find.byKey(const ValueKey('category_/Beta')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
       'visited categories retain lists, filters and scroll on $platform',
@@ -313,6 +464,10 @@ void main() {
       Future<void> choose(AudioLibraryCategoryType type) async {
         await tester.tap(find.byKey(ValueKey('app_search_category_$type')));
         await tester.pumpAndSettle();
+        // Category animation completion leaves the coordinator's idle timer
+        // armed; pumpAndSettle alone stops before deferred filter commits run.
+        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+        await tester.pumpAndSettle();
       }
 
       for (final type in AudioLibraryCategoryType.values.skip(1)) {
@@ -362,6 +517,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 230));
       expect(entries.first.reads[AudioLibraryCategoryType.tags], beforeSlide);
       await tester.pumpAndSettle();
+      await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+      await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('category_/Alpha')), findsOneWidget);
       await choose(AudioLibraryCategoryType.tags);
       await tester.tap(find.widgetWithText(ActionChip, '展开'));
@@ -380,7 +537,8 @@ void main() {
       selected.onToggle('ASMR');
       await tester.pumpAndSettle();
       expect(
-        tester.widget<LibraryCategoryTermBox>(find.byType(LibraryCategoryTermBox))
+        tester
+            .widget<LibraryCategoryTermBox>(find.byType(LibraryCategoryTermBox))
             .selectedTerms,
         {'ASMR'},
       );
@@ -393,7 +551,8 @@ void main() {
       cleared.onClear();
       await tester.pumpAndSettle();
       expect(
-        tester.widget<LibraryCategoryTermBox>(find.byType(LibraryCategoryTermBox))
+        tester
+            .widget<LibraryCategoryTermBox>(find.byType(LibraryCategoryTermBox))
             .selectedTerms,
         isEmpty,
       );
@@ -418,29 +577,30 @@ void main() {
   );
 
   group('SearchHighlightScope.withTerms', () {
-    testWidgets('provides custom terms list to descendant SearchHighlightedText', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: SearchHighlightScope.withTerms(
-              terms: ['alpha', 'beta'],
-              child: SearchHighlightedText(
-                text: 'alpha test beta',
-                style: TextStyle(),
+    testWidgets(
+      'provides custom terms list to descendant SearchHighlightedText',
+      (tester) async {
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: Scaffold(
+              body: SearchHighlightScope.withTerms(
+                terms: ['alpha', 'beta'],
+                child: SearchHighlightedText(
+                  text: 'alpha test beta',
+                  style: TextStyle(),
+                ),
               ),
             ),
           ),
-        ),
-      );
+        );
 
-      expect(find.byType(RichText), findsOneWidget);
-      final richText = tester.widget<RichText>(find.byType(RichText));
-      final textSpan = richText.text as TextSpan;
-      expect(textSpan.children, isNotNull);
-      expect(textSpan.children!.length, greaterThan(1));
-    });
+        expect(find.byType(RichText), findsOneWidget);
+        final richText = tester.widget<RichText>(find.byType(RichText));
+        final textSpan = richText.text as TextSpan;
+        expect(textSpan.children, isNotNull);
+        expect(textSpan.children!.length, greaterThan(1));
+      },
+    );
   });
 
   group('Category entry search filtering logic', () {
@@ -472,7 +632,6 @@ void main() {
       expect(terms2.contains('asmr'), isTrue);
       expect(terms2.contains('sleep'), isTrue);
     });
-
   });
 
   group('LibraryCategoryTermBox styling', () {

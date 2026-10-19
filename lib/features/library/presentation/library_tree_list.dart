@@ -19,6 +19,7 @@ import '../../../core/widgets/operation_feedback.dart';
 
 import 'library_tab_ui_helpers.dart';
 import 'library_tab_tree_widgets.dart';
+import '../../settings/presentation/settings_providers.dart';
 
 class _LoadedLibraryFolder {
   const _LoadedLibraryFolder({required this.folder, required this.revision});
@@ -186,6 +187,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   _folderLoadAnimations = {};
   final Set<String> _pendingFolderReveals = {};
   List<VisibleLibraryItem> _visibleItemsCache = const <VisibleLibraryItem>[];
+  Set<String> _presentedPinnedPaths = const {};
   List<String> _visibleItemIds = const [];
   List<String> _reorderItemIds = const [];
   Set<String> _visibleNodeIds = const {};
@@ -529,6 +531,9 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
     _ProjectionInput input,
     (List<LibraryNode>, int, int) request,
   ) async {
+    final pinnedPaths =
+        ref.read(settingsStateProvider).value?.pinnedLibraryPaths.toSet() ??
+        const <String>{};
     try {
       final projection = await compute(_buildLibraryProjection, input);
       if (!mounted) return;
@@ -590,6 +595,9 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
           _projectionError = null;
           _presentedProjectionVersion = request.$3;
           _visibleItemsCache = List.unmodifiable(items);
+          // Badges follow the same snapshot as the row order so they cannot
+          // appear while the replacement projection is still being prepared.
+          _presentedPinnedPaths = pinnedPaths;
           _visibleItemIds = projection.ids;
           _reorderItemIds = projection.reorderIds;
           _visibleNodeIds = projection.nodeIds;
@@ -817,6 +825,9 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         child: RepaintBoundary(
           child: LibraryTreeItem(
             node: node,
+            isPinned: _presentedPinnedPaths.contains(
+              PathMatcher.normalize(node.path),
+            ),
             initiallyExpanded:
                 node is FolderNode &&
                 _expandedCardPaths.contains(PathMatcher.normalize(node.path)),

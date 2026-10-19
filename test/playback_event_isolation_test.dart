@@ -259,7 +259,7 @@ final class _PlaybackIsolationHarness {
 
   Future<void> waitForLibrarySnapshot(WidgetTester tester) async {
     for (var attempt = 0; attempt < 100; attempt++) {
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
       expect(librarySortingError, isNull);
       if (libraryCardCount == graph.library.libraryCards.length) {
         await tester.pumpAndSettle();

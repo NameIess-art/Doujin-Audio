@@ -330,7 +330,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   ScrollController get _scrollController =>
       _scrollControllers[_selectedCategory]!;
 
-  late bool _wasSelected;
+  bool? _wasActive;
   ModalRoute<dynamic>? _route;
 
   bool get _isSelected =>
@@ -375,7 +375,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   @override
   void initState() {
     super.initState();
-    _wasSelected = _isSelected;
     _scrollControllers = {
       for (final category in _headerCategories) category: ScrollController(),
     };
@@ -388,27 +387,22 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       _activationCompleted = controller.hasLoadedCategory(_selectedCategory);
     }
     _languageProvider.addListener(_handleAppLanguageChanged);
-    widget.activeTabIndexListenable?.addListener(_handleActiveStateChanged);
-    widget.activeSectionListenable?.addListener(_handleActiveStateChanged);
+    widget.activeTabIndexListenable?.addListener(_handleActivityChanged);
+    widget.activeSectionListenable?.addListener(_handleActivityChanged);
     final mainController = ref.read(mainScreenControllerProvider);
     initTabState(mainController.scrollToTopTab, mainController.stopScrollTab);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_isActive) return;
       _scheduleHeaderMeasurement(force: true);
-      _ensureActivated();
     });
   }
 
-  void _handleActiveStateChanged() {
-    if (!mounted) return;
-    final selected = _isSelected;
-    if (selected == _wasSelected) return;
-    _wasSelected = selected;
-    _handleActivityChanged();
-  }
-
   void _handleActivityChanged() {
-    if (!_isActive) {
+    if (!mounted) return;
+    final active = _isActive;
+    if (active == _wasActive) return;
+    _wasActive = active;
+    if (!active) {
       UiInteractionCoordinator.instance.cancelCommit(_categoryLoadCommitKey);
       UiInteractionCoordinator.instance.cancelCommit(_activationCommitKey);
       UiInteractionCoordinator.instance.cancelCommit(_languageCommitKey);
@@ -593,17 +587,15 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.activeTabIndexListenable != widget.activeTabIndexListenable) {
       oldWidget.activeTabIndexListenable?.removeListener(
-        _handleActiveStateChanged,
+        _handleActivityChanged,
       );
-      widget.activeTabIndexListenable?.addListener(_handleActiveStateChanged);
+      widget.activeTabIndexListenable?.addListener(_handleActivityChanged);
     }
     if (oldWidget.activeSectionListenable != widget.activeSectionListenable) {
-      oldWidget.activeSectionListenable?.removeListener(
-        _handleActiveStateChanged,
-      );
-      widget.activeSectionListenable?.addListener(_handleActiveStateChanged);
+      oldWidget.activeSectionListenable?.removeListener(_handleActivityChanged);
+      widget.activeSectionListenable?.addListener(_handleActivityChanged);
     }
-    _handleActiveStateChanged();
+    _handleActivityChanged();
   }
 
   @override
@@ -868,8 +860,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     UiInteractionCoordinator.instance.cancelCommit(_languageCommitKey);
     _activeCategoryIndex.dispose();
     _languageProvider.removeListener(_handleAppLanguageChanged);
-    widget.activeTabIndexListenable?.removeListener(_handleActiveStateChanged);
-    widget.activeSectionListenable?.removeListener(_handleActiveStateChanged);
+    widget.activeTabIndexListenable?.removeListener(_handleActivityChanged);
+    widget.activeSectionListenable?.removeListener(_handleActivityChanged);
     disposeTabState();
     for (final controller in _scrollControllers.values) {
       controller.dispose();

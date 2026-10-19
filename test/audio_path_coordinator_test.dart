@@ -204,10 +204,44 @@ void main() {
     expect(session.currentTrackPath, tracks[1].path);
     expect(session.customQueueTracks, isNull);
     expect(
-      graph.audioPaths.tracksForSessionSwitcher(session.id).map((t) => t.path),
+      (await graph.audioPaths.tracksForSessionSwitcher(
+        session.id,
+      )).map((t) => t.path),
       graph.audioPaths.tracksInSameWork(tracks[0].path).map((t) => t.path),
     );
   });
+
+  test(
+    'async switcher reloads a changed library and preserves track identity',
+    () async {
+      final graph = createTestRuntimeGraph();
+      addTearDown(graph.runtime.dispose);
+      MusicTrack track(String name) => MusicTrack(
+        path: '/library/work/$name.mp3',
+        displayName: name,
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        groupSubtitle: '',
+        isSingle: false,
+      );
+      final first = track('Track 10');
+      final second = track('Track 2');
+      graph.library.addWatchedFolder('/library/work', notify: false);
+      graph.library.addTracks([first], persist: false);
+      final session = graph.playback.createTrackSession(first);
+      final pending = graph.audioPaths.tracksForSessionSwitcher(session.id);
+      graph.library.addTracks([second], persist: false);
+      final result = await pending;
+      expect(result, [second, first]);
+      expect(result.first, same(second));
+      expect(result.last, same(first));
+      expect(() => result.clear(), throwsUnsupportedError);
+      expect(
+        await graph.audioPaths.tracksForSessionSwitcher(session.id),
+        same(result),
+      );
+    },
+  );
 
   test('selected ASMR track enables the full work switcher', () async {
     final graph = createTestRuntimeGraph();
@@ -235,7 +269,9 @@ void main() {
     final session = graph.playback.ordinarySessions.single;
     expect(graph.audioPaths.hasOtherTracksInSameWork(selected.path), isTrue);
     expect(
-      graph.audioPaths.tracksForSessionSwitcher(session.id).map((t) => t.path),
+      (await graph.audioPaths.tracksForSessionSwitcher(
+        session.id,
+      )).map((t) => t.path),
       [selected.path, sibling.path],
     );
   });
@@ -277,7 +313,7 @@ void main() {
     );
   }
 
-  test('sibling lookup skips unrelated tracks and reuses the work cache', () {
+  test('sibling lookup skips unrelated tracks and reuses the work cache', () async {
     final service = _CountingLibrary();
     final graph = createTestRuntimeGraph(libraryService: service);
     addTearDown(graph.runtime.dispose);
@@ -311,11 +347,9 @@ void main() {
     expect(counted.reads, 0);
     expect(graph.audioPaths.cachedHasOtherTracksInSameWork(path), isTrue);
     expect(
-      graph.audioPaths
-          .tracksForSessionSwitcher(
-            graph.playback.createTrackSession(tracks[5000]).id,
-          )
-          .map((track) => track.path),
+      (await graph.audioPaths.tracksForSessionSwitcher(
+        graph.playback.createTrackSession(tracks[5000]).id,
+      )).map((track) => track.path),
       [tracks[5000].path, tracks[5001].path],
     );
     counted.reads = 0;

@@ -1086,6 +1086,9 @@ void main() {
       expect(loads, 1);
       expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
       expect(find.text('Batch track 0'), findsNothing);
+      // Finish route/scroll quiet windows before freezing time to measure the
+      // first frame of the loaded rows' fade.
+      await pumpUntilUiIdle(tester);
       result.complete(loaded);
       await _waitForLibraryProjection(
         tester,
@@ -1964,9 +1967,14 @@ void main() {
         expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
         await gesture.up();
         await tester.pumpAndSettle();
-        final warmedImage = tester.widget<RawImage>(decodedCover).image!.clone();
+        final warmedImage = tester
+            .widget<RawImage>(decodedCover)
+            .image!
+            .clone();
         addTearDown(warmedImage.dispose);
-        final originalElement = tester.element(find.byType(AsyncLocalCoverImage));
+        final originalElement = tester.element(
+          find.byType(AsyncLocalCoverImage),
+        );
         scrollController.jumpTo(9000);
         await tester.pump();
         expect(originalElement.mounted, isFalse);
@@ -1981,7 +1989,8 @@ void main() {
         expect(
           decodedCover,
           findsOneWidget,
-          reason: '${surface.runtimeType} must reuse the decoded cover on return',
+          reason:
+              '${surface.runtimeType} must reuse the decoded cover on return',
         );
         expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
         expect(
@@ -2068,6 +2077,7 @@ void main() {
               AudioDetailTarget.libraryRootFolder(folder.path),
             ).copyWith(workTitle: 'Metadata Work Title'),
           );
+          await fixture.runtimeGraph.library.flushPendingPersistence();
         });
         fixture.libraryService.syncSlice(
           isInitialized: true,
@@ -2117,7 +2127,7 @@ void main() {
         await tester.runAsync(
           () => precacheImage(cardProvider, tester.element(cardSurface)),
         );
-        await tester.pumpAndSettle();
+        await pumpAndSettleWithAsync(tester);
         final cardImage = tester
             .widget<RawImage>(
               find.descendant(of: cardSurface, matching: find.byType(RawImage)),
@@ -2162,9 +2172,12 @@ void main() {
         await pumpUntilFound(tester, find.byType(WorkDetailPage));
         await pumpUntilNotFound(
           tester,
-          find.byKey(const ValueKey('work_detail_entries_skeleton')),
+          find.byKey(
+            const ValueKey('work_detail_entries_skeleton'),
+            skipOffstage: false,
+          ),
         );
-        await tester.pumpAndSettle();
+        await pumpAndSettleWithAsync(tester);
         for (var tick = 0; tick < 100; tick++) {
           if (tester.widget<RawImage>(detailFrames).image?.width == 600) break;
           await tester.runAsync(
@@ -2205,7 +2218,7 @@ void main() {
           coverCacheWidthForResolution(resolution),
         );
         Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
-        await tester.pumpAndSettle();
+        await pumpAndSettleWithAsync(tester);
         expect(
           find.descendant(
             of: find.byType(AsyncLocalCoverImage).first,
@@ -2227,7 +2240,7 @@ void main() {
           isInitialized: true,
         );
         await tester.pumpWidget(fixture.build(const PlaylistTab()));
-        await tester.pumpAndSettle();
+        await pumpAndSettleWithAsync(tester);
         final playlistCard = tester.widget<AsyncLocalCoverImage>(
           find.byType(AsyncLocalCoverImage).first,
         );
@@ -2276,7 +2289,7 @@ void main() {
           ),
           findsNothing,
         );
-        await tester.pumpAndSettle();
+        await pumpAndSettleWithAsync(tester);
         final playbackCover = tester.widget<AsyncLocalCoverImage>(
           find.descendant(
             of: playbackArtwork,
@@ -2292,7 +2305,7 @@ void main() {
           coverCacheWidthForResolution(resolution),
         );
         Navigator.of(tester.element(playbackArtwork)).pop();
-        await tester.pumpAndSettle();
+        await pumpAndSettleWithAsync(tester);
         await tester.pumpWidget(const SizedBox.shrink());
         if (defaultTargetPlatform == TargetPlatform.windows) {
           PaintingBinding.instance.imageCache.clear();
@@ -2421,18 +2434,18 @@ void main() {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       const rootPath = '/library/deep';
-      fixture.runtimeGraph.library.addWatchedFolder(rootPath, notify: false);
-      fixture.runtimeGraph.library.addTracks(
-        <MusicTrack>[
+      await tester.runAsync(() async {
+        fixture.runtimeGraph.library.addWatchedFolder(rootPath, notify: false);
+        fixture.runtimeGraph.library.addTracks(<MusicTrack>[
           testMusicTrack(
             name: 'Deep track',
             path: '$rootPath/Disc/Chapter/deep.mp3',
             groupKey: rootPath,
             groupTitle: 'Deep work',
           ),
-        ],
-        persist: false,
-      );
+        ], persist: false);
+        await fixture.runtimeGraph.library.flushPendingPersistence();
+      });
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
       await tester.pumpWidget(fixture.build(const LibraryTab()));
@@ -2443,10 +2456,15 @@ void main() {
       await pumpUntilFound(tester, find.byType(WorkDetailPage));
       await pumpUntilNotFound(
         tester,
-        find.byKey(const ValueKey('work_detail_entries_skeleton')),
+        find.byKey(
+          const ValueKey('work_detail_entries_skeleton'),
+          skipOffstage: false,
+        ),
       );
+      final disc = find.text('Disc', findRichText: true, skipOffstage: false);
+      await pumpUntilFound(tester, disc);
+      await tester.ensureVisible(disc);
       await tester.pumpAndSettle();
-      await pumpUntilFound(tester, find.text('Disc', findRichText: true));
       await tester.tap(find.text('Disc', findRichText: true));
       await pumpUntilFound(tester, find.text('Chapter', findRichText: true));
       await tester.tap(find.text('Chapter', findRichText: true));
@@ -2465,18 +2483,18 @@ void main() {
     const trackPath =
         'content://com.android.externalstorage.documents/tree/primary%3AASMR/'
         'document/primary%3AASMR%2Fcontent-track.mp3';
-    fixture.runtimeGraph.library.addWatchedFolder(rootPath, notify: false);
-    fixture.runtimeGraph.library.addTracks(
-      <MusicTrack>[
+    await tester.runAsync(() async {
+      fixture.runtimeGraph.library.addWatchedFolder(rootPath, notify: false);
+      fixture.runtimeGraph.library.addTracks(<MusicTrack>[
         testMusicTrack(
           name: 'Content track',
           path: trackPath,
           groupKey: rootPath,
           groupTitle: 'Content work',
         ),
-      ],
-      persist: false,
-    );
+      ], persist: false);
+      await fixture.runtimeGraph.library.flushPendingPersistence();
+    });
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
     await tester.pumpWidget(fixture.build(const LibraryTab()));
@@ -2487,10 +2505,15 @@ void main() {
 
     await tester.tap(find.byType(ListTile).first);
     await pumpUntilFound(tester, find.byType(WorkDetailPage));
-    await pumpUntilFound(
-      tester,
-      find.text('Content track', findRichText: true),
+    final contentTrack = find.text(
+      'Content track',
+      findRichText: true,
+      skipOffstage: false,
     );
+    await pumpUntilFound(tester, contentTrack);
+    await tester.ensureVisible(contentTrack);
+    await pumpAndSettleWithAsync(tester);
+    expect(find.text('Content track', findRichText: true), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -2511,8 +2534,11 @@ void main() {
       ),
       growable: false,
     );
-    runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
-    runtimeGraph.library.addTracks(tracks, persist: false);
+    await tester.runAsync(() async {
+      runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
+      runtimeGraph.library.addTracks(tracks, persist: false);
+      await runtimeGraph.library.flushPendingPersistence();
+    });
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
     await tester.pumpWidget(fixture.build(const LibraryTab()));
@@ -2523,10 +2549,15 @@ void main() {
     final expansionStopwatch = Stopwatch()..start();
     await tester.tap(find.byType(ListTile).first);
     await pumpUntilFound(tester, find.byType(WorkDetailPage));
-    await pumpUntilFound(
-      tester,
-      find.text('Lazy track 0000', findRichText: true),
+    final firstTrack = find.text(
+      'Lazy track 0000',
+      findRichText: true,
+      skipOffstage: false,
     );
+    await pumpUntilFound(tester, firstTrack);
+    await tester.ensureVisible(firstTrack);
+    await pumpAndSettleWithAsync(tester);
+    expect(find.text('Lazy track 0000', findRichText: true), findsOneWidget);
     expansionStopwatch.stop();
 
     final builtRows = find.textContaining('Lazy track', findRichText: true);
@@ -3192,6 +3223,7 @@ void main() {
       'Categorized',
     );
     await tester.pump(const Duration(milliseconds: 250));
+    await pumpUntilFound(tester, find.text('展开'));
 
     expect(find.text('展开'), findsOneWidget);
     final expandButton = find.ancestor(
@@ -3232,6 +3264,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump(const Duration(milliseconds: 350));
+    await pumpUntilFound(tester, find.text('展开'));
     expect(find.text('展开'), findsOneWidget);
     expect(find.text('收起'), findsNothing);
     expect(
@@ -5236,6 +5269,12 @@ void main() {
       'healing whisper',
     );
     await tester.pump(const Duration(milliseconds: 350));
+    await _waitForLibraryProjection(
+      tester,
+      () =>
+          find.text('healing-work', findRichText: true).evaluate().isNotEmpty &&
+          find.text('whisper-work', findRichText: true).evaluate().isEmpty,
+    );
     expect(find.text('healing-work', findRichText: true), findsOneWidget);
     expect(find.text('whisper-work', findRichText: true), findsNothing);
 
@@ -5253,6 +5292,10 @@ void main() {
       'healing,ocean',
     );
     await tester.pump(const Duration(milliseconds: 350));
+    await _waitForLibraryProjection(
+      tester,
+      () => find.text('healing-work', findRichText: true).evaluate().isEmpty,
+    );
     expect(find.text('healing-work', findRichText: true), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
@@ -5435,7 +5478,14 @@ void main() {
       // Toggle pin
       swipeCard.onLeadingAction!();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await pumpUntilFound(
+        tester,
+        find.byKey(
+          ValueKey<String>(
+            'library_pinned_${PathMatcher.normalize(libraryPath)}',
+          ),
+        ),
+      );
 
       // Pin badge is now shown on cover
       expect(
@@ -5649,7 +5699,19 @@ void main() {
         final directory = (await tester.runAsync(
           () => Directory.systemTemp.createTemp('single_card_'),
         ))!;
-        addTearDown(() => directory.delete(recursive: true));
+        addTearDown(() async {
+          // Windows decoders retain mapped source files through image caches.
+          releaseRetainedCoverImages();
+          PaintingBinding.instance.imageCache
+            ..clear()
+            ..clearLiveImages();
+          // Finish deferred image disposal before deleting mapped source files.
+          await tester.pump();
+          await tester.runAsync(() async {
+            await Future<void>.delayed(Duration.zero);
+            await directory.delete(recursive: true);
+          });
+        });
         final track = MusicTrack(
           path: '${directory.path}/selected.${kind == 'video' ? 'mp4' : 'mp3'}',
           displayName: 'Selected $kind',

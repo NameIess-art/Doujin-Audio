@@ -143,6 +143,7 @@ class LibraryTreeItem extends StatelessWidget {
   const LibraryTreeItem({
     super.key,
     required this.node,
+    this.isPinned,
     this.initiallyExpanded = false,
     this.searchQuery = '',
     this.index,
@@ -155,6 +156,7 @@ class LibraryTreeItem extends StatelessWidget {
   });
 
   final LibraryNode node;
+  final bool? isPinned;
   final bool initiallyExpanded;
   final String searchQuery;
   final int? index;
@@ -171,6 +173,7 @@ class LibraryTreeItem extends StatelessWidget {
     if (node is FolderNode) {
       return LibraryFolderNodeWidget(
         folder: node as FolderNode,
+        isPinned: isPinned,
         initiallyExpanded: initiallyExpanded,
         onFolderExpansionChanged: onFolderExpansionChanged,
         renderChildrenInline: renderChildrenInline,
@@ -184,6 +187,7 @@ class LibraryTreeItem extends StatelessWidget {
     } else if (node is TrackNode) {
       return _TrackNodeWidget(
         trackNode: node as TrackNode,
+        isPinned: isPinned,
         searchQuery: searchQuery,
         index: index,
         isSelectionMode: isSelectionMode,
@@ -200,6 +204,7 @@ class LibraryFolderNodeWidget extends ConsumerStatefulWidget {
   const LibraryFolderNodeWidget({
     super.key,
     required this.folder,
+    this.isPinned,
     required this.initiallyExpanded,
     required this.searchQuery,
     this.index,
@@ -212,6 +217,7 @@ class LibraryFolderNodeWidget extends ConsumerStatefulWidget {
   });
 
   final FolderNode folder;
+  final bool? isPinned;
   final bool initiallyExpanded;
   final String searchQuery;
   final int? index;
@@ -365,15 +371,16 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
     final isRootFolder = folder.depth == 0;
     final isPinned =
         isRootFolder &&
-        ref.watch(
-          settingsStateProvider.select(
-            (s) =>
-                s.value?.pinnedLibraryPaths.contains(
-                  PathMatcher.normalize(folder.path),
-                ) ??
-                false,
-          ),
-        );
+        (widget.isPinned ??
+            ref.watch(
+              settingsStateProvider.select(
+                (s) =>
+                    s.value?.pinnedLibraryPaths.contains(
+                      PathMatcher.normalize(folder.path),
+                    ) ??
+                    false,
+              ),
+            ));
     final rootDetailState = isRootFolder
         ? ref.watch(
             libraryDetailForTargetProvider(
@@ -703,6 +710,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
 class _TrackNodeWidget extends ConsumerWidget {
   const _TrackNodeWidget({
     required this.trackNode,
+    this.isPinned,
     this.searchQuery = '',
     this.index,
     this.isSelectionMode = false,
@@ -712,6 +720,7 @@ class _TrackNodeWidget extends ConsumerWidget {
   });
 
   final TrackNode trackNode;
+  final bool? isPinned;
   final String searchQuery;
   final int? index;
   final bool isSelectionMode;
@@ -748,15 +757,16 @@ class _TrackNodeWidget extends ConsumerWidget {
     final nameParts = textTranslationText(track.displayName, fileName: true);
     final isPinned =
         track.isSingle &&
-        ref.watch(
-          settingsStateProvider.select(
-            (s) =>
-                s.value?.pinnedLibraryPaths.contains(
-                  PathMatcher.normalize(track.path),
-                ) ??
-                false,
-          ),
-        );
+        (this.isPinned ??
+            ref.watch(
+              settingsStateProvider.select(
+                (s) =>
+                    s.value?.pinnedLibraryPaths.contains(
+                      PathMatcher.normalize(track.path),
+                    ) ??
+                    false,
+              ),
+            ));
     final singleDetailState = track.isSingle
         ? ref.watch(
             libraryDetailForTargetProvider(

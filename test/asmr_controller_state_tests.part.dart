@@ -272,6 +272,10 @@ void registerAsmrControllerStateTests({
 
         final remote = controller.worksFor(AsmrCategoryType.release);
         final favorites = controller.worksFor(AsmrCategoryType.favorites);
+        await controller.ensureCategoryLoaded(
+          AsmrCategoryType.favorites,
+          searchQuery: 'even',
+        );
         final filtered = controller.filteredWorksFor(
           AsmrCategoryType.favorites,
           searchQuery: 'even',
@@ -287,12 +291,15 @@ void registerAsmrControllerStateTests({
           ),
           same(filtered),
         );
+        await controller.ensureCategoryLoaded(
+          AsmrCategoryType.favorites,
+          searchQuery: 'EVEN',
+        );
         expect(
-          controller.filteredWorksFor(
-            AsmrCategoryType.favorites,
-            searchQuery: 'EVEN',
-          ),
-          orderedEquals(filtered),
+          controller
+              .filteredWorksFor(AsmrCategoryType.favorites, searchQuery: 'EVEN')
+              .map((work) => work.id),
+          filtered.map((work) => work.id),
         );
         await controller.refreshCategory(AsmrCategoryType.history);
         expect(controller.worksFor(AsmrCategoryType.release), same(remote));
@@ -313,7 +320,7 @@ void registerAsmrControllerStateTests({
   }
 
   test(
-    'local search reuses normalized fields until its work snapshot changes',
+    'local search reads snapshots and prepares normalized fields off the UI isolate',
     () async {
       await resetPrefs();
       final first = _CountingSearchWork(1);
@@ -343,29 +350,280 @@ void registerAsmrControllerStateTests({
         searchQuery: query,
         searchSession: true,
       );
+      Future<void> search(String query) async {
+        catalog.setSearchQuery(query, AsmrCategoryType.favorites);
+        await catalog.refresh(
+          AsmrCategoryType.favorites,
+          searchQuery: query,
+          searchSession: true,
+          context: context,
+        );
+      }
+
+      expect(filter('Sleep Induction'), isEmpty);
+      expect(
+        catalog
+            .viewState(
+              AsmrCategoryType.favorites,
+              searchQuery: 'Sleep Induction',
+              searchSession: true,
+            )
+            .hasAttemptedLoad,
+        isFalse,
+      );
+      expect([first.titleReads, second.titleReads], [0, 0]);
+      await search('Sleep Induction');
       final initial = filter('Sleep Induction');
       expect(initial.map((work) => work.id), [1, 2]);
       for (final query in ['CIRCLE demo', 'Gentle Sound', 'VOICE Actor']) {
-        catalog.setSearchQuery(query, AsmrCategoryType.favorites);
+        await search(query);
         expect(filter(query).map((work) => work.id), [1, 2]);
       }
+      await search('RJ0001');
       expect(filter('RJ0001').map((work) => work.id), [1]);
+      await search('sleep circle');
       expect(filter('sleep circle'), isEmpty);
-      expect([first.titleReads, second.titleReads], [1, 1]);
+      expect([first.titleReads, second.titleReads], [0, 0]);
       catalog.clearSearchQueries();
-      expect(filter('Sleep Induction'), same(initial));
-      expect([first.titleReads, second.titleReads], [1, 1]);
+      expect(filter('Sleep Induction'), isEmpty);
+      expect([first.titleReads, second.titleReads], [0, 0]);
 
       works = [second];
+      await search('Sleep Induction');
       expect(filter('Sleep Induction').map((work) => work.id), [2]);
-      expect([first.titleReads, second.titleReads], [1, 2]);
+      expect([first.titleReads, second.titleReads], [0, 0]);
       works = [
         _work(id: 2, title: 'Changed metadata', tags: ['New tag']),
       ];
       expect(filter('Sleep Induction'), isEmpty);
+      catalog.bumpRevision(AsmrCategoryType.favorites);
+      await Future<void>.delayed(Duration.zero);
+      await catalog.pendingRefresh(
+        AsmrCategoryType.favorites,
+        searchQuery: 'Sleep Induction',
+        searchSession: true,
+      );
+      expect(filter('Sleep Induction'), isEmpty);
+      expect(
+        catalog
+            .viewState(
+              AsmrCategoryType.favorites,
+              searchQuery: 'Sleep Induction',
+              searchSession: true,
+            )
+            .hasAttemptedLoad,
+        isTrue,
+      );
+      await search('New tag');
       expect(filter('New tag').map((work) => work.id), [2]);
+      works = [];
+      catalog.bumpRevision(AsmrCategoryType.favorites);
+      expect(filter('New tag'), isEmpty);
+      await Future<void>.delayed(Duration.zero);
+      await catalog.pendingRefresh(
+        AsmrCategoryType.favorites,
+        searchQuery: 'New tag',
+        searchSession: true,
+      );
+      expect(filter('New tag'), isEmpty);
     },
   );
+
+  test(
+    'local search replaces pending preparation after its source changes',
+    () async {
+      await resetPrefs();
+      final services = createTestAsmrServices(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+      );
+      const context = (
+        authEpoch: 0,
+        token: null,
+        contentEpoch: 0,
+        language: AsmrContentLanguage.en,
+        scope: 'local-source-swap',
+      );
+      var works = [_work(id: 1, title: 'Sleep old')];
+      final catalog = AsmrCategoryCatalog(
+        remoteCatalogService: services.remoteCatalogService,
+        onChanged: () {},
+        isContextCurrent: (_) => true,
+        currentContext: () => context,
+        localWorks: (_) => works,
+        favoriteIds: () => const <int>{},
+      );
+      catalog.setSearchQuery('sleep', AsmrCategoryType.favorites);
+      Future<void>? pending() => catalog.pendingRefresh(
+        AsmrCategoryType.favorites,
+        searchQuery: 'sleep',
+        searchSession: true,
+      );
+      final first = catalog.refresh(
+        AsmrCategoryType.favorites,
+        searchQuery: 'sleep',
+        searchSession: true,
+        context: context,
+      );
+      final original = pending();
+      expect(original, isNotNull);
+      // Replace the source synchronously, before the worker can return its result.
+      works = [_work(id: 2, title: 'Sleep new')];
+      catalog.refreshLocalSearch();
+      await Future<void>.value();
+      final replacement = pending();
+      expect(replacement, isNotNull);
+      expect(replacement, isNot(same(original)));
+      await Future.wait([first, replacement!]);
+      final state = catalog.viewState(
+        AsmrCategoryType.favorites,
+        searchQuery: 'sleep',
+        searchSession: true,
+      );
+      expect(state.works.map((work) => work.id), [2]);
+      expect(state.isLoading, isFalse);
+      expect(state.hasAttemptedLoad, isTrue);
+      expect(state.lastError, isNull);
+    },
+  );
+
+  test(
+    'local history search reports preparation errors and can retry',
+    () async {
+      await resetPrefs();
+      final services = createTestAsmrServices(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+      );
+      const context = (
+        authEpoch: 0,
+        token: null,
+        contentEpoch: 0,
+        language: AsmrContentLanguage.en,
+        scope: 'local-error',
+      );
+      var works = <AsmrWork>[_FailingSearchWork()];
+      final catalog = AsmrCategoryCatalog(
+        remoteCatalogService: services.remoteCatalogService,
+        onChanged: () {},
+        isContextCurrent: (_) => true,
+        currentContext: () => context,
+        localWorks: (_) => works,
+        favoriteIds: () => const <int>{},
+      );
+      Future<void> refresh() => catalog.refresh(
+        AsmrCategoryType.history,
+        searchQuery: 'sleep',
+        context: context,
+      );
+      await refresh();
+      final failed = catalog.viewState(
+        AsmrCategoryType.history,
+        searchQuery: 'sleep',
+      );
+      expect(failed.lastError, isA<StateError>());
+      expect(failed.isLoading, isFalse);
+      expect(failed.hasAttemptedLoad, isTrue);
+      works = [_work(id: 1, title: 'Sleep')];
+      await refresh();
+      final retried = catalog.viewState(
+        AsmrCategoryType.history,
+        searchQuery: 'sleep',
+      );
+      expect(retried.lastError, isNull);
+      expect(retried.works.map((work) => work.id), [1]);
+    },
+  );
+
+  test('local search rejects superseded queries and content epochs', () async {
+    await resetPrefs();
+    final services = createTestAsmrServices(
+      preferencesStore: preferences,
+      persistenceRepository: persistenceRepository(),
+    );
+    var context = (
+      authEpoch: 0,
+      token: null as String?,
+      contentEpoch: 0,
+      language: AsmrContentLanguage.en,
+      scope: 'local-cancellation',
+    );
+    final works = [_work(id: 1, title: 'old'), _work(id: 2, title: 'new')];
+    final catalog = AsmrCategoryCatalog(
+      remoteCatalogService: services.remoteCatalogService,
+      onChanged: () {},
+      isContextCurrent: (request) => request == context,
+      currentContext: () => context,
+      localWorks: (_) => works,
+      favoriteIds: () => const <int>{},
+    );
+    Future<void> search(String query) {
+      catalog.setSearchQuery(query, AsmrCategoryType.favorites);
+      return catalog.refresh(
+        AsmrCategoryType.favorites,
+        searchQuery: query,
+        searchSession: true,
+        context: context,
+      );
+    }
+
+    final old = search('old');
+    final newest = search('new');
+    await Future.wait([old, newest]);
+    expect(
+      catalog
+          .viewState(
+            AsmrCategoryType.favorites,
+            searchQuery: 'old',
+            searchSession: true,
+          )
+          .works,
+      isEmpty,
+    );
+    expect(
+      catalog
+          .viewState(
+            AsmrCategoryType.favorites,
+            searchQuery: 'new',
+            searchSession: true,
+          )
+          .works
+          .map((work) => work.id),
+      [2],
+    );
+    final stale = search('old');
+    context = (
+      authEpoch: 0,
+      token: null,
+      contentEpoch: 1,
+      language: AsmrContentLanguage.ja,
+      scope: 'local-cancellation',
+    );
+    catalog.invalidateForContentChange();
+    await stale;
+    expect(
+      catalog
+          .viewState(
+            AsmrCategoryType.favorites,
+            searchQuery: 'old',
+            searchSession: true,
+          )
+          .works,
+      isEmpty,
+    );
+    await search('old');
+    expect(
+      catalog
+          .viewState(
+            AsmrCategoryType.favorites,
+            searchQuery: 'old',
+            searchSession: true,
+          )
+          .works
+          .map((work) => work.id),
+      [1],
+    );
+  });
 
   test(
     'category state preserves untouched and empty-query load semantics',
@@ -2198,6 +2456,14 @@ class _CountingSearchWork extends AsmrWork {
     _titleReads[0]++;
     return super.title;
   }
+}
+
+class _FailingSearchWork extends _CountingSearchWork {
+  _FailingSearchWork() : super(1);
+
+  @override
+  String get title =>
+      throw StateError('forced local search preparation failure');
 }
 
 class _FailingHiddenTrackPreferences extends AsmrPreferencesStore {

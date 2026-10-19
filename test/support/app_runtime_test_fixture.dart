@@ -215,6 +215,23 @@ Future<void> pumpUntilUiIdle(
   fail('Timed out waiting for UI interactions and commits to become idle');
 }
 
+Future<void> pumpAndSettleWithAsync(
+  WidgetTester tester, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final ticks = timeout.inMilliseconds ~/ 50;
+  for (var i = 0; i < ticks; i++) {
+    // File I/O and isolate work need a real event-loop turn while their loading
+    // animations keep the test's fake frame clock running.
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    if (!tester.binding.hasScheduledFrame) return;
+  }
+  fail('Timed out waiting for animations and asynchronous work to settle');
+}
+
 Future<void> pumpUntilLibraryTreeReady(
   WidgetTester tester,
   LibraryFacade library, {

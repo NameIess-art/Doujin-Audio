@@ -1327,9 +1327,9 @@ void main() {
         final session = runtimeGraph.playback.ordinarySessions.single;
         expect(session.customQueueTracks, isNull);
         expect(
-          runtimeGraph.audioPaths
-              .tracksForSessionSwitcher(session.id)
-              .map((track) => track.path),
+          (await runtimeGraph.audioPaths.tracksForSessionSwitcher(
+            session.id,
+          )).map((track) => track.path),
           <String>[first.path, second.path],
         );
       },

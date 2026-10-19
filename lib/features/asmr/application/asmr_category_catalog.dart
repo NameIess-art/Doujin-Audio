@@ -1,4 +1,4 @@
-import 'dart:collection';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
@@ -26,14 +26,10 @@ typedef _CategoryRequestKey = ({
   AsmrCategoryRequestContext context,
   int serial,
 });
-typedef _FilteredWorksKey = ({
-  AsmrCategoryType category,
-  String query,
-  int revision,
-});
 
 final class _CategoryState {
   List<AsmrWork>? works;
+  List<AsmrWork>? localSource;
   Set<int> workIds = const <int>{};
   bool isLoading = false;
   bool isLoadingMore = false;
@@ -88,11 +84,8 @@ final class AsmrCategoryCatalog {
   AsmrCategoryType? _searchCategory;
   final Map<AsmrCategoryType, String> _lastQueries = {};
   final Map<AsmrCategoryType, String> _pendingAuthRefreshes = {};
-  final LinkedHashMap<_FilteredWorksKey, List<AsmrWork>> _filteredWorksCache =
-      LinkedHashMap();
   final Map<AsmrCategoryType, ({List<AsmrWork> works, List<String> text})>
   _localSearchText = {};
-  static final _searchWhitespace = RegExp(r'\s+');
   _CategoryKey _key(
     AsmrCategoryType category,
     String query, [
@@ -143,6 +136,11 @@ final class AsmrCategoryCatalog {
     bool searchSession = false,
   }) {
     final state = _state(category, searchQuery, searchSession);
+    if (!isRemote(category) &&
+        normalizeSearchQuery(searchQuery).isNotEmpty &&
+        !identical(state.localSource, _localWorks(category))) {
+      return state.isLoading;
+    }
     return state.query != null || state.error != null || state.isLoading;
   }
 
@@ -179,8 +177,11 @@ final class AsmrCategoryCatalog {
       isLoadingMore: state.isLoadingMore,
       isRefreshing: state.isLoading && state.works != null,
       isStale: state.isLoading && state.works != null,
-      hasAttemptedLoad:
-          state.query != null || state.error != null || state.isLoading,
+      hasAttemptedLoad: hasAttemptedLoad(
+        category,
+        searchQuery: searchQuery,
+        searchSession: searchSession,
+      ),
       hasMore: state.hasMore,
       needsLoadMoreRetry: state.needsLoadMoreRetry,
       totalCount: isRemote(category)
@@ -207,64 +208,75 @@ final class AsmrCategoryCatalog {
     final works = _localWorks(category);
     final query = normalizeSearchQuery(searchQuery);
     if (query.isEmpty) return works;
-    var searchable = _localSearchText[category];
-    if (searchable == null || !identical(searchable.works, works)) {
-      searchable = (
-        works: works,
-        text: [
-          for (final work in works)
-            [
-                  work.title,
-                  work.circleName,
-                  work.rjCode,
-                  ...work.tags,
-                  ...work.voiceActors,
-                ]
-                .map(
-                  (value) => value
-                      .replaceAll(_searchWhitespace, ' ')
-                      .trim()
-                      .toLowerCase(),
-                )
-                .join('\n'),
-        ],
-      );
-      _localSearchText[category] = searchable;
-      _filteredWorksCache.removeWhere((key, _) => key.category == category);
-    }
-    final key = (
-      category: category,
-      query: query,
-      revision: _state(category, query, searchSession).revision,
-    );
-    final cached = _filteredWorksCache.remove(key);
-    if (cached != null) {
-      _filteredWorksCache[key] = cached;
-      return cached;
-    }
-    final terms = normalizedSearchTerms(query);
-    final filtered = immutableList([
-      for (var i = 0; i < works.length; i++)
-        if (terms.every(searchable.text[i].contains)) works[i],
-    ]);
-    _filteredWorksCache[key] = filtered;
-    if (_filteredWorksCache.length > 24) {
-      _filteredWorksCache.remove(_filteredWorksCache.keys.first);
-    }
-    return filtered;
+    final state = _state(category, query, searchSession);
+    return identical(state.localSource, works)
+        ? state.works ?? const []
+        : const [];
   }
 
   void bumpRevision(AsmrCategoryType category) {
-    for (final entry in _categories.entries) {
-      if (entry.key.category == category) entry.value.revision++;
+    if (!isRemote(category) &&
+        !identical(_localSearchText[category]?.works, _localWorks(category))) {
+      _localSearchText.remove(category);
     }
-    _filteredWorksCache.removeWhere((key, _) => key.category == category);
+    for (final entry in _categories.entries) {
+      if (entry.key.category != category) continue;
+      final state = entry.value;
+      state.revision++;
+      if (!isRemote(category) && entry.key.query.isNotEmpty) {
+        state.invalidateRequest();
+        state.works = null;
+        state.localSource = null;
+        state.query = null;
+        state.error = null;
+        unawaited(_reloadLocalSearch(entry.key, state));
+      }
+    }
+  }
+
+  Future<void> _reloadLocalSearch(
+    _CategoryKey key,
+    _CategoryState state,
+  ) async {
+    // Let the account mutation finish publishing its new immutable snapshots.
+    await Future<void>.value();
+    if (!identical(_categories[key], state) ||
+        key.scope != _currentContext().scope ||
+        (key.searchEpoch != 0 &&
+            !isSearchRequestCurrent(key.query, key.category))) {
+      return;
+    }
+    await refresh(
+      key.category,
+      searchQuery: key.query,
+      context: _currentContext(),
+      searchSession: key.searchEpoch != 0,
+    );
   }
 
   void setOperationError(AsmrCategoryType category, Object? error) {
-    _state(category).error = error;
-    bumpRevision(category);
+    final state = _state(category);
+    state.error = error;
+    state.revision++;
     _onChanged();
+  }
+
+  void refreshLocalSearch() {
+    final category = _searchCategory;
+    if (category == null || isRemote(category) || _searchQuery.isEmpty) return;
+    final state = _state(category, _searchQuery, true);
+    final source = _localWorks(category);
+    if (identical(state.localSource, source) && state.query != null) {
+      return;
+    }
+    if (state.refreshTask != null && !identical(state.localSource, source)) {
+      // A refresh for the previous snapshot will reject its result; cancel it
+      // so refresh() can start preparing the replacement instead of joining it.
+      state.invalidateRequest();
+    }
+    unawaited(
+      _reloadLocalSearch(_key(category, _searchQuery, null, true), state),
+    );
   }
 
   void updateLocalCounts() {
@@ -278,6 +290,7 @@ final class AsmrCategoryCatalog {
 
   void updateFavorites(Map<int, bool> favorites) {
     for (final entry in _categories.entries) {
+      if (!isRemote(entry.key.category)) continue;
       final works = entry.value.works;
       if (works == null ||
           !works.any((work) => favorites.containsKey(work.id))) {
@@ -292,7 +305,6 @@ final class AsmrCategoryCatalog {
       );
       entry.value.revision++;
     }
-    _filteredWorksCache.clear();
   }
 
   Map<AsmrCategoryType, String> get loadedRemoteQueries => {
@@ -311,9 +323,13 @@ final class AsmrCategoryCatalog {
         _pendingAuthRefreshes[entry.key.category] = entry.key.query;
       }
       entry.value.invalidateRequest();
+      if (!isRemote(entry.key.category)) {
+        entry.value.localSource = null;
+        entry.value.works = null;
+        entry.value.query = null;
+      }
     }
     _lastQueries.clear();
-    _filteredWorksCache.clear();
   }
 
   Map<AsmrCategoryType, String> takePendingAuthRefreshes() {
@@ -323,12 +339,17 @@ final class AsmrCategoryCatalog {
   }
 
   void invalidateForContentChange() {
-    for (final state in _categories.values) {
+    for (final entry in _categories.entries) {
+      final state = entry.value;
       state.invalidateRequest();
       state.revision++;
+      if (!isRemote(entry.key.category)) {
+        state.localSource = null;
+        state.works = null;
+        state.query = null;
+      }
     }
     _lastQueries.clear();
-    _filteredWorksCache.clear();
   }
 
   void cancelRequests() {
@@ -342,8 +363,8 @@ final class AsmrCategoryCatalog {
     _categories.clear();
     _lastQueries.clear();
     _pendingAuthRefreshes.clear();
-    _filteredWorksCache.clear();
     _localSearchText.clear();
+    refreshLocalSearch();
   }
 
   void clearSearchQueries() {
@@ -474,8 +495,33 @@ final class AsmrCategoryCatalog {
     try {
       if (!_isCurrent(cacheKey, request)) return;
       if (!isRemote(cacheKey.category)) {
+        final source = _localWorks(cacheKey.category);
+        if (!identical(state.localSource, source)) state.works = null;
+        state.localSource = source;
+        if (cacheKey.query.isNotEmpty) {
+          final searchable = _localSearchText[cacheKey.category];
+          final prepared = await cancellationToken.waitFor(
+            compute(_prepareLocalSearch, (
+              works: source,
+              text: identical(searchable?.works, source)
+                  ? searchable!.text
+                  : null,
+              query: cacheKey.query,
+            )),
+          );
+          if (!_isCurrent(cacheKey, request) ||
+              !identical(source, _localWorks(cacheKey.category))) {
+            return;
+          }
+          _localSearchText[cacheKey.category] = (
+            works: source,
+            text: prepared.text,
+          );
+          state.works = prepared.works;
+        }
         state.query = cacheKey.query;
         state.hasMore = false;
+        state.revision++;
         return;
       }
       final result = await _fetch(
@@ -646,6 +692,37 @@ final class AsmrCategoryCatalog {
     state.hasMore =
         result.hasMore && (state.works?.length ?? 0) < result.totalCount;
   }
+}
+
+({List<AsmrWork> works, List<String> text}) _prepareLocalSearch(
+  ({List<AsmrWork> works, List<String>? text, String query}) request,
+) {
+  final whitespace = RegExp(r'\s+');
+  final text =
+      request.text ??
+      [
+        for (final work in request.works)
+          [
+                work.title,
+                work.circleName,
+                work.rjCode,
+                ...work.tags,
+                ...work.voiceActors,
+              ]
+              .map(
+                (value) =>
+                    value.replaceAll(whitespace, ' ').trim().toLowerCase(),
+              )
+              .join('\n'),
+      ];
+  final terms = normalizedSearchTerms(request.query);
+  return (
+    works: immutableList([
+      for (var i = 0; i < request.works.length; i++)
+        if (terms.every(text[i].contains)) request.works[i],
+    ]),
+    text: text,
+  );
 }
 
 typedef _PreparedCategoryPage = ({List<AsmrWork> additions, Set<int> ids});

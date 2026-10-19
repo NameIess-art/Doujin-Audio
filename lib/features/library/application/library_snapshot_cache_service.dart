@@ -101,6 +101,74 @@ typedef LibraryCardSnapshotBuilder =
 typedef LibraryTreeSnapshotBuilder =
     Future<LibraryTreeSnapshot> Function(LibraryDerivedSnapshotPayload payload);
 
+typedef LibraryCategoryFilterRequest = ({
+  AudioLibraryCategorySnapshot snapshot,
+  AudioLibraryCategoryType category,
+  List<String> queryTerms,
+  List<String> termKeywords,
+  Set<String> selectedTerms,
+  Set<String> pinnedPaths,
+});
+
+typedef LibraryCategoryFilterResult = ({
+  List<AudioLibraryCategoryEntry> entries,
+  List<String> terms,
+});
+
+LibraryCategoryFilterResult filterLibraryCategoryEntries(
+  LibraryCategoryFilterRequest request,
+) {
+  final selected = request.selectedTerms
+      .map((term) => term.toLowerCase())
+      .toSet();
+  final pinnedPaths = request.pinnedPaths.map(PathMatcher.normalize).toSet();
+  final pinned = <AudioLibraryCategoryEntry>[];
+  final unpinned = <AudioLibraryCategoryEntry>[];
+  for (final entry in request.snapshot.entries) {
+    if (request.queryTerms.isNotEmpty &&
+        !request.queryTerms.every(entry.searchableText.contains)) {
+      continue;
+    }
+    if (selected.isNotEmpty || request.termKeywords.isNotEmpty) {
+      final terms = entry.normalizedTermsForCategory(request.category);
+      if (!selected.every(terms.contains) ||
+          !request.termKeywords.every(
+            (keyword) => terms.any((term) => term.contains(keyword)),
+          )) {
+        continue;
+      }
+    }
+    // Stable partition preserves catalog order within both groups and normalizes
+    // each matched path once instead of in every sort comparison.
+    if (pinnedPaths.isNotEmpty &&
+        pinnedPaths.contains(PathMatcher.normalize(entry.path))) {
+      pinned.add(entry);
+    } else {
+      unpinned.add(entry);
+    }
+  }
+  final terms = switch (request.category) {
+    AudioLibraryCategoryType.tags => request.snapshot.tagTerms,
+    AudioLibraryCategoryType.voiceActors => request.snapshot.voiceActorTerms,
+    AudioLibraryCategoryType.circles => request.snapshot.circleTerms,
+    AudioLibraryCategoryType.all => const <String>[],
+  };
+  return (
+    entries: List<AudioLibraryCategoryEntry>.unmodifiable([
+      ...pinned,
+      ...unpinned,
+    ]),
+    terms: request.termKeywords.isEmpty
+        ? terms
+        : List<String>.unmodifiable(
+            terms.where((term) {
+              final normalized = term.toLowerCase();
+              return request.termKeywords.any(normalized.contains);
+            }),
+          ),
+  );
+}
+
 Future<LibraryTreeSnapshot> _defaultCardSnapshotBuilder(
   LibraryDerivedSnapshotPayload payload,
 ) {
@@ -312,6 +380,10 @@ class LibrarySnapshotCacheService {
     flushDetailChanges();
     return _categorySnapshot;
   }
+
+  Future<LibraryCategoryFilterResult> filterCategoryEntries(
+    LibraryCategoryFilterRequest request,
+  ) => compute(filterLibraryCategoryEntries, request);
 
   Future<LibraryDerivedSnapshot> buildDerivedSnapshot() {
     return AppLogService.measureAsync(

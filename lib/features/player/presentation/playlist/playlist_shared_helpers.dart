@@ -1,9 +1,11 @@
+export '../../application/session_switcher_tree.dart'
+    show orderTracksForSessionSwitcher, resolveSessionSwitcherSelectedTrack;
+
 import '../playback_providers.dart';
 import '../../../settings/presentation/settings_providers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as path;
 
 import '../../../library/application/library_facade.dart';
 
@@ -13,8 +15,6 @@ import '../../application/playback_facade.dart';
 import '../../domain/audio_effects.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
-import '../../../../core/media/natural_sort.dart';
-import '../../../../core/media/path_matcher.dart';
 import '../../../../core/ui/undoable_removal_service.dart';
 import '../../../../core/widgets/app_feedback.dart';
 
@@ -35,7 +35,7 @@ const RoundedRectangleBorder playlistRowShape = _PlaylistRowShape();
 
 class _PlaylistRowShape extends RoundedRectangleBorder {
   const _PlaylistRowShape({super.side})
-      : super(borderRadius: playlistRowBorderRadius);
+    : super(borderRadius: playlistRowBorderRadius);
 
   @override
   RoundedRectangleBorder copyWith({
@@ -102,10 +102,7 @@ LinearGradient playlistActiveHighlightGradient([
 ]) => const LinearGradient(
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
-  colors: <Color>[
-    Colors.transparent,
-    Colors.transparent,
-  ],
+  colors: <Color>[Colors.transparent, Colors.transparent],
 );
 
 UndoableRemovalKey playbackSessionRemovalKey(String sessionId) =>
@@ -132,7 +129,8 @@ void showPlaybackRemovalFeedback(
     context,
     service: service,
     message: i18n.tr('items_removed_count', {'count': 1}),
-    batchMessage: (int count) => i18n.tr('items_removed_count', {'count': count}),
+    batchMessage: (int count) =>
+        i18n.tr('items_removed_count', {'count': count}),
     undoLabel: i18n.tr('undo'),
     failureMessage: i18n.tr('removal_failed'),
     icon: icon,
@@ -240,87 +238,6 @@ Color sessionDetailForeground(
     ).withValues(alpha: 0.72),
   };
 }
-
-List<MusicTrack> orderTracksForSessionSwitcher(
-  List<MusicTrack> tracks, {
-  required bool preserveQueueOrder,
-}) {
-  if (preserveQueueOrder ||
-      tracks.length < 2 ||
-      !tracks.every((track) => track.isRemoteAsmr)) {
-    return tracks;
-  }
-  final sorted = List<MusicTrack>.of(tracks);
-  sorted.sort((left, right) {
-    final leftPath = left.remoteMetadata?['trackRelativePath']?.toString();
-    final rightPath = right.remoteMetadata?['trackRelativePath']?.toString();
-    final pathResult = compareNatural(
-      leftPath?.trim().isNotEmpty == true ? leftPath!.trim() : left.displayName,
-      rightPath?.trim().isNotEmpty == true
-          ? rightPath!.trim()
-          : right.displayName,
-    );
-    if (pathResult != 0) return pathResult;
-    return compareNatural(left.path, right.path, caseSensitive: true);
-  });
-  return List<MusicTrack>.unmodifiable(sorted);
-}
-
-MusicTrack? resolveSessionSwitcherSelectedTrack({
-  required List<MusicTrack> displayedTracks,
-  required List<MusicTrack>? queueTracks,
-  required String currentPath,
-  required int currentQueueIndex,
-}) {
-  for (final track in displayedTracks) {
-    if (PathMatcher.equalsNormalized(track.path, currentPath)) return track;
-  }
-  if (queueTracks == null ||
-      currentQueueIndex < 0 ||
-      currentQueueIndex >= queueTracks.length) {
-    return null;
-  }
-  final queuedTrack = queueTracks[currentQueueIndex];
-  if (!queuedTrack.isRemoteAsmr) return null;
-  for (final track in displayedTracks) {
-    if (sameSessionSwitcherTrack(track, queuedTrack)) return track;
-  }
-  return null;
-}
-
-
-bool sameSessionSwitcherTrack(MusicTrack left, MusicTrack right) {
-  if (identical(left, right) ||
-      PathMatcher.equalsNormalized(left.path, right.path)) {
-    return true;
-  }
-  if (!left.isRemoteAsmr || !right.isRemoteAsmr) {
-    return false;
-  }
-  final leftRelative = left.remoteMetadata?['trackRelativePath']
-      ?.toString()
-      .trim();
-  final rightRelative = right.remoteMetadata?['trackRelativePath']
-      ?.toString()
-      .trim();
-  if (leftRelative == null ||
-      leftRelative.isEmpty ||
-      rightRelative == null ||
-      rightRelative.isEmpty ||
-      normalizedRemoteRelativePath(leftRelative) !=
-          normalizedRemoteRelativePath(rightRelative)) {
-    return false;
-  }
-  final leftWorkId = left.remoteMetadata?['id']?.toString().trim();
-  final rightWorkId = right.remoteMetadata?['id']?.toString().trim();
-  if (leftWorkId?.isNotEmpty == true && rightWorkId?.isNotEmpty == true) {
-    return leftWorkId == rightWorkId;
-  }
-  return left.groupKey.isNotEmpty && left.groupKey == right.groupKey;
-}
-
-String normalizedRemoteRelativePath(String value) =>
-    path.posix.normalize(value.replaceAll('\\', '/'));
 
 List<IconData> sessionFeatureBadgeIcons({
   required bool showSubtitles,

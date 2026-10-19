@@ -7963,6 +7963,10 @@ void main() {
       );
       expect(find.byType(ImageFiltered), findsNothing);
       await tester.tap(find.byTooltip(languageProvider.tr('switch_audio')));
+      await pumpUntilFound(
+        tester,
+        find.byKey(ValueKey<String>('queue_switcher_track_${track.path}')),
+      );
       await tester.pumpAndSettle();
 
       final sheet = find.byType(BottomSheet);

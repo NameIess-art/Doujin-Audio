@@ -151,6 +151,7 @@ class AsmrLibraryController extends ChangeNotifier
     _historyWorks = snapshot.historyWorks;
     _syncOperations = snapshot.pendingOperations;
     _lastSyncAt = snapshot.lastSyncAt;
+    _catalog.refreshLocalSearch();
   }
 
   void _cancelActiveSync() {

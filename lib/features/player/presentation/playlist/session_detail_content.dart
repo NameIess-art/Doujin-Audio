@@ -23,7 +23,6 @@ import '../../../library/presentation/audio_detail_sheet.dart';
 import 'playlist_progress_widgets.dart';
 import 'playlist_subtitle_panel.dart';
 import 'playlist_subtitle_menu_sheet.dart';
-import 'playlist_shared_helpers.dart';
 import 'playlist_time_segments.dart';
 import 'playlist_transport_controls.dart';
 
@@ -87,6 +86,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   int _siblingStructureRevision = -1;
   int _siblingGeneration = 0;
   bool _hasSiblings = false;
+  bool _openingTrackSwitcher = false;
   VoidCallback? _pendingSegmentResult;
   bool _segmentLabelsLoaded = false;
   bool _syncingSegmentText = false;
@@ -777,80 +777,105 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     );
   }
 
-  void _showTrackSwitcher(BuildContext context) {
-    final session = _playback.sessionSnapshotById(widget.session.id);
-    if (session == null) return;
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final tracks = orderTracksForSessionSwitcher(
-      session.isPlaybackQueue
+  Future<void> _showTrackSwitcher(BuildContext context) async {
+    if (_openingTrackSwitcher) return;
+    _openingTrackSwitcher = true;
+    try {
+      final session = _playback.sessionSnapshotById(widget.session.id);
+      if (session == null) return;
+      final i18n = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appLanguageProviderInstanceProvider);
+      final tracks = session.isPlaybackQueue
           ? session.playbackQueue!.expandedTracks
-          : _paths.tracksForSessionSwitcher(session.id),
-      preserveQueueOrder: session.isPlaybackQueue,
-    );
-    if (tracks.isEmpty) return;
-    final workRoot = _paths.workRootForTrack(session.currentTrackPath);
-    var selectionStarted = false;
-    AppBottomSheet.show<void>(
-      context: context,
-      builder: (ctx) {
-        return SessionTrackSwitcherSheet(
-          session: session,
-          tracks: tracks,
-          workRoot: workRoot,
-          resolveTrack: _paths.trackByPath,
-          workRootForTrack: _paths.workRootForTrack,
-          onSelected: (selectedNode) {
-            if (selectionStarted) return;
-            selectionStarted = true;
-            final route = ModalRoute.of(ctx)!;
-            unawaited(() async {
-              unawaited(
-                AppInteractionFeedback.trigger(
-                  AppInteractionFeedbackType.tap,
-                  context: ctx,
-                ),
-              );
-              Navigator.of(ctx).pop();
-              if (!mounted) return;
-              final current = _playback.sessionSnapshotById(session.id);
-              if (current == null ||
-                  current.playbackQueue != session.playbackQueue ||
-                  (current.queueVersion != session.queueVersion &&
-                      !listEquals(
-                        current.customQueueTracks,
-                        session.customQueueTracks,
-                      ))) {
-                return;
-              }
-              if (session.isPlaybackQueue) {
-                await _playback.switchSessionQueueTrack(
-                  session.id,
-                  selectedNode.queueIndex,
+          : await _paths.tracksForSessionSwitcher(session.id);
+      if (!mounted || !context.mounted) return;
+      final current = _playback.sessionSnapshotById(session.id);
+      if (current == null ||
+          current.currentTrackPath != session.currentTrackPath ||
+          current.queueVersion != session.queueVersion ||
+          ModalRoute.of(context)?.isCurrent == false) {
+        return;
+      }
+      if (tracks.isEmpty) return;
+      final workRoot = _paths.workRootForTrack(session.currentTrackPath);
+      var selectionStarted = false;
+      await AppBottomSheet.show<void>(
+        context: context,
+        builder: (ctx) {
+          return SessionTrackSwitcherSheet(
+            session: session,
+            tracks: tracks,
+            workRoot: workRoot,
+            resolveTrack: _paths.trackByPath,
+            workRootForTrack: _paths.workRootForTrack,
+            onSelected: (selectedNode) {
+              if (selectionStarted) return;
+              selectionStarted = true;
+              final route = ModalRoute.of(ctx)!;
+              unawaited(() async {
+                unawaited(
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.tap,
+                    context: ctx,
+                  ),
                 );
-              } else {
-                await _playback.switchSessionTrack(
-                  session.id,
-                  selectedNode.track.path,
-                );
-              }
-              // Prepare playback while the sheet exits; show feedback only
-              // after its overlay has been removed.
-              await route.completed;
-              if (mounted) {
-                showAppSnackBar(
-                  this.context,
-                  i18n.tr('switch_audio'),
-                  tone: AppFeedbackTone.success,
-                  icon: Icons.queue_music_rounded,
-                );
-              }
-            }());
-          },
+                Navigator.of(ctx).pop();
+                if (!mounted) return;
+                final current = _playback.sessionSnapshotById(session.id);
+                if (current == null ||
+                    current.playbackQueue != session.playbackQueue ||
+                    (current.queueVersion != session.queueVersion &&
+                        !listEquals(
+                          current.customQueueTracks,
+                          session.customQueueTracks,
+                        ))) {
+                  return;
+                }
+                if (session.isPlaybackQueue) {
+                  await _playback.switchSessionQueueTrack(
+                    session.id,
+                    selectedNode.queueIndex,
+                  );
+                } else {
+                  await _playback.switchSessionTrack(
+                    session.id,
+                    selectedNode.track.path,
+                  );
+                }
+                // Prepare playback while the sheet exits; show feedback only
+                // after its overlay has been removed.
+                await route.completed;
+                if (mounted) {
+                  showAppSnackBar(
+                    this.context,
+                    i18n.tr('switch_audio'),
+                    tone: AppFeedbackTone.success,
+                    icon: Icons.queue_music_rounded,
+                  );
+                }
+              }());
+            },
+          );
+        },
+      );
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'session_switcher_prepare_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted && context.mounted) {
+        final i18n = ref.read(appLanguageProviderInstanceProvider);
+        showAppSnackBar(
+          context,
+          i18n.tr('operation_failed_retry'),
+          tone: AppFeedbackTone.warning,
         );
-      },
-    );
+      }
+    } finally {
+      _openingTrackSwitcher = false;
+    }
   }
 }

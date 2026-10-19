@@ -49,14 +49,17 @@ void main() {
               ),
             );
             final library = fixture.runtimeGraph.library;
-            library
-              ..addWatchedLibrary('/library/reorder', notify: false)
-              ..recordLibraryEntriesForTracks(
-                '/library/reorder',
-                tracks,
-                persist: false,
-              )
-              ..addTracks(tracks, persist: false);
+            await tester.runAsync(() async {
+              library
+                ..addWatchedLibrary('/library/reorder', notify: false)
+                ..recordLibraryEntriesForTracks(
+                  '/library/reorder',
+                  tracks,
+                  persist: false,
+                )
+                ..addTracks(tracks, persist: false);
+              await library.flushPendingPersistence();
+            });
             fixture.libraryService.syncSlice(
               isInitialized: true,
               detailRevision: 0,
@@ -101,8 +104,14 @@ void main() {
                 libraryPage ? const LibraryTab() : const PlaylistTab(),
               ),
             );
-            if (libraryPage) await pumpUntilLibraryTreeReady(tester, library);
-            await tester.pumpAndSettle();
+            if (libraryPage) {
+              await pumpUntilLibraryTreeReady(tester, library);
+              await pumpUntilFound(
+                tester,
+                find.text('Audio 0', findRichText: true),
+              );
+            }
+            await pumpAndSettleWithAsync(tester);
             await pumpUntilUiIdle(tester);
             final first = find.text('Audio 0', findRichText: true);
             final moved = find.text('Audio 2', findRichText: true);
@@ -122,7 +131,7 @@ void main() {
             if (pin) {
               if (platform == TargetPlatform.android) {
                 await tester.drag(moved, const Offset(180, 0));
-                await tester.pumpAndSettle();
+                await pumpAndSettleWithAsync(tester);
                 await tester.tap(
                   find.byTooltip(fixture.languageProvider.tr('pin_to_top')),
                 );
@@ -139,7 +148,7 @@ void main() {
                 await tester.pump(const Duration(milliseconds: 111));
               } else {
                 await tester.tap(moved, buttons: 2);
-                await tester.pumpAndSettle();
+                await pumpAndSettleWithAsync(tester);
                 await tester.tap(
                   find.text(fixture.languageProvider.tr('pin_to_top')),
                 );
@@ -159,7 +168,7 @@ void main() {
                 ? PathMatcher.equivalenceKey(tracks.last.path)
                 : sessions.last.id;
             for (var i = 0; i < 100; i++) {
-              await tester.pump();
+              await tester.pump(const Duration(milliseconds: 16));
               if (tester
                       .widget<AnimatedReorder>(find.byType(AnimatedReorder))
                       .order
@@ -204,7 +213,7 @@ void main() {
                 closeTo(kAppFadeCurve.transform(0.5), 0.001),
               );
               expect(tester.getTopLeft(moved).dy, closeTo(firstY, 0.01));
-              await tester.pumpAndSettle();
+              await pumpAndSettleWithAsync(tester);
               expect(pinOpacity(), 1);
             }
             expect(tester.takeException(), isNull);

@@ -1701,10 +1701,6 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 50)),
-    );
-    await tester.pump();
 
     final fetchInfoButton = find.byTooltip(
       languageProvider.tr('audio_detail_fetch_info'),
@@ -1712,6 +1708,7 @@ void main() {
     final fetchInfoIconButton = find.byKey(
       const ValueKey<String>('audio_detail_fetch_info'),
     );
+    await pumpUntilFound(tester, fetchInfoIconButton);
     final collapseButton = find.byTooltip(
       MaterialLocalizations.of(
         tester.element(find.byType(AudioDetailSheet)),
@@ -1729,8 +1726,10 @@ void main() {
     expect(find.byIcon(Icons.drive_file_rename_outline), findsNothing);
 
     await tester.tap(fetchInfoButton);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+    await pumpUntilFound(
+      tester,
+      find.text(languageProvider.tr('audio_detail_fetch_scope_title')),
+    );
 
     expect(
       find.text(languageProvider.tr('audio_detail_fetch_scope_title')),

@@ -660,6 +660,10 @@ void registerAsmrRemoteCatalogTests({
       );
       await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
 
+      await controller.ensureCategoryLoaded(
+        AsmrCategoryType.favorites,
+        searchQuery: 'sleep',
+      );
       final first = controller.categoryViewState(
         AsmrCategoryType.favorites,
         searchQuery: 'sleep',
@@ -675,6 +679,10 @@ void registerAsmrRemoteCatalogTests({
 
       await controller.toggleFavorite(
         _work(id: 42, title: 'Sleep New', tags: <String>['sleep']),
+      );
+      await controller.ensureCategoryLoaded(
+        AsmrCategoryType.favorites,
+        searchQuery: 'sleep',
       );
       final third = controller.categoryViewState(
         AsmrCategoryType.favorites,
@@ -719,6 +727,10 @@ void registerAsmrRemoteCatalogTests({
         AsmrCategoryType category,
         String searchQuery,
       ) async {
+        await controller.ensureCategoryLoaded(
+          category,
+          searchQuery: searchQuery,
+        );
         final request = (
           category: category,
           searchQuery: searchQuery,

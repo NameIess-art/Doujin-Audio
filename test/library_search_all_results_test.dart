@@ -120,6 +120,11 @@ void main() {
       LibraryTreeSnapshot(tree: [card], leafFolderCount: 1),
     );
     await tester.runAsync(fixture.library.coverArtworkCacheService.initialize);
+    await tester.runAsync(
+      () => fixture.library.detailCacheService.load(
+        AudioDetailTarget.libraryRootFolder(card.path),
+      ),
+    );
     final controller = ScrollController();
     addTearDown(controller.dispose);
     final published = <List<LibraryNode>>[];

@@ -31,6 +31,11 @@ class DesktopIntegration {
   void RefreshPower();
   void EndSession();
   void UpdateTheme();
+  void OpenContainingFolder(const flutter::EncodableMap& args,
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>& result);
+  void ReplyFolderOpens();
+  struct FolderOpenState;
+  std::shared_ptr<FolderOpenState> folder_opens_;
   HWND window_;
   bool ready_ = false;
   bool quitting_ = false;

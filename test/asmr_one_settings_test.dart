@@ -209,6 +209,17 @@ void main() {
       expect(container.read(asmrLibraryControllerProvider), same(controller));
       final alphaSubscription = container.listen(alphaProvider, (_, _) {});
       final betaSubscription = container.listen(betaProvider, (_, _) {});
+      Future<void> prepareQueries() async {
+        await Future.wait([
+          for (final query in ['Alpha', 'Beta'])
+            controller.ensureCategoryLoaded(
+              AsmrCategoryType.favorites,
+              searchQuery: query,
+            ),
+        ]);
+      }
+
+      await prepareQueries();
       // Each structural projection is published in a separate frame.
       UiInteractionCoordinator.instance.flushPendingCommitsForTest();
       UiInteractionCoordinator.instance.flushPendingCommitsForTest();
@@ -223,6 +234,7 @@ void main() {
       expect(controller.hasActiveListeners, isTrue);
 
       await controller.toggleFavorite(alpha);
+      await prepareQueries();
       UiInteractionCoordinator.instance.flushPendingCommitsForTest();
       UiInteractionCoordinator.instance.flushPendingCommitsForTest();
       await container.pump();

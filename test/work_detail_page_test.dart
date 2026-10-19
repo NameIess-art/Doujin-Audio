@@ -389,7 +389,6 @@ void main() {
           navigator.push<void>(
             buildAppPageRoute<void>(
               context: navigator.context,
-              workDetailTransition: true,
               child: remote
                   ? WorkDetailPage.forAsmr(
                       work: AsmrWork.fromJson(const {'id': 123456, 'title': 'Work'}),

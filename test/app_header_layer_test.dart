@@ -220,7 +220,6 @@ void main() {
         await tester.pumpAndSettle();
         final detail = buildAppPageRoute<void>(
           context: navigator.currentContext!,
-          workDetailTransition: true,
           child: _page('detail', Colors.blue, _newHeader),
         );
         unawaited(navigator.currentState!.push(detail));
@@ -333,117 +332,109 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-    for (final workDetail in [false, true]) {
-      testWidgets(
-        'headers paint above both sliding route bodies ($platform, detail: $workDetail)',
-        (tester) async {
-          final navigator = GlobalKey<NavigatorState>();
-          final surface = GlobalKey();
-          var taps = 0;
-          await tester.pumpWidget(
-            RepaintBoundary(
-              key: surface,
-              child: MaterialApp(
-                navigatorKey: navigator,
-                theme: ThemeData(
-                  platform: platform,
-                  pageTransitionsTheme: const PageTransitionsTheme(
-                    builders: {
-                      TargetPlatform.android: AppPageTransitionsBuilder(),
-                      TargetPlatform.windows: AppPageTransitionsBuilder(),
-                    },
-                  ),
-                ),
-                builder: (_, child) => AppPageTransitionHost(child: child!),
-                home: _page('old', Colors.red, _oldHeader),
+    testWidgets('headers paint above both sliding route bodies ($platform)', (
+      tester,
+    ) async {
+      final navigator = GlobalKey<NavigatorState>();
+      final surface = GlobalKey();
+      var taps = 0;
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: surface,
+          child: MaterialApp(
+            navigatorKey: navigator,
+            theme: ThemeData(
+              platform: platform,
+              pageTransitionsTheme: const PageTransitionsTheme(
+                builders: {
+                  TargetPlatform.android: AppPageTransitionsBuilder(),
+                  TargetPlatform.windows: AppPageTransitionsBuilder(),
+                },
               ),
             ),
-          );
-          final route = buildAppPageRoute<void>(
-            context: navigator.currentContext!,
-            workDetailTransition: workDetail,
-            child: _page('new', Colors.blue, _newHeader, onTap: () => taps++),
-          );
-          unawaited(navigator.currentState!.push(route));
-          await tester.pump();
-          await tester.pump();
-          final header = find.byKey(const ValueKey('new-header'));
-          final rect = tester.getRect(header);
-          for (final elapsed in [50, 50, 50]) {
-            await tester.pump(Duration(milliseconds: elapsed));
-            expect(tester.getRect(header), rect);
-            final colors = await _pixels(tester, surface, [
-              const Offset(8, 50),
-              const Offset(790, 50),
-            ]);
-            // Both edges retain the old green header while the new yellow header
-            // fades in; the blue body's moving edge cannot wipe either header.
-            final incoming = kAppFadeCurve.transform(route.animation!.value);
-            final expected = Color.alphaBlend(
-              _newHeader.withValues(alpha: incoming),
-              Color.alphaBlend(
-                _oldHeader.withValues(alpha: 1 - incoming),
-                Colors.blue,
-              ),
-            );
-            expect(colors.last.r, closeTo(expected.r, 0.02));
-            expect(colors.last.g, closeTo(expected.g, 0.02));
-            expect(colors.last.b, closeTo(expected.b, 0.02));
-            expect(
-              colors.every((color) => color.g > 0.6 && color.b < 0.4),
-              isTrue,
-              reason: '$colors',
-            );
-          }
-          await tester.pumpAndSettle();
-          await tester.tap(header);
-          expect(taps, 1);
-          navigator.currentState!.pop();
-          await tester.pump();
-          await tester.pump(const Duration(milliseconds: 150));
-          expect(tester.getRect(header), rect);
-          final colors = await _pixels(tester, surface, [
-            const Offset(8, 50),
-            const Offset(790, 50),
-          ]);
-          expect(
-            colors.every((color) => color.g > 0.6 && color.b < 0.4),
-            isTrue,
-            reason: '$colors',
-          );
-          await tester.pumpAndSettle();
-          expect(find.byKey(const ValueKey('old-header')), findsOneWidget);
-          unawaited(
-            navigator.currentState!.push(
-              buildAppPageRoute<void>(
-                context: navigator.currentContext!,
-                workDetailTransition: workDetail,
-                child: _page('interrupted', Colors.blue, _newHeader),
-              ),
-            ),
-          );
-          await tester.pump();
-          await tester.pump();
-          await tester.pump(const Duration(milliseconds: 75));
-          final beforeReverse = (await _pixels(tester, surface, [
-            const Offset(790, 50),
-          ])).single;
-          navigator.currentState!.pop();
-          await tester.pump();
-          final afterReverse = (await _pixels(tester, surface, [
-            const Offset(790, 50),
-          ])).single;
-          expect(afterReverse, beforeReverse);
-          await tester.pumpAndSettle();
-          expect(
-            find.byKey(const ValueKey('interrupted-header')),
-            findsNothing,
-          );
-          expect(find.byKey(const ValueKey('old-header')), findsOneWidget);
-          await tester.pumpWidget(const SizedBox.shrink());
-        },
+            builder: (_, child) => AppPageTransitionHost(child: child!),
+            home: _page('old', Colors.red, _oldHeader),
+          ),
+        ),
       );
-    }
+      final route = buildAppPageRoute<void>(
+        context: navigator.currentContext!,
+        child: _page('new', Colors.blue, _newHeader, onTap: () => taps++),
+      );
+      unawaited(navigator.currentState!.push(route));
+      await tester.pump();
+      await tester.pump();
+      final header = find.byKey(const ValueKey('new-header'));
+      final rect = tester.getRect(header);
+      for (final elapsed in [50, 50, 50]) {
+        await tester.pump(Duration(milliseconds: elapsed));
+        expect(tester.getRect(header), rect);
+        final colors = await _pixels(tester, surface, [
+          const Offset(8, 50),
+          const Offset(790, 50),
+        ]);
+        // Both edges retain the old green header while the new yellow header
+        // fades in; the blue body's moving edge cannot wipe either header.
+        final incoming = kAppFadeCurve.transform(route.animation!.value);
+        final expected = Color.alphaBlend(
+          _newHeader.withValues(alpha: incoming),
+          Color.alphaBlend(
+            _oldHeader.withValues(alpha: 1 - incoming),
+            Colors.blue,
+          ),
+        );
+        expect(colors.last.r, closeTo(expected.r, 0.02));
+        expect(colors.last.g, closeTo(expected.g, 0.02));
+        expect(colors.last.b, closeTo(expected.b, 0.02));
+        expect(
+          colors.every((color) => color.g > 0.6 && color.b < 0.4),
+          isTrue,
+          reason: '$colors',
+        );
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(header);
+      expect(taps, 1);
+      navigator.currentState!.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(tester.getRect(header), rect);
+      final colors = await _pixels(tester, surface, [
+        const Offset(8, 50),
+        const Offset(790, 50),
+      ]);
+      expect(
+        colors.every((color) => color.g > 0.6 && color.b < 0.4),
+        isTrue,
+        reason: '$colors',
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('old-header')), findsOneWidget);
+      unawaited(
+        navigator.currentState!.push(
+          buildAppPageRoute<void>(
+            context: navigator.currentContext!,
+            child: _page('interrupted', Colors.blue, _newHeader),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 75));
+      final beforeReverse = (await _pixels(tester, surface, [
+        const Offset(790, 50),
+      ])).single;
+      navigator.currentState!.pop();
+      await tester.pump();
+      final afterReverse = (await _pixels(tester, surface, [
+        const Offset(790, 50),
+      ])).single;
+      expect(afterReverse, beforeReverse);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('interrupted-header')), findsNothing);
+      expect(find.byKey(const ValueKey('old-header')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
   }
 
   testWidgets(

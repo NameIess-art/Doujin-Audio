@@ -96,41 +96,20 @@ Future<void> showAudioDetailSheet(
   bool returnToMain = false,
   AudioDetail? initialDetail,
   String? initialCoverPath,
-}) async {
-  final navigator = Navigator.of(context);
-  final origin = ModalRoute.of(context);
-  PageRoute<void> buildRoute(BuildContext routeContext) =>
-      buildAppPageRoute<void>(
-        context: routeContext,
-        settings: const RouteSettings(name: workDetailRouteName),
-        workDetailTransition: true,
-        child: WorkDetailPage.forLocal(
-          target: target,
-          initialDetail: initialDetail,
-          initialCoverPath: initialCoverPath,
-        ),
-      );
-  await WidgetsBinding.instance.endOfFrame;
-  if (!context.mounted || !navigator.mounted || origin?.isCurrent == false) {
-    return;
-  }
-  final detailNavigation = WorkDetailNavigationScope.maybeOf(context);
-  if (detailNavigation != null &&
-      (returnToMain || detailNavigation.canOpenInPane(context))) {
-    await detailNavigation.open(
-      ('local', target),
-      buildRoute,
-      returnToMain: returnToMain,
-    );
-    return;
-  }
-  final route = buildRoute(context);
-  if (returnToMain) {
-    await navigator.pushAndRemoveUntil<void>(route, (route) => route.isFirst);
-    return;
-  }
-  await navigator.push<void>(route);
-}
+}) => WorkDetailNavigation.openFrom(
+  context,
+  ('local', target),
+  (routeContext) => buildAppPageRoute<void>(
+    context: routeContext,
+    settings: const RouteSettings(name: workDetailRouteName),
+    child: WorkDetailPage.forLocal(
+      target: target,
+      initialDetail: initialDetail,
+      initialCoverPath: initialCoverPath,
+    ),
+  ),
+  returnToMain: returnToMain,
+);
 
 Future<DlsiteMetadataReviewResult?> showAudioDetailEditor(
   BuildContext context,

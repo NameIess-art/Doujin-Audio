@@ -205,7 +205,10 @@ void main() {
       );
       final initialPageSize = expanded ? tester.getSize(pages) : null;
       final contentNavigator = tester.element(
-        find.byType(MainContentNavigator),
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is MainContentNavigator && widget.navigatorKey == null,
+        ),
       );
       var contentNavigatorBuilds = 0;
       final beforeNavigation = debugOnRebuildDirtyWidget;

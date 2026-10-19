@@ -1067,7 +1067,8 @@ void main() {
     navigatorKey.currentState!.pop();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 301));
-    expect(route.animation!.status, AnimationStatus.dismissed);
+    expect(route.animation!.value, 0);
+    expect(route.animation!.status, AnimationStatus.reverse);
     await tester.pumpAndSettle();
     expect(find.text('prepared-route'), findsNothing);
   });
@@ -1105,7 +1106,6 @@ void main() {
         );
         final route = buildAppPageRoute<void>(
           context: navigatorKey.currentContext!,
-          workDetailTransition: true,
           child: page('detail-destination', focusNode: focus),
         );
         unawaited(navigatorKey.currentState!.push(route));
@@ -1643,205 +1643,204 @@ void main() {
   );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-    for (final workDetail in [false, true]) {
-      testWidgets(
-        'route exit decelerates without changing duration ($platform, detail: $workDetail)',
-        (tester) async {
-          final navigatorKey = GlobalKey<NavigatorState>();
-          await tester.pumpWidget(
-            MaterialApp(
-              theme: ThemeData(platform: platform),
-              navigatorKey: navigatorKey,
-              navigatorObservers: [UiInteractionNavigatorObserver()],
-              home: regions('trajectory-home'),
-            ),
-          );
-          final navigator = navigatorKey.currentState!;
-          final route = buildAppPageRoute<void>(
-            context: navigator.context,
-            workDetailTransition: workDetail,
-            child: regions('trajectory-detail'),
-          );
-          expect(route.transitionDuration, const Duration(milliseconds: 300));
-          expect(
-            route.reverseTransitionDuration,
-            const Duration(milliseconds: 300),
-          );
-          unawaited(navigator.push(route));
-          await tester.pump();
-          await tester.pump();
-          await tester.pumpAndSettle();
-          final body = find.byKey(const ValueKey('trajectory-detail-body'));
-          final width = tester.getSize(body).width;
-          final origin = tester.getRect(body).left;
-          navigator.pop();
-          await tester.pump();
-          expect(
-            UiInteractionCoordinator.instance.navigationAllowed.value,
-            isFalse,
-          );
-          expect(tester.getRect(body).left, closeTo(origin, 0.001));
-          await tester.pump(const Duration(milliseconds: 100));
-          final firstStep = tester.getRect(body).left - origin;
-          await tester.pump(const Duration(milliseconds: 100));
-          final secondPosition = tester.getRect(body).left - origin;
-          expect(firstStep, greaterThan(width * 0.5));
-          expect(firstStep, greaterThan((width - secondPosition) * 2));
-          expect(secondPosition, inExclusiveRange(firstStep, width));
-          await tester.pump(const Duration(milliseconds: 99));
-          expect(route.animation!.status, AnimationStatus.reverse);
-          var retainedFinalFrame = false;
-          if (workDetail) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              retainedFinalFrame =
-                  route.animation!.value == 0 &&
-                  route.animation!.status == AnimationStatus.reverse &&
-                  find
-                      .byKey(
-                        const ValueKey('trajectory-detail-body'),
-                        skipOffstage: false,
-                      )
-                      .evaluate()
-                      .isNotEmpty;
-            });
-          }
-          await tester.pump(const Duration(milliseconds: 1));
-          if (workDetail) expect(retainedFinalFrame, isTrue);
-          await tester.pumpAndSettle();
-          expect(
-            find.byKey(
-              const ValueKey('trajectory-detail-body'),
-              skipOffstage: false,
-            ),
-            findsNothing,
-          );
-          expect(
-            UiInteractionCoordinator.instance.navigationAllowed.value,
-            isTrue,
-          );
-          await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-          expect(tester.takeException(), isNull);
-        },
-      );
-
-      testWidgets(
-        'route interrupted entrance reverses continuously ($platform, detail: $workDetail)',
-        (tester) async {
-          final navigatorKey = GlobalKey<NavigatorState>();
-          await tester.pumpWidget(
-            MaterialApp(
-              theme: ThemeData(platform: platform),
-              navigatorKey: navigatorKey,
-              navigatorObservers: [UiInteractionNavigatorObserver()],
-              home: const SizedBox(),
-            ),
-          );
-          final navigator = navigatorKey.currentState!;
-          final route = buildAppPageRoute<void>(
-            context: navigator.context,
-            workDetailTransition: workDetail,
-            child: regions('interrupted-trajectory'),
-          );
-          unawaited(navigator.push(route));
-          await tester.pump();
-          await tester.pump();
-          await tester.pump(const Duration(milliseconds: 90));
-          final body = find.byKey(
-            const ValueKey('interrupted-trajectory-body'),
-          );
-          final beforePop = tester.getRect(body).left;
-          navigator.pop();
-          await tester.pump();
-          expect(tester.getRect(body).left, closeTo(beforePop, 0.001));
-          await tester.pump(const Duration(milliseconds: 30));
-          expect(tester.getRect(body).left, greaterThan(beforePop));
-          await tester.pumpAndSettle();
-          expect(
-            find.byKey(
-              const ValueKey('interrupted-trajectory-body'),
-              skipOffstage: false,
-            ),
-            findsNothing,
-          );
-          expect(
-            UiInteractionCoordinator.instance.navigationAllowed.value,
-            isTrue,
-          );
-          await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-          expect(tester.takeException(), isNull);
-        },
-      );
-
-      testWidgets(
-        'route activity hosts stay cached between ticks ($platform, detail: $workDetail)',
-        (tester) async {
-          final navigatorKey = GlobalKey<NavigatorState>();
-          await tester.pumpWidget(
-            MaterialApp(
-              theme: ThemeData(platform: platform),
-              navigatorKey: navigatorKey,
-              home: const SizedBox(),
-            ),
-          );
-          final route = buildAppPageRoute<void>(
-            context: navigatorKey.currentContext!,
-            workDetailTransition: workDetail,
-            child: regions('cached-activity'),
-          );
-          unawaited(navigatorKey.currentState!.push(route));
-          await tester.pump();
-          await tester.pump();
-          await tester.pump(const Duration(milliseconds: 30));
-          final body = find.byKey(const ValueKey('cached-activity-body'));
-          final hosts = [
-            for (final type in [TickerMode, ExcludeFocus, ExcludeSemantics])
-              tester.element(
-                find.ancestor(of: body, matching: find.byType(type)).first,
-              ),
-          ];
-          hosts.add(
-            tester.element(
+    testWidgets(
+      'route exit decelerates without changing duration ($platform)',
+      (tester) async {
+        final navigatorKey = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: platform),
+            navigatorKey: navigatorKey,
+            navigatorObservers: [UiInteractionNavigatorObserver()],
+            home: regions('trajectory-home'),
+          ),
+        );
+        final navigator = navigatorKey.currentState!;
+        final route = buildAppPageRoute<String>(
+          context: navigator.context,
+          child: regions('trajectory-detail'),
+        );
+        expect(route.transitionDuration, const Duration(milliseconds: 300));
+        expect(
+          route.reverseTransitionDuration,
+          const Duration(milliseconds: 300),
+        );
+        String? popResult;
+        var routeCompleted = false;
+        unawaited(
+          navigator.push(route).then<void>((value) => popResult = value),
+        );
+        unawaited(route.completed.then<void>((_) => routeCompleted = true));
+        await tester.pump();
+        await tester.pump();
+        await tester.pumpAndSettle();
+        final body = find.byKey(const ValueKey('trajectory-detail-body'));
+        final width = tester.getSize(body).width;
+        final origin = tester.getRect(body).left;
+        navigator.pop('closed');
+        await tester.pump();
+        expect(popResult, 'closed');
+        expect(routeCompleted, isFalse);
+        expect(
+          UiInteractionCoordinator.instance.navigationAllowed.value,
+          isFalse,
+        );
+        expect(tester.getRect(body).left, closeTo(origin, 0.001));
+        await tester.pump(const Duration(milliseconds: 100));
+        final firstStep = tester.getRect(body).left - origin;
+        await tester.pump(const Duration(milliseconds: 100));
+        final secondPosition = tester.getRect(body).left - origin;
+        expect(firstStep, greaterThan(width * 0.5));
+        expect(firstStep, greaterThan((width - secondPosition) * 2));
+        expect(secondPosition, inExclusiveRange(firstStep, width));
+        await tester.pump(const Duration(milliseconds: 99));
+        expect(route.animation!.status, AnimationStatus.reverse);
+        var retainedFinalFrame = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          retainedFinalFrame =
+              !routeCompleted &&
+              route.animation!.value == 0 &&
+              route.animation!.status == AnimationStatus.reverse &&
               find
-                  .descendant(
-                    of: find.byElementPredicate(
-                      (element) => element == hosts[2],
-                    ),
-                    matching: find.byType(IgnorePointer),
+                  .byKey(
+                    const ValueKey('trajectory-detail-body'),
+                    skipOffstage: false,
                   )
-                  .first,
-            ),
-          );
-          final hostWidgets = hosts.map((element) => element.widget).toList();
-          final rebuilds = <Element, int>{for (final host in hosts) host: 0};
-          final previous = debugOnRebuildDirtyWidget;
-          debugOnRebuildDirtyWidget = (element, builtOnce) {
-            previous?.call(element, builtOnce);
-            if (rebuilds.containsKey(element)) {
-              rebuilds[element] = rebuilds[element]! + 1;
-            }
-          };
-          try {
-            for (var frame = 0; frame < 5; frame++) {
-              await tester.pump(const Duration(milliseconds: 20));
-            }
-            expect(rebuilds.values, everyElement(0));
-            for (var index = 0; index < hosts.length; index++) {
-              expect(hosts[index].widget, same(hostWidgets[index]));
-            }
-          } finally {
-            debugOnRebuildDirtyWidget = previous;
-          }
-          await tester.pumpAndSettle();
-          expect((hosts[0].widget as TickerMode).enabled, isTrue);
-          expect((hosts[1].widget as ExcludeFocus).excluding, isFalse);
-          expect((hosts[2].widget as ExcludeSemantics).excluding, isFalse);
-          expect((hosts[3].widget as IgnorePointer).ignoring, isFalse);
-          expect(tester.takeException(), isNull);
-        },
-      );
+                  .evaluate()
+                  .isNotEmpty;
+        });
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(retainedFinalFrame, isTrue);
+        await tester.pumpAndSettle();
+        expect(routeCompleted, isTrue);
+        expect(
+          find.byKey(
+            const ValueKey('trajectory-detail-body'),
+            skipOffstage: false,
+          ),
+          findsNothing,
+        );
+        expect(
+          UiInteractionCoordinator.instance.navigationAllowed.value,
+          isTrue,
+        );
+        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+        expect(tester.takeException(), isNull);
+      },
+    );
 
+    testWidgets(
+      'route interrupted entrance reverses continuously ($platform)',
+      (tester) async {
+        final navigatorKey = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: platform),
+            navigatorKey: navigatorKey,
+            navigatorObservers: [UiInteractionNavigatorObserver()],
+            home: const SizedBox(),
+          ),
+        );
+        final navigator = navigatorKey.currentState!;
+        final route = buildAppPageRoute<void>(
+          context: navigator.context,
+          child: regions('interrupted-trajectory'),
+        );
+        unawaited(navigator.push(route));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 90));
+        final body = find.byKey(const ValueKey('interrupted-trajectory-body'));
+        final beforePop = tester.getRect(body).left;
+        navigator.pop();
+        await tester.pump();
+        expect(tester.getRect(body).left, closeTo(beforePop, 0.001));
+        await tester.pump(const Duration(milliseconds: 30));
+        expect(tester.getRect(body).left, greaterThan(beforePop));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(
+            const ValueKey('interrupted-trajectory-body'),
+            skipOffstage: false,
+          ),
+          findsNothing,
+        );
+        expect(
+          UiInteractionCoordinator.instance.navigationAllowed.value,
+          isTrue,
+        );
+        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets('route activity hosts stay cached between ticks ($platform)', (
+      tester,
+    ) async {
+      final navigatorKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: platform),
+          navigatorKey: navigatorKey,
+          home: const SizedBox(),
+        ),
+      );
+      final route = buildAppPageRoute<void>(
+        context: navigatorKey.currentContext!,
+        child: regions('cached-activity'),
+      );
+      unawaited(navigatorKey.currentState!.push(route));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 30));
+      final body = find.byKey(const ValueKey('cached-activity-body'));
+      final hosts = [
+        for (final type in [TickerMode, ExcludeFocus, ExcludeSemantics])
+          tester.element(
+            find.ancestor(of: body, matching: find.byType(type)).first,
+          ),
+      ];
+      hosts.add(
+        tester.element(
+          find
+              .descendant(
+                of: find.byElementPredicate((element) => element == hosts[2]),
+                matching: find.byType(IgnorePointer),
+              )
+              .first,
+        ),
+      );
+      final hostWidgets = hosts.map((element) => element.widget).toList();
+      final rebuilds = <Element, int>{for (final host in hosts) host: 0};
+      final previous = debugOnRebuildDirtyWidget;
+      debugOnRebuildDirtyWidget = (element, builtOnce) {
+        previous?.call(element, builtOnce);
+        if (rebuilds.containsKey(element)) {
+          rebuilds[element] = rebuilds[element]! + 1;
+        }
+      };
+      try {
+        for (var frame = 0; frame < 5; frame++) {
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        expect(rebuilds.values, everyElement(0));
+        for (var index = 0; index < hosts.length; index++) {
+          expect(hosts[index].widget, same(hostWidgets[index]));
+        }
+      } finally {
+        debugOnRebuildDirtyWidget = previous;
+      }
+      await tester.pumpAndSettle();
+      expect((hosts[0].widget as TickerMode).enabled, isTrue);
+      expect((hosts[1].widget as ExcludeFocus).excluding, isFalse);
+      expect((hosts[2].widget as ExcludeSemantics).excluding, isFalse);
+      expect((hosts[3].widget as IgnorePointer).ignoring, isFalse);
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final materialRoute in [false, true]) {
       testWidgets(
-        'route cache resizes during its slide ($platform, detail: $workDetail)',
+        'route cache resizes during its slide ($platform, material: $materialRoute)',
         (tester) async {
           tester.view.devicePixelRatio = 1;
           tester.view.physicalSize = const Size(800, 600);
@@ -1871,12 +1870,8 @@ void main() {
             child: regions('resizing-detail'),
           );
           final navigator = navigatorKey.currentState!;
-          final route = workDetail
-              ? buildAppPageRoute<void>(
-                  context: navigator.context,
-                  workDetailTransition: true,
-                  child: page,
-                )
+          final route = !materialRoute
+              ? buildAppPageRoute<void>(context: navigator.context, child: page)
               : MaterialPageRoute<void>(builder: (_) => page);
           unawaited(navigator.push(route));
           await tester.pump();
@@ -1911,7 +1906,7 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'work detail fades its stationary header and retains prepared frames on $platform',
+      'routes fade stationary headers and retain prepared frames on $platform',
       (tester) async {
         final navigatorKey = GlobalKey<NavigatorState>();
         final surface = GlobalKey();
@@ -1930,7 +1925,6 @@ void main() {
         );
         final route = buildAppPageRoute<void>(
           context: navigatorKey.currentContext!,
-          workDetailTransition: true,
           child: regions(
             'whole-detail',
             backgroundColor: Colors.blue,
@@ -1974,9 +1968,9 @@ void main() {
         final preparedHeaderPaints = headerPaints;
         expect(preparedHeaderPaints, 1);
         expect(
-          find.ancestor(of: header, matching: find.byType(Transform)),
-          findsNothing,
-          reason: 'Header opacity no longer counter-translates a moving page.',
+          tester.getRect(header).left,
+          closeTo(headerLeft, 0.01),
+          reason: 'Header geometry stays fixed while the page moves.',
         );
         for (var i = 0; i < 3; i++) {
           await tester.pump(const Duration(milliseconds: 75));
@@ -2049,126 +2043,120 @@ void main() {
       },
     );
 
-    testWidgets(
-      'work detail overlays slide in route coordinates on $platform',
-      (tester) async {
-        final navigatorKey = GlobalKey<NavigatorState>();
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: ThemeData(platform: platform),
-            navigatorKey: navigatorKey,
-            home: const ColoredBox(color: Colors.red),
-          ),
-        );
-        final route = buildAppPageRoute<void>(
-          context: navigatorKey.currentContext!,
-          workDetailTransition: true,
-          child: const Stack(
-            children: [
-              AppPageContentTransition(
-                child: SizedBox.expand(key: ValueKey('detail-overlay-body')),
-              ),
-              Positioned(
-                left: 16,
-                top: 100,
-                width: 120,
-                height: 30,
-                child: AppPageContentTransition(
-                  child: ColoredBox(
-                    key: ValueKey('detail-narrow-overlay'),
-                    color: Colors.orange,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-        final body = find.byKey(const ValueKey('detail-overlay-body'));
-        final overlay = find.byKey(const ValueKey('detail-narrow-overlay'));
-        unawaited(navigatorKey.currentState!.push(route));
-        await tester.pump();
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
-        expect(tester.getRect(body).left, greaterThan(0));
-        expect(tester.getRect(overlay).left - tester.getRect(body).left, 16);
-        await tester.pumpAndSettle();
-        navigatorKey.currentState!.pop();
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
-        expect(tester.getRect(body).left, greaterThan(0));
-        expect(tester.getRect(overlay).left - tester.getRect(body).left, 16);
-        await tester.pumpAndSettle();
-        expect(overlay, findsNothing);
-        expect(tester.takeException(), isNull);
-      },
-    );
-  }
-
-  testWidgets(
-    'work detail cancels during preparation and honors reduced motion',
-    (tester) async {
-      for (final reduced in [false, true]) {
-        final navigatorKey = GlobalKey<NavigatorState>();
-        await tester.pumpWidget(
-          MediaQuery(
-            data: MediaQueryData(disableAnimations: reduced),
-            child: MaterialApp(
-              navigatorKey: navigatorKey,
-              home: const SizedBox(),
-            ),
-          ),
-        );
-        final route = buildAppPageRoute<void>(
-          context: navigatorKey.currentContext!,
-          workDetailTransition: true,
-          child: const Text('cancel-whole-detail'),
-        );
-        if (reduced) expect(route.transitionDuration, Duration.zero);
-        unawaited(navigatorKey.currentState!.push(route));
-        await tester.pump();
-        navigatorKey.currentState!.pop();
-        await tester.pumpAndSettle();
-        expect(
-          find.text('cancel-whole-detail', skipOffstage: false),
-          findsNothing,
-        );
-        expect(tester.binding.transientCallbackCount, 0);
-        expect(tester.takeException(), isNull);
-      }
-    },
-  );
-
-  testWidgets(
-    'work detail releases tickers after interrupted entry and removal',
-    (tester) async {
+    testWidgets('route overlays slide in route coordinates on $platform', (
+      tester,
+    ) async {
       final navigatorKey = GlobalKey<NavigatorState>();
       await tester.pumpWidget(
-        MaterialApp(navigatorKey: navigatorKey, home: const SizedBox()),
+        MaterialApp(
+          theme: ThemeData(platform: platform),
+          navigatorKey: navigatorKey,
+          home: const ColoredBox(color: Colors.red),
+        ),
       );
-      for (final remove in [false, true]) {
-        final route = buildAppPageRoute<void>(
-          context: navigatorKey.currentContext!,
-          workDetailTransition: true,
-          child: const Text('interrupted-whole-detail'),
-        );
-        unawaited(navigatorKey.currentState!.push(route));
-        await tester.pump();
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 75));
-        expect(route.animation!.value, closeTo(0.25, 0.001));
-        navigatorKey.currentState!.pop();
-        await tester.pump();
-        if (remove) navigatorKey.currentState!.removeRoute(route);
-        await tester.pumpAndSettle();
-        expect(
-          find.text('interrupted-whole-detail', skipOffstage: false),
-          findsNothing,
-        );
-        expect(tester.binding.transientCallbackCount, 0);
-        expect(tester.takeException(), isNull);
-      }
-    },
-  );
+      final route = buildAppPageRoute<void>(
+        context: navigatorKey.currentContext!,
+        child: const Stack(
+          children: [
+            AppPageContentTransition(
+              child: SizedBox.expand(key: ValueKey('detail-overlay-body')),
+            ),
+            Positioned(
+              left: 16,
+              top: 100,
+              width: 120,
+              height: 30,
+              child: AppPageContentTransition(
+                child: ColoredBox(
+                  key: ValueKey('detail-narrow-overlay'),
+                  color: Colors.orange,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      final body = find.byKey(const ValueKey('detail-overlay-body'));
+      final overlay = find.byKey(const ValueKey('detail-narrow-overlay'));
+      unawaited(navigatorKey.currentState!.push(route));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(tester.getRect(body).left, greaterThan(0));
+      expect(tester.getRect(overlay).left - tester.getRect(body).left, 16);
+      await tester.pumpAndSettle();
+      navigatorKey.currentState!.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(tester.getRect(body).left, greaterThan(0));
+      expect(tester.getRect(overlay).left - tester.getRect(body).left, 16);
+      await tester.pumpAndSettle();
+      expect(overlay, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('routes cancel during preparation and honor reduced motion', (
+    tester,
+  ) async {
+    for (final reduced in [false, true]) {
+      final navigatorKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MediaQuery(
+          data: MediaQueryData(disableAnimations: reduced),
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            home: const SizedBox(),
+          ),
+        ),
+      );
+      final route = buildAppPageRoute<void>(
+        context: navigatorKey.currentContext!,
+        child: const Text('cancel-whole-detail'),
+      );
+      if (reduced) expect(route.transitionDuration, Duration.zero);
+      unawaited(navigatorKey.currentState!.push(route));
+      await tester.pump();
+      navigatorKey.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(
+        find.text('cancel-whole-detail', skipOffstage: false),
+        findsNothing,
+      );
+      expect(tester.binding.transientCallbackCount, 0);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('routes release tickers after interrupted entry and removal', (
+    tester,
+  ) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(navigatorKey: navigatorKey, home: const SizedBox()),
+    );
+    for (final remove in [false, true]) {
+      final route = buildAppPageRoute<void>(
+        context: navigatorKey.currentContext!,
+        child: const Text('interrupted-whole-detail'),
+      );
+      unawaited(navigatorKey.currentState!.push(route));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 75));
+      expect(route.animation!.value, closeTo(0.25, 0.001));
+      navigatorKey.currentState!.pop();
+      await tester.pump();
+      if (remove) navigatorKey.currentState!.removeRoute(route);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('interrupted-whole-detail', skipOffstage: false),
+        findsNothing,
+      );
+      expect(tester.binding.transientCallbackCount, 0);
+      expect(tester.takeException(), isNull);
+    }
+  });
 
   for (final (platform, materialRoute) in [
     (TargetPlatform.android, false),

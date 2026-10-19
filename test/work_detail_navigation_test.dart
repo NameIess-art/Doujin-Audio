@@ -464,7 +464,6 @@ void main() {
       final route = buildAppPageRoute<void>(
         context: navigation.navigatorKey.currentContext!,
         settings: const RouteSettings(name: workDetailRouteName),
-        workDetailTransition: true,
         child: const Scaffold(
           backgroundColor: Colors.transparent,
           body: AppPageContentTransition(

@@ -1937,7 +1937,6 @@ Future<_TransitionSamples> _measurePageTransitions(
           settings: page is WorkDetailPage
               ? const RouteSettings(name: workDetailRouteName)
               : null,
-          workDetailTransition: page is WorkDetailPage,
         );
         if (page is WorkDetailPage) {
           WidgetsBinding.instance.addPostFrameCallback((_) {

@@ -694,7 +694,6 @@ class _CoveringPageTransition extends StatefulWidget {
     required this.contentKey,
     required this.animation,
     required this.secondaryAnimation,
-    this.workDetailTransition = false,
     this.animatePage = true,
     required this.child,
   });
@@ -702,7 +701,6 @@ class _CoveringPageTransition extends StatefulWidget {
   final GlobalKey contentKey;
   final Animation<double> animation;
   final Animation<double> secondaryAnimation;
-  final bool workDetailTransition;
   final bool animatePage;
   final Widget child;
 
@@ -787,8 +785,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
       _interactive = _isInteractive;
       _transition = null;
     }
-    if (oldWidget.workDetailTransition != widget.workDetailTransition ||
-        oldWidget.animatePage != widget.animatePage ||
+    if (oldWidget.animatePage != widget.animatePage ||
         oldWidget.contentKey != widget.contentKey) {
       _transition = null;
     }
@@ -848,25 +845,12 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
         widget.animation,
         _secondaryAnimation,
         constraints.maxWidth,
-        widget.workDetailTransition,
         animatePage,
       ),
-      contentBuilder: (context, content) =>
-          widget.workDetailTransition && animatePage
-          ? AnimatedBuilder(
-              animation: _position,
-              child: RepaintBoundary(child: content),
-              builder: (context, content) => Transform.translate(
-                offset: Offset(constraints.maxWidth * _position.value.dx, 0),
-                child: content,
-              ),
-            )
-          : RepaintBoundary(child: content),
+      contentBuilder: (context, content) => RepaintBoundary(child: content),
       headerBuilder: (context, header) => AnimatedBuilder(
         animation: _headerAnimation,
-        child: widget.workDetailTransition
-            ? RepaintBoundary(child: header)
-            : header,
+        child: RepaintBoundary(child: header),
         builder: (context, header) {
           final incoming = kAppFadeCurve.transform(widget.animation.value);
           final outgoing = kAppFadeCurve.transform(_secondaryAnimation.value);
@@ -874,8 +858,8 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
             opacity: incoming * (1 - outgoing),
             child: header,
           );
-          if (widget.workDetailTransition || !animatePage) return fadedHeader;
-          // Generic routes translate the whole page; cancel that motion
+          if (!animatePage) return fadedHeader;
+          // Routes translate the whole page; cancel that motion
           // for headers narrower than the page so menus change in place.
           return Transform.translate(
             offset: Offset(-constraints.maxWidth * _position.value.dx, 0),
@@ -888,9 +872,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
         builder: (_, child, _) => child,
       ),
     );
-    // Keep header fades out of the moving content's recording/cache layer.
-    // Every detail region moves in route coordinates, including overlays.
-    return widget.workDetailTransition || !animatePage
+    return !animatePage
         ? page
         : SlideTransition(
             position: _position,
@@ -2034,8 +2016,6 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   required BuildContext context,
   required Widget child,
   RouteSettings? settings,
-  // Work details keep their smooth slide curve and paint the final exit frame.
-  bool workDetailTransition = false,
   Duration duration = kAppMotionSlow,
   bool fullscreenDialog = false,
 }) {
@@ -2050,7 +2030,6 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     reverseTransitionDuration: reducedMotion || duration == Duration.zero
         ? Duration.zero
         : duration,
-    deferExitFinalization: workDetailTransition,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
       // Instant pages still own their header fade when another route covers them.
@@ -2058,7 +2037,6 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
         contentKey: contentKey,
         animation: animation,
         secondaryAnimation: secondaryAnimation,
-        workDetailTransition: workDetailTransition,
         animatePage: duration != Duration.zero,
         child: routedChild,
       );
@@ -2076,10 +2054,8 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
     required super.reverseTransitionDuration,
     super.settings,
     super.fullscreenDialog,
-    required this.deferExitFinalization,
   });
 
-  final bool deferExitFinalization;
   bool _prepared = false;
   bool _disposed = false;
   Timer? _exitCompletionTimer;
@@ -2103,7 +2079,6 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
   @override
   Simulation? createSimulation({required bool forward}) {
     if (!forward &&
-        deferExitFinalization &&
         controller!.reverseDuration != Duration.zero &&
         controller!.value > 0) {
       return _PostFrameExitSimulation(

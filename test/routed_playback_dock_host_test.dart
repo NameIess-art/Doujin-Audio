@@ -138,7 +138,6 @@ PageRoute<void> _detailRoute(
 }) => buildAppPageRoute<void>(
   context: navigator.currentContext!,
   settings: const RouteSettings(name: workDetailRouteName),
-  workDetailTransition: true,
   child: child ?? const Scaffold(body: Text('Detail')),
 );
 

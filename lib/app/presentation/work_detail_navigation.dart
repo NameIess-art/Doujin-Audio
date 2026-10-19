@@ -33,6 +33,32 @@ class WorkDetailNavigation extends ChangeNotifier {
   bool get isContentOpen =>
       _contentRoutes.length > 1 || _contentClosing.isNotEmpty;
 
+  static Future<void> openFrom(
+    BuildContext context,
+    Object identity,
+    PageRoute<void> Function(BuildContext context) buildRoute, {
+    bool returnToMain = false,
+  }) async {
+    final navigator = Navigator.of(context);
+    final origin = ModalRoute.of(context);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!context.mounted || !navigator.mounted || origin?.isCurrent == false) {
+      return;
+    }
+    final navigation = WorkDetailNavigationScope.maybeOf(context);
+    if (navigation != null &&
+        (returnToMain || navigation.canOpenInPane(context))) {
+      await navigation.open(identity, buildRoute, returnToMain: returnToMain);
+      return;
+    }
+    final route = buildRoute(context);
+    if (returnToMain) {
+      await navigator.pushAndRemoveUntil<void>(route, (route) => route.isFirst);
+    } else {
+      await navigator.push<void>(route);
+    }
+  }
+
   void resetContent() {
     menuDismiss.value?.call();
     final navigator = contentNavigatorKey.currentState;
@@ -190,12 +216,18 @@ class MainContentNavigator extends StatefulWidget {
     required this.isLandscape,
     required this.child,
     this.geometry,
+    this.navigatorKey,
+    this.observer,
+    this.backgroundColor,
   });
 
   final WorkDetailNavigation navigation;
   final bool isLandscape;
   final Widget child;
   final PlaybackDockGeometryController? geometry;
+  final GlobalKey<NavigatorState>? navigatorKey;
+  final NavigatorObserver? observer;
+  final Color? backgroundColor;
 
   @override
   State<MainContentNavigator> createState() => _MainContentNavigatorState();
@@ -216,17 +248,19 @@ class _MainContentNavigatorState extends State<MainContentNavigator> {
     isLandscape: widget.isLandscape,
     child: ClipRect(
       child: RoutedPlaybackDockHost(
-        navigatorKey: widget.navigation.contentNavigatorKey,
+        navigatorKey:
+            widget.navigatorKey ?? widget.navigation.contentNavigatorKey,
         playbackNavigatorKey: widget.navigation.rootNavigatorKey,
         geometry: widget.geometry,
         enabled: !widget.isLandscape,
         menuDismiss: widget.navigation.menuDismiss,
+        backgroundColor: widget.backgroundColor,
         builder: (context, observer, geometry, wrapNavigator) => wrapNavigator(
           context,
           Navigator(
-            key: widget.navigation.contentNavigatorKey,
+            key: widget.navigatorKey ?? widget.navigation.contentNavigatorKey,
             observers: [
-              widget.navigation.contentObserver,
+              widget.observer ?? widget.navigation.contentObserver,
               observer,
               _interactionObserver,
             ],
@@ -244,7 +278,7 @@ class _MainContentNavigatorState extends State<MainContentNavigator> {
   );
 }
 
-class WorkDetailPane extends StatefulWidget {
+class WorkDetailPane extends StatelessWidget {
   const WorkDetailPane({
     super.key,
     required this.child,
@@ -259,35 +293,19 @@ class WorkDetailPane extends StatefulWidget {
   final PlaybackDockGeometryController? geometry;
 
   @override
-  State<WorkDetailPane> createState() => _WorkDetailPaneState();
-}
-
-class _WorkDetailPaneState extends State<WorkDetailPane> {
-  final _interactionObserver = UiInteractionNavigatorObserver();
-
-  @override
-  void dispose() {
-    _interactionObserver.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final navigation = WorkDetailNavigationScope.maybeOf(context);
-    if (navigation == null) return widget.child;
+    if (navigation == null) return child;
     return ListenableBuilder(
       listenable: Listenable.merge([navigation, navigation.menuDismiss]),
-      child: widget.child,
+      child: child,
       builder: (context, child) {
         // The main body fills this MediaQuery. Update route metrics before
         // layout, so resizing cannot rebuild navigator overlays during layout.
         final mediaQuery = MediaQuery.of(context);
         final size = mediaQuery.size;
-        final contentWidth = (size.width - widget.sidebarWidth).clamp(
-          0.0,
-          size.width,
-        );
-        final paneWidth = widget.isLandscape
+        final contentWidth = (size.width - sidebarWidth).clamp(0.0, size.width);
+        final paneWidth = isLandscape
             ? (contentWidth - 1).clamp(0.0, contentWidth) / 2
             : size.width;
         return PopScope<Object?>(
@@ -320,7 +338,7 @@ class _WorkDetailPaneState extends State<WorkDetailPane> {
                 bottom: 0,
                 width: 1,
                 child: Offstage(
-                  offstage: !navigation.isOpen || !widget.isLandscape,
+                  offstage: !navigation.isOpen || !isLandscape,
                   child: ColoredBox(
                     color: Theme.of(context).colorScheme.outlineVariant,
                   ),
@@ -340,33 +358,15 @@ class _WorkDetailPaneState extends State<WorkDetailPane> {
                       padding: mediaQuery.padding.copyWith(left: 0),
                       viewPadding: mediaQuery.viewPadding.copyWith(left: 0),
                     ),
-                    child: ClipRect(
+                    child: MainContentNavigator(
                       key: const ValueKey('work_detail_pane'),
-                      child: RoutedPlaybackDockHost(
-                        navigatorKey: navigation.navigatorKey,
-                        playbackNavigatorKey: navigation.rootNavigatorKey,
-                        geometry: widget.geometry,
-                        enabled: !widget.isLandscape,
-                        menuDismiss: navigation.menuDismiss,
-                        backgroundColor: widget.isLandscape
-                            ? null
-                            : Colors.transparent,
-                        builder: (context, observer, geometry, wrapNavigator) =>
-                            wrapNavigator(
-                              context,
-                              Navigator(
-                                key: navigation.navigatorKey,
-                                observers: [
-                                  navigation.observer,
-                                  observer,
-                                  _interactionObserver,
-                                ],
-                                onGenerateRoute: (_) => MaterialPageRoute<void>(
-                                  builder: (_) => const SizedBox.shrink(),
-                                ),
-                              ),
-                            ),
-                      ),
+                      navigation: navigation,
+                      navigatorKey: navigation.navigatorKey,
+                      observer: navigation.observer,
+                      isLandscape: isLandscape,
+                      geometry: geometry,
+                      backgroundColor: isLandscape ? null : Colors.transparent,
+                      child: const SizedBox.shrink(),
                     ),
                   ),
                 ),

@@ -21,7 +21,6 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
     : super(
         transitionDuration: kAppMotionSlow,
         reverseTransitionDuration: kAppMotionSlow,
-        deferExitFinalization: true,
         pageBuilder: (context, animation, secondaryAnimation) =>
             SessionDetailPage(
               sessionId: sessionId,

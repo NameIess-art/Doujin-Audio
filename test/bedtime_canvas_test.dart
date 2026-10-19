@@ -151,6 +151,8 @@ void main() {
       await gesture.up();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
+      // System cleanup belongs to disposal, after the final exit frame paints.
+      await tester.pumpAndSettle();
 
       // BedtimeCanvasPage should be popped, and keepScreenOn(false) called
       expect(find.byType(BedtimeCanvasPage), findsNothing);

@@ -754,9 +754,25 @@ void main() {
           await tester.pump();
         }
         expect(PaintingBinding.instance.imageCache.pendingImageCount, 0);
+        final carouselCover = find.byType(AsyncLocalCoverImage).first;
+        final carouselArtwork = tester.widget<AsyncLocalCoverImage>(
+          carouselCover,
+        );
+        final thumbnailWidth = coverThumbnailCacheWidth(
+          logicalWidth: tester.getSize(carouselCover).width,
+          devicePixelRatio: tester.view.devicePixelRatio,
+          resolution: resolution,
+        );
+        expect(carouselArtwork.initialPath, cover.path);
+        expect(carouselArtwork.cacheWidth, thumbnailWidth);
+        expect(carouselArtwork.useDefaultCacheWidth, isFalse);
         expect(
-          await imageKey(find.byType(AsyncLocalCoverImage).first),
-          detailKey,
+          await imageKey(carouselCover),
+          await resizeFileImageIfNeeded(
+            path: cover.path,
+            cacheWidth: thumbnailWidth,
+            useDefaultCacheWidth: false,
+          ).obtainKey(ImageConfiguration.empty),
         );
         expect(downloads, 1);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -934,6 +950,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(rootScroll.offset, closeTo(320, 1));
       expect(controller.refreshRequests, isEmpty);
+      // Resuming the root rechecks its cached category once. Opening another
+      // empty search page must reuse that category without a further request.
+      expect(controller.ensureLanguages, hasLength(rootLoads + 1));
+      final resumedRootLoads = controller.ensureLanguages.length;
       await tester.tap(
         find.byKey(const ValueKey<String>('asmr_search_button')),
       );
@@ -955,13 +975,15 @@ void main() {
           )
           .controller!;
       expect(reopenedScroll.offset, 0);
-      expect(controller.ensureLanguages, hasLength(rootLoads));
+      expect(controller.ensureLanguages, hasLength(resumedRootLoads));
     },
   );
 
   testWidgets(
     'Windows metadata copies with right click only',
     (tester) async {
+      await tester.binding.setSurfaceSize(const Size(600, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -997,7 +1019,7 @@ void main() {
         tester,
         find.byKey(const ValueKey('work_detail_entries_skeleton')),
       );
-      await tester.pumpAndSettle();
+      await pumpAndSettleWithAsync(tester);
       final text = find.text('Test circle');
       await tester.ensureVisible(text);
       await tester.longPress(text);
@@ -1017,6 +1039,8 @@ void main() {
   testWidgets('WorkDetailPage renders ASMR work detail header and actions', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(600, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
@@ -1036,7 +1060,7 @@ void main() {
       tester,
       find.byKey(const ValueKey('work_detail_entries_skeleton')),
     );
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
 
     expect(
       find.byKey(const ValueKey<String>('asmr_work_detail_download')),
@@ -1054,6 +1078,8 @@ void main() {
   testWidgets('work metadata capsules copy their values on tap', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(600, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
@@ -1095,7 +1121,7 @@ void main() {
       tester,
       find.byKey(const ValueKey('work_detail_entries_skeleton')),
     );
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
 
     final voiceActor = find.byKey(
       const ValueKey<String>('work_detail_voice_actor_Voice A'),
@@ -1223,6 +1249,8 @@ void main() {
   testWidgets('detail download button opens the work download page', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(600, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
@@ -1245,7 +1273,7 @@ void main() {
       tester,
       find.byKey(const ValueKey('work_detail_entries_skeleton')),
     );
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
 
     await tester.tap(
       find.byKey(const ValueKey<String>('asmr_work_detail_download')),
@@ -1361,6 +1389,8 @@ void main() {
   testWidgets(
     'detail sheet shows download and favorite buttons and allows undoing unfavorite',
     (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(600, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -1392,7 +1422,7 @@ void main() {
         tester,
         find.byKey(const ValueKey('work_detail_entries_skeleton')),
       );
-      await tester.pumpAndSettle();
+      await pumpAndSettleWithAsync(tester);
 
       final favoriteButtonFinder = find.byKey(
         const ValueKey<String>('asmr_work_detail_favorite'),

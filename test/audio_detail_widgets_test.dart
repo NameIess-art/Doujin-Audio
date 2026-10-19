@@ -249,6 +249,31 @@ Future<void> _replaceDuringSubmission(
   expect(tester.takeException(), isNull);
 }
 
+Future<void> _drainAudioDetailFixture(
+  WidgetTester tester,
+  AppRuntimeWidgetTestFixture fixture,
+) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  var completed = false;
+  final pending = Future.wait<void>([
+    fixture.library.coverArtworkCacheService.initialize(),
+    fixture.library.detailCacheService.suspendAndWait(),
+  ]).then((_) => fixture.library.flushPendingPersistence()).then((_) {
+    completed = true;
+  });
+  // SQLite's serialization queue can still belong to this fake-async zone.
+  // Keep pumping it until background reads/writes release the shared database;
+  // awaiting them only inside the next test's runAsync would freeze that zone.
+  for (var tick = 0; tick < 1000 && !completed; tick++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 5)),
+    );
+    await tester.pump(const Duration(milliseconds: 5));
+  }
+  expect(completed, isTrue, reason: 'Audio detail database work did not drain');
+  await pending;
+}
+
 class _FakeAsmrMetadataService extends AsmrMetadataService {
   @override
   Future<DlsiteMetadata> fetchByRjCode(
@@ -334,6 +359,42 @@ void main() {
 
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
+  });
+
+  testWidgets('audio detail cleanup releases delayed SQLite work', (tester) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    var transactionStarted = false;
+    var transactionFinished = false;
+    final write = testDatabase.transaction((transaction) async {
+      transactionStarted = true;
+      // Model background work still holding SQLite's queue when a page closes.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      await transaction.insert('app_kv_settings', {
+        'key': 'audio_detail_cleanup_regression',
+        'value': 'finished',
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      transactionFinished = true;
+    });
+    for (var tick = 0; tick < 100 && !transactionStarted; tick++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 5)),
+      );
+      await tester.pump();
+    }
+    expect(transactionStarted, isTrue);
+    expect(transactionFinished, isFalse);
+    await _drainAudioDetailFixture(tester, fixture);
+    await write;
+    final rows = await tester.runAsync(
+      () => testDatabase.query(
+        'app_kv_settings',
+        where: 'key = ?',
+        whereArgs: ['audio_detail_cleanup_regression'],
+      ),
+    );
+    expect(transactionFinished, isTrue);
+    expect(rows!.single['value'], 'finished');
   });
 
   testWidgets('submitted download completion cannot close a replacement work', (
@@ -1617,6 +1678,7 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 50)),
     );
     await tester.pump();
+    await _drainAudioDetailFixture(tester, fixture);
   });
 
   testWidgets(
@@ -1656,6 +1718,7 @@ void main() {
         ),
         findsOneWidget,
       );
+      await _drainAudioDetailFixture(tester, fixture);
     },
   );
 
@@ -1743,6 +1806,7 @@ void main() {
       find.text(languageProvider.tr('metadata_scope_missing')),
       findsOneWidget,
     );
+    await _drainAudioDetailFixture(tester, fixture);
   });
 
   for (final closeDuringEntrance in [false, true]) {

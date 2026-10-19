@@ -70,7 +70,7 @@ class AsmrDownloadManager {
       persistTasks: persistTasks,
       persistenceReady: !persistTasks,
       persistenceWriter: persistenceWriter,
-      persistenceSnapshot: _capturePersistenceSnapshot,
+      persistenceSnapshot: _outputs.capturePersistenceSnapshot,
       operationObserver: storeOperationObserver,
     );
     _transfers = AsmrDownloadTransferExecutor(
@@ -933,21 +933,6 @@ class AsmrDownloadManager {
     _store.notifyTaskChanged();
     _processQueue();
   }
-
-  PersistedDownloadTask _capturePersistenceSnapshot(
-    AsmrDownloadTaskSnapshot task,
-  ) => PersistedDownloadTask(
-    task: task,
-    // Transfers can mutate ownership while this snapshot waits for an older
-    // write. Freeze ownership now; the task and its tree are already immutable.
-    createdOutputPaths: Set<String>.unmodifiable(
-      _outputs.createdOutputPaths[task.work.id] ?? const <String>{},
-    ),
-    createdJsonDocuments: Map<String, CreatedDownloadJsonDocument>.unmodifiable(
-      _outputs.createdJsonDocuments[task.work.id] ??
-          const <String, CreatedDownloadJsonDocument>{},
-    ),
-  );
 
   Future<void> _restorePersistedTasksFromPreferences() async {
     try {

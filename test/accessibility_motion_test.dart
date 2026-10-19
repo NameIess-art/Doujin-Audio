@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 
 void main() {
@@ -139,8 +140,8 @@ void main() {
     final controller = tester
         .widget<BottomSheet>(find.byType(BottomSheet))
         .animationController!;
-    expect(controller.duration, const Duration(milliseconds: 320));
-    expect(controller.reverseDuration, const Duration(milliseconds: 250));
+    expect(controller.duration, kAppFadeDuration);
+    expect(controller.reverseDuration, kAppFadeDuration);
   });
 
   testWidgets('bottom sheets never exceed three quarters of the screen', (

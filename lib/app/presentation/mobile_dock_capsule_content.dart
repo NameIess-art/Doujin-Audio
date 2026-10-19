@@ -48,6 +48,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
   late final Listenable _animationListenable;
   List<PlaybackSessionSnapshot> _cachedSessions = const [];
   final Object _motionInteraction = Object();
+  Object? _appearancePreparation;
   bool _tickerModeEnabled = true;
   bool _disableAnimations = false;
 
@@ -105,9 +106,15 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     final coordinator = UiInteractionCoordinator.instance;
     if (!_tickerModeEnabled || _disableAnimations) {
       coordinator.cancelInteraction(_motionInteraction);
-    } else if (_appearanceController.isAnimating ||
+    } else if (_appearancePreparation != null ||
+        _appearanceController.isAnimating ||
         _expandController.isAnimating) {
-      coordinator.beginInteraction(_motionInteraction);
+      // Keep new image decodes out of the moving dock's frames. Already
+      // decoded covers can still be reused by RetryingImage during motion.
+      coordinator.beginInteraction(
+        _motionInteraction,
+        deferVisualUpdates: true,
+      );
     } else {
       coordinator.endInteraction(_motionInteraction);
     }
@@ -119,6 +126,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
     _disableAnimations = MediaQuery.disableAnimationsOf(context);
     if (_disableAnimations) {
+      _appearancePreparation = null;
       final hasPlayback = widget.overlaySessions.isNotEmpty;
       _appearanceController.value = hasPlayback ? 1 : 0;
       _expandController.value = hasPlayback && widget.isPlaybackExpanded
@@ -142,6 +150,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     _disableAnimations = disableAnimations;
 
     if (hasPlayback != hadPlayback) {
+      _appearancePreparation = null;
       if (disableAnimations) {
         _appearanceController.value = hasPlayback ? 1.0 : 0.0;
         if (!hasPlayback) {
@@ -149,11 +158,17 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
         }
       } else {
         if (hasPlayback) {
-          _appearanceController.forward();
+          if (_appearanceController.isDismissed) {
+            _prepareAppearance();
+          } else {
+            _appearanceController.forward();
+          }
         } else {
           _appearanceController.reverse();
+          if (_appearanceController.isDismissed) _cachedSessions = const [];
         }
       }
+      _syncMotionInteraction();
     }
 
     final isExpanded = hasPlayback && widget.isPlaybackExpanded;
@@ -171,6 +186,23 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     }
   }
 
+  void _prepareAppearance() {
+    final preparation = _appearancePreparation = Object();
+    _syncMotionInteraction();
+    // Mount and paint the offscreen card before starting its clock. A slow
+    // first layout must not consume the visible entrance animation.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _appearancePreparation != preparation) return;
+      _appearancePreparation = null;
+      if (_disableAnimations || !_tickerModeEnabled) {
+        _appearanceController.value = 1;
+        _syncMotionInteraction();
+      } else {
+        _appearanceController.forward();
+      }
+    });
+  }
+
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelInteraction(_motionInteraction);
@@ -186,15 +218,13 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
       builder: (context, constraints) {
         final availableWidth = constraints.maxWidth;
         final playbackChild = _buildPlaybackChild(context);
-        final navigationChild = ClipRect(
-          child: widget.buildBottomBar(
-            context,
-            isPlaybackExpanded: widget.isPlaybackExpanded,
-            appearance: _appearanceCurve,
-            expansion: _expandController,
-            availableWidth: availableWidth,
-            onCurrentTap: widget.onShowDestinations,
-          ),
+        final navigationChild = widget.buildBottomBar(
+          context,
+          isPlaybackExpanded: widget.isPlaybackExpanded,
+          appearance: _appearanceCurve,
+          expansion: _expandController,
+          availableWidth: availableWidth,
+          onCurrentTap: widget.onShowDestinations,
         );
 
         return AnimatedBuilder(
@@ -221,12 +251,21 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
               children: [
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: RepaintBoundary(
-                    child: SizedBox(
-                      key: const ValueKey<String>('mobile_dock_navigation'),
-                      width: navigationWidth,
-                      height: kActiveSessionCarouselDockHeight,
-                      child: navigationChild,
+                  child: SizedBox(
+                    key: const ValueKey<String>('mobile_dock_navigation'),
+                    width: navigationWidth,
+                    height: kActiveSessionCarouselDockHeight,
+                    // Change only the visible window. The icons already move
+                    // with appearance, so their layout can retain full width.
+                    child: ClipRect(
+                      child: OverflowBox(
+                        alignment: Alignment.centerLeft,
+                        minWidth: availableWidth,
+                        maxWidth: availableWidth,
+                        minHeight: kActiveSessionCarouselDockHeight,
+                        maxHeight: kActiveSessionCarouselDockHeight,
+                        child: RepaintBoundary(child: navigationChild),
+                      ),
                     ),
                   ),
                 ),

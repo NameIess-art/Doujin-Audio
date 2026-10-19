@@ -1513,7 +1513,7 @@ void main() {
   });
 
   testWidgets(
-    'LibrarySelectionIndicator performs 300ms fade-in and fade-out with 22x22 cutout border',
+    'LibrarySelectionIndicator waits for highlight then fades with 22x22 cutout border',
     (tester) async {
       final checkmarkFinder = find.byKey(
         const ValueKey<String>('library_selection_indicator_lib-fade-test'),
@@ -1541,6 +1541,10 @@ void main() {
       );
 
       await tester.pump();
+      expect(checkmarkFinder, findsNothing);
+      await tester.pump(kThemeChangeDuration - const Duration(milliseconds: 1));
+      expect(checkmarkFinder, findsNothing);
+      await tester.pump(const Duration(milliseconds: 1));
       expect(checkmarkFinder, findsOneWidget);
 
       final switcherFinder = find.byType(AnimatedSwitcher);

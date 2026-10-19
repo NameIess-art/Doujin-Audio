@@ -91,8 +91,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   List<AsmrWork> _visibleWorksCache = const [];
   Map<int, _CollapsingAsmrWork> _visibleCollapsing = const {};
   List<String> _anchorIds = const [];
-  final Map<int, int> _workIndexById = {};
-  final Map<Key, int> _workKeyIndices = {};
+  Map<int, int> _workIndexById = {};
+  Map<Key, int> _workKeyIndices = {};
 
   List<AsmrWork> _prepareVisibleWorks(List<AsmrWork> works) {
     if (identical(_visibleWorksSource, works) &&
@@ -116,8 +116,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     _visibleWorksSource = works;
     _visibleCollapsing = Map.of(_collapsingWorks);
     _visibleWorksCache = visible;
-    _workIndexById.clear();
-    _workKeyIndices.clear();
+    _workIndexById = {};
+    _workKeyIndices = {};
     final anchors = <String>[];
     for (var index = 0; index < visible.length; index++) {
       final id = visible[index].id;
@@ -357,6 +357,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     }
 
     final visibleWorks = _prepareVisibleWorks(works);
+    // Outgoing placeholder transitions can still build the previous list.
+    // Keep each delegate's indices with the projection it renders.
+    final workIndexById = _workIndexById;
+    final workKeyIndices = _workKeyIndices;
 
     Widget buildWorkCard(AsmrWork work) {
       final card = _AsmrWorkTreeCard(
@@ -398,7 +402,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       // Rows regroup on resize; retain the complete card, including its
       // removal host and decoded cover, when it moves to another row.
       final key = _itemKeys.putIfAbsent(work.id, GlobalKey.new);
-      _workKeyIndices[key] = _workIndexById[work.id]!;
+      workKeyIndices[key] = workIndexById[work.id]!;
       return KeyedSubtree(key: key, child: workCard);
     }
 
@@ -517,7 +521,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         return rowCount;
                       }
                       if (columnCount != 1) return null;
-                      return _workKeyIndices[key];
+                      return workKeyIndices[key];
                     },
                     itemBuilder: (context, rowIndex) {
                       if (visibleWorks.isEmpty) {

@@ -750,8 +750,10 @@ class _ActiveSessionCover extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final library = ref.read(libraryFacadeProvider);
-    final coverCacheWidth = coverCacheWidthForResolution(
-      ref.watch(coverImageResolutionProvider),
+    final coverCacheWidth = coverThumbnailCacheWidth(
+      logicalWidth: dimension,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: ref.watch(coverImageResolutionProvider),
     );
 
     return SizedBox.square(

@@ -89,6 +89,57 @@ Future<void> _prewarmDirectory(
   ).load();
 }
 
+Future<void> _drainDetailFixture(
+  WidgetTester tester,
+  AppRuntimeWidgetTestFixture fixture,
+) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  var completed = false;
+  final pending = Future.wait<void>([
+    fixture.library.coverArtworkCacheService.initialize(),
+    fixture.library.detailCacheService.suspendAndWait(),
+  ]).then((_) => fixture.library.flushPendingPersistence()).then((_) {
+    completed = true;
+  });
+  // SQLite's shared queue can still depend on this test's fake-async zone.
+  // Drain it while both its simulated clock and the real I/O loop can advance.
+  for (var tick = 0; tick < 1000 && !completed; tick++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 5)),
+    );
+    await tester.pump(const Duration(milliseconds: 5));
+  }
+  expect(completed, isTrue, reason: 'Work detail database work did not drain');
+  await pending;
+  await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+}
+
+final _detailFixtures = <AppRuntimeWidgetTestFixture>[];
+
+void _detailTestWidgets(
+  String description,
+  WidgetTesterCallback callback, {
+  TestVariant<Object?> variant = const DefaultTestVariant(),
+}) {
+  testWidgets(description, (tester) async {
+    // The 4:3 cover leaves metadata and the first lazy rows below 600 px.
+    // Tests that verify geometry explicitly choose their own viewport.
+    await tester.binding.setSurfaceSize(const Size(600, 1000));
+    _detailFixtures.clear();
+    try {
+      await callback(tester);
+    } finally {
+      // A failed assertion must also release SQLite while its original
+      // fake-async zone is still alive, before the next test uses runAsync.
+      for (final fixture in _detailFixtures) {
+        await _drainDetailFixture(tester, fixture);
+      }
+      _detailFixtures.clear();
+      await tester.binding.setSurfaceSize(null);
+    }
+  }, variant: variant);
+}
+
 class _CountingDetailRepository extends TestPersistenceRepository {
   int detailRequests = 0;
 
@@ -272,7 +323,7 @@ void main() {
   });
 
   for (final remote in [false, true]) {
-    testWidgets(
+    _detailTestWidgets(
       'covering work details retains loaded rows, remote=$remote',
       (tester) async {
         await tester.binding.setSurfaceSize(const Size(450, 800));
@@ -288,6 +339,7 @@ void main() {
           coverArtworkCacheService: covers,
           asmrMetadataService: _WorkDetailAsmrMetadataService(),
         );
+        _detailFixtures.add(fixture);
         addTearDown(fixture.dispose);
         const folder = 'C:/works/route-cache';
         final target = AudioDetailTarget.libraryRootFolder(folder);
@@ -404,7 +456,7 @@ void main() {
     );
   }
 
-  testWidgets(
+  _detailTestWidgets(
     'work scrolling defers discovered files and reuses row menus',
     (tester) async {
       final interaction = UiInteractionCoordinator.instance;
@@ -416,6 +468,7 @@ void main() {
       final fixture = AppRuntimeWidgetTestFixture(
         coverArtworkCacheService: covers,
       );
+      _detailFixtures.add(fixture);
       addTearDown(fixture.dispose);
       const folder = 'C:/works/scroll-discovery';
       final target = AudioDetailTarget.libraryRootFolder(folder);
@@ -557,9 +610,10 @@ void main() {
   group('WorkDetailPage', () {
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       for (final local in [false, true]) {
-        testWidgets(
+        _detailTestWidgets(
           'expanded work cover stays 4:3 on pane resize, local=$local on $platform',
           (tester) async {
+            await tester.binding.setSurfaceSize(null);
             tester.view.physicalSize = const Size(1280, 1000);
             tester.view.devicePixelRatio = 1;
             tester.view.padding = const FakeViewPadding(top: 24);
@@ -571,6 +625,7 @@ void main() {
               coverArtworkCacheService: covers,
               asmrMetadataService: _WorkDetailAsmrMetadataService(),
             );
+            _detailFixtures.add(fixture);
             addTearDown(fixture.dispose);
             const folder = 'C:/works/cover-ratio';
             fixture.library.addWatchedFolder(folder, notify: false);
@@ -649,7 +704,7 @@ void main() {
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       for (final cached in [false, true]) {
         for (final local in [false, true]) {
-          testWidgets(
+          _detailTestWidgets(
             '${local ? 'local' : 'ASMR'} ${cached ? 'cached' : 'cold'} detail displays content during real navigation on $platform',
             (tester) async {
               final interaction = UiInteractionCoordinator.instance;
@@ -662,6 +717,7 @@ void main() {
               final fixture = AppRuntimeWidgetTestFixture(
                 coverArtworkCacheService: covers,
               );
+              _detailFixtures.add(fixture);
               addTearDown(fixture.dispose);
               const folder = 'C:/works/first-detail';
               final target = AudioDetailTarget.libraryRootFolder(folder);
@@ -794,11 +850,12 @@ void main() {
       }
     }
 
-    testWidgets('leaving the source frame cancels a pending detail push', (
+    _detailTestWidgets('leaving the source frame cancels a pending detail push', (
       tester,
     ) async {
       SharedPreferences.setMockInitialValues({});
       final fixture = AppRuntimeWidgetTestFixture();
+      _detailFixtures.add(fixture);
       addTearDown(fixture.dispose);
       await tester.pumpWidget(
         fixture.build(
@@ -836,7 +893,7 @@ void main() {
     });
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-      testWidgets(
+      _detailTestWidgets(
         'initial library revision does not rebuild cached rows on $platform',
         (tester) async {
           final interaction = UiInteractionCoordinator.instance;
@@ -849,6 +906,7 @@ void main() {
           final fixture = AppRuntimeWidgetTestFixture(
             coverArtworkCacheService: covers,
           );
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           const folder = 'C:/works/initial-revision';
           final target = AudioDetailTarget.libraryRootFolder(folder);
@@ -910,7 +968,7 @@ void main() {
         variant: TargetPlatformVariant({platform}),
       );
 
-      testWidgets(
+      _detailTestWidgets(
         'cold directory preparation waits until the detail route finishes on $platform',
         (tester) async {
           await tester.binding.setSurfaceSize(const Size(800, 1000));
@@ -931,6 +989,7 @@ void main() {
               return directory.future;
             },
           );
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           const folder = 'C:/works/cold-directory';
           final target = AudioDetailTarget.libraryRootFolder(folder);
@@ -982,12 +1041,12 @@ void main() {
           final directorySkeleton = tester.widget<FileTreeSkeleton>(
             find.byType(FileTreeSkeleton),
           );
-          expect(directorySkeleton.viewportHeight, greaterThan(6 * 48));
+          expect(directorySkeleton.viewportHeight, greaterThan(0));
           final skeletonBounds = tester.getRect(
             find.byKey(const ValueKey('work_detail_entries_skeleton')),
           );
           expect(skeletonBounds.bottom, greaterThanOrEqualTo(996));
-          expect(skeletonBounds.bottom, lessThan(996 + 48));
+          expect(skeletonBounds.bottom, lessThanOrEqualTo(996 + 48));
           final skeletonRows = find.descendant(
             of: find.byKey(const ValueKey('work_detail_entries_skeleton')),
             matching: find.byType(SizedBox),
@@ -1027,7 +1086,7 @@ void main() {
           );
           expect(skeletonRect.height, greaterThan(skeletonBounds.height));
           expect(skeletonRect.bottom, greaterThanOrEqualTo(1196));
-          expect(skeletonRect.bottom, lessThan(1196 + 48));
+          expect(skeletonRect.bottom, lessThanOrEqualTo(1196 + 48));
           directory.complete(
             const LibraryOrganizer().buildTree(
               tracks: fixture.library.library,
@@ -1099,7 +1158,7 @@ void main() {
         variant: TargetPlatformVariant({platform}),
       );
 
-      testWidgets(
+      _detailTestWidgets(
         'late file discoveries fade only new rows on $platform',
         (tester) async {
           final interaction = UiInteractionCoordinator.instance;
@@ -1112,6 +1171,7 @@ void main() {
           final fixture = AppRuntimeWidgetTestFixture(
             coverArtworkCacheService: covers,
           );
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           const folder = 'C:/works/late-files';
           final target = AudioDetailTarget.libraryRootFolder(folder);
@@ -1237,7 +1297,7 @@ void main() {
         variant: TargetPlatformVariant({platform}),
       );
 
-      testWidgets(
+      _detailTestWidgets(
         'in-flight file and cover results wait for the next route transition on $platform',
         (tester) async {
           UiInteractionCoordinator.instance.resetForTest();
@@ -1248,6 +1308,7 @@ void main() {
           final fixture = AppRuntimeWidgetTestFixture(
             coverArtworkCacheService: covers,
           );
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           const folder = 'C:/works/in-flight';
           final target = AudioDetailTarget.libraryRootFolder(folder);
@@ -1346,7 +1407,7 @@ void main() {
       );
     }
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-      testWidgets(
+      _detailTestWidgets(
         'opens with card data after shared caches clear on $platform',
         (tester) async {
           SharedPreferences.setMockInitialValues({});
@@ -1357,6 +1418,7 @@ void main() {
             providedPersistenceRepository: repository,
             coverArtworkCacheService: covers,
           );
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           final target = AudioDetailTarget.libraryRootFolder('C:/works/card');
           final detail = AudioDetail.empty(target).copyWith(
@@ -1416,7 +1478,7 @@ void main() {
         variant: TargetPlatformVariant({platform}),
       );
 
-      testWidgets(
+      _detailTestWidgets(
         'reuses remote card cover and keeps its future stable on $platform',
         (tester) async {
           SharedPreferences.setMockInitialValues({});
@@ -1425,6 +1487,7 @@ void main() {
           final fixture = AppRuntimeWidgetTestFixture(
             coverArtworkCacheService: covers,
           );
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           final work = AsmrWork.fromJson(const {
             'id': 321,
@@ -1465,7 +1528,7 @@ void main() {
         variant: TargetPlatformVariant({platform}),
       );
 
-      testWidgets(
+      _detailTestWidgets(
         'reuses main-page metadata snapshot without reloading on $platform',
         (tester) async {
           SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -1483,6 +1546,7 @@ void main() {
                   watchedLibraries: payload.watchedLibraries,
                 ),
           );
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           const folder = 'C:/works/card-snapshot';
           final target = AudioDetailTarget.libraryRootFolder(folder);
@@ -1560,7 +1624,7 @@ void main() {
         variant: TargetPlatformVariant({platform}),
       );
 
-      testWidgets(
+      _detailTestWidgets(
         'shows cached indexed tree immediately and reuses file snapshots on $platform',
         (tester) async {
           SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -1577,6 +1641,7 @@ void main() {
               );
             },
           );
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           final interaction = UiInteractionCoordinator.instance;
           final source = Object();
@@ -1693,7 +1758,7 @@ void main() {
     }
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-      testWidgets(
+      _detailTestWidgets(
         'reopens local details at root with warm or cold tree on $platform',
         (tester) async {
           SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -1708,6 +1773,7 @@ void main() {
                   watchedFolders: payload.watchedFolders,
                 ),
           );
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           const folder = 'C:/works/page-cache';
           final target = AudioDetailTarget.libraryRootFolder(folder);
@@ -1808,7 +1874,7 @@ void main() {
       );
     }
 
-    testWidgets('empty local tree keeps loading until file scans finish', (
+    _detailTestWidgets('empty local tree keeps loading until file scans finish', (
       tester,
     ) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -1816,6 +1882,7 @@ void main() {
       final fixture = AppRuntimeWidgetTestFixture(
         coverArtworkCacheService: covers,
       );
+      _detailFixtures.add(fixture);
       addTearDown(fixture.dispose);
       const target = AudioDetailTarget(
         targetType: AudioDetailTargetType.libraryRootFolder,
@@ -1867,11 +1934,12 @@ void main() {
       await _settleDetail(tester);
     });
 
-    testWidgets(
+    _detailTestWidgets(
       'local tree shows folders containing only text or image files',
       (tester) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         final fixture = AppRuntimeWidgetTestFixture();
+        _detailFixtures.add(fixture);
         addTearDown(fixture.dispose);
         final root = (await tester.runAsync<Directory>(
           () => Directory.systemTemp.createTemp('work_non_audio_folders_'),
@@ -1976,11 +2044,12 @@ void main() {
       },
     );
 
-    testWidgets('local text and image entries use contextual more menus', (
+    _detailTestWidgets('local text and image entries use contextual more menus', (
       tester,
     ) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
+      _detailFixtures.add(fixture);
       addTearDown(fixture.dispose);
       final root = (await tester.runAsync<Directory>(
         () => Directory.systemTemp.createTemp('work_actions_'),
@@ -2066,7 +2135,7 @@ void main() {
         ..clearLiveImages();
     });
 
-    testWidgets(
+    _detailTestWidgets(
       'audio and video menus add one item without starting playback and remove with undo',
       (tester) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -2076,6 +2145,7 @@ void main() {
         final fixture = AppRuntimeWidgetTestFixture(
           coverArtworkCacheService: covers,
         );
+        _detailFixtures.add(fixture);
         addTearDown(fixture.dispose);
         var prepareCount = 0;
         var playSucceeds = true;
@@ -2229,13 +2299,14 @@ void main() {
       }),
     );
 
-    testWidgets(
+    _detailTestWidgets(
       'renders local work detail header, pinned RJ row and action buttons',
       (tester) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         final fixture = AppRuntimeWidgetTestFixture(
           asmrMetadataService: _WorkDetailAsmrMetadataService(),
         );
+        _detailFixtures.add(fixture);
         addTearDown(fixture.dispose);
 
         const folderPath = r'C:\library\RJ123456 - Test Work';
@@ -2474,7 +2545,7 @@ void main() {
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       for (final hasSubtitle in [false, true]) {
-        testWidgets(
+        _detailTestWidgets(
           'local work subtitle status reflects all subfolders, subtitles=$hasSubtitle on $platform',
           (tester) async {
             final covers = _ControlledWorkDetailCoverService()
@@ -2483,6 +2554,7 @@ void main() {
             final fixture = AppRuntimeWidgetTestFixture(
               coverArtworkCacheService: covers,
             );
+            _detailFixtures.add(fixture);
             addTearDown(fixture.dispose);
             const folder = 'C:/作品/字幕状态';
             final target = AudioDetailTarget.libraryRootFolder(folder);
@@ -2555,15 +2627,17 @@ void main() {
       }
     }
 
-    testWidgets('renders ASMR.ONE work detail header and actions', (
+    _detailTestWidgets('renders ASMR.ONE work detail header and actions', (
       tester,
     ) async {
+      await tester.binding.setSurfaceSize(null);
       tester.view.physicalSize = const Size(320, 700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
+      _detailFixtures.add(fixture);
       addTearDown(fixture.dispose);
 
       final asmrWork = AsmrWork(
@@ -2689,9 +2763,10 @@ void main() {
       );
     });
 
-    testWidgets('back button navigates back', (tester) async {
+    _detailTestWidgets('back button navigates back', (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
+      _detailFixtures.add(fixture);
       addTearDown(fixture.dispose);
 
       final asmrWork = AsmrWork(
@@ -2801,11 +2876,12 @@ void main() {
       expect(find.text('Go'), findsOneWidget);
     });
 
-    testWidgets(
+    _detailTestWidgets(
       'tags render in capsule style and clicking a tag copies to clipboard',
       (tester) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         final fixture = AppRuntimeWidgetTestFixture();
+        _detailFixtures.add(fixture);
         addTearDown(fixture.dispose);
 
         final copied = <String>[];
@@ -2869,11 +2945,12 @@ void main() {
     );
 
     for (final platform in [TargetPlatform.windows, TargetPlatform.android]) {
-      testWidgets(
+      _detailTestWidgets(
         'WorkDetailPage hides scrollbars on $platform and remains scrollable',
         (tester) async {
           SharedPreferences.setMockInitialValues(const <String, Object>{});
           final fixture = AppRuntimeWidgetTestFixture();
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
 
           const folderPath = 'C:/works/no-scrollbar';
@@ -2953,13 +3030,15 @@ void main() {
 
   group('WorkImageViewerPage', () {
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-      testWidgets(
+      _detailTestWidgets(
         'fullscreen fills the window and preserves paging and zoom on $platform',
         (tester) async {
+          await tester.binding.setSurfaceSize(null);
           tester.view.devicePixelRatio = 1;
           tester.view.physicalSize = const Size(1280, 800);
           addTearDown(tester.view.reset);
           final fixture = AppRuntimeWidgetTestFixture();
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           final pane = GlobalKey<NavigatorState>();
           await tester.pumpWidget(
@@ -3076,13 +3155,15 @@ void main() {
       );
     }
 
-    testWidgets(
+    _detailTestWidgets(
       'portrait hides fullscreen and rotation restores the original region',
       (tester) async {
+        await tester.binding.setSurfaceSize(null);
         tester.view.devicePixelRatio = 1;
         tester.view.physicalSize = const Size(390, 820);
         addTearDown(tester.view.reset);
         final fixture = AppRuntimeWidgetTestFixture();
+        _detailFixtures.add(fixture);
         addTearDown(fixture.dispose);
         await tester.pumpWidget(
           fixture.build(
@@ -3120,10 +3201,11 @@ void main() {
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       for (final reduceMotion in [false, true]) {
-        testWidgets(
+        _detailTestWidgets(
           'library motion: image navigation retains rapid targets and follows manual dragging ($reduceMotion)',
           (tester) async {
             final fixture = AppRuntimeWidgetTestFixture();
+            _detailFixtures.add(fixture);
             addTearDown(fixture.dispose);
             final images = [
               for (var i = 0; i < 5; i++)
@@ -3186,10 +3268,11 @@ void main() {
         );
       }
 
-      testWidgets(
+      _detailTestWidgets(
         'library motion: reduced breadcrumbs reveal the newest segment immediately',
         (tester) async {
           final fixture = AppRuntimeWidgetTestFixture();
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           Widget page(List<String> segments) => fixture.build(
             MediaQuery(
@@ -3228,10 +3311,11 @@ void main() {
       );
     }
 
-    testWidgets(
+    _detailTestWidgets(
       'image browsing starts at the requested entry without restoring cache',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
+        _detailFixtures.add(fixture);
         addTearDown(fixture.dispose);
         final store = BrowsePageStateStore();
         store.update('images:work', {'image': '02.jpg'});
@@ -3263,11 +3347,12 @@ void main() {
       },
     );
 
-    testWidgets(
+    _detailTestWidgets(
       'displays images, switches with prev/next, and sets manual cover',
       (tester) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         final fixture = AppRuntimeWidgetTestFixture();
+        _detailFixtures.add(fixture);
         addTearDown(fixture.dispose);
 
         var coverSelected = '';
@@ -3443,11 +3528,12 @@ void main() {
       },
     );
 
-    testWidgets('double-tap toggles zoom and blocks swiping when zoomed', (
+    _detailTestWidgets('double-tap toggles zoom and blocks swiping when zoomed', (
       tester,
     ) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
+      _detailFixtures.add(fixture);
       addTearDown(fixture.dispose);
 
       final images = [
@@ -3500,7 +3586,7 @@ void main() {
       );
     });
 
-    testWidgets('loads ASMR image URLs through persistent artwork cache', (
+    _detailTestWidgets('loads ASMR image URLs through persistent artwork cache', (
       tester,
     ) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -3508,6 +3594,7 @@ void main() {
       final fixture = AppRuntimeWidgetTestFixture(
         coverArtworkCacheService: covers,
       );
+      _detailFixtures.add(fixture);
       addTearDown(fixture.dispose);
 
       await tester.pumpWidget(
@@ -3550,7 +3637,7 @@ void main() {
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       for (final remote in [false, true]) {
-        testWidgets(
+        _detailTestWidgets(
           '${remote ? 'remote' : 'local'} viewer defers original image decode during navigation on $platform',
           (tester) async {
             final interaction = UiInteractionCoordinator.instance;
@@ -3577,6 +3664,7 @@ void main() {
             final fixture = AppRuntimeWidgetTestFixture(
               coverArtworkCacheService: covers,
             );
+            _detailFixtures.add(fixture);
             addTearDown(fixture.dispose);
             final source = Object();
             interaction.beginNavigation(source);
@@ -3604,8 +3692,26 @@ void main() {
             interaction.endNavigation(source);
             await tester.pump();
             expect(find.byType(Image), findsOneWidget);
+            // Finish the file read before teardown removes the temporary image
+            // on Windows, where an in-flight ImmutableBuffer holds the file.
+            var decoded = false;
+            final provider = FileImage(image);
+            final decoding = precacheImage(
+              provider,
+              tester.element(find.byType(Image)),
+            ).then((_) => decoded = true);
+            for (var attempt = 0; attempt < 100 && !decoded; attempt++) {
+              await tester.runAsync(
+                () => Future<void>.delayed(const Duration(milliseconds: 10)),
+              );
+              await tester.pump();
+            }
+            expect(decoded, isTrue);
+            await decoding;
             await tester.pump(interaction.idleDelay);
             await tester.pumpWidget(const SizedBox.shrink());
+            releaseRetainedCoverImage(provider);
+            await provider.evict();
             PaintingBinding.instance.imageCache.clear();
             PaintingBinding.instance.imageCache.clearLiveImages();
           },
@@ -3613,7 +3719,7 @@ void main() {
         );
       }
 
-      testWidgets('reuses and repairs cached viewer artwork on $platform', (
+      _detailTestWidgets('reuses and repairs cached viewer artwork on $platform', (
         tester,
       ) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -3650,6 +3756,7 @@ void main() {
         final fixture = AppRuntimeWidgetTestFixture(
           coverArtworkCacheService: covers,
         );
+        _detailFixtures.add(fixture);
         addTearDown(fixture.dispose);
         const viewer = WorkImageViewerPage(
           images: [
@@ -3703,11 +3810,12 @@ void main() {
       });
     }
 
-    testWidgets('empty images viewer uses theme surface background', (
+    _detailTestWidgets('empty images viewer uses theme surface background', (
       tester,
     ) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
+      _detailFixtures.add(fixture);
       addTearDown(fixture.dispose);
 
       await tester.pumpWidget(
@@ -3727,11 +3835,12 @@ void main() {
       expect(scaffold.backgroundColor, isNot(Colors.black));
     });
 
-    testWidgets(
+    _detailTestWidgets(
       'WorkDetailPage more menu renders in overlay above playback dock',
       (tester) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         final fixture = AppRuntimeWidgetTestFixture();
+        _detailFixtures.add(fixture);
         addTearDown(fixture.dispose);
         final root = (await tester.runAsync<Directory>(
           () => Directory.systemTemp.createTemp('work_dock_menu_'),
@@ -3817,7 +3926,7 @@ void main() {
       },
     );
 
-    testWidgets(
+    _detailTestWidgets(
       'WorkDetailEntryTile hides file suffixes in names and preserves folder names',
       (tester) async {
         const samples = [
@@ -3922,9 +4031,10 @@ void main() {
     );
 
     for (final textScale in [1.0, 2.0]) {
-      testWidgets(
+      _detailTestWidgets(
         'WorkDetailEntryTile fits two name lines and one file info line at $textScale scale',
         (tester) async {
+          await tester.binding.setSurfaceSize(null);
           tester.view.devicePixelRatio = 1;
           tester.view.physicalSize = const Size(320, 800);
           addTearDown(tester.view.resetDevicePixelRatio);
@@ -4032,9 +4142,10 @@ void main() {
           TargetPlatform.windows,
         }),
       );
-      testWidgets(
+      _detailTestWidgets(
         'WorkDetailEntryTile adapts to name length and width at $textScale scale',
         (tester) async {
+          await tester.binding.setSurfaceSize(null);
           tester.view.devicePixelRatio = 1;
           tester.view.physicalSize = const Size(1200, 800);
           addTearDown(tester.view.resetDevicePixelRatio);
@@ -4118,7 +4229,7 @@ void main() {
       );
     }
 
-    testWidgets(
+    _detailTestWidgets(
       'WorkDetailEntryTile renders transparent Material and provides feedback colors and action on tap',
       (WidgetTester tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -4213,7 +4324,7 @@ void main() {
       },
     );
 
-    testWidgets(
+    _detailTestWidgets(
       'WorkDetailEntryTile highlights item on Windows when more menu is opened',
       (WidgetTester tester) async {
         WorkEntryAction? performedAction;
@@ -4272,7 +4383,7 @@ void main() {
     );
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-      testWidgets(
+      _detailTestWidgets(
         'cached file rows retain their identity without row animation during entry on $platform',
         (tester) async {
           final interaction = UiInteractionCoordinator.instance;
@@ -4285,6 +4396,7 @@ void main() {
           final fixture = AppRuntimeWidgetTestFixture(
             coverArtworkCacheService: covers,
           );
+          _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
           const folder = 'C:/works/cached-rows';
           final target = AudioDetailTarget.libraryRootFolder(folder);

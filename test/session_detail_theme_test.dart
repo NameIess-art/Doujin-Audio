@@ -69,8 +69,34 @@ Widget _subject({
 ThemeData _theme(WidgetTester tester) =>
     Theme.of(tester.element(find.byKey(_probeKey)));
 
-ThemeData _target(WidgetTester tester) =>
-    tester.widgetList<AnimatedTheme>(find.byType(AnimatedTheme)).last.data;
+ThemeData _appliedTheme(WidgetTester tester) => tester
+    .element(find.byKey(_probeKey))
+    .findAncestorWidgetOfExactType<Theme>()!
+    .data;
+
+Animation<double> _paletteAnimation(WidgetTester tester) =>
+    tester
+            .widget<AnimatedBuilder>(
+              find
+                  .descendant(
+                    of: find.byType(SessionDetailTheme),
+                    matching: find.byType(AnimatedBuilder),
+                  )
+                  .first,
+            )
+            .animation
+        as Animation<double>;
+
+Future<void> _waitForFade(WidgetTester tester) async {
+  for (var attempt = 0; attempt < 100; attempt++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump();
+    if (_paletteAnimation(tester).status == AnimationStatus.forward) return;
+  }
+  fail('The cover palette fade did not start within one second.');
+}
 
 double _contrast(Color first, Color second) {
   final a = first.computeLuminance();
@@ -107,14 +133,19 @@ Future<File> _cover(WidgetTester tester, Color color, {File? replace}) async {
 
 Future<void> _waitForTarget(
   WidgetTester tester,
-  bool Function(ThemeData) predicate,
-) async {
+  bool Function(ThemeData) predicate, {
+  bool settle = true,
+}) async {
   for (var attempt = 0; attempt < 100; attempt++) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 10)),
     );
-    await tester.pump();
-    if (predicate(_target(tester))) return;
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump();
+    }
+    if (predicate(_theme(tester))) return;
   }
   fail('The cover palette did not arrive within one second.');
 }
@@ -240,11 +271,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(_theme(tester).colorScheme.primary, original);
     pending.complete(file.path);
-    await _waitForTarget(
-      tester,
-      (theme) => theme.colorScheme.primary != original,
-    );
-    final destination = _target(tester).colorScheme.primary;
+    await _waitForFade(tester);
+    expect(_paletteAnimation(tester).status, AnimationStatus.forward);
+    final destination = (await tester.runAsync(
+      () => ColorScheme.fromImageProvider(provider: FileImage(file)),
+    ))!.primary;
     expect(_theme(tester).colorScheme.primary, original);
     await tester.pump(const Duration(milliseconds: 150));
     final halfway = _theme(tester).colorScheme.primary;
@@ -273,7 +304,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 500));
     final fallback = _base(Brightness.light).colorScheme.primary;
-    expect(_target(tester).colorScheme.primary, fallback);
+    expect(_theme(tester).colorScheme.primary, fallback);
     transition.value = false;
     await _waitForTarget(
       tester,
@@ -282,6 +313,75 @@ void main() {
     await tester.pumpAndSettle();
     expect(_theme(tester).colorScheme.primary, isNot(fallback));
   });
+
+  testWidgets('rebuilding a settled palette does not restart the theme fade', (
+    tester,
+  ) async {
+    final file = await _cover(tester, Colors.red);
+    final path = Future<String?>.value(file.path);
+    await tester.pumpWidget(_subject(path: path));
+    await _waitForTarget(
+      tester,
+      (theme) =>
+          theme.colorScheme.primary !=
+          _base(Brightness.light).colorScheme.primary,
+    );
+    await tester.pumpAndSettle();
+    final settled = _appliedTheme(tester);
+
+    await tester.pumpWidget(_subject(path: path));
+    expect(_appliedTheme(tester), same(settled));
+    final rebuilt = _appliedTheme(tester);
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(_appliedTheme(tester), same(rebuilt));
+    expect(_theme(tester).colorScheme, settled.colorScheme);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+    'page motion pauses a palette fade and resumes its remaining time',
+    (tester) async {
+      final file = await _cover(tester, Colors.blue);
+      final transition = ValueNotifier(false);
+      addTearDown(transition.dispose);
+      final path = Future<String?>.value(file.path);
+      await tester.pumpWidget(_subject(path: path, transition: transition));
+      await _waitForFade(tester);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        _paletteAnimation(tester).value,
+        allOf(greaterThan(0), lessThan(1)),
+      );
+      final paused = _appliedTheme(tester);
+      transition.value = true;
+      for (var frame = 0; frame < 25; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(_appliedTheme(tester), same(paused));
+      }
+      // Parent updates during a drag must not restart or replace the paused fade.
+      // Theme.of uses an evictable localization cache; compare the data applied
+      // by our Theme rather than the identity of Flutter's localized copy.
+      for (var entry = 0; entry < 6; entry++) {
+        ThemeData.localize(ThemeData(), const TextTheme());
+      }
+      await tester.pumpWidget(_subject(path: path, transition: transition));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(_appliedTheme(tester), same(paused));
+      expect(_theme(tester).colorScheme, paused.colorScheme);
+
+      transition.value = false;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        _theme(tester).colorScheme.primary,
+        isNot(paused.colorScheme.primary),
+      );
+      expect(_paletteAnimation(tester).status, AnimationStatus.forward);
+      await tester.pump(const Duration(milliseconds: 101));
+      expect(_paletteAnimation(tester).status, AnimationStatus.completed);
+      await tester.pumpAndSettle();
+    },
+  );
 
   testWidgets(
     'switch keeps current colors and ignores the previous late cover',
@@ -512,11 +612,9 @@ void main() {
     await _waitForTarget(
       tester,
       (theme) => theme.colorScheme.primary != fallback,
+      settle: false,
     );
-    expect(
-      _theme(tester).colorScheme.primary,
-      _target(tester).colorScheme.primary,
-    );
+    expect(_paletteAnimation(tester).status, AnimationStatus.completed);
   });
 
   testWidgets('disposed detail ignores a later cover completion', (

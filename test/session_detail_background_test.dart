@@ -303,6 +303,75 @@ void main() {
             ).colorScheme,
             expected,
           );
+          Navigator.of(tester.element(find.byType(SubtitleMenuSheet))).pop();
+          await tester.pumpAndSettle();
+          if (defaultTargetPlatform == TargetPlatform.android) {
+            final dismiss = tester.widget<GestureDetector>(
+              find.byKey(const ValueKey('session_detail_dismiss_gesture')),
+            );
+            dismiss.onVerticalDragStart!(DragStartDetails());
+            void move(double delta) => dismiss.onVerticalDragUpdate!(
+              DragUpdateDetails(
+                globalPosition: Offset.zero,
+                delta: Offset(0, delta),
+                primaryDelta: delta,
+              ),
+            );
+            move(24);
+            await tester.pump();
+            final content = tester.widget<SessionDetailContent>(
+              find.byType(SessionDetailContent),
+            );
+            final theme = Theme.of(tester.element(detail));
+            for (var frame = 0; frame < 8; frame++) {
+              move(8);
+              await tester.pump(const Duration(milliseconds: 16));
+              expect(
+                tester.widget<SessionDetailContent>(
+                  find.byType(SessionDetailContent),
+                ),
+                same(content),
+              );
+              expect(Theme.of(tester.element(detail)), same(theme));
+            }
+            // A short drag returns to the same page; a long drag closes it.
+            dismiss.onVerticalDragEnd!(DragEndDetails(primaryVelocity: 0));
+            await tester.pumpAndSettle();
+            expect(find.byType(SessionDetailContent), findsOneWidget);
+            dismiss.onVerticalDragStart!(DragStartDetails());
+            move(400);
+            dismiss.onVerticalDragEnd!(
+              DragEndDetails(
+                primaryVelocity: 600,
+                velocity: const Velocity(pixelsPerSecond: Offset(0, 600)),
+              ),
+            );
+            await tester.pumpAndSettle();
+            expect(find.byType(SessionDetailContent), findsNothing);
+            unawaited(
+              Navigator.of(
+                tester.element(find.byType(PlaylistTab)),
+              ).push(buildSessionDetailRoute(sessionId: session.id)),
+            );
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 48));
+            final enteringContent = tester.widget<SessionDetailContent>(
+              find.byType(SessionDetailContent),
+            );
+            final enteringTheme = Theme.of(tester.element(detail));
+            for (var frame = 0; frame < 8; frame++) {
+              await tester.pump(const Duration(milliseconds: 16));
+              expect(
+                tester.widget<SessionDetailContent>(
+                  find.byType(SessionDetailContent),
+                ),
+                same(enteringContent),
+              );
+              expect(Theme.of(tester.element(detail)), same(enteringTheme));
+            }
+            await tester.pumpAndSettle();
+            expect(Theme.of(tester.element(detail)).colorScheme, expected);
+          }
         }
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());

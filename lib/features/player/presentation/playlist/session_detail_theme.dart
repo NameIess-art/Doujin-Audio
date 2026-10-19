@@ -82,9 +82,15 @@ class SessionDetailTheme extends StatefulWidget {
   State<SessionDetailTheme> createState() => _SessionDetailThemeState();
 }
 
-class _SessionDetailThemeState extends State<SessionDetailTheme> {
+class _SessionDetailThemeState extends State<SessionDetailTheme>
+    with SingleTickerProviderStateMixin {
   ColorScheme? _scheme;
   (Brightness, double)? _appearance;
+  (ThemeData, ColorScheme?, bool, int?)? _themeInputs;
+  ThemeDataTween? _themeTween;
+  (ThemeDataTween, double, ThemeData)? _displayedTheme;
+  late final AnimationController _themeController;
+  late final CurvedAnimation _themeProgress;
   int _request = 0;
   bool _snap = true;
   late final _commitKey = 'detail_palette_${identityHashCode(this)}';
@@ -92,6 +98,15 @@ class _SessionDetailThemeState extends State<SessionDetailTheme> {
   @override
   void initState() {
     super.initState();
+    _themeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: 1,
+    );
+    _themeProgress = CurvedAnimation(
+      parent: _themeController,
+      curve: Curves.easeInOut,
+    );
     widget.transitionActive?.addListener(_handleTransition);
   }
 
@@ -126,7 +141,28 @@ class _SessionDetailThemeState extends State<SessionDetailTheme> {
   }
 
   void _handleTransition() {
+    // A full-page theme tick rebuilds its dependents and invalidates the moving
+    // content's repaint boundary. Resume from this color after motion settles.
+    if (widget.transitionActive?.value == true) {
+      _themeController.stop(canceled: false);
+    } else if (!_themeController.isCompleted && !_themeController.isAnimating) {
+      _themeController.forward();
+    }
     UiInteractionCoordinator.instance.scheduleCommitFrame();
+  }
+
+  ThemeData _currentTheme() {
+    final tween = _themeTween!;
+    final progress = _themeProgress.value;
+    final displayed = _displayedTheme;
+    if (displayed != null &&
+        displayed.$1 == tween &&
+        displayed.$2 == progress) {
+      return displayed.$3;
+    }
+    final theme = tween.evaluate(_themeProgress);
+    _displayedTheme = (tween, progress, theme);
+    return theme;
   }
 
   _CoverSchemeKey _keyFor(String path) => (
@@ -195,6 +231,8 @@ class _SessionDetailThemeState extends State<SessionDetailTheme> {
     _request++;
     widget.transitionActive?.removeListener(_handleTransition);
     UiInteractionCoordinator.instance.cancelCommit(_commitKey);
+    _themeProgress.dispose();
+    _themeController.dispose();
     super.dispose();
   }
 
@@ -202,19 +240,33 @@ class _SessionDetailThemeState extends State<SessionDetailTheme> {
   Widget build(BuildContext context) {
     final base = Theme.of(context);
     final queueColor = widget.queueColorValue;
-    final fallback = queueColor != null
-        ? createPlaybackQueueSessionDetailTheme(base, Color(queueColor))
-        : widget.isAsmr
-        ? createAsmrSessionDetailTheme(base, AppDesignTokens.of(context))
-        : base;
-    return AnimatedTheme(
-      data: _scheme == null
-          ? fallback
-          : _applyDetailColorScheme(base, _scheme!),
-      duration: _snap || MediaQuery.disableAnimationsOf(context)
-          ? Duration.zero
-          : const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
+    final inputs = (base, _scheme, widget.isAsmr, queueColor);
+    final snap = _snap || MediaQuery.disableAnimationsOf(context);
+    if (_themeInputs != inputs) {
+      _themeInputs = inputs;
+      // Reuse the complete theme: state-property callbacks use identity
+      // equality, so recreating them would animate unchanged colors again.
+      final target = _scheme != null
+          ? _applyDetailColorScheme(base, _scheme!)
+          : queueColor != null
+          ? createPlaybackQueueSessionDetailTheme(base, Color(queueColor))
+          : widget.isAsmr
+          ? createAsmrSessionDetailTheme(base, AppDesignTokens.of(context))
+          : base;
+      final current = _themeTween == null ? target : _currentTheme();
+      _themeTween = ThemeDataTween(begin: current, end: target);
+      if (snap) {
+        _themeController.value = 1;
+      } else {
+        _themeController.value = 0;
+        if (widget.transitionActive?.value != true) _themeController.forward();
+      }
+    } else if (snap && !_themeController.isCompleted) {
+      _themeController.value = 1;
+    }
+    return AnimatedBuilder(
+      animation: _themeProgress,
+      builder: (context, child) => Theme(data: _currentTheme(), child: child!),
       child: widget.child,
     );
   }

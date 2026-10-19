@@ -23,7 +23,7 @@ void main() {
       expect(provider.tr('volume_range_hint'), '0-150');
       expect(
         provider.tr('volume_warning_message'),
-        '音量ブーストはクリッピングや歪みの原因になることがあります。',
+        '音量増幅で音割れや歪みが生じる場合があります。',
       );
 
       await provider.setLanguage(AppLanguage.en);
@@ -76,19 +76,19 @@ void main() {
       expect(provider.tr('asmr_detail_other'), 'Other information');
 
       await provider.setLanguage(AppLanguage.ja);
-      expect(provider.tr('add_playback_queue'), '再生キューを作成');
-      expect(provider.tr('edit_queue_color'), 'キューの色を編集');
-      expect(provider.tr('multi_select'), '複数選択モード');
+      expect(provider.tr('add_playback_queue'), 'キューを作成');
+      expect(provider.tr('edit_queue_color'), 'キューの色');
+      expect(provider.tr('multi_select'), '複数選択');
       expect(
         provider.tr('batch_added_to_playlist', {'count': '2'}),
-        '2 件の作品をプレイリストに追加しました',
+        '2作品をプレイリストに追加しました',
       );
       expect(
         provider.tr('batch_metadata_completion_failed', {'count': '1'}),
-        '1 件の作品データに失敗しました',
+        '1作品の補完に失敗',
       );
-      expect(provider.tr('audio_detail_title'), '詳細情報');
-      expect(provider.tr('asmr_detail_other'), 'その他の情報');
+      expect(provider.tr('audio_detail_title'), '作品詳細');
+      expect(provider.tr('asmr_detail_other'), 'その他');
     },
   );
 
@@ -127,7 +127,7 @@ void main() {
 
       await provider.setLanguage(AppLanguage.ja);
       expect(provider.tr('cover_image_resolution_1200'), '1200px');
-      expect(provider.tr('cover_image_resolution_original'), 'オリジナル');
+      expect(provider.tr('cover_image_resolution_original'), '原寸');
     },
   );
 

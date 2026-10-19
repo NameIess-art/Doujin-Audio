@@ -30,6 +30,22 @@ class AsmrDownloadOutputStore {
   static const _audioDetailJsonCodec = AudioDetailJsonCodec();
   JsonDocumentStore get jsonDocuments => _jsonDocumentStore;
   FileCachePlatformGateway get gateway => _fileCacheGateway;
+
+  PersistedDownloadTask capturePersistenceSnapshot(
+    AsmrDownloadTaskSnapshot task,
+  ) => PersistedDownloadTask(
+    task: task,
+    // Transfers can mutate ownership while this snapshot waits for an older
+    // write. Freeze ownership now; the task and its tree are already immutable.
+    createdOutputPaths: Set<String>.unmodifiable(
+      createdOutputPaths[task.work.id] ?? const <String>{},
+    ),
+    createdJsonDocuments: Map<String, CreatedDownloadJsonDocument>.unmodifiable(
+      createdJsonDocuments[task.work.id] ??
+          const <String, CreatedDownloadJsonDocument>{},
+    ),
+  );
+
   Future<String> prepareTask(AsmrDownloadTaskSnapshot task) async {
     final workId = task.work.id;
     final normalizedDestination = task.destinationRoot;

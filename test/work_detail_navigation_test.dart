@@ -67,8 +67,13 @@ Future<WorkDetailNavigation> _pumpApp(
     tester.view.resetPhysicalSize();
   });
   final fixture = AppRuntimeWidgetTestFixture(
-    configureSettingsRepository: (settings) =>
-        settings.showAsmrOne = showAsmrOne,
+    configureSettingsRepository: (settings) {
+      settings.showAsmrOne = showAsmrOne;
+      if (libraryWorkCount > 0) {
+        // Navigation fixtures provide synthetic folders without saved metadata.
+        settings.workNameDisplay = WorkNameDisplay.folderName;
+      }
+    },
   );
   addTearDown(fixture.dispose);
   fixture.settings.syncSlice(isInitialized: true);
@@ -90,7 +95,6 @@ Future<WorkDetailNavigation> _pumpApp(
       ),
       persist: false,
     );
-    await tester.runAsync(() => fixture.library.ensureCardSnapshot());
   }
   final sessions = <PlaybackSessionSnapshot>[];
   if (withSession) {
@@ -165,6 +169,17 @@ Future<WorkDetailNavigation> _pumpApp(
       ],
     ),
   );
+  if (libraryWorkCount > 0) {
+    await pumpUntilFound(
+      tester,
+      find.descendant(
+        of: _main,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is ListView && widget.controller != null,
+        ),
+      ),
+    );
+  }
   await _settle(tester);
   return navigation;
 }

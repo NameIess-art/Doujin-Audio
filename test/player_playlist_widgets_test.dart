@@ -885,10 +885,11 @@ void main() {
         await tester.tap(
           find.byTooltip(harness.fixture.languageProvider.tr('switch_audio')),
         );
-        await tester.pumpAndSettle();
         final row = find.byKey(
           ValueKey('queue_switcher_track_${tracks[1].path}'),
         );
+        await pumpUntilFound(tester, row);
+        await tester.pumpAndSettle();
         final sheet = tester.widget<SessionTrackSwitcherSheet>(
           find.byType(SessionTrackSwitcherSheet),
         );
@@ -6565,8 +6566,12 @@ void main() {
       ),
     );
 
-    // First frame after change: AnimatedSwitcher creates the child
+    // The selection highlight finishes before the checkmark starts fading in.
     await tester.pump();
+    expect(checkmarkFinder, findsNothing);
+    await tester.pump(kThemeChangeDuration ~/ 2);
+    expect(checkmarkFinder, findsNothing);
+    await tester.pump(kThemeChangeDuration ~/ 2);
     expect(checkmarkFinder, findsOneWidget);
 
     final animatedSwitcherFinder = find.byType(AnimatedSwitcher);

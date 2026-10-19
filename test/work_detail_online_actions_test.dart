@@ -25,6 +25,14 @@ void main() {
   });
   tearDownAll(() => AppRuntimeTestFixture.disposeSharedDatabase(database));
 
+  Future<void> setActionViewport(WidgetTester tester) async {
+    final binding = tester.binding;
+    // These action tests inspect metadata and file rows in the same viewport.
+    // Keep both mounted instead of depending on the sliver cache extent.
+    await binding.setSurfaceSize(const Size(1000, 1400));
+    addTearDown(() => binding.setSurfaceSize(null));
+  }
+
   Future<void> settleIo(WidgetTester tester) async {
     // Keep yielding real IO while a route or directory placeholder animates;
     // FakeAsync's pumpAndSettle alone cannot complete a compute isolate.
@@ -47,6 +55,7 @@ void main() {
           ? 'closing online details during opening skips file-tree requests'
           : 'online details reuse card metadata and defer the tree until open',
       (tester) async {
+        await setActionViewport(tester);
         SharedPreferences.setMockInitialValues({});
         final interaction = UiInteractionCoordinator.instance;
         interaction.resetForTest();
@@ -131,6 +140,7 @@ void main() {
           ? 'initialization finishing during closing starts no file request'
           : 'initialization finishing during interaction defers file requests',
       (tester) async {
+        await setActionViewport(tester);
         final interaction = UiInteractionCoordinator.instance;
         interaction.resetForTest();
         addTearDown(interaction.resetForTest);
@@ -205,6 +215,7 @@ void main() {
   testWidgets(
     'reopening online details displays the cached tree during navigation',
     (tester) async {
+      await setActionViewport(tester);
       SharedPreferences.setMockInitialValues({});
       final interaction = UiInteractionCoordinator.instance;
       interaction.resetForTest();
@@ -293,9 +304,8 @@ void main() {
   testWidgets(
     'online audio/video menus add one work session and remove with undo',
     (tester) async {
+      await setActionViewport(tester);
       SharedPreferences.setMockInitialValues({});
-      await tester.binding.setSurfaceSize(const Size(1000, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       final services = createTestAsmrServices(
@@ -378,6 +388,7 @@ void main() {
   testWidgets(
     'reopening online details resets folders and reuses tree data',
     (tester) async {
+      await setActionViewport(tester);
       SharedPreferences.setMockInitialValues({});
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -440,9 +451,8 @@ void main() {
   testWidgets(
     'reopened online details respect persisted hidden tracks and retain other files',
     (tester) async {
+      await setActionViewport(tester);
       SharedPreferences.setMockInitialValues({});
-      await tester.binding.setSurfaceSize(const Size(1000, 1400));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       AsmrLibraryController controller() {
@@ -506,6 +516,7 @@ void main() {
   testWidgets(
     'online details show loaded file rows without extra animations',
     (tester) async {
+      await setActionViewport(tester);
       SharedPreferences.setMockInitialValues({});
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);

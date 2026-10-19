@@ -2,7 +2,9 @@ import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/presentation/desktop_main_navigation.dart';
 import 'package:doujin_audio/app/presentation/main_destination.dart';
 import 'package:doujin_audio/app/presentation/mobile_dock_capsule_content.dart';
+import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
@@ -150,7 +152,7 @@ void main() {
         var expanded = false;
         var visible = true;
         var reduced = false;
-        var hasPlayback = true;
+        var hasPlayback = desktop;
         var geometryReports = 0;
         Widget shell() {
           final sessions = hasPlayback
@@ -215,8 +217,26 @@ void main() {
           );
         }
 
+        void expectVisualProtection(bool protected) {
+          if (!desktop) {
+            expect(interaction.isVisualUpdateDeferred, protected);
+          }
+        }
+
         await tester.pumpWidget(shell());
         await tester.pumpAndSettle();
+        expectVisualProtection(false);
+        if (!desktop) {
+          hasPlayback = true;
+          await tester.pumpWidget(shell());
+          expect(interaction.isInteracting, isTrue);
+          expectVisualProtection(true);
+          await tester.pump(const Duration(milliseconds: 40));
+          expectVisualProtection(true);
+          await tester.pumpAndSettle();
+          await tester.pump(interaction.idleDelay);
+          expectVisualProtection(false);
+        }
         final progress = PlaybackPositionUiGate(
           session: PlaybackSessionSnapshot.fromRuntime(session),
           minUpdateInterval: Duration.zero,
@@ -227,6 +247,7 @@ void main() {
         expanded = true;
         await tester.pumpWidget(shell());
         expect(interaction.isInteracting, isTrue);
+        expectVisualProtection(true);
         var dataCommits = 0;
         interaction.scheduleCommit(
           key: 'dock_motion_data',
@@ -242,6 +263,7 @@ void main() {
         expanded = false;
         await tester.pumpWidget(shell());
         expect(interaction.isInteracting, isTrue);
+        expectVisualProtection(true);
         for (var value = 21; value <= 40; value++) {
           session.setOptimisticPosition(Duration(seconds: value));
         }
@@ -251,6 +273,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.pump(interaction.idleDelay);
         expect(interaction.isInteracting, isFalse);
+        expectVisualProtection(false);
         expect(dataCommits, 1);
         expect(progressNotifications, 1);
         expect(progress.value.position, const Duration(seconds: 40));
@@ -262,27 +285,34 @@ void main() {
         visible = false;
         await tester.pumpWidget(shell());
         expect(interaction.isInteracting, isFalse);
+        expectVisualProtection(false);
         visible = true;
         await tester.pumpWidget(shell());
         expect(interaction.isInteracting, isTrue);
+        expectVisualProtection(true);
         reduced = true;
         await tester.pumpWidget(shell());
         expect(interaction.isInteracting, isFalse);
+        expectVisualProtection(false);
         expanded = false;
         await tester.pumpWidget(shell());
         expect(interaction.isInteracting, isFalse);
+        expectVisualProtection(false);
 
         reduced = false;
         if (!desktop) {
           hasPlayback = false;
           await tester.pumpWidget(shell());
           expect(interaction.isInteracting, isTrue);
+          expectVisualProtection(true);
           await tester.pumpAndSettle();
           await tester.pump(interaction.idleDelay);
           expect(interaction.isInteracting, isFalse);
+          expectVisualProtection(false);
           hasPlayback = true;
           await tester.pumpWidget(shell());
           expect(interaction.isInteracting, isTrue);
+          expectVisualProtection(true);
         } else {
           expanded = true;
           await tester.pumpWidget(shell());
@@ -290,6 +320,98 @@ void main() {
         }
         await tester.pumpWidget(const SizedBox.shrink());
         expect(interaction.isInteracting, isFalse);
+        expectVisualProtection(false);
+        debugDefaultTargetPlatformOverride = null;
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final preparationDelayMs in [96, 640]) {
+    testWidgets(
+      'mobile dock prepares its first card before starting entrance ($preparationDelayMs ms)',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final session = PlaybackSession(
+          id: 'first-entrance',
+          currentTrackPath: '/first-entrance.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: const PlayerState(false, ProcessingState.idle),
+        );
+        addTearDown(session.shutdown);
+        final geometryKey = GlobalKey();
+        var hasPlayback = false;
+        var navigationLayouts = 0;
+        Widget shell() => fixture.build(
+          Center(
+            child: SizedBox(
+              width: 400,
+              height: kActiveSessionCarouselDockHeight,
+              child: MobileDockCapsuleContent(
+                overlaySessions: hasPlayback
+                    ? [PlaybackSessionSnapshot.fromRuntime(session)]
+                    : const [],
+                isPlaybackExpanded: false,
+                i18n: fixture.languageProvider,
+                mobilePlaybackGeometryKey: geometryKey,
+                onShowPlayback: () {},
+                onShowDestinations: () {},
+                onReportPlaybackCoverRect: () {},
+                buildBottomBar:
+                    (
+                      _, {
+                      required isPlaybackExpanded,
+                      required appearance,
+                      required expansion,
+                      required availableWidth,
+                      required onCurrentTap,
+                    }) => LayoutBuilder(
+                      builder: (context, constraints) {
+                        navigationLayouts++;
+                        return const SizedBox.expand();
+                      },
+                    ),
+              ),
+            ),
+          ),
+        );
+        final playback = find.byKey(
+          const ValueKey<String>('mobile_dock_playback'),
+        );
+
+        await tester.pumpWidget(shell());
+        await tester.pumpAndSettle();
+        hasPlayback = true;
+        await tester.pumpWidget(shell());
+        final initialRect = tester.getRect(playback);
+        final dockRect = tester.getRect(find.byType(MobileDockCapsuleContent));
+        expect(initialRect.left, closeTo(dockRect.right, 0.001));
+
+        // The card's first layout and paint may miss several display frames.
+        // Its initial offscreen preparation must not spend entrance duration.
+        await tester.pump(Duration(milliseconds: preparationDelayMs));
+        expect(tester.getRect(playback), initialRect);
+        final preparedNavigationLayouts = navigationLayouts;
+        for (var frame = 0; frame < 5; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(navigationLayouts, preparedNavigationLayouts);
+        }
+        final movingRect = tester.getRect(playback);
+        expect(movingRect.left, lessThan(initialRect.left));
+        expect(
+          movingRect.left,
+          greaterThan(initialRect.left - kActiveSessionCarouselDockHeight),
+        );
+        await tester.pump(const Duration(milliseconds: 280));
+        expect(tester.getRect(playback).right, closeTo(dockRect.right, 0.001));
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(interaction.isVisualUpdateDeferred, isFalse);
         debugDefaultTargetPlatformOverride = null;
         expect(tester.takeException(), isNull);
       },
@@ -325,7 +447,10 @@ void main() {
           addTearDown(session.shutdown);
         }
         var dockWidth = kActiveSessionCarouselDockHeight;
-        Widget dock(List<PlaybackSession> shown) => fixture.build(
+        Widget dock(
+          List<PlaybackSession> shown, {
+          CoverImageResolution resolution = CoverImageResolution.balanced,
+        }) => fixture.build(
           Center(
             child: SizedBox(
               width: dockWidth,
@@ -340,8 +465,37 @@ void main() {
               ),
             ),
           ),
+          overrides: [
+            coverImageResolutionProvider.overrideWithValue(resolution),
+          ],
         );
 
+        for (final resolution in [
+          CoverImageResolution.balanced,
+          CoverImageResolution.original,
+        ]) {
+          await tester.pumpWidget(
+            dock([sessions.first], resolution: resolution),
+          );
+          await tester.pumpAndSettle();
+          final coverFinder = find.byType(AsyncLocalCoverImage);
+          expect(coverFinder, findsOneWidget);
+          final cover = tester.widget<AsyncLocalCoverImage>(coverFinder);
+          final dimension =
+              presentation == ActiveSessionCarouselPresentation.circularCover
+              ? 56.0
+              : 48.0;
+          expect(
+            cover.cacheWidth,
+            coverThumbnailCacheWidth(
+              logicalWidth: dimension,
+              devicePixelRatio: MediaQuery.devicePixelRatioOf(
+                tester.element(coverFinder),
+              ),
+              resolution: resolution,
+            ),
+          );
+        }
         await tester.pumpWidget(dock([sessions.first]));
         await tester.pumpAndSettle();
         final controller = ProviderScope.containerOf(

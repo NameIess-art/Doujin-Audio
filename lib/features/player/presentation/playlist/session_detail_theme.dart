@@ -9,7 +9,7 @@ import '../../../../core/ui/ui_interaction_coordinator.dart';
 
 typedef _CoverSchemeKey = ({
   String path,
-  int generation,
+  ({String scope, int epoch, int revision}) revision,
   Brightness brightness,
   double contrast,
 });
@@ -62,7 +62,7 @@ class SessionDetailTheme extends StatefulWidget {
     required this.coverPathFuture,
     required this.initialCoverPath,
     required this.requestKey,
-    required this.coverGeneration,
+    required this.coverRevision,
     required this.isAsmr,
     required this.queueColorValue,
     required this.child,
@@ -72,7 +72,7 @@ class SessionDetailTheme extends StatefulWidget {
   final Future<String?> coverPathFuture;
   final String? initialCoverPath;
   final Object requestKey;
-  final int coverGeneration;
+  final ({String scope, int epoch, int revision}) coverRevision;
   final bool isAsmr;
   final int? queueColorValue;
   final ValueListenable<bool>? transitionActive;
@@ -117,7 +117,7 @@ class _SessionDetailThemeState extends State<SessionDetailTheme> {
       widget.transitionActive?.addListener(_handleTransition);
     }
     if (oldWidget.requestKey != widget.requestKey ||
-        oldWidget.coverGeneration != widget.coverGeneration ||
+        oldWidget.coverRevision != widget.coverRevision ||
         oldWidget.initialCoverPath != widget.initialCoverPath ||
         oldWidget.coverPathFuture != widget.coverPathFuture) {
       _updateRequest();
@@ -131,7 +131,7 @@ class _SessionDetailThemeState extends State<SessionDetailTheme> {
 
   _CoverSchemeKey _keyFor(String path) => (
     path: path,
-    generation: widget.coverGeneration,
+    revision: widget.coverRevision,
     brightness: _appearance!.$1,
     contrast: _appearance!.$2,
   );
@@ -145,20 +145,19 @@ class _SessionDetailThemeState extends State<SessionDetailTheme> {
       _snap = true;
     }
     final future = widget.coverPathFuture;
-    final generation = widget.coverGeneration;
+    final revision = widget.coverRevision;
     final appearance = _appearance!;
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _commitKey,
       canRun: () => widget.transitionActive?.value != true,
-      commit: () =>
-          unawaited(_resolve(request, future, generation, appearance)),
+      commit: () => unawaited(_resolve(request, future, revision, appearance)),
     );
   }
 
   Future<void> _resolve(
     int request,
     Future<String?> future,
-    int generation,
+    ({String scope, int epoch, int revision}) revision,
     (Brightness, double) appearance,
   ) async {
     ColorScheme? scheme;
@@ -168,7 +167,7 @@ class _SessionDetailThemeState extends State<SessionDetailTheme> {
       if (path != null && path.isNotEmpty) {
         scheme = await _loadCoverScheme((
           path: path,
-          generation: generation,
+          revision: revision,
           brightness: appearance.$1,
           contrast: appearance.$2,
         ));

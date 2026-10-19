@@ -33,6 +33,10 @@ class SubtitleTaskCancelled implements Exception {
   const SubtitleTaskCancelled();
 }
 
+class SubtitleAlignmentTooLarge implements Exception {
+  const SubtitleAlignmentTooLarge();
+}
+
 String? subtitleGenerationUnavailableReasonFor({
   required bool isAndroid,
   required bool isWindows,

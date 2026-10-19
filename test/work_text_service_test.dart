@@ -20,11 +20,13 @@ class _FakeFileCacheGateway extends Fake implements FileCachePlatformGateway {
     this.discoverResult = const [],
     this.readResult,
     this.discover,
+    this.read,
   });
 
   final List<Map<String, String>> discoverResult;
   final Uint8List? readResult;
   final Future<List<Map<String, String>>> Function(String)? discover;
+  final Future<Uint8List?> Function()? read;
   int discoverCalls = 0;
 
   @override
@@ -35,11 +37,120 @@ class _FakeFileCacheGateway extends Fake implements FileCachePlatformGateway {
 
   @override
   Future<Uint8List?> readDocumentBytes(String filePath) async {
-    return readResult;
+    return read == null ? readResult : await read!();
+  }
+}
+
+class _PreparationCountingService extends WorkTextService {
+  _PreparationCountingService(FileCachePlatformGateway gateway)
+    : super(platformGateway: gateway);
+  int preparations = 0;
+  @override
+  Future<PreparedWorkText> prepareDocument(
+    Uint8List bytes, {
+    required WorkDocType type,
+    WorkTextEncoding? encodingOverride,
+  }) {
+    preparations++;
+    return super.prepareDocument(
+      bytes,
+      type: type,
+      encodingOverride: encodingOverride,
+    );
   }
 }
 
 void main() {
+  test('a cancelled local read never starts document preparation', () async {
+    final request = WorkTextReadRequest();
+    final service = _PreparationCountingService(
+      _FakeFileCacheGateway(
+        read: () async {
+          request.cancel();
+          return Uint8List.fromList(utf8.encode('obsolete document'));
+        },
+      ),
+    );
+    addTearDown(service.dispose);
+    await expectLater(
+      service.readPreparedDocument(
+        const WorkTextFile(
+          name: 'script.txt',
+          relativePath: 'script.txt',
+          path: '/work/script.txt',
+        ),
+        request: request,
+      ),
+      throwsA(isA<WorkTextReadCancelled>()),
+    );
+    expect(service.preparations, 0);
+  });
+
+  for (final disposeService in [false, true]) {
+    test(
+      'document ${disposeService ? 'disposal' : 'cancellation'} closes a streaming connection without fallback',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        final streaming = Completer<void>();
+        final disconnected = Completer<void>();
+        final paths = <String>[];
+        Timer? chunks;
+        Socket? socket;
+        addTearDown(() {
+          chunks?.cancel();
+          socket?.destroy();
+        });
+        server.listen((incoming) async {
+          paths.add(incoming.uri.path);
+          incoming.response.contentLength = 1 << 30;
+          socket = await incoming.response.detachSocket();
+          void closed() {
+            chunks?.cancel();
+            if (!disconnected.isCompleted) disconnected.complete();
+          }
+
+          socket!.listen(
+            (_) {},
+            onDone: closed,
+            onError: (Object _) => closed(),
+          );
+          socket!.add(List.filled(1024, 65));
+          chunks = Timer.periodic(const Duration(milliseconds: 10), (_) {
+            socket!.add(List.filled(1024, 65));
+          });
+          streaming.complete();
+        });
+        final service = WorkTextService();
+        addTearDown(service.dispose);
+        final request = WorkTextReadRequest();
+        final reading = service.readPreparedDocument(
+          WorkTextFile(
+            name: 'script.txt',
+            relativePath: 'script.txt',
+            path: 'http://127.0.0.1:${server.port}/stream',
+            fallbackUrls: ['http://127.0.0.1:${server.port}/fallback'],
+          ),
+          request: request,
+        );
+        final cancelled = expectLater(
+          reading,
+          throwsA(isA<WorkTextReadCancelled>()),
+        );
+        await streaming.future;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        if (disposeService) {
+          await service.dispose();
+        } else {
+          request.cancel();
+        }
+        await cancelled.timeout(const Duration(seconds: 2));
+        await disconnected.future.timeout(const Duration(seconds: 2));
+        expect(paths, ['/stream']);
+      },
+    );
+  }
+
   group('document preparation', () {
     test(
       'one MiB TXT preserves exact whitespace and Unicode at newline boundaries',

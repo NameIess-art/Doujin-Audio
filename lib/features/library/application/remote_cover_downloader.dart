@@ -58,10 +58,14 @@ final class RemoteCoverDownloader {
         request.headers.set(header.key, header.value);
       }
       final response = await request.close().timeout(_requestTimeout);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          response.contentLength > maxCoverFileBytes) {
+        // Unread response bodies retain their connections. Cancel rather than
+        // drain a rejected body, which may be oversized or never finish.
+        await response.listen(null).cancel();
         return null;
       }
-      if (response.contentLength > maxCoverFileBytes) return null;
 
       final bytes = BytesBuilder(copy: false);
       final headerBytes = <int>[];

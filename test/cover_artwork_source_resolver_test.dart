@@ -11,6 +11,301 @@ import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('completed work refresh indexes have bounded retention', () async {
+    final library = LibraryService()..addWatchedLibrary('/works');
+    addTearDown(library.dispose);
+    final scans = <String>[];
+    final resolver = CoverArtworkSourceResolver(
+      libraryService: library,
+      fileCacheGateway: FileCachePlatformGateway(),
+      artworkStore: CoverArtworkStore(),
+      isClearingPersistentCache: () => false,
+      filesystemImageScanner: (root, _) async {
+        scans.add(root);
+        return ['$root/cover.jpg'];
+      },
+    );
+    await resolver.discoverFolderImages('/works');
+    for (var i = 0; i < 40; i++) {
+      await resolver.discoverFolderImageReferences('/works/$i', refresh: true);
+    }
+    expect(resolver.folderImageIndexCount, lessThanOrEqualTo(33));
+    final images = await resolver.discoverFolderImages('/works');
+    expect(images, hasLength(41));
+    await resolver.discoverFolderImages('/works/0');
+    expect(scans, hasLength(41));
+  });
+
+  test('a failed pending root scan observes its refresh patches', () async {
+    final library = LibraryService()..addWatchedLibrary('/works');
+    addTearDown(library.dispose);
+    final initial = Completer<List<String>>();
+    var rootScans = 0;
+    final resolver = CoverArtworkSourceResolver(
+      libraryService: library,
+      fileCacheGateway: FileCachePlatformGateway(),
+      artworkStore: CoverArtworkStore(),
+      isClearingPersistentCache: () => false,
+      filesystemImageScanner: (root, _) =>
+          root.replaceAll('\\', '/') == '/works' && ++rootScans == 1
+          ? initial.future
+          : Future.value(['/works/a/fresh.jpg']),
+    );
+    final root = resolver.discoverFolderImages('/works');
+    await resolver.discoverFolderImageReferences('/works/a', refresh: true);
+    initial.completeError(const FileSystemException('Permission denied'));
+    expect(await root, isEmpty);
+    await Future<void>.delayed(Duration.zero);
+    expect(await resolver.discoverFolderImages('/works'), [
+      '/works/a/fresh.jpg',
+    ]);
+  });
+
+  test('index trimming waits for pending root merges', () async {
+    final library = LibraryService()..addWatchedLibrary('/works');
+    addTearDown(library.dispose);
+    final initial = Completer<List<String>>();
+    final resolver = CoverArtworkSourceResolver(
+      libraryService: library,
+      fileCacheGateway: FileCachePlatformGateway(),
+      artworkStore: CoverArtworkStore(),
+      isClearingPersistentCache: () => false,
+      filesystemImageScanner: (root, _) =>
+          root.replaceAll('\\', '/') == '/works'
+          ? initial.future
+          : Future.value(['$root/new.jpg']),
+    );
+    final root = resolver.discoverFolderImages('/works');
+    await Future.wait([
+      for (var i = 0; i < 40; i++)
+        resolver.discoverFolderImageReferences('/works/$i', refresh: true),
+    ]);
+    initial.complete(['/works/kept.jpg']);
+    final images = await root;
+    expect(images, hasLength(41));
+    for (var i = 0; i < 40; i++) {
+      expect(
+        images.any(
+          (image) => PathMatcher.equalsNormalized(image, '/works/$i/new.jpg'),
+        ),
+        isTrue,
+      );
+    }
+    expect(resolver.folderImageIndexCount, lessThanOrEqualTo(33));
+  });
+
+  test(
+    'work refresh scans only its subtree and patches warm root images',
+    () async {
+      final library = LibraryService()..addWatchedLibrary('/works');
+      addTearDown(library.dispose);
+      final scans = <String>[];
+      final files = <String, List<String>>{
+        '/works': ['/works/a/old.jpg', '/works/b/old.jpg'],
+        '/works/a': ['/works/a/new.jpg'],
+        '/works/b': ['/works/b/new.jpg'],
+      };
+      final resolver = CoverArtworkSourceResolver(
+        libraryService: library,
+        fileCacheGateway: FileCachePlatformGateway(),
+        artworkStore: CoverArtworkStore(),
+        isClearingPersistentCache: () => false,
+        filesystemImageScanner: (root, recursive) async {
+          expect(recursive, isTrue);
+          final canonical = root.replaceAll('\\', '/');
+          scans.add(canonical);
+          return files[canonical]!;
+        },
+      );
+      await resolver.discoverFolderImages('/works');
+      Future<List<String>> refresh(String folder) async =>
+          (await resolver.discoverFolderImageReferences(
+            folder,
+            refresh: true,
+            propagateFailure: true,
+          )).map((image) => image.sourcePath).toList();
+      expect(await refresh('/works/a'), ['/works/a/new.jpg']);
+      expect(await refresh('/works/b'), ['/works/b/new.jpg']);
+      files['/works/a'] = ['/works/a/latest.jpg'];
+      expect(await refresh('/works/a'), ['/works/a/latest.jpg']);
+      expect(await resolver.discoverFolderImages('/works'), [
+        '/works/a/latest.jpg',
+        '/works/b/new.jpg',
+      ]);
+      expect(scans, ['/works', '/works/a', '/works/b', '/works/a']);
+    },
+  );
+
+  test(
+    'concurrent work refreshes merge and the same work shares its scan',
+    () async {
+      final library = LibraryService()..addWatchedLibrary('/works');
+      addTearDown(library.dispose);
+      final initial = Completer<List<String>>();
+      final first = Completer<List<String>>();
+      final second = Completer<List<String>>();
+      final scans = <String>[];
+      final resolver = CoverArtworkSourceResolver(
+        libraryService: library,
+        fileCacheGateway: FileCachePlatformGateway(),
+        artworkStore: CoverArtworkStore(),
+        isClearingPersistentCache: () => false,
+        filesystemImageScanner: (root, _) {
+          final canonical = root.replaceAll('\\', '/');
+          scans.add(canonical);
+          return switch (canonical) {
+            '/works' => initial.future,
+            '/works/a' => first.future,
+            _ => second.future,
+          };
+        },
+      );
+      final root = resolver.discoverFolderImages('/works');
+      final a = resolver.discoverFolderImageReferences(
+        '/works/a',
+        refresh: true,
+      );
+      final same = resolver.discoverFolderImageReferences(
+        '/works/a',
+        refresh: true,
+      );
+      final b = resolver.discoverFolderImageReferences(
+        '/works/b',
+        refresh: true,
+      );
+      second.complete(['/works/b/new.jpg']);
+      first.complete(['/works/a/new.jpg']);
+      initial.complete([
+        '/works/a/old.jpg',
+        '/works/b/old.jpg',
+        '/works/c/keep.jpg',
+      ]);
+      await Future.wait([a, same, b]);
+      expect(await root, [
+        '/works/a/new.jpg',
+        '/works/b/new.jpg',
+        '/works/c/keep.jpg',
+      ]);
+      expect(await resolver.discoverFolderImages('/works'), await root);
+      expect(scans, ['/works', '/works/a', '/works/b']);
+    },
+  );
+
+  for (final clearAll in [false, true]) {
+    test(
+      'retired work refresh cannot refill indexes, clearAll=$clearAll',
+      () async {
+        final library = LibraryService()..addWatchedLibrary('/works');
+        addTearDown(library.dispose);
+        final pending = Completer<List<String>>();
+        final resolver = CoverArtworkSourceResolver(
+          libraryService: library,
+          fileCacheGateway: FileCachePlatformGateway(),
+          artworkStore: CoverArtworkStore(),
+          isClearingPersistentCache: () => false,
+          filesystemImageScanner: (root, _) =>
+              root.replaceAll('\\', '/') == '/works/a'
+              ? pending.future
+              : Future.value(['/works/b/kept.jpg']),
+        );
+        await resolver.discoverFolderImages('/works');
+        final old = resolver.discoverFolderImageReferences(
+          '/works/a',
+          refresh: true,
+          propagateFailure: true,
+        );
+        final failure = expectLater(old, throwsStateError);
+        if (clearAll) {
+          resolver.invalidateAll();
+        } else {
+          resolver.invalidateFolderImageIndexes('/works/a');
+        }
+        pending.complete(['/works/a/retired.jpg']);
+        await failure;
+        expect(resolver.sourcePathForDisplay('/works/a/retired.jpg'), isNull);
+        expect(await resolver.discoverFolderImages('/works'), [
+          '/works/b/kept.jpg',
+        ]);
+      },
+    );
+  }
+
+  test(
+    'SAF refresh keeps the native directory scope and discovers new images',
+    () async {
+      final library = LibraryService()..addWatchedLibrary('content://library');
+      addTearDown(library.dispose);
+      final paths = <String>[];
+      final gateway = _ImageGateway((root, _) async {
+        paths.add(root);
+        return ['/cache/${paths.length}.jpg'];
+      });
+      final resolver = CoverArtworkSourceResolver(
+        libraryService: library,
+        fileCacheGateway: gateway,
+        artworkStore: CoverArtworkStore(),
+        isClearingPersistentCache: () => false,
+      );
+      const work = 'content://library/work';
+      expect(await resolver.discoverFolderImages(work), ['/cache/1.jpg']);
+      final fresh = await resolver.discoverFolderImageReferences(
+        work,
+        refresh: true,
+      );
+      expect(fresh.single.displayPath, '/cache/2.jpg');
+      expect(await resolver.discoverFolderImages(work), ['/cache/2.jpg']);
+      expect(paths, [work, work]);
+    },
+  );
+
+  test(
+    'shared artwork keeps bounded source aliases through moves and trimming',
+    () {
+      final library = LibraryService();
+      addTearDown(library.dispose);
+      final resolver = CoverArtworkSourceResolver(
+        libraryService: library,
+        fileCacheGateway: FileCachePlatformGateway(),
+        artworkStore: CoverArtworkStore(),
+        isClearingPersistentCache: () => false,
+      );
+      const shared = '/cache/shared.image';
+      for (var index = 0; index <= 500; index++) {
+        resolver.rememberFolderImageSource(shared, 'content://library/$index');
+      }
+      expect(resolver.displayPathForSource('content://library/0'), isNull);
+      for (var index = 1; index <= 500; index++) {
+        expect(
+          resolver.displayPathForSource('content://library/$index'),
+          shared,
+        );
+      }
+      expect(resolver.sourcePathForDisplay(shared), 'content://library/500');
+
+      resolver.rememberFolderImageSource(
+        '/cache/moved.image',
+        'content://library/500',
+      );
+      expect(resolver.sourcePathForDisplay(shared), 'content://library/499');
+      expect(
+        resolver.sourcePathForDisplay('/cache/moved.image'),
+        'content://library/500',
+      );
+      resolver.rememberFolderImageSource(
+        '/cache/new.image',
+        'content://library/new',
+      );
+      expect(resolver.displayPathForSource('content://library/1'), isNull);
+      expect(resolver.displayPathForSource('content://library/2'), shared);
+
+      resolver.trimMemory();
+      expect(resolver.sourcePathForDisplay(shared), isNull);
+      expect(resolver.sourcePathForDisplay('/cache/moved.image'), isNull);
+      expect(resolver.displayPathForSource('content://library/2'), isNull);
+      expect(resolver.displayPathForSource('content://library/500'), isNull);
+    },
+  );
+
   for (final kind in ['embedded', 'video', 'directory']) {
     test(
       '$kind generation keeps temporary artwork until durable copy completes',

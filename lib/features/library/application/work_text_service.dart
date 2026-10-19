@@ -291,9 +291,13 @@ class WorkTextService {
   final _imageSnapshots = <String, List<CoverImageReference>>{};
   int _cacheGeneration = 0;
   bool _disposed = false;
+  final _activeReads = <WorkTextReadRequest>{};
 
   Future<void> dispose() async {
     _disposed = true;
+    for (final request in _activeReads.toList(growable: false)) {
+      request.cancel();
+    }
     await clearDirectoryCache();
   }
 
@@ -422,8 +426,10 @@ class WorkTextService {
   Future<({String text, WorkTextEncoding encoding})> readDecodedText(
     WorkTextFile file, {
     WorkTextEncoding? encodingOverride,
+    WorkTextReadRequest? request,
   }) async {
-    final bytes = await readDocumentBytes(file);
+    final bytes = await readDocumentBytes(file, request: request);
+    _checkReadActive(request);
     if (bytes == null) {
       return (text: '', encoding: encodingOverride ?? WorkTextEncoding.utf8);
     }
@@ -433,14 +439,18 @@ class WorkTextService {
   Future<PreparedWorkText> readPreparedDocument(
     WorkTextFile file, {
     WorkTextEncoding? encodingOverride,
+    WorkTextReadRequest? request,
   }) async {
     if (file.isPdf) throw ArgumentError('PDF uses readDocumentBytes.');
-    final bytes = await readDocumentBytes(file);
-    return prepareDocument(
+    final bytes = await readDocumentBytes(file, request: request);
+    _checkReadActive(request);
+    final prepared = await prepareDocument(
       bytes ?? Uint8List(0),
       type: file.docType,
       encodingOverride: encodingOverride,
     );
+    _checkReadActive(request);
+    return prepared;
   }
 
   Future<PreparedWorkText> prepareDocument(
@@ -458,10 +468,36 @@ class WorkTextService {
         : Future.value(_prepareWorkText(request));
   }
 
-  Future<Uint8List?> readDocumentBytes(WorkTextFile file) async {
+  void _checkReadActive(WorkTextReadRequest? request) {
+    if (_disposed || request?.cancelled == true) {
+      throw const WorkTextReadCancelled();
+    }
+  }
+
+  Future<Uint8List?> readDocumentBytes(
+    WorkTextFile file, {
+    WorkTextReadRequest? request,
+  }) async {
+    final active = request ?? WorkTextReadRequest();
+    _checkReadActive(active);
+    _activeReads.add(active);
+    try {
+      final bytes = await _readDocumentBytes(file, active);
+      _checkReadActive(active);
+      return bytes;
+    } finally {
+      _activeReads.remove(active);
+    }
+  }
+
+  Future<Uint8List?> _readDocumentBytes(
+    WorkTextFile file,
+    WorkTextReadRequest active,
+  ) async {
     final filePath = file.path.trim();
     if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
       final client = _httpClientFactory();
+      active._abort = () => client.close(force: true);
       try {
         try {
           client.connectionTimeout = const Duration(seconds: 15);
@@ -470,6 +506,7 @@ class WorkTextService {
         }
         Object? lastError;
         for (final url in <String>{filePath, ...file.fallbackUrls}) {
+          _checkReadActive(active);
           final uri = Uri.tryParse(url);
           if (uri == null || !uri.hasScheme || uri.host.isEmpty) continue;
           HttpClientRequest? request;
@@ -477,9 +514,11 @@ class WorkTextService {
             request = await client
                 .getUrl(uri)
                 .timeout(const Duration(seconds: 15));
+            _checkReadActive(active);
             final response = await request.close().timeout(
               const Duration(seconds: 15),
             );
+            _checkReadActive(active);
             if (response.statusCode < 200 || response.statusCode >= 300) {
               lastError = HttpException(
                 'Document request failed (${response.statusCode}).',
@@ -492,16 +531,20 @@ class WorkTextService {
             await for (final chunk in response.timeout(
               const Duration(seconds: 30),
             )) {
+              _checkReadActive(active);
               bytesBuilder.add(chunk);
             }
             return bytesBuilder.takeBytes();
           } catch (error) {
             request?.abort(error);
+            _checkReadActive(active);
             lastError = error;
           }
         }
         throw lastError ??
             HttpException('No valid document URL.', uri: Uri.parse(filePath));
+      } on WorkTextReadCancelled {
+        rethrow;
       } catch (error, stackTrace) {
         AppLogService.warning(
           'read_remote_document_bytes_failed',
@@ -510,9 +553,27 @@ class WorkTextService {
         );
         rethrow;
       } finally {
+        active._abort = null;
         client.close(force: true);
       }
     }
     return _platformGateway.readDocumentBytes(file.path);
   }
+}
+
+final class WorkTextReadRequest {
+  bool _cancelled = false;
+  void Function()? _abort;
+  bool get cancelled => _cancelled;
+
+  void cancel() {
+    if (_cancelled) return;
+    _cancelled = true;
+    _abort?.call();
+    _abort = null;
+  }
+}
+
+final class WorkTextReadCancelled implements Exception {
+  const WorkTextReadCancelled();
 }

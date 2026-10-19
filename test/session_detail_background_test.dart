@@ -14,6 +14,7 @@ import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_scaffold.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/session_detail_theme.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_menu_sheet.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
@@ -27,7 +28,7 @@ class _ResolvedCoverCache extends CoverArtworkCacheService {
   _ResolvedCoverCache([this.path = '/covers/detail.png'])
     : super(libraryService: LibraryService());
 
-  final String path;
+  final String? path;
 
   @override
   String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) =>
@@ -62,6 +63,84 @@ class _SubtitlePresenceService extends PlaybackSubtitleService {
 }
 
 void main() {
+  testWidgets(
+    'detail retains its cover request when another cover scope changes',
+    (tester) async {
+      UiInteractionCoordinator.instance.resetForTest();
+      addTearDown(UiInteractionCoordinator.instance.resetForTest);
+      final cache = _ResolvedCoverCache(null);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'Current',
+        path: '/library/current/audio.mp3',
+        groupKey: '/library/current',
+        groupTitle: 'Current',
+      );
+      fixture.library.addTracks([track], persist: false);
+      final session = fixture.playback.createTrackSession(track);
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: cache.generation,
+        isInitialized: true,
+      );
+      final revealBehind = ValueNotifier(false);
+      addTearDown(revealBehind.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          SessionDetailPage(
+            sessionId: session.id,
+            revealBehindNotifier: revealBehind,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final original = tester.widget<SessionDetailTheme>(
+        find.byType(SessionDetailTheme),
+      );
+      cache.invalidateFolder('/library/unrelated');
+      await tester.pumpAndSettle();
+      final unchanged = tester.widget<SessionDetailTheme>(
+        find.byType(SessionDetailTheme),
+      );
+      expect(unchanged.coverPathFuture, same(original.coverPathFuture));
+      expect(unchanged.coverRevision, original.coverRevision);
+      cache.invalidateFolder(track.path);
+      await tester.pumpAndSettle();
+      final changed = tester.widget<SessionDetailTheme>(
+        find.byType(SessionDetailTheme),
+      );
+      expect(changed.coverPathFuture, isNot(same(original.coverPathFuture)));
+      expect(changed.coverRevision.scope, original.coverRevision.scope);
+      expect(
+        changed.coverRevision.revision,
+        greaterThan(original.coverRevision.revision),
+      );
+      cache.invalidateAll();
+      await tester.pumpAndSettle();
+      final cleared = tester.widget<SessionDetailTheme>(
+        find.byType(SessionDetailTheme),
+      );
+      expect(cleared.coverPathFuture, isNot(same(changed.coverPathFuture)));
+      expect(
+        cleared.coverRevision.epoch,
+        greaterThan(changed.coverRevision.epoch),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final kind in ['normal', 'asmr', 'queue', 'fullscreen']) {
     testWidgets(
       'cover palette reaches detail background controls and menu for $kind',
@@ -396,9 +475,6 @@ void main() {
       );
       final detailContext = tester.element(find.byType(SessionDetailScaffold));
       final navigator = Navigator.of(detailContext);
-      final content = tester.widget<SessionDetailContent>(
-        find.byType(SessionDetailContent),
-      );
       for (var round = 0; round < 2; round++) {
         unawaited(
           navigator.push(
@@ -409,15 +485,22 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        // Route visibility can rebuild immutable widgets; the page state and
+        // its controllers must survive being covered and revealed.
         expect(
-          tester.widget<SessionDetailContent>(
+          tester.state<SessionDetailContentState>(
             find.byType(SessionDetailContent, skipOffstage: false),
           ),
-          same(content),
+          same(contentState),
         );
         navigator.pop();
         await tester.pumpAndSettle();
-        expect(tester.widget(find.byType(SessionDetailContent)), same(content));
+        expect(
+          tester.state<SessionDetailContentState>(
+            find.byType(SessionDetailContent),
+          ),
+          same(contentState),
+        );
       }
       expect(
         tester.state<SessionDetailContentState>(

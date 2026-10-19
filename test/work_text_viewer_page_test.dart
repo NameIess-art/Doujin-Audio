@@ -53,11 +53,13 @@ class _CountingTextService extends WorkTextService {
   Future<PreparedWorkText> readPreparedDocument(
     WorkTextFile file, {
     WorkTextEncoding? encodingOverride,
+    WorkTextReadRequest? request,
   }) async {
     preparations++;
     final document = await super.readPreparedDocument(
       file,
       encodingOverride: encodingOverride,
+      request: request,
     );
     prepared = document;
     if (!ready.isCompleted) ready.complete();
@@ -73,9 +75,26 @@ class _PreparedTextService extends WorkTextService {
   Future<PreparedWorkText> readPreparedDocument(
     WorkTextFile file, {
     WorkTextEncoding? encodingOverride,
+    WorkTextReadRequest? request,
   }) async {
     reads++;
     return document;
+  }
+}
+
+class _PendingTextService extends WorkTextService {
+  final requests = <WorkTextReadRequest>[];
+  final pending = <Completer<PreparedWorkText>>[];
+  @override
+  Future<PreparedWorkText> readPreparedDocument(
+    WorkTextFile file, {
+    WorkTextEncoding? encodingOverride,
+    WorkTextReadRequest? request,
+  }) {
+    requests.add(request!);
+    final result = Completer<PreparedWorkText>();
+    pending.add(result);
+    return result.future;
   }
 }
 
@@ -97,6 +116,45 @@ void main() {
     relativePath: 'readme.txt',
     path: '/works/RJ123/readme.txt',
   );
+
+  testWidgets('switching documents and leaving cancels their active reads', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final language = AppLanguageProvider();
+    addTearDown(language.dispose);
+    final service = _PendingTextService();
+    addTearDown(service.dispose);
+    final interaction = UiInteractionCoordinator.instance;
+    interaction.resetForTest();
+    addTearDown(interaction.resetForTest);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(language),
+          workTextServiceProvider.overrideWithValue(service),
+        ],
+        child: const MaterialApp(
+          home: WorkTextViewerPage(files: [file1, file2]),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(interaction.idleDelay);
+    expect(service.requests, hasLength(1));
+    await tester.tap(find.byTooltip(language.tr('next_text_file')));
+    await tester.pump();
+    await tester.pump(interaction.idleDelay);
+    expect(service.requests.first.cancelled, isTrue);
+    expect(service.requests, hasLength(2));
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(service.requests.last.cancelled, isTrue);
+    for (final pending in service.pending) {
+      pending.completeError(const WorkTextReadCancelled());
+    }
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'covering loaded text retains blocks and accepts real updates',

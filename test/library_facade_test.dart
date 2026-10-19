@@ -2231,6 +2231,145 @@ void main() {
     },
   );
 
+  for (final authoritative in [false, true]) {
+    test(
+      'duration backfill reuses snapshots beyond LRU capacity when authoritative=$authoritative',
+      () async {
+        final repository = _CountingTestPersistenceRepository(
+          AppDatabase.test(db),
+        );
+        final documents = _CountingJsonDocumentStore();
+        final detailCache = AudioDetailCacheService(
+          repository: AudioDetailRepository(
+            databaseRepository: repository,
+            jsonDocumentStore: documents,
+          ),
+          maxResolvedEntries: 2,
+        );
+        final library = LibraryFacade.create(
+          databaseRepository: repository,
+          detailCacheService: detailCache,
+        )..configurePersistence(enabled: false);
+        addTearDown(library.dispose);
+        final tracks = [
+          for (var index = 0; index < 5; index++)
+            _localDurationTrack('/library/lru_work_$index'),
+        ];
+        for (final track in tracks) {
+          library.addWatchedFolder(track.groupKey, notify: false);
+        }
+        library.addTracks(tracks, persist: false);
+        final importedTarget = library.audioDetailTargetForTrack(tracks.first);
+        await repository.saveAppSetting(
+          'backup_restore_authoritative_v1',
+          authoritative ? '1' : '0',
+        );
+        if (!authoritative) {
+          await documents.write(
+            location: JsonDocumentLocation.folderChild(
+              folder: importedTarget.targetPath,
+              name: audioDetailDocumentName,
+            ),
+            bytes: const AudioDetailJsonCodec().encodeNew(
+              AudioDetail.empty(importedTarget).copyWith(
+                workTitle: 'Imported work',
+                duration: const Duration(minutes: 7),
+              ),
+            ),
+            mode: JsonDocumentWriteMode.createIfAbsent,
+          );
+        }
+
+        await library.backfillMissingLibraryDurations(
+          durationReader: (_) async => null,
+        );
+
+        expect(repository.detailBatchLoadCount, authoritative ? 1 : 2);
+        expect(repository.detailLoadCount, 0);
+        expect(documents.readCount, authoritative ? 0 : 6);
+        final imported = await repository.load(importedTarget);
+        expect(imported?.workTitle, authoritative ? null : 'Imported work');
+        expect(
+          imported?.duration,
+          authoritative ? null : const Duration(minutes: 7),
+        );
+        for (final track in tracks.skip(1)) {
+          expect(
+            await repository.load(library.audioDetailTargetForTrack(track)),
+            isNull,
+          );
+        }
+      },
+    );
+  }
+
+  test(
+    'duration backfill preserves a concurrent edit after snapshot cache eviction',
+    () async {
+      final repository = _CountingTestPersistenceRepository(
+        AppDatabase.test(db),
+      );
+      final documents = _CountingJsonDocumentStore();
+      final detailCache = AudioDetailCacheService(
+        repository: AudioDetailRepository(
+          databaseRepository: repository,
+          jsonDocumentStore: documents,
+        ),
+        maxResolvedEntries: 1,
+      );
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        detailCacheService: detailCache,
+      )..configurePersistence(enabled: false);
+      addTearDown(library.dispose);
+      final tracks = [
+        for (var index = 0; index < 3; index++)
+          _localDurationTrack('/library/evicted_edit_$index'),
+      ];
+      for (final track in tracks) {
+        library.addWatchedFolder(track.groupKey, notify: false);
+      }
+      library.addTracks(tracks, persist: false);
+      await repository.saveAppSetting('backup_restore_authoritative_v1', '1');
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final backfill = library.backfillMissingLibraryDurations(
+        durationReader: (_) async {
+          if (!started.isCompleted) started.complete();
+          await release.future;
+          return const Duration(minutes: 2);
+        },
+      );
+      await started.future;
+      final target = library.audioDetailTargetForTrack(tracks.first);
+      await library.saveAudioDetail(
+        AudioDetail.empty(target).copyWith(
+          workTitle: 'Concurrent edit',
+          duration: const Duration(minutes: 9),
+        ),
+      );
+      detailCache.clear();
+      release.complete();
+      await backfill;
+
+      final saved = await repository.load(target);
+      expect(saved?.workTitle, 'Concurrent edit');
+      expect(saved?.duration, const Duration(minutes: 9));
+      final document = await documents.read(
+        JsonDocumentLocation.folderChild(
+          folder: target.targetPath,
+          name: audioDetailDocumentName,
+        ),
+      );
+      final exported = const AudioDetailJsonCodec().decode(
+        document.snapshot!.bytes,
+        target,
+      );
+      expect(exported.workTitle, 'Concurrent edit');
+      expect(exported.duration, const Duration(minutes: 9));
+    },
+  );
+
   for (final importing in [false, true]) {
     test(
       'duration maintenance yields between ${importing ? 'import batches' : 'documents'}',

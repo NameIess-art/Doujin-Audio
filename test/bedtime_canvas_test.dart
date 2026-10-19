@@ -72,7 +72,6 @@ void main() {
 
     setUp(() {
       BedtimeCanvasPage.idleDimDelay = const Duration(seconds: 15);
-      BedtimeCanvasPage.screenTimeoutDelay = const Duration(minutes: 2);
       powerService = _RecordingBedtimePowerPlatformService();
       fixture = AppRuntimeWidgetTestFixture(powerPlatformService: powerService);
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -90,7 +89,6 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, null);
       BedtimeCanvasPage.idleDimDelay = const Duration(seconds: 15);
-      BedtimeCanvasPage.screenTimeoutDelay = const Duration(minutes: 2);
       fixture.dispose();
     });
 
@@ -602,43 +600,28 @@ void main() {
       },
     );
 
-    testWidgets(
-      'releases keepScreenOn after screenTimeoutDelay if no audio playing and no active timer',
-      (tester) async {
-        BedtimeCanvasPage.screenTimeoutDelay = const Duration(minutes: 2);
+    testWidgets('keeps screen on without audio or timer until the page exits', (
+      tester,
+    ) async {
+      await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
+      await tester.pump();
 
-        await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
-        await tester.pump();
+      expect(powerService.keepScreenOnCalls, equals([true]));
 
-        expect(powerService.keepScreenOnCalls, equals([true]));
+      await tester.pump(const Duration(hours: 8));
+      expect(powerService.keepScreenOnCalls, equals([true]));
+      await tester.tap(find.byType(BedtimeCanvasPage));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(powerService.keepScreenOnCalls, equals([true]));
 
-        // Advance 1 minute (less than 2 min timeout): keepScreenOn still true
-        await tester.pump(const Duration(minutes: 1));
-        expect(powerService.keepScreenOnCalls, equals([true]));
-
-        // Advance past 2 minutes: keepScreenOn is released (false)
-        await tester.pump(const Duration(minutes: 1, seconds: 5));
-        expect(powerService.keepScreenOnCalls, equals([true, false]));
-
-        // Tap on screen: wake up and re-acquire keepScreenOn
-        final center = tester.getCenter(find.byType(BedtimeCanvasPage));
-        final gesture = await tester.startGesture(center);
-        await tester.pump();
-        await gesture.up();
-        await tester.pump();
-
-        expect(powerService.keepScreenOnCalls, equals([true, false, true]));
-
-        // Drain gesture double tap timeout before test teardown
-        await tester.pump(const Duration(seconds: 1));
-      },
-    );
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(powerService.keepScreenOnCalls, equals([true, false]));
+    });
 
     testWidgets(
       'audio playback keeps screen on and prevents inactivity timeout',
       (tester) async {
-        BedtimeCanvasPage.screenTimeoutDelay = const Duration(minutes: 2);
-
         final session = PlaybackSession(
           id: 'test-session-power',
           currentTrackPath: '/music/test.mp3',
@@ -662,17 +645,61 @@ void main() {
 
         expect(powerService.keepScreenOnCalls, equals([true]));
 
-        // Advance 5 minutes while audio is playing
         await tester.pump(const Duration(minutes: 5));
-        // Screen should still be on, no keepScreenOn(false) call
         expect(powerService.keepScreenOnCalls, equals([true]));
+
+        // A pause, buffering gap, or completed timer must not turn the display off.
+        session.state = const PlayerState(false, ProcessingState.ready);
+        fixture.playback.publishSessionState(session.id);
+        await tester.pump();
+        await tester.pump(const Duration(minutes: 5));
+        expect(powerService.keepScreenOnCalls, equals([true]));
+      },
+    );
+
+    testWidgets(
+      'unattended sleep mode never sends a playback pause or stop command',
+      (tester) async {
+        final session = PlaybackSession(
+          id: 'unattended',
+          currentTrackPath: '/music/unattended.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 0.8,
+          createdAt: DateTime(2026),
+          state: const PlayerState(true, ProcessingState.ready),
+        );
+        fixture.playback.registerSession(session);
+        final commands = <String>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              commands.add(call.method);
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+
+        await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
+        await tester.pump();
+        commands.clear();
+        for (final duration in [
+          const Duration(seconds: 16),
+          const Duration(minutes: 3),
+          const Duration(hours: 8),
+        ]) {
+          await tester.pump(duration);
+          expect(commands, isEmpty);
+          expect(session.effectivePlaying, isTrue);
+          expect(powerService.keepScreenOnCalls, [true]);
+        }
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(commands, isEmpty);
+        expect(powerService.keepScreenOnCalls, [true, false]);
       },
     );
 
     testWidgets(
       'scheduled playback resume keeps sleep mode active after countdown ends',
       (tester) async {
-        BedtimeCanvasPage.screenTimeoutDelay = const Duration(minutes: 2);
         fixture.timerService
           ..autoResumeAt = DateTime.now().add(const Duration(hours: 1))
           ..pausedByTimerSessionIds.add('paused-by-timer');

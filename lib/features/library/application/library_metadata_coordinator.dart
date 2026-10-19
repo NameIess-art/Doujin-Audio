@@ -349,26 +349,28 @@ final class LibraryMetadataCoordinator {
           ) ==
           '1';
       if (!databaseIsAuthoritative) {
+        final importedDetails = <String, AudioDetail>{};
         for (var start = 0; start < missing.length; start += 64) {
           if (!await checkpoint()) return;
           final imported = await _detailCacheService.importBackupsMany(
             missing.skip(start).take(64),
           );
           if (imported.changedDetails.isNotEmpty) {
+            for (final detail in imported.changedDetails) {
+              importedDetails[_targetKey(detail.target)] = detail;
+            }
             _snapshotCacheService.markDetailChanged();
             _syncState();
           }
         }
-      }
-      if (!_isCurrent(epoch)) return;
-      for (var start = 0; start < targets.length; start += 64) {
-        if (!await checkpoint()) return;
-        final end = (start + 64).clamp(0, targets.length);
-        loadResults.replaceRange(
-          start,
-          end,
-          await _detailCacheService.loadMany(targets.sublist(start, end)),
-        );
+        // The first pass already owns a complete snapshot, even when its rows
+        // outgrow the LRU. Only imported records need to replace that snapshot.
+        for (var index = 0; index < targets.length; index++) {
+          final imported = importedDetails[_targetKey(targets[index])];
+          if (imported != null) {
+            loadResults[index] = AudioDetailLoadResult(detail: imported);
+          }
+        }
       }
       if (!_isCurrent(epoch)) return;
     }

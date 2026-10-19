@@ -807,14 +807,10 @@ class CoverArtworkCacheService {
     String folderPath, {
     bool refresh = false,
   }) {
-    if (refresh) {
-      _sourceResolver.invalidateFolderImageIndexes(
-        PathMatcher.normalize(folderPath),
-      );
-    }
     return _sourceResolver.discoverFolderImageReferences(
       folderPath,
       propagateFailure: true,
+      refresh: refresh,
     );
   }
 
@@ -827,17 +823,12 @@ class CoverArtworkCacheService {
   }) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     if (normalizedFolder.isEmpty) return const <String>[];
-    final candidates = await _sourceResolver.resolveFolderCoverCandidates(
+    return _sourceResolver.resolveFolderCoverCandidates(
       normalizedFolder,
+      selectedCoverPath: selectedCoverPath,
       includeVideoFrames: includeVideoFrames,
       includeEmbeddedCovers: includeEmbeddedCovers,
       propagateFailure: propagateFailure,
-    );
-    final selectedCover = selectedCoverPath?.trim();
-    if (selectedCover == null || selectedCover.isEmpty) return candidates;
-    return _sourceResolver.candidatesWithSelectedCover(
-      selectedCover,
-      candidates,
     );
   }
 

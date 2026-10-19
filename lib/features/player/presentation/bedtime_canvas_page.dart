@@ -18,7 +18,6 @@ class BedtimeCanvasPage extends ConsumerStatefulWidget {
 
   static bool isCanvasActive = false;
   static Duration idleDimDelay = const Duration(seconds: 15);
-  static Duration screenTimeoutDelay = const Duration(minutes: 2);
 
   static Route<void> route(BuildContext context) {
     return buildAppPageRoute<void>(
@@ -41,14 +40,12 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
 
   Timer? _clockTimer;
   Timer? _idleDimTimer;
-  Timer? _screenTimeoutTimer;
   Timer? _feedbackTimer;
   IconData? _feedbackIcon;
   Offset? _touchPosition;
   Offset? _touchStartPosition;
   final Set<String> _targetSessionIds = <String>{};
   String? _brightnessToken;
-  bool _isKeepScreenOn = true;
   bool _disposed = false;
   bool? _disableAnimations;
 
@@ -58,7 +55,6 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     BedtimeCanvasPage.isCanvasActive = true;
     _powerGateway = ref.read(powerPlatformGatewayProvider);
     _displayGateway = ref.read(videoDisplayPlatformGatewayProvider);
-    _isKeepScreenOn = true;
     unawaited(_powerGateway.setKeepScreenOn(true));
     unawaited(_initBrightness());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -115,13 +111,6 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     });
 
     _scheduleNextMinuteClock();
-
-    final timer = ref.read(timerFacadeProvider);
-    final isInitialActive =
-        playback.aggregateState.playingSessionCount > 0 ||
-        timer.hasArmedRuntime ||
-        timer.state.stopAfterCurrentTrack;
-    _updateKeepScreenOnState(isInitialActive);
   }
 
   @override
@@ -145,7 +134,6 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     BedtimeCanvasPage.isCanvasActive = false;
     _clockTimer?.cancel();
     _idleDimTimer?.cancel();
-    _screenTimeoutTimer?.cancel();
     _feedbackTimer?.cancel();
     _breathingController.dispose();
     _holdExitController.dispose();
@@ -176,7 +164,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     }
   }
 
-  void _wakeBreathingAnimation() {
+  void _onUserInteraction() {
     if (_disableAnimations == true) {
       _breathingController.value = 0;
     } else if (_idleDimTimer?.isActive != true) {
@@ -216,66 +204,6 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
         }
       },
     );
-  }
-
-  void _updateKeepScreenOnState(bool isAudioOrTimerActive) {
-    if (isAudioOrTimerActive) {
-      _screenTimeoutTimer?.cancel();
-      _screenTimeoutTimer = null;
-      if (!_isKeepScreenOn) {
-        _isKeepScreenOn = true;
-        unawaited(_powerGateway.setKeepScreenOn(true));
-      }
-    } else {
-      if (_isKeepScreenOn && _screenTimeoutTimer == null) {
-        _screenTimeoutTimer = Timer(BedtimeCanvasPage.screenTimeoutDelay, () {
-          if (mounted && !_disposed) {
-            _isKeepScreenOn = false;
-            unawaited(_powerGateway.setKeepScreenOn(false));
-          }
-        });
-      }
-    }
-  }
-
-  void _checkAudioOrTimerState({
-    int? playingCount,
-    bool? timerActive,
-    bool? stopAfterTrack,
-  }) {
-    final count =
-        playingCount ??
-        ref.read(playbackFacadeProvider).state.playingSessionCount;
-    final timer = ref.read(timerFacadeProvider);
-    final active = timerActive ?? timer.state.active;
-    final stop = stopAfterTrack ?? timer.state.stopAfterCurrentTrack;
-    _updateKeepScreenOnState(
-      count > 0 || active || stop || timer.hasArmedRuntime,
-    );
-  }
-
-  void _onUserInteraction() {
-    _wakeBreathingAnimation();
-    _screenTimeoutTimer?.cancel();
-    _screenTimeoutTimer = null;
-    if (!_isKeepScreenOn) {
-      _isKeepScreenOn = true;
-      unawaited(_powerGateway.setKeepScreenOn(true));
-    }
-    final playback = ref.read(playbackFacadeProvider);
-    final timer = ref.read(timerFacadeProvider);
-    final isAudioOrTimerActive =
-        playback.aggregateState.playingSessionCount > 0 ||
-        timer.hasArmedRuntime ||
-        timer.state.stopAfterCurrentTrack;
-    if (!isAudioOrTimerActive) {
-      _screenTimeoutTimer = Timer(BedtimeCanvasPage.screenTimeoutDelay, () {
-        if (mounted && !_disposed) {
-          _isKeepScreenOn = false;
-          unawaited(_powerGateway.setKeepScreenOn(false));
-        }
-      });
-    }
   }
 
   void _showFeedback({required IconData icon}) {
@@ -402,22 +330,6 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     final timerState =
         ref.watch(timerStateProvider).value ??
         ref.read(timerFacadeProvider).state;
-
-    ref.listen(playbackStateProvider, (_, next) {
-      final slice = next.value;
-      if (slice != null) {
-        _checkAudioOrTimerState(playingCount: slice.playingSessionCount);
-      }
-    });
-    ref.listen(timerStateProvider, (_, next) {
-      final slice = next.value;
-      if (slice != null) {
-        _checkAudioOrTimerState(
-          timerActive: slice.active,
-          stopAfterTrack: slice.stopAfterCurrentTrack,
-        );
-      }
-    });
 
     final now = DateTime.now();
     final timeStr =

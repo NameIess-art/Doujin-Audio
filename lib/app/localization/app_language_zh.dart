@@ -750,6 +750,7 @@ const Map<String, String> appLanguageZh = {
   'subtitle_stage_saving': '正在保存字幕',
   'subtitle_task_cancelled': '任务已暂停，重新执行相同任务可继续',
   'subtitle_task_failed': '字幕处理失败',
+  'subtitle_alignment_too_large': '音频与台本过长，超出匹配内存上限。请缩短后重试。',
   'subtitle_no_reliable_match': '未找到可信的台本匹配结果',
   'subtitle_source_confirm_japanese': '确认原字幕是日语',
   'subtitle_source_confirm_japanese_hint': '无法可靠判断字幕语言。确认原文是日语后才能翻译。',

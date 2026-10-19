@@ -81,7 +81,11 @@ class SubtitleAiEngine {
       final worker = await _SubtitleWorker.open(model);
       final reader = await decoded.open();
       try {
-        await worker.beginScriptAlignment(lines);
+        // The pinned Japanese wav2vec2 model downsamples by 320 at 16 kHz.
+        // Round up and allow chunk boundaries; the aligner also checks actual
+        // frames before every append so a changed model cannot bypass its cap.
+        final expectedFrames = (length / (320 * 4)).ceil() + totalChunks * 2;
+        await worker.beginScriptAlignment(lines, expectedFrames);
         for (var chunk = 0; chunk < totalChunks; chunk++) {
           _checkCancelled(isCancelled);
           final expectedBytes = math.min(
@@ -516,15 +520,23 @@ class _SubtitleWorker {
       _commands.send([reply.sendPort, action, payload]);
       final result =
           await reply.first.timeout(const Duration(minutes: 10)) as List;
-      if (result[0] != true) throw StateError(result[1].toString());
+      if (result[0] != true) {
+        if (result[1] == 'alignment_too_large') {
+          throw const SubtitleAlignmentTooLarge();
+        }
+        throw StateError(result[1].toString());
+      }
       return result[1];
     } finally {
       reply.close();
     }
   }
 
-  Future<void> beginScriptAlignment(List<String> lines) async {
-    await _request('beginScriptAlignment', lines);
+  Future<void> beginScriptAlignment(
+    List<String> lines,
+    int expectedFrames,
+  ) async {
+    await _request('beginScriptAlignment', [lines, expectedFrames]);
   }
 
   Future<void> feedScriptAlignment(
@@ -587,14 +599,16 @@ Future<void> _workerMain(List<Object> args) async {
       try {
         switch (action) {
           case 'beginScriptAlignment':
+            final input = command[2] as List;
             final vocab = asr.ctcVocab();
             if (vocab == null || vocab.isEmpty || vocab[0] != '<pad>') {
               throw StateError('CTC vocabulary is unavailable');
             }
             scriptAlignment = SubtitleCtcAlignment(
-              lines: (command[2] as List).cast<String>(),
+              lines: (input[0] as List).cast<String>(),
               vocab: vocab,
               blankId: 0,
+              expectedFrames: input[1] as int,
             );
             reply!.send([true, null]);
           case 'feedScriptAlignment':
@@ -631,6 +645,8 @@ Future<void> _workerMain(List<Object> args) async {
                   .toList(),
             ]);
         }
+      } on SubtitleAlignmentTooLarge {
+        reply?.send([false, 'alignment_too_large']);
       } catch (error) {
         reply?.send([false, error.toString()]);
       }

@@ -48,7 +48,9 @@ internal class NativeAudioFocusController(
                             .build()
                     )
                     .setAcceptsDelayedFocusGain(false)
-                    .setWillPauseWhenDucked(false)
+                    // Android otherwise ducks MUSIC without notifying our listener.
+                    // Keep pause/duck policy in the coordinator so settings apply immediately.
+                    .setWillPauseWhenDucked(true)
                     .setOnAudioFocusChangeListener(focusChangeListener, handler)
                     .build()
                     .also { focusRequest = it }

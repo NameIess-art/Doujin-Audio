@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/cover_image_cache_policy.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -60,6 +61,55 @@ void main() {
 
   String url(String name) =>
       'http://${server.address.address}:${server.port}/$name.png';
+
+  for (final status in [
+    HttpStatus.forbidden,
+    HttpStatus.tooManyRequests,
+    HttpStatus.ok,
+  ]) {
+    test(
+      'rejected cover response $status closes its unfinished connection',
+      () async {
+        final disconnected = Completer<void>();
+        final sockets = <Socket>[];
+        addTearDown(() {
+          for (final socket in sockets) {
+            socket.destroy();
+          }
+        });
+        respond = (request) async {
+          request.response.statusCode = status;
+          request.response.contentLength = status == HttpStatus.ok
+              ? maxCoverFileBytes + 1
+              : 1024;
+          final socket = await request.response.detachSocket();
+          sockets.add(socket);
+          void closed() {
+            if (!disconnected.isCompleted) disconnected.complete();
+          }
+
+          socket.listen(
+            (_) {},
+            onDone: closed,
+            onError: (Object _) => closed(),
+          );
+          // Leave the body unfinished: rejecting the headers must close the
+          // connection without waiting for, or downloading, the remaining bytes.
+          socket.add([0]);
+        };
+        final cache = createCache();
+        expect(await cache.futureForRemoteCover(url('rejected')), isNull);
+        await disconnected.future.timeout(const Duration(seconds: 2));
+
+        respond = null;
+        final valid = await cache.futureForRemoteCover(
+          url('valid-after-rejection'),
+        );
+        expect(valid, isNotNull);
+        expect(await File(valid!).readAsBytes(), pngBytes);
+      },
+    );
+  }
 
   test(
     'remote artwork remains durable without requests after aging or offline restart',

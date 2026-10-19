@@ -44,6 +44,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   bool _loadFailed = false;
   int _loadGeneration = 0;
   bool _loadPending = false;
+  WorkTextReadRequest? _readRequest;
   late final _loadKey = 'work_text_load_${identityHashCode(this)}';
   late final _resultKey = 'work_text_result_${identityHashCode(this)}';
 
@@ -66,6 +67,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   @override
   void dispose() {
     _loadGeneration++;
+    _readRequest?.cancel();
     UiInteractionCoordinator.instance.cancelCommit(_loadKey);
     UiInteractionCoordinator.instance.cancelCommit(_resultKey);
     _disposePdfController();
@@ -83,6 +85,8 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
 
   void _loadFile() {
     _loadGeneration++;
+    _readRequest?.cancel();
+    _readRequest = null;
     UiInteractionCoordinator.instance.cancelCommit(_loadKey);
     UiInteractionCoordinator.instance.cancelCommit(_resultKey);
     _disposePdfController();
@@ -124,12 +128,15 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   }
 
   Future<void> _readFile(WorkTextFile file, int gen) async {
+    final request = _readRequest = WorkTextReadRequest();
     try {
       final service = ref.read(workTextServiceProvider);
-      final bytes = file.isPdf ? await service.readDocumentBytes(file) : null;
+      final bytes = file.isPdf
+          ? await service.readDocumentBytes(file, request: request)
+          : null;
       final document = file.isPdf
           ? null
-          : await service.readPreparedDocument(file);
+          : await service.readPreparedDocument(file, request: request);
       _publishFileResult(gen, () {
         if (file.isPdf) {
           if (bytes == null || bytes.isEmpty) {
@@ -153,6 +160,8 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
           });
         }
       });
+    } on WorkTextReadCancelled {
+      // A replaced document has no result to publish.
     } catch (_) {
       _publishFileResult(gen, () {
         setState(() {
@@ -160,6 +169,8 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
           _loadFailed = true;
         });
       });
+    } finally {
+      if (identical(_readRequest, request)) _readRequest = null;
     }
   }
 

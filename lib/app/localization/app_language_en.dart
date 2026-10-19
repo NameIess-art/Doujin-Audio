@@ -837,6 +837,8 @@ const Map<String, String> appLanguageEn = {
   'subtitle_stage_saving': 'Saving subtitles',
   'subtitle_task_cancelled': 'Paused. Start the same task to resume',
   'subtitle_task_failed': 'Subtitle processing failed',
+  'subtitle_alignment_too_large':
+      'Audio and script exceed the alignment memory limit. Shorten them and retry.',
   'subtitle_no_reliable_match': 'No reliable script matches were found',
   'subtitle_source_confirm_japanese': 'Confirm Japanese source',
   'subtitle_source_confirm_japanese_hint':

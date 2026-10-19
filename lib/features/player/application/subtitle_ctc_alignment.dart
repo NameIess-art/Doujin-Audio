@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'subtitle_generation.dart';
+
 class CtcAlignedLine {
   const CtcAlignedLine(this.text, this.startSeconds, this.endSeconds);
 
@@ -15,10 +17,17 @@ class SubtitleCtcAlignment {
     required List<String> lines,
     required List<String> vocab,
     required int blankId,
+    int expectedFrames = 0,
+    int maxMemoryBytes = 64 * 1024 * 1024,
   }) : _lines = List.of(lines),
        _blankId = blankId,
-       _vocabSize = vocab.length {
-    if (lines.isEmpty || blankId < 0 || blankId >= vocab.length) {
+       _vocabSize = vocab.length,
+       _maxMemoryBytes = maxMemoryBytes {
+    if (lines.isEmpty ||
+        blankId < 0 ||
+        blankId >= vocab.length ||
+        expectedFrames < 0 ||
+        maxMemoryBytes <= 0) {
       throw ArgumentError('Invalid CTC transcript or blank ID');
     }
     final tokenIds = <String, int>{
@@ -67,19 +76,33 @@ class SubtitleCtcAlignment {
       }
     }
     final states = _labels.length * 2 + 1;
-    _scores = List<double>.filled(states, double.negativeInfinity);
+    _checkBudget(expectedFrames);
+    _scores = Float64List(states)
+      ..fillRange(0, states, double.negativeInfinity);
+    _nextScores = Float64List(states);
   }
 
   final List<String> _lines;
   final int _blankId;
   final int _vocabSize;
+  final int _maxMemoryBytes;
   final List<int> _labels = [];
   final List<int> _lineForLabel = [];
   // Four two-bit transition sources (stay, advance, skip) per byte.
   final List<Uint8List> _back = [];
   final List<({double start, double end})> _times = [];
-  late List<double> _scores;
+  late Float64List _scores;
+  late Float64List _nextScores;
   bool _finished = false;
+
+  void _checkBudget(int frames) {
+    final states = _labels.length * 2 + 1;
+    // Include the two score buffers, label maps, and conservative per-frame
+    // row/list/timing overhead. Input chunking alone cannot bound this history.
+    final bytes =
+        states * 16 + _labels.length * 16 + frames * (((states + 3) >> 2) + 96);
+    if (bytes > _maxMemoryBytes) throw const SubtitleAlignmentTooLarge();
+  }
 
   void addChunk({
     required Float32List logits,
@@ -99,6 +122,7 @@ class SubtitleCtcAlignment {
         (_times.isNotEmpty && (startSeconds - _times.last.end).abs() > 1e-4)) {
       throw ArgumentError('Invalid or non-contiguous CTC chunk');
     }
+    _checkBudget(_times.length + nFrames);
     final frameDuration = durationSeconds / nFrames;
     final stateCount = _scores.length;
     for (var frame = 0; frame < nFrames; frame++) {
@@ -115,7 +139,8 @@ class SubtitleCtcAlignment {
           _scores[1] = logits[offset + _labels[0]];
         }
       } else {
-        final next = List<double>.filled(stateCount, double.negativeInfinity);
+        final next = _nextScores
+          ..fillRange(0, stateCount, double.negativeInfinity);
         for (var state = 0; state < stateCount; state++) {
           final token = state.isEven ? _blankId : _labels[state ~/ 2];
           var best = _scores[state];
@@ -136,6 +161,7 @@ class SubtitleCtcAlignment {
             back[state >> 2] |= source << ((state & 3) * 2);
           }
         }
+        _nextScores = _scores;
         _scores = next;
       }
       _back.add(back);
@@ -157,7 +183,9 @@ class SubtitleCtcAlignment {
         (_times.isNotEmpty && (startSeconds - _times.last.end).abs() > 1e-4)) {
       throw ArgumentError('Invalid or non-contiguous silent interval');
     }
-    final next = List<double>.filled(_scores.length, double.negativeInfinity);
+    _checkBudget(_times.length + 1);
+    final next = _nextScores
+      ..fillRange(0, _scores.length, double.negativeInfinity);
     final back = Uint8List((_scores.length + 3) >> 2);
     if (_times.isEmpty) {
       next[0] = 0;
@@ -171,6 +199,7 @@ class SubtitleCtcAlignment {
         next[state] = best;
       }
     }
+    _nextScores = _scores;
     _scores = next;
     _back.add(back);
     _times.add((start: startSeconds, end: startSeconds + durationSeconds));

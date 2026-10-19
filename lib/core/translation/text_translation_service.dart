@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -21,25 +22,55 @@ enum TextTranslationFailure {
 }
 
 class TextTranslationRequest {
-  final Completer<void> _cancellation = Completer<void>();
+  bool _cancelled = false;
+  final Set<void Function()> _pendingCancellations = {};
   void Function()? _abort;
   void Function()? _onCancel;
 
-  bool get cancelled => _cancellation.isCompleted;
+  bool get cancelled => _cancelled;
+
+  @visibleForTesting
+  int get pendingOperationCount => _pendingCancellations.length;
 
   void cancel() {
     if (cancelled) return;
-    _cancellation.complete();
+    _cancelled = true;
+    final pending = _pendingCancellations.toList(growable: false);
+    _pendingCancellations.clear();
+    for (final cancel in pending) {
+      cancel();
+    }
     _abort?.call();
     _onCancel?.call();
   }
 
-  Future<T> _active<T>(Future<T> future) {
+  Future<T> _active<T>(Future<T> future) async {
     if (cancelled) throw const _TranslationCancelled();
-    return Future.any([
-      future,
-      _cancellation.future.then<T>((_) => throw const _TranslationCancelled()),
-    ]);
+    final result = Completer<T>();
+    void cancel() {
+      if (!result.isCompleted) {
+        result.completeError(const _TranslationCancelled());
+      }
+    }
+
+    _pendingCancellations.add(cancel);
+    // Observe late errors after cancellation, but release the cancellation
+    // listener on completion so a live page cannot retain old result snapshots.
+    unawaited(
+      future.then<void>(
+        (value) {
+          if (!result.isCompleted) result.complete(value);
+        },
+        onError: (Object error, StackTrace stack) {
+          if (!result.isCompleted) result.completeError(error, stack);
+        },
+      ),
+    );
+    try {
+      return await result.future;
+    } finally {
+      _pendingCancellations.remove(cancel);
+    }
   }
 }
 

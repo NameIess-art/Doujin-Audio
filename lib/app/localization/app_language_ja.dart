@@ -756,6 +756,7 @@ const Map<String, String> appLanguageJa = {
   'subtitle_stage_saving': '字幕を保存中',
   'subtitle_task_cancelled': '一時停止中。同じタスクを再実行すると再開できます',
   'subtitle_task_failed': '字幕処理に失敗',
+  'subtitle_alignment_too_large': '音声と台本が長すぎます。短くして再試行してください。',
   'subtitle_no_reliable_match': '台本と確実に一致する箇所がありません',
   'subtitle_source_confirm_japanese': '原文は日本語ですか？',
   'subtitle_source_confirm_japanese_hint': '字幕言語を判定できません。日本語か確認してから翻訳してください。',

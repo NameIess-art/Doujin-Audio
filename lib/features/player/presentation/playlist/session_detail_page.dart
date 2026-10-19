@@ -90,7 +90,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     false,
   );
   String? _cachedTrackPath;
-  int? _cachedCoverGeneration;
+  String? _cachedCoverScope;
+  ({int epoch, int revision})? _cachedCoverRevision;
   Future<String?>? _cachedCoverFuture;
   String get _coverCommitKey =>
       'session_detail_${identityHashCode(this)}_cover';
@@ -345,7 +346,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           ).select((value) => _DetailStructure(value)),
         )
         .session;
-    final coverGen = ref.watch(coverGenerationProvider);
     ref.watch(
       libraryStateProvider.select((state) => state.value?.contentRevision),
     );
@@ -354,14 +354,26 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     }
 
     final trackPath = session.currentTrackPath;
+    final library = ref.read(libraryFacadeProvider);
+    final detailTrack = paths.trackByPath(trackPath);
+    final coverCache = library.coverArtworkCacheService;
+    final coverScope =
+        coverCache.coverSearchKeyForTrack(detailTrack, trackPath: trackPath) ??
+        trackPath;
+    final coverRevision = ref.watch(
+      coverGenerationProvider.select(
+        (_) => coverCache.revisionForScope(coverScope),
+      ),
+    );
     if (_cachedCoverFuture == null ||
         _cachedTrackPath != trackPath ||
-        _cachedCoverGeneration != coverGen) {
+        _cachedCoverScope != coverScope ||
+        _cachedCoverRevision != coverRevision) {
       _cachedTrackPath = trackPath;
-      _cachedCoverGeneration = coverGen;
-      final detailTrack = paths.trackByPath(trackPath);
+      _cachedCoverScope = coverScope;
+      _cachedCoverRevision = coverRevision;
       _cachedCoverFuture = coverFutureForTrack(
-        ref.read(libraryFacadeProvider),
+        library,
         detailTrack,
         cachedOnly: true,
       );
@@ -371,10 +383,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         key: _coverCommitKey,
         commit: () {
           if (!mounted) return;
-          final coverFuture = coverFutureForTrack(
-            ref.read(libraryFacadeProvider),
-            detailTrack,
-          );
+          final coverFuture = coverFutureForTrack(library, detailTrack);
           setState(() {
             _cachedCoverFuture = coverFuture;
           });
@@ -382,7 +391,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       );
     }
     final coverPathFuture = _cachedCoverFuture!;
-    final detailTrack = paths.trackByPath(trackPath);
 
     final routeAnimation = MediaQuery.disableAnimationsOf(context)
         ? null
@@ -393,7 +401,11 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           .read(libraryFacadeProvider)
           .resolvedPlaybackCoverPathForTrack(detailTrack),
       requestKey: (session.id, trackPath),
-      coverGeneration: coverGen,
+      coverRevision: (
+        scope: coverScope,
+        epoch: coverRevision.epoch,
+        revision: coverRevision.revision,
+      ),
       isAsmr: detailTrack?.usesAsmrVisualTheme ?? false,
       queueColorValue: session.playbackQueue?.colorValue,
       transitionActive: _transitionActive,

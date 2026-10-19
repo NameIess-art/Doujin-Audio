@@ -195,6 +195,9 @@ class PlaybackSubtitleService extends ChangeNotifier {
       }
     } on SubtitleTaskCancelled {
       job._status = SubtitleGenerationStatus.cancelled;
+    } on SubtitleAlignmentTooLarge {
+      job._errorMessageKey = 'subtitle_alignment_too_large';
+      job._status = SubtitleGenerationStatus.failed;
     } on TextTranslationFailure catch (failure) {
       if (job._cancelRequested) {
         job._status = SubtitleGenerationStatus.cancelled;

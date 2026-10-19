@@ -448,6 +448,31 @@ void main() {
   );
 
   test(
+    'a live page releases completed cancellation listeners after every batch',
+    () async {
+      final request = service.newRequest();
+      for (var index = 0; index < 20; index++) {
+        final text = 'page item $index';
+        final result = await translate([text], request: request);
+        expect(result.translations[text], 'translated $text');
+        expect(request.pendingOperationCount, 0);
+      }
+      handler = (request) async {
+        await sources(request);
+        await respond(request, []);
+      };
+      expect(
+        (await translate(['invalid response'], request: request)).failure,
+        TextTranslationFailure.invalidResponse,
+      );
+      expect(request.pendingOperationCount, 0);
+      expect(request.cancelled, isFalse);
+      request.cancel();
+      expect(request.pendingOperationCount, 0);
+    },
+  );
+
+  test(
     'cancels pending network and ignores late response and cache mutation',
     () async {
       final received = Completer<void>();
@@ -461,11 +486,13 @@ void main() {
       final request = service.newRequest();
       final pending = translate(['title'], request: request);
       await received.future;
+      expect(request.pendingOperationCount, greaterThan(0));
       request.cancel();
       final result = await pending.timeout(const Duration(seconds: 1));
       expect(request.cancelled, isTrue);
       expect(result.failure, isNull);
       expect(result.translations, isEmpty);
+      expect(request.pendingOperationCount, 0);
       release.complete();
       await Future<void>.delayed(const Duration(milliseconds: 30));
       expect(service.cached('title', 'zh-CN'), isNull);

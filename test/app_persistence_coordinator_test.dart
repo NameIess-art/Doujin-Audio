@@ -18,6 +18,7 @@ import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
@@ -32,10 +33,108 @@ import 'package:doujin_audio/features/settings/application/settings_repository.d
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'support/app_runtime_test_fixture.dart'
+    show createTestRuntimeGraph, nativePlaybackChannel;
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
+
+  for (final (name, playing, processingState) in [
+    ('playing', true, 'ready'),
+    ('buffering', false, 'buffering'),
+    ('paused', false, 'ready'),
+    ('cold', false, 'idle'),
+  ]) {
+    test(
+      'startup preserves $name playback without transport commands',
+      () async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final database = await databaseFactoryFfi.openDatabase(
+          inMemoryDatabasePath,
+        );
+        await AppDatabase.createSchemaForTest(database);
+        final repository = TestPersistenceRepository(
+          database: AppDatabase.test(database),
+        );
+        final tracks = [
+          for (final title in ['first', 'second'])
+            MusicTrack(
+              path: 'https://example.com/$title.mp3',
+              displayName: title,
+              groupKey: 'retained',
+              groupTitle: 'Retained',
+              groupSubtitle: 'Retained',
+              isSingle: false,
+            ),
+        ];
+        await repository.seedSessions([
+          PersistedPlaybackSession(
+            id: 'retained',
+            trackPath: tracks.first.path,
+            loopModeIndex: SessionLoopMode.folderSequential.index,
+            volume: 1,
+            positionMs: 22000,
+            durationMs: 60000,
+            customQueueTracks: tracks,
+            channelSwapEnabled: false,
+            sortOrder: 0,
+          ),
+        ]);
+        final native = _FakeNativePlaybackRepository();
+        if (name != 'cold') {
+          native.retainedSnapshot = NativePlaybackSnapshot.fromMap({
+            'sessionId': 'retained',
+            'path': tracks.last.path,
+            'uri': tracks.last.path,
+            'playing': playing,
+            'playWhenReady': name != 'paused',
+            'processingState': processingState,
+            'positionMs': 40000,
+            'durationMs': 60000,
+            'volume': 0.7,
+            'queueIndex': 1,
+          });
+        }
+        final nativeCommands = <String>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              nativeCommands.add(call.method);
+              return <String, Object?>{'ok': true};
+            });
+        final graph = createTestRuntimeGraph(
+          persistenceRepository: repository,
+          nativePlaybackRepository: native,
+        );
+        addTearDown(() async {
+          await graph.runtime.dispose();
+          await database.close();
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(nativePlaybackChannel, null);
+        });
+
+        await graph.persistence.loadPersistedState();
+
+        final session = graph.playback.sessionById('retained')!;
+        expect(graph.persistence.hasLoadedState, isTrue);
+        expect(native.pauseAllCount, 0);
+        expect(native.clearAllCount, 0);
+        expect(nativeCommands, isEmpty);
+        expect(
+          session.playbackRequested,
+          name == 'playing' || name == 'buffering',
+        );
+        expect(
+          session.currentTrackPath,
+          name == 'cold' ? tracks.first.path : tracks.last.path,
+        );
+        expect(session.position, Duration(seconds: name == 'cold' ? 22 : 40));
+        expect(session.volume, name == 'cold' ? 1 : 0.7);
+        if (name == 'cold') expect(session.loadedPath, isNull);
+      },
+    );
+  }
 
   test('loads owners and resets them before a runtime reload', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -774,7 +873,28 @@ final class _ChangingCatalogPersistenceRepository
 
 final class _FakeNativePlaybackRepository extends NativePlaybackRepository {
   int clearAllCount = 0;
+  int pauseAllCount = 0;
   bool failNextPlaybackBehavior = false;
+  NativePlaybackSnapshot? retainedSnapshot;
+
+  @override
+  Future<NativeResult<void>> pauseAll() async {
+    pauseAllCount++;
+    retainedSnapshot = retainedSnapshot?.copyWith(
+      playing: false,
+      playWhenReady: false,
+    );
+    return const NativeSuccess<void>();
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() async =>
+      NativeSuccess(
+        NativePlaybackBundleSnapshot(
+          sessions: [?retainedSnapshot],
+          focusedSessionId: retainedSnapshot?.sessionId,
+        ),
+      );
 
   @override
   Future<NativeResult<void>> setPlaybackBehavior({

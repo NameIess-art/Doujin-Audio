@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:doujin_audio/features/player/application/subtitle_ctc_alignment.dart';
+import 'package:doujin_audio/features/player/application/subtitle_generation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Float32List logitsFor(List<int> bestTokens, int vocabSize) {
@@ -12,6 +13,69 @@ Float32List logitsFor(List<int> bestTokens, int vocabSize) {
 }
 
 void main() {
+  test(
+    'rejects a long complete script before allocating its frame history',
+    () {
+      expect(
+        () => SubtitleCtcAlignment(
+          lines: [List.filled(10000, 'あ').join()],
+          vocab: ['<blank>', 'あ', '|'],
+          blankId: 0,
+          expectedFrames: 180000,
+        ),
+        throwsA(isA<SubtitleAlignmentTooLarge>()),
+      );
+    },
+  );
+
+  test(
+    'budget accepts its boundary and rejects underestimated future chunks',
+    () {
+      // One label: 64 bytes of score/label buffers plus 97 per retained frame.
+      final alignment = SubtitleCtcAlignment(
+        lines: ['あ'],
+        vocab: ['<blank>', 'あ'],
+        blankId: 0,
+        expectedFrames: 2,
+        maxMemoryBytes: 258,
+      );
+      alignment.addChunk(
+        logits: logitsFor([1, 0], 2),
+        nFrames: 2,
+        nVocab: 2,
+        startSeconds: 0,
+        durationSeconds: 0.2,
+      );
+      expect(
+        () => alignment.addChunk(
+          logits: logitsFor([0], 2),
+          nFrames: 1,
+          nVocab: 2,
+          startSeconds: 0.2,
+          durationSeconds: 0.1,
+        ),
+        throwsA(isA<SubtitleAlignmentTooLarge>()),
+      );
+      expect(
+        () => alignment.addSilence(startSeconds: 0.2, durationSeconds: 1),
+        throwsA(isA<SubtitleAlignmentTooLarge>()),
+      );
+      final line = alignment.finish().single!;
+      expect(line.startSeconds, 0);
+      expect(line.endSeconds, 0.1);
+      expect(
+        () => SubtitleCtcAlignment(
+          lines: ['あ'],
+          vocab: ['<blank>', 'あ'],
+          blankId: 0,
+          expectedFrames: 3,
+          maxMemoryBytes: 258,
+        ),
+        throwsA(isA<SubtitleAlignmentTooLarge>()),
+      );
+    },
+  );
+
   test(
     'aligns repeated Japanese characters across chunks and preserves silence',
     () {

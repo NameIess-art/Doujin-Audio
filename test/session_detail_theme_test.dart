@@ -33,7 +33,11 @@ Widget _subject({
   required Future<String?> path,
   String? initialPath,
   Object request = 'track',
-  int generation = 0,
+  ({String scope, int epoch, int revision}) coverRevision = (
+    scope: 'track',
+    epoch: 0,
+    revision: 0,
+  ),
   bool asmr = false,
   int? queueColor,
   Brightness brightness = Brightness.light,
@@ -53,7 +57,7 @@ Widget _subject({
       coverPathFuture: path,
       initialCoverPath: initialPath,
       requestKey: request,
-      coverGeneration: generation,
+      coverRevision: coverRevision,
       isAsmr: asmr,
       queueColorValue: queueColor,
       transitionActive: transition,
@@ -355,7 +359,7 @@ void main() {
   );
 
   testWidgets(
-    'cached palette applies immediately and generation invalidates it',
+    'cached palette applies immediately and scope revision invalidates it',
     (tester) async {
       final file = await _cover(tester, Colors.red);
       await tester.pumpWidget(
@@ -379,13 +383,43 @@ void main() {
         _subject(
           path: Future.value(file.path),
           initialPath: file.path,
-          generation: 1,
+          coverRevision: (scope: 'track', epoch: 0, revision: 1),
         ),
       );
       await _waitForTarget(tester, (theme) => theme.colorScheme.primary != red);
       await tester.pumpAndSettle();
       final blue = _theme(tester).colorScheme.primary;
       expect(blue.b, greaterThan(blue.r));
+      await _cover(tester, Colors.green, replace: file);
+      await tester.pumpWidget(
+        _subject(
+          path: Future.value(file.path),
+          initialPath: file.path,
+          coverRevision: (scope: 'track', epoch: 1, revision: 0),
+        ),
+      );
+      await _waitForTarget(
+        tester,
+        (theme) => theme.colorScheme.primary != blue,
+      );
+      await tester.pumpAndSettle();
+      final green = _theme(tester).colorScheme.primary;
+      expect(green.g, greaterThan(green.r));
+      await _cover(tester, Colors.blue, replace: file);
+      await tester.pumpWidget(
+        _subject(
+          path: Future.value(file.path),
+          initialPath: file.path,
+          coverRevision: (scope: 'other', epoch: 1, revision: 0),
+        ),
+      );
+      await _waitForTarget(
+        tester,
+        (theme) => theme.colorScheme.primary != green,
+      );
+      await tester.pumpAndSettle();
+      final otherScope = _theme(tester).colorScheme.primary;
+      expect(otherScope.b, greaterThan(otherScope.r));
     },
   );
 

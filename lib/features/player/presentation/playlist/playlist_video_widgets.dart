@@ -108,8 +108,9 @@ class _SessionVideoFullscreenPageState
   PlaybackSessionSnapshot? _initialSession;
   PlaybackPositionUiGate? _positionGate;
   late Future<String?> _coverFuture;
-  late String _activeTrackPath;
-  late int _activeCoverGeneration;
+  String? _activeTrackPath;
+  String? _activeCoverScope;
+  ({int epoch, int revision})? _activeCoverRevision;
   Timer? _controlsTimer;
   Timer? _feedbackTimer;
   bool _controlsVisible = true;
@@ -155,13 +156,6 @@ class _SessionVideoFullscreenPageState
       _sliderPositionMs,
       _dragVolume,
     ]);
-    final paths = ref.read(audioPathCoordinatorProvider);
-    final track = paths.trackByPath(widget.trackPath);
-    _activeTrackPath = widget.trackPath;
-    _activeCoverGeneration = ref.read(coverGenerationProvider);
-    _coverFuture = ref
-        .read(libraryFacadeProvider)
-        .playbackCoverPathFutureForTrack(track);
     _brightness = widget.fullscreenLease.initialBrightness ?? 0.5;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _scheduleControlsHide();
@@ -600,7 +594,6 @@ class _SessionVideoFullscreenPageState
     ref.watch(
       libraryStateProvider.select((state) => state.value?.contentRevision),
     );
-    final coverGeneration = ref.watch(coverGenerationProvider);
     final paths = ref.read(audioPathCoordinatorProvider);
     final allowVideoPlayback = ref.watch(
       settingsStateProvider.select(
@@ -621,19 +614,32 @@ class _SessionVideoFullscreenPageState
       _exitAfterBuild();
       return const ColoredBox(color: Colors.black);
     }
-    if (coverGeneration != _activeCoverGeneration ||
+    final library = ref.read(libraryFacadeProvider);
+    final coverCache = library.coverArtworkCacheService;
+    final coverScope =
+        coverCache.coverSearchKeyForTrack(
+          track,
+          trackPath: activeSession.currentTrackPath,
+        ) ??
+        activeSession.currentTrackPath;
+    final coverRevision = ref.watch(
+      coverGenerationProvider.select(
+        (_) => coverCache.revisionForScope(coverScope),
+      ),
+    );
+    if (coverRevision != _activeCoverRevision ||
+        coverScope != _activeCoverScope ||
+        _activeTrackPath == null ||
         !PathMatcher.equalsNormalized(
           activeSession.currentTrackPath,
-          _activeTrackPath,
+          _activeTrackPath!,
         )) {
       _activeTrackPath = activeSession.currentTrackPath;
-      _activeCoverGeneration = coverGeneration;
-      _coverFuture = ref
-          .read(libraryFacadeProvider)
-          .playbackCoverPathFutureForTrack(track);
+      _activeCoverScope = coverScope;
+      _activeCoverRevision = coverRevision;
+      _coverFuture = library.playbackCoverPathFutureForTrack(track);
     }
     final playing = detail?.isPlaying == true;
-    final library = ref.read(libraryFacadeProvider);
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(
         settingsStateProvider.select(
@@ -651,7 +657,11 @@ class _SessionVideoFullscreenPageState
         coverPathFuture: _coverFuture,
         initialCoverPath: library.resolvedPlaybackCoverPathForTrack(track),
         requestKey: activeSession.currentTrackPath,
-        coverGeneration: coverGeneration,
+        coverRevision: (
+          scope: coverScope,
+          epoch: coverRevision.epoch,
+          revision: coverRevision.revision,
+        ),
         isAsmr: track?.usesAsmrVisualTheme == true,
         queueColorValue: activeSession.playbackQueue?.colorValue,
         child: PopScope<void>(
@@ -692,7 +702,7 @@ class _SessionVideoFullscreenPageState
                                   future: _coverFuture,
                                   requestKey: (
                                     activeSession.currentTrackPath,
-                                    coverGeneration,
+                                    coverRevision,
                                   ),
                                   initialPath: library
                                       .resolvedPlaybackCoverPathForTrack(track),

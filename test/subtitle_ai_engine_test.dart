@@ -37,6 +37,17 @@ class _ScriptFiles extends FileCachePlatformGateway {
       Uint8List.fromList(utf8.encode('今日は一緒に眠りましょう。'));
 }
 
+class _OversizedAlignmentEngine extends SubtitleAiEngine {
+  @override
+  Future<SubtitleDraft?> prepareScript(
+    String trackPath,
+    String scriptPath, {
+    SubtitleProgressCallback? onProgress,
+    bool Function()? isCancelled,
+    Future<void>? cancellation,
+  }) async => throw const SubtitleAlignmentTooLarge();
+}
+
 class _PendingTranslations extends TextTranslationService {
   final results = <Completer<TextTranslationResult>>[];
   final requests = <TextTranslationRequest>[];
@@ -242,6 +253,27 @@ void main() {
       await Future<void>.delayed(Duration.zero);
     },
     skip: !Platform.isWindows && !Platform.isAndroid,
+  );
+
+  test(
+    'oversized script alignment fails with a localized actionable result',
+    () async {
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => null,
+        aiEngine: _OversizedAlignmentEngine(),
+      );
+      addTearDown(service.dispose);
+      expect(service.startScriptGeneration('audio.mp3', 'script.txt'), isTrue);
+      await _waitUntil(
+        () => service.generationJob?.status == SubtitleGenerationStatus.failed,
+      );
+      expect(
+        service.generationJob!.errorMessageKey,
+        'subtitle_alignment_too_large',
+      );
+      expect(service.generationJob!.errorMessage, isNull);
+      expect(service.trackSync('audio.mp3'), isNull);
+    },
   );
 
   test(

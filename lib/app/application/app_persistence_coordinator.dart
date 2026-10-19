@@ -103,8 +103,8 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
             _settings.interruptionResumeBehavior ==
             InterruptionResumeBehavior.resume,
       );
-      await _playback.nativeRepository.pauseAll();
-
+      // A rebuilt Flutter engine reconnects to playback that may still be live.
+      // Session restore below reconciles its native snapshot without pausing it.
       await Future.wait<void>(<Future<void>>[
         _library.coverArtworkCacheService.initialize(),
         _library.loadPersistedState(),

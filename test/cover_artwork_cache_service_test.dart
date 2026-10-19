@@ -20,6 +20,57 @@ import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
+  test(
+    'candidate discovery reads each content once and rereads on the next request',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'candidate_reads_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final first = File('${directory.path}/first.jpg');
+      final second = File('${directory.path}/second.jpg');
+      await first.writeAsBytes([1, 2, 3]);
+      await second.writeAsBytes([1, 2, 3]);
+      final library = LibraryService();
+      addTearDown(library.dispose);
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        filesystemImageScanner: (_, _) async => [first.path, second.path],
+      );
+      addTearDown(cache.dispose);
+      final reads = <String, int>{};
+      await IOOverrides.runZoned(
+        () async {
+          expect(
+            await cache.discoverCoverCandidatesInFolder(
+              directory.path,
+              selectedCoverPath: first.path,
+            ),
+            [first.path],
+          );
+          expect(reads, {first.path: 1, second.path: 1});
+        },
+        createFile: (path) =>
+            _ContentReadFile(path == first.path ? first : second, reads),
+      );
+      await second.writeAsBytes([4, 5, 6]);
+      await IOOverrides.runZoned(
+        () async {
+          expect(
+            await cache.discoverCoverCandidatesInFolder(
+              directory.path,
+              selectedCoverPath: first.path,
+            ),
+            [first.path, second.path],
+          );
+          expect(reads, {first.path: 2, second.path: 2});
+        },
+        createFile: (path) =>
+            _ContentReadFile(path == first.path ? first : second, reads),
+      );
+    },
+  );
+
   for (final kind in [
     'video',
     'native',
@@ -3373,6 +3424,29 @@ class _DelayedManualStatFile implements File {
 
   @override
   Future<FileStat> stat() => _stat;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _ContentReadFile implements File {
+  _ContentReadFile(this.file, this.reads);
+  final File file;
+  final Map<String, int> reads;
+  @override
+  String get path => file.path;
+  @override
+  Future<bool> exists() => file.exists();
+  @override
+  Future<int> length() => file.length();
+  @override
+  Future<RandomAccessFile> open({FileMode mode = FileMode.read}) =>
+      file.open(mode: mode);
+  @override
+  Stream<List<int>> openRead([int? start, int? end]) {
+    reads.update(path, (count) => count + 1, ifAbsent: () => 1);
+    return file.openRead(start, end);
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

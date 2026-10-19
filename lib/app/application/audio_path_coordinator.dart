@@ -252,8 +252,11 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
   }
 
   @override
-  String? workRootForTrack(String trackPath) {
-    final track = trackByPath(trackPath);
+  String? workRootForTrack(String trackPath, {MusicTrack? knownTrack}) {
+    final track = knownTrack == null
+        ? trackByPath(trackPath)
+        : _library.trackByPath(_playback.resolveRetargetedPath(trackPath)) ??
+              knownTrack;
     if (track == null ||
         track.isSingle ||
         PathMatcher.isRemoteUri(track.path)) {
@@ -273,9 +276,11 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     return PathMatcher.normalize(groupKey);
   }
 
-  String rootFolderName(String trackPath) {
+  String rootFolderName(String trackPath, {MusicTrack? knownTrack}) {
     final resolvedPath = _playback.resolveRetargetedPath(trackPath);
-    final workRoot = workRootForTrack(resolvedPath);
+    // List rows already resolve their session track. Looking it up again scans
+    // unrelated sessions for remote/imported tracks whenever a row mounts.
+    final workRoot = workRootForTrack(resolvedPath, knownTrack: knownTrack);
     if (workRoot != null && workRoot.isNotEmpty) {
       return PathDisplay.folderName(workRoot);
     }

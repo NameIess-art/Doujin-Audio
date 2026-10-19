@@ -4168,7 +4168,7 @@ void main() {
   );
 
   testWidgets(
-    'landscape playlist keeps forty sessions within a bounded scroll window',
+    'landscape playlist keeps sixty sessions within a bounded scroll window',
     (tester) async {
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -4189,7 +4189,7 @@ void main() {
       );
       addTearDown(fixture.dispose);
       final tracks = List.generate(
-        40,
+        60,
         (index) => testMusicTrack(
           name: 'Scroll session $index',
           path: '/playlist-scroll/track-$index.mp3',
@@ -4248,7 +4248,7 @@ void main() {
           .sessionId;
       for (
         var attempt = 0;
-        attempt < 10 && controller.position.extentAfter > 0.5;
+        attempt < 20 && controller.position.extentAfter > 0.5;
         attempt++
       ) {
         await tester.drag(list, const Offset(0, -400));

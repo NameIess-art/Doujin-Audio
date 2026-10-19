@@ -418,7 +418,7 @@ class SessionListCard extends ConsumerWidget {
     final currentTrack = track;
     final rootFolderName = ref
         .read(audioPathCoordinatorProvider)
-        .rootFolderName(cardState.trackPath);
+        .rootFolderName(cardState.trackPath, knownTrack: currentTrack);
     final folderName = rootFolderName.isNotEmpty
         ? rootFolderName
         : (currentTrack != null && !currentTrack.isSingle)

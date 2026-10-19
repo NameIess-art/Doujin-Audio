@@ -30,6 +30,14 @@ class _CountingTracks extends ListBase<MusicTrack> {
 
 class _CountingLibrary extends LibraryService {
   int comparisons = 0;
+  int trackLookups = 0;
+
+  @override
+  MusicTrack? trackByPath(String trackPath) {
+    trackLookups++;
+    return super.trackByPath(trackPath);
+  }
+
   @override
   int compareTracks(MusicTrack first, MusicTrack second) {
     comparisons++;
@@ -39,6 +47,67 @@ class _CountingLibrary extends LibraryService {
 
 void main() {
   AppRuntimeTestFixture.initialize();
+  test('playlist folder labels reuse known tracks across sixty sessions', () {
+    final library = _CountingLibrary();
+    final graph = createTestRuntimeGraph(libraryService: library);
+    addTearDown(graph.runtime.dispose);
+    final tracks = List.generate(
+      60,
+      (index) => MusicTrack(
+        path: 'https://example.com/$index.mp3',
+        displayName: 'Track $index',
+        groupKey: 'remote-$index',
+        groupTitle: 'Work $index',
+        groupSubtitle: '',
+        isSingle: false,
+      ),
+    );
+    for (final track in tracks) {
+      graph.playback.createTrackSession(track);
+    }
+    library.trackLookups = 0;
+    final expected = graph.audioPaths.rootFolderName(tracks.last.path);
+    expect(library.trackLookups, greaterThanOrEqualTo(60));
+
+    library.trackLookups = 0;
+    for (final track in tracks) {
+      expect(
+        graph.audioPaths.rootFolderName(track.path, knownTrack: track),
+        expected,
+      );
+    }
+    expect(library.trackLookups, tracks.length);
+  });
+
+  test('known playlist track preserves current library metadata priority', () {
+    final graph = createTestRuntimeGraph();
+    addTearDown(graph.runtime.dispose);
+    final queued = MusicTrack(
+      path: '/library/work/track.mp3',
+      displayName: 'Track',
+      groupKey: 'old-group',
+      groupTitle: 'Old work',
+      groupSubtitle: '',
+      isSingle: true,
+    );
+    graph.playback.createTrackSession(queued);
+    graph.library.addWatchedFolder('/library', notify: false);
+    graph.library.addTracks([
+      MusicTrack(
+        path: queued.path,
+        displayName: queued.displayName,
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        groupSubtitle: '',
+        isSingle: false,
+      ),
+    ], persist: false);
+    expect(
+      graph.audioPaths.rootFolderName(queued.path, knownTrack: queued),
+      graph.audioPaths.rootFolderName(queued.path),
+    );
+  });
+
   for (final isDirectory in [false, true]) {
     test(
       'work ${isDirectory ? 'folder' : 'file'} rename retargets every playback queue',

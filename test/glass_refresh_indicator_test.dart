@@ -3,8 +3,96 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 void main() {
+  testWidgets('hidden refresh releases deferred updates on other pages', (
+    tester,
+  ) async {
+    final interaction = UiInteractionCoordinator.instance;
+    addTearDown(interaction.resetForTest);
+    final refresh = Completer<void>();
+    final key = GlobalKey<GlassRefreshIndicatorState>();
+    var visible = true;
+    late StateSetter setVisible;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              setVisible = setState;
+              return TickerMode(
+                enabled: visible,
+                child: GlassRefreshIndicator(
+                  key: key,
+                  onRefresh: () => refresh.future,
+                  child: ListView(children: const [SizedBox(height: 800)]),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+      unawaited(key.currentState!.show());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    var commits = 0;
+    interaction.scheduleCommit(
+      key: 'hidden-refresh-test',
+      structural: true,
+      commit: () => commits++,
+    );
+    expect(interaction.isInteracting, isTrue);
+    setVisible(() => visible = false);
+    await tester.pump();
+    await tester.pump();
+    expect(interaction.isInteracting, isFalse);
+    expect(commits, 1);
+    refresh.complete();
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+  });
+  testWidgets('catalog updates wait for refresh and indicator dismissal', (
+    tester,
+  ) async {
+    final interaction = UiInteractionCoordinator.instance;
+    addTearDown(interaction.resetForTest);
+    final refresh = Completer<void>();
+    final key = GlobalKey<GlassRefreshIndicatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GlassRefreshIndicator(
+            key: key,
+            onRefresh: () => refresh.future,
+            child: ListView(children: const [SizedBox(height: 800)]),
+          ),
+        ),
+      ),
+    );
+    final future = key.currentState!.show();
+    var commits = 0;
+    interaction.scheduleCommit(
+      key: 'refresh-catalog-test',
+      structural: true,
+      commit: () => commits++,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(commits, 0);
+    refresh.complete();
+    await tester.pump();
+    await future;
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(commits, 0);
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump(const Duration(milliseconds: 180));
+    await tester.pump();
+    expect(commits, 1);
+    await tester.pumpWidget(const SizedBox());
+    expect(interaction.isInteracting, isFalse);
+  });
   testWidgets('pull-to-refresh indicator has no shadow decoration', (
     tester,
   ) async {

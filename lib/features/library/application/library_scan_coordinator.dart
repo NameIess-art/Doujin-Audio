@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/cache/app_cache_service.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import 'library_catalog.dart';
 import 'library_scanner_service.dart';
 
@@ -138,17 +139,23 @@ class LibraryScanCoordinator extends ChangeNotifier {
   }
 
   void _backfillDurations(LibraryCatalog catalog) {
-    unawaited(
-      catalog.backfillMissingLibraryDurations().catchError((
-        Object error,
-        StackTrace stackTrace,
-      ) {
-        AppLogService.warning(
-          'library_scan_duration_backfill_failed',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      }),
+    final interaction = UiInteractionCoordinator.instance;
+    interaction.scheduleAfterIdle(
+      key: 'library_scan_durations_${identityHashCode(catalog)}',
+      generation: interaction.generation,
+      priority: 100,
+      task: () async {
+        if (_disposed) return;
+        try {
+          await catalog.backfillMissingLibraryDurations();
+        } catch (error, stackTrace) {
+          AppLogService.warning(
+            'library_scan_duration_backfill_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      },
     );
   }
 

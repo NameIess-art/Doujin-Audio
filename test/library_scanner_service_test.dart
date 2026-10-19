@@ -19,6 +19,69 @@ void main() {
   );
 
   test(
+    'large refresh chunk yields to input before finishing its writes',
+    () async {
+      final catalog = _RefreshCatalog(watchedFolders: <String>['C:/music']);
+      final tracks = List.generate(
+        120,
+        (index) => _scannedTrack('C:/music/$index.mp3'),
+      );
+      int? countWhenInputRuns;
+      catalog.onTrackChunk = () {
+        if (catalog.library.length == 120) return;
+        Timer.run(() => countWhenInputRuns ??= catalog.library.length);
+      };
+      final outcome = await LibraryScannerService(
+        dataSource: _ChunkedRefreshDataSource(
+          catalog: catalog,
+          chunks: [
+            FolderScanChunk(
+              tracks: tracks,
+              paths: tracks.map((t) => t.path).toSet(),
+            ),
+          ],
+          terminalPaths: tracks.map((t) => t.path).toSet(),
+        ),
+      ).refreshWatchedFolders(provider: catalog, labels: labels);
+
+      expect(countWhenInputRuns, allOf(greaterThan(0), lessThan(120)));
+      expect(outcome.addedCount, 120);
+      expect(catalog.library, hasLength(120));
+    },
+  );
+
+  test(
+    'cancellation inside a large chunk rolls back all partial writes',
+    () async {
+      final original = _musicTrack('C:/music/original.mp3');
+      final catalog = _RefreshCatalog(
+        watchedFolders: <String>['C:/music'],
+        initialTracks: [original],
+        cancelAfterTrackChunk: 2,
+      );
+      final tracks = List.generate(
+        120,
+        (index) => _scannedTrack('C:/music/$index.mp3'),
+      );
+      final outcome = await LibraryScannerService(
+        dataSource: _ChunkedRefreshDataSource(
+          catalog: catalog,
+          chunks: [
+            FolderScanChunk(
+              tracks: tracks,
+              paths: tracks.map((t) => t.path).toSet(),
+            ),
+          ],
+        ),
+      ).refreshWatchedFolders(provider: catalog, labels: labels);
+
+      expect(outcome.code, LibraryScanOutcomeCode.cancelled);
+      expect(catalog.library, [original]);
+      expect(catalog.stagedBatchDepth, 0);
+    },
+  );
+
+  test(
     'refresh owner can cancel at acquisition before any folder scan',
     () async {
       final catalog = _RefreshCatalog(watchedFolders: <String>['C:/music']);
@@ -667,6 +730,7 @@ class _RefreshCatalog implements LibraryCatalog {
   final List<String> watchedLibraries = <String>[];
   final List<LibraryEntry> _initialEntries;
   final int? cancelAfterTrackChunk;
+  void Function()? onTrackChunk;
 
   @override
   bool isScanning = false;
@@ -782,6 +846,7 @@ class _RefreshCatalog implements LibraryCatalog {
       );
       library.add(track);
     }
+    if (tracks.isNotEmpty) onTrackChunk?.call();
     if (tracks.isNotEmpty &&
         cancelAfterTrackChunk != null &&
         ++_appliedTrackChunks == cancelAfterTrackChunk) {

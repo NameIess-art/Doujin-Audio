@@ -11,6 +11,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show clampDouble;
 import 'package:flutter/material.dart';
 
+import '../ui/ui_interaction_coordinator.dart';
 import 'app_feedback.dart';
 import 'app_transitions.dart';
 
@@ -411,6 +412,26 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
   void didChangeDependencies() {
     _setupColorTween();
     super.didChangeDependencies();
+    _syncRefreshInteraction();
+  }
+
+  void _syncRefreshInteraction() {
+    final interaction = UiInteractionCoordinator.instance;
+    if ((_status == GlassGlassRefreshIndicatorStatus.snap ||
+            _status == GlassGlassRefreshIndicatorStatus.refresh ||
+            _status == GlassGlassRefreshIndicatorStatus.done) &&
+        TickerMode.valuesOf(context).enabled &&
+        ModalRoute.isCurrentOf(context) != false) {
+      interaction.beginInteraction(this);
+    } else {
+      interaction.cancelInteraction(this);
+    }
+  }
+
+  @override
+  void deactivate() {
+    UiInteractionCoordinator.instance.cancelInteraction(this);
+    super.deactivate();
   }
 
   @protected
@@ -425,6 +446,7 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
   @protected
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelInteraction(this);
     _positionController.dispose();
     _scaleController.dispose();
     super.dispose();
@@ -582,10 +604,13 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
 
   // Stop showing the refresh indicator.
   Future<void> _dismiss(GlassGlassRefreshIndicatorStatus newMode) async {
-    final fadeDuration = MediaQuery.disableAnimationsOf(context)
+    final fadeDuration =
+        MediaQuery.disableAnimationsOf(context) ||
+            !TickerMode.valuesOf(context).enabled
         ? Duration.zero
         : kAppFadeDuration;
     await Future<void>.value();
+    if (!mounted) return;
     // This can only be called from _show() when refreshing and
     // _handleScrollNotification in response to a ScrollEndNotification or
     // direction change.
@@ -621,18 +646,22 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
       setState(() {
         _status = null;
       });
+      UiInteractionCoordinator.instance.endInteraction(this);
     }
   }
 
   void _show() {
     assert(_status != GlassGlassRefreshIndicatorStatus.refresh);
     assert(_status != GlassGlassRefreshIndicatorStatus.snap);
+    // Keep prepared catalog updates out of the refresh/fade frames. Scanning
+    // continues; the existing deferred streams publish after the indicator.
     final completer = Completer<void>();
     _pendingRefreshFuture = completer.future;
     setState(() {
       _status = GlassGlassRefreshIndicatorStatus.snap;
       widget.onStatusChange?.call(_status);
     });
+    _syncRefreshInteraction();
     _positionController
         .animateTo(
           1.0 / _kDragSizeFactorLimit,

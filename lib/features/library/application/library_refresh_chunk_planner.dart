@@ -255,15 +255,15 @@ class LibraryRefreshChunkPlanner {
     retainedTrackPaths.addAll(scanResult.paths.map(PathMatcher.normalize));
     retainedEntryPaths.addAll(retainedTrackPaths);
     final allowRemoval = scanResult.isComplete && additionalFailureCount == 0;
-    final removals = await _findRefreshRemovalPaths(
-      sourceFolderPath: sourceFolderPath,
-      provider: provider,
-      entrySnapshot: mergeContext.entrySnapshot,
-      retainedTrackPaths: retainedTrackPaths,
-      retainedEntryPaths: retainedEntryPaths,
-      allowRemoval: allowRemoval,
-      generation: generation,
-    );
+    final removals = allowRemoval
+        ? await compute(_findRefreshRemovalPaths, (
+            sourceFolderPath: sourceFolderPath,
+            library: provider.library,
+            entrySnapshot: mergeContext.entrySnapshot,
+            retainedTrackPaths: retainedTrackPaths,
+            retainedEntryPaths: retainedEntryPaths,
+          ))
+        : (trackPaths: const <String>[], entryPaths: const <String>[]);
     if (!provider.isScanGenerationActive(generation)) return;
     await onChunk(
       LibraryRefreshChunk(
@@ -283,59 +283,6 @@ class LibraryRefreshChunkPlanner {
     );
   }
 
-  Future<({List<String> trackPaths, List<String> entryPaths})>
-  _findRefreshRemovalPaths({
-    required String sourceFolderPath,
-    required LibraryCatalogReader provider,
-    required LibraryEntrySnapshot entrySnapshot,
-    required Set<String> retainedTrackPaths,
-    required Set<String> retainedEntryPaths,
-    required bool allowRemoval,
-    required int generation,
-  }) async {
-    if (!allowRemoval) {
-      return (trackPaths: const <String>[], entryPaths: const <String>[]);
-    }
-    final normalizedSource = PathMatcher.normalize(sourceFolderPath);
-    final retainedTrackIndex = PathMembershipIndex(retainedTrackPaths);
-    final removedTrackPaths = <String>[];
-    var processed = 0;
-    for (final track in provider.library) {
-      if (PathMatcher.isWithinOrEqualNormalized(track.path, normalizedSource) &&
-          !retainedTrackIndex.containsEquivalent(track.path)) {
-        removedTrackPaths.add(track.path);
-      }
-      if (++processed % 200 == 0) {
-        await Future<void>.delayed(Duration.zero);
-        if (!provider.isScanGenerationActive(generation)) {
-          return (trackPaths: const <String>[], entryPaths: const <String>[]);
-        }
-      }
-    }
-
-    final retainedEntryIndex = PathMembershipIndex(retainedEntryPaths);
-    final removedEntryPaths = <String>[];
-    for (final entry in entrySnapshot.entriesByPath.values) {
-      if (!PathMatcher.isWithinOrEqualNormalized(
-        entry.path,
-        normalizedSource,
-      )) {
-        continue;
-      }
-      final retained = entry.isFolder
-          ? retainedEntryIndex.containsDescendantOrEqual(entry.path)
-          : retainedEntryIndex.containsEquivalent(entry.path);
-      if (!retained) removedEntryPaths.add(entry.path);
-      if (++processed % 200 == 0) {
-        await Future<void>.delayed(Duration.zero);
-        if (!provider.isScanGenerationActive(generation)) {
-          return (trackPaths: const <String>[], entryPaths: const <String>[]);
-        }
-      }
-    }
-    return (trackPaths: removedTrackPaths, entryPaths: removedEntryPaths);
-  }
-
   String _displaySourceName(String source) {
     if (PathMatcher.isContentUri(source)) {
       final decoded = Uri.decodeFull(source);
@@ -344,4 +291,38 @@ class LibraryRefreshChunkPlanner {
     }
     return PathDisplay.folderName(source);
   }
+}
+
+({List<String> trackPaths, List<String> entryPaths}) _findRefreshRemovalPaths(
+  ({
+    String sourceFolderPath,
+    List<MusicTrack> library,
+    LibraryEntrySnapshot entrySnapshot,
+    Set<String> retainedTrackPaths,
+    Set<String> retainedEntryPaths,
+  })
+  payload,
+) {
+  final normalizedSource = PathMatcher.normalize(payload.sourceFolderPath);
+  final retainedTrackIndex = PathMembershipIndex(payload.retainedTrackPaths);
+  final removedTrackPaths = <String>[];
+  for (final track in payload.library) {
+    if (PathMatcher.isWithinOrEqualNormalized(track.path, normalizedSource) &&
+        !retainedTrackIndex.containsEquivalent(track.path)) {
+      removedTrackPaths.add(track.path);
+    }
+  }
+
+  final retainedEntryIndex = PathMembershipIndex(payload.retainedEntryPaths);
+  final removedEntryPaths = <String>[];
+  for (final entry in payload.entrySnapshot.entriesByPath.values) {
+    if (!PathMatcher.isWithinOrEqualNormalized(entry.path, normalizedSource)) {
+      continue;
+    }
+    final retained = entry.isFolder
+        ? retainedEntryIndex.containsDescendantOrEqual(entry.path)
+        : retainedEntryIndex.containsEquivalent(entry.path);
+    if (!retained) removedEntryPaths.add(entry.path);
+  }
+  return (trackPaths: removedTrackPaths, entryPaths: removedEntryPaths);
 }

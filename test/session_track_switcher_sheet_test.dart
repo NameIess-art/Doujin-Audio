@@ -96,7 +96,7 @@ Future<void> _pumpSheet(
 Future<void> _waitForTree(WidgetTester tester) async {
   for (var attempt = 0; attempt < 200; attempt++) {
     await tester.pump(const Duration(milliseconds: 16));
-    if (find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+    if (find.byType(FileTreeSkeleton).evaluate().isEmpty) {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       return;
@@ -542,4 +542,54 @@ void main() {
     await _jumpToEnd(tester, position);
     expect(find.text('Track 999'), findsOneWidget);
   });
+
+  testWidgets(
+    'switcher displays file tree skeleton and max height while loading, and keeps fixed height',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final language = AppLanguageProvider();
+      await language.initialized;
+      addTearDown(language.dispose);
+      final tracks = [_track('Audio1.mp3'), _track('Audio2.mp3')];
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                height: 500,
+                child: SessionTrackSwitcherSheet(
+                  tracks: tracks,
+                  session: _session(tracks),
+                  workRoot: '/work',
+                  resolveTrack: (_) => null,
+                  workRootForTrack: (_) => '/work',
+                  onSelected: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      // While loading, file tree skeleton is displayed and height is fixed to max
+      expect(find.byType(FileTreeSkeleton), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('queue_switcher_skeleton_header')),
+        findsOneWidget,
+      );
+      expect(tester.getSize(find.byType(SessionTrackSwitcherSheet)).height, 500);
+
+      // Settle tree loading
+      await _waitForTree(tester);
+      expect(find.byType(FileTreeSkeleton), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('queue_switcher_header')),
+        findsOneWidget,
+      );
+      // Height remains fixed at maximum height (500) even with only 2 items
+      expect(tester.getSize(find.byType(SessionTrackSwitcherSheet)).height, 500);
+    },
+  );
 }

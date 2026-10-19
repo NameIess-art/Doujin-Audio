@@ -9,6 +9,7 @@ import '../../app/theme/app_styles.dart';
 import '../ui/app_interaction_feedback_settings.dart';
 import '../ui/undoable_removal_service.dart';
 import '../ui/ui_operation_service.dart';
+import '../ui/ui_interaction_coordinator.dart';
 import '../logging/app_log_service.dart';
 import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
@@ -607,11 +608,24 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     _controller = AnimationController(
       vsync: this,
       duration: widget.transitionDuration,
-    );
+    )..addStatusListener(_handleAnimationStatus);
     _opacity = CurvedAnimation(parent: _controller, curve: kAppFadeCurve);
 
     _controller.forward();
     _startDuration(_currentDuration, _currentShowCountdown);
+  }
+
+  void _handleAnimationStatus(AnimationStatus status) {
+    if (widget.transitionDuration == Duration.zero) return;
+    final interaction = UiInteractionCoordinator.instance;
+    if (status == AnimationStatus.forward ||
+        status == AnimationStatus.reverse) {
+      // Catalog/metadata notifications must not rebuild the list beneath a
+      // completion message while that message is fading.
+      interaction.beginInteraction(this);
+    } else {
+      interaction.endInteraction(this);
+    }
   }
 
   void _startDuration(Duration duration, bool showCountdown) {
@@ -659,6 +673,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
   void dispose() {
     _countdownTimer?.cancel();
     _dismissTimer?.cancel();
+    UiInteractionCoordinator.instance.cancelInteraction(this);
     _controller.dispose();
     super.dispose();
   }

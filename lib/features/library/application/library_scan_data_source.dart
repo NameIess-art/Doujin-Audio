@@ -297,7 +297,7 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
             if (!keepGoing) {
               return NativeScanResult.success(
                 const <ScannedTrack>[],
-                Set<String>.unmodifiable(discoveredPaths),
+                discoveredPaths,
                 completenessKnown: true,
                 wasCancelled: true,
               );
@@ -307,7 +307,7 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
           case 'done':
             return NativeScanResult.success(
               const <ScannedTrack>[],
-              Set<String>.unmodifiable(discoveredPaths),
+              discoveredPaths,
               failureCount: (payload['failureCount'] as num?)?.toInt() ?? 0,
               completenessKnown: true,
             );

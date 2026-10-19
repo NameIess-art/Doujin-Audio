@@ -7,6 +7,7 @@ import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/confirm_action_dialog.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 Widget _feedbackApp({required Widget home}) {
   return MaterialApp(theme: ThemeData.dark(useMaterial3: true), home: home);
@@ -14,6 +15,44 @@ Widget _feedbackApp({required Widget home}) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+    'completion feedback defers catalog commits only during its fade',
+    (tester) async {
+      final interaction = UiInteractionCoordinator.instance;
+      addTearDown(interaction.resetForTest);
+      late BuildContext feedbackContext;
+      await tester.pumpWidget(
+        _feedbackApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                feedbackContext = context;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+      showAppSnackBar(feedbackContext, 'Refresh complete');
+      await tester.pump();
+      var commits = 0;
+      interaction.scheduleCommit(
+        key: 'refresh-result-test',
+        structural: true,
+        commit: () => commits++,
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(commits, 0);
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(const Duration(milliseconds: 180));
+      await tester.pump();
+      expect(commits, 1);
+      expect(find.text('Refresh complete'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      expect(interaction.isInteracting, isFalse);
+    },
+  );
 
   test('continuous feedback deduplicates repeated values', () async {
     final calls = <MethodCall>[];

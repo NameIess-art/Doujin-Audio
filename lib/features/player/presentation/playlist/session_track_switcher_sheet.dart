@@ -264,50 +264,99 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet>
     );
   }
 
+  Widget _buildSkeleton(BuildContext context) {
+    return Padding(
+      padding: AppBottomSheet.contentPadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            key: const ValueKey<String>('queue_switcher_skeleton_header'),
+            padding: const EdgeInsets.only(bottom: 6),
+            child: _QueueSheetHeader(count: widget.tracks.length),
+          ),
+          const Expanded(
+            child: RepaintBoundary(
+              key: ValueKey<String>('queue_switcher_skeleton'),
+              child: FileTreeSkeleton(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildError(BuildContext context) {
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    return Padding(
+      padding: AppBottomSheet.contentPadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            key: const ValueKey<String>('queue_switcher_error_header'),
+            padding: const EdgeInsets.only(bottom: 6),
+            child: _QueueSheetHeader(count: widget.tracks.length),
+          ),
+          Expanded(
+            child: Center(
+              child: TextButton(
+                onPressed: () =>
+                    setState(() => _rebuildTree(expandSelected: true)),
+                child: Text(i18n.tr('retry')),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
+    return ListView.builder(
+      key: _listKey,
+      padding: AppBottomSheet.contentPadding,
+      itemCount: _rows.length + 1,
+      findChildIndexCallback: (key) {
+        if (key == const ValueKey<String>('queue_switcher_header')) return 0;
+        final index = _rowIndices[(key as ValueKey<String>).value];
+        return index == null ? null : index + 1;
+      },
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Padding(
+            key: const ValueKey<String>('queue_switcher_header'),
+            padding: const EdgeInsets.only(bottom: 6),
+            child: _QueueSheetHeader(count: widget.tracks.length),
+          );
+        }
+        return _buildRow(index - 1);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_loading || _treeError != null) {
-      final i18n = ProviderScope.containerOf(
-        context,
-        listen: false,
-      ).read(appLanguageProviderInstanceProvider);
-      return SizedBox(
-        height: 160,
-        child: Center(
-          child: _treeError == null
-              ? const CircularProgressIndicator()
-              : TextButton(
-                  onPressed: () =>
-                      setState(() => _rebuildTree(expandSelected: true)),
-                  child: Text(i18n.tr('retry')),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final height = constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : MediaQuery.sizeOf(context).height * 0.75;
+        return SizedBox(
+          width: double.infinity,
+          height: height,
+          child: _treeError != null
+              ? _buildError(context)
+              : PlaceholderContentTransition(
+                  showPlaceholder: _loading,
+                  placeholder: _buildSkeleton(context),
+                  content: _buildContent(context),
                 ),
-        ),
-      );
-    }
-    return SizedBox(
-      width: double.infinity,
-      child: ListView.builder(
-        key: _listKey,
-        // Keep outgoing rows until the shared reverse animation completes.
-        shrinkWrap: _rows.length <= 8,
-        padding: AppBottomSheet.contentPadding,
-        itemCount: _rows.length + 1,
-        findChildIndexCallback: (key) {
-          if (key == const ValueKey<String>('queue_switcher_header')) return 0;
-          final index = _rowIndices[(key as ValueKey<String>).value];
-          return index == null ? null : index + 1;
-        },
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return Padding(
-              key: const ValueKey<String>('queue_switcher_header'),
-              padding: const EdgeInsets.only(bottom: 6),
-              child: _QueueSheetHeader(count: widget.tracks.length),
-            );
-          }
-          return _buildRow(index - 1);
-        },
-      ),
+        );
+      },
     );
   }
 }

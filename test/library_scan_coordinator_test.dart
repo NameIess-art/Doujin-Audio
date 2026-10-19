@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/errors/app_failure.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/library/application/library_catalog.dart';
 import 'package:doujin_audio/features/library/application/library_scan_coordinator.dart';
 import 'package:doujin_audio/features/library/application/library_scanner_service.dart';
@@ -19,6 +20,32 @@ void main() {
     chooseAudioFiles: 'files',
     importedFiles: 'imported',
     manuallySelectedFiles: 'selected',
+  );
+
+  test(
+    'duration backfill waits until refresh and feedback animation finish',
+    () async {
+      final interaction = UiInteractionCoordinator.instance;
+      final animation = Object();
+      interaction.beginInteraction(animation);
+      addTearDown(interaction.resetForTest);
+      final catalog = _FakeCatalog();
+      final coordinator = LibraryScanCoordinator(
+        scanner: _FakeScanner(
+          (_, _) async => LibraryScanOutcome(
+            code: LibraryScanOutcomeCode.refreshNoChanges,
+            source: 'refresh',
+          ),
+        ),
+      );
+      addTearDown(coordinator.dispose);
+
+      await coordinator.refresh(catalog: catalog, labels: labels);
+      expect(coordinator.state.phase, LibraryScanPhase.success);
+      expect(catalog.durationBackfillCount, 0);
+      interaction.cancelInteraction(animation);
+      expect(catalog.durationBackfillCount, 1);
+    },
   );
 
   test('refresh stores and returns the typed scan outcome', () async {

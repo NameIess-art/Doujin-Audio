@@ -56,10 +56,7 @@ class LibraryScannerService {
         .where((track) => !identical(provider.trackByPath(track.path), track))
         .toList(growable: false);
     if (tracksToRestore.isNotEmpty) {
-      provider.addOrReplaceTracks(
-        tracksToRestore,
-        mergeExistingState: false,
-      );
+      provider.addOrReplaceTracks(tracksToRestore, mergeExistingState: false);
     }
     for (final entry in existingEntryPathsByRoot.entries) {
       provider.removeLibraryEntriesByPaths(
@@ -122,11 +119,11 @@ class LibraryScannerService {
     var totalAdded = 0;
     var chunkDuplicateCount = 0;
     var chunkFailureCount = 0;
-    var chunkIndex = 0;
     var batchOpen = true;
     var batchStarted = false;
     var wasCancelled = false;
     final deferredCleanupChunks = <LibraryRefreshChunk>[];
+    final foldersToPrefill = <String>{};
 
     Future<bool> applyRefreshChunk(LibraryRefreshChunk chunk) async {
       if (!provider.isScanGenerationActive(generation) || !batchOpen) {
@@ -142,18 +139,33 @@ class LibraryScannerService {
           chunk.removeEntryPaths.isNotEmpty) {
         deferredCleanupChunks.add(chunk);
       }
-      totalAdded += provider.applyStagedLibraryRefreshChunk(
-        sourceFolderPath: chunk.sourceFolderPath,
-        libraryRoot: chunk.libraryRoot,
-        tracks: chunk.tracks,
-        entryTracks: chunk.entryTracks,
-        exclusionMatcher: chunk.mergeContext?.exclusionMatcher,
-        entrySnapshot: chunk.mergeContext?.entrySnapshot,
-        folderPaths: chunk.folderPaths,
-      );
+      // Entry construction and path-index writes still run on the UI isolate.
+      // Native/legacy chunks can be large; acknowledge only after small writes
+      // have yielded to input and animation events.
+      const batchSize = 16;
+      final itemCount = [
+        chunk.tracks.length,
+        chunk.entryTracks.length,
+        chunk.folderPaths.length,
+      ].reduce((a, b) => a > b ? a : b);
+      for (var start = 0; start < itemCount; start += batchSize) {
+        if (!provider.isScanGenerationActive(generation)) return false;
+        List<T> batch<T>(List<T> items) => start >= items.length
+            ? <T>[]
+            : items.sublist(start, (start + batchSize).clamp(0, items.length));
+        totalAdded += provider.applyStagedLibraryRefreshChunk(
+          sourceFolderPath: chunk.sourceFolderPath,
+          libraryRoot: chunk.libraryRoot,
+          tracks: batch(chunk.tracks),
+          entryTracks: batch(chunk.entryTracks),
+          exclusionMatcher: chunk.mergeContext?.exclusionMatcher,
+          entrySnapshot: chunk.mergeContext?.entrySnapshot,
+          folderPaths: batch(chunk.folderPaths),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
       chunkDuplicateCount += chunk.duplicateCount;
       chunkFailureCount += chunk.failureCount;
-      chunkIndex++;
       provider.setScanProgress(
         currentFolder: chunk.progressLabel,
         foundCount: totalAdded,
@@ -161,10 +173,8 @@ class LibraryScannerService {
         failureCount: chunkFailureCount,
         generation: generation,
       );
-      if (chunkIndex % 2 == 0) {
-        await Future<void>.delayed(Duration.zero);
-        batchOpen = provider.isScanGenerationActive(generation);
-      }
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+      batchOpen = provider.isScanGenerationActive(generation);
       return provider.isScanGenerationActive(generation) && batchOpen;
     }
 
@@ -234,6 +244,7 @@ class LibraryScannerService {
         if (batchStarted) {
           if (provider.isScanGenerationActive(generation)) {
             for (final chunk in deferredCleanupChunks) {
+              if (!provider.isScanGenerationActive(generation)) break;
               provider.applyStagedLibraryRefreshChunk(
                 sourceFolderPath: chunk.sourceFolderPath,
                 libraryRoot: chunk.libraryRoot,
@@ -242,9 +253,8 @@ class LibraryScannerService {
                 removeTrackPaths: chunk.removeTrackPaths,
                 removeEntryPaths: chunk.removeEntryPaths,
               );
-              for (final childFolder in chunk.addWatchedFolders) {
-                unawaited(_prefillRjDetailForFolder(provider, childFolder));
-              }
+              foldersToPrefill.addAll(chunk.addWatchedFolders);
+              await Future<void>.delayed(const Duration(milliseconds: 1));
             }
           }
           await provider.finishStagedLibraryRefresh(
@@ -262,6 +272,9 @@ class LibraryScannerService {
         source: 'refresh',
       );
     }
+    // Reuse the serial metadata importer instead of starting one task per
+    // folder in the same completion frame.
+    unawaited(_prefillRjDetailsForFolders(provider, foldersToPrefill));
     return LibraryScanOutcome(
       code: chunkFailureCount > 0
           ? LibraryScanOutcomeCode.failed

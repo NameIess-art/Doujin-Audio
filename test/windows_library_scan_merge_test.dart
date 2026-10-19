@@ -55,8 +55,21 @@ void main() {
         isFavorite: true,
         lastPlayedPosition: const Duration(seconds: 12),
       );
+      final missing = MusicTrack(
+        path: r'C:\Music\Missing.mp3',
+        displayName: 'Missing',
+        groupKey: r'C:\Music',
+        groupTitle: 'Music',
+        groupSubtitle: '',
+        isSingle: false,
+      );
       graph.library.addWatchedFolder(r'C:\Music', notify: false);
-      graph.library.addTracks([existing], persist: false);
+      graph.library.addTracks([existing, missing], persist: false);
+      graph.library.recordLibraryEntriesForTracks(
+        r'C:\Music',
+        [existing, missing],
+        persist: false,
+      );
       await LibraryScannerService(
         dataSource: _CaseChangedScan(),
       ).refreshWatchedFolders(
@@ -76,6 +89,12 @@ void main() {
       expect(refreshed.isFavorite, isTrue);
       expect(refreshed.lastPlayedPosition, const Duration(seconds: 12));
       expect(graph.library.trackByPath(existing.path), same(refreshed));
+      expect(graph.library.trackByPath(missing.path), isNull);
+      final entryPaths = graph.library
+          .libraryEntriesForLibrary(r'C:\Music')
+          .map((entry) => entry.path);
+      expect(entryPaths, contains(existing.path));
+      expect(entryPaths, isNot(contains(missing.path)));
     },
   );
   test(

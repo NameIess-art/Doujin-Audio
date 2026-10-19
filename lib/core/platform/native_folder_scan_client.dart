@@ -76,7 +76,7 @@ final class NativeFolderScanClient {
 
     NativeScanResult cancelledResult() => NativeScanResult.success(
       const <ScannedTrack>[],
-      Set<String>.unmodifiable(paths),
+      paths,
       failureCount: failureCount,
       completenessKnown: true,
       wasCancelled: true,
@@ -179,7 +179,7 @@ final class NativeFolderScanClient {
                   completeAfterPending(
                     () => NativeScanResult.success(
                       const <ScannedTrack>[],
-                      Set<String>.unmodifiable(paths),
+                      paths,
                       failureCount: failureCount + scanEvent.chunk.failureCount,
                       completenessKnown: scanEvent.complete,
                     ),

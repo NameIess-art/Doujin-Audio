@@ -1824,6 +1824,49 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
   });
 
+  testWidgets('capsule dock blocks its full band and releases it in tiny mode', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(390, 820));
+    await _pumpAppShell(tester, includePlaybackSession: false);
+    final mask = find.byKey(
+      const ValueKey<String>('mobile_bottom_capsule_fade_mask'),
+    );
+    final listener = find.ancestor(
+      of: mask,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is Listener && widget.child is AppEdgeFadeMask,
+      ),
+    );
+    expect(listener, findsOneWidget);
+    final barrier = tester.renderObject<RenderPointerListener>(listener);
+    final bounds = tester.getRect(mask);
+    final capsule = tester.getRect(find.byKey(
+      const ValueKey<String>('mobile_bottom_capsule_surface'),
+    ));
+    for (final point in [
+      Offset(bounds.left + 1, capsule.center.dy),
+      Offset(bounds.right - 1, capsule.center.dy),
+      Offset(bounds.center.dx, bounds.bottom - 1),
+      Offset(bounds.center.dx, bounds.top + 1),
+    ]) {
+      expect(
+        tester.hitTestOnBinding(point).path.map((entry) => entry.target),
+        contains(barrier),
+        reason: 'The dock band must consume input at $point.',
+      );
+    }
+    expect(
+      tester.hitTestOnBinding(Offset(bounds.center.dx, bounds.top - 2))
+          .path.map((entry) => entry.target),
+      isNot(contains(barrier)),
+    );
+    tester.view.physicalSize = const Size(280, 500) * tester.view.devicePixelRatio;
+    await tester.pumpAndSettle();
+    expect(mask, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('capsule dock keeps a fixed height without playback', (
     tester,
   ) async {

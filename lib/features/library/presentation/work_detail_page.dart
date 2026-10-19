@@ -1539,43 +1539,47 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               ),
             ),
           ),
-          // Floating Back Button (top-left)
           Positioned(
-            top: topSafeArea + 6,
-            left: 16,
+            top: 0,
+            left: 0,
+            right: 0,
             child: AppPageHeaderTransition(
-              child: HeaderFloatingButton(
-                backgroundOpacity: 0.5,
-                child: IconButton(
-                  key: const ValueKey<String>('work_detail_back_button'),
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: topSafeArea + 6,
-            right: 16,
-            child: AppPageHeaderTransition(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (widget.isLocal) ...[
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, topSafeArea + 6, 16, 0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
                     HeaderFloatingButton(
                       backgroundOpacity: 0.5,
                       child: IconButton(
-                        key: const ValueKey<String>('work_detail_edit'),
-                        onPressed: _handleLocalEdit,
-                        tooltip: i18n.tr('edit'),
-                        icon: const Icon(Icons.edit_rounded),
+                        key: const ValueKey<String>('work_detail_back_button'),
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        tooltip: MaterialLocalizations.of(
+                          context,
+                        ).backButtonTooltip,
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.isLocal) ...[
+                          HeaderFloatingButton(
+                            backgroundOpacity: 0.5,
+                            child: IconButton(
+                              key: const ValueKey<String>('work_detail_edit'),
+                              onPressed: _handleLocalEdit,
+                              tooltip: i18n.tr('edit'),
+                              icon: const Icon(Icons.edit_rounded),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        const WorkPageTranslationButton(backgroundOpacity: 0.5),
+                      ],
+                    ),
                   ],
-                  const WorkPageTranslationButton(backgroundOpacity: 0.5),
-                ],
+                ),
               ),
             ),
           ),

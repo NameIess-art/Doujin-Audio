@@ -5,6 +5,7 @@ import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/app/presentation/routed_playback_dock_host.dart';
 import 'support/app_runtime_test_fixture.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -56,6 +57,96 @@ Future<List<Color>> _pixels(
 }))!;
 
 void main() {
+  testWidgets(
+    'transparent header blocks sibling input within its live bounds',
+    (tester) async {
+      var bodyPointers = 0;
+      var bodyGestures = 0;
+      var bodySignals = 0;
+      var controlTaps = 0;
+      var height = 96.0;
+      var visible = true;
+      Widget page() => MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              Listener(
+                onPointerDown: (_) => bodyPointers++,
+                onPointerSignal: (_) => bodySignals++,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => bodyGestures++,
+                  onLongPress: () => bodyGestures++,
+                  onSecondaryTap: () => bodyGestures++,
+                  onVerticalDragUpdate: (_) => bodyGestures++,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Offstage(
+                  offstage: !visible,
+                  child: AppPageHeaderTransition(
+                    child: SizedBox(
+                      height: height,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: IconButton(
+                          key: const ValueKey('header-control'),
+                          onPressed: () => controlTaps++,
+                          icon: const Icon(Icons.close),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpWidget(page());
+      const gap = Offset(400, 40);
+      await tester.tapAt(gap);
+      await tester.longPressAt(gap);
+      await tester.tapAt(gap, buttons: kSecondaryMouseButton);
+      await tester.dragFrom(gap, const Offset(0, 100));
+      await tester.sendEventToBinding(
+        const PointerScrollEvent(position: gap, scrollDelta: Offset(0, 100)),
+      );
+      await tester.tap(find.byKey(const ValueKey('header-control')));
+      await tester.pump();
+      expect(controlTaps, 1);
+      expect(bodyPointers, 0);
+      expect(bodyGestures, 0);
+      expect(bodySignals, 0);
+
+      height = 24;
+      await tester.pumpWidget(page());
+      await tester.tapAt(gap);
+      expect(bodyGestures, 1);
+      visible = false;
+      await tester.pumpWidget(page());
+      await tester.tapAt(const Offset(400, 8));
+      await tester.sendEventToBinding(
+        const PointerScrollEvent(
+          position: Offset(400, 8),
+          scrollDelta: Offset(0, 100),
+        ),
+      );
+      expect(bodyGestures, 2);
+      expect(bodySignals, 1);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final (platform, reducedMotion) in [
     for (final platform in [TargetPlatform.android, TargetPlatform.windows])
       for (final reducedMotion in [false, true]) (platform, reducedMotion),

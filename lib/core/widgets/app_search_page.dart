@@ -100,10 +100,17 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
           else
             Positioned(
               key: const ValueKey<String>('app_search_controls_overlay'),
-              top: MediaQuery.paddingOf(context).top + 6,
-              left: 16,
-              right: 16,
-              child: AppPageHeaderTransition(child: Column(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: AppPageHeaderTransition(child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  MediaQuery.paddingOf(context).top + 6,
+                  16,
+                  0,
+                ),
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
@@ -253,7 +260,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                     ),
                   ),
                 ],
-              )),
+              ))),
             ),
         ],
       ),

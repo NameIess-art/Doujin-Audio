@@ -6,6 +6,7 @@ import 'package:doujin_audio/app/presentation/main_destination.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,6 +15,107 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'navigation rail blocks its transparent padding only on $platform',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        await AppPreferences.init();
+        final i18n = AppLanguageProvider();
+        final activePage = ValueNotifier(0);
+        final iconKeys = List.generate(4, (_) => GlobalKey());
+        final destinations = resolveMainDestinations(
+          showLocalLibrary: true,
+          showAsmrOne: true,
+        );
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+          i18n.dispose();
+          activePage.dispose();
+        });
+        var collapsed = false;
+        var backgroundEvents = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: StatefulBuilder(
+              builder: (context, setState) => Scaffold(
+                body: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Listener(
+                      behavior: HitTestBehavior.opaque,
+                      onPointerDown: (_) => backgroundEvents++,
+                      onPointerMove: (_) => backgroundEvents++,
+                      onPointerSignal: (_) => backgroundEvents++,
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: DesktopMainNavigation(
+                        i18n: i18n,
+                        overlaySessions: const [],
+                        destinations: destinations,
+                        isMenuCollapsed: collapsed,
+                        activePageIndex: activePage,
+                        menuIconKeys: iconKeys,
+                        menuIconLinks: List.generate(4, (_) => LayerLink()),
+                        collapseOffset: (_, _) => Offset.zero,
+                        onSwitchPage: (index) => activePage.value = index,
+                        onToggleMenu: () =>
+                            setState(() => collapsed = !collapsed),
+                        playbackGeometryKey: GlobalKey(),
+                        onReportPlaybackRect:
+                            ({
+                              required dockCollapsed,
+                              required dockAreaWidth,
+                              required expandedDockWidth,
+                            }) {},
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        for (var state = 0; state < 2; state++) {
+          final bounds = tester.getRect(find.byType(DesktopMainNavigation));
+          final point = bounds.bottomLeft + const Offset(1, -1);
+          final previousEvents = backgroundEvents;
+          await tester.tapAt(point);
+          await tester.longPressAt(point);
+          await tester.tapAt(point, buttons: kSecondaryMouseButton);
+          await tester.dragFrom(point, const Offset(0, -80));
+          await tester.sendEventToBinding(
+            PointerScrollEvent(
+              position: point,
+              scrollDelta: const Offset(0, 60),
+            ),
+          );
+          expect(backgroundEvents, previousEvents);
+          await tester.tapAt(Offset(bounds.right + 1, bounds.center.dy));
+          expect(backgroundEvents, previousEvents + 1);
+          await tester.tapAt(
+            tester.getCenter(
+              find.byKey(iconKeys[destinations[state + 1].type.index]),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(activePage.value, state + 1);
+          if (!collapsed) {
+            await tester.tap(find.byIcon(Icons.menu_open_rounded));
+            await tester.pumpAndSettle();
+          }
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     testWidgets(
       'landscape rail motion leaves ${platform.name} content constraints stable',
       (tester) async {

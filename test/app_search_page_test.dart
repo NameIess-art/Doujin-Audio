@@ -7,6 +7,64 @@ import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 void main() {
+  testWidgets('search safe area, side margins and row gap block result input', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    var bodyTaps = 0;
+    var closes = 0;
+    var categories = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(800, 600),
+            padding: EdgeInsets.only(top: 24),
+          ),
+          child: AppSearchPageScaffold<int>(
+            controller: controller,
+            focusNode: focusNode,
+            hintText: 'Search',
+            categories: const [AppSearchCategory(value: 0, label: 'All')],
+            selectedCategory: 0,
+            onCategorySelected: (_) => categories++,
+            onChanged: (_) {},
+            onSubmitted: (_) {},
+            onCloseOrClear: () => closes++,
+            body: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => bodyTaps++,
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final field = tester.getRect(
+      find.byKey(const ValueKey('app_search_field_shell')),
+    );
+    for (final point in [
+      const Offset(4, 8),
+      Offset(4, field.center.dy),
+      Offset(400, field.bottom + 3),
+    ]) {
+      await tester.tapAt(point);
+    }
+    expect(bodyTaps, 0);
+    await tester.tap(find.byKey(const ValueKey('app_search_close')));
+    await tester.tap(find.byKey(const ValueKey('app_search_category_0')));
+    expect(closes, 1);
+    expect(categories, 1);
+    await tester.enterText(find.byType(TextField), 'query');
+    expect(controller.text, 'query');
+    await tester.tapAt(const Offset(400, 200));
+    expect(bodyTaps, 1);
+  });
+
   testWidgets('keyboard animation does not rebuild search result content', (
     tester,
   ) async {

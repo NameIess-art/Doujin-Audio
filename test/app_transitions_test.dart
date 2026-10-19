@@ -93,9 +93,11 @@ class _ListenerCountingController extends AnimationController {
     : super(duration: kAppMotionSlow);
 
   final Set<AnimationStatusListener> statusListeners = {};
+  int statusListenerAdds = 0;
 
   @override
   void addStatusListener(AnimationStatusListener listener) {
+    statusListenerAdds++;
     statusListeners.add(listener);
     super.addStatusListener(listener);
   }
@@ -105,6 +107,16 @@ class _ListenerCountingController extends AnimationController {
     statusListeners.remove(listener);
     super.removeStatusListener(listener);
   }
+}
+
+class _ListenerCountingMaterialRoute extends MaterialPageRoute<void> {
+  _ListenerCountingMaterialRoute({required super.builder});
+
+  late final _ListenerCountingController trackedController;
+
+  @override
+  AnimationController createAnimationController() =>
+      trackedController = _ListenerCountingController(vsync: navigator!);
 }
 
 void main() {
@@ -1525,6 +1537,71 @@ void main() {
     expect(materialRoute.reverseTransitionDuration, kAppMotionSlow);
     await tester.pumpAndSettle();
   });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'covered Material route retains animation listeners on $platform',
+      (tester) async {
+        final navigatorKey = GlobalKey<NavigatorState>();
+        final home = _ListenerCountingMaterialRoute(
+          builder: (_) => const Scaffold(body: Text('retained-home')),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            navigatorKey: navigatorKey,
+            onGenerateInitialRoutes: (_) => [home],
+            onGenerateRoute: (_) => home,
+            theme: ThemeData(
+              platform: platform,
+              pageTransitionsTheme: const PageTransitionsTheme(
+                builders: {
+                  TargetPlatform.android: AppPageTransitionsBuilder(),
+                  TargetPlatform.windows: AppPageTransitionsBuilder(),
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final navigator = navigatorKey.currentState!;
+        unawaited(
+          navigator.push(
+            buildAppPageRoute<void>(
+              context: navigator.context,
+              child: const Scaffold(body: Text('covering-page')),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 30));
+        for (final closing in [false, true]) {
+          if (closing) {
+            await tester.pumpAndSettle();
+            navigator.pop();
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 30));
+          }
+          final additions = home.trackedController.statusListenerAdds;
+          for (var frame = 0; frame < 5; frame++) {
+            await tester.pump(const Duration(milliseconds: 20));
+          }
+          expect(
+            home.trackedController.statusListenerAdds,
+            additions,
+            reason:
+                'Delegated transition proxies must not resubscribe the '
+                'retained home route on every animation frame.',
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('covering-page'), findsNothing);
+        expect(find.text('retained-home'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(home.trackedController.statusListeners, isEmpty);
+      },
+    );
+  }
 
   Widget regions(
     String name, {

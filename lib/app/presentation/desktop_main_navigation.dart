@@ -144,7 +144,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
               : cs.surfaceContainerLow)
         : cs.surfaceContainerLow;
 
-    return AnimatedContainer(
+    final sidebar = AnimatedContainer(
       key: ValueKey<bool>(isLandscapeLayout),
       // Resizing the shell every frame also relayouts the adjacent page trees.
       // Landscape motion is confined to the rail below instead.
@@ -604,6 +604,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
         ],
       ),
     );
+    return Listener(behavior: HitTestBehavior.opaque, child: sidebar);
   }
 
   void _finishMotion() {

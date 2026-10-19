@@ -3,6 +3,61 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('header safe area and margins block input behind its controls', (
+    tester,
+  ) async {
+    var bodyTaps = 0;
+    var buttonTaps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(800, 600),
+            padding: EdgeInsets.only(top: 24),
+          ),
+          child: Scaffold(
+            body: Stack(
+              fit: StackFit.expand,
+              children: [
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => bodyTaps++,
+                  child: const SizedBox.expand(),
+                ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: TopPageHeader(
+                    title: 'Title',
+                    leading: IconButton(
+                      key: const ValueKey('header-back'),
+                      onPressed: () => buttonTaps++,
+                      icon: const Icon(Icons.arrow_back),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    final rect = tester.getRect(find.byType(TopPageHeader));
+    for (final point in [
+      const Offset(4, 8),
+      Offset(rect.right - 2, rect.center.dy),
+      Offset(rect.center.dx, rect.bottom - 1),
+    ]) {
+      await tester.tapAt(point);
+    }
+    expect(bodyTaps, 0);
+    await tester.tap(find.byKey(const ValueKey('header-back')));
+    expect(buttonTaps, 1);
+    await tester.tapAt(Offset(rect.center.dx, rect.bottom + 10));
+    expect(bodyTaps, 1);
+  });
+
   testWidgets(
     'scrolling rebuilds only changing header geometry',
     (tester) async {

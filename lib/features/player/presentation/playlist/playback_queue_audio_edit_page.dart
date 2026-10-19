@@ -248,42 +248,45 @@ class _PlaybackQueueAudioEditPageState
                           top: headerHeight,
                           left: 0,
                           right: 0,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                              AppSpacing.xs,
-                              AppSpacing.sm,
-                              AppSpacing.xs,
-                              AppSpacing.xs,
-                            ),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: HeaderFloatingSurface(
-                                height: 32,
-                                radius: 16,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.playlist_play_rounded,
-                                      size: 16,
-                                      color: cs.primary,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      i18n.tr('queue_added_audio'),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleSmall
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                            color: cs.onSurface,
-                                            fontSize: 13,
-                                          ),
-                                    ),
-                                  ],
+                          child: Listener(
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                AppSpacing.xs,
+                                AppSpacing.sm,
+                                AppSpacing.xs,
+                                AppSpacing.xs,
+                              ),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: HeaderFloatingSurface(
+                                  height: 32,
+                                  radius: 16,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.playlist_play_rounded,
+                                        size: 16,
+                                        color: cs.primary,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        i18n.tr('queue_added_audio'),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              color: cs.onSurface,
+                                              fontSize: 13,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -330,42 +333,45 @@ class _PlaybackQueueAudioEditPageState
                             top: sectionTopOffset,
                             left: 0,
                             right: 0,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                AppSpacing.xs,
-                                AppSpacing.sm,
-                                AppSpacing.xs,
-                                AppSpacing.xs,
-                              ),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: HeaderFloatingSurface(
-                                  height: 32,
-                                  radius: 16,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.playlist_play_rounded,
-                                        size: 17,
-                                        color: cs.primary,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        i18n.tr('playback_list_audio'),
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleSmall
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w700,
-                                              color: cs.onSurface,
-                                              fontSize: 13,
-                                            ),
-                                      ),
-                                    ],
+                            child: Listener(
+                              behavior: HitTestBehavior.opaque,
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  AppSpacing.xs,
+                                  AppSpacing.sm,
+                                  AppSpacing.xs,
+                                  AppSpacing.xs,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: HeaderFloatingSurface(
+                                    height: 32,
+                                    radius: 16,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.playlist_play_rounded,
+                                          size: 17,
+                                          color: cs.primary,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          i18n.tr('playback_list_audio'),
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleSmall
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                                color: cs.onSurface,
+                                                fontSize: 13,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),

@@ -430,9 +430,12 @@ extension _MainScreenLayout on _MainScreenState {
             right: 0,
             bottom: 0,
             height: maskHeight,
-            child: const AppEdgeFadeMask(
-              key: ValueKey<String>('mobile_bottom_capsule_fade_mask'),
-              direction: AppEdgeFadeDirection.towardBottom,
+            child: const Listener(
+              behavior: HitTestBehavior.opaque,
+              child: AppEdgeFadeMask(
+                key: ValueKey<String>('mobile_bottom_capsule_fade_mask'),
+                direction: AppEdgeFadeDirection.towardBottom,
+              ),
             ),
           ),
         SafeArea(

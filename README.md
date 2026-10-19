@@ -222,6 +222,8 @@ tool\build_windows.bat
 
 [GitHub Actions](.github/workflows/flutter.yml) 负责静态分析、全量 Flutter 测试、Android JVM 测试、双端验证构建和正式打包。正式 Release 包含 Android universal、arm64、armv7、x64 APK 与 Windows x64 安装包，每个资产附带同名 `.sha256`。
 
+Flutter 检查、Android 验证与 Windows 打包并行执行；Android 基础验证完成后，模拟器测试与正式 APK 构建并行，共用本次流水线已编译并校验的字幕原生库。Gradle 依赖和 Windows 工具下载也会缓存。正式发布仍等待所有必需检查通过，再统一发布双端资产。
+
 创建 tag 前，确认版本与 `pubspec.yaml` 一致，并等待对应提交的主分支 CI 全部成功：
 
 ```powershell

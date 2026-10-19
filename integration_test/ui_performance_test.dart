@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/app/presentation/main_destination.dart';
+import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -132,6 +133,7 @@ void main() {
         'playback',
         'page-transitions',
         'page-transitions-playing',
+        'page-transitions-settings-cycle',
         'page-transitions-startup',
       },
       contains(_scenario),
@@ -174,7 +176,9 @@ void main() {
         expect(await File(cover.path).exists(), true);
       }
     }
-    if (_scenario == 'playback' || _scenario == 'page-transitions-playing') {
+    if (_scenario == 'playback' ||
+        _scenario == 'page-transitions-playing' ||
+        _scenario == 'page-transitions-settings-cycle') {
       await _measureRealPlayback(tester, binding);
       return;
     }
@@ -705,12 +709,22 @@ Future<void> _measureRealPlayback(
     trackTree: const [],
   );
   addTearDown(asmrController.dispose);
+  const settingsCycle = _scenario == 'page-transitions-settings-cycle';
+  final navigation = settingsCycle
+      ? WorkDetailNavigation(rootNavigatorKey: GlobalKey<NavigatorState>())
+      : null;
+  if (navigation != null) addTearDown(navigation.dispose);
   // Keep the real overlay provider, native event streams and runtime bindings.
   await tester.pumpWidget(
     fixture.build(
-      const ExcludeSemantics(
+      ExcludeSemantics(
         excluding: !_semanticsEnabled,
-        child: MainScreen(),
+        child: navigation == null
+            ? const MainScreen()
+            : WorkDetailNavigationScope(
+                navigation: navigation,
+                child: const MainScreen(),
+              ),
       ),
       navigatorObservers: [
         UiInteractionNavigatorObserver.instance,
@@ -722,6 +736,84 @@ Future<void> _measureRealPlayback(
     ),
   );
   await _switchMainPage(tester, MainDestinationType.library);
+  if (settingsCycle) {
+    await _waitForHostTimeline(tester);
+    final rounds = <Map<String, Object>>[];
+    for (var index = 0; index < 17; index++) {
+      expect(
+        await fixture.playback.spawnSessionWithQueue(
+          [tracks[index]],
+          autoPlay: false,
+          loopMode: SessionLoopMode.single,
+        ),
+        true,
+      );
+    }
+    final id = fixture.playback.sessions.keys.first;
+    await _switchMainPage(tester, MainDestinationType.settings);
+    final i18n = fixture.languageProvider;
+    for (final phase in ['before-play', 'playing', 'paused']) {
+      if (phase == 'playing') {
+        await _toggleRuntimeSession(
+          tester,
+          fixture,
+          id,
+          playing: true,
+        );
+      } else if (phase == 'paused') {
+        // Normal audio pause immediately releases the native service. Querying
+        // its snapshot after the acknowledged pause would require it to exist.
+        await _pumpUntilComplete(
+          tester,
+          fixture.playback.toggleSessionPlayPause(id),
+        );
+        expect(fixture.playback.sessionById(id)!.state.playing, false);
+        expect(fixture.playback.sessionById(id)!.playbackError, isNull);
+      }
+      for (var frame = 0; frame < 120; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      final later = find.text(i18n.tr('later')).hitTestable();
+      if (phase == 'playing' && later.evaluate().isNotEmpty) {
+        await tester.tap(later);
+        for (var frame = 0; frame < 40; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+      }
+      for (var opening = 1; opening <= _openings; opening++) {
+        for (final category in ['section_common', 'section_playback']) {
+          final tile = find.ancestor(
+            of: find.text(i18n.tr(category)),
+            matching: find.byType(ListTile),
+          );
+          tester.widget<ListTile>(tile).onTap!();
+          for (var frame = 0; frame < 40; frame++) {
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          final header = tester.element(find.byType(TopPageHeader));
+          final route = ModalRoute.of(header)! as TransitionRoute<dynamic>;
+          final navigator = Navigator.of(header);
+          expect(navigator, navigation!.contentNavigatorKey.currentState);
+          rounds.add(
+            await _measureTransitionAction(
+              tester,
+              'settings-$phase-$category-exit',
+              opening,
+              navigator.pop,
+              () => _routeTransitionVisible(route),
+            ),
+          );
+        }
+      }
+    }
+    binding.reportData = {
+      'uiPerformance': _pageTransitionReport((
+        rounds: rounds,
+        conditions: <Map<String, Object>>[],
+      ), playing: true),
+    };
+    return;
+  }
   if (_scenario == 'page-transitions-playing') {
     expect(
       await fixture.playback.spawnSessionWithQueue(

@@ -672,8 +672,11 @@ class AppPageHeaderTransition extends StatelessWidget {
   Widget build(BuildContext context) {
     final motion = context
         .dependOnInheritedWidgetOfExactType<_AppPageMotionScope>();
-    if (motion == null) return child;
-    final header = motion.headerBuilder(context, child);
+    // Transparent gaps belong to the header too; stop sibling hit testing
+    // without competing with gestures owned by its controls or ancestors.
+    final hitRegion = Listener(behavior: HitTestBehavior.opaque, child: child);
+    if (motion == null) return hitRegion;
+    final header = motion.headerBuilder(context, hitRegion);
     final host = context
         .findAncestorRenderObjectOfType<_RenderPageTransitionHost>();
     if (host == null) return header;
@@ -720,8 +723,10 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
 
   bool get _isInteractive =>
       widget.animation.status == AnimationStatus.completed &&
-      (_routeSecondaryAnimation ?? widget.secondaryAnimation).status ==
-          AnimationStatus.dismissed;
+      _secondaryAnimation.status == AnimationStatus.dismissed;
+
+  Animation<double> get _secondaryAnimation =>
+      _routeSecondaryAnimation ?? widget.secondaryAnimation;
 
   @override
   void initState() {
@@ -729,17 +734,8 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     _pageChild = ValueNotifier(widget.child);
     _updateAnimations();
     _interactive = _isInteractive;
-    _listenToStatus(widget);
-  }
-
-  void _listenToStatus(_CoveringPageTransition transition) {
-    transition.animation.addStatusListener(_handleStatusChanged);
-    transition.secondaryAnimation.addStatusListener(_handleStatusChanged);
-  }
-
-  void _stopListeningToStatus(_CoveringPageTransition transition) {
-    transition.animation.removeStatusListener(_handleStatusChanged);
-    transition.secondaryAnimation.removeStatusListener(_handleStatusChanged);
+    widget.animation.addStatusListener(_handleStatusChanged);
+    _secondaryAnimation.addStatusListener(_handleStatusChanged);
   }
 
   void _updateAnimations() {
@@ -754,9 +750,13 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     _position = _motion!.drive(
       Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero),
     );
+    _updateHeaderAnimation();
+  }
+
+  void _updateHeaderAnimation() {
     _headerAnimation = Listenable.merge([
       widget.animation,
-      _routeSecondaryAnimation ?? widget.secondaryAnimation,
+      _secondaryAnimation,
     ]);
   }
 
@@ -766,14 +766,25 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     // Flutter refreshes its gesture-listening child wrapper on each route tick.
     // Update that leaf without invalidating the retained motion/activity tree.
     _pageChild.value = widget.child;
-    final animationsChanged =
-        oldWidget.animation != widget.animation ||
+    // Material's delegated transition can supply a fresh dismissed proxy on
+    // every tick. The route's real secondary animation still owns this page;
+    // its proxy must not replace either the listeners or the retained tree.
+    final primaryChanged = oldWidget.animation != widget.animation;
+    final secondaryChanged =
+        _routeSecondaryAnimation == null &&
         oldWidget.secondaryAnimation != widget.secondaryAnimation;
-    if (animationsChanged) {
-      _stopListeningToStatus(oldWidget);
-      _listenToStatus(widget);
-      _interactive = _isInteractive;
+    if (primaryChanged) {
+      oldWidget.animation.removeStatusListener(_handleStatusChanged);
+      widget.animation.addStatusListener(_handleStatusChanged);
       _updateAnimations();
+    }
+    if (secondaryChanged) {
+      oldWidget.secondaryAnimation.removeStatusListener(_handleStatusChanged);
+      _secondaryAnimation.addStatusListener(_handleStatusChanged);
+      if (!primaryChanged) _updateHeaderAnimation();
+    }
+    if (primaryChanged || secondaryChanged) {
+      _interactive = _isInteractive;
       _transition = null;
     }
     if (oldWidget.workDetailTransition != widget.workDetailTransition ||
@@ -798,24 +809,21 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     // MaterialPageRoute replaces the original secondary animation with a
     // dismissed proxy when it delegates transitions to the incoming route.
     // Read the route's real animation so its header still fades when covered.
+    final previousSecondary = _secondaryAnimation;
     final secondaryAnimation = ModalRoute.of(context)?.secondaryAnimation;
-    if (!identical(secondaryAnimation, _routeSecondaryAnimation)) {
-      _routeSecondaryAnimation?.removeStatusListener(_handleStatusChanged);
-      _routeSecondaryAnimation = secondaryAnimation;
-      _routeSecondaryAnimation?.addStatusListener(_handleStatusChanged);
-    }
+    _routeSecondaryAnimation = secondaryAnimation;
+    if (identical(previousSecondary, _secondaryAnimation)) return;
+    previousSecondary.removeStatusListener(_handleStatusChanged);
+    _secondaryAnimation.addStatusListener(_handleStatusChanged);
     _interactive = _isInteractive;
-    _headerAnimation = Listenable.merge([
-      widget.animation,
-      _routeSecondaryAnimation ?? widget.secondaryAnimation,
-    ]);
+    _updateHeaderAnimation();
     _transition = null;
   }
 
   @override
   void dispose() {
-    _stopListeningToStatus(widget);
-    _routeSecondaryAnimation?.removeStatusListener(_handleStatusChanged);
+    widget.animation.removeStatusListener(_handleStatusChanged);
+    _secondaryAnimation.removeStatusListener(_handleStatusChanged);
     _motion?.dispose();
     _pageChild.dispose();
     super.dispose();
@@ -838,7 +846,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
       headerViewport: _headerViewport,
       configuration: (
         widget.animation,
-        widget.secondaryAnimation,
+        _secondaryAnimation,
         constraints.maxWidth,
         widget.workDetailTransition,
         animatePage,
@@ -861,9 +869,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
             : header,
         builder: (context, header) {
           final incoming = kAppFadeCurve.transform(widget.animation.value);
-          final outgoing = kAppFadeCurve.transform(
-            (_routeSecondaryAnimation ?? widget.secondaryAnimation).value,
-          );
+          final outgoing = kAppFadeCurve.transform(_secondaryAnimation.value);
           final fadedHeader = Opacity(
             opacity: incoming * (1 - outgoing),
             child: header,

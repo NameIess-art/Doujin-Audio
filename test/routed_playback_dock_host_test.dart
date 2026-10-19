@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -50,12 +52,17 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   TargetPlatform platform, {
   bool reducedMotion = false,
   bool dockCollapsed = true,
+  Size? viewportSize,
+  EdgeInsets padding = EdgeInsets.zero,
+  Widget? home,
 }) async {
   debugDefaultTargetPlatformOverride = platform;
   tester.view.devicePixelRatio = 1;
-  final size = platform == TargetPlatform.windows
-      ? const Size(1280, 800)
-      : const Size(390, 820);
+  final size =
+      viewportSize ??
+      (platform == TargetPlatform.windows
+          ? const Size(1280, 800)
+          : const Size(390, 820));
   tester.view.physicalSize = size;
   addTearDown(() {
     debugDefaultTargetPlatformOverride = null;
@@ -98,12 +105,12 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(
                 context,
-              ).copyWith(disableAnimations: reducedMotion),
+              ).copyWith(disableAnimations: reducedMotion, padding: padding),
               child: Builder(
                 builder: (context) => wrapNavigator(context, child!),
               ),
             ),
-            home: const Scaffold(body: Text('Home')),
+            home: home ?? const Scaffold(body: Text('Home')),
           );
         },
       ),
@@ -125,13 +132,42 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   return navigator;
 }
 
-PageRoute<void> _detailRoute(GlobalKey<NavigatorState> navigator) =>
-    buildAppPageRoute<void>(
-      context: navigator.currentContext!,
-      settings: const RouteSettings(name: workDetailRouteName),
-      workDetailTransition: true,
-      child: const Scaffold(body: Text('Detail')),
-    );
+PageRoute<void> _detailRoute(
+  GlobalKey<NavigatorState> navigator, {
+  Widget? child,
+}) => buildAppPageRoute<void>(
+  context: navigator.currentContext!,
+  settings: const RouteSettings(name: workDetailRouteName),
+  workDetailTransition: true,
+  child: child ?? const Scaffold(body: Text('Detail')),
+);
+
+Future<void> _exercisePointerInputs(
+  WidgetTester tester,
+  Offset point, {
+  GlobalKey<NavigatorState>? navigator,
+}) async {
+  for (final input in <Future<void> Function()>[
+    () => tester.tapAt(point),
+    () => tester.longPressAt(point),
+    () => tester.tapAt(point, buttons: kSecondaryMouseButton),
+    () => tester.dragFrom(point, const Offset(0, -80)),
+    () => tester.sendEventToBinding(
+      PointerScrollEvent(position: point, scrollDelta: const Offset(0, 60)),
+    ),
+  ]) {
+    await input();
+    if (navigator != null) {
+      await tester.pumpAndSettle();
+      // Card gestures may open playback or a menu. Test each input against
+      // the work detail again instead of the resulting route's barrier.
+      navigator.currentState!.popUntil(
+        (route) => route.settings.name == workDetailRouteName,
+      );
+      await tester.pumpAndSettle();
+    }
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -141,7 +177,173 @@ void main() {
   });
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
+  testWidgets('portrait dock blocks its full bottom strip and releases it', (
+    tester,
+  ) async {
+    var backgroundEvents = 0;
+    Widget background(String label) => Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => backgroundEvents++,
+      onPointerMove: (_) => backgroundEvents++,
+      onPointerSignal: (_) => backgroundEvents++,
+      child: SizedBox.expand(child: Text(label)),
+    );
+    final navigator = await _pumpHost(
+      tester,
+      TargetPlatform.android,
+      padding: const EdgeInsets.only(bottom: 30),
+      home: Scaffold(body: background('Home')),
+    );
+    unawaited(
+      navigator.currentState!.push(
+        _detailRoute(navigator, child: Scaffold(body: background('Detail'))),
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (final point in [
+      const Offset(1, 735),
+      const Offset(389, 735),
+      const Offset(195, 819),
+    ]) {
+      await _exercisePointerInputs(tester, point);
+      expect(
+        backgroundEvents,
+        0,
+        reason: 'The whole dock strip blocks $point.',
+      );
+    }
+    await tester.tapAt(const Offset(1, 733));
+    expect(backgroundEvents, 1);
+
+    var dialogTaps = 0;
+    unawaited(
+      showDialog<void>(
+        context: navigator.currentContext!,
+        useRootNavigator: false,
+        builder: (_) => Align(
+          alignment: Alignment.bottomCenter,
+          child: GestureDetector(
+            key: const ValueKey('dock_overlay_dialog'),
+            onTap: () => dialogTaps++,
+            child: const SizedBox(
+              width: 100,
+              height: 100,
+              child: ColoredBox(color: Colors.white),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final dialog = find.byKey(const ValueKey('dock_overlay_dialog'));
+    final dialogCenter = tester.getCenter(dialog);
+    expect(dialogCenter.dy, greaterThanOrEqualTo(734));
+    await tester.runAsync(() async {
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.ancestor(of: dialog, matching: find.byType(RepaintBoundary)).last,
+      );
+      final image = await boundary.toImage();
+      try {
+        final pixels = (await image.toByteData())!;
+        final local = boundary.globalToLocal(dialogCenter);
+        final offset = (local.dy.floor() * image.width + local.dx.floor()) * 4;
+        expect(
+          pixels.getUint32(offset),
+          0xffffffff,
+          reason: 'The white dialog must paint over the dock at its center.',
+        );
+      } finally {
+        image.dispose();
+      }
+    });
+    await tester.tap(dialog);
+    expect(dialogTaps, 1);
+    expect(backgroundEvents, 1);
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(1, 819));
+    expect(backgroundEvents, 1);
+
+    final removedDialog = DialogRoute<void>(
+      context: navigator.currentContext!,
+      builder: (_) => const AlertDialog(content: Text('Removed popup')),
+    );
+    unawaited(navigator.currentState!.push(removedDialog));
+    await tester.pumpAndSettle();
+    navigator.currentState!.removeRoute(removedDialog);
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(1, 819));
+    expect(backgroundEvents, 1);
+
+    unawaited(
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => Scaffold(body: background('Covered')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(1, 819));
+    expect(backgroundEvents, 2);
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(1, 819));
+    expect(backgroundEvents, 2);
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(1, 819));
+    expect(backgroundEvents, 3);
+    expect(_dock, findsNothing);
+    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets('landscape dock blocks its rectangle only on $platform', (
+      tester,
+    ) async {
+      var backgroundEvents = 0;
+      final navigator = await _pumpHost(
+        tester,
+        platform,
+        viewportSize: const Size(1280, 800),
+      );
+      unawaited(
+        navigator.currentState!.push(
+          _detailRoute(
+            navigator,
+            child: Scaffold(
+              body: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (_) => backgroundEvents++,
+                onPointerMove: (_) => backgroundEvents++,
+                onPointerSignal: (_) => backgroundEvents++,
+                child: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final bounds = tester.getRect(_dock);
+      await _exercisePointerInputs(
+        tester,
+        bounds.topLeft + const Offset(1, 1),
+        navigator: navigator,
+      );
+      expect(backgroundEvents, 0);
+      await tester.tapAt(bounds.topLeft - const Offset(1, 0));
+      await tester.tapAt(Offset(bounds.right + 1, bounds.center.dy));
+      await tester.tapAt(Offset(bounds.center.dx, bounds.bottom + 1));
+      expect(backgroundEvents, 3);
+      navigator.currentState!.pop();
+      await tester.pumpAndSettle();
+      await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+      expect(tester.takeException(), isNull);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
     testWidgets(
       'page opened from playback menu stays above it after a dialog on $platform',
       (tester) async {
@@ -189,10 +391,12 @@ void main() {
         expect(
           tester
               .widget<Opacity>(
-                find.ancestor(
-                  of: _dock,
-                  matching: find.byType(Opacity, skipOffstage: false),
-                ).first,
+                find
+                    .ancestor(
+                      of: _dock,
+                      matching: find.byType(Opacity, skipOffstage: false),
+                    )
+                    .first,
               )
               .opacity,
           1,

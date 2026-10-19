@@ -5817,6 +5817,35 @@ void main() {
         findsOneWidget,
       );
       expect(placeholders, findsNWidgets(3));
+      final scrollableTargets = tester
+          .elementList(find.byType(Scrollable))
+          .map((element) => element.findRenderObject())
+          .toSet();
+      for (final title in ['queue_added_audio', 'playback_list_audio']) {
+        final header = find.ancestor(
+          of: find.text(fixture.languageProvider.tr(title)),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Listener &&
+                widget.behavior == HitTestBehavior.opaque,
+          ),
+        ).first;
+        final rect = tester.getRect(header);
+        final target = tester.renderObject<RenderPointerListener>(header);
+        final hitTargets = tester
+            .hitTestOnBinding(Offset(rect.right - 2, rect.center.dy))
+            .path
+            .map((entry) => entry.target)
+            .toSet();
+        expect(hitTargets, contains(target));
+        expect(hitTargets.intersection(scrollableTargets), isEmpty);
+      }
+      final sourceHitTargets = tester
+          .hitTestOnBinding(tester.getCenter(addButtons.first))
+          .path
+          .map((entry) => entry.target)
+          .toSet();
+      expect(sourceHitTargets.intersection(scrollableTargets), isNotEmpty);
       final primary = Theme.of(
         tester.element(find.byType(PlaybackQueueAudioEditPage)),
       ).colorScheme.primary;

@@ -155,6 +155,7 @@ class _RoutedPlaybackDockHostState
           return;
         }
         final orderedEntries = <OverlayEntry>[];
+        // Popup barriers and contents must keep their place in route order.
         for (final route in _routeObserver.routes) {
           orderedEntries.addAll(route.overlayEntries);
           if (identical(route, workDetailRoute)) orderedEntries.add(entry);
@@ -292,27 +293,27 @@ class _RootPageRouteObserver extends NavigatorObserver {
 
   final ValueNotifier<int> revision;
   final ValueChanged<PageRoute<dynamic>?> onTopPageChanged;
-  final List<PageRoute<dynamic>> _routes = <PageRoute<dynamic>>[];
-  final Map<PageRoute<dynamic>, (Animation<double>, AnimationStatusListener)>
+  final List<Route<dynamic>> _routes = <Route<dynamic>>[];
+  final Map<TransitionRoute<dynamic>, (Animation<double>, AnimationStatusListener)>
   _routeAnimationListeners = {};
   final Set<PageRoute<dynamic>> _departingRoutes = {};
   final Set<PageRoute<dynamic>> _departingWorkDetailRoutes = {};
   // Nested dialogs must not restore dock ordering while their menu is open.
   final Set<PopupRoute<dynamic>> _sessionDetailPopups = {};
-  final Set<PopupRoute<dynamic>> _popups = {};
-  bool get hasPopups => _popups.isNotEmpty;
+  bool get hasPopups => _routes.any((route) => route is PopupRoute<dynamic>);
   bool _syncScheduled = false;
   bool _disposed = false;
 
-  PageRoute<dynamic>? get topRoute => _routes.lastOrNull;
-  List<PageRoute<dynamic>> get routes => List.unmodifiable(_routes);
+  PageRoute<dynamic>? get topRoute =>
+      _routes.whereType<PageRoute<dynamic>>().lastOrNull;
+  List<Route<dynamic>> get routes => List.unmodifiable(_routes);
   bool get suppressDockForSessionDetail => _sessionDetailPopups.isNotEmpty;
   bool get isWorkDetailDeparting => _departingWorkDetailRoutes.isNotEmpty;
 
   PageRoute<dynamic>? lastRouteNamed(String name) {
     for (var index = _routes.length - 1; index >= 0; index--) {
       final route = _routes[index];
-      if (route.settings.name == name) return route;
+      if (route is PageRoute<dynamic> && route.settings.name == name) return route;
     }
     if (name == workDetailRouteName && _departingWorkDetailRoutes.isNotEmpty) {
       return _departingWorkDetailRoutes.last;
@@ -361,12 +362,11 @@ class _RootPageRouteObserver extends NavigatorObserver {
     }
     _routeAnimationListeners.clear();
     _sessionDetailPopups.clear();
-    _popups.clear();
     _departingRoutes.clear();
     _departingWorkDetailRoutes.clear();
   }
 
-  void _trackAnimation(PageRoute<dynamic> route) {
+  void _trackAnimation(TransitionRoute<dynamic> route) {
     final animation = route.animation;
     if (animation == null || _routeAnimationListeners.containsKey(route)) {
       return;
@@ -377,6 +377,11 @@ class _RootPageRouteObserver extends NavigatorObserver {
         if (status == AnimationStatus.dismissed) {
           _departingRoutes.remove(route);
           _departingWorkDetailRoutes.remove(route);
+          if (route is PopupRoute<dynamic> && !route.isActive) {
+            // completed waits for overlay disposal; stop reordering these
+            // entries as soon as Navigator finalizes the popup instead.
+            _routes.remove(route);
+          }
         }
         _sync();
       }
@@ -386,7 +391,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
     animation.addStatusListener(listener);
   }
 
-  void _untrackAnimation(PageRoute<dynamic> route) {
+  void _untrackAnimation(TransitionRoute<dynamic> route) {
     final listener = _routeAnimationListeners.remove(route);
     listener?.$1.removeStatusListener(listener.$2);
   }
@@ -394,11 +399,21 @@ class _RootPageRouteObserver extends NavigatorObserver {
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     if (route is PopupRoute<dynamic>) {
-      _popups.add(route);
+      _routes.add(route);
+      _trackAnimation(route);
       _sync();
+      // Navigator reorders its entries after observers run, including when a
+      // popup finishes entering. Restore the dock below it after the first
+      // layout as well as at the normal animation-status synchronization.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_disposed && _routes.contains(route)) _syncImmediately();
+      });
       unawaited(
         route.completed.then((_) {
-          if (!_disposed && _popups.remove(route)) _syncImmediately();
+          if (_disposed) return;
+          _routes.remove(route);
+          _untrackAnimation(route);
+          _syncImmediately();
         }),
       );
     }
@@ -424,6 +439,12 @@ class _RootPageRouteObserver extends NavigatorObserver {
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PopupRoute<dynamic>) {
+      if (route.animation?.status == AnimationStatus.dismissed) {
+        _routes.remove(route);
+      }
+      _sync();
+    }
     if (route is PageRoute<dynamic>) {
       if (route is SessionDetailRoute) {
         _sessionDetailPopups.clear();
@@ -454,6 +475,12 @@ class _RootPageRouteObserver extends NavigatorObserver {
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PopupRoute<dynamic>) {
+      _routes.remove(route);
+      _sessionDetailPopups.remove(route);
+      _untrackAnimation(route);
+      _sync();
+    }
     if (route is PageRoute<dynamic>) {
       if (route is SessionDetailRoute) {
         _sessionDetailPopups.clear();
@@ -471,20 +498,20 @@ class _RootPageRouteObserver extends NavigatorObserver {
     if (oldRoute is SessionDetailRoute) {
       _sessionDetailPopups.clear();
     }
-    if (oldRoute is PageRoute<dynamic>) {
+    if (oldRoute is TransitionRoute<dynamic>) {
       _untrackAnimation(oldRoute);
       _departingRoutes.remove(oldRoute);
       _departingWorkDetailRoutes.remove(oldRoute);
       final index = _routes.indexOf(oldRoute);
       if (index >= 0) {
-        if (newRoute is PageRoute<dynamic>) {
+        if (newRoute is TransitionRoute<dynamic>) {
           _routes[index] = newRoute;
           _trackAnimation(newRoute);
         } else {
           _routes.removeAt(index);
         }
       }
-    } else if (newRoute is PageRoute<dynamic>) {
+    } else if (newRoute is TransitionRoute<dynamic>) {
       _routes.add(newRoute);
       _trackAnimation(newRoute);
     }
@@ -685,21 +712,24 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
                 height: dockRect.height,
                 child: SizedBox.expand(
                   key: const ValueKey<String>('routed_playback_dock_width'),
-                  child: ClipRRect(
-                    key: const ValueKey<String>('routed_playback_dock'),
-                    borderRadius: BorderRadius.circular(
-                      kActiveSessionCarouselDockHeight / 2,
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    child: ClipRRect(
+                      key: const ValueKey<String>('routed_playback_dock'),
+                      borderRadius: BorderRadius.circular(
+                        kActiveSessionCarouselDockHeight / 2,
+                      ),
+                      child: !widget.geometry.mainDockCollapsed
+                          ? RepaintBoundary(child: dockContent())
+                          : OverflowBox(
+                              alignment: Alignment.centerLeft,
+                              minWidth: expandedRect.width,
+                              maxWidth: expandedRect.width,
+                              minHeight: kActiveSessionCarouselDockHeight,
+                              maxHeight: kActiveSessionCarouselDockHeight,
+                              child: RepaintBoundary(child: dockContent()),
+                            ),
                     ),
-                    child: !widget.geometry.mainDockCollapsed
-                        ? RepaintBoundary(child: dockContent())
-                        : OverflowBox(
-                            alignment: Alignment.centerLeft,
-                            minWidth: expandedRect.width,
-                            maxWidth: expandedRect.width,
-                            minHeight: kActiveSessionCarouselDockHeight,
-                            maxHeight: kActiveSessionCarouselDockHeight,
-                            child: RepaintBoundary(child: dockContent()),
-                          ),
                   ),
                 ),
               ),
@@ -712,61 +742,68 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     return IgnorePointer(
       key: const ValueKey<String>('routed_playback_dock_interaction'),
       ignoring: !widget.active || widget.covered,
-      child: SafeArea(
-        top: false,
-        minimum: const EdgeInsets.only(bottom: kMobileDockBottomMargin),
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 430),
-              child: FractionallySizedBox(
-                widthFactor: 0.96,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    _reportDockBounds();
-                    final isExpandedDock =
-                        !widget.geometry.mainDockCollapsed &&
-                        _transitionWidth(constraints.maxWidth) >= 160;
-                    return Align(
-                      alignment: Alignment.centerRight,
-                      child: SizedBox(
-                        key: const ValueKey<String>(
-                          'routed_playback_dock_width',
-                        ),
-                        child: AnimatedContainer(
-                          key: _dockBoundsKey,
-                          duration: duration,
-                          curve: Curves.easeOutCubic,
-                          width: (_expanded && !widget.departing)
-                              ? constraints.maxWidth
-                              : _transitionWidth(constraints.maxWidth),
-                          height: kActiveSessionCarouselDockHeight,
-                          // Animate the visible window while retaining the
-                          // carousel's final layout throughout the transition.
-                          child: ClipRRect(
-                            key: const ValueKey<String>('routed_playback_dock'),
-                            borderRadius: BorderRadius.circular(
-                              kActiveSessionCarouselDockHeight / 2,
-                            ),
-                            child: isExpandedDock
-                                ? RepaintBoundary(child: dockContent())
-                                : OverflowBox(
-                                    alignment: Alignment.centerLeft,
-                                    minWidth: constraints.maxWidth,
-                                    maxWidth: constraints.maxWidth,
-                                    minHeight: kActiveSessionCarouselDockHeight,
-                                    maxHeight: kActiveSessionCarouselDockHeight,
-                                    child: RepaintBoundary(
-                                      child: dockContent(),
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        child: SafeArea(
+          top: false,
+          minimum: const EdgeInsets.only(bottom: kMobileDockBottomMargin),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 430),
+                child: FractionallySizedBox(
+                  widthFactor: 0.96,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      _reportDockBounds();
+                      final isExpandedDock =
+                          !widget.geometry.mainDockCollapsed &&
+                          _transitionWidth(constraints.maxWidth) >= 160;
+                      return Align(
+                        alignment: Alignment.centerRight,
+                        child: SizedBox(
+                          key: const ValueKey<String>(
+                            'routed_playback_dock_width',
+                          ),
+                          child: AnimatedContainer(
+                            key: _dockBoundsKey,
+                            duration: duration,
+                            curve: Curves.easeOutCubic,
+                            width: (_expanded && !widget.departing)
+                                ? constraints.maxWidth
+                                : _transitionWidth(constraints.maxWidth),
+                            height: kActiveSessionCarouselDockHeight,
+                            // Animate the visible window while retaining the
+                            // carousel's final layout throughout the transition.
+                            child: ClipRRect(
+                              key: const ValueKey<String>(
+                                'routed_playback_dock',
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                kActiveSessionCarouselDockHeight / 2,
+                              ),
+                              child: isExpandedDock
+                                  ? RepaintBoundary(child: dockContent())
+                                  : OverflowBox(
+                                      alignment: Alignment.centerLeft,
+                                      minWidth: constraints.maxWidth,
+                                      maxWidth: constraints.maxWidth,
+                                      minHeight:
+                                          kActiveSessionCarouselDockHeight,
+                                      maxHeight:
+                                          kActiveSessionCarouselDockHeight,
+                                      child: RepaintBoundary(
+                                        child: dockContent(),
+                                      ),
                                     ),
-                                  ),
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
             ),

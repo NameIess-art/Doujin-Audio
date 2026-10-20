@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/app_dialog.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../features/player/presentation/playback_providers.dart';
 import '../state/app_runtime_providers.dart';
@@ -188,7 +189,7 @@ class GlobalShortcuts extends ConsumerWidget {
     _isHelpOpen = true;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     try {
-      await showDialog<void>(
+      await showAppDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
         title: Text(i18n.tr('keyboard_shortcuts_title')),

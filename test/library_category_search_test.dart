@@ -212,7 +212,7 @@ void main() {
       );
       cache.filter = null;
       await tester.tap(find.text('重试'));
-      await tester.pumpAndSettle();
+      await pumpUntilFound(tester, find.byKey(const ValueKey('category_/Alpha')));
       expect(find.byKey(const ValueKey('category_/Alpha')), findsOneWidget);
       expect(find.byKey(const ValueKey('category_/Beta')), findsNothing);
       expect(tester.takeException(), isNull);

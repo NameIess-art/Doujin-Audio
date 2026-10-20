@@ -9,6 +9,7 @@ import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
+import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../library/application/work_text_service.dart';
@@ -62,16 +63,21 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   List<({String sourcePath, String name})>? _subtitleFiles;
   bool _subtitleBusy = false;
   double? _selectionMenuHeight;
+  late PlaybackSubtitleService _subtitles;
+  int _availableSubtitleCount = 0;
+  int _subtitleCountRequestId = 0;
 
   @override
   void initState() {
     super.initState();
+    _subtitles = ref.read(playbackSubtitleServiceProvider)
+      ..addListener(_handleSubtitleServiceChanged);
     final trackPath = widget.session.currentTrackPath;
     if (trackPath.isNotEmpty) {
-      final subtitles = ref.read(playbackSubtitleServiceProvider);
-      if (!subtitles.hasResult(trackPath)) {
-        unawaited(subtitles.load(trackPath));
+      if (!_subtitles.hasResult(trackPath)) {
+        unawaited(_subtitles.load(trackPath));
       }
+      _updateAvailableSubtitleCount();
     }
   }
 
@@ -81,7 +87,46 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     if (oldWidget.session.currentTrackPath != widget.session.currentTrackPath) {
       _subtitleFiles = null;
       _scriptFiles = null;
+      _availableSubtitleCount = 0;
+      _updateAvailableSubtitleCount();
     }
+  }
+
+  @override
+  void dispose() {
+    _subtitles.removeListener(_handleSubtitleServiceChanged);
+    super.dispose();
+  }
+
+  void _handleSubtitleServiceChanged() {
+    if (_subtitles.generationJob?.status == SubtitleGenerationStatus.running) {
+      return;
+    }
+    _updateAvailableSubtitleCount();
+  }
+
+  void _updateAvailableSubtitleCount() {
+    final trackPath = widget.session.currentTrackPath;
+    if (trackPath.isEmpty) {
+      if (_availableSubtitleCount != 0) {
+        setState(() => _availableSubtitleCount = 0);
+      }
+      return;
+    }
+    final requestId = ++_subtitleCountRequestId;
+    _subtitles.availableSubtitleFiles(trackPath).then((files) {
+      if (!mounted || requestId != _subtitleCountRequestId) return;
+      if (widget.session.currentTrackPath != trackPath) return;
+      if (_availableSubtitleCount != files.length) {
+        setState(() => _availableSubtitleCount = files.length);
+      }
+    }).catchError((_) {
+      if (!mounted || requestId != _subtitleCountRequestId) return;
+      if (widget.session.currentTrackPath != trackPath) return;
+      if (_availableSubtitleCount != 0) {
+        setState(() => _availableSubtitleCount = 0);
+      }
+    });
   }
 
   String _formatOffset(Duration offset) {
@@ -117,6 +162,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       setState(() {
         _subtitleFiles = files;
         _selectionMenuHeight = menuHeight;
+        _availableSubtitleCount = files.length;
       });
     } catch (_) {
       if (mounted && widget.session.currentTrackPath == trackPath) {
@@ -224,6 +270,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         ref
             .read(subtitleSettingsProvider.notifier)
             .ensureSubtitlesEnabled(widget.session.id);
+        _updateAvailableSubtitleCount();
         showAppSnackBar(
           context,
           i18n.tr('subtitle_imported'),
@@ -245,7 +292,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
 
   Future<void> _showGeneration(PlaybackSubtitleService subtitles) async {
     if (subtitles.generationJob == null) return;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (_) => SubtitleGenerationDialog(service: subtitles),
     );
@@ -324,7 +371,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       }
       if (!mounted) return;
       if (subtitles.hasKnownSubtitle(widget.session.currentTrackPath)) {
-        final confirmed = await showDialog<bool>(
+        final confirmed = await showAppDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: Text(i18n.tr('subtitle_script_existing_title')),
@@ -415,7 +462,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     if (!mounted) return null;
     if (!exists) return false;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(i18n.tr('subtitle_import_overwrite_title')),
@@ -438,7 +485,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   Future<void> _translateSubtitle(SubtitleLanguage language) async {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     if (language == SubtitleLanguage.unknown) {
-      final confirmed = await showDialog<bool>(
+      final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: Text(i18n.tr('subtitle_source_confirm_japanese')),
@@ -457,7 +504,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       );
       if (!mounted || confirmed != true) return;
     }
-    final targetLanguage = await showDialog<String>(
+    final targetLanguage = await showAppDialog<String>(
       context: context,
       builder: (dialogContext) {
         final theme = Theme.of(dialogContext);
@@ -537,12 +584,8 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             () {
               final isZh = i18n.locale.languageCode == 'zh';
               final isEn = i18n.locale.languageCode == 'en';
-              final zhSubtitle = isZh
-                  ? 'Chinese (Simplified)'
-                  : '中文（简体）';
-              final enSubtitle = isEn
-                  ? '英语'
-                  : 'English';
+              final zhSubtitle = isZh ? 'Chinese (Simplified)' : '中文（简体）';
+              final enSubtitle = isEn ? '英语' : 'English';
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -596,17 +639,19 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                   children: [
                                     Text(
                                       i18n.tr('subtitle_language_zh'),
-                                      style: theme.textTheme.bodyLarge?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                        color: cs.onSurface,
-                                      ),
+                                      style: theme.textTheme.bodyLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            color: cs.onSurface,
+                                          ),
                                     ),
                                     const SizedBox(height: 1),
                                     Text(
                                       zhSubtitle,
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: cs.onSurfaceVariant,
-                                      ),
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -614,7 +659,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                               Icon(
                                 Icons.arrow_forward_ios_rounded,
                                 size: 14,
-                                color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                                color: cs.onSurfaceVariant.withValues(
+                                  alpha: 0.6,
+                                ),
                               ),
                             ],
                           ),
@@ -672,17 +719,19 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                   children: [
                                     Text(
                                       i18n.tr('subtitle_language_en'),
-                                      style: theme.textTheme.bodyLarge?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                        color: cs.onSurface,
-                                      ),
+                                      style: theme.textTheme.bodyLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            color: cs.onSurface,
+                                          ),
                                     ),
                                     const SizedBox(height: 1),
                                     Text(
                                       enSubtitle,
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: cs.onSurfaceVariant,
-                                      ),
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -690,7 +739,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                               Icon(
                                 Icons.arrow_forward_ios_rounded,
                                 size: 14,
-                                color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                                color: cs.onSurfaceVariant.withValues(
+                                  alpha: 0.6,
+                                ),
                               ),
                             ],
                           ),
@@ -730,7 +781,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     }
     if (!mounted) return false;
     if (status.ready) return true;
-    final downloaded = await showDialog<bool>(
+    final downloaded = await showAppDialog<bool>(
       context: context,
       builder: (_) =>
           SubtitleModelDownloadDialog(store: store, spec: spec, status: status),
@@ -799,7 +850,8 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             trackPath.isNotEmpty &&
             !_importing &&
             !_subtitleBusy &&
-            !generationBusy;
+            !generationBusy &&
+            _availableSubtitleCount > 1;
         final generateEnabled =
             importEnabled &&
             !generationBusy &&
@@ -1173,22 +1225,6 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                   : cs.onSurface.withValues(alpha: 0.38),
                             ),
                           ),
-                          subtitle: Text(
-                            activeTrack != null
-                                ? i18n.tr('subtitle_loaded_file', {
-                                    'file': path.basename(
-                                      activeTrack.sourcePath,
-                                    ),
-                                  })
-                                : i18n.tr('import_subtitle_hint'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: importEnabled
-                                  ? cs.onSurfaceVariant
-                                  : cs.onSurface.withValues(alpha: 0.38),
-                            ),
-                          ),
                           trailing: Icon(
                             Icons.chevron_right_rounded,
                             size: 20,
@@ -1222,17 +1258,6 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                               fontWeight: FontWeight.w600,
                               color: generateEnabled
                                   ? null
-                                  : cs.onSurface.withValues(alpha: 0.38),
-                            ),
-                          ),
-                          subtitle: Text(
-                            i18n.tr(
-                              generationUnavailableKey ??
-                                  'subtitle_script_hint',
-                            ),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: generateEnabled
-                                  ? cs.onSurfaceVariant
                                   : cs.onSurface.withValues(alpha: 0.38),
                             ),
                           ),
@@ -1277,18 +1302,6 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                               fontWeight: FontWeight.w600,
                               color: translateEnabled
                                   ? null
-                                  : cs.onSurface.withValues(alpha: 0.38),
-                            ),
-                          ),
-                          subtitle: Text(
-                            i18n.tr(
-                              subtitleLanguage == SubtitleLanguage.other
-                                  ? 'subtitle_non_japanese'
-                                  : 'subtitle_translate_hint',
-                            ),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: translateEnabled
-                                  ? cs.onSurfaceVariant
                                   : cs.onSurface.withValues(alpha: 0.38),
                             ),
                           ),

@@ -33,8 +33,12 @@ class AppDeferredFade extends StatefulWidget {
   State<AppDeferredFade> createState() => _AppDeferredFadeState();
 }
 
-class _AppDeferredFadeState extends State<AppDeferredFade> {
+class _AppDeferredFadeState extends State<AppDeferredFade>
+    with SingleTickerProviderStateMixin {
   late bool _visible;
+  late bool _retained;
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
   bool _delayComplete = true;
   bool _disableAnimations = false;
   Timer? _timer;
@@ -43,17 +47,28 @@ class _AppDeferredFadeState extends State<AppDeferredFade> {
   void initState() {
     super.initState();
     _visible = widget.visible && widget.waitFor?.isAnimating != true;
+    _retained = _visible;
+    _controller = AnimationController(
+      vsync: this,
+      duration: kAppFadeDuration,
+      value: _visible ? 1 : 0,
+    )..addStatusListener(_handleFadeStatus);
+    _opacity = _controller.drive(CurveTween(curve: kAppFadeCurve));
     widget.waitFor?.addStatusListener(_handleMotionStatus);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _disableAnimations = MediaQuery.disableAnimationsOf(context);
+    _disableAnimations =
+        MediaQuery.disableAnimationsOf(context) ||
+        !TickerMode.valuesOf(context).enabled;
     if (_disableAnimations) {
       _timer?.cancel();
       _delayComplete = true;
       _visible = widget.visible;
+      _retained = _visible;
+      _controller.value = _visible ? 1 : 0;
     }
   }
 
@@ -68,10 +83,13 @@ class _AppDeferredFadeState extends State<AppDeferredFade> {
       _timer?.cancel();
       _delayComplete =
           !widget.visible ||
+          _retained ||
           _disableAnimations ||
           widget.showDelay == Duration.zero;
       if (_disableAnimations) {
         _visible = widget.visible;
+        _retained = _visible;
+        _controller.value = _visible ? 1 : 0;
       } else if (!_delayComplete) {
         // Material's color transition owns the highlight; no badge ticker is
         // needed while it is running. Cancelling selection cancels this wait.
@@ -93,7 +111,21 @@ class _AppDeferredFadeState extends State<AppDeferredFade> {
     if (_visible != widget.visible &&
         _delayComplete &&
         (_disableAnimations || widget.waitFor?.isAnimating != true)) {
-      setState(() => _visible = widget.visible);
+      setState(() {
+        _visible = widget.visible;
+        if (_visible) _retained = true;
+      });
+      if (_visible) {
+        _controller.forward();
+      } else {
+        _controller.reverse();
+      }
+    }
+  }
+
+  void _handleFadeStatus(AnimationStatus status) {
+    if (status == AnimationStatus.dismissed && !_visible && _retained) {
+      setState(() => _retained = false);
     }
   }
 
@@ -101,18 +133,22 @@ class _AppDeferredFadeState extends State<AppDeferredFade> {
   void dispose() {
     _timer?.cancel();
     widget.waitFor?.removeStatusListener(_handleMotionStatus);
+    _controller.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedSwitcher(
-    duration: _disableAnimations ? Duration.zero : kAppFadeDuration,
-    reverseDuration: _disableAnimations ? Duration.zero : kAppFadeDuration,
-    switchInCurve: kAppFadeCurve,
-    switchOutCurve: kAppFadeCurve,
-    transitionBuilder: (child, animation) =>
-        FadeTransition(opacity: animation, child: child),
-    child: _visible ? widget.child : const SizedBox.shrink(),
+  Widget build(BuildContext context) => IgnorePointer(
+    ignoring: !widget.visible,
+    child: ExcludeFocus(
+      excluding: !widget.visible,
+      child: ExcludeSemantics(
+        excluding: !widget.visible,
+        child: _retained
+            ? FadeTransition(opacity: _opacity, child: widget.child)
+            : const SizedBox.shrink(),
+      ),
+    ),
   );
 }
 
@@ -695,6 +731,7 @@ class _CoveringPageTransition extends StatefulWidget {
     required this.animation,
     required this.secondaryAnimation,
     this.animatePage = true,
+    this.slide = true,
     required this.child,
   });
 
@@ -702,6 +739,7 @@ class _CoveringPageTransition extends StatefulWidget {
   final Animation<double> animation;
   final Animation<double> secondaryAnimation;
   final bool animatePage;
+  final bool slide;
   final Widget child;
 
   @override
@@ -709,11 +747,42 @@ class _CoveringPageTransition extends StatefulWidget {
       _CoveringPageTransitionState();
 }
 
+/// Keeps the first page's paint work in its preparation frame. Flutter's normal
+/// opacity render object skips a fully transparent child until the first fade
+/// tick; recording it in an alpha-zero layer avoids that first visible-frame cost.
+class AppPageFadeTransition extends FadeTransition {
+  const AppPageFadeTransition({
+    super.key,
+    required super.opacity,
+    required super.child,
+  });
+
+  @override
+  RenderAnimatedOpacity createRenderObject(BuildContext context) =>
+      _RenderPreparedPageOpacity(opacity: opacity);
+}
+
+class _RenderPreparedPageOpacity extends RenderAnimatedOpacity {
+  _RenderPreparedPageOpacity({required super.opacity});
+
+  @override
+  bool get isRepaintBoundary => child != null;
+
+  @override
+  bool paintsChild(RenderObject child) => true;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (child != null) context.paintChild(child!, offset);
+  }
+}
+
 class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   CurvedAnimation? _motion;
   late final ValueNotifier<Widget> _pageChild;
   final _headerViewport = GlobalKey();
   late Animation<Offset> _position;
+  late Animation<double> _opacity;
   late Listenable _headerAnimation;
   Animation<double>? _routeSecondaryAnimation;
   late bool _interactive;
@@ -748,6 +817,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     _position = _motion!.drive(
       Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero),
     );
+    _opacity = widget.animation.drive(CurveTween(curve: kAppFadeCurve));
     _updateHeaderAnimation();
   }
 
@@ -786,6 +856,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
       _transition = null;
     }
     if (oldWidget.animatePage != widget.animatePage ||
+        oldWidget.slide != widget.slide ||
         oldWidget.contentKey != widget.contentKey) {
       _transition = null;
     }
@@ -846,19 +917,21 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
         _secondaryAnimation,
         constraints.maxWidth,
         animatePage,
+        widget.slide,
       ),
       contentBuilder: (context, content) => RepaintBoundary(child: content),
       headerBuilder: (context, header) => AnimatedBuilder(
         animation: _headerAnimation,
         child: RepaintBoundary(child: header),
         builder: (context, header) {
-          final incoming = kAppFadeCurve.transform(widget.animation.value);
           final outgoing = kAppFadeCurve.transform(_secondaryAnimation.value);
           final fadedHeader = Opacity(
-            opacity: incoming * (1 - outgoing),
+            // The route owns its entrance/exit fade, including lifted headers.
+            // Only the fade under a covering route belongs to the header.
+            opacity: 1 - outgoing,
             child: header,
           );
-          if (!animatePage) return fadedHeader;
+          if (!animatePage || !widget.slide) return fadedHeader;
           // Routes translate the whole page; cancel that motion
           // for headers narrower than the page so menus change in place.
           return Transform.translate(
@@ -872,12 +945,14 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
         builder: (_, child, _) => child,
       ),
     );
-    return !animatePage
-        ? page
-        : SlideTransition(
-            position: _position,
-            child: RepaintBoundary(child: page),
-          );
+    if (!animatePage) return page;
+    final faded = AppPageFadeTransition(
+      opacity: _opacity,
+      child: RepaintBoundary(child: page),
+    );
+    return widget.slide
+        ? SlideTransition(position: _position, child: faded)
+        : faded;
   }
 
   @override
@@ -1156,16 +1231,28 @@ class _PlaceholderContentTransitionState
           IgnorePointer(
             key: const ValueKey('placeholder_transition_placeholder'),
             ignoring: !widget.showPlaceholder,
-            child: FadeTransition(
-              opacity: _placeholderOpacity,
-              child: widget.placeholder,
+            child: ExcludeFocus(
+              excluding: !widget.showPlaceholder,
+              child: ExcludeSemantics(
+                excluding: !widget.showPlaceholder,
+                child: FadeTransition(
+                  opacity: _placeholderOpacity,
+                  child: widget.placeholder,
+                ),
+              ),
             ),
           ),
         if (!widget.showPlaceholder || _fading)
           IgnorePointer(
             key: const ValueKey('placeholder_transition_content'),
             ignoring: widget.showPlaceholder,
-            child: FadeTransition(opacity: _contentOpacity, child: content),
+            child: ExcludeFocus(
+              excluding: widget.showPlaceholder,
+              child: ExcludeSemantics(
+                excluding: widget.showPlaceholder,
+                child: FadeTransition(opacity: _contentOpacity, child: content),
+              ),
+            ),
           ),
       ],
     );
@@ -1506,8 +1593,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _progress;
-  late final Animation<double> _headerProgress;
-  late final Animation<double> _reverseProgress;
+  late Animation<double> _headerProgress;
+  late Animation<double> _reverseProgress;
   late final List<Animation<Offset>> _incomingPositions;
   late final List<Animation<Offset>> _outgoingPositions;
   late int _currentIndex;
@@ -1583,8 +1670,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _lazyChildren = List<Widget?>.generate(
       _itemCount,
       (index) =>
-          index < previousChildren.length &&
-              previousChildren[index] != null
+          index < previousChildren.length && previousChildren[index] != null
           ? widget.itemBuilder(context, index)
           : null,
     );
@@ -1664,12 +1750,37 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       // Swap the visible source when the new destination is on the other side.
       // Invert decelerate so its position survives the direction change.
       final progress = Curves.decelerate.transform(_controller.value);
+      final nextValue = 1 - math.sqrt(progress);
+      final fadeAnchor = 1 - _headerProgress.value;
+      // The slide and fade use different curves. Preserve the visible page's
+      // opacity when its incoming role becomes outgoing at the remapped time.
+      _headerProgress = _controller.drive(
+        nextValue > 0 && nextValue < 1
+            ? TweenSequence<double>([
+                TweenSequenceItem(
+                  tween: Tween(
+                    begin: 0.0,
+                    end: fadeAnchor,
+                  ).chain(CurveTween(curve: kAppFadeCurve)),
+                  weight: nextValue,
+                ),
+                TweenSequenceItem(
+                  tween: Tween(
+                    begin: fadeAnchor,
+                    end: 1.0,
+                  ).chain(CurveTween(curve: kAppFadeCurve)),
+                  weight: 1 - nextValue,
+                ),
+              ])
+            : CurveTween(curve: kAppFadeCurve),
+      );
+      _reverseProgress = ReverseAnimation(_headerProgress);
       setState(() {
         _currentIndex = _targetIndex;
         _targetIndex = nextIndex;
         _transitionDirection = direction;
       });
-      _controller.forward(from: 1 - math.sqrt(progress));
+      _controller.forward(from: nextValue);
       return;
     }
 
@@ -1684,6 +1795,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       return;
     }
 
+    _headerProgress = _controller.drive(CurveTween(curve: kAppFadeCurve));
+    _reverseProgress = ReverseAnimation(_headerProgress);
     setState(() {
       _targetIndex = nextIndex;
       _transitionDirection = _targetIndex > _currentIndex ? 1 : -1;
@@ -1804,6 +1917,13 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         : outgoing || incoming
         ? _controller
         : const AlwaysStoppedAnimation<double>(1);
+    final opacity = preparing
+        ? const AlwaysStoppedAnimation<double>(0)
+        : outgoing
+        ? _reverseProgress
+        : incoming
+        ? _headerProgress
+        : const AlwaysStoppedAnimation<double>(1);
     final directionIndex = _transitionDirection < 0 ? 0 : 1;
     final Animation<Offset> position;
     if (preparing) {
@@ -1822,7 +1942,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         key: ValueKey<String>('app_indexed_page_$index'),
         child: SlideTransition(
           position: position,
-          child: RepaintBoundary(key: _pageKeys[index], child: page),
+          child: AppPageFadeTransition(
+            opacity: opacity,
+            child: RepaintBoundary(key: _pageKeys[index], child: page),
+          ),
         ),
       );
     }
@@ -1845,22 +1968,16 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         ),
         contentBuilder: (context, content) => SlideTransition(
           position: position,
-          child: ColoredBox(
-            color: Theme.of(context).colorScheme.surface,
-            child: RepaintBoundary(child: content),
+          child: AppPageFadeTransition(
+            opacity: opacity,
+            child: ColoredBox(
+              color: Theme.of(context).colorScheme.surface,
+              child: RepaintBoundary(child: content),
+            ),
           ),
         ),
         headerBuilder: (context, header) {
-          final faded = FadeTransition(
-            opacity: preparing
-                ? const AlwaysStoppedAnimation<double>(0)
-                : outgoing
-                ? _reverseProgress
-                : incoming
-                ? _headerProgress
-                : const AlwaysStoppedAnimation<double>(1),
-            child: header,
-          );
+          final faded = FadeTransition(opacity: opacity, child: header);
           return parentMotion?.headerBuilder(context, faded) ?? faded;
         },
         child: RepaintBoundary(key: _pageKeys[index], child: page),
@@ -2041,6 +2158,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   RouteSettings? settings,
   Duration duration = kAppMotionSlow,
   bool fullscreenDialog = false,
+  bool slide = true,
 }) {
   final reducedMotion = MediaQuery.disableAnimationsOf(context);
   final contentKey = GlobalKey();
@@ -2061,6 +2179,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
         animation: animation,
         secondaryAnimation: secondaryAnimation,
         animatePage: duration != Duration.zero,
+        slide: slide,
         child: routedChild,
       );
     },

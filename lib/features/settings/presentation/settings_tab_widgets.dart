@@ -292,20 +292,27 @@ class _UpdateSettingsTile extends StatelessWidget {
       trailing: SizedBox(
         width: 48,
         height: 48,
-        child: busy
-            ? const Center(
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2.4),
+        child: AnimatedSwitcher(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : kAppFadeDuration,
+          switchInCurve: kAppFadeCurve,
+          switchOutCurve: kAppFadeCurve,
+          child: busy
+              ? const Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  ),
+                )
+              : IconButton(
+                  onPressed: onCheck,
+                  tooltip: i18n.tr('check'),
+                  color: cs.onSurfaceVariant,
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
                 ),
-              )
-            : IconButton(
-                onPressed: onCheck,
-                tooltip: i18n.tr('check'),
-                color: cs.onSurfaceVariant,
-                icon: const Icon(Icons.refresh_rounded, size: 20),
-              ),
+        ),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 8),
     );
@@ -331,6 +338,20 @@ class _UpdateSubtitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : kAppFadeDuration,
+      switchInCurve: kAppFadeCurve,
+      switchOutCurve: kAppFadeCurve,
+      child: KeyedSubtree(
+        key: ValueKey((checking, downloading, updateInfo?.status)),
+        child: _buildStatus(context),
+      ),
+    );
+  }
+
+  Widget _buildStatus(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,

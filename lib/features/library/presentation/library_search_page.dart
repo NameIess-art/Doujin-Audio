@@ -661,9 +661,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     return ValueListenableBuilder<int>(
       valueListenable: cache.revision,
       builder: (context, _, _) => FutureBuilder<AudioLibraryCategorySnapshot>(
-        key: ValueKey(
-          'category_future_${categoryType.name}_${structureRevision}_$detailRevision',
-        ),
+        key: ValueKey('category_future_${categoryType.name}'),
         future: _categorySnapshotFuture,
         initialData:
             cachedSnapshot?.structureRevision == structureRevision &&
@@ -672,32 +670,13 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
             : null,
         builder: (context, snapshotState) {
           final snapshot = snapshotState.data;
-          if (snapshotState.hasError) {
-            return AppErrorState(
-              title: i18n.tr('error'),
-              message: i18n.tr('operation_failed_retry'),
-              retryLabel: i18n.tr('retry'),
-              onRetry: () {
-                _categorySnapshotFuture = libraryFacade
-                    .audioLibraryCategorySnapshot();
-                cache.revision.value++;
-              },
-            );
-          }
-          if (snapshot == null) {
-            return PlaceholderContentTransition(
-              showPlaceholder: true,
-              placeholder: LibraryLoadingSkeleton(
-                bottomInset: bottomPadding,
-                topInset: topPadding,
-              ),
-              content: const SizedBox.shrink(),
-            );
-          }
-
-          // The outgoing page stays visible during a slide, but only the
-          // selected category should project a newly committed query.
-          if (categoryType == _categoryType) {
+          // FutureBuilder retains the last data while a new snapshot loads.
+          // Keep that list mounted, but only filter the current revision.
+          if (!snapshotState.hasError &&
+              snapshot != null &&
+              snapshot.structureRevision == structureRevision &&
+              snapshot.detailRevision == detailRevision &&
+              categoryType == _categoryType) {
             _ensureCategoryEntries(
               libraryFacade,
               snapshot,
@@ -705,27 +684,10 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
               pinnedPaths: pinnedPaths,
             );
           }
-          if (cache.error != null) {
-            return AppErrorState(
-              key: ValueKey('library_category_error_${categoryType.name}'),
-              title: i18n.tr('error'),
-              message: i18n.tr('operation_failed_retry'),
-              retryLabel: i18n.tr('retry'),
-              onRetry: () {
-                cache.pendingKey = null;
-                cache.error = null;
-                cache.revision.value++;
-              },
-            );
-          }
-          if (cache.result == null) {
-            return LibraryLoadingSkeleton(
-              bottomInset: bottomPadding,
-              topInset: topPadding,
-            );
-          }
-          final entries = cache.result!.entries;
-          final terms = cache.result!.terms;
+          final error = snapshotState.error ?? cache.error;
+          final entries =
+              cache.result?.entries ?? const <AudioLibraryCategoryEntry>[];
+          final terms = cache.result?.terms ?? const <String>[];
           Map<String, FolderNode>? foldersByPath;
           FolderNode? folderForEntry(AudioLibraryCategoryEntry entry) {
             if (!entry.isFolder) return null;
@@ -748,6 +710,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
             ..._termSearchKeywordsForCategory(categoryType),
           }.where((t) => t.trim().isNotEmpty).toList(growable: false);
 
+          Map<Key, int>? entryIndices;
           final list = SearchHighlightScope.withTerms(
             terms: highlightTerms,
             child: ListView.builder(
@@ -764,6 +727,23 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
               physics: const ClampingScrollPhysics(),
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               itemCount: itemCount,
+              findChildIndexCallback: (key) {
+                if (key == const ValueKey('category_bottom')) {
+                  return itemCount - 1;
+                }
+                if (key ==
+                    ValueKey(
+                      'library_category_term_box_${categoryType.name}',
+                    )) {
+                  return 0;
+                }
+                entryIndices ??= {
+                  for (var index = 0; index < entries.length; index++)
+                    ValueKey('category_${entries[index].target.targetPath}'):
+                        index + (hasTermBox ? 1 : 0),
+                };
+                return entryIndices![key];
+              },
               itemBuilder: (context, index) {
                 if (hasTermBox && index == 0) {
                   return LibraryCategoryTermBox(
@@ -815,8 +795,10 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
 
                 final entryIndex = index - (hasTermBox ? 1 : 0);
                 if (entryIndex == entries.length) {
-                  if (entries.isEmpty) {
-                    return SizedBox(
+                  return AppDeferredFade(
+                    key: const ValueKey('category_bottom'),
+                    visible: entries.isEmpty,
+                    child: SizedBox(
                       height: 220,
                       child: Center(
                         child: Text(
@@ -829,10 +811,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                               ),
                         ),
                       ),
-                    );
-                  }
-                  return const SizedBox.shrink(
-                    key: ValueKey('category_bottom'),
+                    ),
                   );
                 }
 
@@ -861,10 +840,36 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           );
 
           return PlaceholderContentTransition(
-            showPlaceholder: false,
-            placeholder: LibraryLoadingSkeleton(
-              bottomInset: bottomPadding,
-              topInset: topPadding,
+            showPlaceholder: error != null || cache.result == null,
+            placeholder: AnimatedSwitcher(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : kAppFadeDuration,
+              switchInCurve: kAppFadeCurve,
+              switchOutCurve: kAppFadeCurve,
+              child: error != null
+                  ? AppErrorState(
+                      key: ValueKey(
+                        'library_category_error_${categoryType.name}',
+                      ),
+                      title: i18n.tr('error'),
+                      message: i18n.tr('operation_failed_retry'),
+                      retryLabel: i18n.tr('retry'),
+                      onRetry: () {
+                        if (snapshotState.hasError) {
+                          _categorySnapshotFuture = libraryFacade
+                              .audioLibraryCategorySnapshot();
+                        } else {
+                          cache.pendingKey = null;
+                          cache.error = null;
+                        }
+                        cache.revision.value++;
+                      },
+                    )
+                  : LibraryLoadingSkeleton(
+                      bottomInset: bottomPadding,
+                      topInset: topPadding,
+                    ),
             ),
             content: list,
           );

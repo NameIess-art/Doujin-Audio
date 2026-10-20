@@ -1717,13 +1717,13 @@ void main() {
         expect(dock, findsOneWidget);
         final opacity = find.ancestor(
           of: dock,
-          matching: find.byType(Opacity, skipOffstage: false),
+          matching: find.byType(AnimatedOpacity, skipOffstage: false),
         );
-        expect(tester.widget<Opacity>(opacity.first).opacity, 0);
+        expect(tester.widget<AnimatedOpacity>(opacity.first).opacity, 0);
         navigator.pop();
         await tester.pumpAndSettle();
         expect(dock, findsOneWidget);
-        expect(tester.widget<Opacity>(opacity.first).opacity, 1);
+        expect(tester.widget<AnimatedOpacity>(opacity.first).opacity, 1);
         final paintOrder = tester.allWidgets.toList(growable: false);
         expect(
           paintOrder.indexOf(tester.widget(dock)),
@@ -1736,9 +1736,9 @@ void main() {
       expect(dock, findsOneWidget);
       final opacity = find.ancestor(
         of: dock,
-        matching: find.byType(Opacity, skipOffstage: false),
+        matching: find.byType(AnimatedOpacity, skipOffstage: false),
       );
-      expect(tester.widget<Opacity>(opacity.first).opacity, 1);
+      expect(tester.widget<AnimatedOpacity>(opacity.first).opacity, 1);
       navigator.pop();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
@@ -2159,9 +2159,7 @@ void main() {
 
     await tester.pump(const Duration(seconds: 4));
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
-    await tester.pump(const Duration(milliseconds: 200));
+    await _waitForSearchRoute(tester);
 
     expect(
       find.byKey(const ValueKey<String>('app_search_field')),
@@ -2180,9 +2178,11 @@ void main() {
       findsNothing,
     );
     await tester.tap(find.byKey(const ValueKey<String>('app_search_close')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
-    await tester.pump(const Duration(milliseconds: 200));
+    await pumpUntilNotFound(
+      tester,
+      find.byKey(const ValueKey<String>('app_search_field')),
+    );
+    await pumpUntilUiIdle(tester);
     expect(
       find.byKey(const ValueKey<String>('app_search_field')),
       findsNothing,
@@ -2326,8 +2326,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 550));
+    await _waitForSearchRoute(tester);
 
     final firstWork = find.text('Loaded work', findRichText: true);
     final secondWork = find.text('Second loaded work', findRichText: true);
@@ -3228,8 +3227,7 @@ void main() {
     await _waitForAsmrContent(tester);
 
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 550));
+    await _waitForSearchRoute(tester);
 
     final searchPage = find.byKey(
       const ValueKey<String>('asmr_search_collected'),
@@ -3319,8 +3317,7 @@ void main() {
     expect(find.text('Loaded work', findRichText: true), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 550));
+    await _waitForSearchRoute(tester);
     await tester.enterText(
       find.byKey(const ValueKey<String>('app_search_field')),
       'sleep',
@@ -3334,8 +3331,11 @@ void main() {
         find.byKey(const ValueKey<String>('asmr_search_collected')),
       ),
     ).pop();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 550));
+    await pumpUntilNotFound(
+      tester,
+      find.byKey(const ValueKey<String>('asmr_search_collected')),
+    );
+    await _waitForAsmrContent(tester);
     expect(controller.refreshRequests, [(AsmrCategoryType.collected, 'sleep')]);
     expect(find.byType(LibraryLikeSkeletonCard), findsNothing);
     expect(find.text('Loaded work', findRichText: true), findsOneWidget);
@@ -3997,16 +3997,33 @@ void main() {
 
     expect(controller.loadMoreCount, 1);
     coordinator.finishInteractionsForTest();
-    await tester.pump();
-    expect(
-      find.descendant(
-        of: collectedList,
-        matching: find.byKey(
-          const ValueKey<String>('asmr_load_more_retry_hint'),
-        ),
-      ),
-      findsNothing,
+    final progress = find.descendant(
+      of: collectedList,
+      matching: find.byKey(const ValueKey<String>('asmr_load_more_progress')),
     );
+    for (var frame = 0; frame < 20 && progress.evaluate().isEmpty; frame++) {
+      await tester.pump();
+    }
+    expect(progress, findsOneWidget);
+    final retryHint = find.descendant(
+      of: collectedList,
+      matching: find.byKey(
+        const ValueKey<String>('asmr_load_more_retry_hint'),
+      ),
+    );
+    expect(retryHint, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 150));
+    final fade = find.ancestor(
+      of: retryHint,
+      matching: find.byType(FadeTransition),
+    );
+    expect(
+      tester.widget<FadeTransition>(fade.first).opacity.value,
+      inExclusiveRange(0, 1),
+    );
+    await tester.pump(const Duration(milliseconds: 151));
+    await tester.pump();
+    expect(retryHint, findsNothing);
   });
 
   testWidgets('app shell does not render a custom startup overlay', (
@@ -7567,6 +7584,22 @@ Future<void> _pumpMainScreenAnimations(
     await tester.pump(kAppMotionSlow);
   }
   await tester.pump();
+}
+
+Future<void> _waitForSearchRoute(WidgetTester tester) async {
+  // Preparation keeps the first frame at zero; a single large pump only starts
+  // the visible fade. Wait for route completion before typing or counting rows.
+  final page = find.byKey(const ValueKey<String>('app_search_field'));
+  for (var frame = 0; frame < 100; frame++) {
+    await tester.pump(const Duration(milliseconds: 20));
+    if (page.evaluate().isEmpty) continue;
+    final route = ModalRoute.of(tester.element(page));
+    if (route?.animation?.status == AnimationStatus.completed) {
+      await pumpUntilUiIdle(tester);
+      return;
+    }
+  }
+  fail('Search route did not complete its prepared entrance fade');
 }
 
 Future<void> _waitForAsmrContent(WidgetTester tester) async {

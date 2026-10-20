@@ -148,8 +148,12 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
     Animation<double> secondaryAnimation,
   ) {
     final page = super.buildPage(context, animation, secondaryAnimation);
-    return halfWidth
+    final constrainedPage = halfWidth
         ? FractionallySizedBox(widthFactor: 0.5, child: page)
         : page;
+    return FadeTransition(
+      opacity: animation.drive(CurveTween(curve: kAppFadeCurve)),
+      child: constrainedPage,
+    );
   }
 }

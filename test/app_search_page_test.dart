@@ -7,6 +7,66 @@ import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 void main() {
+  testWidgets('fading search requests focus once after entrance completes', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    late BuildContext routeContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            routeContext = context;
+            return const SizedBox.expand();
+          },
+        ),
+      ),
+    );
+    var selectedCategory = 0;
+    final route = buildAppPageRoute<void>(
+      context: routeContext,
+      slide: false,
+      child: StatefulBuilder(
+        builder: (context, setState) => AppSearchPageScaffold<int>(
+          controller: controller,
+          focusNode: focusNode,
+          hintText: 'Search',
+          categories: const [
+            AppSearchCategory(value: 0, label: 'All'),
+            AppSearchCategory(value: 1, label: 'Tags'),
+          ],
+          selectedCategory: selectedCategory,
+          onCategorySelected: (category) {
+            focusNode.unfocus();
+            setState(() => selectedCategory = category);
+          },
+          onChanged: (_) {},
+          onSubmitted: (_) {},
+          onCloseOrClear: () {},
+          body: const SizedBox.expand(),
+        ),
+      ),
+    );
+    unawaited(Navigator.of(routeContext).push(route));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(route.animation!.value, closeTo(0.5, 0.01));
+    expect(focusNode.hasFocus, isFalse);
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('app_search_category_1')));
+    await tester.pumpAndSettle();
+    expect(selectedCategory, 1);
+    expect(focusNode.hasFocus, isFalse);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('search safe area, side margins and row gap block result input', (
     tester,
   ) async {

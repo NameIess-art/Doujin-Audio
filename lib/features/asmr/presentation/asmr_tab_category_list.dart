@@ -523,7 +523,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                       LibraryLikeCardMetrics.listHorizontalPadding,
                       widget.bottomInset + 24,
                     ),
-                    itemCount: visibleWorks.isEmpty ? 1 : rowCount + 1,
+                    itemCount: rowCount + 1,
                     findChildIndexCallback: (key) {
                       if (key ==
                           const ValueKey<String>('asmr_load_more_footer')) {
@@ -533,28 +533,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                       return workKeyIndices[key];
                     },
                     itemBuilder: (context, rowIndex) {
-                      if (visibleWorks.isEmpty) {
-                        final errorText = state.lastError == null
-                            ? null
-                            : localizedAsmrCatalogErrorText(
-                                i18n,
-                                state.lastError,
-                              );
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 80),
-                          child: AppEmptyState(
-                            icon: state.lastError != null
-                                ? Icons.error_outline_rounded
-                                : Icons.search_off_rounded,
-                            title: state.lastError != null
-                                ? i18n.tr('error')
-                                : i18n.tr('asmr_empty_category'),
-                            message: errorText ?? '',
-                          ),
-                        );
-                      }
                       if (rowIndex >= rowCount) {
-                        if (!state.needsLoadMoreRetry) {
+                        if (visibleWorks.isNotEmpty &&
+                            !state.needsLoadMoreRetry) {
                           _scheduleAutomaticLoadMore(state);
                         }
                         return AnimatedSwitcher(
@@ -564,16 +545,39 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                               : kAppFadeDuration,
                           switchInCurve: kAppFadeCurve,
                           switchOutCurve: kAppFadeCurve,
-                          child: !hasLoadMore
+                          child: visibleWorks.isEmpty
+                              ? Padding(
+                                  key: ValueKey((
+                                    'asmr_empty',
+                                    state.lastError,
+                                  )),
+                                  padding: const EdgeInsets.only(top: 80),
+                                  child: AppEmptyState(
+                                    icon: state.lastError != null
+                                        ? Icons.error_outline_rounded
+                                        : Icons.search_off_rounded,
+                                    title: state.lastError != null
+                                        ? i18n.tr('error')
+                                        : i18n.tr('asmr_empty_category'),
+                                    message: state.lastError == null
+                                        ? ''
+                                        : localizedAsmrCatalogErrorText(
+                                            i18n,
+                                            state.lastError,
+                                          ),
+                                  ),
+                                )
+                              : !hasLoadMore
                               ? const SizedBox.shrink(
                                   key: ValueKey<String>(
                                     'asmr_load_more_complete',
                                   ),
                                 )
                               : Padding(
-                                  key: const ValueKey<String>(
+                                  key: ValueKey((
                                     'asmr_load_more_visible',
-                                  ),
+                                    state.needsLoadMoreRetry,
+                                  )),
                                   padding: const EdgeInsets.only(
                                     top: 4,
                                     bottom: 4,

@@ -470,7 +470,12 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                           borderRadius: BorderRadius.vertical(
                             top: Radius.circular(24 * revealProgress),
                           ),
-                          child: child!,
+                          child: AppPageFadeTransition(
+                            opacity: AlwaysStoppedAnimation(
+                              kAppFadeCurve.transform(rawEnterProgress),
+                            ),
+                            child: child!,
+                          ),
                         ),
                       ),
                     ),

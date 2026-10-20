@@ -40,23 +40,21 @@ extension _TimerTabBody on _TimerTabState {
     final showCompactDetail =
         showCompactOnly && _showCompactDetail && timerConfigured;
     Future<TimeOfDay?> showAutoResumeTimePicker() {
-      return showTimePicker(
+      return showAppDialog<TimeOfDay>(
         context: context,
-        initialTime: TimeOfDay(
-          hour: timerSlice.autoResumeHour,
-          minute: timerSlice.autoResumeMinute,
-        ),
-        helpText: i18n.tr('choose_auto_resume_time'),
-        builder: (ctx, child) {
-          final mediaQuery = MediaQuery.of(ctx);
-          return MediaQuery(
-            data: mediaQuery.copyWith(
-              alwaysUse24HourFormat: true,
-              gestureSettings: const DeviceGestureSettings(touchSlop: 4),
+        builder: (ctx) => MediaQuery(
+          data: MediaQuery.of(ctx).copyWith(
+            alwaysUse24HourFormat: true,
+            gestureSettings: const DeviceGestureSettings(touchSlop: 4),
+          ),
+          child: TimePickerDialog(
+            initialTime: TimeOfDay(
+              hour: timerSlice.autoResumeHour,
+              minute: timerSlice.autoResumeMinute,
             ),
-            child: child!,
-          );
-        },
+            helpText: i18n.tr('choose_auto_resume_time'),
+          ),
+        ),
       );
     }
 
@@ -340,201 +338,264 @@ extension _TimerTabBody on _TimerTabState {
             topInset: timerTopInset,
             child: Stack(
               children: [
-              AppPageContentTransition(child: ListView(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  widget.showHeader ? 82 + topPadding : 6,
-                  16,
-                  24,
-                ),
-                physics: const ClampingScrollPhysics(),
-                children: [
-                  if (!showCompactOnly) ...[
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _TimerSummaryChip(
-                          icon: Icons.timer_outlined,
-                          text: _fmtDuration(summaryDuration),
-                        ),
-                        _TimerSummaryChip(
-                          icon: summaryMode == TimerMode.manual
-                              ? Icons.play_arrow_rounded
-                              : Icons.schedule_rounded,
-                          text: draftModeTitle,
-                        ),
-                      ],
+                AppPageContentTransition(
+                  child: ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      widget.showHeader ? 82 + topPadding : 6,
+                      16,
+                      24,
                     ),
-                    const SizedBox(height: 14),
-                  ],
-                  if (!showCompactOnly &&
-                      (timerActive || timerExpired || timerWaitingTrigger)) ...[
-                    _CountdownCard(
-                      timerState: timerSlice,
-                      timerExpired: timerExpired,
-                      waitingTrigger: timerWaitingTrigger,
-                      fmtDuration: _fmtDuration,
-                      cs: cs,
-                      autoResumeAt: autoResumeCountdownTarget,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  if (!showCompactOnly &&
-                      (timerConfigured || timerSlice.autoResumeEnabled)) ...[
-                    if (defaultTargetPlatform != TargetPlatform.windows)
-                      buildReliabilityCard(),
-                    const SizedBox(height: 16),
-                  ],
-                  if (showCompactOnly ||
-                      (!timerActive && !timerWaitingTrigger)) ...[
-                    buildConfiguratorSection(compactMode: false),
-                    if (!showCompactOnly) const SizedBox(height: 14),
-                  ],
-                  if (!showCompactOnly && timerConfigured) ...[
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        AppInteractionFeedback.trigger(
-                          AppInteractionFeedbackType.destructive,
-                        );
-                        timer.cancelTimer();
-                      },
-                      icon: const Icon(Icons.cancel_outlined),
-                      label: Text(i18n.tr('cancel_timer')),
-                      style: OutlinedButton.styleFrom(
-                        elevation: 0,
-                        shadowColor: Colors.transparent,
-                        foregroundColor: cs.error,
-                        side: BorderSide(color: cs.error),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  if (!showCompactOnly && timerConfigured)
-                    _TimerPanelCard(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    physics: const ClampingScrollPhysics(),
+                    children: [
+                      if (!showCompactOnly) ...[
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
-                            SwitchListTile(
-                              title: Text(i18n.tr('auto_resume_after_timer')),
-                              subtitle: Text(i18n.tr('auto_resume_subtitle')),
-                              secondary: const Icon(Icons.restore_rounded),
-                              value: timerSlice.autoResumeEnabled,
-                              onChanged: (value) {
-                                AppInteractionFeedback.trigger(
-                                  AppInteractionFeedbackType.selection,
-                                );
-                                unawaited(
-                                  _setAutoResumeWithCapabilityCheck(
-                                    timer,
-                                    enabled: value,
-                                    hour: timerSlice.autoResumeHour,
-                                    minute: timerSlice.autoResumeMinute,
-                                    promptForCapability:
-                                        value && !timerSlice.autoResumeEnabled,
-                                  ),
-                                );
-                              },
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
+                            _TimerSummaryChip(
+                              icon: Icons.timer_outlined,
+                              text: _fmtDuration(summaryDuration),
                             ),
-                            if (timerSlice.autoResumeEnabled) ...[
-                              const SizedBox(height: 4),
-                              ListTile(
-                                leading: const Icon(Icons.alarm_rounded),
-                                title: Text(
-                                  i18n.tr('resume_time', {
-                                    'time': _fmtClockTime(
-                                      timerSlice.autoResumeHour,
-                                      timerSlice.autoResumeMinute,
-                                    ),
-                                  }),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  i18n.tr('tap_choose_resume_time'),
-                                ),
-                                trailing: const Icon(
-                                  Icons.chevron_right_rounded,
-                                ),
-                                onTap: () async {
-                                  unawaited(
-                                    AppInteractionFeedback.trigger(
-                                      AppInteractionFeedbackType.tap,
-                                      context: context,
-                                    ),
-                                  );
-                                  final picked =
-                                      await showAutoResumeTimePicker();
-                                  if (picked != null) {
-                                    timer.setAutoResume(
-                                      timerSlice.autoResumeEnabled,
-                                      picked.hour,
-                                      picked.minute,
-                                    );
-                                  }
-                                },
-                                shape: const RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.vertical(
-                                    bottom: Radius.circular(16),
-                                  ),
-                                ),
-                              ),
-                            ],
-                            if (!timerExpired) ...[
-                              const Divider(height: 1),
-                              SwitchListTile(
-                                title: Text(i18n.tr('stop_after_current_track')),
-                                subtitle: Text(
-                                  i18n.tr('stop_after_current_track_subtitle'),
-                                ),
-                                secondary: const Icon(Icons.music_note_rounded),
-                                value: timerSlice.stopAfterCurrentTrack,
-                                onChanged: (value) {
-                                  AppInteractionFeedback.trigger(
-                                    AppInteractionFeedbackType.selection,
-                                  );
-                                  timer.setStopAfterCurrentTrack(value);
-                                },
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                            ],
+                            _TimerSummaryChip(
+                              icon: summaryMode == TimerMode.manual
+                                  ? Icons.play_arrow_rounded
+                                  : Icons.schedule_rounded,
+                              text: draftModeTitle,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                      AppDeferredFade(
+                        visible:
+                            !showCompactOnly &&
+                            (timerActive ||
+                                timerExpired ||
+                                timerWaitingTrigger),
+                        child: Column(
+                          children: [
+                            _CountdownCard(
+                              timerState: timerSlice,
+                              timerExpired: timerExpired,
+                              waitingTrigger: timerWaitingTrigger,
+                              fmtDuration: _fmtDuration,
+                              cs: cs,
+                              autoResumeAt: autoResumeCountdownTarget,
+                            ),
+                            const SizedBox(height: 16),
                           ],
                         ),
                       ),
-                    )
-                  else if (!showCompactOnly)
-                    Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 28),
-                        child: _TimerSummaryChip(
-                          icon: Icons.info_outline_rounded,
-                          text: i18n.tr('set_timer_to_enable_auto_resume'),
+                      AppDeferredFade(
+                        visible:
+                            !showCompactOnly &&
+                            (timerConfigured || timerSlice.autoResumeEnabled),
+                        child: Column(
+                          children: [
+                            if (defaultTargetPlatform != TargetPlatform.windows)
+                              buildReliabilityCard(),
+                            const SizedBox(height: 16),
+                          ],
                         ),
                       ),
-                    ),
-                ],
-              )),
-              if (widget.showHeader && !showCompactOnly)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: TopPageHeader(
-                    icon: Icons.timer_rounded,
-                    title: i18n.tr('timer_title'),
+                      AppDeferredFade(
+                        visible:
+                            showCompactOnly ||
+                            (!timerActive && !timerWaitingTrigger),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            buildConfiguratorSection(compactMode: false),
+                            if (!showCompactOnly) const SizedBox(height: 14),
+                          ],
+                        ),
+                      ),
+                      AppDeferredFade(
+                        visible: !showCompactOnly && timerConfigured,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                AppInteractionFeedback.trigger(
+                                  AppInteractionFeedbackType.destructive,
+                                );
+                                timer.cancelTimer();
+                              },
+                              icon: const Icon(Icons.cancel_outlined),
+                              label: Text(i18n.tr('cancel_timer')),
+                              style: OutlinedButton.styleFrom(
+                                elevation: 0,
+                                shadowColor: Colors.transparent,
+                                foregroundColor: cs.error,
+                                side: BorderSide(color: cs.error),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                        ),
+                      ),
+                      AppDeferredFade(
+                        visible: !showCompactOnly && timerConfigured,
+                        child: _TimerPanelCard(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SwitchListTile(
+                                  title: Text(
+                                    i18n.tr('auto_resume_after_timer'),
+                                  ),
+                                  subtitle: Text(
+                                    i18n.tr('auto_resume_subtitle'),
+                                  ),
+                                  secondary: const Icon(Icons.restore_rounded),
+                                  value: timerSlice.autoResumeEnabled,
+                                  onChanged: (value) {
+                                    AppInteractionFeedback.trigger(
+                                      AppInteractionFeedbackType.selection,
+                                    );
+                                    unawaited(
+                                      _setAutoResumeWithCapabilityCheck(
+                                        timer,
+                                        enabled: value,
+                                        hour: timerSlice.autoResumeHour,
+                                        minute: timerSlice.autoResumeMinute,
+                                        promptForCapability:
+                                            value &&
+                                            !timerSlice.autoResumeEnabled,
+                                      ),
+                                    );
+                                  },
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                                AppDeferredFade(
+                                  visible: timerSlice.autoResumeEnabled,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      const SizedBox(height: 4),
+                                      ListTile(
+                                        leading: const Icon(
+                                          Icons.alarm_rounded,
+                                        ),
+                                        title: Text(
+                                          i18n.tr('resume_time', {
+                                            'time': _fmtClockTime(
+                                              timerSlice.autoResumeHour,
+                                              timerSlice.autoResumeMinute,
+                                            ),
+                                          }),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          i18n.tr('tap_choose_resume_time'),
+                                        ),
+                                        trailing: const Icon(
+                                          Icons.chevron_right_rounded,
+                                        ),
+                                        onTap: () async {
+                                          unawaited(
+                                            AppInteractionFeedback.trigger(
+                                              AppInteractionFeedbackType.tap,
+                                              context: context,
+                                            ),
+                                          );
+                                          final picked =
+                                              await showAutoResumeTimePicker();
+                                          if (picked != null) {
+                                            timer.setAutoResume(
+                                              timerSlice.autoResumeEnabled,
+                                              picked.hour,
+                                              picked.minute,
+                                            );
+                                          }
+                                        },
+                                        shape: const RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.vertical(
+                                            bottom: Radius.circular(16),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                AppDeferredFade(
+                                  visible: !timerExpired,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      const Divider(height: 1),
+                                      SwitchListTile(
+                                        title: Text(
+                                          i18n.tr('stop_after_current_track'),
+                                        ),
+                                        subtitle: Text(
+                                          i18n.tr(
+                                            'stop_after_current_track_subtitle',
+                                          ),
+                                        ),
+                                        secondary: const Icon(
+                                          Icons.music_note_rounded,
+                                        ),
+                                        value: timerSlice.stopAfterCurrentTrack,
+                                        onChanged: (value) {
+                                          AppInteractionFeedback.trigger(
+                                            AppInteractionFeedbackType
+                                                .selection,
+                                          );
+                                          timer.setStopAfterCurrentTrack(value);
+                                        },
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      AppDeferredFade(
+                        visible: !showCompactOnly && !timerConfigured,
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 28),
+                            child: _TimerSummaryChip(
+                              icon: Icons.info_outline_rounded,
+                              text: i18n.tr('set_timer_to_enable_auto_resume'),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-            ],
-          ),
-        );
+                if (widget.showHeader && !showCompactOnly)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: TopPageHeader(
+                      icon: Icons.timer_rounded,
+                      title: i18n.tr('timer_title'),
+                    ),
+                  ),
+              ],
+            ),
+          );
 
     if (widget.useSafeArea) {
       return SafeArea(child: content);

@@ -226,19 +226,25 @@ void main() {
         await tester.pump();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 150));
-        final pixel = (await _pixels(tester, surface, [
+        final sampled = await _pixels(tester, surface, [
           const Offset(790, 50),
-        ])).single;
+          const Offset(790, 140),
+        ]);
+        final pixel = sampled.first;
         final incoming = kAppFadeCurve.transform(detail.animation!.value);
         final expected = Color.alphaBlend(
           _newHeader.withValues(alpha: incoming),
           Color.alphaBlend(
             _oldHeader.withValues(alpha: 1 - incoming),
-            Colors.blue,
+            sampled.last,
           ),
         );
-        expect(pixel.g, closeTo(expected.g, 0.02));
-        expect(pixel.b, closeTo(expected.b, 0.02));
+        // The search top mask also blends the body into the theme surface.
+        // Red isolates header opacity because both underlying bodies have the
+        // same red contribution here; green verifies the retained header wins.
+        expect(pixel.r, closeTo(expected.r, 0.02));
+        expect(pixel.g, greaterThan(0.6));
+        expect(pixel.b, lessThan(0.4));
         await tester.pumpAndSettle();
         // This area belongs only to the search header, outside the detail header.
         expect(
@@ -372,6 +378,7 @@ void main() {
         final colors = await _pixels(tester, surface, [
           const Offset(8, 50),
           const Offset(790, 50),
+          const Offset(790, 140),
         ]);
         // Both edges retain the old green header while the new yellow header
         // fades in; the blue body's moving edge cannot wipe either header.
@@ -380,14 +387,14 @@ void main() {
           _newHeader.withValues(alpha: incoming),
           Color.alphaBlend(
             _oldHeader.withValues(alpha: 1 - incoming),
-            Colors.blue,
+            colors.last,
           ),
         );
-        expect(colors.last.r, closeTo(expected.r, 0.02));
-        expect(colors.last.g, closeTo(expected.g, 0.02));
-        expect(colors.last.b, closeTo(expected.b, 0.02));
+        expect(colors[1].r, closeTo(expected.r, 0.02));
+        expect(colors[1].g, closeTo(expected.g, 0.02));
+        expect(colors[1].b, closeTo(expected.b, 0.02));
         expect(
-          colors.every((color) => color.g > 0.6 && color.b < 0.4),
+          colors.take(2).every((color) => color.g > 0.6 && color.b < 0.4),
           isTrue,
           reason: '$colors',
         );
@@ -567,12 +574,16 @@ void main() {
     final returningColors = await _pixels(tester, surface, [
       const Offset(8, 50),
       const Offset(790, 50),
+      const Offset(8, 140),
     ]);
     final incoming = kAppFadeCurve.transform(0.5);
     // Revisited tabs must follow the current Stack paint order, not mount order.
     final expected = Color.alphaBlend(
       _oldHeader.withValues(alpha: incoming),
-      Color.alphaBlend(_newHeader.withValues(alpha: 1 - incoming), Colors.red),
+      Color.alphaBlend(
+        _newHeader.withValues(alpha: 1 - incoming),
+        returningColors.last,
+      ),
     );
     expect(returningColors.first.r, closeTo(expected.r, 0.02));
     await tester.pumpAndSettle();

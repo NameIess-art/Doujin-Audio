@@ -2,9 +2,11 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_transitions.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/time_segment_label.dart';
@@ -389,14 +391,31 @@ class _ProgressSliderFrame extends StatefulWidget {
   State<_ProgressSliderFrame> createState() => _ProgressSliderFrameState();
 }
 
-class _ProgressSliderFrameState extends State<_ProgressSliderFrame> {
+class _ProgressSliderFrameState extends State<_ProgressSliderFrame>
+    with SingleTickerProviderStateMixin {
   final OverlayPortalController _tooltipPortalController =
       OverlayPortalController();
   final LayerLink _layerLink = LayerLink();
+  late final AnimationController _tooltipAnimation;
+  late final Animation<double> _tooltipOpacity;
+  _ProgressTooltipState? _lastTooltip;
+  bool _tooltipVisible = false;
+  bool _disableAnimations = false;
 
   @override
   void initState() {
     super.initState();
+    _tooltipAnimation =
+        AnimationController(vsync: this, duration: kAppFadeDuration)
+          ..addStatusListener((status) {
+            if (status == AnimationStatus.dismissed && !_tooltipVisible) {
+              _setTooltipPortalVisible(false);
+            }
+          });
+    _tooltipOpacity = CurvedAnimation(
+      parent: _tooltipAnimation,
+      curve: kAppFadeCurve,
+    );
     widget.tooltipValue.addListener(_handleTooltipChanged);
     _syncTooltipState();
   }
@@ -412,8 +431,25 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _disableAnimations = MediaQuery.disableAnimationsOf(context);
+    _tooltipAnimation.duration = _disableAnimations
+        ? Duration.zero
+        : kAppFadeDuration;
+    if (!TickerMode.valuesOf(context).enabled) {
+      _tooltipVisible = false;
+      _tooltipAnimation.value = 0;
+      _setTooltipPortalVisible(false);
+    } else if (_disableAnimations) {
+      _tooltipAnimation.value = _tooltipVisible ? 1 : 0;
+    }
+  }
+
+  @override
   void dispose() {
     widget.tooltipValue.removeListener(_handleTooltipChanged);
+    _tooltipAnimation.dispose();
     super.dispose();
   }
 
@@ -421,13 +457,38 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame> {
     _syncTooltipState();
   }
 
+  void _setTooltipPortalVisible(bool visible) {
+    void update() {
+      if (!mounted || visible != _tooltipVisible) return;
+      if (visible) {
+        _tooltipPortalController.show();
+      } else {
+        _tooltipPortalController.hide();
+      }
+    }
+
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => update());
+    } else {
+      update();
+    }
+  }
+
   void _syncTooltipState() {
     final state = widget.tooltipValue.value;
     final shouldShow = state != null && state.labels.isNotEmpty;
-    if (shouldShow && !_tooltipPortalController.isShowing) {
-      _tooltipPortalController.show();
-    } else if (!shouldShow && _tooltipPortalController.isShowing) {
-      _tooltipPortalController.hide();
+    if (shouldShow) _lastTooltip = state;
+    if (shouldShow == _tooltipVisible) return;
+    _tooltipVisible = shouldShow;
+    if (shouldShow) {
+      _setTooltipPortalVisible(true);
+      _tooltipAnimation.forward();
+    } else if (_disableAnimations) {
+      _tooltipAnimation.value = 0;
+      _setTooltipPortalVisible(false);
+    } else {
+      _tooltipAnimation.reverse();
     }
   }
 
@@ -440,7 +501,8 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame> {
         overlayChildBuilder: (context) {
           return ValueListenableBuilder<_ProgressTooltipState?>(
             valueListenable: widget.tooltipValue,
-            builder: (context, value, child) {
+            builder: (context, currentValue, child) {
+              final value = currentValue ?? _lastTooltip;
               if (value == null || value.labels.isEmpty) {
                 return const SizedBox.shrink();
               }
@@ -451,7 +513,10 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame> {
                   showWhenUnlinked: false,
                   followerAnchor: Alignment.bottomLeft,
                   offset: Offset(value.left, -8),
-                  child: _TimeSegmentDragTooltip(labels: value.labels),
+                  child: FadeTransition(
+                    opacity: _tooltipOpacity,
+                    child: _TimeSegmentDragTooltip(labels: value.labels),
+                  ),
                 ),
               );
             },

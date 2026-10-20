@@ -110,10 +110,11 @@ Future<void> _waitForLibraryProjection(
   WidgetTester tester,
   bool Function() isReady,
 ) async {
-  // Isolate work requires real event-loop time. Keep the animation clock still
-  // so callers can verify the first installed frame and its full fade duration.
+  // Isolate work and its zero-delay preparation slices both need an event-loop
+  // turn. Advance one microsecond so slices cannot stall at a frozen deadline;
+  // the incoming animation still starts at zero in its first installed frame.
   for (var attempt = 0; attempt < 1000; attempt++) {
-    await tester.pump();
+    await tester.pump(const Duration(microseconds: 1));
     if (isReady()) return;
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 5)),
@@ -155,6 +156,128 @@ void main() {
 
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final libraryPage in [true, false]) {
+      testWidgets(
+        '${libraryPage ? 'library' : 'playlist'} empty state fades after clear and restore on $platform',
+        (tester) async {
+          final fixture = AppRuntimeWidgetTestFixture(
+            coverArtworkCacheService: _NoCoverArtworkCacheService(),
+          );
+          addTearDown(fixture.dispose);
+          final track = testMusicTrack(
+            name: 'Fade transition track',
+            path: '/fade/track.mp3',
+            groupKey: '/fade/track.mp3',
+            groupTitle: 'Fade transition track',
+            isSingle: true,
+          );
+          final session = libraryPage ? null : PlaybackSession(
+            id: 'fade-empty-session',
+            currentTrackPath: track.path,
+            loopMode: SessionLoopMode.single,
+            nonSingleLoopMode: SessionLoopMode.single,
+            volume: 1,
+            createdAt: DateTime(2026),
+            state: const PlayerState(false, ProcessingState.ready),
+          );
+          if (session != null) addTearDown(session.shutdown);
+          fixture.library.addTracks([track], persist: false);
+          fixture.library.syncPresentationState(isInitialized: true);
+          if (session != null) fixture.playbackService.registerSession(session);
+          void publishSessions(bool populated) {
+            fixture.playbackService.syncSlice(
+              activeSessions: populated && session != null ? [session] : const [],
+              playingSessionCount: 0,
+              focusedSessionId: populated ? session?.id : null,
+              coverGeneration: 0,
+              isInitialized: true,
+            );
+          }
+
+          publishSessions(true);
+          await tester.pumpWidget(
+            fixture.build(
+              libraryPage ? const LibraryTab() : const PlaylistTab(),
+            ),
+          );
+          final emptyCard = find.byKey(
+            ValueKey(
+              libraryPage
+                  ? 'library_empty_state_card'
+                  : 'playlist_empty_state_card',
+            ),
+          );
+          await pumpUntilFound(
+            tester,
+            find.text('Fade transition track', findRichText: true),
+          );
+          await pumpUntilUiIdle(tester);
+          expect(emptyCard, findsNothing);
+
+          if (libraryPage) {
+            fixture.library.removeTracksByPath([track.path]);
+          } else {
+            fixture.playbackService.removeSessions([session!.id]);
+            publishSessions(false);
+          }
+          await pumpUntilFound(tester, emptyCard);
+          double opacity() => tester
+              .widget<FadeTransition>(
+                find
+                    .ancestor(
+                      of: emptyCard,
+                      matching: find.byType(FadeTransition),
+                    )
+                    .first,
+              )
+              .opacity
+              .value;
+          expect(opacity(), lessThan(1));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(opacity(), inExclusiveRange(0, 1));
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(opacity(), 1);
+          await pumpUntilUiIdle(tester);
+
+          if (libraryPage) {
+            fixture.library.addTracks([track], persist: false);
+          } else {
+            fixture.playbackService.registerSession(session!);
+            publishSessions(true);
+          }
+          var sawEmptyFadeOut = false;
+          for (var tick = 0; tick < 160; tick++) {
+            await tester.pump(const Duration(milliseconds: 25));
+            if (emptyCard.evaluate().isEmpty) break;
+            final effectiveOpacity = tester
+                .widgetList<FadeTransition>(
+                  find.ancestor(
+                    of: emptyCard,
+                    matching: find.byType(FadeTransition),
+                  ),
+                )
+                .fold<double>(1, (value, fade) => value * fade.opacity.value);
+            sawEmptyFadeOut |= effectiveOpacity > 0 && effectiveOpacity < 1;
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 5)),
+            );
+          }
+          expect(sawEmptyFadeOut, isTrue);
+          await pumpUntilFound(
+            tester,
+            find.text('Fade transition track', findRichText: true),
+          );
+          await pumpUntilNotFound(tester, emptyCard);
+          expect(tester.takeException(), isNull);
+          await finishLibraryTest(tester, fixture);
+        },
+        variant: TargetPlatformVariant.only(platform),
+      );
+    }
+  }
 
   setUpAll(() async {
     testDatabase = await AppRuntimeTestFixture.installSharedDatabase();
@@ -3186,6 +3309,7 @@ void main() {
       find.byKey(const ValueKey<String>('library_search_button')),
     );
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump(const Duration(milliseconds: 200));
     final tagsLabel = languageProvider.tr('library_category_tags');
@@ -3344,6 +3468,8 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('library_search_button')),
     );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
     await tester.pump(const Duration(milliseconds: 350));
     await pumpUntilFound(
       tester,
@@ -3555,6 +3681,7 @@ void main() {
       find.byKey(const ValueKey<String>('library_search_button')),
     );
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump(const Duration(milliseconds: 200));
     final searchField = find.byKey(const ValueKey<String>('app_search_field'));
@@ -3762,6 +3889,7 @@ void main() {
         find.byKey(const ValueKey<String>('library_search_button')),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
       await tester.pump(const Duration(milliseconds: 350));
       await tester.pump(const Duration(milliseconds: 200));
       await tester.enterText(
@@ -3947,27 +4075,31 @@ void main() {
       TopPageHeader,
       languageProvider.tr('batch_metadata'),
     );
-    final batchHeaderFade = find.descendant(
+    final batchHeaderFade = find.ancestor(
+      of: batchHeader,
+      matching: find.byType(AppPageFadeTransition),
+    ).first;
+    expect(
+      tester.widget<AppPageFadeTransition>(batchHeaderFade).opacity.value,
+      inExclusiveRange(0, 1),
+    );
+    final batchHeaderPosition = find.descendant(
       of: batchHeader,
       matching: find.byType(Opacity),
     ).first;
-    expect(
-      tester.widget<Opacity>(batchHeaderFade).opacity,
-      inExclusiveRange(0, 1),
-    );
-    final headerLeft = tester.getRect(batchHeaderFade).left;
+    final headerLeft = tester.getRect(batchHeaderPosition).left;
     await tester.pumpAndSettle();
-    expect(tester.widget<Opacity>(batchHeaderFade).opacity, 1);
+    expect(tester.widget<AppPageFadeTransition>(batchHeaderFade).opacity.value, 1);
     await tester.tap(
       find.descendant(of: batchHeader, matching: find.byType(BackButton)),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 225));
     expect(
-      tester.widget<Opacity>(batchHeaderFade).opacity,
+      tester.widget<AppPageFadeTransition>(batchHeaderFade).opacity.value,
       inExclusiveRange(0, 1),
     );
-    expect(tester.getRect(batchHeaderFade).left, closeTo(headerLeft, 0.01));
+    expect(tester.getRect(batchHeaderPosition).left, closeTo(headerLeft, 0.01));
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 100));
     expect(batchHeader, findsNothing);
@@ -5157,6 +5289,7 @@ void main() {
         find.byKey(const ValueKey<String>('library_search_button')),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
       await tester.pump(const Duration(milliseconds: 350));
       await pumpUntilFound(
         tester,
@@ -5243,6 +5376,7 @@ void main() {
       find.byKey(const ValueKey<String>('library_search_button')),
     );
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
     await tester.pump(const Duration(milliseconds: 350));
     await tester.tap(
       find.byKey(
@@ -5269,11 +5403,9 @@ void main() {
       'healing whisper',
     );
     await tester.pump(const Duration(milliseconds: 350));
-    await _waitForLibraryProjection(
+    await pumpUntilNotFound(
       tester,
-      () =>
-          find.text('healing-work', findRichText: true).evaluate().isNotEmpty &&
-          find.text('whisper-work', findRichText: true).evaluate().isEmpty,
+      find.text('whisper-work', findRichText: true),
     );
     expect(find.text('healing-work', findRichText: true), findsOneWidget);
     expect(find.text('whisper-work', findRichText: true), findsNothing);
@@ -5292,9 +5424,9 @@ void main() {
       'healing,ocean',
     );
     await tester.pump(const Duration(milliseconds: 350));
-    await _waitForLibraryProjection(
+    await pumpUntilNotFound(
       tester,
-      () => find.text('healing-work', findRichText: true).evaluate().isEmpty,
+      find.text('healing-work', findRichText: true),
     );
     expect(find.text('healing-work', findRichText: true), findsNothing);
 

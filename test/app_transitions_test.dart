@@ -120,6 +120,58 @@ class _ListenerCountingMaterialRoute extends MaterialPageRoute<void> {
 }
 
 void main() {
+  for (final deferred in [true, false]) {
+    testWidgets(
+      'departing ${deferred ? 'deferred' : 'placeholder'} content releases input and semantics',
+      (tester) async {
+        final semantics = tester.ensureSemantics();
+        var visible = true;
+        var taps = 0;
+        late StateSetter update;
+        final focus = FocusNode();
+        addTearDown(focus.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (context, setState) {
+                  update = setState;
+                  final button = TextButton(
+                    focusNode: focus,
+                    onPressed: () => taps++,
+                    child: const Text('departing action'),
+                  );
+                  return deferred
+                      ? AppDeferredFade(visible: visible, child: button)
+                      : PlaceholderContentTransition(
+                          showPlaceholder: !visible,
+                          placeholder: const Text('replacement'),
+                          content: button,
+                        );
+                },
+              ),
+            ),
+          ),
+        );
+        focus.requestFocus();
+        await tester.pump();
+        expect(focus.hasFocus, isTrue);
+        update(() => visible = false);
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(find.text('departing action'), findsOneWidget);
+        expect(focus.hasFocus, isFalse);
+        expect(find.semantics.byLabel('departing action'), findsNothing);
+        await tester.tap(find.text('departing action'), warnIfMissed: false);
+        expect(taps, 0);
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pumpWidget(const SizedBox());
+        semantics.dispose();
+        UiInteractionCoordinator.instance.resetForTest();
+      },
+    );
+  }
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
@@ -157,6 +209,59 @@ void main() {
   });
 
   testWidgets(
+    'deferred fade reverses from its current opacity and retains state',
+    (tester) async {
+      var visible = true;
+      late StateSetter update;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              update = setState;
+              return AppDeferredFade(
+                visible: visible,
+                showDelay: kThemeChangeDuration,
+                child: const _StateProbe(label: 'retained badge'),
+              );
+            },
+          ),
+        ),
+      );
+      final state = tester.state(find.byType(_StateProbe));
+      double opacity() => tester
+          .widget<FadeTransition>(
+            find
+                .ancestor(
+                  of: find.text('retained badge'),
+                  matching: find.byType(FadeTransition),
+                )
+                .first,
+          )
+          .opacity
+          .value;
+      update(() => visible = false);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      final departingOpacity = opacity();
+      expect(departingOpacity, closeTo(kAppFadeCurve.transform(0.5), 0.001));
+      update(() => visible = true);
+      await tester.pump();
+      expect(opacity(), departingOpacity);
+      expect(tester.state(find.byType(_StateProbe)), same(state));
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(opacity(), 1);
+      update(() => visible = false);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 299));
+      expect(find.text('retained badge'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(opacity(), 0);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(find.text('retained badge'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'existing badges stay visible and reduced motion skips the wait',
     (tester) async {
       await tester.pumpWidget(deferredBadge(true));
@@ -186,6 +291,39 @@ void main() {
       expect(tester.binding.hasScheduledFrame, isFalse);
     },
   );
+
+  testWidgets('hidden deferred fade removes departing content immediately', (
+    tester,
+  ) async {
+    var visible = true;
+    var active = true;
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return TickerMode(
+              enabled: active,
+              child: AppDeferredFade(
+                visible: visible,
+                child: const Text('hidden badge'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    update(() => visible = false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('hidden badge'), findsOneWidget);
+    update(() => active = false);
+    await tester.pump();
+    expect(find.text('hidden badge'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('badge waits for restarted motion before fading in or out', (
     tester,
@@ -1958,13 +2096,7 @@ void main() {
         final body = find.byKey(const ValueKey('whole-detail-body'));
         expect(tester.getRect(header).left, closeTo(headerLeft, 0.01));
         expect(tester.getRect(body).left, greaterThan(0));
-        final headerOpacity = find
-            .ancestor(of: header, matching: find.byType(Opacity))
-            .first;
-        expect(
-          tester.widget<Opacity>(headerOpacity).opacity,
-          inExclusiveRange(0, 1),
-        );
+        expect(_effectiveOpacity(tester, header), inExclusiveRange(0, 1));
         final preparedHeaderPaints = headerPaints;
         expect(preparedHeaderPaints, 1);
         expect(
@@ -1990,10 +2122,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 225));
         expect(tester.getRect(header).left, closeTo(headerLeft, 0.01));
         expect(tester.getRect(body).left, greaterThan(0));
-        expect(
-          tester.widget<Opacity>(headerOpacity).opacity,
-          inExclusiveRange(0, 1),
-        );
+        expect(_effectiveOpacity(tester, header), inExclusiveRange(0, 1));
         var finalFrameRetained = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           finalFrameRetained =
@@ -2250,14 +2379,7 @@ void main() {
       final body = find.byKey(const ValueKey('detail-body'));
       final enteringHeader = tester.getRect(header);
       final enteringBody = tester.getRect(body);
-      expect(
-        tester
-            .widgetList<Opacity>(
-              find.ancestor(of: header, matching: find.byType(Opacity)),
-            )
-            .any((opacity) => opacity.opacity > 0 && opacity.opacity < 1),
-        isTrue,
-      );
+      expect(_effectiveOpacity(tester, header), inExclusiveRange(0, 1));
       await tester.pumpAndSettle();
       final settledHeader = tester.getRect(header);
       final settledBody = tester.getRect(body);
@@ -2336,21 +2458,32 @@ void main() {
 
     final body = find.byKey(const ValueKey('detail-body'));
     final header = find.byKey(const ValueKey('detail-header'));
+    Future<void> expectFadedBodyPixel(double position) async {
+      final actual = await pixelAt(position);
+      final expected = Color.alphaBlend(
+        Colors.blue.withAlpha((_effectiveOpacity(tester, body) * 255).round()),
+        Colors.red,
+      );
+      expect(actual.r, closeTo(expected.r, 1 / 255));
+      expect(actual.g, closeTo(expected.g, 1 / 255));
+      expect(actual.b, closeTo(expected.b, 1 / 255));
+    }
+
     final midBody = tester.getRect(body);
     final midHeader = tester.getRect(header);
     expect(find.byKey(const ValueKey('home-body')), findsOneWidget);
     expect(find.byKey(const ValueKey('home-header')), findsOneWidget);
     expect(await pixelAt(0.1), const Color(0xfff44336));
-    expect(await pixelAt(0.9), const Color(0xff2196f3));
+    await expectFadedBodyPixel(0.9);
     final headerOpacity = tester.widgetList<Opacity>(
       find.ancestor(of: header, matching: find.byType(Opacity)),
     );
     expect(headerOpacity.length, 1);
-    expect(headerOpacity.single.opacity, greaterThan(0));
-    expect(headerOpacity.single.opacity, lessThan(1));
+    expect(headerOpacity.single.opacity, 1);
+    expect(_effectiveOpacity(tester, header), inExclusiveRange(0, 1));
     expect(
-      find.ancestor(of: body, matching: find.byType(FadeTransition)),
-      findsNothing,
+      _effectiveOpacity(tester, body),
+      closeTo(_effectiveOpacity(tester, header), 0.001),
     );
     expect(
       find.ancestor(of: body, matching: find.byType(SlideTransition)),
@@ -2374,7 +2507,7 @@ void main() {
     expect(await pixelAt(0.1), const Color(0xfff44336));
     // The decelerating exit exposes most of the old page before its last frame.
     expect(await pixelAt(0.9), const Color(0xfff44336));
-    expect(await pixelAt(0.99), const Color(0xff2196f3));
+    await expectFadedBodyPixel(0.99);
     expect(popBody.left, greaterThan(settledBody.left));
     expect(popHeader.left - settledHeader.left, closeTo(0, 0.01));
     await tester.pumpAndSettle();
@@ -2382,49 +2515,50 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final size in [const Size(400, 800), const Size(1000, 600)]) {
-      testWidgets('route header uses the full 300 ms ($platform, $size)', (
-        tester,
-      ) async {
-        await tester.binding.setSurfaceSize(size);
-        addTearDown(() => tester.binding.setSurfaceSize(null));
-        final key = GlobalKey<NavigatorState>();
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: ThemeData(platform: platform),
-            navigatorKey: key,
-            home: const Scaffold(),
-          ),
-        );
-        final route = buildAppPageRoute<void>(
-          context: key.currentContext!,
-          child: regions('timed'),
-        );
-        unawaited(key.currentState!.push(route));
-        await tester.pump();
-        await tester.pump();
-        final header = find.byKey(const ValueKey('timed-header'));
-        double opacity() => tester
-            .widget<Opacity>(
-              find.ancestor(of: header, matching: find.byType(Opacity)).first,
-            )
-            .opacity;
-        expect(opacity(), 0);
-        final left = tester.getRect(header).left;
-        await tester.pump(const Duration(milliseconds: 150));
-        expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
-        expect(tester.getRect(header).left, closeTo(left, 0.01));
-        await tester.pump(const Duration(milliseconds: 75));
-        expect(opacity(), inExclusiveRange(0.5, 1));
-        await tester.pump(const Duration(milliseconds: 75));
-        expect(opacity(), 1);
-        key.currentState!.pop();
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
-        expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
-        expect(tester.getRect(header).left, closeTo(left, 0.01));
-        await tester.pumpAndSettle();
-        expect(header, findsNothing);
-      });
+      testWidgets(
+        'route and header use one full 300 ms fade ($platform, $size)',
+        (tester) async {
+          await tester.binding.setSurfaceSize(size);
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          final key = GlobalKey<NavigatorState>();
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: ThemeData(platform: platform),
+              navigatorKey: key,
+              home: const Scaffold(),
+            ),
+          );
+          final route = buildAppPageRoute<void>(
+            context: key.currentContext!,
+            child: regions('timed'),
+          );
+          unawaited(key.currentState!.push(route));
+          await tester.pump();
+          await tester.pump();
+          final header = find.byKey(const ValueKey('timed-header'));
+          final body = find.byKey(const ValueKey('timed-body'));
+          double opacity() => _effectiveOpacity(tester, header);
+          expect(opacity(), 0);
+          expect(_effectiveOpacity(tester, body), 0);
+          final left = tester.getRect(header).left;
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+          expect(_effectiveOpacity(tester, body), closeTo(opacity(), 0.001));
+          expect(tester.getRect(header).left, closeTo(left, 0.01));
+          await tester.pump(const Duration(milliseconds: 75));
+          expect(opacity(), inExclusiveRange(0.5, 1));
+          await tester.pump(const Duration(milliseconds: 75));
+          expect(opacity(), 1);
+          expect(_effectiveOpacity(tester, body), 1);
+          key.currentState!.pop();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+          expect(tester.getRect(header).left, closeTo(left, 0.01));
+          await tester.pumpAndSettle();
+          expect(header, findsNothing);
+        },
+      );
     }
   }
 
@@ -2464,11 +2598,7 @@ void main() {
     );
     expect(outgoing, findsOneWidget);
     expect(incoming, findsOneWidget);
-    double headerOpacity(Finder header) => tester
-        .widget<Opacity>(
-          find.ancestor(of: header, matching: find.byType(Opacity)).first,
-        )
-        .opacity;
+    double headerOpacity(Finder header) => _effectiveOpacity(tester, header);
     expect(headerOpacity(incoming), inExclusiveRange(0, 1));
     expect(
       headerOpacity(outgoing),
@@ -2491,6 +2621,70 @@ void main() {
     expect(incoming, findsNothing);
     expect(headerOpacity(outgoing), 1);
   });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final reduced in [false, true]) {
+      testWidgets('search route fades without sliding ($platform, $reduced)', (
+        tester,
+      ) async {
+        final navigatorKey = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: platform),
+            navigatorKey: navigatorKey,
+            builder: (_, child) => MediaQuery(
+              data: MediaQueryData(disableAnimations: reduced),
+              child: child!,
+            ),
+            home: const Scaffold(),
+          ),
+        );
+        final route = buildAppPageRoute<void>(
+          context: navigatorKey.currentContext!,
+          slide: false,
+          child: regions('search-fade'),
+        );
+        unawaited(navigatorKey.currentState!.push(route));
+        await tester.pump();
+        await tester.pump();
+        final body = find.byKey(const ValueKey('search-fade-body'));
+        final header = find.byKey(const ValueKey('search-fade-header'));
+        final rect = tester.getRect(body);
+        expect(_effectiveOpacity(tester, body), reduced ? 1 : 0);
+        expect(
+          find.ancestor(of: body, matching: find.byType(SlideTransition)),
+          findsNothing,
+        );
+        if (!reduced) {
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(
+            _effectiveOpacity(tester, body),
+            closeTo(kAppFadeCurve.transform(0.5), 0.001),
+          );
+          expect(
+            _effectiveOpacity(tester, header),
+            closeTo(_effectiveOpacity(tester, body), 0.001),
+          );
+          expect(tester.getRect(body), rect);
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(_effectiveOpacity(tester, body), 1);
+        }
+        navigatorKey.currentState!.pop();
+        await tester.pump();
+        if (!reduced) {
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(
+            _effectiveOpacity(tester, body),
+            closeTo(kAppFadeCurve.transform(0.5), 0.001),
+          );
+          expect(tester.getRect(body), rect);
+        }
+        await tester.pumpAndSettle();
+        expect(body, findsNothing);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final appBar in [false, true]) {
@@ -2839,7 +3033,10 @@ void main() {
           oldFade.opacity.value + newFade.opacity.value,
           closeTo(1, 0.001),
         );
-        expect(find.ancestor(of: newBody, matching: tabFades), findsNothing);
+        expect(
+          _effectiveOpacity(tester, newBody),
+          closeTo(newFade.opacity.value, 0.001),
+        );
         expect(
           find.ancestor(of: newBody, matching: find.byType(Opacity)),
           findsNothing,
@@ -2972,6 +3169,83 @@ void main() {
     expect(find.text('opposite-0'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  for (final separateHeader in [false, true]) {
+    for (final elapsed in [80, 150, 200]) {
+      testWidgets('warm retarget keeps opacity and position after $elapsed ms '
+          '(separate header: $separateHeader)', (tester) async {
+        final index = ValueNotifier<int>(1);
+        addTearDown(index.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AppFadeThroughIndexedStack.lazy(
+              indexListenable: index,
+              itemCount: 4,
+              separateHeader: separateHeader,
+              itemBuilder: (_, page) => regions('warm-$page'),
+            ),
+          ),
+        );
+        // Prepare both destinations so retargeting happens in this frame.
+        for (final destination in [0, 3, 1]) {
+          index.value = destination;
+          await tester.pumpAndSettle();
+        }
+        final incoming = find.byKey(const ValueKey('warm-3-body'));
+        final header = find.byKey(const ValueKey('warm-3-header'));
+        index.value = 3;
+        await tester.pump();
+        await tester.pump(Duration(milliseconds: elapsed));
+        final beforeRect = tester.getRect(incoming);
+        final beforeOpacity = _effectiveOpacity(tester, incoming);
+        final beforeHeader = _effectiveOpacity(tester, header);
+        expect(beforeOpacity, inExclusiveRange(0, 1));
+        index.value = 0;
+        await tester.pump();
+        expect(tester.getRect(incoming).left, closeTo(beforeRect.left, 0.001));
+        expect(
+          _effectiveOpacity(tester, incoming),
+          closeTo(beforeOpacity, 0.001),
+        );
+        expect(_effectiveOpacity(tester, header), closeTo(beforeHeader, 0.001));
+        await tester.pump(const Duration(milliseconds: 10));
+        final beforeReverse = _effectiveOpacity(tester, incoming);
+        expect(beforeReverse, lessThan(beforeOpacity));
+        final reverseRect = tester.getRect(incoming);
+        index.value = 3;
+        await tester.pump();
+        expect(
+          _effectiveOpacity(tester, incoming),
+          closeTo(beforeReverse, 0.001),
+        );
+        expect(tester.getRect(incoming).left, closeTo(reverseRect.left, 0.001));
+        await tester.pump(const Duration(milliseconds: 10));
+        final beforeResume = _effectiveOpacity(tester, incoming);
+        expect(beforeResume, greaterThan(beforeReverse));
+        index.value = 0;
+        await tester.pump();
+        expect(
+          _effectiveOpacity(tester, incoming),
+          closeTo(beforeResume, 0.001),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          _effectiveOpacity(tester, find.byKey(const ValueKey('warm-0-body'))),
+          1,
+        );
+        // A later ordinary transition uses the standard curve again.
+        index.value = 3;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(
+          _effectiveOpacity(tester, incoming),
+          closeTo(kAppFadeCurve.transform(0.5), 0.001),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
 
   testWidgets('slide respects reduced motion', (tester) async {
     final index = ValueNotifier<int>(0);
@@ -3987,6 +4261,24 @@ Offset _translationFor(WidgetTester tester, String label) {
       .widgetList<FractionalTranslation>(finder)
       .map((widget) => widget.translation)
       .firstWhere((translation) => translation.dx.abs() > 0.001);
+}
+
+double _effectiveOpacity(WidgetTester tester, Finder child) {
+  return tester
+      .widgetList<Widget>(
+        find.ancestor(
+          of: child,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Opacity || widget is FadeTransition,
+          ),
+        ),
+      )
+      .fold(1.0, (value, widget) {
+        final opacity = widget is Opacity
+            ? widget.opacity
+            : (widget as FadeTransition).opacity.value;
+        return value * opacity;
+      });
 }
 
 double _opacityFor(WidgetTester tester, String label) {

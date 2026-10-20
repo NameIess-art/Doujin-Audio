@@ -88,7 +88,7 @@ OverlayState? _activeFeedbackOverlay;
 void Function(AppFeedbackDismissReason reason)? _activeFeedbackRemove;
 void Function(_FeedbackData data)? _activeFeedbackUpdateData;
 void Function([Duration? duration, bool? showCountdown])?
-    _activeFeedbackResetDuration;
+_activeFeedbackResetDuration;
 ValueChanged<AppFeedbackDismissReason>? _activeFeedbackOnDismissed;
 Object? _activeFeedbackReplacementGroup;
 Object? _activeFeedbackReplacementOwner;
@@ -392,14 +392,15 @@ void _showTopFeedback(
   );
   final dataNotifier = ValueNotifier<_FeedbackData>(initialData);
   _activeDataNotifier = dataNotifier;
+  var dismissCallback = onDismissed;
 
   late final OverlayEntry entry;
   late final VoidCallback removeWhenUnmounted;
   var removed = false;
-  void removeEntry(AppFeedbackDismissReason reason) {
-    if (removed) return;
-    removed = true;
-    final callback = _activeFeedbackOnDismissed;
+  var dismissed = false;
+  void finishDismissal(AppFeedbackDismissReason reason) {
+    if (dismissed) return;
+    dismissed = true;
     if (_activeFeedbackEntry == entry) {
       _activeFeedbackEntry = null;
       _activeFeedbackOverlay = null;
@@ -412,11 +413,29 @@ void _showTopFeedback(
       _activeFeedbackDismissKey = null;
       _activeDataNotifier = null;
     }
+    dismissCallback?.call(reason);
+  }
+
+  void removeEntry(AppFeedbackDismissReason reason) {
+    if (removed) return;
+    removed = true;
+    finishDismissal(reason);
     dataNotifier.dispose();
     entry.removeListener(removeWhenUnmounted);
     entry.remove();
     entry.dispose();
-    callback?.call(reason);
+  }
+
+  void dismissEntry(AppFeedbackDismissReason reason) {
+    if (removed || dismissed) return;
+    // End the action/undo contract immediately; retain only its fading pixels.
+    finishDismissal(reason);
+    final state = animationKey.currentState;
+    if (state == null) {
+      removeEntry(reason);
+    } else {
+      state.dismiss(() => removeEntry(reason));
+    }
   }
 
   removeWhenUnmounted = () {
@@ -502,7 +521,7 @@ void _showTopFeedback(
                   ? Duration.zero
                   : kAppFadeDuration,
               showCountdown: currentData.showCountdown,
-              onRemove: () => removeEntry(AppFeedbackDismissReason.timeout),
+              onRemove: () => dismissEntry(AppFeedbackDismissReason.timeout),
               builder: (wrapperContext, remainingSeconds) {
                 final isRemovalAction =
                     hasAction &&
@@ -528,6 +547,10 @@ void _showTopFeedback(
                       remainingSeconds: hasAction ? null : remainingSeconds,
                       trailing: hasAction
                           ? TextButton(
+                              key: ValueKey((
+                                currentData.message,
+                                currentData.actionLabel,
+                              )),
                               style: TextButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 12,
@@ -538,7 +561,14 @@ void _showTopFeedback(
                                 shape: const StadiumBorder(),
                               ),
                               onPressed: () {
-                                removeEntry(AppFeedbackDismissReason.action);
+                                if (dismissed ||
+                                    !identical(
+                                      dataNotifier.value,
+                                      currentData,
+                                    )) {
+                                  return;
+                                }
+                                dismissEntry(AppFeedbackDismissReason.action);
                                 currentData.onAction!();
                               },
                               child: Text(resolvedActionLabel!),
@@ -558,9 +588,10 @@ void _showTopFeedback(
   overlay.insert(entry);
   _activeFeedbackEntry = entry;
   _activeFeedbackOverlay = overlay;
-  _activeFeedbackRemove = removeEntry;
+  _activeFeedbackRemove = dismissEntry;
   _activeFeedbackUpdateData = (nextData) {
     if (!removed && dataNotifier.value != nextData) {
+      dismissCallback = _activeFeedbackOnDismissed;
       dataNotifier.value = nextData;
     }
   };
@@ -594,11 +625,14 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _opacity;
-  Timer? _dismissTimer;
+  Timer? _expiryTimer;
   Timer? _countdownTimer;
   late int _remainingSeconds;
   late Duration _currentDuration;
   late bool _currentShowCountdown;
+  bool _dismissing = false;
+  bool _tickerModeEnabled = true;
+  VoidCallback? _onDismissed;
 
   @override
   void initState() {
@@ -616,8 +650,11 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
   }
 
   void _handleAnimationStatus(AnimationStatus status) {
-    if (widget.transitionDuration == Duration.zero) return;
     final interaction = UiInteractionCoordinator.instance;
+    if (!_tickerModeEnabled || widget.transitionDuration == Duration.zero) {
+      interaction.cancelInteraction(this);
+      return;
+    }
     if (status == AnimationStatus.forward ||
         status == AnimationStatus.reverse) {
       // Catalog/metadata notifications must not rebuild the list beneath a
@@ -628,8 +665,20 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     }
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    _handleAnimationStatus(_controller.status);
+    if (!_tickerModeEnabled && _dismissing) {
+      final onDismissed = _onDismissed;
+      _onDismissed = null;
+      if (onDismissed != null) scheduleMicrotask(onDismissed);
+    }
+  }
+
   void _startDuration(Duration duration, bool showCountdown) {
-    _dismissTimer?.cancel();
+    _expiryTimer?.cancel();
     _countdownTimer?.cancel();
     final totalSeconds = (duration.inMilliseconds / 1000).ceil();
     _remainingSeconds = totalSeconds > 0 ? totalSeconds : 1;
@@ -645,17 +694,10 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
       });
     }
 
-    final stayDuration = duration - widget.transitionDuration;
-    _dismissTimer = Timer(
-      stayDuration > Duration.zero ? stayDuration : Duration.zero,
-      () {
-        if (!mounted) return;
-        _countdownTimer?.cancel();
-        _controller.reverse().then((_) {
-          if (mounted) widget.onRemove();
-        });
-      },
-    );
+    // Undo expires on its wall-clock deadline even if rendering is paused.
+    _expiryTimer = Timer(duration, () {
+      if (mounted) widget.onRemove();
+    });
   }
 
   void resetDuration([Duration? duration, bool? showCountdown]) {
@@ -669,10 +711,29 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     setState(() {});
   }
 
+  void dismiss(VoidCallback onComplete) {
+    if (_dismissing) return;
+    _expiryTimer?.cancel();
+    _countdownTimer?.cancel();
+    if (widget.transitionDuration == Duration.zero || !_tickerModeEnabled) {
+      onComplete();
+      return;
+    }
+    _onDismissed = onComplete;
+    setState(() => _dismissing = true);
+    _controller.reverse().then((_) {
+      if (!mounted) return;
+      final onDismissed = _onDismissed;
+      _onDismissed = null;
+      onDismissed?.call();
+    });
+  }
+
   @override
   void dispose() {
     _countdownTimer?.cancel();
-    _dismissTimer?.cancel();
+    _expiryTimer?.cancel();
+    _onDismissed = null;
     UiInteractionCoordinator.instance.cancelInteraction(this);
     _controller.dispose();
     super.dispose();
@@ -684,8 +745,18 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
       context,
       _currentShowCountdown ? _remainingSeconds : null,
     );
-    if (MediaQuery.disableAnimationsOf(context)) return content;
-    return FadeTransition(opacity: _opacity, child: content);
+    return IgnorePointer(
+      ignoring: _dismissing,
+      child: ExcludeFocus(
+        excluding: _dismissing,
+        child: ExcludeSemantics(
+          excluding: _dismissing,
+          child: MediaQuery.disableAnimationsOf(context)
+              ? content
+              : FadeTransition(opacity: _opacity, child: content),
+        ),
+      ),
+    );
   }
 }
 
@@ -780,45 +851,68 @@ class AppFeedbackSurface extends StatelessWidget {
                 duration: tokens.motionFast,
                 curve: Curves.easeOutCubic,
                 alignment: Alignment.centerLeft,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (title != null) ...[
-                      Text(
-                        title!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: cs.onSurface,
-                          fontWeight: FontWeight.w800,
+                child: AnimatedSwitcher(
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : kAppFadeDuration,
+                  switchInCurve: kAppFadeCurve,
+                  switchOutCurve: kAppFadeCurve,
+                  layoutBuilder: _feedbackContentLayout,
+                  child: Column(
+                    key: ValueKey((message, title)),
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (title != null) ...[
+                        Text(
+                          title!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: cs.onSurface,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
+                        const SizedBox(height: 1),
+                      ],
+                      Text(
+                        displayMessage,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            (title != null
+                                    ? theme.textTheme.bodySmall
+                                    : theme.textTheme.labelLarge)
+                                ?.copyWith(
+                                  color: title != null
+                                      ? cs.onSurfaceVariant
+                                      : cs.onSurface,
+                                  fontWeight: title != null
+                                      ? FontWeight.w600
+                                      : FontWeight.w700,
+                                  height: 1.25,
+                                ),
                       ),
-                      const SizedBox(height: 1),
                     ],
-                    Text(
-                      displayMessage,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          (title != null
-                                  ? theme.textTheme.bodySmall
-                                  : theme.textTheme.labelLarge)
-                              ?.copyWith(
-                                color: title != null
-                                    ? cs.onSurfaceVariant
-                                    : cs.onSurface,
-                                fontWeight: title != null
-                                    ? FontWeight.w600
-                                    : FontWeight.w700,
-                                height: 1.25,
-                              ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
-            if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+            AnimatedSwitcher(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : kAppFadeDuration,
+              switchInCurve: kAppFadeCurve,
+              switchOutCurve: kAppFadeCurve,
+              layoutBuilder: _feedbackContentLayout,
+              child: trailing == null
+                  ? const SizedBox.shrink()
+                  : Padding(
+                      key: trailing!.key,
+                      padding: const EdgeInsets.only(left: 8),
+                      child: trailing!,
+                    ),
+            ),
           ],
         ),
       ),
@@ -829,6 +923,22 @@ class AppFeedbackSurface extends StatelessWidget {
       child: surface,
     );
   }
+}
+
+Widget _feedbackContentLayout(
+  Widget? currentChild,
+  List<Widget> previousChildren,
+) {
+  return Stack(
+    alignment: Alignment.centerLeft,
+    children: [
+      for (final child in previousChildren)
+        IgnorePointer(
+          child: ExcludeFocus(child: ExcludeSemantics(child: child)),
+        ),
+      ?currentChild,
+    ],
+  );
 }
 
 Color _accentColor(BuildContext context, AppFeedbackTone tone) {

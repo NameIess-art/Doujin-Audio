@@ -9,6 +9,7 @@ import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/core/widgets/subtitle_window_visual.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
@@ -716,11 +717,11 @@ void main() {
 
       final retryDropdown = find.descendant(
         of: retryTile,
-        matching: find.byType(DropdownButton<int>),
+        matching: find.byType(UnifiedDropdownButton<int>),
       );
       final threadDropdown = find.descendant(
         of: threadTile,
-        matching: find.byType(DropdownButton<int>),
+        matching: find.byType(UnifiedDropdownButton<int>),
       );
       expect(retryDropdown, findsOneWidget);
       expect(threadDropdown, findsOneWidget);
@@ -1365,13 +1366,12 @@ void main() {
     expect(title.overflow, TextOverflow.visible);
     expect(tester.getSize(startupTileFinder).height, greaterThan(58));
 
-    final dropdownFinder = find.byType(DropdownButton<StartupPage>);
-    final dropdown = tester.widget<DropdownButton<StartupPage>>(dropdownFinder);
+    final dropdownFinder = find.byType(UnifiedDropdownButton<StartupPage>);
+    final dropdown = tester.widget<UnifiedDropdownButton<StartupPage>>(dropdownFinder);
     expect(dropdown.isExpanded, isTrue);
-    expect(dropdown.itemHeight, isNull);
+    expect(dropdown.multilineItems, isTrue);
 
-    final optionPadding = dropdown.items!.first.child as Padding;
-    final optionText = optionPadding.child! as Text;
+    final optionText = dropdown.items.first.child as Text;
     expect(optionText.maxLines, isNull);
     expect(optionText.softWrap, isTrue);
     expect(optionText.overflow, TextOverflow.visible);
@@ -1397,7 +1397,7 @@ void main() {
     );
     final dropdown = find.descendant(
       of: interfaceLanguageTile,
-      matching: find.byType(DropdownButton<AppLanguagePreference>),
+      matching: find.byType(UnifiedDropdownButton<AppLanguagePreference>),
     );
 
     expect(dropdown, findsOneWidget);
@@ -1447,7 +1447,7 @@ void main() {
                 alignment: 0.5,
               );
               await tester.pumpAndSettle();
-              final dropdown = find.byType(DropdownButton<StartupPage>);
+              final dropdown = find.byType(UnifiedDropdownButton<StartupPage>);
               await tester.tap(dropdown);
               await tester.pumpAndSettle();
               expect(
@@ -1505,7 +1505,7 @@ void main() {
     final title = find.text(i18n.tr('cover_image_resolution'));
     await Scrollable.ensureVisible(tester.element(title), alignment: 0.5);
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButton<CoverImageResolution>));
+    await tester.tap(find.byType(UnifiedDropdownButton<CoverImageResolution>));
     await tester.pumpAndSettle();
 
     expect(find.text('300px'), findsWidgets);
@@ -1535,7 +1535,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(harness.settings.workNameDisplay, WorkNameDisplay.workTitle);
 
-    await tester.tap(find.byType(DropdownButton<WorkNameDisplay>));
+    await tester.tap(find.byType(UnifiedDropdownButton<WorkNameDisplay>));
     await tester.pumpAndSettle();
     expect(
       find.text(harness.languageProvider.tr('work_name_display_folderName')),
@@ -1563,7 +1563,7 @@ void main() {
       final title = find.text(i18n.tr('cover_image_resolution'));
       await Scrollable.ensureVisible(tester.element(title), alignment: 0.5);
       await tester.pumpAndSettle();
-      expect(find.byType(DropdownButton<CoverImageResolution>), findsOneWidget);
+      expect(find.byType(UnifiedDropdownButton<CoverImageResolution>), findsOneWidget);
       expect(find.text('封面图片显示'), findsNothing);
       expect(find.byIcon(Icons.aspect_ratio_rounded), findsNothing);
     },

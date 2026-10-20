@@ -3104,6 +3104,11 @@ void main() {
               .hitTestable()
               .first;
           final imageState = tester.state(image);
+          Future<void> finishFullscreenFade() async {
+            for (var frame = 0; frame < 8; frame++) {
+              await tester.pump(const Duration(milliseconds: 100));
+            }
+          }
           final transform = tester
               .widget<InteractiveViewer>(image)
               .transformationController!;
@@ -3111,7 +3116,13 @@ void main() {
           await tester.pump();
           await tester.tap(fullscreen);
           await tester.pump();
-          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pump(const Duration(milliseconds: 150));
+          final fade = tester.widget<FadeTransition>(find.byKey(
+            const ValueKey('work_image_fullscreen_fade'),
+          ));
+          expect(fade.opacity.value, inExclusiveRange(0, 1));
+          expect(viewerRect(), originalRect);
+          await finishFullscreenFade();
           expect(viewerRect(), const Rect.fromLTWH(0, 0, 1280, 800));
           expect(find.byIcon(Icons.fullscreen_exit_rounded), findsOneWidget);
           expect(tester.element(viewport), same(viewportElement));
@@ -3119,11 +3130,44 @@ void main() {
           expect(transform.value.getMaxScaleOnAxis(), 2);
           await tester.tap(fullscreen);
           await tester.pump();
+          await finishFullscreenFade();
+          expect(viewerRect(), originalRect);
+          expect(tester.element(viewport), same(viewportElement));
+          expect(transform.value.getMaxScaleOnAxis(), 2);
+          // A second tap while fading merges into the latest inline target.
+          await tester.tap(fullscreen);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 150));
+          final reversedOpacity = fade.opacity.value;
+          expect(reversedOpacity, inExclusiveRange(0, 1));
+          await tester.tap(fullscreen);
+          await tester.pump();
+          expect(fade.opacity.value, reversedOpacity);
+          await tester.pump(const Duration(milliseconds: 75));
+          expect(fade.opacity.value, greaterThan(reversedOpacity));
+          expect(viewerRect(), originalRect);
+          await finishFullscreenFade();
           expect(viewerRect(), originalRect);
           expect(tester.element(viewport), same(viewportElement));
           expect(transform.value.getMaxScaleOnAxis(), 2);
           await tester.tap(fullscreen);
           await tester.pump();
+          await tester.pump(const Duration(milliseconds: 301));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(viewerRect(), const Rect.fromLTWH(0, 0, 1280, 800));
+          final enteringOpacity = fade.opacity.value;
+          expect(enteringOpacity, inExclusiveRange(0, 1));
+          await tester.tap(fullscreen);
+          await tester.pump();
+          expect(fade.opacity.value, enteringOpacity);
+          await tester.pump(const Duration(milliseconds: 75));
+          expect(fade.opacity.value, lessThan(enteringOpacity));
+          await finishFullscreenFade();
+          expect(viewerRect(), originalRect);
+          expect(tester.element(viewport), same(viewportElement));
+          await tester.tap(fullscreen);
+          await finishFullscreenFade();
           await tester.tap(
             find.byKey(const ValueKey('image_viewer_next_button')),
           );
@@ -3132,6 +3176,7 @@ void main() {
           expect(find.text('3 / 3'), findsOneWidget);
           await pane.currentState!.maybePop();
           await tester.pump();
+          await finishFullscreenFade();
           expect(viewerRect(), originalRect);
           expect(find.text('3 / 3'), findsOneWidget);
           expect(pane.currentState!.canPop(), isTrue);
@@ -3180,9 +3225,15 @@ void main() {
         await tester.pump();
         await tester.tap(fullscreen);
         await tester.pump();
+        for (var frame = 0; frame < 8; frame++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
         expect(find.byIcon(Icons.fullscreen_exit_rounded), findsOneWidget);
         tester.view.physicalSize = const Size(390, 820);
         await tester.pump();
+        for (var frame = 0; frame < 8; frame++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
         await tester.pump();
         expect(fullscreen, findsNothing);
         expect(

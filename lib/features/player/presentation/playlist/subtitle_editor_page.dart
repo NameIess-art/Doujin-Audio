@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/subtitle_parser.dart';
+import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/page_header_inset.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
@@ -76,7 +77,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         ? cue.text.substring(original.length + 1)
         : '';
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final next = await showDialog<({String text, String? originalText})>(
+    final next = await showAppDialog<({String text, String? originalText})>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(i18n.tr('subtitle_edit_text')),
@@ -168,7 +169,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     var endText = hasTime ? _formatTime(cue.end) : '';
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     String? validationError;
-    final next = await showDialog<(Duration, Duration)>(
+    final next = await showAppDialog<(Duration, Duration)>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(

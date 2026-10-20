@@ -1,3 +1,4 @@
+import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -1731,6 +1732,15 @@ void main() {
         await tester.pump();
 
         expect(find.text('Middle section'), findsOneWidget);
+        final fadeFinder = find.ancestor(
+          of: find.text('Middle section'),
+          matching: find.byType(FadeTransition),
+        ).first;
+        final tooltipOpacity =
+            tester.widget<FadeTransition>(fadeFinder).opacity;
+        expect(tooltipOpacity.value, 0);
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(tooltipOpacity.value, inExclusiveRange(0, 1));
         final capsule = find.ancestor(
           of: find.text('Middle section'),
           matching: find.byType(DecoratedBox),
@@ -1748,7 +1758,22 @@ void main() {
         tester.widget<Slider>(find.byType(Slider)).onChanged!(35000);
         await tester.pump();
         expect(find.text('Middle section'), findsOneWidget);
+        expect(
+          identical(tester.widget<FadeTransition>(fadeFinder).opacity,
+              tooltipOpacity),
+          isTrue,
+        );
+        expect(tooltipOpacity.value, inExclusiveRange(0, 1));
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(tooltipOpacity.value, 1);
         tester.widget<Slider>(find.byType(Slider)).onChangeEnd!(35000);
+        await tester.pump();
+        expect(find.text('Middle section'), findsOneWidget);
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(tooltipOpacity.value, inExclusiveRange(0, 1));
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(tooltipOpacity.value, closeTo(0, 0.001));
+        await tester.pump(const Duration(milliseconds: 1));
         await tester.pump();
         expect(find.text('Middle section'), findsNothing);
       },
@@ -3755,11 +3780,11 @@ void main() {
     expect(session.audioEffects.eqBandLevels, customPreset.bandLevels);
     final presetDropdown = find.descendant(
       of: find.byType(EqualizerPage),
-      matching: find.byType(DropdownButtonFormField<String>),
+      matching: find.byType(UnifiedDropdownButtonFormField<String>),
     );
     expect(
       tester
-          .widget<DropdownButtonFormField<String>>(presetDropdown)
+          .widget<UnifiedDropdownButtonFormField<String>>(presetDropdown)
           .initialValue,
       isNull,
     );
@@ -3780,7 +3805,7 @@ void main() {
     expect(deleteEqualizerPresetButton, findsOneWidget);
     expect(
       tester
-          .widget<DropdownButtonFormField<String>>(presetDropdown)
+          .widget<UnifiedDropdownButtonFormField<String>>(presetDropdown)
           .initialValue,
       customPreset.id,
     );
@@ -6603,11 +6628,6 @@ void main() {
     await tester.pump(kThemeChangeDuration ~/ 2);
     expect(checkmarkFinder, findsOneWidget);
 
-    final animatedSwitcherFinder = find.byType(AnimatedSwitcher);
-    final switcher = tester.widget<AnimatedSwitcher>(animatedSwitcherFinder);
-    expect(switcher.duration, const Duration(milliseconds: 300));
-    expect(switcher.reverseDuration, const Duration(milliseconds: 300));
-
     // Mid-animation: at 150ms, opacity is partial (0 < opacity < 1)
     await tester.pump(const Duration(milliseconds: 150));
     final fadeTransitionFinder = find
@@ -6670,11 +6690,8 @@ void main() {
         ),
       ),
     );
-    final disabledSwitcher = tester.widget<AnimatedSwitcher>(
-      animatedSwitcherFinder,
-    );
-    expect(disabledSwitcher.duration, Duration.zero);
-    expect(disabledSwitcher.reverseDuration, Duration.zero);
+    expect(checkmarkFinder, findsOneWidget);
+    expect(tester.widget<FadeTransition>(fadeTransitionFinder).opacity.value, 1);
   });
 
   testWidgets(

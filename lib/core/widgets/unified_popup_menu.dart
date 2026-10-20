@@ -15,6 +15,8 @@ class UnifiedMenuEntry<T> {
     this.icon,
     this.iconWidget,
     required this.label,
+    this.labelWidget,
+    this.selected = false,
     this.trailing,
     this.trailingValue,
     this.destructive = false,
@@ -26,6 +28,8 @@ class UnifiedMenuEntry<T> {
       icon = null,
       iconWidget = null,
       label = '',
+      labelWidget = null,
+      selected = false,
       trailing = null,
       trailingValue = null,
       destructive = false,
@@ -36,6 +40,8 @@ class UnifiedMenuEntry<T> {
   final IconData? icon;
   final Widget? iconWidget;
   final String label;
+  final Widget? labelWidget;
+  final bool selected;
   final Widget? trailing;
   final T? trailingValue;
   final bool destructive;
@@ -186,7 +192,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
               if (mounted) widget.onSelected(value);
               return;
             }
-            await _removeOverlay(immediate: true);
+            unawaited(_removeOverlay());
             if (mounted) widget.onSelected(value);
           },
           onTrailingSelected: (value) async {
@@ -299,6 +305,11 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   void initState() {
     super.initState();
     _bindAnimation();
+    widget.animation.addStatusListener(_handleAnimationStatus);
+  }
+
+  void _handleAnimationStatus(AnimationStatus status) {
+    if (mounted) setState(() {});
   }
 
   void _bindAnimation() {
@@ -314,13 +325,16 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
   void didUpdateWidget(covariant _UnifiedPopupOverlay<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.animation != widget.animation) {
+      oldWidget.animation.removeStatusListener(_handleAnimationStatus);
       _curved.dispose();
       _bindAnimation();
+      widget.animation.addStatusListener(_handleAnimationStatus);
     }
   }
 
   @override
   void dispose() {
+    widget.animation.removeStatusListener(_handleAnimationStatus);
     _curved.dispose();
     super.dispose();
   }
@@ -359,10 +373,24 @@ class _UnifiedPopupOverlayState<T> extends State<_UnifiedPopupOverlay<T>> {
                     child: ScaleTransition(
                       alignment: Alignment.topRight,
                       scale: _scale,
-                      child: _UnifiedPopupMenuCard<T>(
-                        entries: widget.entries,
-                        onSelected: widget.onSelected,
-                        onTrailingSelected: widget.onTrailingSelected,
+                      child: ExcludeFocus(
+                        excluding:
+                            widget.animation.status == AnimationStatus.reverse,
+                        child: ExcludeSemantics(
+                          excluding:
+                              widget.animation.status ==
+                              AnimationStatus.reverse,
+                          child: IgnorePointer(
+                            ignoring:
+                                widget.animation.status ==
+                                AnimationStatus.reverse,
+                            child: _UnifiedPopupMenuCard<T>(
+                              entries: widget.entries,
+                              onSelected: widget.onSelected,
+                              onTrailingSelected: widget.onTrailingSelected,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -384,11 +412,13 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
     this.compact = false,
     this.primaryIcons = false,
     this.autofocusFirstEntry = true,
+    this.selectedEntryKey,
   });
 
   final bool compact;
   final bool primaryIcons;
   final bool autofocusFirstEntry;
+  final Key? selectedEntryKey;
   final List<UnifiedMenuEntry<T>> entries;
   final ValueChanged<T> onSelected;
   final ValueChanged<T>? onTrailingSelected;
@@ -423,14 +453,23 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Builder(
             builder: (context) {
-              final firstAutofocusEntry = entries
+              final enabledEntries = entries
                   .where((item) => item.enabled && !item.divider)
+                  .toList(growable: false);
+              final selectedEntry = entries
+                  .where((item) => item.selected)
                   .firstOrNull;
+              final firstAutofocusEntry =
+                  enabledEntries.where((item) => item.selected).firstOrNull ??
+                  enabledEntries.firstOrNull;
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: entries
                     .map(
                       (entry) => _UnifiedPopupMenuRow<T>(
+                        key: identical(entry, selectedEntry)
+                            ? selectedEntryKey
+                            : null,
                         entry: entry,
                         compact: compact,
                         primaryIcons: primaryIcons,
@@ -453,6 +492,7 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
 
 class _UnifiedPopupMenuRow<T> extends StatelessWidget {
   const _UnifiedPopupMenuRow({
+    super.key,
     required this.entry,
     required this.autofocus,
     required this.onSelected,
@@ -525,33 +565,50 @@ class _UnifiedPopupMenuContent<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final foreground = entry.destructive ? cs.error : cs.onSurface;
-    return SizedBox(
-      height: compact ? 40 : 48,
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: compact ? 40 : 48),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Row(
           children: [
-            IconTheme(
-              data: IconThemeData(
-                size: compact ? 18 : 21,
-                color: primaryIcons && !entry.destructive
-                    ? cs.primary
-                    : foreground,
-              ),
-              child: entry.iconWidget ?? Icon(entry.icon),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                entry.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: foreground,
-                  fontWeight: FontWeight.w700,
+            if (entry.icon != null || entry.iconWidget != null) ...[
+              IconTheme(
+                data: IconThemeData(
+                  size: compact ? 18 : 21,
+                  color: primaryIcons && !entry.destructive
+                      ? cs.primary
+                      : foreground,
                 ),
+                child: entry.iconWidget ?? Icon(entry.icon),
+              ),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: DefaultTextStyle.merge(
+                style: TextStyle(
+                  color: entry.enabled
+                      ? foreground
+                      : cs.onSurface.withValues(alpha: 0.38),
+                ),
+                child:
+                    entry.labelWidget ??
+                    Text(
+                      entry.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: entry.enabled
+                            ? foreground
+                            : cs.onSurface.withValues(alpha: 0.38),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
               ),
             ),
+            if (entry.selected) ...[
+              const SizedBox(width: 10),
+              Icon(Icons.check, size: 18, color: cs.primary),
+            ],
             if (entry.trailing != null) ...[
               const SizedBox(width: 10),
               if (entry.trailingValue != null && onTrailingSelected != null)
@@ -620,6 +677,8 @@ Future<T?> showDockAwareMenu<T>({
   required List<UnifiedMenuEntry<T>> entries,
   Listenable? dismissOn,
   bool autofocusFirstEntry = true,
+  double? menuMaxHeight,
+  double? menuWidth,
 }) async {
   final overlayState =
       MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
@@ -633,22 +692,37 @@ Future<T?> showDockAwareMenu<T>({
   final reducedMotion = MediaQuery.disableAnimationsOf(context);
   final hostRoute = readAppRoute(context);
   final menuDismiss = MobileOverlayInset.menuDismissOf(context);
+  final menuKey = GlobalKey<_DockMenuOverlayState<T>>();
   late OverlayEntry entry;
-  void cancelMenu() {
+  void removeImmediately() {
     if (completer.isCompleted) return;
     UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
     completer.complete(null);
   }
 
+  void cancelMenu() {
+    if (completer.isCompleted) return;
+    final state = menuKey.currentState;
+    if (state != null) {
+      unawaited(state._dismiss(null));
+    } else {
+      // A cancellation before the first overlay frame has no visible content.
+      removeImmediately();
+    }
+  }
+
   void cancelWhenHidden() {
-    if (!tickerMode.value.enabled) cancelMenu();
+    if (!tickerMode.value.enabled) removeImmediately();
   }
 
   entry = OverlayEntry(
     builder: (_) => _DockMenuOverlay<T>(
+      key: menuKey,
       position: position,
       entries: entries,
       autofocusFirstEntry: autofocusFirstEntry,
+      menuMaxHeight: menuMaxHeight,
+      menuWidth: menuWidth,
       themes: themes,
       reducedMotion: reducedMotion,
       interactionSource: interactionSource,
@@ -661,19 +735,21 @@ Future<T?> showDockAwareMenu<T>({
 
   UiInteractionCoordinator.instance.beginInteraction(interactionSource);
   tickerMode.addListener(cancelWhenHidden);
-  dismissOn?.addListener(cancelMenu);
+  // This notifier belongs to the launching widget's disposal. Its overlay
+  // cannot remain interactive after the host is gone.
+  dismissOn?.addListener(removeImmediately);
   menuDismiss?.value?.call();
   menuDismiss?.value = cancelMenu;
   overlayState.insert(entry);
   // A root overlay outlives its launching page. Remove its menu when that
   // route completes, including a pop before the menu's first layout.
-  unawaited(hostRoute?.popped.then((_) => cancelMenu()));
+  unawaited(hostRoute?.popped.then((_) => removeImmediately()));
   try {
     return await completer.future;
   } finally {
     if (identical(menuDismiss?.value, cancelMenu)) menuDismiss?.value = null;
     tickerMode.removeListener(cancelWhenHidden);
-    dismissOn?.removeListener(cancelMenu);
+    dismissOn?.removeListener(removeImmediately);
     entry.remove();
     entry.dispose();
     UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
@@ -682,6 +758,7 @@ Future<T?> showDockAwareMenu<T>({
 
 class _DockMenuOverlay<T> extends StatefulWidget {
   const _DockMenuOverlay({
+    super.key,
     required this.position,
     required this.entries,
     required this.themes,
@@ -690,6 +767,8 @@ class _DockMenuOverlay<T> extends StatefulWidget {
     required this.onResult,
     required this.externallyManagedDismiss,
     required this.autofocusFirstEntry,
+    this.menuMaxHeight,
+    this.menuWidth,
   });
 
   final RelativeRect position;
@@ -700,6 +779,8 @@ class _DockMenuOverlay<T> extends StatefulWidget {
   final ValueChanged<T?> onResult;
   final bool externallyManagedDismiss;
   final bool autofocusFirstEntry;
+  final double? menuMaxHeight;
+  final double? menuWidth;
 
   @override
   State<_DockMenuOverlay<T>> createState() => _DockMenuOverlayState<T>();
@@ -707,6 +788,8 @@ class _DockMenuOverlay<T> extends StatefulWidget {
 
 class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
     with SingleTickerProviderStateMixin {
+  final _focusScope = FocusScopeNode();
+  final _selectedEntryKey = GlobalKey();
   late final AnimationController _controller;
   late final CurvedAnimation _curved;
   bool _dismissed = false;
@@ -730,6 +813,16 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
       curve: kAppFadeCurve,
       reverseCurve: kAppFadeCurve,
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _dismissed) return;
+      _focusScope.requestFocus();
+      final selectedContext = _selectedEntryKey.currentContext;
+      if (selectedContext != null) {
+        // Match dropdown behavior: open at the current selection, before the
+        // first visible fade tick, including long and multiline menus.
+        Scrollable.ensureVisible(selectedContext, alignment: 0.5);
+      }
+    });
   }
 
   void _handleAnimationStatus(AnimationStatus status) {
@@ -757,6 +850,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
 
   @override
   void dispose() {
+    _focusScope.dispose();
     _curved.dispose();
     _controller.dispose();
     UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
@@ -766,7 +860,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
 
   Future<void> _dismiss(T? value) async {
     if (_dismissed) return;
-    _dismissed = true;
+    setState(() => _dismissed = true);
     _dismissValue = value;
     try {
       if (!_reducedMotion) {
@@ -790,46 +884,77 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () => _dismiss(null),
       },
-      child: FocusScope(
-        autofocus: true,
-        child: PopScope(
-          canPop: widget.externallyManagedDismiss,
-          onPopInvokedWithResult: (didPop, _) {
-            if (!didPop && !widget.externallyManagedDismiss) _dismiss(null);
-          },
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _dismiss(null),
-                child: const SizedBox.expand(),
-              ),
-              CustomSingleChildLayout(
-                delegate: _DockMenuLayout(widget.position),
-                child: FadeTransition(
-                  opacity: _curved,
-                  child: ScaleTransition(
-                    alignment: Alignment.topRight,
-                    scale: Tween<double>(begin: 0.96, end: 1).animate(_curved),
-                    child: widget.themes.wrap(
-                      Material(
-                        color: Colors.transparent,
-                        child: IntrinsicWidth(
-                          child: _UnifiedPopupMenuCard<T>(
-                            entries: widget.entries,
-                            autofocusFirstEntry: widget.autofocusFirstEntry,
-                            compact: true,
-                            primaryIcons: true,
-                            onSelected: (value) => _dismiss(value),
+      child: Shortcuts(
+        shortcuts: const {
+          SingleActivator(LogicalKeyboardKey.arrowDown): NextFocusIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowUp): PreviousFocusIntent(),
+        },
+        child: FocusScope(
+          node: _focusScope,
+          autofocus: true,
+          child: PopScope(
+            canPop: widget.externallyManagedDismiss,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop && !widget.externallyManagedDismiss) _dismiss(null);
+            },
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _dismiss(null),
+                  child: const SizedBox.expand(),
+                ),
+                CustomSingleChildLayout(
+                  delegate: _DockMenuLayout(widget.position),
+                  child: FadeTransition(
+                    opacity: _curved,
+                    child: ScaleTransition(
+                      alignment: Alignment.topRight,
+                      scale: Tween<double>(
+                        begin: 0.96,
+                        end: 1,
+                      ).animate(_curved),
+                      child: widget.themes.wrap(
+                        Material(
+                          color: Colors.transparent,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minWidth: widget.menuWidth ?? 0,
+                              maxWidth: widget.menuWidth ?? double.infinity,
+                              maxHeight:
+                                  widget.menuMaxHeight ?? double.infinity,
+                            ),
+                            child: SingleChildScrollView(
+                              child: IntrinsicWidth(
+                                child: ExcludeFocus(
+                                  excluding: _dismissed,
+                                  child: ExcludeSemantics(
+                                    excluding: _dismissed,
+                                    child: IgnorePointer(
+                                      ignoring: _dismissed,
+                                      child: _UnifiedPopupMenuCard<T>(
+                                        entries: widget.entries,
+                                        selectedEntryKey: _selectedEntryKey,
+                                        autofocusFirstEntry:
+                                            widget.autofocusFirstEntry,
+                                        compact: true,
+                                        primaryIcons: true,
+                                        onSelected: (value) => _dismiss(value),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -850,35 +975,11 @@ Future<T?> showUnifiedContextMenu<T>({
     point & Size.zero,
     Offset.zero & box.size,
   );
-  if (localOverlay != null) {
-    return showDockAwareMenu<T>(
-      context: context,
-      position: position,
-      entries: entries,
-      // Keep keyboard focus in the menu without preselecting a mouse action.
-      autofocusFirstEntry: false,
-    );
-  }
-  return showMenu<T>(
+  return showDockAwareMenu<T>(
     context: context,
-    requestFocus: true,
     position: position,
-    items: [
-      for (final entry in entries)
-        if (entry.divider)
-          const PopupMenuDivider()
-        else
-          PopupMenuItem<T>(
-            value: entry.value,
-            enabled: entry.enabled,
-            height: 40,
-            padding: EdgeInsets.zero,
-            child: _UnifiedPopupMenuContent(
-              entry: entry,
-              compact: true,
-              primaryIcons: true,
-            ),
-          ),
-    ],
+    entries: entries,
+    // Keep keyboard focus in the menu without preselecting a mouse action.
+    autofocusFirstEntry: false,
   );
 }

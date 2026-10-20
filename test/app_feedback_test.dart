@@ -137,11 +137,26 @@ void main() {
 
     expect(find.text('Import failed'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 300));
 
     await tester.tap(find.text('Retry'));
     await tester.pump();
 
     expect(actionCount, 1);
+    expect(find.text('Import failed'), findsOneWidget);
+    final fade = tester.widget<FadeTransition>(
+      find.ancestor(
+        of: find.byType(AppFeedbackSurface),
+        matching: find.byType(FadeTransition),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(fade.opacity.value, inExclusiveRange(0, 1));
+    await tester.tap(find.text('Retry'), warnIfMissed: false);
+    expect(actionCount, 1);
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(fade.opacity.value, closeTo(0, 0.001));
+    await tester.pumpAndSettle();
     expect(find.text('Import failed'), findsNothing);
   });
 
@@ -229,6 +244,198 @@ void main() {
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));
     expect(committed, <String>['one', 'two']);
   });
+
+  testWidgets('replacement across overlays ends only the old action contract', (
+    tester,
+  ) async {
+    late BuildContext rootContext;
+    late BuildContext scopedContext;
+    final overlayKey = GlobalKey<OverlayState>();
+    final dismissals = <String>[];
+    var oldActions = 0;
+    var newActions = 0;
+    await tester.pumpWidget(
+      _feedbackApp(
+        home: Builder(
+          builder: (context) {
+            rootContext = context;
+            return MobileOverlayInset(
+              bottomInset: 0,
+              menuOverlayKey: overlayKey,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Builder(
+                    builder: (context) {
+                      scopedContext = context;
+                      return const SizedBox();
+                    },
+                  ),
+                  Overlay(key: overlayKey),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    showAppSnackBar(
+      rootContext,
+      'Old feedback',
+      actionLabel: 'Old action',
+      onAction: () => oldActions++,
+      onDismissed: (reason) => dismissals.add('old:$reason'),
+    );
+    await tester.pumpAndSettle();
+    showAppSnackBar(
+      scopedContext,
+      'New feedback',
+      actionLabel: 'New action',
+      onAction: () => newActions++,
+      onDismissed: (reason) => dismissals.add('new:$reason'),
+    );
+    expect(dismissals, ['old:${AppFeedbackDismissReason.replaced}']);
+    await tester.pump();
+    expect(find.text('Old feedback'), findsOneWidget);
+    expect(find.text('New feedback'), findsOneWidget);
+    // A queued old callback is also rejected before the next painted frame.
+    tester
+        .widget<TextButton>(find.widgetWithText(TextButton, 'Old action'))
+        .onPressed!();
+    expect(oldActions, 0);
+    await tester.pumpAndSettle();
+    expect(find.text('Old feedback'), findsNothing);
+    expect(dismissals, ['old:${AppFeedbackDismissReason.replaced}']);
+    await tester.tap(find.text('New action'));
+    expect(newActions, 1);
+    expect(dismissals, [
+      'old:${AppFeedbackDismissReason.replaced}',
+      'new:${AppFeedbackDismissReason.action}',
+    ]);
+    await tester.pumpAndSettle();
+    expect(find.byType(AppFeedbackSurface), findsNothing);
+  });
+
+  testWidgets(
+    'timeout keeps its deadline and then fades noninteractive pixels',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      late BuildContext feedbackContext;
+      final dismissals = <AppFeedbackDismissReason>[];
+      var actions = 0;
+      await tester.pumpWidget(
+        _feedbackApp(
+          home: Builder(
+            builder: (context) {
+              feedbackContext = context;
+              return const Scaffold();
+            },
+          ),
+        ),
+      );
+      showAppSnackBar(
+        feedbackContext,
+        'Expiring notice',
+        duration: const Duration(seconds: 1),
+        actionLabel: 'Deadline action',
+        onAction: () => actions++,
+        onDismissed: dismissals.add,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final fade = tester.widget<FadeTransition>(
+        find.ancestor(
+          of: find.byType(AppFeedbackSurface),
+          matching: find.byType(FadeTransition),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 699));
+      expect(fade.opacity.value, 1);
+      expect(dismissals, isEmpty);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(dismissals, [AppFeedbackDismissReason.timeout]);
+      expect(find.text('Expiring notice'), findsOneWidget);
+      expect(find.semantics.byLabel('Deadline action'), findsNothing);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(fade.opacity.value, inExclusiveRange(0, 1));
+      await tester.tap(find.text('Deadline action'), warnIfMissed: false);
+      expect(actions, 0);
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pumpAndSettle();
+      expect(find.text('Expiring notice'), findsNothing);
+      expect(dismissals, [AppFeedbackDismissReason.timeout]);
+      semantics.dispose();
+    },
+  );
+
+  testWidgets(
+    'feedback expires at its deadline without waiting for fade frames',
+    (tester) async {
+      late BuildContext feedbackContext;
+      final dismissals = <AppFeedbackDismissReason>[];
+      await tester.pumpWidget(
+        _feedbackApp(
+          home: Builder(
+            builder: (context) {
+              feedbackContext = context;
+              return const Scaffold();
+            },
+          ),
+        ),
+      );
+      showAppSnackBar(
+        feedbackContext,
+        'One second notice',
+        duration: const Duration(seconds: 1),
+        onDismissed: dismissals.add,
+      );
+      await tester.pump();
+      // No intermediate animation frames are delivered before the deadline.
+      await tester.pump(const Duration(seconds: 1));
+      expect(dismissals, [AppFeedbackDismissReason.timeout]);
+      expect(find.text('One second notice'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'reduced motion dismisses feedback without retaining fade pixels',
+    (tester) async {
+      late BuildContext feedbackContext;
+      var actions = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: true),
+            child: child!,
+          ),
+          home: Builder(
+            builder: (context) {
+              feedbackContext = context;
+              return const Scaffold();
+            },
+          ),
+        ),
+      );
+      showAppSnackBar(
+        feedbackContext,
+        'Notice',
+        actionLabel: 'Dismiss notice',
+        onAction: () => actions++,
+      );
+      await tester.pump();
+      expect(
+        find.ancestor(
+          of: find.byType(AppFeedbackSurface),
+          matching: find.byType(FadeTransition),
+        ),
+        findsNothing,
+      );
+      await tester.tap(find.text('Dismiss notice'));
+      await tester.pump();
+      expect(actions, 1);
+      expect(find.byType(AppFeedbackSurface), findsNothing);
+    },
+  );
 
   testWidgets('undo action restores pending removals without committing', (
     tester,
@@ -946,18 +1153,38 @@ void main() {
       // Verify it updated in place without restarting fade animation
       expect(find.text('Second message'), findsOneWidget);
       expect(find.text('Updated title'), findsOneWidget);
-      expect(find.text('First message'), findsNothing);
+      expect(find.text('First message'), findsOneWidget);
       final updatedFade = find.ancestor(
         of: find.byType(AppFeedbackSurface),
         matching: find.byType(FadeTransition),
       );
-      final updatedFadeAnimation =
-          tester.widget<FadeTransition>(updatedFade).opacity;
+      final updatedFadeAnimation = tester
+          .widget<FadeTransition>(updatedFade)
+          .opacity;
       expect(identical(updatedFadeAnimation, firstFadeAnimation), isTrue);
       expect(
         updatedFadeAnimation.value,
         1.0,
       ); // Kept fully opaque without flashing
+      await tester.pump(const Duration(milliseconds: 150));
+      final textFade = find
+          .ancestor(
+            of: find.text('Second message'),
+            matching: find.byType(FadeTransition),
+          )
+          .first;
+      expect(
+        tester.widget<FadeTransition>(textFade).opacity.value,
+        inExclusiveRange(0, 1),
+      );
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(
+        tester.widget<FadeTransition>(textFade).opacity.value,
+        closeTo(1, 0.001),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('First message'), findsNothing);
+      expect(find.text('Second message'), findsOneWidget);
     },
   );
 }

@@ -476,10 +476,11 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                             ),
                     ),
                   ),
-                  if (!_loading && _selection != null && _work != null)
-                    Positioned(
-                      bottom: 16 + bottomInset,
-                      right: 16,
+                  Positioned(
+                    bottom: 16 + bottomInset,
+                    right: 16,
+                    child: AppDeferredFade(
+                      visible: !_loading && _selection != null && _work != null,
                       child: HeaderFloatingSurface(
                         key: const ValueKey<String>(
                           'asmr_download_start_button',
@@ -500,27 +501,31 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  if (_starting)
-                                    Padding(
-                                      padding: const EdgeInsets.only(right: 8),
-                                      child: SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                                onAsmrBlue,
-                                              ),
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    Icon(
-                                      Icons.download_rounded,
-                                      size: 18,
-                                      color: onAsmrBlue,
-                                    ),
+                                  AnimatedSwitcher(
+                                    duration:
+                                        MediaQuery.disableAnimationsOf(context)
+                                        ? Duration.zero
+                                        : kAppFadeDuration,
+                                    switchInCurve: kAppFadeCurve,
+                                    switchOutCurve: kAppFadeCurve,
+                                    child: _starting
+                                        ? SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              valueColor:
+                                                  AlwaysStoppedAnimation<Color>(
+                                                    onAsmrBlue,
+                                                  ),
+                                            ),
+                                          )
+                                        : Icon(
+                                            Icons.download_rounded,
+                                            size: 18,
+                                            color: onAsmrBlue,
+                                          ),
+                                  ),
                                   const SizedBox(width: 8),
                                   Text(
                                     i18n.tr('asmr_download_action'),
@@ -539,6 +544,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                         ),
                       ),
                     ),
+                  ),
                 ],
               ),
             ),

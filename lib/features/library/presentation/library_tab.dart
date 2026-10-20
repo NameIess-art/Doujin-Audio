@@ -149,7 +149,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       buildAppPageRoute<void>(
         context: context,
         child: const LibrarySearchPage(),
-        duration: Duration.zero,
+        slide: false,
       ),
     );
   }
@@ -691,23 +691,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       );
     }
 
-    Widget refreshableEmptyBody() {
-      final body = emptyListBody();
-      if (!canPullRefresh) return body;
-      return GlassRefreshIndicator(
-        key: _refreshIndicatorKey,
-        lockChildWhileRefreshing: true,
-        color: Theme.of(context).colorScheme.primary,
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-        onRefresh: _runLibraryPullRefresh,
-        // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
-        edgeOffset: listTopPadding,
-        displacement: 32,
-        triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-        child: body,
-      );
-    }
-
     final page = ScrollActivityGate(
       child: PageHeaderInset(
         topInset: listTopPadding,
@@ -734,7 +717,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     ),
                   );
                   final emptyBody = sortingError == null
-                      ? refreshableEmptyBody()
+                      ? emptyListBody()
                       : const SizedBox.expand();
                   return Stack(
                     children: [
@@ -748,56 +731,59 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           bottomInset: listBottomPadding,
                           topInset: listTopPadding,
                         ),
-                        content: tree.isEmpty
-                            ? emptyBody
-                            : GlassRefreshIndicator(
-                                key: _refreshIndicatorKey,
-                                lockChildWhileRefreshing: true,
-                                color: Theme.of(context).colorScheme.primary,
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerHighest,
-                                onRefresh: _runLibraryPullRefresh,
-                                edgeOffset: listTopPadding,
-                                displacement: 32,
-                                triggerMode:
-                                    GlassRefreshIndicatorTriggerMode.anywhere,
-                                child: LibraryTreeList(
-                                  tree: tree,
-                                  structureRevision: listStateStructureRevision,
-                                  selectedPaths: _selectedLibraryPaths,
-                                  isSelectionMode: _isSelectionMode,
-                                  scrollController: _scrollController,
-                                  i18n: i18n,
-                                  topPadding: listTopPadding,
-                                  bottomPadding: listBottomPadding,
-                                  cacheExtent: listCacheExtent,
-                                  physics: canPullRefresh
-                                      ? AlwaysScrollableScrollPhysics(
-                                          parent:
-                                              GlassRefreshIndicatorScrollPhysics(
-                                                isIndicatorVisible: () =>
-                                                    _refreshIndicatorKey
-                                                        .currentState
-                                                        ?.isIndicatorVisible ??
-                                                    false,
-                                              ),
-                                        )
-                                      : null,
-                                  loadFolder:
-                                      libraryFacade.loadLibraryFolderTree,
-                                  currentStructureRevision: () =>
-                                      libraryFacade.structureRevision,
-                                  onLongPress: _enterSelectionMode,
-                                  onToggleSelect: _toggleLibrarySelection,
-                                ),
-                              ),
+                        content: GlassRefreshIndicator(
+                          key: _refreshIndicatorKey,
+                          lockChildWhileRefreshing: true,
+                          color: Theme.of(context).colorScheme.primary,
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          onRefresh: _runLibraryPullRefresh,
+                          edgeOffset: listTopPadding,
+                          displacement: 32,
+                          triggerMode:
+                              GlassRefreshIndicatorTriggerMode.anywhere,
+                          child: PlaceholderContentTransition(
+                            key: const ValueKey('library_empty_transition'),
+                            showPlaceholder: tree.isEmpty,
+                            placeholder: emptyBody,
+                            content: LibraryTreeList(
+                              tree: tree,
+                              structureRevision: listStateStructureRevision,
+                              selectedPaths: _selectedLibraryPaths,
+                              isSelectionMode: _isSelectionMode,
+                              scrollController: _scrollController,
+                              i18n: i18n,
+                              topPadding: listTopPadding,
+                              bottomPadding: listBottomPadding,
+                              cacheExtent: listCacheExtent,
+                              physics: canPullRefresh
+                                  ? AlwaysScrollableScrollPhysics(
+                                      parent:
+                                          GlassRefreshIndicatorScrollPhysics(
+                                            isIndicatorVisible: () =>
+                                                _refreshIndicatorKey
+                                                    .currentState
+                                                    ?.isIndicatorVisible ??
+                                                false,
+                                          ),
+                                    )
+                                  : null,
+                              loadFolder: libraryFacade.loadLibraryFolderTree,
+                              currentStructureRevision: () =>
+                                  libraryFacade.structureRevision,
+                              onLongPress: _enterSelectionMode,
+                              onToggleSelect: _toggleLibrarySelection,
+                            ),
+                          ),
+                        ),
                       ),
-                      if (sortingError != null)
-                        Positioned(
-                          top: listTopPadding + 16,
-                          left: 12,
-                          right: 12,
+                      Positioned(
+                        top: listTopPadding + 16,
+                        left: 12,
+                        right: 12,
+                        child: AppDeferredFade(
+                          visible: sortingError != null,
                           child: OperationStatusBanner(
                             label: i18n.tr('operation_failed_retry'),
                             error: sortingError,
@@ -806,6 +792,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                 ref.invalidate(librarySortedSnapshotUiProvider),
                           ),
                         ),
+                      ),
                     ],
                   );
                 },
@@ -813,11 +800,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             ),
 
             // Scan progress card
-            if (listStateIsScanning && !listStateIsBackgroundScanning)
-              Positioned(
-                top: headerContentHeight + 10,
-                left: 12,
-                right: 12,
+            Positioned(
+              top: headerContentHeight + 10,
+              left: 12,
+              right: 12,
+              child: AppDeferredFade(
+                visible: listStateIsScanning && !listStateIsBackgroundScanning,
                 child: AppPageContentTransition(
                   child: Consumer(
                     builder: (context, ref, _) {
@@ -833,6 +821,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                   ),
                 ),
               ),
+            ),
 
             // Header — frosted glass overlay on top of the scrolling list
             Positioned(

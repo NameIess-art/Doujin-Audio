@@ -212,7 +212,11 @@ class _RoutedPlaybackDockHostState
             );
             final routeDeparting = _routeObserver.isWorkDetailDeparting;
             return Consumer(
-              builder: (context, ref, _) => Opacity(
+              builder: (context, ref, _) => AnimatedOpacity(
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : kAppFadeDuration,
+                curve: kAppFadeCurve,
                 opacity: _routeObserver.suppressDockForSessionDetail ? 0 : 1,
                 child: _RoutedPlaybackDock(
                   active:
@@ -542,7 +546,7 @@ class _RoutedPlaybackDock extends ConsumerStatefulWidget {
 }
 
 class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
-  static const _duration = Duration(milliseconds: 300);
+  static const _duration = kAppFadeDuration;
   Timer? _hideTimer;
   late bool _visible = widget.active;
   bool _expanded = false;

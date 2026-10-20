@@ -18,6 +18,130 @@ void main() {
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
 
+  for (final dockMenu in [false, true]) {
+    testWidgets(
+      'outgoing menu excludes focus and semantics (dock: $dockMenu)',
+      (tester) async {
+        final semantics = tester.ensureSemantics();
+        var selected = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => dockMenu
+                    ? TextButton(
+                        onPressed: () async {
+                          final result = await showDockAwareMenu<int>(
+                            context: context,
+                            position: const RelativeRect.fromLTRB(
+                              10,
+                              10,
+                              10,
+                              10,
+                            ),
+                            entries: const [
+                              UnifiedMenuEntry.action(
+                                value: 1,
+                                label: 'Closing action',
+                              ),
+                            ],
+                          );
+                          if (result != null) selected++;
+                        },
+                        child: const Text('Open menu'),
+                      )
+                    : UnifiedPopupMenuButton<int>(
+                        icon: Icons.more_vert,
+                        tooltip: 'Open menu',
+                        entries: const [
+                          UnifiedMenuEntry.action(
+                            value: 1,
+                            label: 'Closing action',
+                          ),
+                        ],
+                        onSelected: (_) => selected++,
+                      ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(
+          dockMenu ? find.text('Open menu') : find.byTooltip('Open menu'),
+        );
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(find.text('Closing action'), findsOneWidget);
+        expect(find.semantics.byLabel('Closing action'), findsNothing);
+        final action = find
+            .ancestor(
+              of: find.text('Closing action'),
+              matching: find.byType(InkWell),
+            )
+            .first;
+        expect(Focus.of(tester.element(action)).hasFocus, isFalse);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(selected, 0);
+        expect(find.text('Closing action'), findsNothing);
+        semantics.dispose();
+      },
+    );
+  }
+
+  testWidgets('external menu replacement waits for the full fade out', (
+    tester,
+  ) async {
+    final dismiss = ValueNotifier<VoidCallback?>(null);
+    addTearDown(dismiss.dispose);
+    var completed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MobileOverlayInset(
+            bottomInset: 0,
+            menuDismiss: dismiss,
+            child: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async {
+                  await showDockAwareMenu<int>(
+                    context: context,
+                    position: const RelativeRect.fromLTRB(10, 10, 10, 10),
+                    entries: const [
+                      UnifiedMenuEntry.action(value: 1, label: 'Fading action'),
+                    ],
+                  );
+                  completed = true;
+                },
+                child: const Text('Open fading menu'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open fading menu'));
+    await tester.pumpAndSettle();
+    dismiss.value!();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    final fade = tester.widget<FadeTransition>(
+      find
+          .ancestor(
+            of: find.text('Fading action'),
+            matching: find.byType(FadeTransition),
+          )
+          .first,
+    );
+    expect(fade.opacity.value, inExclusiveRange(0, 1));
+    expect(completed, isFalse);
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pumpAndSettle();
+    expect(find.text('Fading action'), findsNothing);
+    expect(completed, isTrue);
+  });
+
   for (final localOverlay in [false, true]) {
     testWidgets(
       'context menu starts without row focus and supports hover and keyboard (local: $localOverlay)',

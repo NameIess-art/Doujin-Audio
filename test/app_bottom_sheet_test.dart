@@ -1,9 +1,59 @@
+import 'dart:async';
+
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('whole sheet fades in and out over 300 ms', (tester) async {
+    late BuildContext pageContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) {
+              pageContext = context;
+              return const SizedBox();
+            },
+          ),
+        ),
+      ),
+    );
+    unawaited(
+      AppBottomSheet.show<void>(
+        context: pageContext,
+        builder: (_) =>
+            const SizedBox(height: 120, child: Text('Sheet content')),
+      ),
+    );
+    double opacity() => tester
+        .widget<FadeTransition>(
+          find
+              .ancestor(
+                of: find.byType(BottomSheet),
+                matching: find.byType(FadeTransition),
+              )
+              .first,
+        )
+        .opacity
+        .value;
+    await tester.pump();
+    expect(opacity(), 0);
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(opacity(), inExclusiveRange(0, 1));
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(opacity(), 1);
+    Navigator.of(pageContext).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(opacity(), inExclusiveRange(0, 1));
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(opacity(), closeTo(0, 0.001));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+  });
+
   testWidgets('sheet header wraps large text beside its icon and action', (
     tester,
   ) async {

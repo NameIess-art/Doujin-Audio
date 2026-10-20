@@ -742,42 +742,37 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           topPadding: topPadding,
           bottomPadding: bottomPadding,
         ),
-        content: Stack(
+        content: PlaceholderContentTransition(
           key: const ValueKey('playlist_loaded_content'),
-          clipBehavior: Clip.none,
-          children: [
-            if (!structureState.hasSessions)
-              SessionsEmptyState(
-                key: const ValueKey('empty_state'),
-                bottomInset: bottomPadding,
-                topInset: topPadding,
-                onOpenLibrary: widget.onOpenLibrary,
+          showPlaceholder: !structureState.hasSessions,
+          placeholder: SessionsEmptyState(
+            key: const ValueKey('empty_state'),
+            bottomInset: bottomPadding,
+            topInset: topPadding,
+            onOpenLibrary: widget.onOpenLibrary,
+          ),
+          content: AnimatedReorder(
+            order: visibleEntries.map((entry) => entry.session.id).toList(),
+            child: ListView.builder(
+              key: const PageStorageKey<String>('playlist_list'),
+              controller: _scrollController,
+              physics: const ClampingScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                playlistListHorizontalPadding,
+                topPadding,
+                playlistListHorizontalPadding,
+                bottomPadding,
               ),
-            if (structureState.hasSessions)
-              AnimatedReorder(
-                order: visibleEntries.map((entry) => entry.session.id).toList(),
-                child: ListView.builder(
-                  key: const PageStorageKey<String>('playlist_list'),
-                  controller: _scrollController,
-                  physics: const ClampingScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(
-                    playlistListHorizontalPadding,
-                    topPadding,
-                    playlistListHorizontalPadding,
-                    bottomPadding,
-                  ),
-                  // Match the library's small prefetch window. A wide viewport
-                  // already lays out more cards without another screen of cache.
-                  cacheExtent: 320,
-                  clipBehavior: Clip.none,
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  itemCount: visibleEntries.length + 1,
-                  itemBuilder: buildSessionItem,
-                  findChildIndexCallback: (key) => sessionIndices[key],
-                ),
-              ),
-          ],
+              // Match the library's small prefetch window. A wide viewport
+              // already lays out more cards without another screen of cache.
+              cacheExtent: 320,
+              clipBehavior: Clip.none,
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              itemCount: visibleEntries.length + 1,
+              itemBuilder: buildSessionItem,
+              findChildIndexCallback: (key) => sessionIndices[key],
+            ),
+          ),
         ),
       ),
     );

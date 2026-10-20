@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -54,7 +55,7 @@ class WorkImageViewerPage extends ConsumerStatefulWidget {
 }
 
 class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   static const int _loopPageSeed = 100000;
   static const double _imageHeaderGap = 24;
   static const double _imageSwitcherGap = 20;
@@ -70,6 +71,10 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   int? _targetVirtualPage;
   bool _isSettingCover = false;
   bool _isCurrentZoomed = false;
+  late final AnimationController _fullscreenFade;
+  late final Animation<double> _viewerOpacity;
+  bool _fullscreenTarget = false;
+  bool _movingFullscreen = false;
 
   static int _pageForIndex(int index, int length) {
     if (length <= 1) return index;
@@ -86,6 +91,15 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   @override
   void initState() {
     super.initState();
+    _fullscreenFade = AnimationController(
+      vsync: this,
+      duration: kAppFadeDuration,
+      value: 1,
+    );
+    _viewerOpacity = CurvedAnimation(
+      parent: _fullscreenFade,
+      curve: kAppFadeCurve,
+    );
     WidgetsBinding.instance.addObserver(this);
     final count = widget.images.length;
     _currentIndex = widget.initialIndex.clamp(0, count == 0 ? 0 : count - 1);
@@ -97,6 +111,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
+    _fullscreenFade.dispose();
     super.dispose();
   }
 
@@ -104,8 +119,9 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   void didChangeMetrics() {
     final view = View.of(context);
     if (view.physicalSize.width <= view.physicalSize.height &&
-        _fullscreenController.isShowing) {
-      _toggleFullscreen();
+        _fullscreenTarget) {
+      _fullscreenTarget = false;
+      unawaited(_moveFullscreen());
     }
   }
 
@@ -130,7 +146,8 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   void _goToDelta(int delta) {
     if (widget.images.length <= 1) return;
     if (!_pageController.hasClients) return;
-    final current = _pageController.page ??
+    final current =
+        _pageController.page ??
         _pageForIndex(_currentIndex, widget.images.length).toDouble();
     final basePage = _targetVirtualPage ?? current.round();
     final targetPage = basePage + delta;
@@ -254,34 +271,79 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
       platformData: MediaQuery.of(context),
     );
     return PopScope<void>(
-      canPop: !_fullscreenController.isShowing,
+      canPop: !_fullscreenController.isShowing && !_movingFullscreen,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _fullscreenController.isShowing) _toggleFullscreen();
+        if (!didPop) {
+          _fullscreenTarget = false;
+          unawaited(_moveFullscreen());
+        }
       },
       child: OverlayPortal(
         controller: _fullscreenController,
         overlayLocation: OverlayChildLocation.rootOverlay,
         overlayChildBuilder: (context) => Positioned.fill(
-          child: MediaQuery(
-            data: windowMediaQuery,
-            child: Builder(builder: _buildViewer),
-          ),
+          child: MediaQuery(data: windowMediaQuery, child: _fadingViewer()),
         ),
         child: _fullscreenController.isShowing
             ? const SizedBox.expand()
-            : Builder(builder: _buildViewer),
+            : _fadingViewer(),
       ),
     );
   }
 
   void _toggleFullscreen() {
-    setState(() {
-      if (_fullscreenController.isShowing) {
-        _fullscreenController.hide();
+    _fullscreenTarget = !_fullscreenTarget;
+    unawaited(_moveFullscreen());
+  }
+
+  Widget _fadingViewer() => FadeTransition(
+    key: const ValueKey('work_image_fullscreen_fade'),
+    opacity: _viewerOpacity,
+    child: Builder(builder: _buildViewer),
+  );
+
+  Future<void> _moveFullscreen() async {
+    if (_movingFullscreen) {
+      if (_fullscreenTarget == _fullscreenController.isShowing) {
+        unawaited(_fullscreenFade.forward());
       } else {
-        _fullscreenController.show();
+        unawaited(_fullscreenFade.reverse());
       }
-    });
+      return;
+    }
+    setState(() => _movingFullscreen = true);
+    try {
+      while (true) {
+        if (!mounted) return;
+        _fullscreenFade.duration = MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : kAppFadeDuration;
+        try {
+          if (_fullscreenTarget == _fullscreenController.isShowing) {
+            await _fullscreenFade.forward().orCancel;
+            if (_fullscreenTarget == _fullscreenController.isShowing) break;
+          } else {
+            await _fullscreenFade.reverse().orCancel;
+            if (!mounted) return;
+            if (_fullscreenTarget == _fullscreenController.isShowing) continue;
+            // Move the one viewer only when invisible, retaining its GlobalKey
+            // and PageController instead of mounting a second zoom subtree.
+            setState(() {
+              if (_fullscreenTarget) {
+                _fullscreenController.show();
+              } else {
+                _fullscreenController.hide();
+              }
+            });
+          }
+        } on TickerCanceled {
+          // A new target reverses the same fade from its current opacity.
+          // Disposal also cancels this await; mounted ends the loop then.
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _movingFullscreen = false);
+    }
   }
 
   Widget _buildViewer(BuildContext context) {

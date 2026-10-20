@@ -211,7 +211,7 @@ class _FailedTranslationService extends PlaybackSubtitleService {
 class _SubtitleSelectionService extends PlaybackSubtitleService {
   _SubtitleSelectionService(this.files) : super(trackResolver: (_) => null);
 
-  final List<({String sourcePath, String name})> files;
+  List<({String sourcePath, String name})> files;
   String current = 'original.srt';
   String? selected;
   bool failLoading = false;
@@ -396,7 +396,7 @@ void main() {
     );
   }
 
-  testWidgets('subtitle selection reports empty and loading errors', (
+  testWidgets('subtitle selection is only enabled when work has multiple subtitles', (
     tester,
   ) async {
     final language = AppLanguageProvider();
@@ -406,9 +406,52 @@ void main() {
     await pumpSelectionMenu(tester, service, language);
     final tile = find.byKey(const ValueKey('subtitle_select_tile'));
     await tester.ensureVisible(tile);
+
+    // 0 subtitles -> disabled
+    expect(tester.widget<ListTile>(tile).enabled, isFalse);
+    expect(tester.widget<ListTile>(tile).onTap, isNull);
+
+    // 1 subtitle -> disabled
+    service.files = [
+      (sourcePath: 'sub1.srt', name: 'sub1.srt'),
+    ];
+    service.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(tester.widget<ListTile>(tile).enabled, isFalse);
+    expect(tester.widget<ListTile>(tile).onTap, isNull);
+
+    // 2 subtitles -> enabled
+    service.files = [
+      (sourcePath: 'sub1.srt', name: 'sub1.srt'),
+      (sourcePath: 'sub2.srt', name: 'sub2.srt'),
+    ];
+    service.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(tester.widget<ListTile>(tile).enabled, isTrue);
+    expect(tester.widget<ListTile>(tile).onTap, isNotNull);
+  });
+
+  testWidgets('subtitle selection reports empty and loading errors', (
+    tester,
+  ) async {
+    final language = AppLanguageProvider();
+    addTearDown(language.dispose);
+    final service = _SubtitleSelectionService([
+      (sourcePath: 'original.srt', name: 'original.srt'),
+      (sourcePath: 'translation.srt', name: 'audio.mp3.translated.en.srt'),
+    ]);
+    addTearDown(service.dispose);
+    await pumpSelectionMenu(tester, service, language);
+    final tile = find.byKey(const ValueKey('subtitle_select_tile'));
+    await tester.ensureVisible(tile);
+    service.files = [];
     await tester.tap(tile);
     await tester.pumpAndSettle();
     expect(find.text(language.tr('subtitle_selection_empty')), findsOneWidget);
+    service.files = [
+      (sourcePath: 'original.srt', name: 'original.srt'),
+      (sourcePath: 'translation.srt', name: 'audio.mp3.translated.en.srt'),
+    ];
     service.failLoading = true;
     await tester.tap(tile);
     await tester.pumpAndSettle();
@@ -422,6 +465,7 @@ void main() {
       final language = AppLanguageProvider();
       addTearDown(language.dispose);
       final service = _SubtitleSelectionService([
+        (sourcePath: 'original.srt', name: 'original.srt'),
         (sourcePath: 'translation.srt', name: 'audio.mp3.translated.en.srt'),
       ]);
       addTearDown(service.dispose);
@@ -452,6 +496,7 @@ void main() {
       final language = AppLanguageProvider();
       addTearDown(language.dispose);
       final service = _SubtitleSelectionService([
+        (sourcePath: 'original.srt', name: 'original.srt'),
         (sourcePath: 'translation.srt', name: 'audio.mp3.translated.en.srt'),
       ]);
       addTearDown(service.dispose);
@@ -904,8 +949,10 @@ void main() {
       isFalse,
     );
     expect(
-      find.text(language.tr('subtitle_unsupported_32bit')),
-      findsOneWidget,
+      tester
+          .widget<ListTile>(find.byKey(const ValueKey('subtitle_script_tile')))
+          .subtitle,
+      isNull,
     );
     final translation = find.byKey(const ValueKey('subtitle_translate_tile'));
     expect(tester.widget<ListTile>(translation).enabled, isTrue);
@@ -1401,9 +1448,12 @@ void main() {
             find.text('台本选择'),
             findsOneWidget,
           );
-          expect(find.text(language.tr('subtitle_script_hint')), findsOneWidget);
           expect(
-            find.text(language.tr('subtitle_script_hint')).hitTestable(),
+            find.text(language.tr('subtitle_script_generate')),
+            findsOneWidget,
+          );
+          expect(
+            find.text(language.tr('subtitle_script_generate')).hitTestable(),
             findsNothing,
           );
           expect(
@@ -1556,7 +1606,7 @@ void main() {
       expect(dialogFinder, findsOneWidget);
       expect(find.byIcon(Icons.translate_rounded), findsNWidgets(2)); // tile + dialog header
       expect(find.text(language.tr('subtitle_choose_language')), findsOneWidget);
-      expect(find.text(language.tr('subtitle_translate_hint')), findsNWidgets(2));
+      expect(find.text(language.tr('subtitle_translate_hint')), findsOneWidget);
       expect(find.text('ZH'), findsOneWidget);
       expect(find.text('EN'), findsOneWidget);
       expect(find.text(language.tr('subtitle_language_zh')), findsOneWidget);
@@ -1591,6 +1641,49 @@ void main() {
       await tester.tap(closeButton);
       await tester.pumpAndSettle();
       expect(find.byType(SimpleDialog), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'options in subtitle menu do not have subtitle description texts',
+    (tester) async {
+      const audioPath = '/path/to/japanese_audio.mp3';
+      final service = _RecordingGenerationService(_PendingGenerationEngine());
+      await service.load(audioPath);
+      final language = AppLanguageProvider();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            playbackSubtitleServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SubtitleMenuSheet(
+                session: _createSnapshot(trackPath: audioPath),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final importTile = tester.widget<ListTile>(
+        find.byKey(const ValueKey('subtitle_import_tile')),
+      );
+      final scriptTile = tester.widget<ListTile>(
+        find.byKey(const ValueKey('subtitle_script_tile')),
+      );
+      final translateTile = tester.widget<ListTile>(
+        find.byKey(const ValueKey('subtitle_translate_tile')),
+      );
+
+      expect(importTile.subtitle, isNull);
+      expect(scriptTile.subtitle, isNull);
+      expect(translateTile.subtitle, isNull);
+      expect(find.text(language.tr('import_subtitle_hint')), findsNothing);
+      expect(find.text(language.tr('subtitle_script_hint')), findsNothing);
+      expect(find.text(language.tr('subtitle_translate_hint')), findsNothing);
     },
   );
 }

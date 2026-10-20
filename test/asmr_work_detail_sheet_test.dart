@@ -1219,9 +1219,9 @@ void main() {
         final badge = find.byKey(
           ValueKey('asmr_selection_indicator_${_work(id: 0).rjCode}'),
         );
-        await tester.pump(kThemeChangeDuration ~/ 2);
+        await tester.pump(kAppSelectionDuration ~/ 2);
         expect(badge, findsNothing);
-        await tester.pump(kThemeChangeDuration ~/ 2);
+        await tester.pump(kAppSelectionDuration ~/ 2);
         expect(badge, findsOneWidget);
         final badgeFade = find
             .ancestor(of: badge, matching: find.byType(FadeTransition))

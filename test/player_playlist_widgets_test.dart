@@ -6119,13 +6119,13 @@ void main() {
     final cardContent = tester.widget<Padding>(
       find.byKey(ValueKey<String>('playlist_card_content_${session.id}')),
     );
-    final visualCard = tester.widget<Card>(
+    final visualCard = tester.widget<Material>(
       find
           .ancestor(
             of: find.byKey(
               ValueKey<String>('playlist_card_content_${session.id}'),
             ),
-            matching: find.byType(Card),
+            matching: find.byType(Material),
           )
           .first,
     );
@@ -6587,7 +6587,7 @@ void main() {
     }),
   );
 
-  testWidgets('PlaylistSelectionIndicator performs 300ms fade-in and fade-out', (
+  testWidgets('PlaylistSelectionIndicator enters quickly and fades out in 300ms', (
     tester,
   ) async {
     final checkmarkFinder = find.byKey(
@@ -6623,13 +6623,12 @@ void main() {
     // The selection highlight finishes before the checkmark starts fading in.
     await tester.pump();
     expect(checkmarkFinder, findsNothing);
-    await tester.pump(kThemeChangeDuration ~/ 2);
+    await tester.pump(kAppSelectionDuration ~/ 2);
     expect(checkmarkFinder, findsNothing);
-    await tester.pump(kThemeChangeDuration ~/ 2);
+    await tester.pump(kAppSelectionDuration ~/ 2);
     expect(checkmarkFinder, findsOneWidget);
 
-    // Mid-animation: at 150ms, opacity is partial (0 < opacity < 1)
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(kAppMotionFast ~/ 2);
     final fadeTransitionFinder = find
         .ancestor(of: checkmarkFinder, matching: find.byType(FadeTransition))
         .first;
@@ -6641,8 +6640,7 @@ void main() {
     expect(midOpacity, greaterThan(0.0));
     expect(midOpacity, lessThan(1.0));
 
-    // After remaining 150ms (300ms total), opacity reaches 1.0
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(kAppMotionFast ~/ 2);
     final fullOpacity = tester
         .widget<FadeTransition>(fadeTransitionFinder)
         .opacity
@@ -8820,9 +8818,9 @@ void main() {
         ValueKey<String>('playlist_selection_indicator_${trackSession.id}'),
       );
       await tester.pump();
-      await tester.pump(kThemeChangeDuration ~/ 2);
+      await tester.pump(kAppSelectionDuration ~/ 2);
       expect(delayedCheck, findsNothing);
-      await tester.pump(kThemeChangeDuration ~/ 2);
+      await tester.pump(kAppSelectionDuration ~/ 2);
       expect(delayedCheck, findsOneWidget);
       final checkFade = find
           .ancestor(of: delayedCheck, matching: find.byType(FadeTransition))
@@ -8915,8 +8913,8 @@ void main() {
       final colorScheme = Theme.of(
         tester.element(find.byType(PlaylistTab)),
       ).colorScheme;
-      final trackCard = tester.widget<Card>(
-        find.ancestor(of: trackContent, matching: find.byType(Card)).first,
+      final trackCard = tester.widget<Material>(
+        find.ancestor(of: trackContent, matching: find.byType(Material)).first,
       );
       expect(
         trackCard.color,
@@ -9204,11 +9202,11 @@ void main() {
             tester.getBottomLeft(temporaryCard).dy,
         0.0,
       );
-      final temporaryCardWidget = tester.widget<Card>(
-        find.ancestor(of: temporaryCard, matching: find.byType(Card)),
+      final temporaryCardWidget = tester.widget<Material>(
+        find.ancestor(of: temporaryCard, matching: find.byType(Material)).first,
       );
-      final savedCardWidget = tester.widget<Card>(
-        find.ancestor(of: savedCard, matching: find.byType(Card)),
+      final savedCardWidget = tester.widget<Material>(
+        find.ancestor(of: savedCard, matching: find.byType(Material)).first,
       );
       final theme = Theme.of(tester.element(temporaryCard));
       final isDark = theme.brightness == Brightness.dark;

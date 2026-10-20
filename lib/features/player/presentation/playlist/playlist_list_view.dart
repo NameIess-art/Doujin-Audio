@@ -51,7 +51,8 @@ class PlaylistSelectionIndicator extends StatelessWidget {
       child: ExcludeSemantics(
         child: AppDeferredFade(
           visible: isSelected,
-          showDelay: kThemeChangeDuration,
+          showDelay: kAppSelectionDuration,
+          fadeInDuration: kAppMotionFast,
           child: Container(
             key: ValueKey<String>('playlist_selection_indicator_$sessionId'),
             width: 22,
@@ -101,6 +102,7 @@ class PlaylistPinnedIndicator extends StatelessWidget {
       child: ExcludeSemantics(
         child: AppDeferredFade(
           visible: isPinned,
+          fadeInDuration: kAppMotionFast,
           waitFor: AnimatedReorder.animationOf(context),
           child: Container(
             key: ValueKey<String>('playlist_session_pinned_$sessionId'),
@@ -461,14 +463,14 @@ class SessionListCard extends ConsumerWidget {
           constraints: const BoxConstraints(minHeight: playlistRowHeight),
           child: Material(
           color: Colors.transparent,
-          child: Card(
-            margin: EdgeInsets.zero,
+          child: Material(
+            type: MaterialType.card,
+            animationDuration: kAppSelectionDuration,
             clipBehavior: Clip.antiAlias,
             shape: cardShape,
             color: isSelected
                 ? cs.primaryContainer.withValues(alpha: 0.15)
                 : Colors.transparent,
-            elevation: 0,
             shadowColor: Colors.transparent,
             child: Stack(
               fit: StackFit.passthrough,
@@ -480,6 +482,8 @@ class SessionListCard extends ConsumerWidget {
                     shape: playlistRowShape,
                   ),
                   child: InkWell(
+                    splashFactory: InkSplash.splashFactory,
+                    highlightColor: Colors.transparent,
                     excludeFromSemantics: true,
                     onTap: () {
                       if (isSelectionMode) {

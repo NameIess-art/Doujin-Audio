@@ -1759,8 +1759,8 @@ void main() {
     );
 
     final workTitle = find.text('Partially loaded work', findRichText: true);
-    final workCard = tester.widget<Card>(
-      find.ancestor(of: workTitle, matching: find.byType(Card)).first,
+    final workCard = tester.widget<Material>(
+      find.ancestor(of: workTitle, matching: find.byType(Material)).first,
     );
     expect(workCard.color, Colors.transparent);
     expect(workCard.elevation, 0);
@@ -1776,7 +1776,9 @@ void main() {
     expect(listPadding.bottom, 148);
     final libraryCards = find.descendant(
       of: find.byKey(const PageStorageKey<String>('library_list')),
-      matching: find.byType(Card),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is Material && widget.type == MaterialType.card,
+      ),
     );
     expect(libraryCards, findsNWidgets(2));
     expect(
@@ -6057,10 +6059,32 @@ void main() {
               'library_selection_indicator_${PathMatcher.normalize(singleTrack.path)}',
             ),
           );
-          await tester.pump(kThemeChangeDuration ~/ 2);
+          await tester.pump(kAppSelectionDuration ~/ 2);
           expect(selectionBadge, findsNothing);
-          await tester.pump(kThemeChangeDuration ~/ 2);
+          await tester.pump(kAppSelectionDuration ~/ 2);
           expect(selectionBadge, findsOneWidget);
+          final selectionSurface = find
+              .ancestor(of: trackFinder, matching: find.byType(Material))
+              .first;
+          final surface = tester.widget<Material>(selectionSurface);
+          expect(surface.animationDuration, const Duration(milliseconds: 80));
+          final paintedSurface = tester.widget<PhysicalShape>(
+            find.descendant(
+              of: selectionSurface,
+              matching: find.byType(PhysicalShape),
+            ).first,
+          );
+          expect(paintedSurface.color, surface.color);
+          final tapSurface = tester.widget<InkWell>(
+            find.ancestor(
+              of: trackFinder,
+              matching: find.byWidgetPredicate(
+                (widget) => widget is InkWell && widget.onLongPress != null,
+              ),
+            ).first,
+          );
+          expect(tapSurface.splashFactory, InkSplash.splashFactory);
+          expect(tapSurface.highlightColor, Colors.transparent);
           final badgeFade = find
               .ancestor(
                 of: selectionBadge,
@@ -6073,13 +6097,34 @@ void main() {
           expect(trackFinder, findsOneWidget);
           expect(pinBadge, pinned ? findsOneWidget : findsNothing);
           final cardFinder = find
-              .ancestor(of: trackFinder, matching: find.byType(Card))
+              .ancestor(of: trackFinder, matching: find.byType(Material))
               .first;
           final cardRect = tester.getRect(cardFinder);
           final titleRect = tester.getRect(trackFinder);
           final selectionRect = tester.getRect(selectionBadge);
           expect(selectionRect.left, lessThanOrEqualTo(titleRect.left));
           expect(selectionRect.top, greaterThanOrEqualTo(titleRect.bottom));
+          final dynamic inkController = Material.of(
+            tester.element(find.ancestor(
+              of: trackFinder,
+              matching: find.byWidgetPredicate(
+                (widget) => widget is InkWell && widget.onLongPress != null,
+              ),
+            ).first),
+          );
+          await tester.tap(trackFinder);
+          await tester.pump();
+          expect(
+            inkController.debugInkFeatures.whereType<InkSplash>(),
+            isNotEmpty,
+          );
+          await tester.pump(const Duration(milliseconds: 210));
+          expect(
+            inkController.debugInkFeatures.whereType<InkSplash>(),
+            isEmpty,
+          );
+          await tester.longPress(trackFinder);
+          await tester.pumpAndSettle();
           expect(cardRect.contains(selectionRect.topLeft), isTrue);
           expect(cardRect.contains(selectionRect.bottomRight), isTrue);
           if (pinned) {
@@ -6152,9 +6197,9 @@ void main() {
 
       final cardFinder = find.ancestor(
         of: find.text('single.mp3', findRichText: true),
-        matching: find.byType(Card),
+        matching: find.byType(Material),
       );
-      final card = tester.widget<Card>(cardFinder.first);
+      final card = tester.widget<Material>(cardFinder.first);
       expect(card.color, Colors.transparent);
       expect(
         find.descendant(

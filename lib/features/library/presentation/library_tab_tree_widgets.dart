@@ -59,7 +59,8 @@ class LibrarySelectionIndicator extends StatelessWidget {
       child: ExcludeSemantics(
         child: AppDeferredFade(
           visible: isSelected,
-          showDelay: kThemeChangeDuration,
+          showDelay: kAppSelectionDuration,
+          fadeInDuration: kAppMotionFast,
           child: Container(
             key: normalizedPath == null
                 ? const ValueKey<String>('library_selection_indicator')
@@ -114,6 +115,7 @@ class LibraryPinnedIndicator extends StatelessWidget {
       child: ExcludeSemantics(
         child: AppDeferredFade(
           visible: isPinned,
+          fadeInDuration: kAppMotionFast,
           waitFor: AnimatedReorder.animationOf(context),
           child: Container(
             key: normalizedPath == null
@@ -608,19 +610,21 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
         ? cardShape
         : RoundedRectangleBorder(borderRadius: folderRadius);
     final cardContent = isRootFolder
-        ? Card(
-            margin: EdgeInsets.zero,
+        ? Material(
+            type: MaterialType.card,
+            animationDuration: kAppSelectionDuration,
             clipBehavior: Clip.antiAlias,
             shape: cardShape,
             color: widget.isSelected
                 ? cs.primaryContainer.withValues(alpha: 0.25)
                 : Colors.transparent,
-            elevation: 0,
             shadowColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
             // The tap surface sits inside the card so its ink highlight and
             // ripple paint above the swipe card's closed background.
             child: InkWell(
+              splashFactory: InkSplash.splashFactory,
+              highlightColor: Colors.transparent,
               canRequestFocus: widget.isSelectionMode,
               onLongPress: widget.onLongPress,
               onTap: widget.isSelectionMode
@@ -696,6 +700,8 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
     final result = isRootFolder
         ? swipeCard
         : InkWell(
+            splashFactory: InkSplash.splashFactory,
+            highlightColor: Colors.transparent,
             canRequestFocus: widget.isSelectionMode,
             onLongPress: widget.onLongPress,
             onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
@@ -862,8 +868,9 @@ class _TrackNodeWidget extends ConsumerWidget {
         leadingActionIcon: Icons.push_pin_rounded,
         leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
         onRemove: () => _removeTrack(context, ref, track),
-        child: Card(
-          margin: EdgeInsets.zero,
+        child: Material(
+          type: MaterialType.card,
+          animationDuration: kAppSelectionDuration,
           clipBehavior: Clip.antiAlias,
           shape: cardShape,
           color: isSelected
@@ -874,12 +881,13 @@ class _TrackNodeWidget extends ConsumerWidget {
                   cs.surface,
                 )
               : Colors.transparent,
-          elevation: 0,
           shadowColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           // The tap surface sits inside the card so its ink highlight and
           // ripple paint above the swipe card's closed background.
           child: InkWell(
+            splashFactory: InkSplash.splashFactory,
+            highlightColor: Colors.transparent,
             canRequestFocus: isSelectionMode,
             onLongPress: onLongPress,
             onTap: isSelectionMode

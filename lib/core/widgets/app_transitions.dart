@@ -13,6 +13,7 @@ const kPlaceholderContentTransitionDuration = kAppFadeDuration;
 const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
+const kAppSelectionDuration = Duration(milliseconds: 80);
 
 /// Keeps the current badge until the preceding card motion has finished.
 class AppDeferredFade extends StatefulWidget {
@@ -21,12 +22,14 @@ class AppDeferredFade extends StatefulWidget {
     required this.visible,
     required this.child,
     this.showDelay = Duration.zero,
+    this.fadeInDuration = kAppFadeDuration,
     this.waitFor,
   });
 
   final bool visible;
   final Widget child;
   final Duration showDelay;
+  final Duration fadeInDuration;
   final Animation<double>? waitFor;
 
   @override
@@ -50,7 +53,8 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
     _retained = _visible;
     _controller = AnimationController(
       vsync: this,
-      duration: kAppFadeDuration,
+      duration: widget.fadeInDuration,
+      reverseDuration: kAppFadeDuration,
       value: _visible ? 1 : 0,
     )..addStatusListener(_handleFadeStatus);
     _opacity = _controller.drive(CurveTween(curve: kAppFadeCurve));
@@ -75,6 +79,9 @@ class _AppDeferredFadeState extends State<AppDeferredFade>
   @override
   void didUpdateWidget(AppDeferredFade oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.fadeInDuration != widget.fadeInDuration) {
+      _controller.duration = widget.fadeInDuration;
+    }
     if (oldWidget.waitFor != widget.waitFor) {
       oldWidget.waitFor?.removeStatusListener(_handleMotionStatus);
       widget.waitFor?.addStatusListener(_handleMotionStatus);

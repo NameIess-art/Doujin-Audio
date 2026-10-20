@@ -207,7 +207,7 @@ void main() {
                   .fold(1.0, (value, fade) => value * fade.opacity.value);
               expect(pinBadge, findsOneWidget);
               expect(pinOpacity(), 0);
-              await tester.pump(kAppFadeDuration ~/ 2);
+              await tester.pump(kAppMotionFast ~/ 2);
               expect(
                 pinOpacity(),
                 closeTo(kAppFadeCurve.transform(0.5), 0.001),

@@ -208,6 +208,45 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('fast badge enter preserves the full fade out duration', (
+    tester,
+  ) async {
+    Widget badge(bool visible) => MaterialApp(
+      home: AppDeferredFade(
+        visible: visible,
+        showDelay: kAppSelectionDuration,
+        fadeInDuration: kAppMotionFast,
+        child: const Text('fast badge'),
+      ),
+    );
+    double opacity() => tester
+        .widget<FadeTransition>(
+          find
+              .ancestor(
+                of: find.text('fast badge'),
+                matching: find.byType(FadeTransition),
+              )
+              .first,
+        )
+        .opacity
+        .value;
+    await tester.pumpWidget(badge(false));
+    await tester.pumpWidget(badge(true));
+    await tester.pump(const Duration(milliseconds: 79));
+    expect(find.text('fast badge'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(opacity(), 0);
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(opacity(), 1);
+    await tester.pumpWidget(badge(false));
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+    await tester.pumpAndSettle();
+    expect(find.text('fast badge'), findsNothing);
+  });
+
   testWidgets(
     'deferred fade reverses from its current opacity and retains state',
     (tester) async {

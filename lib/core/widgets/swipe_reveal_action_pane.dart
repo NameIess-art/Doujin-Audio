@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_feedback.dart';
+import 'app_transitions.dart';
 
 @immutable
 class SwipeRevealAction {
@@ -279,6 +280,8 @@ class SwipeRevealActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = IconButton.styleFrom(
+      animationDuration: kAppSelectionDuration,
+      splashFactory: InkSplash.splashFactory,
       backgroundColor: backgroundColor,
       foregroundColor: foregroundColor,
       minimumSize: Size.square(size),

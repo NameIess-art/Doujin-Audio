@@ -21,7 +21,8 @@ class _AsmrSelectionIndicator extends StatelessWidget {
       child: ExcludeSemantics(
         child: AppDeferredFade(
           visible: isSelected,
-          showDelay: kThemeChangeDuration,
+          showDelay: kAppSelectionDuration,
+          fadeInDuration: kAppMotionFast,
           child: Container(
             key: workId == null
                 ? const ValueKey<String>('asmr_selection_indicator')
@@ -129,19 +130,21 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
         ref.watch(asmrPlaybackCoordinatorProvider) != null;
     const cardShape = LibraryLikeCardMetrics.cardShape;
 
-    final cardContent = Card(
-      margin: EdgeInsets.zero,
+    final cardContent = Material(
+      type: MaterialType.card,
+      animationDuration: kAppSelectionDuration,
       clipBehavior: Clip.hardEdge,
       shape: cardShape,
       color: widget.isSelected
           ? cs.primaryContainer.withValues(alpha: 0.25)
           : Colors.transparent,
-      elevation: 0,
       shadowColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       // The tap surface sits inside the card so its ink highlight and ripple
       // paint above the swipe card's closed background.
       child: InkWell(
+        splashFactory: InkSplash.splashFactory,
+        highlightColor: Colors.transparent,
         canRequestFocus: widget.isSelectionMode,
         onLongPress: widget.onLongPress,
         onTap: widget.isSelectionMode

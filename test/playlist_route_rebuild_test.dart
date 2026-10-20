@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:doujin_audio/app/presentation/browse_page_scroll.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,9 +20,13 @@ void main() {
   });
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
-  for (final count in [1, 80]) {
+  for (final (count, played) in [
+    for (final count in [1, 80])
+      for (final played in [false, true]) (count, played),
+  ]) {
     testWidgets(
-      'played hidden playlist retains its content across routes ($count sessions)',
+      'hidden playlist and library retain content across routes '
+      '($count sessions, played: $played)',
       (tester) async {
         final messenger =
             TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -60,31 +65,44 @@ void main() {
           fixture.build(
             AppFadeThroughIndexedStack.lazy(
               indexListenable: index,
-              itemCount: 2,
-              itemBuilder: (_, i) => i == 0
-                  ? PlaylistTab(tabIndex: 0, activeTabIndexListenable: index)
-                  : const Center(child: Text('settings-root')),
+              itemCount: 3,
+              itemBuilder: (_, i) => switch (i) {
+                0 => PlaylistTab(tabIndex: 0, activeTabIndexListenable: index),
+                1 => LibraryTab(activeTabIndexListenable: index),
+                _ => const Center(child: Text('settings-root')),
+              },
             ),
           ),
         );
         await tester.pumpAndSettle();
         // The same structural notification that starting playback publishes.
-        sessions.first.lastPlayedAt = DateTime.now();
-        fixture.playbackService.publishSession(sessions.first);
-        await tester.pumpAndSettle();
+        if (played) {
+          sessions.first.lastPlayedAt = DateTime.now();
+          fixture.playbackService.publishSession(sessions.first);
+          await tester.pumpAndSettle();
+        }
         index.value = 1;
+        await tester.pumpAndSettle();
+        index.value = 2;
         await tester.pumpAndSettle();
         final playlist = tester.element(
           find.byType(PlaylistTab, skipOffstage: false),
         );
-        final content = tester.widget<BrowsePageScroll>(
-          find.byType(BrowsePageScroll, skipOffstage: false),
+        final library = tester.element(
+          find.byType(LibraryTab, skipOffstage: false),
         );
-        var rebuilds = 0;
+        final content = tester
+            .widgetList<BrowsePageScroll>(
+              find.byType(BrowsePageScroll, skipOffstage: false),
+            )
+            .toList();
+        final rebuilds = {playlist: 0, library: 0};
         final previous = debugOnRebuildDirtyWidget;
         debugOnRebuildDirtyWidget = (element, builtOnce) {
           previous?.call(element, builtOnce);
-          if (identical(element, playlist)) rebuilds++;
+          if (rebuilds.containsKey(element)) {
+            rebuilds[element] = rebuilds[element]! + 1;
+          }
         };
         try {
           final context = tester.element(find.text('settings-root'));
@@ -104,12 +122,26 @@ void main() {
             navigator.pop();
             await tester.pumpAndSettle();
           }
-          expect(rebuilds, 0);
+          // Reversing an unfinished push must also retain the hidden pages.
+          unawaited(
+            navigator.push(
+              buildAppPageRoute<void>(
+                context: context,
+                child: const Scaffold(body: Text('interrupted')),
+              ),
+            ),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 80));
+          navigator.pop();
+          await tester.pumpAndSettle();
+          await tester.pump(Duration.zero);
+          expect(rebuilds.values, everyElement(0));
           expect(
-            tester.widget<BrowsePageScroll>(
+            tester.widgetList<BrowsePageScroll>(
               find.byType(BrowsePageScroll, skipOffstage: false),
             ),
-            same(content),
+            orderedEquals(content),
           );
         } finally {
           debugOnRebuildDirtyWidget = previous;
@@ -119,6 +151,7 @@ void main() {
         expect(find.byType(PlaylistTab), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(Duration.zero);
       },
       variant: const TargetPlatformVariant({
         TargetPlatform.android,

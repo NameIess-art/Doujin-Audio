@@ -3247,6 +3247,62 @@ void main() {
     }
   }
 
+  for (final zeroDuration in [false, true]) {
+    testWidgets(
+      'disabling tab motion finishes an active transition, zeroDuration=$zeroDuration',
+      (tester) async {
+        final index = ValueNotifier<int>(0);
+        addTearDown(index.dispose);
+        final completed = <int>[];
+        late StateSetter update;
+        var reduced = false;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: StatefulBuilder(
+              builder: (context, setState) {
+                update = setState;
+                return MediaQuery(
+                  data: MediaQueryData(
+                    disableAnimations: reduced && !zeroDuration,
+                  ),
+                  child: AppFadeThroughIndexedStack.lazy(
+                    duration: reduced && zeroDuration
+                        ? Duration.zero
+                        : kAppFadeDuration,
+                    indexListenable: index,
+                    itemCount: 3,
+                    onTransitionCompleted: completed.add,
+                    itemBuilder: (_, page) => Text('motion-$page'),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+        index.value = 1;
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(completed, isEmpty);
+        update(() => reduced = true);
+        await tester.pump();
+        expect(completed, [1]);
+        expect(find.text('motion-0'), findsNothing);
+        expect(find.text('motion-1'), findsOneWidget);
+        expect(tester.binding.transientCallbackCount, 0);
+        index.value = 2;
+        await tester.pump();
+        expect(completed, [1, 2]);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets('slide respects reduced motion', (tester) async {
     final index = ValueNotifier<int>(0);
     addTearDown(index.dispose);

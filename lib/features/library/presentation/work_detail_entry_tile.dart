@@ -151,10 +151,10 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
           minTileHeight: 44,
           minVerticalPadding: 4,
           titleAlignment: ListTileTitleAlignment.center,
-          horizontalTitleGap: 4,
+          horizontalTitleGap: 0,
           // Preserve the name's leading offset while tightening the action gap.
-          minLeadingWidth: 36,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+          minLeadingWidth: 40,
+          contentPadding: const EdgeInsets.only(left: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           splashColor: color.withValues(alpha: 0.16),
           hoverColor: color.withValues(alpha: 0.08),
@@ -193,7 +193,8 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
             child: Builder(
               builder: (buttonContext) => IconButton(
                 key: ValueKey<String>('work_entry_more_${item.relativePath}'),
-                padding: EdgeInsets.zero,
+                // Match the skeleton action center without shrinking its target.
+                padding: const EdgeInsets.only(left: 4),
                 iconSize: 20,
                 color: cs.onSurfaceVariant.withValues(alpha: 0.7),
                 icon: const Icon(Icons.more_vert_rounded),

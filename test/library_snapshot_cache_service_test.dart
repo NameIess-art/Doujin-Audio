@@ -356,6 +356,74 @@ void main() {
   );
 
   test(
+    'repeated page reads share snapshots until the catalog changes',
+    () async {
+      const root = '/library';
+      final repository = _FakeAudioDetailRepository();
+      final detailCache = AudioDetailCacheService(repository: repository);
+      final library = LibraryService()
+        ..watchedFolders.add(root)
+        ..library.add(_track(path: '$root/01.mp3', groupKey: root))
+        ..markStructureChanged();
+      addTearDown(library.dispose);
+      var cardBuilds = 0;
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: detailCache,
+        cardSnapshotBuilder: (payload) async {
+          cardBuilds++;
+          return const LibraryOrganizer().buildCardTree(
+            tracks: payload.tracks,
+            watchedFolders: payload.watchedFolders,
+          );
+        },
+      );
+      addTearDown(service.dispose);
+
+      final firstCards = service.cardSnapshot(onCommitted: () {});
+      final firstCategory = service.categorySnapshot(onCommitted: () {});
+      expect(service.cardSnapshot(onCommitted: () {}), same(firstCards));
+      expect(service.categorySnapshot(onCommitted: () {}), same(firstCategory));
+      final cards = await firstCards;
+      final category = await firstCategory;
+      for (var visit = 0; visit < 20; visit++) {
+        expect(
+          (await service.cardSnapshot(onCommitted: () {})).tree,
+          same(cards.tree),
+        );
+        expect(
+          await service.categorySnapshot(onCommitted: () {}),
+          same(category),
+        );
+      }
+      expect(cardBuilds, 1);
+      expect(repository.batchLoadCount, 1);
+      expect(repository.loadCount, 1);
+
+      library.library.add(_track(path: '$root/02.mp3', groupKey: root));
+      library.markStructureChanged();
+      service.markStructureChanged();
+      final updated = await service.categorySnapshot(onCommitted: () {});
+      expect(updated.entries.single.tracks, hasLength(2));
+      expect(cardBuilds, 2);
+      // The root's metadata is unchanged by adding another track.
+      expect(repository.batchLoadCount, 1);
+      expect(repository.loadCount, 1);
+
+      final target = AudioDetailTarget.libraryRootFolder(root);
+      final saved = await detailCache.save(
+        AudioDetail.empty(target).copyWith(workTitle: 'Changed title'),
+      );
+      service.markDetailChanged(saved.detail);
+      final renamed = await service.categorySnapshot(onCommitted: () {});
+      expect(renamed.entries.single.detail.workTitle, 'Changed title');
+      expect(cardBuilds, 2);
+      expect(repository.batchLoadCount, 1);
+      expect(repository.loadCount, 1);
+    },
+  );
+
+  test(
     'batch metadata with covers rebuilds categories and publishes once',
     () async {
       final library = LibraryService();

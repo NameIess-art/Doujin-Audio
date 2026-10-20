@@ -1,4 +1,5 @@
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
+import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/app/application/browse_page_state_store.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
@@ -4073,6 +4074,70 @@ void main() {
           expect(item.relativePath, sample.path);
         }
         expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+
+    _detailTestWidgets(
+      'WorkDetailEntryTile aligns more icon with the skeleton action',
+      (tester) async {
+        for (final width in [240.0, 800.0]) {
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: Align(
+                  alignment: Alignment.topLeft,
+                  child: SizedBox(
+                    width: width,
+                    child: Column(
+                      children: [
+                        const FileTreeSkeleton(viewportHeight: 48),
+                        WorkDetailEntryTile(
+                          item: const WorkEntryItem(
+                            name: 'Track.mp3',
+                            relativePath: 'Track.mp3',
+                            type: WorkEntryType.audio,
+                          ),
+                          accentColor: Colors.deepPurple,
+                          menuEntries: const [],
+                          moreLabel: 'More',
+                          onAction: (_) {},
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          final placeholder = find.byWidgetPredicate(
+            (widget) => widget is ShimmerContainer && widget.width == 16,
+          );
+          final more = find.byIcon(Icons.more_vert_rounded);
+          expect(
+            tester.getCenter(more).dx,
+            closeTo(tester.getCenter(placeholder).dx, 0.01),
+          );
+          expect(
+            tester.getSize(find.byTooltip('More')),
+            Size(44, defaultTargetPlatform == TargetPlatform.windows ? 40 : 44),
+          );
+          final tile = tester.widget<ListTile>(find.byType(ListTile));
+          final density = Theme.of(
+            tester.element(find.byType(ListTile)),
+          ).visualDensity;
+          final titleRect = tester.getRect(find.byWidget(tile.title!));
+          final buttonRect = tester.getRect(find.byTooltip('More'));
+          expect(
+            buttonRect.left - titleRect.right,
+            closeTo(density.horizontal * 2, 0.01),
+          );
+          expect(titleRect.left, closeTo(56 + density.horizontal * 2, 0.01));
+          expect(tester.takeException(), isNull);
+        }
       },
       variant: const TargetPlatformVariant({
         TargetPlatform.android,

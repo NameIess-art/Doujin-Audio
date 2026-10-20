@@ -20,7 +20,7 @@ void main() {
 
   for (final brightness in Brightness.values) {
     testWidgets(
-      'button menus share the add menu style and context menus stay compact ($brightness)',
+      'menus retain v0.29 row and icon styles ($brightness)',
       (tester) async {
         const entries = [
           UnifiedMenuEntry.action(
@@ -30,8 +30,6 @@ void main() {
           ),
         ];
         final theme = ThemeData(brightness: brightness);
-        Size? referenceSize;
-        TextStyle? referenceTextStyle;
         for (final mode in ['add', 'button', 'context']) {
           await tester.pumpWidget(
             MaterialApp(
@@ -89,22 +87,21 @@ void main() {
           final iconTheme = IconTheme.of(
             tester.element(find.byIcon(Icons.folder)),
           );
-          final textStyle = DefaultTextStyle.of(tester.element(label)).style;
-          if (mode == 'add') {
-            referenceSize = tester.getSize(row);
-            referenceTextStyle = textStyle;
-          } else if (mode == 'button') {
-            expect(tester.getSize(row), referenceSize);
-            expect(textStyle, referenceTextStyle);
-          } else {
-            expect(tester.getSize(row).height, 40);
-          }
-          expect(iconTheme.size, mode == 'context' ? 18 : 21);
+          final textStyle = tester.widget<Text>(label).style;
+          expect(tester.getSize(row).height, mode == 'add' ? 48 : 40);
+          expect(
+            textStyle,
+            Theme.of(tester.element(label)).textTheme.bodyMedium!.copyWith(
+              color: theme.colorScheme.onSurface,
+              fontWeight: FontWeight.w700,
+            ),
+          );
+          expect(iconTheme.size, mode == 'add' ? 21 : 18);
           expect(
             iconTheme.color,
-            mode == 'context'
-                ? theme.colorScheme.primary
-                : theme.colorScheme.onSurface,
+            mode == 'add'
+                ? theme.colorScheme.onSurface
+                : theme.colorScheme.primary,
           );
           await tester.sendKeyEvent(LogicalKeyboardKey.escape);
           await tester.pumpAndSettle();

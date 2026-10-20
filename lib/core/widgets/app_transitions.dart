@@ -1662,6 +1662,34 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         }
       }
     }
+    if (widget.duration == Duration.zero &&
+        (_isAnimating || _pendingIndex != null)) {
+      _switchImmediately(_safeIndex(widget.indexListenable.value));
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Accessibility can change while the outgoing page still owns input.
+    // Stop the ticker and release that page in the same frame.
+    if (MediaQuery.disableAnimationsOf(context) &&
+        (_isAnimating || _pendingIndex != null)) {
+      _switchImmediately(_safeIndex(widget.indexListenable.value));
+    }
+  }
+
+  void _switchImmediately(int index) {
+    _controller.stop();
+    setState(() {
+      _pendingIndex = null;
+      _currentIndex = index;
+      _targetIndex = index;
+      _isAnimating = false;
+      _controller.value = 1;
+    });
+    widget.onTransitionCompleted?.call(index);
+    UiInteractionCoordinator.instance.endNavigation(_transitionInteraction);
   }
 
   void _resetLazyChildren() {
@@ -1709,14 +1737,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     UiInteractionCoordinator.instance.beginNavigation(_transitionInteraction);
     if (widget.duration == Duration.zero ||
         MediaQuery.disableAnimationsOf(context)) {
-      setState(() {
-        _currentIndex = nextIndex;
-        _targetIndex = nextIndex;
-        _isAnimating = false;
-        _controller.value = 1;
-      });
-      widget.onTransitionCompleted?.call(_currentIndex);
-      UiInteractionCoordinator.instance.endNavigation(_transitionInteraction);
+      _switchImmediately(nextIndex);
       return;
     }
 

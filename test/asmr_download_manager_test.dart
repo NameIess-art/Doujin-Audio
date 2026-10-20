@@ -183,6 +183,10 @@ void main() {
     expect(reads, 2);
     expect(manager.persistedUriReferencesReady, isTrue);
     expect(manager.initializationError, isNull);
+    for (var visit = 0; visit < 10; visit++) {
+      await manager.initialize();
+    }
+    expect(reads, 2);
   });
 
   test('flush waits for restoration before capturing tasks', () async {

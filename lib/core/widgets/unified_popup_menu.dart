@@ -9,16 +9,12 @@ import 'app_feedback.dart';
 import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
 
-const double _defaultMenuWidth = 236;
-
 class UnifiedMenuEntry<T> {
   const UnifiedMenuEntry.action({
     required this.value,
     this.icon,
     this.iconWidget,
     required this.label,
-    this.labelWidget,
-    this.selected = false,
     this.trailing,
     this.trailingValue,
     this.destructive = false,
@@ -30,8 +26,6 @@ class UnifiedMenuEntry<T> {
       icon = null,
       iconWidget = null,
       label = '',
-      labelWidget = null,
-      selected = false,
       trailing = null,
       trailingValue = null,
       destructive = false,
@@ -42,8 +36,6 @@ class UnifiedMenuEntry<T> {
   final IconData? icon;
   final Widget? iconWidget;
   final String label;
-  final Widget? labelWidget;
-  final bool selected;
   final Widget? trailing;
   final T? trailingValue;
   final bool destructive;
@@ -60,7 +52,7 @@ class UnifiedPopupMenuButton<T> extends StatefulWidget {
     required this.onSelected,
     this.onTrailingSelected,
     this.iconSize = 28,
-    this.menuWidth = _defaultMenuWidth,
+    this.menuWidth = 236,
     this.enabled = true,
     this.selectAfterDismiss = true,
     this.padding,
@@ -414,13 +406,11 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
     this.compact = false,
     this.primaryIcons = false,
     this.autofocusFirstEntry = true,
-    this.selectedEntryKey,
   });
 
   final bool compact;
   final bool primaryIcons;
   final bool autofocusFirstEntry;
-  final Key? selectedEntryKey;
   final List<UnifiedMenuEntry<T>> entries;
   final ValueChanged<T> onSelected;
   final ValueChanged<T>? onTrailingSelected;
@@ -448,23 +438,14 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Builder(
             builder: (context) {
-              final enabledEntries = entries
+              final firstAutofocusEntry = entries
                   .where((item) => item.enabled && !item.divider)
-                  .toList(growable: false);
-              final selectedEntry = entries
-                  .where((item) => item.selected)
                   .firstOrNull;
-              final firstAutofocusEntry =
-                  enabledEntries.where((item) => item.selected).firstOrNull ??
-                  enabledEntries.firstOrNull;
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: entries
                     .map(
                       (entry) => _UnifiedPopupMenuRow<T>(
-                        key: identical(entry, selectedEntry)
-                            ? selectedEntryKey
-                            : null,
                         entry: entry,
                         compact: compact,
                         primaryIcons: primaryIcons,
@@ -487,7 +468,6 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
 
 class _UnifiedPopupMenuRow<T> extends StatelessWidget {
   const _UnifiedPopupMenuRow({
-    super.key,
     required this.entry,
     required this.autofocus,
     required this.onSelected,
@@ -560,8 +540,8 @@ class _UnifiedPopupMenuContent<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final foreground = entry.destructive ? cs.error : cs.onSurface;
-    return ConstrainedBox(
-      constraints: BoxConstraints(minHeight: compact ? 40 : 48),
+    return SizedBox(
+      height: compact ? 40 : 48,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Row(
@@ -579,26 +559,18 @@ class _UnifiedPopupMenuContent<T> extends StatelessWidget {
               const SizedBox(width: 12),
             ],
             Expanded(
-              child: DefaultTextStyle.merge(
+              child: Text(
+                entry.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: entry.enabled
                       ? foreground
                       : cs.onSurface.withValues(alpha: 0.38),
                   fontWeight: FontWeight.w700,
                 ),
-                child:
-                    entry.labelWidget ??
-                    Text(
-                      entry.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
               ),
             ),
-            if (entry.selected) ...[
-              const SizedBox(width: 10),
-              Icon(Icons.check, size: 18, color: cs.primary),
-            ],
             if (entry.trailing != null) ...[
               const SizedBox(width: 10),
               if (entry.trailingValue != null && onTrailingSelected != null)
@@ -672,8 +644,6 @@ Future<T?> showDockAwareMenu<T>({
   required List<UnifiedMenuEntry<T>> entries,
   Listenable? dismissOn,
   bool autofocusFirstEntry = true,
-  bool compact = false,
-  double? menuMaxHeight,
 }) async {
   final overlayState =
       MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
@@ -716,8 +686,6 @@ Future<T?> showDockAwareMenu<T>({
       position: position,
       entries: entries,
       autofocusFirstEntry: autofocusFirstEntry,
-      compact: compact,
-      menuMaxHeight: menuMaxHeight,
       themes: themes,
       reducedMotion: reducedMotion,
       interactionSource: interactionSource,
@@ -762,8 +730,6 @@ class _DockMenuOverlay<T> extends StatefulWidget {
     required this.onResult,
     required this.externallyManagedDismiss,
     required this.autofocusFirstEntry,
-    required this.compact,
-    this.menuMaxHeight,
   });
 
   final RelativeRect position;
@@ -774,8 +740,6 @@ class _DockMenuOverlay<T> extends StatefulWidget {
   final ValueChanged<T?> onResult;
   final bool externallyManagedDismiss;
   final bool autofocusFirstEntry;
-  final bool compact;
-  final double? menuMaxHeight;
 
   @override
   State<_DockMenuOverlay<T>> createState() => _DockMenuOverlayState<T>();
@@ -784,7 +748,6 @@ class _DockMenuOverlay<T> extends StatefulWidget {
 class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
     with SingleTickerProviderStateMixin {
   final _focusScope = FocusScopeNode();
-  final _selectedEntryKey = GlobalKey();
   late final AnimationController _controller;
   late final CurvedAnimation _curved;
   bool _dismissed = false;
@@ -811,12 +774,6 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _dismissed) return;
       _focusScope.requestFocus();
-      final selectedContext = _selectedEntryKey.currentContext;
-      if (selectedContext != null) {
-        // Match dropdown behavior: open at the current selection, before the
-        // first visible fade tick, including long and multiline menus.
-        Scrollable.ensureVisible(selectedContext, alignment: 0.5);
-      }
     });
   }
 
@@ -875,7 +832,6 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
 
   @override
   Widget build(BuildContext context) {
-    final menuWidth = widget.compact ? null : _defaultMenuWidth;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () => _dismiss(null),
@@ -914,30 +870,21 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                       child: widget.themes.wrap(
                         Material(
                           color: Colors.transparent,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              minWidth: menuWidth ?? 0,
-                              maxWidth: menuWidth ?? double.infinity,
-                              maxHeight:
-                                  widget.menuMaxHeight ?? double.infinity,
-                            ),
-                            child: SingleChildScrollView(
-                              child: IntrinsicWidth(
-                                child: ExcludeFocus(
+                          child: SingleChildScrollView(
+                            child: IntrinsicWidth(
+                              child: ExcludeFocus(
+                                excluding: _dismissed,
+                                child: ExcludeSemantics(
                                   excluding: _dismissed,
-                                  child: ExcludeSemantics(
-                                    excluding: _dismissed,
-                                    child: IgnorePointer(
-                                      ignoring: _dismissed,
-                                      child: _UnifiedPopupMenuCard<T>(
-                                        entries: widget.entries,
-                                        selectedEntryKey: _selectedEntryKey,
-                                        autofocusFirstEntry:
-                                            widget.autofocusFirstEntry,
-                                        compact: widget.compact,
-                                        primaryIcons: widget.compact,
-                                        onSelected: (value) => _dismiss(value),
-                                      ),
+                                  child: IgnorePointer(
+                                    ignoring: _dismissed,
+                                    child: _UnifiedPopupMenuCard<T>(
+                                      entries: widget.entries,
+                                      autofocusFirstEntry:
+                                          widget.autofocusFirstEntry,
+                                      compact: true,
+                                      primaryIcons: true,
+                                      onSelected: (value) => _dismiss(value),
                                     ),
                                   ),
                                 ),
@@ -977,6 +924,5 @@ Future<T?> showUnifiedContextMenu<T>({
     entries: entries,
     // Keep keyboard focus in the menu without preselecting a mouse action.
     autofocusFirstEntry: false,
-    compact: true,
   );
 }

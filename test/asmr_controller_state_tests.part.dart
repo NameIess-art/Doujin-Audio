@@ -707,14 +707,14 @@ void registerAsmrControllerStateTests({
   );
 
   test(
-    'concurrent first category ensures await the shared in-flight request',
+    'cold category ensures share a request and repeated returns reuse results',
     () async {
       await resetPrefs();
       final started = Completer<void>();
       final release = Completer<void>();
       final api = _FakeAsmrApiService(
         beforeFetchWorkResponse: (_) async {
-          started.complete();
+          if (!started.isCompleted) started.complete();
           await release.future;
         },
       );
@@ -723,8 +723,10 @@ void registerAsmrControllerStateTests({
         apiService: api,
         persistenceRepository: persistenceRepository(),
       );
-      await controller.initializeForVisiblePage();
       final first = controller.ensureCategoryLoaded(AsmrCategoryType.release);
+      final concurrent = controller.ensureCategoryLoaded(
+        AsmrCategoryType.release,
+      );
       await started.future;
       var repeatedCompleted = false;
       final repeated = controller
@@ -736,8 +738,24 @@ void registerAsmrControllerStateTests({
       expect(repeatedCompleted, isFalse);
       expect(api.fetchWorkRequests, hasLength(1));
       release.complete();
-      await Future.wait([first, repeated]);
+      await Future.wait([first, concurrent, repeated]);
       expect(repeatedCompleted, isTrue);
+      expect(
+        controller.categoryViewState(AsmrCategoryType.release).works,
+        isNotEmpty,
+      );
+      final loaded = controller.categoryViewState(AsmrCategoryType.release);
+      for (var visit = 0; visit < 10; visit++) {
+        await controller.initializeForVisiblePage();
+        await controller.ensureCategoryLoaded(AsmrCategoryType.release);
+      }
+      expect(api.fetchWorkRequests, hasLength(1));
+      expect(
+        controller.categoryViewState(AsmrCategoryType.release).works,
+        same(loaded.works),
+      );
+      await controller.refreshCategory(AsmrCategoryType.release);
+      expect(api.fetchWorkRequests, hasLength(2));
       expect(
         controller.categoryViewState(AsmrCategoryType.release).works,
         isNotEmpty,

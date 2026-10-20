@@ -3364,8 +3364,15 @@ void main() {
 
     final workTitle = find.text('Loaded work', findRichText: true);
     expect(workTitle, findsOneWidget);
-    final workCard = tester.widget<Card>(
-      find.ancestor(of: workTitle, matching: find.byType(Card)).first,
+    final workCard = tester.widget<Material>(
+      find
+          .ancestor(
+            of: workTitle,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Material && widget.type == MaterialType.card,
+            ),
+          )
+          .first,
     );
     expect(workCard.color, Colors.transparent);
     expect(workCard.elevation, 0);

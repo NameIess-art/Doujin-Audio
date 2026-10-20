@@ -1542,7 +1542,7 @@ void main() {
 
       await tester.pump();
       expect(checkmarkFinder, findsNothing);
-      await tester.pump(kThemeChangeDuration - const Duration(milliseconds: 1));
+      await tester.pump(kAppSelectionDuration - const Duration(milliseconds: 1));
       expect(checkmarkFinder, findsNothing);
       await tester.pump(const Duration(milliseconds: 1));
       expect(checkmarkFinder, findsOneWidget);
@@ -1554,7 +1554,7 @@ void main() {
       expect(decoration.border?.top.width, 2.0);
 
       // Verify mid-animation opacity
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppMotionFast ~/ 2);
       final fadeFinder = find
           .ancestor(of: checkmarkFinder, matching: find.byType(FadeTransition))
           .first;
@@ -1562,11 +1562,10 @@ void main() {
           .widget<FadeTransition>(fadeFinder)
           .opacity
           .value;
-      expect(midOpacity, greaterThan(0.0));
-      expect(midOpacity, lessThan(1.0));
+      expect(midOpacity, closeTo(kAppFadeCurve.transform(0.5), 0.001));
 
       // After remaining duration
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppMotionFast ~/ 2);
       final fullOpacity = tester
           .widget<FadeTransition>(fadeFinder)
           .opacity
@@ -1617,7 +1616,7 @@ void main() {
       );
     }
 
-    testWidgets('$kind pin fades in and out over 300ms', (tester) async {
+    testWidgets('$kind pin fades in over 180ms and out over 300ms', (tester) async {
       final pin = find.byIcon(Icons.push_pin_rounded);
       double opacity() => tester
           .widgetList<FadeTransition>(
@@ -1630,9 +1629,9 @@ void main() {
       await tester.pumpWidget(buildPinned(true));
       await tester.pump();
       expect(opacity(), 0);
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppMotionFast ~/ 2);
       expect(opacity(), closeTo(kAppFadeCurve.transform(0.5), 0.001));
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(kAppMotionFast ~/ 2);
       expect(opacity(), 1);
       await tester.pump(const Duration(milliseconds: 1));
 

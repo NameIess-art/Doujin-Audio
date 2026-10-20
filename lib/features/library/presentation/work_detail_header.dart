@@ -32,7 +32,8 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Widget? subtitleStatus;
 
   // Reuse text and metadata while the sliver only changes cover geometry.
-  late final Widget _title = RepaintBoundary(child: _buildTitle());
+  late final Widget _expandedTitle = RepaintBoundary(child: _buildTitle(17));
+  late final Widget _compactTitle = RepaintBoundary(child: _buildTitle(15));
   late final Widget _rjBar = RepaintBoundary(
     child: Builder(builder: _buildRjBar),
   );
@@ -51,7 +52,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     ),
   );
 
-  Widget _buildTitle() => Semantics(
+  Widget _buildTitle(double fontSize) => Semantics(
     button: title.isNotEmpty,
     label: title.isNotEmpty ? title : null,
     child: InkWell(
@@ -70,12 +71,12 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
         title,
         maxLines: 3,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
+        style: TextStyle(
           color: Colors.white,
-          fontSize: 17,
+          fontSize: fontSize,
           fontWeight: FontWeight.bold,
           height: 1.25,
-          shadows: [
+          shadows: const [
             Shadow(color: Colors.black87, blurRadius: 4, offset: Offset(0, 1)),
           ],
         ),
@@ -224,13 +225,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                   left: 16,
                   right: 16,
                   bottom: 10,
-                  // Scale cached text instead of changing its font size, which
-                  // reflows long titles when crossing the collapse threshold.
-                  child: Transform.scale(
-                    scale: 1 - progress * (2 / 17),
-                    alignment: Alignment.bottomLeft,
-                    child: _title,
-                  ),
+                  child: progress > 0.5 ? _compactTitle : _expandedTitle,
                 ),
               ],
             ),

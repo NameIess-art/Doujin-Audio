@@ -892,6 +892,8 @@ void main() {
         find.byKey(const ValueKey<String>('asmr_search_button')),
       );
       await tester.pump();
+      // The prepared route first lays out offstage, then exposes its content.
+      await tester.pump();
       expect(
         find.descendant(
           of: find.byKey(const ValueKey<String>('asmr_search_favorites')),

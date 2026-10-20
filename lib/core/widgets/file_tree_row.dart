@@ -205,10 +205,18 @@ class FileTreeSkeleton extends StatelessWidget {
     super.key,
     this.viewportHeight,
     this.padding = EdgeInsets.zero,
+    this.rowHeight = 48,
+    this.rowPadding = const EdgeInsets.only(left: 16, right: 12),
+    this.leadingSize = 22,
+    this.leadingGap = 18,
   });
 
   final double? viewportHeight;
   final EdgeInsetsGeometry padding;
+  final double rowHeight;
+  final EdgeInsetsGeometry rowPadding;
+  final double leadingSize;
+  final double leadingGap;
 
   static const _titleFractions = [0.52, 0.68, 0.44, 0.60, 0.38, 0.55];
 
@@ -223,7 +231,7 @@ class FileTreeSkeleton extends StatelessWidget {
       final contentHeight =
           availableHeight -
           padding.resolve(Directionality.of(context)).vertical;
-      final itemCount = math.max(1, (contentHeight / 48).ceil());
+      final itemCount = math.max(1, (contentHeight / rowHeight).ceil());
       final rows = ShimmerLoader(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -231,17 +239,17 @@ class FileTreeSkeleton extends StatelessWidget {
           children: [
             for (var i = 0; i < itemCount; i++)
               SizedBox(
-                height: 48,
+                height: rowHeight,
                 child: Padding(
-                  padding: const EdgeInsets.only(left: 16, right: 12),
+                  padding: rowPadding,
                   child: Row(
                     children: [
-                      const ShimmerContainer(
-                        width: 22,
-                        height: 22,
+                      ShimmerContainer(
+                        width: leadingSize,
+                        height: leadingSize,
                         borderRadius: 5,
                       ),
-                      const SizedBox(width: 18),
+                      SizedBox(width: leadingGap),
                       Expanded(
                         child: Align(
                           alignment: Alignment.centerLeft,

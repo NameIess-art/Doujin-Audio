@@ -11,6 +11,7 @@ import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_settings_action_tile.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
+import '../../../core/widgets/shimmer_loading.dart';
 import '../application/permission_status_service.dart';
 
 class PermissionSettingsControls extends ConsumerStatefulWidget {
@@ -277,10 +278,10 @@ class _PermissionStatusButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (enabled == null) {
-      return const SizedBox.square(
-        dimension: 18,
-        child: CircularProgressIndicator(strokeWidth: 2.2),
-      );
+      final placeholderLabel = disabledLabel.length >= enabledLabel.length
+          ? disabledLabel
+          : enabledLabel;
+      return _PermissionStatusPlaceholder(label: placeholderLabel);
     }
     final cs = Theme.of(context).colorScheme;
     final color = enabled! ? AppDesignTokens.of(context).success : cs.error;
@@ -301,6 +302,55 @@ class _PermissionStatusButton extends StatelessWidget {
           ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
         ),
         child: Text(label),
+      ),
+    );
+  }
+}
+
+class _PermissionStatusPlaceholder extends StatelessWidget {
+  const _PermissionStatusPlaceholder({
+    required this.label,
+  });
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tokens = AppDesignTokens.of(context);
+    final baseColor = isDark
+        ? cs.surfaceContainerHigh
+        : cs.surfaceContainerHighest;
+
+    return ExcludeSemantics(
+      child: ShimmerLoader(
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: baseColor,
+            borderRadius: BorderRadius.circular(tokens.radiusCapsule),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Visibility(
+                visible: false,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

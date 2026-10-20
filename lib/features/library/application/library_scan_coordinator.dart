@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/cache/app_cache_service.dart';
-import '../../../core/ui/ui_interaction_coordinator.dart';
 import 'library_catalog.dart';
 import 'library_scanner_service.dart';
 
@@ -118,14 +117,14 @@ class LibraryScanCoordinator extends ChangeNotifier {
     }
     if (skipWhenUnchanged &&
         outcome.code == LibraryScanOutcomeCode.refreshNoChanges) {
-      _backfillDurations(catalog);
+      unawaited(_backfillDurations(catalog));
       return outcome;
     }
     final import = await catalog.importAudioDetailBackups(
       onlyMissing: onlyMissing,
     );
     if (!_isCurrent(generation)) return null;
-    _backfillDurations(catalog);
+    unawaited(_backfillDurations(catalog));
     if (import.failureCount == 0 && import.importedCount == 0) return outcome;
     return LibraryScanOutcome(
       code: outcome.code,
@@ -138,25 +137,16 @@ class LibraryScanCoordinator extends ChangeNotifier {
     );
   }
 
-  void _backfillDurations(LibraryCatalog catalog) {
-    final interaction = UiInteractionCoordinator.instance;
-    interaction.scheduleAfterIdle(
-      key: 'library_scan_durations_${identityHashCode(catalog)}',
-      generation: interaction.generation,
-      priority: 100,
-      task: () async {
-        if (_disposed) return;
-        try {
-          await catalog.backfillMissingLibraryDurations();
-        } catch (error, stackTrace) {
-          AppLogService.warning(
-            'library_scan_duration_backfill_failed',
-            error: error,
-            stackTrace: stackTrace,
-          );
-        }
-      },
-    );
+  Future<void> _backfillDurations(LibraryCatalog catalog) async {
+    try {
+      await catalog.backfillMissingLibraryDurations();
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'library_scan_duration_backfill_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   bool _canImportBackups(LibraryScanOutcomeCode code) {

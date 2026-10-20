@@ -87,6 +87,49 @@ void main() {
     );
   });
 
+  test(
+    'duration backfill waits for foreground and pauses between batches',
+    () async {
+      final root = await Directory.systemTemp.createTemp('duration_idle_');
+      addTearDown(() => root.delete(recursive: true));
+      final library = runtimeGraph.library;
+      library.addWatchedFolder(root.path, notify: false);
+      final tracks = List.generate(
+        3,
+        (index) => _localDurationTrack(root.path, filename: '$index.mp3'),
+      );
+      library.addTracks(tracks, persist: false);
+      library.setBackgroundMode(true);
+      final firstBatch = Completer<void>();
+      final requestedPaths = <String>[];
+      final backfill = library.backfillMissingLibraryDurations(
+        durationReader: (trackPath) async {
+          requestedPaths.add(trackPath);
+          if (requestedPaths.length == 2) {
+            library.setInteractionPaused(true);
+            firstBatch.complete();
+          }
+          return const Duration(seconds: 25);
+        },
+      );
+      await pumpEventQueue();
+      expect(requestedPaths, isEmpty);
+
+      library.setBackgroundMode(false);
+      await firstBatch.future;
+      await pumpEventQueue();
+      expect(requestedPaths, hasLength(2));
+
+      library.setInteractionPaused(false);
+      await backfill;
+      expect(requestedPaths, tracks.map((track) => track.path));
+      expect(
+        library.library.map((track) => track.duration),
+        everyElement(const Duration(seconds: 25)),
+      );
+    },
+  );
+
   for (final kind in ['media', 'folder', 'detail']) {
     test('rename $kind waits for a captured scan to retire', () async {
       final root = await Directory.systemTemp.createTemp('scan_rename_');

@@ -592,4 +592,84 @@ void main() {
       expect(tester.getSize(find.byType(SessionTrackSwitcherSheet)).height, 500);
     },
   );
+
+  testWidgets(
+    'switcher skeleton row height and vertical spacing match actual rows',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final language = AppLanguageProvider();
+      await language.initialized;
+      addTearDown(language.dispose);
+      final tracks = [
+        _track('Folder/Audio1.mp3'),
+        _track('Folder/Audio2.mp3'),
+        _track('Folder/Audio3.mp3'),
+      ];
+
+      // 1. Check skeleton layout geometry while loading
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                height: 500,
+                child: SessionTrackSwitcherSheet(
+                  tracks: tracks,
+                  session: _session(tracks),
+                  workRoot: '/work',
+                  resolveTrack: (_) => null,
+                  workRootForTrack: (_) => '/work',
+                  onSelected: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final skeletonFinder = find.byType(FileTreeSkeleton);
+      expect(skeletonFinder, findsOneWidget);
+      final skeletonWidget = tester.widget<FileTreeSkeleton>(skeletonFinder);
+      expect(skeletonWidget.rowHeight, 44.0);
+
+      final skeletonBoxes = <RenderBox>[];
+      for (final element in find
+          .descendant(
+            of: skeletonFinder,
+            matching: find.byType(SizedBox),
+          )
+          .evaluate()) {
+        final box = element.renderObject as RenderBox?;
+        if (box != null && box.hasSize && box.size.height == 44.0) {
+          skeletonBoxes.add(box);
+        }
+      }
+      expect(skeletonBoxes.length, greaterThanOrEqualTo(3));
+      final skeletonDy0 = skeletonBoxes[0].localToGlobal(Offset.zero).dy;
+      final skeletonDy1 = skeletonBoxes[1].localToGlobal(Offset.zero).dy;
+      final skeletonDy2 = skeletonBoxes[2].localToGlobal(Offset.zero).dy;
+      expect(skeletonDy1 - skeletonDy0, 44.0);
+      expect(skeletonDy2 - skeletonDy1, 44.0);
+
+      // 2. Settle tree loading and check actual row layout geometry
+      await _waitForTree(tester);
+      final actualRows = find.byType(FileTreeRow);
+      expect(actualRows, findsNWidgets(4)); // 1 folder + 3 tracks (or open)
+
+      final actualBoxes = <RenderBox>[];
+      for (final element in actualRows.evaluate()) {
+        final box = element.renderObject as RenderBox;
+        actualBoxes.add(box);
+      }
+      expect(actualBoxes[0].size.height, 44.0);
+      expect(actualBoxes[1].size.height, 44.0);
+      final actualDy0 = actualBoxes[0].localToGlobal(Offset.zero).dy;
+      final actualDy1 = actualBoxes[1].localToGlobal(Offset.zero).dy;
+      expect(actualDy0, skeletonDy0);
+      expect(actualDy1 - actualDy0, 44.0);
+    },
+  );
 }

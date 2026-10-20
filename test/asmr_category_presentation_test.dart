@@ -674,6 +674,9 @@ void main() {
         final initializations = controller.initializations;
         await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
         await tester.pump();
+        // The prepared route's first layout is offstage. Inspect its first
+        // visible frame without advancing the entrance animation.
+        await tester.pump();
         final results = find.byKey(const ValueKey('asmr_search_collected'));
         expect(
           find.descendant(of: results, matching: find.text('Published work')),
@@ -763,6 +766,8 @@ void main() {
           ..publish('Loaded after opening');
         await tester.pump();
         await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
+        await tester.pump();
+        // Complete the prepared route's offstage layout before inspecting it.
         await tester.pump();
         final results = find.byKey(const ValueKey('asmr_search_collected'));
         final loading = find.descendant(
@@ -1117,6 +1122,8 @@ void main() {
         final loads = controller.categoryLoads;
 
         await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
+        await tester.pump();
+        // Complete the prepared route's offstage layout before counting cards.
         await tester.pump();
         final results = find.byKey(const ValueKey('asmr_search_collected'));
         final searchCards = find.descendant(

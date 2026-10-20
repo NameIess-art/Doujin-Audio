@@ -1547,11 +1547,6 @@ void main() {
       await tester.pump(const Duration(milliseconds: 1));
       expect(checkmarkFinder, findsOneWidget);
 
-      final switcherFinder = find.byType(AnimatedSwitcher);
-      final switcher = tester.widget<AnimatedSwitcher>(switcherFinder);
-      expect(switcher.duration, const Duration(milliseconds: 300));
-      expect(switcher.reverseDuration, const Duration(milliseconds: 300));
-
       expect(tester.getSize(checkmarkFinder), const Size(22.0, 22.0));
       final container = tester.widget<Container>(checkmarkFinder);
       final decoration = container.decoration as BoxDecoration;
@@ -1593,6 +1588,12 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 150));
       expect(checkmarkFinder, findsOneWidget);
+      final outgoingOpacity = tester
+          .widget<FadeTransition>(fadeFinder)
+          .opacity
+          .value;
+      expect(outgoingOpacity, greaterThan(0.0));
+      expect(outgoingOpacity, lessThan(1.0));
 
       await tester.pump(const Duration(milliseconds: 250));
       expect(checkmarkFinder, findsNothing);

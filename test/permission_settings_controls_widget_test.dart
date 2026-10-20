@@ -7,6 +7,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/app_settings_group_card.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/widgets/app_settings_action_tile.dart';
+import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/settings/presentation/permission_settings_controls.dart';
@@ -237,6 +238,60 @@ void main() {
           matching: find.text(language.tr('permission_not_enabled')),
         ),
         findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'shows capsule placeholders of same size and position while loading',
+    (tester) async {
+      final language = AppLanguageProvider();
+      final pending = Completer<PermissionStatusSnapshot>();
+      final service = _TestPermissionStatusService(pending.future);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: PermissionSettingsControls(statusService: service),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      final shimmerFinders = find.byType(ShimmerLoader);
+      expect(shimmerFinders, findsNWidgets(4));
+
+      final firstPlaceholderRect = tester.getRect(shimmerFinders.first);
+      expect(firstPlaceholderRect.height, 36.0);
+
+      pending.complete(
+        const PermissionStatusSnapshot(
+          backgroundRunAllowed: false,
+          exactAlarmsAllowed: false,
+          manageFilesAllowed: false,
+          overlayAllowed: false,
+          updateInstallsAllowed: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ShimmerLoader), findsNothing);
+      final buttons = find.byType(TextButton);
+      expect(buttons, findsNWidgets(4));
+
+      final firstButtonRect = tester.getRect(buttons.first);
+      expect(firstButtonRect.right, closeTo(firstPlaceholderRect.right, 0.5));
+      expect(firstButtonRect.width, closeTo(firstPlaceholderRect.width, 0.5));
+      expect(
+        firstButtonRect.center.dy,
+        closeTo(firstPlaceholderRect.center.dy, 0.5),
       );
     },
   );

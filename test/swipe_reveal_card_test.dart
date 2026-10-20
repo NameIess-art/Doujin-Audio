@@ -405,22 +405,15 @@ void main() {
         );
         await click.up();
         await tester.pumpAndSettle();
-        expect(find.byType(PopupMenuItem<VoidCallback>), findsNWidgets(4));
-        final item = tester.widget<PopupMenuItem<VoidCallback>>(
-          find.ancestor(
-            of: find.text(label),
-            matching: find.byType(PopupMenuItem<VoidCallback>),
-          ),
-        );
-        expect(item.height, 40);
+        for (final action in ['Pin', 'Download', 'Details', 'Remove']) {
+          expect(find.text(action), findsOneWidget);
+        }
+        final item = find
+            .ancestor(of: find.text(label), matching: find.byType(InkWell))
+            .first;
+        expect(tester.getSize(item).height, 40);
         final iconContext = tester.element(
-          find.descendant(
-            of: find.ancestor(
-              of: find.text(label),
-              matching: find.byType(PopupMenuItem<VoidCallback>),
-            ),
-            matching: find.byType(Icon),
-          ),
+          find.descendant(of: item, matching: find.byType(Icon)),
         );
         final colors = Theme.of(iconContext).colorScheme;
         expect(
@@ -461,7 +454,7 @@ void main() {
     );
     await click.up();
     await tester.pumpAndSettle();
-    expect(find.byType(PopupMenuItem<VoidCallback>), findsNothing);
+    expect(find.text('Remove'), findsNothing);
     debugDefaultTargetPlatformOverride = null;
   });
 
@@ -1048,7 +1041,16 @@ void main() {
         );
         await click.up();
         await tester.pumpAndSettle();
-        expect(find.byType(PopupMenuItem<VoidCallback>), findsNWidgets(4));
+        final actions = ['Info', 'Download', 'Pin', 'Remove'];
+        for (var i = 0; i < actions.length; i++) {
+          expect(find.text(actions[i]), findsOneWidget);
+          if (i > 0) {
+            expect(
+              tester.getBottomLeft(find.text(actions[i - 1])).dy,
+              lessThan(tester.getTopLeft(find.text(actions[i])).dy),
+            );
+          }
+        }
         await tester.tap(find.text(label));
         await tester.pumpAndSettle();
       }

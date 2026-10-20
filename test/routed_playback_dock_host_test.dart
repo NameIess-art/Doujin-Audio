@@ -347,8 +347,20 @@ void main() {
       'page opened from playback menu stays above it after a dialog on $platform',
       (tester) async {
         final navigator = await _pumpHost(tester, platform);
+        double dockOpacity() => tester
+            .renderObject<RenderAnimatedOpacity>(
+              find
+                  .ancestor(
+                    of: _dock,
+                    matching: find.byType(AnimatedOpacity, skipOffstage: false),
+                  )
+                  .first,
+            )
+            .opacity
+            .value;
         unawaited(navigator.currentState!.push(_detailRoute(navigator)));
         await tester.pumpAndSettle();
+        expect(dockOpacity(), 1);
         unawaited(navigator.currentState!.push(_MenuSessionDetailRoute()));
         await tester.pumpAndSettle();
         unawaited(
@@ -363,6 +375,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        expect(dockOpacity(), 0);
         unawaited(
           showDialog<void>(
             context: tester.element(find.text('Subtitle menu')),
@@ -373,6 +386,7 @@ void main() {
         await tester.pumpAndSettle();
         navigator.currentState!.pop();
         await tester.pumpAndSettle();
+        expect(dockOpacity(), 0);
         final editor = buildAppPageRoute<void>(
           context: tester.element(find.text('Subtitle menu')),
           child: const Scaffold(body: Center(child: Text('Subtitle editor'))),
@@ -381,19 +395,27 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Subtitle editor').hitTestable(), findsOneWidget);
         expect(find.text('Subtitle menu').hitTestable(), findsNothing);
+        expect(dockOpacity(), 0);
         expect(tester.takeException(), isNull);
         navigator.currentState!.pop();
         await tester.pumpAndSettle();
         expect(find.text('Subtitle menu').hitTestable(), findsOneWidget);
+        expect(dockOpacity(), 0);
         navigator.currentState!.pop();
         await tester.pumpAndSettle();
+        // The opaque playback page keeps this retained dock offstage and
+        // mutes its fade ticker. It finishes fading when playback is closed.
+        expect(TickerMode.valuesOf(tester.element(_dock)).enabled, isFalse);
         expect(
           tester
-              .widget<Opacity>(
+              .widget<AnimatedOpacity>(
                 find
                     .ancestor(
                       of: _dock,
-                      matching: find.byType(Opacity, skipOffstage: false),
+                      matching: find.byType(
+                        AnimatedOpacity,
+                        skipOffstage: false,
+                      ),
                     )
                     .first,
               )
@@ -402,6 +424,8 @@ void main() {
         );
         navigator.currentState!.pop();
         await tester.pumpAndSettle();
+        expect(dockOpacity(), 1);
+        expect(_dock.hitTestable(), findsOneWidget);
         navigator.currentState!.pop();
         await tester.pumpAndSettle();
         await tester.pump(UiInteractionCoordinator.instance.idleDelay);

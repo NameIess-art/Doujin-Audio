@@ -381,6 +381,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     Future<Duration?> Function(String path)? durationReader,
   }) => _metadataCoordinator.backfillMissingDurations(
     durationReader: durationReader,
+    waitForIdle: () => _waitForContinuousUiIdle(Duration.zero, () => _disposed),
   );
 
   Future<Duration?> calculateMissingLibraryDuration(

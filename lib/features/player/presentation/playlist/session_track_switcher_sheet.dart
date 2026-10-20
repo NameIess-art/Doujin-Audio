@@ -278,7 +278,12 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet>
           const Expanded(
             child: RepaintBoundary(
               key: ValueKey<String>('queue_switcher_skeleton'),
-              child: FileTreeSkeleton(),
+              child: FileTreeSkeleton(
+                rowHeight: 44,
+                rowPadding: EdgeInsets.symmetric(horizontal: 6),
+                leadingSize: 20,
+                leadingGap: 10,
+              ),
             ),
           ),
         ],

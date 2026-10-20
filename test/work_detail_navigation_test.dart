@@ -477,6 +477,8 @@ void main() {
       );
       Future<void> expectMainBehindSlide() async {
         expect(tester.getRect(body).left, inExclusiveRange(8, 380));
+        final opacity = kAppFadeCurve.transform(route.animation!.value);
+        expect(opacity, inExclusiveRange(0, 1));
         final colors = await tester.runAsync(() async {
           final image = await tester
               .renderObject<RenderRepaintBoundary>(find.byKey(surface))
@@ -496,7 +498,14 @@ void main() {
           image.dispose();
           return result;
         });
-        expect(colors, (const Color(0xfff44336), const Color(0xff2196f3)));
+        // The page slides and fades together; uncovered pixels must still
+        // show the main page, while the moving page blends over its paint.
+        final blended = Color.alphaBlend(
+          Colors.blue.withAlpha((opacity * 255).round()),
+          Colors.red,
+        );
+        expect(colors!.$1, Color(Colors.red.toARGB32()));
+        expect(colors.$2, Color(blended.toARGB32()));
       }
 
       unawaited(navigation.open('slide', (_) => route));

@@ -172,21 +172,6 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                 ),
               )
             : Border.all(color: cs.outlineVariant.withValues(alpha: 0.85)),
-        boxShadow: isLandscapeLayout
-            ? [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-                  blurRadius: 10,
-                  offset: const Offset(2, 0),
-                ),
-              ]
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -575,7 +560,6 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                       height: kActiveSessionCarouselDockHeight,
                       child: RepaintBoundary(
                         child: AppDockPanel(
-                          shadowOpacity: 0.12,
                           showTopHighlight: false,
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(

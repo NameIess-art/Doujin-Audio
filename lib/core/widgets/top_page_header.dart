@@ -604,20 +604,7 @@ class HeaderFloatingSurface extends StatelessWidget {
       child: padding != null ? Padding(padding: padding!, child: child) : child,
     );
 
-    final content = DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: borderRadius,
-        boxShadow: [
-          BoxShadow(
-            color: cs.shadow.withValues(alpha: 0.14),
-            blurRadius: 18,
-            spreadRadius: -5,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: ClipRRect(borderRadius: borderRadius, child: surface),
-    );
+    final content = ClipRRect(borderRadius: borderRadius, child: surface);
 
     if (width != null || height != null) {
       return SizedBox(width: width, height: height, child: content);

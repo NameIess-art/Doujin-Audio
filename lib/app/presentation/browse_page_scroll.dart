@@ -78,7 +78,9 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
       return;
     }
     final position = widget.controller.position;
-    if (!position.hasContentDimensions || position.isScrollingNotifier.value) {
+    if (!position.hasContentDimensions ||
+        position.isScrollingNotifier.value ||
+        position.pixels <= position.minScrollExtent) {
       return;
     }
     if (extent == null) {
@@ -172,6 +174,12 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
         );
         _applyingRestore = false;
         _scheduleRestore();
+        return;
+      }
+      // Refresh can insert rows before the saved first item. A page saved at
+      // the top must keep showing the new first item instead of following it.
+      if (offset <= position.minScrollExtent) {
+        _anchorRestored = true;
         return;
       }
       final anchor = saved['anchor'];

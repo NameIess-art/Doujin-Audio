@@ -59,7 +59,6 @@ class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
         position: RelativeRect.fromRect(rect, Offset.zero & overlayBox.size),
         dismissOn: _dismiss,
         menuMaxHeight: widget.menuMaxHeight,
-        menuWidth: widget.isExpanded ? box.size.width : null,
         entries: [
           for (var index = 0; index < items.length; index++)
             UnifiedMenuEntry.action(
@@ -72,8 +71,20 @@ class _UnifiedDropdownButtonState<T> extends State<UnifiedDropdownButton<T>> {
                   vertical: widget.multilineItems ? 8 : 0,
                 ),
                 child: Align(
-                  alignment: widget.alignment,
-                  child: items[index].child,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: switch (items[index].child) {
+                    Text(:final data?, :final style) => Text(
+                      data,
+                      style: style,
+                      textAlign: TextAlign.start,
+                      softWrap: widget.multilineItems,
+                      maxLines: widget.multilineItems ? null : 1,
+                      overflow: widget.multilineItems
+                          ? TextOverflow.visible
+                          : TextOverflow.ellipsis,
+                    ),
+                    final child => child,
+                  },
                 ),
               ),
             ),

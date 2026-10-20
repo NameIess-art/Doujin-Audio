@@ -29,6 +29,68 @@ void main() {
       .opacity
       .value;
 
+  for (final width in [190.0, 800.0]) {
+    testWidgets(
+      'dropdown uses the add menu style within a $width viewport',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = Size(width, 600);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        await tester.pumpWidget(
+          harness(
+            SizedBox(
+              width: 100,
+              child: UnifiedDropdownButton<String>(
+                value: 'a',
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(
+                    value: 'a',
+                    child: Text('Alpha', textAlign: TextAlign.end),
+                  ),
+                  DropdownMenuItem(value: 'b', child: Text('Beta')),
+                ],
+                onChanged: (_) {},
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('Alpha'));
+        await tester.pumpAndSettle();
+        final menu = find.byType(SingleChildScrollView);
+        final label = find.descendant(of: menu, matching: find.text('Alpha'));
+        final row = find
+            .ancestor(of: label, matching: find.byType(InkWell))
+            .first;
+        final menuRect = tester.getRect(menu);
+        expect(menuRect.width, width < 236 ? width - 16 : 236);
+        expect(menuRect.left, greaterThanOrEqualTo(8));
+        expect(menuRect.right, lessThanOrEqualTo(width - 8));
+        expect(tester.getSize(row).height, 48);
+        expect(tester.widget<Text>(label).textAlign, TextAlign.start);
+        final textStyle = DefaultTextStyle.of(tester.element(label)).style;
+        expect(textStyle.fontWeight, FontWeight.w700);
+        expect(
+          textStyle.fontSize,
+          Theme.of(tester.element(label)).textTheme.bodyMedium!.fontSize,
+        );
+        expect(tester.getTopLeft(label).dx, tester.getTopLeft(row).dx + 14);
+        expect(
+          find.descendant(of: menu, matching: find.byIcon(Icons.check)),
+          findsOneWidget,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets('dropdown fades for 300 ms and keyboard skips disabled options', (
     tester,
   ) async {

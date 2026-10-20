@@ -18,6 +18,107 @@ void main() {
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
 
+  for (final brightness in Brightness.values) {
+    testWidgets(
+      'button menus share the add menu style and context menus stay compact ($brightness)',
+      (tester) async {
+        const entries = [
+          UnifiedMenuEntry.action(
+            value: 1,
+            icon: Icons.folder,
+            label: 'Styled action',
+          ),
+        ];
+        final theme = ThemeData(brightness: brightness);
+        Size? referenceSize;
+        TextStyle? referenceTextStyle;
+        for (final mode in ['add', 'button', 'context']) {
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: theme,
+              home: Scaffold(
+                body: Builder(
+                  builder: (context) => mode == 'add'
+                      ? UnifiedPopupMenuButton<int>(
+                          icon: Icons.add,
+                          tooltip: 'Open styled menu',
+                          entries: entries,
+                          onSelected: (_) {},
+                        )
+                      : TextButton(
+                          onPressed: () {
+                            if (mode == 'context') {
+                              unawaited(
+                                showUnifiedContextMenu<int>(
+                                  context: context,
+                                  globalPosition: const Offset(200, 100),
+                                  entries: entries,
+                                ),
+                              );
+                            } else {
+                              unawaited(
+                                showDockAwareMenu<int>(
+                                  context: context,
+                                  position: const RelativeRect.fromLTRB(
+                                    200,
+                                    100,
+                                    200,
+                                    100,
+                                  ),
+                                  entries: entries,
+                                ),
+                              );
+                            }
+                          },
+                          child: const Text('Open styled menu'),
+                        ),
+                ),
+              ),
+            ),
+          );
+          await tester.tap(
+            mode == 'add'
+                ? find.byTooltip('Open styled menu')
+                : find.text('Open styled menu'),
+          );
+          await tester.pumpAndSettle();
+          final label = find.text('Styled action');
+          final row = find
+              .ancestor(of: label, matching: find.byType(InkWell))
+              .first;
+          final iconTheme = IconTheme.of(
+            tester.element(find.byIcon(Icons.folder)),
+          );
+          final textStyle = DefaultTextStyle.of(tester.element(label)).style;
+          if (mode == 'add') {
+            referenceSize = tester.getSize(row);
+            referenceTextStyle = textStyle;
+          } else if (mode == 'button') {
+            expect(tester.getSize(row), referenceSize);
+            expect(textStyle, referenceTextStyle);
+          } else {
+            expect(tester.getSize(row).height, 40);
+          }
+          expect(iconTheme.size, mode == 'context' ? 18 : 21);
+          expect(
+            iconTheme.color,
+            mode == 'context'
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurface,
+          );
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await tester.pumpAndSettle();
+          expect(label, findsNothing);
+          expect(tester.takeException(), isNull);
+        }
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   for (final dockMenu in [false, true]) {
     testWidgets(
       'outgoing menu excludes focus and semantics (dock: $dockMenu)',

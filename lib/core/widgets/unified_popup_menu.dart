@@ -9,6 +9,8 @@ import 'app_feedback.dart';
 import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
 
+const double _defaultMenuWidth = 236;
+
 class UnifiedMenuEntry<T> {
   const UnifiedMenuEntry.action({
     required this.value,
@@ -58,7 +60,7 @@ class UnifiedPopupMenuButton<T> extends StatefulWidget {
     required this.onSelected,
     this.onTrailingSelected,
     this.iconSize = 28,
-    this.menuWidth = 236,
+    this.menuWidth = _defaultMenuWidth,
     this.enabled = true,
     this.selectAfterDismiss = true,
     this.padding,
@@ -441,13 +443,6 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
               alpha: tokens.standardBorderAlpha,
             ),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: cs.shadow.withValues(alpha: isDark ? 0.36 : 0.18),
-              blurRadius: 30,
-              offset: const Offset(0, 16),
-            ),
-          ],
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -585,10 +580,11 @@ class _UnifiedPopupMenuContent<T> extends StatelessWidget {
             ],
             Expanded(
               child: DefaultTextStyle.merge(
-                style: TextStyle(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: entry.enabled
                       ? foreground
                       : cs.onSurface.withValues(alpha: 0.38),
+                  fontWeight: FontWeight.w700,
                 ),
                 child:
                     entry.labelWidget ??
@@ -596,12 +592,6 @@ class _UnifiedPopupMenuContent<T> extends StatelessWidget {
                       entry.label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: entry.enabled
-                            ? foreground
-                            : cs.onSurface.withValues(alpha: 0.38),
-                        fontWeight: FontWeight.w700,
-                      ),
                     ),
               ),
             ),
@@ -645,7 +635,12 @@ class _DockMenuLayout extends SingleChildLayoutDelegate {
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
-    return BoxConstraints.loose(constraints.biggest);
+    return BoxConstraints.loose(
+      Size(
+        (constraints.maxWidth - 16).clamp(0.0, double.infinity),
+        (constraints.maxHeight - 16).clamp(0.0, double.infinity),
+      ),
+    );
   }
 
   @override
@@ -677,8 +672,8 @@ Future<T?> showDockAwareMenu<T>({
   required List<UnifiedMenuEntry<T>> entries,
   Listenable? dismissOn,
   bool autofocusFirstEntry = true,
+  bool compact = false,
   double? menuMaxHeight,
-  double? menuWidth,
 }) async {
   final overlayState =
       MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
@@ -721,8 +716,8 @@ Future<T?> showDockAwareMenu<T>({
       position: position,
       entries: entries,
       autofocusFirstEntry: autofocusFirstEntry,
+      compact: compact,
       menuMaxHeight: menuMaxHeight,
-      menuWidth: menuWidth,
       themes: themes,
       reducedMotion: reducedMotion,
       interactionSource: interactionSource,
@@ -767,8 +762,8 @@ class _DockMenuOverlay<T> extends StatefulWidget {
     required this.onResult,
     required this.externallyManagedDismiss,
     required this.autofocusFirstEntry,
+    required this.compact,
     this.menuMaxHeight,
-    this.menuWidth,
   });
 
   final RelativeRect position;
@@ -779,8 +774,8 @@ class _DockMenuOverlay<T> extends StatefulWidget {
   final ValueChanged<T?> onResult;
   final bool externallyManagedDismiss;
   final bool autofocusFirstEntry;
+  final bool compact;
   final double? menuMaxHeight;
-  final double? menuWidth;
 
   @override
   State<_DockMenuOverlay<T>> createState() => _DockMenuOverlayState<T>();
@@ -880,6 +875,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
 
   @override
   Widget build(BuildContext context) {
+    final menuWidth = widget.compact ? null : _defaultMenuWidth;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () => _dismiss(null),
@@ -920,8 +916,8 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                           color: Colors.transparent,
                           child: ConstrainedBox(
                             constraints: BoxConstraints(
-                              minWidth: widget.menuWidth ?? 0,
-                              maxWidth: widget.menuWidth ?? double.infinity,
+                              minWidth: menuWidth ?? 0,
+                              maxWidth: menuWidth ?? double.infinity,
                               maxHeight:
                                   widget.menuMaxHeight ?? double.infinity,
                             ),
@@ -938,8 +934,8 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                                         selectedEntryKey: _selectedEntryKey,
                                         autofocusFirstEntry:
                                             widget.autofocusFirstEntry,
-                                        compact: true,
-                                        primaryIcons: true,
+                                        compact: widget.compact,
+                                        primaryIcons: widget.compact,
                                         onSelected: (value) => _dismiss(value),
                                       ),
                                     ),
@@ -981,5 +977,6 @@ Future<T?> showUnifiedContextMenu<T>({
     entries: entries,
     // Keep keyboard focus in the menu without preselecting a mouse action.
     autofocusFirstEntry: false,
+    compact: true,
   );
 }

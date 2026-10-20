@@ -332,22 +332,6 @@ class _SearchFloatingCapsule extends StatelessWidget {
       ),
       child: child,
     );
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: borderRadius,
-        boxShadow: [
-          BoxShadow(
-            color: cs.shadow.withValues(alpha: 0.14),
-            blurRadius: 18,
-            spreadRadius: -5,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: borderRadius,
-        child: capsuleSurface,
-      ),
-    );
+    return ClipRRect(borderRadius: borderRadius, child: capsuleSurface);
   }
 }

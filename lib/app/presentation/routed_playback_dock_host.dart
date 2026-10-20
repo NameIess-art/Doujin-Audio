@@ -655,7 +655,6 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
     Widget dockContent() => AppDockPanel(
-      shadowOpacity: 0.12,
       showTopHighlight: false,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(

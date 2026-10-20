@@ -463,7 +463,6 @@ extension _MainScreenLayout on _MainScreenState {
                             key: const ValueKey<String>(
                               'mobile_bottom_capsule_surface',
                             ),
-                            shadowOpacity: 0.12,
                             showTopHighlight: false,
                             tinyMode: tinyMode,
                             child: SizedBox(

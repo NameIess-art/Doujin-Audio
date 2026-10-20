@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/application/browse_page_state_store.dart';
 import 'package:doujin_audio/app/presentation/browse_page_scroll.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
 
 void main() {
   Widget page(
@@ -39,8 +41,16 @@ void main() {
                 controller: placeholderController ?? controller,
                 itemExtent: fixedExtent ? extent : null,
                 itemCount: (count / columns).ceil(),
+                findChildIndexCallback: columns == 1 && fixedExtent
+                    ? (key) {
+                        if (key is! ValueKey<String>) return null;
+                        final index = int.parse(key.value) - start;
+                        return index >= 0 && index < count ? index : null;
+                      }
+                    : null,
                 itemBuilder: (_, row) => columns == 1 && fixedExtent
                     ? BrowseAnchor(
+                        key: ValueKey('${row + start}'),
                         id: '${row + start}',
                         child: Text('item $row'),
                       )
@@ -275,6 +285,127 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
   });
+  testWidgets('scrolled page preserves its anchor when rows are prepended', (
+    tester,
+  ) async {
+    final store = BrowsePageStateStore();
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(page(store, controller));
+    await tester.pumpAndSettle();
+    controller.jumpTo(640);
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(page(store, controller, count: 45, start: -5));
+    await tester.pumpAndSettle();
+    expect(controller.offset, 1040);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('top stays fixed when insertion also changes column count', (
+    tester,
+  ) async {
+    final store = BrowsePageStateStore();
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(page(store, controller, columns: 2));
+    await tester.pumpAndSettle();
+    controller.jumpTo(80);
+    controller.jumpTo(0);
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(page(store, controller, count: 45, start: -5));
+    expect(controller.offset, 0);
+    await tester.pumpAndSettle();
+    expect(controller.offset, 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets('pull refresh keeps new rows at the top on ${platform.name}', (
+      tester,
+    ) async {
+      final store = BrowsePageStateStore();
+      final controller = ScrollController();
+      final indicator = GlobalKey<GlassRefreshIndicatorState>();
+      final refresh = Completer<void>();
+      final interaction = UiInteractionCoordinator.instance;
+      addTearDown(interaction.resetForTest);
+      addTearDown(controller.dispose);
+      var ids = List.generate(40, (i) => '$i');
+      var refreshCount = 0;
+      final offsets = <double>[];
+      controller.addListener(() => offsets.add(controller.offset));
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [browsePageStateStoreProvider.overrideWithValue(store)],
+          child: MaterialApp(
+            theme: ThemeData(platform: platform),
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (context, setState) => BrowsePageScroll(
+                  pageKey: 'page',
+                  controller: controller,
+                  anchorIds: ids,
+                  child: GlassRefreshIndicator(
+                    key: indicator,
+                    lockChildWhileRefreshing: true,
+                    onRefresh: () async {
+                      refreshCount++;
+                      await refresh.future;
+                      interaction.scheduleCommit(
+                        key: 'refresh-test-data',
+                        structural: true,
+                        commit: () => setState(() {
+                          ids = [...List.generate(5, (i) => 'new$i'), ...ids];
+                        }),
+                      );
+                    },
+                    child: ListView.builder(
+                      controller: controller,
+                      padding: const EdgeInsets.only(top: 100, bottom: 80),
+                      itemExtent: 80,
+                      physics: AlwaysScrollableScrollPhysics(
+                        parent: GlassRefreshIndicatorScrollPhysics(
+                          isIndicatorVisible: () =>
+                              indicator.currentState?.isIndicatorVisible ??
+                              false,
+                        ),
+                      ),
+                      itemCount: ids.length,
+                      findChildIndexCallback: (key) =>
+                          ids.indexOf((key as ValueKey<String>).value),
+                      itemBuilder: (context, index) => BrowseAnchor(
+                        key: ValueKey(ids[index]),
+                        id: ids[index],
+                        child: Text('item ${ids[index]}'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView), const Offset(0, 400));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(refreshCount, 1);
+      expect(controller.offset, 0);
+      refresh.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 180));
+      await tester.pumpAndSettle();
+      expect(ids.length, 45);
+      expect(controller.offset, 0);
+      expect(offsets, everyElement(0));
+      expect(tester.getTopLeft(find.text('item new0')).dy, 100);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets('queued layout restoration yields to a user scroll', (
     tester,
   ) async {

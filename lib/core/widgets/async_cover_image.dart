@@ -675,10 +675,16 @@ class _RetryingImageState extends State<RetryingImage> {
       !widget.deferLoadDuringInteraction ||
       !_interaction.isVisualUpdateDeferred;
 
+  // Newly exposed rows share the existing frame budget during a scroll.
+  // Decoded covers still bypass the queue in build; cold covers keep loading
+  // progressively without waiting for the gesture to end.
+  bool get _canLoadImmediately =>
+      !widget.deferLoadDuringInteraction || !_interaction.isInteracting;
+
   @override
   void initState() {
     super.initState();
-    _loadEnabled = _canStartLoad;
+    _loadEnabled = _canLoadImmediately;
     _interaction.navigationAllowed.addListener(_scheduleLoadWhenAllowed);
     _interaction.addListener(_scheduleLoadWhenAllowed);
   }
@@ -697,12 +703,13 @@ class _RetryingImageState extends State<RetryingImage> {
       _interaction.cancelCommit(_retryCommitKey);
       _interaction.cancelCommit(_loadCommitKey);
       _retryAttempt = 0;
-      _loadEnabled = _canStartLoad;
+      _loadEnabled = _canLoadImmediately;
       _cacheCheckKey = null;
       _previewProvider = null;
       _hasDisplayedFrame = false;
     }
     if (!widget.deferLoadDuringInteraction) _loadEnabled = true;
+    if (!_loadEnabled) _scheduleLoadWhenAllowed();
   }
 
   @override
@@ -734,12 +741,14 @@ class _RetryingImageState extends State<RetryingImage> {
     );
   }
 
-  ImageProvider<Object>? _cachedProviderForBuild(BuildContext context) {
+  ImageProvider<Object>? _cachedProviderForBuild(
+    BuildContext context,
+    ImageProvider<Object> provider,
+  ) {
     final checkKey = (widget.retryKey, _retryAttempt);
     if (_cacheCheckKey == checkKey) return null;
     _cacheCheckKey = checkKey;
 
-    final provider = widget.imageProviderBuilder();
     restoreRetainedCoverImage(provider);
     final configuration = createLocalImageConfiguration(context);
     var callbackIsSynchronous = true;
@@ -802,11 +811,11 @@ class _RetryingImageState extends State<RetryingImage> {
 
   @override
   Widget build(BuildContext context) {
+    final requested = widget.imageProviderBuilder();
     ImageProvider<Object>? provider;
     if (!_loadEnabled) {
-      provider = _cachedProviderForBuild(context);
+      provider = _cachedProviderForBuild(context, requested);
     }
-    final requested = provider ?? widget.imageProviderBuilder();
     final retained = widget.retainInImageCache && _retryAttempt == 0
         ? retainedCoverImageFor(requested)
         : null;

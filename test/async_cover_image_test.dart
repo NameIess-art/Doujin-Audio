@@ -1632,6 +1632,58 @@ void main() {
     expect(find.text('loading'), findsOneWidget);
   });
 
+  testWidgets(
+    'new scroll covers start at most one cold load per frame',
+    (tester) async {
+      final providers = List.generate(4, (_) => _ControlledImageProvider());
+      final interaction = UiInteractionCoordinator.instance;
+      final scrolling = Object();
+      addTearDown(() async {
+        for (final provider in providers) {
+          await provider.evict();
+        }
+      });
+      Widget page(List<_ControlledImageProvider> visible) => MaterialApp(
+        home: Column(
+          children: [
+            for (var index = 0; index < visible.length; index++)
+              SizedBox(
+                height: 90,
+                child: RetryingImage(
+                  key: ValueKey(index),
+                  retryKey: visible[index],
+                  imageProviderBuilder: () => visible[index],
+                  fallbackBuilder: (_) => const SizedBox(),
+                ),
+              ),
+          ],
+        ),
+      );
+      interaction.beginInteraction(scrolling);
+      await tester.pumpWidget(page(providers.take(3).toList()));
+      int loads() =>
+          providers.fold(0, (sum, provider) => sum + provider.loadCount);
+      expect(loads(), 0);
+      await tester.pump();
+      expect(loads(), 1);
+      // Reusing a visible row for another cover must also join the frame queue.
+      await tester.pumpWidget(page([providers[3], providers[1], providers[2]]));
+      expect(loads(), 2);
+      await tester.pump();
+      expect(loads(), 3);
+      await tester.pump();
+      expect(loads(), 4);
+      expect(interaction.isInteracting, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(interaction.pendingCommitCount, 0);
+      interaction.cancelInteraction(scrolling);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final foregroundProtection in [false, true]) {
     testWidgets(
       'cold covers resume one per frame and discard replaced ${foregroundProtection ? 'foreground' : 'navigation'} requests',
@@ -1739,7 +1791,8 @@ void main() {
   testWidgets('RetryingImage retries an image error during interaction', (
     tester,
   ) async {
-    var providerBuilds = 0;
+    final provider = _ControlledImageProvider();
+    addTearDown(provider.evict);
     UiInteractionCoordinator.instance.beginInteraction(Object());
 
     await tester.pumpWidget(
@@ -1749,10 +1802,7 @@ void main() {
           height: 90,
           child: RetryingImage(
             retryKey: 'broken-cover',
-            imageProviderBuilder: () {
-              providerBuilds += 1;
-              return MemoryImage(Uint8List(0));
-            },
+            imageProviderBuilder: () => provider,
             retryDelay: const Duration(milliseconds: 10),
             maxRetryAttempts: 1,
             fallbackBuilder: (_) => const Text('fallback'),
@@ -1762,13 +1812,16 @@ void main() {
     );
 
     await tester.pump();
+    provider._imageInfo.completeError(StateError('broken cover'));
+    await tester.pump();
+    await tester.pump();
     expect(find.text('fallback'), findsOneWidget);
-    expect(providerBuilds, 1);
+    expect(provider.loadCount, 1);
 
     await tester.pump(const Duration(milliseconds: 10));
     await tester.pump();
 
-    expect(providerBuilds, 2);
+    expect(provider.loadCount, 2);
   });
 
   testWidgets(

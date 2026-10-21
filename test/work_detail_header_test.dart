@@ -47,7 +47,7 @@ void main() {
 
   for (final textScale in [1.0, 2.0]) {
     testWidgets(
-      'collapsing work header retains both title layouts at $textScale scale',
+      'collapsing work header retains one fixed-size title at $textScale scale',
       (tester) async {
         final controller = ScrollController();
         addTearDown(controller.dispose);
@@ -110,24 +110,31 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        final allTitleText = find.descendant(
-          of: find.byKey(
+        expect(find.byType(BackdropFilter), findsNothing);
+        expect(
+          find.ancestor(
+            of: find.byKey(const ValueKey('work_detail_rj_copy')),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Container && widget.color == Colors.white,
+            ),
+          ),
+          findsOneWidget,
+          reason: 'The metadata row uses the opaque page surface without blur.',
+        );
+        final titleText = find.descendant(
+          of: find.byKey(const ValueKey('work_detail_title_copy')),
+          matching: find.byType(RichText),
+        );
+        final paragraph = tester.renderObject<RenderParagraph>(titleText);
+        final titleSize = paragraph.size;
+        expect(titleSize.width, greaterThan(0));
+        expect(titleSize.height, greaterThan(0));
+        expect(
+          find.byKey(
             const ValueKey('work_detail_title_copy'),
             skipOffstage: false,
           ),
-          matching: find.byType(RichText, skipOffstage: false),
-          skipOffstage: false,
-        );
-        final paragraphs = tester
-            .renderObjectList<RenderParagraph>(allTitleText)
-            .toList();
-        expect(paragraphs, hasLength(2));
-        final titleSizes = paragraphs
-            .map((paragraph) => paragraph.size)
-            .toList();
-        expect(
-          titleSizes.every((size) => size.width > 0 && size.height > 0),
-          isTrue,
+          findsOneWidget,
         );
         expect(
           tester
@@ -136,7 +143,7 @@ void main() {
               )
               .style!
               .fontSize,
-          17,
+          15,
         );
         expect(
           find.bySemanticsLabel(RegExp(RegExp.escape(title))),
@@ -154,12 +161,12 @@ void main() {
         var titleBuilds = 0;
         var rjBuilds = 0;
         final titleLayouts = <String>[];
-        final paragraphIds = paragraphs.map(describeIdentity).toList();
+        final paragraphId = describeIdentity(paragraph);
         final previousPrint = debugPrint;
         final previousPrintLayouts = debugPrintLayouts;
         debugPrint = (message, {wrapWidth}) {
           if (message != null && message.startsWith('Laying out')) {
-            if (paragraphIds.any(message.contains)) titleLayouts.add(message);
+            if (message.contains(paragraphId)) titleLayouts.add(message);
           } else {
             previousPrint(message, wrapWidth: wrapWidth);
           }
@@ -217,15 +224,13 @@ void main() {
                 )
                 .style!
                 .fontSize,
-            offset > 60 ? 15 : 17,
+            15,
           );
-          final currentParagraphs = tester
-              .renderObjectList<RenderParagraph>(allTitleText)
-              .toList();
-          for (var index = 0; index < paragraphs.length; index++) {
-            expect(currentParagraphs[index], same(paragraphs[index]));
-            expect(currentParagraphs[index].size, titleSizes[index]);
-          }
+          expect(
+            tester.renderObject<RenderParagraph>(titleText),
+            same(paragraph),
+          );
+          expect(paragraph.size, titleSize);
           expect(
             find.byKey(const ValueKey('work_detail_title_copy')),
             findsOneWidget,
@@ -253,7 +258,7 @@ void main() {
         expect(
           titleLayouts,
           isEmpty,
-          reason: 'Threshold crossings must reuse the prelaid-out paragraphs.',
+          reason: 'Scrolling must reuse the fixed-size title layout.',
         );
         debugPrint = previousPrint;
         debugPrintLayouts = previousPrintLayouts;
@@ -265,9 +270,7 @@ void main() {
           800,
         );
         await tester.pumpAndSettle();
-        for (final paragraph in paragraphs) {
-          expect(paragraph.size.width, tester.view.physicalSize.width - 32);
-        }
+        expect(paragraph.size.width, tester.view.physicalSize.width - 32);
         await tester.pumpWidget(const SizedBox());
       },
       variant: const TargetPlatformVariant({

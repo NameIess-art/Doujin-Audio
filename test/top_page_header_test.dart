@@ -1,8 +1,189 @@
+import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
+import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  for (final reducedMotion in [false, true]) {
+    testWidgets(
+      'selection header and mask crossfade together for 300ms (reduced: $reducedMotion)',
+      (tester) async {
+        late StateSetter update;
+        var selecting = false;
+        var normalBuilds = 0;
+        var selectionBuilds = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: MediaQueryData(disableAnimations: reducedMotion),
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  update = setState;
+                  final selected = selecting;
+                  return Align(
+                    alignment: Alignment.topCenter,
+                    child: AppHeaderTransition(
+                      child: TopPageHeader(
+                        key: ValueKey(selected),
+                        useSafeAreaTop: false,
+                        topCapsuleTitle: selected ? 'Selected 1' : 'Library',
+                        titleWidget: Builder(
+                          builder: (_) {
+                            if (selected) {
+                              selectionBuilds++;
+                            } else {
+                              normalBuilds++;
+                            }
+                            return Text(selected ? 'Batch actions' : 'Browse');
+                          },
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        final mask = find.byType(AppEdgeFadeMask);
+        expect(mask, findsOneWidget);
+        update(() => selecting = true);
+        await tester.pump();
+        if (!reducedMotion) {
+          final builds = (normalBuilds, selectionBuilds);
+          await tester.pump(const Duration(milliseconds: 150));
+          final fades = find.descendant(
+            of: find.byType(AppHeaderTransition),
+            matching: find.byWidgetPredicate((widget) => widget is FadeTransition),
+          );
+          expect(fades, findsNWidgets(2));
+          for (final fade in tester.widgetList<FadeTransition>(fades)) {
+            expect(
+              fade.opacity.value,
+              closeTo(kAppFadeCurve.transform(0.5), 0.001),
+            );
+          }
+          expect((normalBuilds, selectionBuilds), builds);
+          expect(mask, findsNWidgets(2));
+          for (final element in mask.evaluate()) {
+            final fade = element.findAncestorWidgetOfExactType<FadeTransition>()!;
+            expect(fade.opacity.value, closeTo(kAppFadeCurve.transform(0.5), 0.001));
+          }
+          await tester.pump(const Duration(milliseconds: 150));
+        }
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(find.text('Browse'), findsNothing);
+        expect(find.text('Batch actions'), findsOneWidget);
+        expect(mask, findsOneWidget);
+        // Reverse before the previous outgoing entry has finished.
+        update(() => selecting = false);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        if (!reducedMotion) {
+          expect(mask, findsNWidgets(2));
+          for (final element in mask.evaluate()) {
+            final fade = element.findAncestorWidgetOfExactType<FadeTransition>()!;
+            expect(
+              fade.opacity.value,
+              closeTo(kAppFadeCurve.transform(0.5), 0.001),
+            );
+          }
+        }
+        update(() => selecting = true);
+        await tester.pumpAndSettle();
+        expect(mask, findsOneWidget);
+        expect(find.byType(TopPageHeader), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  testWidgets('header boundary enables glass without changing body capsules', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              TopPageHeader(
+                title: 'Header',
+                useSafeAreaTop: false,
+                leading: HeaderFloatingButton(
+                  key: const ValueKey('transparent-header'),
+                  backgroundOpacity: 0,
+                  child: IconButton(
+                    onPressed: () {},
+                    icon: const Icon(Icons.add),
+                  ),
+                ),
+                trailing: HeaderFloatingButton(
+                  key: const ValueKey('partial-header'),
+                  backgroundOpacity: 0.5,
+                  child: IconButton(
+                    onPressed: () {},
+                    icon: const Icon(Icons.close),
+                  ),
+                ),
+              ),
+              const HeaderFloatingSurface(
+                key: ValueKey('body-capsule'),
+                child: Text('Body'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.byType(AppGlassSurface), findsNWidgets(3));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('body-capsule')),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsNothing,
+    );
+    expect(
+      tester.widget<BackdropFilter>(find.descendant(
+        of: find.byKey(const ValueKey('transparent-header')),
+        matching: find.byType(BackdropFilter),
+      )).enabled,
+      isFalse,
+    );
+    expect(
+      tester.widget<AppGlassSurface>(find.descendant(
+        of: find.byKey(const ValueKey('partial-header')),
+        matching: find.byType(AppGlassSurface),
+      )).backgroundColor.a,
+      0.5,
+    );
+  });
+
+  testWidgets('full-width title bar owns a single bounded glass surface', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(appBar: AppPageAppBar(title: Text('Title'))),
+    ));
+    expect(find.byType(BackdropFilter), findsOneWidget);
+    final glass = find.byType(AppGlassSurface);
+    expect(
+      tester.getSize(glass).height,
+      tester.getSize(find.byType(AppBar)).height,
+    );
+    expect(tester.getSize(glass).height, lessThan(100));
+    final appBar = tester.widget<AppBar>(find.byType(AppBar));
+    expect(appBar.elevation, 0);
+    expect(appBar.scrolledUnderElevation, 0);
+  });
+
   testWidgets('header safe area and margins block input behind its controls', (
     tester,
   ) async {
@@ -89,6 +270,22 @@ void main() {
       );
       await tester.pumpAndSettle();
       final expandedHeight = tester.getSize(find.byType(TopPageHeader)).height;
+      final headerFilters = find.descendant(
+        of: find.byType(TopPageHeader),
+        matching: find.byType(BackdropFilter),
+      );
+      final topFilter = tester.renderObject<RenderBackdropFilter>(
+        find.descendant(
+          of: find.byType(HeaderTopCapsule),
+          matching: find.byType(BackdropFilter),
+        ),
+      );
+      final rowFilter = tester.renderObject<RenderBackdropFilter>(
+        headerFilters.last,
+      );
+      final rowKey = rowFilter.backdropKey;
+      expect(rowKey, isNotNull);
+      expect(topFilter.backdropKey, isNot(rowKey));
       final geometryElement = tester.element(
         find.byWidgetPredicate(
           (widget) =>
@@ -108,6 +305,8 @@ void main() {
       for (var offset = 8.0; offset <= 80; offset += 8) {
         controller.jumpTo(offset);
         await tester.pump();
+        expect(rowFilter.backdropKey, same(rowKey));
+        expect(topFilter.backdropKey, isNot(rowKey));
       }
       expect(geometryBuilds, greaterThan(0));
       expect(capsuleBuilds, 0);

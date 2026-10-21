@@ -367,7 +367,7 @@ void main() {
           find.byKey(const ValueKey('subtitle_file_selection')),
           findsOneWidget,
         );
-        expect(find.byType(SimpleDialog), findsNothing);
+        expect(find.bySubtype<SimpleDialog>(), findsNothing);
         final original = find.byKey(const ValueKey('original.srt'));
         expect(
           find.descendant(
@@ -634,7 +634,7 @@ void main() {
       await _waitForImportAction(
         tester,
         () => hasExisting
-            ? find.byType(AlertDialog).evaluate().isNotEmpty
+            ? find.bySubtype<AlertDialog>().evaluate().isNotEmpty
             : service.trackSync(audioFile.path)?.sourcePath == destination.path,
       );
       if (hasExisting) {
@@ -665,7 +665,7 @@ void main() {
           expect(service.trackSync(audioFile.path)?.sourcePath, existing.path);
         }
       } else {
-        expect(find.byType(AlertDialog), findsNothing);
+        expect(find.bySubtype<AlertDialog>(), findsNothing);
       }
       if (confirm) {
         expect(selected.existsSync(), isFalse);
@@ -959,7 +959,7 @@ void main() {
     await tester.ensureVisible(translation);
     await tester.tap(translation);
     await tester.pumpAndSettle();
-    expect(find.byType(SimpleDialog), findsOneWidget);
+    expect(find.bySubtype<SimpleDialog>(), findsOneWidget);
   });
 
   testWidgets(
@@ -997,7 +997,7 @@ void main() {
       await tester.ensureVisible(translation);
       await tester.tap(translation);
       await tester.pumpAndSettle();
-      expect(find.byType(SimpleDialog), findsOneWidget);
+      expect(find.bySubtype<SimpleDialog>(), findsOneWidget);
       await tester.tap(find.text(language.tr('subtitle_language_zh')));
       await tester.pump(const Duration(milliseconds: 300));
       expect(models.checks, 0);
@@ -1116,7 +1116,7 @@ void main() {
       find.byKey(const ValueKey('subtitle_script_selection')),
       findsOneWidget,
     );
-    expect(find.byType(SimpleDialog), findsNothing);
+    expect(find.bySubtype<SimpleDialog>(), findsNothing);
     expect(find.text('説明.TXT'), findsOneWidget);
     expect(find.text('台本/トラック１.md'), findsOneWidget);
     expect(find.text('book.pdf'), findsNothing);
@@ -1182,10 +1182,10 @@ void main() {
       find.byKey(const ValueKey('subtitle_script_selection')),
       findsOneWidget,
     );
-    expect(find.byType(SimpleDialog), findsNothing);
+    expect(find.bySubtype<SimpleDialog>(), findsNothing);
     await tester.tap(find.text('script.md'));
     await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.bySubtype<AlertDialog>(), findsOneWidget);
     expect(
       find.text(language.tr('subtitle_script_existing_title')),
       findsOneWidget,
@@ -1198,7 +1198,7 @@ void main() {
 
     await tester.tap(find.text(language.tr('cancel')));
     await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.bySubtype<AlertDialog>(), findsNothing);
     expect(find.byType(SubtitleMenuSheet), findsOneWidget);
   });
 
@@ -1243,16 +1243,16 @@ void main() {
     await tester.ensureVisible(translation);
     await tester.tap(translation);
     await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsOneWidget);
-    expect(find.byType(SimpleDialog), findsNothing);
+    expect(find.bySubtype<AlertDialog>(), findsOneWidget);
+    expect(find.bySubtype<SimpleDialog>(), findsNothing);
     await tester.tap(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.bySubtype<AlertDialog>(),
         matching: find.byType(FilledButton),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byType(SimpleDialog), findsOneWidget);
+    expect(find.bySubtype<SimpleDialog>(), findsOneWidget);
     expect(find.text(language.tr('subtitle_language_zh')), findsOneWidget);
     expect(find.text(language.tr('subtitle_language_en')), findsOneWidget);
   });
@@ -1336,7 +1336,7 @@ void main() {
 
     await tester.tapAt(Offset(tester.getCenter(tile).dx, sheetTop + 24));
     await tester.pumpAndSettle();
-    expect(find.byType(SimpleDialog), findsNothing);
+    expect(find.bySubtype<SimpleDialog>(), findsNothing);
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
@@ -1442,7 +1442,7 @@ void main() {
           );
           final back = find.byKey(const ValueKey('subtitle_script_back'));
           expect(selection, findsOneWidget);
-          expect(find.byType(SimpleDialog), findsNothing);
+          expect(find.bySubtype<SimpleDialog>(), findsNothing);
           expect(tester.getRect(sheet), originalRect);
           expect(
             find.text('台本选择'),
@@ -1602,8 +1602,12 @@ void main() {
       await tester.tap(translateTile);
       await tester.pumpAndSettle();
 
-      final dialogFinder = find.byType(SimpleDialog);
+      final dialogFinder = find.bySubtype<SimpleDialog>();
       expect(dialogFinder, findsOneWidget);
+      expect(
+        find.descendant(of: dialogFinder, matching: find.byType(BackdropFilter)),
+        findsOneWidget,
+      );
       expect(find.byIcon(Icons.translate_rounded), findsNWidgets(2)); // tile + dialog header
       expect(find.text(language.tr('subtitle_choose_language')), findsOneWidget);
       expect(find.text(language.tr('subtitle_translate_hint')), findsOneWidget);
@@ -1640,7 +1644,7 @@ void main() {
       expect(closeButton, findsOneWidget);
       await tester.tap(closeButton);
       await tester.pumpAndSettle();
-      expect(find.byType(SimpleDialog), findsNothing);
+      expect(find.bySubtype<SimpleDialog>(), findsNothing);
     },
   );
 

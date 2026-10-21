@@ -15,6 +15,7 @@ Future<void> showAsmrWorkDetailSheet(
   (routeContext) => buildAppPageRoute<void>(
     context: routeContext,
     settings: const RouteSettings(name: workDetailRouteName),
+    separateHeader: true,
     child: WorkDetailPage.forAsmr(work: work),
   ),
   returnToMain: returnToMain,

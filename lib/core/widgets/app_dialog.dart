@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_styles.dart';
+import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 
 class _AppAnimatedScrim extends StatelessWidget {
@@ -240,14 +241,8 @@ class AppDialog extends StatelessWidget {
       label: title,
       child: Container(
         key: const ValueKey('app_dialog_surface'),
-        padding: const EdgeInsets.all(AppSpacing.lg),
         decoration: BoxDecoration(
-          color: cs.surfaceContainerLow,
           borderRadius: AppRadius.borderDialog,
-          border: Border.all(
-            color: cs.outlineVariant.withValues(alpha: 0.22),
-            width: 1.2,
-          ),
           boxShadow: [
             BoxShadow(
               color: cs.shadow.withValues(alpha: 0.24),
@@ -261,55 +256,151 @@ class AppDialog extends StatelessWidget {
             ),
           ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: AppGlassSurface(
+          backgroundColor: cs.surfaceContainerLow,
+          borderRadius: AppRadius.borderDialog,
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            decoration: BoxDecoration(
+              borderRadius: AppRadius.borderDialog,
+              border: Border.all(
+                color: cs.outlineVariant.withValues(alpha: 0.22),
+                width: 1.2,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (icon != null) ...[
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: resolvedAccentColor.withValues(alpha: 0.12),
-                      borderRadius: AppRadius.borderMedium,
-                    ),
-                    child: Icon(icon, color: resolvedAccentColor),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                ],
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: icon == null ? 0 : 8),
-                    child: Text(
-                      title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (icon != null) ...[
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: resolvedAccentColor.withValues(alpha: 0.12),
+                          borderRadius: AppRadius.borderMedium,
+                        ),
+                        child: Icon(icon, color: resolvedAccentColor),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                    ],
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(top: icon == null ? 0 : 8),
+                        child: Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
+                const SizedBox(height: AppSpacing.md),
+                Flexible(
+                  child: scrollable
+                      ? SingleChildScrollView(child: content)
+                      : content,
+                ),
+                if (actions != null) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  actions!,
+                ],
               ],
             ),
-            const SizedBox(height: AppSpacing.md),
-            Flexible(
-              child: scrollable
-                  ? SingleChildScrollView(child: content)
-                  : content,
-            ),
-            if (actions != null) ...[
-              const SizedBox(height: AppSpacing.lg),
-              actions!,
-            ],
-          ],
+          ),
         ),
       ),
     );
   }
+}
+
+/// Keeps Material alert layout while limiting blur to its actual surface.
+class AppAlertDialog extends AlertDialog {
+  const AppAlertDialog({
+    super.key,
+    super.title,
+    super.content,
+    super.actions,
+    super.scrollable,
+    super.contentPadding,
+    super.titlePadding,
+    super.actionsPadding,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // AlertDialog builds a Dialog with its complete, accessible content layout.
+    // Keep its outer inset and Material shadow outside the clipped glass.
+    final dialog = super.build(context) as Dialog;
+    return _glassMaterialDialog(context, dialog);
+  }
+}
+
+class AppSimpleDialog extends SimpleDialog {
+  const AppSimpleDialog({
+    super.key,
+    super.title,
+    super.titlePadding,
+    super.contentPadding,
+    super.children,
+    super.backgroundColor,
+    super.surfaceTintColor,
+    RoundedRectangleBorder? shape,
+  }) : super(shape: shape);
+
+  @override
+  Widget build(BuildContext context) =>
+      _glassMaterialDialog(context, super.build(context) as Dialog);
+}
+
+Widget _glassMaterialDialog(BuildContext context, Dialog dialog) {
+  final theme = Theme.of(context);
+  final dialogTheme = DialogTheme.of(context);
+  final resolvedShape =
+      (dialog.shape ??
+              dialogTheme.shape ??
+              RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(
+                  theme.useMaterial3 ? 28 : 4,
+                ),
+              ))
+          as RoundedRectangleBorder;
+  final surfaceColor =
+      dialog.backgroundColor ??
+      dialogTheme.backgroundColor ??
+      (theme.useMaterial3
+          ? theme.colorScheme.surfaceContainerHigh
+          : theme.brightness == Brightness.dark
+          ? Colors.grey[800]!
+          : Colors.white);
+  return Dialog(
+    backgroundColor: Colors.transparent,
+    elevation: dialog.elevation,
+    shadowColor: dialog.shadowColor,
+    surfaceTintColor: Colors.transparent,
+    insetAnimationDuration: dialog.insetAnimationDuration,
+    insetAnimationCurve: dialog.insetAnimationCurve,
+    insetPadding: dialog.insetPadding,
+    clipBehavior: dialog.clipBehavior,
+    shape: resolvedShape,
+    alignment: dialog.alignment,
+    constraints: dialog.constraints,
+    semanticsRole: dialog.semanticsRole,
+    child: AppGlassSurface(
+      backgroundColor: surfaceColor,
+      borderRadius: resolvedShape.borderRadius.resolve(
+        Directionality.of(context),
+      ),
+      child: dialog.child!,
+    ),
+  );
 }
 
 class AppDialogActions extends StatelessWidget {

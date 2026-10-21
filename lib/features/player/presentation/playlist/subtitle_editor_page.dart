@@ -79,7 +79,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final next = await showAppDialog<({String text, String? originalText})>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: Text(i18n.tr('subtitle_edit_text')),
         content: SingleChildScrollView(
           child: Column(
@@ -172,7 +172,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     final next = await showAppDialog<(Duration, Duration)>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => AppAlertDialog(
           title: Text(i18n.tr('subtitle_edit_time')),
           content: Column(
             mainAxisSize: MainAxisSize.min,

@@ -19,6 +19,7 @@ import '../../../../core/media/path_matcher.dart';
 import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_glass_surface.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../settings/application/settings_state.dart';
 import '../../application/playback_facade.dart';
@@ -870,7 +871,7 @@ class _SessionVideoFullscreenPageState
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Colors.black.withValues(alpha: 0.6),
+                        Colors.black.withValues(alpha: 0.6 * 0.6),
                         Colors.transparent,
                       ],
                     ),
@@ -889,16 +890,20 @@ class _SessionVideoFullscreenPageState
                     ),
                     child: Align(
                       alignment: Alignment.topLeft,
-                      child: IconButton(
-                        key: const ValueKey<String>('fullscreen_video_exit'),
-                        tooltip: i18n.tr('exit_fullscreen'),
-                        onPressed: _requestExit,
-                        color: Colors.white,
-                        constraints: const BoxConstraints.tightFor(
-                          width: exitButtonSize,
-                          height: exitButtonSize,
+                      child: AppGlassSurface(
+                        backgroundColor: Colors.black,
+                        borderRadius: BorderRadius.circular(exitButtonSize / 2),
+                        child: IconButton(
+                          key: const ValueKey<String>('fullscreen_video_exit'),
+                          tooltip: i18n.tr('exit_fullscreen'),
+                          onPressed: _requestExit,
+                          color: Colors.white,
+                          constraints: const BoxConstraints.tightFor(
+                            width: exitButtonSize,
+                            height: exitButtonSize,
+                          ),
+                          icon: const Icon(Icons.arrow_back_rounded),
                         ),
-                        icon: const Icon(Icons.arrow_back_rounded),
                       ),
                     ),
                   ),

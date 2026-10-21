@@ -828,7 +828,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               top: 0,
               left: 0,
               right: 0,
-              child: _isSelectionMode
+              child: AppHeaderTransition(
+                child: _isSelectionMode
                   ? Consumer(
                       builder: (context, ref, _) {
                         final selectedSelections =
@@ -979,7 +980,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           ],
                         ),
                       ),
-                    ).withAppHeaderTransition(),
+                    ),
+              ),
             ),
           ],
         ),

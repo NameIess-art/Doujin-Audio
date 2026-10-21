@@ -30,11 +30,20 @@ String selectionKeyForLibraryNode(LibraryNode node) =>
 List<LibraryBatchSelection> selectedLibraryNodeSelections(
   List<LibraryNode> nodes,
   Set<String> selectedPaths,
-) => nodes
-    .where(isSelectableLibraryNode)
-    .where((node) => selectedPaths.contains(selectionKeyForLibraryNode(node)))
-    .map(LibraryBatchSelection.fromNode)
-    .toList(growable: false);
+) {
+  if (selectedPaths.isEmpty) return const [];
+  final remainingPaths = Set<String>.of(selectedPaths);
+  final selections = <LibraryBatchSelection>[];
+  for (final node in nodes) {
+    if (!isSelectableLibraryNode(node) ||
+        !remainingPaths.remove(selectionKeyForLibraryNode(node))) {
+      continue;
+    }
+    selections.add(LibraryBatchSelection.fromNode(node));
+    if (remainingPaths.isEmpty) break;
+  }
+  return selections.toList(growable: false);
+}
 
 class LibraryBatchSelection {
   const LibraryBatchSelection({
@@ -308,6 +317,6 @@ class LibraryBatchSelectionHeader extends StatelessWidget {
           tooltip: i18n.tr('cancel'),
         ),
       ),
-    ).withAppHeaderTransition();
+    );
   }
 }

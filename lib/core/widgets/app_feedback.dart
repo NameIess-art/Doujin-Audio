@@ -11,6 +11,7 @@ import '../ui/undoable_removal_service.dart';
 import '../ui/ui_operation_service.dart';
 import '../ui/ui_interaction_coordinator.dart';
 import '../logging/app_log_service.dart';
+import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 import 'mobile_overlay_inset.dart';
 
@@ -802,19 +803,10 @@ class AppFeedbackSurface extends StatelessWidget {
 
     final surface = DecoratedBox(
       decoration: BoxDecoration(
-        color: surfaceColor,
         borderRadius: BorderRadius.circular(resolvedBorderRadius),
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: cs.shadow.withValues(alpha: 0.14),
-            blurRadius: 18,
-            spreadRadius: -5,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Padding(
         padding: padding,
@@ -918,9 +910,23 @@ class AppFeedbackSurface extends StatelessWidget {
       ),
     );
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(resolvedBorderRadius),
-      child: surface,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(resolvedBorderRadius),
+        boxShadow: [
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: 0.14),
+            blurRadius: 18,
+            spreadRadius: -5,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: AppGlassSurface(
+        backgroundColor: surfaceColor,
+        borderRadius: BorderRadius.circular(resolvedBorderRadius),
+        child: surface,
+      ),
     );
   }
 }

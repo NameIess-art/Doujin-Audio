@@ -1,12 +1,84 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
+import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 
 void main() {
+  testWidgets('search selection crossfades controls and mask for 300ms', (
+    tester,
+  ) async {
+    final controller = TextEditingController(text: 'query');
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    late StateSetter update;
+    var selecting = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return AppSearchPageScaffold<int>(
+              controller: controller,
+              focusNode: focusNode,
+              hintText: 'Search',
+              categories: const [AppSearchCategory(value: 0, label: 'All')],
+              selectedCategory: 0,
+              onCategorySelected: (_) {},
+              onChanged: (_) {},
+              onSubmitted: (_) {},
+              onCloseOrClear: () {},
+              controlsOverlay: selecting
+                  ? const TopPageHeader(topCapsuleTitle: 'Selected 1')
+                  : null,
+              body: const SizedBox.expand(),
+            );
+          },
+        ),
+      ),
+    );
+    final mask = find.byKey(const ValueKey('app_search_top_fade_mask'));
+    update(() => selecting = true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(mask, findsNWidgets(2));
+    for (final switcher in tester.widgetList<AnimatedSwitcher>(find.byType(AnimatedSwitcher))) {
+      expect(switcher.duration, const Duration(milliseconds: 300));
+    }
+    for (final element in mask.evaluate()) {
+      final fade = element.findAncestorWidgetOfExactType<FadeTransition>()!;
+      expect(fade.opacity.value, closeTo(kAppFadeCurve.transform(0.5), 0.001));
+    }
+    final fades = find.descendant(
+      of: find.byType(AppHeaderTransition),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is FadeTransition &&
+            widget.opacity.value > 0 && widget.opacity.value < 1,
+      ),
+    );
+    expect(fades, findsNWidgets(2));
+    for (final fade in tester.widgetList<FadeTransition>(fades)) {
+      expect(
+        fade.opacity.value,
+        closeTo(kAppFadeCurve.transform(0.5), 0.001),
+      );
+    }
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsNothing);
+    update(() => selecting = false);
+    await tester.pumpAndSettle();
+    expect(controller.text, 'query');
+    expect(find.byType(TextField), findsOneWidget);
+    expect(mask, findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('fading search requests focus once after entrance completes', (
     tester,
   ) async {
@@ -360,7 +432,8 @@ void main() {
       expect(fadeGradient.begin, Alignment.topCenter);
       expect(fadeGradient.end, Alignment.bottomCenter);
       expect(fadeGradient.stops, const <double>[0, 0.35, 0.58, 0.82, 1]);
-      expect(fadeGradient.colors.first.a, 0.82);
+      expect(fadeMask.opacity, 0.6);
+      expect(fadeGradient.colors.first.a, closeTo(0.82 * 0.6, 1e-6));
       expect(fadeGradient.colors.last.a, 0);
       expect(
         tester
@@ -403,7 +476,7 @@ void main() {
           of: find.byKey(const ValueKey<String>('app_search_controls_overlay')),
           matching: find.byType(BackdropFilter),
         ),
-        findsNothing,
+        findsNWidgets(3),
       );
       final inputDecorator = tester.widget<InputDecorator>(
         find.descendant(
@@ -427,7 +500,7 @@ void main() {
     },
   );
 
-  testWidgets('search capsules use opaque surfaces without backdrop filters', (
+  testWidgets('search blurs only its three control capsules', (
     tester,
   ) async {
     final controller = TextEditingController();
@@ -458,6 +531,28 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('app_search_controls_overlay')),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsNWidgets(3),
+    );
+    expect(find.byType(AppGlassSurface), findsNWidgets(3));
+    final filters = tester.renderObjectList<RenderBackdropFilter>(
+      find.byType(BackdropFilter),
+    ).toList();
+    expect(filters.first.backdropKey, isNotNull);
+    expect(filters.every((filter) =>
+        identical(filter.backdropKey, filters.first.backdropKey)), isTrue);
+    final surfaces = find.byType(AppGlassSurface).evaluate().map(
+      (element) => tester.getRect(find.byWidget(element.widget)),
+    ).toList();
+    for (var i = 0; i < surfaces.length; i++) {
+      for (var j = i + 1; j < surfaces.length; j++) {
+        expect(surfaces[i].overlaps(surfaces[j]), isFalse);
+      }
+    }
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('app_search_body_layer')),
         matching: find.byType(BackdropFilter),
       ),
       findsNothing,

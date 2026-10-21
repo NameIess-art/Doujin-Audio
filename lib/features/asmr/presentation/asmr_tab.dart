@@ -84,14 +84,17 @@ List<AsmrWork> _selectedAsmrWorks(
   if (selectedWorkIds.isEmpty) return const <AsmrWork>[];
   final controller = ref.read(asmrLibraryControllerProvider);
   if (controller == null) return const <AsmrWork>[];
-  return controller
-      .filteredWorksFor(
-        category,
-        searchQuery: searchQuery,
-        searchSession: searchSession,
-      )
-      .where((work) => selectedWorkIds.contains(work.id))
-      .toList(growable: false);
+  final selected = <AsmrWork>[];
+  for (final work in controller.filteredWorksFor(
+    category,
+    searchQuery: searchQuery,
+    searchSession: searchSession,
+  )) {
+    if (!selectedWorkIds.contains(work.id)) continue;
+    selected.add(work);
+    if (selected.length == selectedWorkIds.length) break;
+  }
+  return selected;
 }
 
 Future<void> _addAsmrWorksToPlaylist({
@@ -283,7 +286,7 @@ class _AsmrBatchSelectionHeader extends StatelessWidget {
           tooltip: i18n.tr('cancel'),
         ),
       ),
-    ).withAppHeaderTransition();
+    );
   }
 }
 
@@ -1016,7 +1019,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                       : const <AsmrWork>[];
                   return Theme(
                     data: asmrThemeData(context),
-                    child: _isSelectionMode
+                    child: AppHeaderTransition(
+                      child: _isSelectionMode
                         ? _AsmrBatchSelectionHeader(
                             keyPrefix: 'asmr',
                             i18n: i18n,
@@ -1108,7 +1112,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                                 ],
                               ),
                             ),
-                          ).withAppHeaderTransition(),
+                          ),
+                    ),
                   );
                 },
               ),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/widgets/app_dialog.dart';
 import '../../application/playback_subtitle_service.dart';
 import '../../application/subtitle_generation.dart';
 import '../../application/subtitle_model_store.dart';
@@ -45,7 +46,7 @@ class SubtitleGenerationDialog extends ConsumerWidget {
           SubtitleGenerationStatus.failed => 'subtitle_task_failed',
           _ => 'subtitle_generation_ready',
         };
-        return AlertDialog(
+        return AppAlertDialog(
           title: Text(
             i18n.tr(
               job.kind == SubtitleDraftKind.script

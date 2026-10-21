@@ -777,7 +777,7 @@ void main() {
     expect(fadeGradient.colors.first.a, 0);
     expect(
       fadeGradient.colors.last.a,
-      maskTheme.brightness == Brightness.dark ? 0.86 : 0.82,
+      closeTo((maskTheme.brightness == Brightness.dark ? 0.86 : 0.82) * 0.6, 1e-6),
     );
     expect(
       tester.getSize(fadeMaskFinder).height,
@@ -5696,7 +5696,7 @@ void main() {
     final decoration = tester.widget<DecoratedBox>(surface).decoration;
     expect(
       find.descendant(of: panel, matching: find.byType(BackdropFilter)),
-      findsNothing,
+      findsOneWidget,
     );
 
     UiInteractionCoordinator.instance.beginInteraction(interactionSource);
@@ -5706,7 +5706,7 @@ void main() {
     expect(tester.widget<DecoratedBox>(surface).decoration, decoration);
     expect(
       find.descendant(of: panel, matching: find.byType(BackdropFilter)),
-      findsNothing,
+      findsOneWidget,
     );
   });
 

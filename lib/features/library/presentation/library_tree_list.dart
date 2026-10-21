@@ -230,7 +230,9 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   @override
   void didUpdateWidget(covariant LibraryTreeList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isSelectionMode && !oldWidget.isSelectionMode) {
+    if (widget.isSelectionMode &&
+        !oldWidget.isSelectionMode &&
+        (_expandedCardPaths.isNotEmpty || _cardExpansionMotions.isNotEmpty)) {
       _expandedCardPaths.clear();
       _cardExpansionMotions.clear();
       _visibleItemsVersion++;

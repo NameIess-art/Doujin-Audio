@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_feedback.dart';
+import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 
 // The over-scroll distance that moves the indicator to its maximum
@@ -791,15 +792,12 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
                     elevation: 0.0,
                   );
 
-                  final Widget materialIndicator = RepaintBoundary(
-                    child: ClipOval(
-                      child: Container(
-                        color:
-                            (widget.backgroundColor ?? cs.surfaceContainerHigh)
-                                .withValues(alpha: 1.0),
-                        child: innerIndicator,
-                      ),
-                    ),
+                  final Widget materialIndicator = AppGlassSurface(
+                    backgroundColor:
+                        widget.backgroundColor ?? cs.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(100),
+                    blurSigma: 4,
+                    child: innerIndicator,
                   );
 
                   final Widget cupertinoIndicator =

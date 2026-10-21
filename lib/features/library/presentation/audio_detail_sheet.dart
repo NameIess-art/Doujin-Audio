@@ -102,6 +102,7 @@ Future<void> showAudioDetailSheet(
   (routeContext) => buildAppPageRoute<void>(
     context: routeContext,
     settings: const RouteSettings(name: workDetailRouteName),
+    separateHeader: true,
     child: WorkDetailPage.forLocal(
       target: target,
       initialDetail: initialDetail,

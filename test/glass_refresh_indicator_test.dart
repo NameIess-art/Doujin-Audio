@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
@@ -34,7 +35,7 @@ void main() {
         ),
       ),
     );
-      unawaited(key.currentState!.show());
+    unawaited(key.currentState!.show());
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     var commits = 0;
@@ -93,7 +94,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     expect(interaction.isInteracting, isFalse);
   });
-  testWidgets('pull-to-refresh indicator has no shadow decoration', (
+  testWidgets('refresh mounts one circular glass surface only while visible', (
     tester,
   ) async {
     final refresh = Completer<void>();
@@ -111,6 +112,8 @@ void main() {
       ),
     );
 
+    expect(find.byType(AppGlassSurface), findsNothing);
+    expect(find.byType(BackdropFilter), findsNothing);
     await tester.drag(find.byType(ListView), const Offset(0, 300));
     await tester.pump(const Duration(milliseconds: 250));
     await tester.pump();
@@ -119,12 +122,22 @@ void main() {
     expect(indicator, findsOneWidget);
     expect(
       find.ancestor(of: indicator, matching: find.byType(BackdropFilter)),
+      findsOneWidget,
+    );
+    final glass = tester.widget<AppGlassSurface>(find.byType(AppGlassSurface));
+    expect(glass.blurSigma, 4);
+    final clips = find.ancestor(of: indicator, matching: find.byType(ClipRRect));
+    expect(clips, findsOneWidget);
+    final clipSize = tester.getSize(clips);
+    expect(clipSize.width, clipSize.height);
+    final radius = tester.widget<ClipRRect>(clips).borderRadius.resolve(
+      TextDirection.ltr,
+    );
+    expect(radius.topLeft.x, greaterThanOrEqualTo(clipSize.width / 2));
+    expect(
+      find.ancestor(of: indicator, matching: find.byType(ClipOval)),
       findsNothing,
     );
-    final background = tester.widget<Container>(
-      find.ancestor(of: indicator, matching: find.byType(Container)).first,
-    );
-    expect(background.color!.a, 1);
     final decoratedAncestors = tester.widgetList<DecoratedBox>(
       find.ancestor(of: indicator, matching: find.byType(DecoratedBox)),
     );
@@ -138,18 +151,23 @@ void main() {
     );
 
     refresh.complete();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppGlassSurface), findsNothing);
+    expect(find.byType(BackdropFilter), findsNothing);
   });
 
-  testWidgets(
-    'pull-to-refresh indicator enforces opaque background even if semi-transparent color is passed',
-    (tester) async {
+  for (final brightness in Brightness.values) {
+    testWidgets('refresh preserves input alpha in $brightness theme', (
+      tester,
+    ) async {
       final refresh = Completer<void>();
+      const backgroundColor = Color(0x99FF0000);
       await tester.pumpWidget(
         MaterialApp(
+          theme: ThemeData(brightness: brightness),
           home: Scaffold(
             body: GlassRefreshIndicator(
-              backgroundColor: const Color(0x99FF0000), // ~60% alpha
+              backgroundColor: backgroundColor,
               onRefresh: () => refresh.future,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -166,15 +184,61 @@ void main() {
 
       final indicator = find.byType(RefreshProgressIndicator);
       expect(indicator, findsOneWidget);
-      final background = tester.widget<Container>(
-        find.ancestor(of: indicator, matching: find.byType(Container)).first,
+      final glass = tester.widget<AppGlassSurface>(
+        find.byType(AppGlassSurface),
       );
-      expect(background.color!.a, 1.0);
+      expect(glass.backgroundColor, backgroundColor);
+      final background = tester.widget<ColoredBox>(
+        find
+            .descendant(
+              of: find.byType(AppGlassSurface),
+              matching: find.byType(ColoredBox),
+            )
+            .first,
+      );
+      expect(
+        background.color.a,
+        closeTo(
+          backgroundColor.a * (brightness == Brightness.dark ? .84 : .8),
+          .005,
+        ),
+      );
 
       refresh.complete();
+      await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-    },
-  );
+    });
+  }
+
+  testWidgets('transparent refresh background disables the blur filter', (
+    tester,
+  ) async {
+    final refresh = Completer<void>();
+    final key = GlobalKey<GlassRefreshIndicatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GlassRefreshIndicator(
+            key: key,
+            backgroundColor: Colors.transparent,
+            onRefresh: () => refresh.future,
+            child: ListView(children: const [SizedBox(height: 800)]),
+          ),
+        ),
+      ),
+    );
+    unawaited(key.currentState!.show());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+    expect(
+      tester.widget<BackdropFilter>(find.byType(BackdropFilter)).enabled,
+      isFalse,
+    );
+    refresh.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+  });
 
   testWidgets(
     'pull-to-refresh indicator stays strictly at or below edgeOffset and fades in during drag',

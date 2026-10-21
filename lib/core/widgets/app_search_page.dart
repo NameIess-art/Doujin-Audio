@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_design_tokens.dart';
 import 'app_edge_fade_mask.dart';
+import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 import 'page_header_inset.dart';
 import 'windows_horizontal_wheel_scroll.dart';
@@ -53,6 +54,7 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
 }
 
 class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
+  final BackdropKey _controlsBackdropKey = BackdropKey();
   bool _requestedInitialFocus = false;
   bool _focusScheduled = false;
 
@@ -123,33 +125,49 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
             left: 0,
             right: 0,
             height: MediaQuery.paddingOf(context).top + 104,
-            child: const AppEdgeFadeMask(
-              key: ValueKey<String>('app_search_top_fade_mask'),
-              direction: AppEdgeFadeDirection.towardTop,
+            child: AnimatedSwitcher(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : kAppFadeDuration,
+              switchInCurve: kAppFadeCurve,
+              switchOutCurve: kAppFadeCurve,
+              layoutBuilder: (currentChild, previousChildren) => Stack(
+                fit: StackFit.passthrough,
+                children: [...previousChildren, ?currentChild],
+              ),
+              child: KeyedSubtree(
+                key: ValueKey(widget.controlsOverlay != null),
+                child: const AppEdgeFadeMask(
+                  key: ValueKey<String>('app_search_top_fade_mask'),
+                  direction: AppEdgeFadeDirection.towardTop,
+                  opacity: 0.6,
+                ),
+              ),
             ),
           ),
-          if (widget.controlsOverlay != null)
-            Positioned(
-              key: const ValueKey<String>('app_search_controls_overlay'),
-              top: 0,
-              left: 0,
-              right: 0,
-              child: AppPageHeaderTransition(child: widget.controlsOverlay!),
-            )
-          else
-            Positioned(
-              key: const ValueKey<String>('app_search_controls_overlay'),
-              top: 0,
-              left: 0,
-              right: 0,
-              child: AppPageHeaderTransition(child: Padding(
-                padding: EdgeInsets.fromLTRB(
+          Positioned(
+            key: const ValueKey<String>('app_search_controls_overlay'),
+            top: 0,
+            left: 0,
+            right: 0,
+            child: AppHeaderTransition(
+              showBackground: false,
+              child: widget.controlsOverlay != null
+                  ? KeyedSubtree(
+                      key: const ValueKey('search_selection_controls'),
+                      child: widget.controlsOverlay!,
+                    )
+                  : Padding(
+                      key: const ValueKey('search_normal_controls'),
+                      padding: EdgeInsets.fromLTRB(
                   16,
                   MediaQuery.paddingOf(context).top + 6,
                   16,
                   0,
                 ),
-                child: Column(
+                child: BackdropGroup(
+                  backdropKey: _controlsBackdropKey,
+                  child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
@@ -298,7 +316,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
                     ),
                   ),
                 ],
-              ))),
+              )))),
             ),
         ],
       ),
@@ -324,7 +342,6 @@ class _SearchFloatingCapsule extends StatelessWidget {
     final borderRadius = BorderRadius.circular(radius);
     final capsuleSurface = DecoratedBox(
       decoration: BoxDecoration(
-        color: background,
         borderRadius: borderRadius,
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
@@ -332,6 +349,10 @@ class _SearchFloatingCapsule extends StatelessWidget {
       ),
       child: child,
     );
-    return ClipRRect(borderRadius: borderRadius, child: capsuleSurface);
+    return AppGlassSurface(
+      backgroundColor: background,
+      borderRadius: borderRadius,
+      child: capsuleSurface,
+    );
   }
 }

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
+import 'app_edge_fade_mask.dart';
 
 const kAppFadeDuration = Duration(milliseconds: 300);
 const kAppFadeCurve = Curves.easeInOutCubic;
@@ -739,6 +740,7 @@ class _CoveringPageTransition extends StatefulWidget {
     required this.secondaryAnimation,
     this.animatePage = true,
     this.slide = true,
+    this.separateHeader = false,
     required this.child,
   });
 
@@ -747,6 +749,7 @@ class _CoveringPageTransition extends StatefulWidget {
   final Animation<double> secondaryAnimation;
   final bool animatePage;
   final bool slide;
+  final bool separateHeader;
   final Widget child;
 
   @override
@@ -864,6 +867,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     }
     if (oldWidget.animatePage != widget.animatePage ||
         oldWidget.slide != widget.slide ||
+        oldWidget.separateHeader != widget.separateHeader ||
         oldWidget.contentKey != widget.contentKey) {
       _transition = null;
     }
@@ -925,19 +929,32 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
         constraints.maxWidth,
         animatePage,
         widget.slide,
+        widget.separateHeader,
       ),
-      contentBuilder: (context, content) => RepaintBoundary(child: content),
+      contentBuilder: (context, content) {
+        final body = RepaintBoundary(child: content);
+        if (!widget.separateHeader || !animatePage) return body;
+        final faded = AppPageFadeTransition(opacity: _opacity, child: body);
+        return widget.slide
+            ? SlideTransition(position: _position, child: faded)
+            : faded;
+      },
       headerBuilder: (context, header) => AnimatedBuilder(
         animation: _headerAnimation,
         child: RepaintBoundary(child: header),
         builder: (context, header) {
           final outgoing = kAppFadeCurve.transform(_secondaryAnimation.value);
           final fadedHeader = Opacity(
-            // The route owns its entrance/exit fade, including lifted headers.
-            // Only the fade under a covering route belongs to the header.
             opacity: 1 - outgoing,
             child: header,
           );
+          if (widget.separateHeader) {
+            return animatePage
+                ? FadeTransition(opacity: _opacity, child: fadedHeader)
+                : fadedHeader;
+          }
+          // Unseparated pages inherit their entrance fade and slide from the
+          // route; only cancel the slide for their fixed-position headers.
           if (!animatePage || !widget.slide) return fadedHeader;
           // Routes translate the whole page; cancel that motion
           // for headers narrower than the page so menus change in place.
@@ -952,7 +969,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
         builder: (_, child, _) => child,
       ),
     );
-    if (!animatePage) return page;
+    if (!animatePage || widget.separateHeader) return page;
     final faded = AppPageFadeTransition(
       opacity: _opacity,
       child: RepaintBoundary(child: page),
@@ -1072,22 +1089,52 @@ class _AppMenuContentTransitionState extends State<AppMenuContentTransition>
 }
 
 class AppHeaderTransition extends StatelessWidget {
-  const AppHeaderTransition({super.key, required this.child});
+  const AppHeaderTransition({
+    super.key,
+    required this.child,
+    this.showBackground = true,
+  });
 
   final Widget child;
+  final bool showBackground;
 
   @override
   Widget build(BuildContext context) {
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : kAppFadeDuration;
+    // Preserve the positioned header's width through both stacks; loose
+    // constraints can shrink a supplied overlay to zero width.
     return AnimatedSwitcher(
       duration: duration,
       switchInCurve: kAppFadeCurve,
       switchOutCurve: kAppFadeCurve,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: AppPageHeaderTransition(
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: [
+              if (showBackground)
+                const Positioned.fill(
+                  child: AppEdgeFadeMask(
+                    direction: AppEdgeFadeDirection.towardTop,
+                    opacity: 0.6,
+                  ),
+                ),
+              child,
+            ],
+          ),
+        ),
+      ),
       layoutBuilder: (currentChild, previousChildren) => Stack(
+        fit: StackFit.passthrough,
         alignment: Alignment.topLeft,
-        children: [...previousChildren, ?currentChild],
+        children: [
+          for (final previous in previousChildren)
+            ExcludeSemantics(child: IgnorePointer(child: previous)),
+          ?currentChild,
+        ],
       ),
       child: child,
     );
@@ -2187,6 +2234,8 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   Duration duration = kAppMotionSlow,
   bool fullscreenDialog = false,
   bool slide = true,
+  // Opt in only when the page marks its body with AppPageContentTransition.
+  bool separateHeader = false,
 }) {
   final reducedMotion = MediaQuery.disableAnimationsOf(context);
   final contentKey = GlobalKey();
@@ -2208,6 +2257,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
         secondaryAnimation: secondaryAnimation,
         animatePage: duration != Duration.zero,
         slide: slide,
+        separateHeader: separateHeader,
         child: routedChild,
       );
     },

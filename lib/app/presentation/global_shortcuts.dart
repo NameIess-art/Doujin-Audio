@@ -191,7 +191,7 @@ class GlobalShortcuts extends ConsumerWidget {
     try {
       await showAppDialog<void>(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => AppAlertDialog(
         title: Text(i18n.tr('keyboard_shortcuts_title')),
         content: SizedBox(
           width: 560,

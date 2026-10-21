@@ -373,7 +373,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       if (subtitles.hasKnownSubtitle(widget.session.currentTrackPath)) {
         final confirmed = await showAppDialog<bool>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
+          builder: (dialogContext) => AppAlertDialog(
             title: Text(i18n.tr('subtitle_script_existing_title')),
             content: Text(i18n.tr('subtitle_script_existing_hint')),
             actions: [
@@ -464,7 +464,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: Text(i18n.tr('subtitle_import_overwrite_title')),
         content: Text(i18n.tr('subtitle_import_overwrite_hint')),
         actions: [
@@ -487,7 +487,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     if (language == SubtitleLanguage.unknown) {
       final confirmed = await showAppDialog<bool>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
+        builder: (dialogContext) => AppAlertDialog(
           title: Text(i18n.tr('subtitle_source_confirm_japanese')),
           content: Text(i18n.tr('subtitle_source_confirm_japanese_hint')),
           actions: [
@@ -509,7 +509,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       builder: (dialogContext) {
         final theme = Theme.of(dialogContext);
         final cs = theme.colorScheme;
-        return SimpleDialog(
+        return AppSimpleDialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.dialog),
             side: BorderSide(

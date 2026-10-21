@@ -295,7 +295,7 @@ void main() {
         expect(find.text('zh-CN:Original title'), findsOneWidget);
         expect(
           find.text('zh-CN:Original title', skipOffstage: false),
-          findsNWidgets(2),
+          findsOneWidget,
         );
         await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
         await _batch(tester);

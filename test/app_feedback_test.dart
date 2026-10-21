@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
+import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/confirm_action_dialog.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
@@ -617,7 +618,7 @@ void main() {
   });
 
   testWidgets(
-    'top feedback uses an opaque surface and keeps icon on the left',
+    'top feedback clips one glass surface and keeps icon on the left',
     (tester) async {
       Widget buildSurface() {
         return _feedbackApp(
@@ -650,25 +651,22 @@ void main() {
       );
       expect(
         find.descendant(of: surface, matching: find.byType(BackdropFilter)),
-        findsNothing,
+        findsOneWidget,
       );
       expect(
         tester.getCenter(find.byIcon(Icons.info_outline_rounded)).dx,
         lessThan(tester.getCenter(find.text('Operation is still running.')).dx),
       );
-      final opaqueDecoration =
-          tester
-                  .widget<DecoratedBox>(
-                    find
-                        .descendant(
-                          of: surface,
-                          matching: find.byType(DecoratedBox),
-                        )
-                        .first,
-                  )
-                  .decoration
-              as BoxDecoration;
-      expect(opaqueDecoration.color!.a, 1);
+      final glass = find.descendant(
+        of: surface,
+        matching: find.byType(AppGlassSurface),
+      );
+      expect(glass, findsOneWidget);
+      expect(tester.getRect(glass), tester.getRect(surface));
+      final tint = tester.widget<ColoredBox>(
+        find.descendant(of: glass, matching: find.byType(ColoredBox)).first,
+      );
+      expect(tint.color.a, closeTo(0.84, 0.001));
     },
   );
 
@@ -702,7 +700,7 @@ void main() {
     );
     expect(
       find.descendant(of: surface, matching: find.byType(BackdropFilter)),
-      findsNothing,
+      findsOneWidget,
     );
 
     final initialTopLeft = tester.getTopLeft(surface);

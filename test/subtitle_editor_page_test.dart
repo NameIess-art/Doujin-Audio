@@ -153,7 +153,7 @@ void main() {
       await tester.enterText(bilingualField('subtitle_original_text'), ' \n ');
       await tester.tap(find.byType(FilledButton));
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.bySubtype<AlertDialog>(), findsOneWidget);
       expect(service.saved, isNull);
       await tester.enterText(
         bilingualField('subtitle_original_text'),
@@ -217,7 +217,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.bySubtype<AlertDialog>(),
         matching: find.byType(SingleChildScrollView),
       ),
       findsOneWidget,
@@ -234,7 +234,7 @@ void main() {
     );
     await tester.tap(find.byType(FilledButton));
     await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.bySubtype<AlertDialog>(), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
     await tester.pump();

@@ -32,27 +32,24 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Widget? subtitleStatus;
 
   // Reuse text and metadata while the sliver only changes cover geometry.
-  late final Widget _expandedTitle = RepaintBoundary(child: _buildTitle(17));
-  late final Widget _compactTitle = RepaintBoundary(child: _buildTitle(15));
-  late final Widget _rjBar = RepaintBoundary(
-    child: Builder(builder: _buildRjBar),
-  );
+  late final Widget _title = RepaintBoundary(child: _buildTitle());
+  late final Widget _rjBar = Builder(builder: _buildRjBar);
   late final Widget _coverGradient = DecoratedBox(
     decoration: BoxDecoration(
       gradient: LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Colors.black.withValues(alpha: 0.35),
+          Colors.black.withValues(alpha: 0.35 * 0.6),
           Colors.transparent,
-          Colors.black.withValues(alpha: 0.85),
+          Colors.black.withValues(alpha: 0.85 * 0.6),
         ],
         stops: const [0.0, 0.4, 1.0],
       ),
     ),
   );
 
-  Widget _buildTitle(double fontSize) => Semantics(
+  Widget _buildTitle() => Semantics(
     button: title.isNotEmpty,
     label: title.isNotEmpty ? title : null,
     child: InkWell(
@@ -71,12 +68,12 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
         title,
         maxLines: 3,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
+        style: const TextStyle(
           color: Colors.white,
-          fontSize: fontSize,
+          fontSize: 15,
           fontWeight: FontWeight.bold,
           height: 1.25,
-          shadows: const [
+          shadows: [
             Shadow(color: Colors.black87, blurRadius: 4, offset: Offset(0, 1)),
           ],
         ),
@@ -192,18 +189,12 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    final scrollDelta = maxExtent - minExtent;
-    final progress = scrollDelta <= 0
-        ? 0.0
-        : (shrinkOffset / scrollDelta).clamp(0.0, 1.0);
-
     final currentCoverHeight =
         coverMaxHeight -
         (shrinkOffset).clamp(0.0, coverMaxHeight - coverMinHeight);
 
     return Material(
-      color: surfaceColor,
-      elevation: progress > 0.8 ? 2.0 : 0.0,
+      type: MaterialType.transparency,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -221,31 +212,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                 // Gradient overlay
                 _coverGradient,
                 // Work title (max 3 lines) at the bottom of the cover
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 10,
-                  // Keep both paragraphs laid out in separate slots so crossing
-                  // the threshold does not replace the active text's font size.
-                  // Keep TickerMode stable for the translation subscriptions.
-                  child: Visibility(
-                    visible: progress <= 0.5,
-                    maintainState: true,
-                    maintainAnimation: true,
-                    child: _expandedTitle,
-                  ),
-                ),
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 10,
-                  child: Visibility(
-                    visible: progress > 0.5,
-                    maintainState: true,
-                    maintainAnimation: true,
-                    child: _compactTitle,
-                  ),
-                ),
+                Positioned(left: 16, right: 16, bottom: 10, child: _title),
               ],
             ),
           ),

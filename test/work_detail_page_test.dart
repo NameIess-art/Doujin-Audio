@@ -771,13 +771,27 @@ void main() {
                   () => WorkDirectoryInput.asmr(remote.tree).load(),
                 );
               }
+              final headerFinder = find.byKey(
+                const ValueKey('work_detail_page_header'),
+              );
+
+              double headerOpacity() {
+                final fade = find.descendant(
+                  of: headerFinder,
+                  matching: find.byType(FadeTransition),
+                ).first;
+                return tester.widget<FadeTransition>(fade).opacity.value;
+              }
+
               await tester.pumpWidget(
-                fixture.build(
+                AppPageTransitionHost(
+                  child: fixture.build(
                   Builder(
                     builder: (context) => TextButton(
                       onPressed: () => Navigator.of(context).push<void>(
                         buildAppPageRoute(
                           context: context,
+                          separateHeader: true,
                           child: local
                               ? WorkDetailPage.forLocal(
                                   target: target,
@@ -799,6 +813,7 @@ void main() {
                     if (!local)
                       asmrLibraryControllerProvider.overrideWithValue(remote),
                   ],
+                  ),
                 ),
               );
               await tester.tap(find.text('Open first detail'));
@@ -806,6 +821,8 @@ void main() {
               await tester.pump();
               expect(find.text('Deferred voice actor'), findsOneWidget);
               await tester.pump(const Duration(milliseconds: 100));
+              expect(headerFinder, findsOneWidget);
+              expect(headerOpacity(), inExclusiveRange(0.0, 1.0));
               expect(find.text('First detail title'), findsOneWidget);
               expect(
                 find.byType(WorkDetailEntryTile),
@@ -827,6 +844,7 @@ void main() {
               expect(remote.cacheReads, local ? 0 : 1);
               expect(remote.requests, 0);
               await _settleDetail(tester);
+              expect(headerOpacity(), 1.0);
               expect(find.byType(WorkDetailEntryTile), findsWidgets);
               expect(find.text('Deferred voice actor'), findsOneWidget);
               if (!local) {
@@ -837,6 +855,15 @@ void main() {
                 expect(remote.cacheReads, 1);
                 expect(remote.requests, 1);
               }
+              Navigator.of(tester.element(headerFinder)).pop();
+              await tester.pump();
+              await tester.pump();
+              await tester.pump(const Duration(milliseconds: 100));
+              expect(headerFinder, findsOneWidget);
+              expect(headerOpacity(), inExclusiveRange(0.0, 1.0));
+              await tester.pumpAndSettle();
+              await tester.pump(Duration.zero);
+              expect(headerFinder, findsNothing);
               await tester.pumpWidget(const SizedBox.shrink());
               await _settleDetail(tester);
               expect(tester.takeException(), isNull);
@@ -2412,6 +2439,18 @@ void main() {
               )
               .map((surface) => surface.backgroundOpacity),
           everyElement(0.5),
+        );
+        final header = find.byKey(const ValueKey('work_detail_page_header'));
+        expect(
+          find.descendant(
+            of: header,
+            matching: find.text(fixture.languageProvider.tr('audio_detail_title')),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.descendant(of: header, matching: find.byType(HeaderFloatingSurface)),
+          findsNWidgets(3),
         );
 
         expect(find.text('Test Local Work Title'), findsOneWidget);

@@ -3,10 +3,87 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
+import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 void main() {
+  testWidgets('Material alert glass preserves layout, inset, and dismissal', (
+    tester,
+  ) async {
+    const radius = BorderRadius.all(Radius.circular(18));
+    final theme = ThemeData(
+      dialogTheme: const DialogThemeData(
+        backgroundColor: Colors.blue,
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: radius),
+      ),
+    );
+    Widget app(bool glass) => MaterialApp(
+      theme: theme,
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showAppDialog<void>(
+              context: context,
+              builder: (context) => glass
+                  ? AppAlertDialog(
+                      title: const Text('Material alert'),
+                      content: const Text('Keep the same layout.'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Close'),
+                        ),
+                      ],
+                    )
+                  : AlertDialog(
+                      title: const Text('Material alert'),
+                      content: const Text('Keep the same layout.'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Close'),
+                        ),
+                      ],
+                    ),
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(app(false));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    final originalTitle = tester.getRect(find.text('Material alert'));
+    final originalContent = tester.getRect(find.text('Keep the same layout.'));
+    final originalAction = tester.getRect(find.text('Close'));
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(app(true));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.text('Material alert')), originalTitle);
+    expect(tester.getRect(find.text('Keep the same layout.')), originalContent);
+    expect(tester.getRect(find.text('Close')), originalAction);
+    final glass = find.byType(AppGlassSurface);
+    expect(glass, findsOneWidget);
+    expect(tester.widget<AppGlassSurface>(glass).borderRadius, radius);
+    expect(tester.widget<AppGlassSurface>(glass).backgroundColor, Colors.blue);
+    final dialog = tester.widget<Dialog>(find.byType(Dialog));
+    expect(dialog.backgroundColor, Colors.transparent);
+    expect(dialog.semanticsRole, SemanticsRole.alertDialog);
+    expect(tester.getSize(glass).height, lessThan(300));
+    expect(
+      find.descendant(of: glass, matching: find.byType(BackdropFilter)),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(glass, findsNothing);
+  });
+
   testWidgets('dialog preserves the opening local theme across its route', (
     tester,
   ) async {
@@ -200,7 +277,21 @@ void main() {
       find.byKey(const ValueKey('app_dialog_surface')),
     );
     final surfaceDecoration = surface.decoration! as BoxDecoration;
-    expect(surfaceDecoration.color!.a, 1);
+    expect(surfaceDecoration.color, isNull);
+    expect(surfaceDecoration.boxShadow, hasLength(2));
+    final glass = find.descendant(
+      of: find.byType(AppDialog),
+      matching: find.byType(AppGlassSurface),
+    );
+    expect(glass, findsOneWidget);
+    expect(
+      find.descendant(of: glass, matching: find.byType(BackdropFilter)),
+      findsOneWidget,
+    );
+    expect(
+      tester.getRect(glass),
+      tester.getRect(find.byKey(const ValueKey('app_dialog_surface'))),
+    );
     expect(find.byIcon(Icons.edit_rounded), findsOneWidget);
     expect(find.text('Rename queue'), findsOneWidget);
     expect(find.text('Queue name'), findsOneWidget);

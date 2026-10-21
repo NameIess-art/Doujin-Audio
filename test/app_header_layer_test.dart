@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/app/presentation/routed_playback_dock_host.dart';
 import 'support/app_runtime_test_fixture.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
@@ -57,6 +59,181 @@ Future<List<Color>> _pixels(
 }))!;
 
 void main() {
+  for (final brightness in Brightness.values) {
+    testWidgets(
+      'glass header keeps its tint continuous at route fade endpoints in $brightness',
+      (tester) async {
+        final navigator = GlobalKey<NavigatorState>();
+        final surface = GlobalKey();
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: surface,
+            child: MaterialApp(
+              navigatorKey: navigator,
+              theme: ThemeData(
+                brightness: brightness,
+                platform: defaultTargetPlatform,
+              ),
+              builder: (_, child) => AppPageTransitionHost(child: child!),
+              home: const Scaffold(backgroundColor: Colors.blue),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final detail = buildAppPageRoute<void>(
+          context: navigator.currentContext!,
+          separateHeader: true,
+          child: const Scaffold(
+            backgroundColor: Colors.transparent,
+            body: Stack(
+              fit: StackFit.expand,
+              children: [
+                AppPageContentTransition(child: ColoredBox(color: Colors.blue)),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  child: TopPageHeader(
+                    titleWidget: SizedBox.shrink(),
+                    leading: HeaderFloatingButton(
+                      backgroundOpacity: 0.5,
+                      child: SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        unawaited(navigator.currentState!.push(detail));
+        await tester.pump();
+        await tester.pump();
+        final samples = <({double progress, Color pixel})>[];
+        Future<void> sampleTint() async {
+          final progress = kAppFadeCurve.transform(detail.animation!.value);
+          final center = tester.getCenter(find.byType(HeaderFloatingButton));
+          final pixel = (await _pixels(tester, surface, [center])).single;
+          samples.add((progress: progress, pixel: pixel));
+        }
+
+        for (final milliseconds in [75, 75, 75, 45, 15, 15]) {
+          await tester.pump(Duration(milliseconds: milliseconds));
+          await sampleTint();
+        }
+        await tester.pumpAndSettle();
+        await sampleTint();
+        final settled = samples.last.pixel;
+        navigator.currentState!.pop();
+        await tester.pump();
+        await tester.pump();
+        for (final milliseconds in [15, 15, 45, 75, 75]) {
+          await tester.pump(Duration(milliseconds: milliseconds));
+          await sampleTint();
+        }
+        for (final sample in samples) {
+          final expected = Color.lerp(Colors.blue, settled, sample.progress)!;
+          expect(
+            sample.pixel.r,
+            closeTo(expected.r, 0.02),
+            reason: 'Progress ${sample.progress}',
+          );
+          expect(
+            sample.pixel.g,
+            closeTo(expected.g, 0.02),
+            reason: 'Progress ${sample.progress}',
+          );
+          expect(
+            sample.pixel.b,
+            closeTo(expected.b, 0.02),
+            reason: 'Progress ${sample.progress}',
+          );
+        }
+        await tester.pumpAndSettle();
+        await tester.pump(Duration.zero);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  testWidgets(
+    'route header crossfades across its full width on push and pop',
+    (tester) async {
+      final navigator = GlobalKey<NavigatorState>();
+      final surface = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: surface,
+          child: MaterialApp(
+            navigatorKey: navigator,
+            theme: ThemeData(
+              platform: defaultTargetPlatform,
+              pageTransitionsTheme: const PageTransitionsTheme(
+                builders: {
+                  TargetPlatform.android: AppPageTransitionsBuilder(),
+                  TargetPlatform.windows: AppPageTransitionsBuilder(),
+                },
+              ),
+            ),
+            builder: (_, child) => AppPageTransitionHost(child: child!),
+            home: _page('home', Colors.blue, _oldHeader),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final detail = buildAppPageRoute<void>(
+        context: navigator.currentContext!,
+        separateHeader: true,
+        child: _page('detail', Colors.blue, _newHeader),
+      );
+      unawaited(navigator.currentState!.push(detail));
+      await tester.pump();
+      await tester.pump();
+
+      Future<void> expectCrossfade() async {
+        final progress = kAppFadeCurve.transform(detail.animation!.value);
+        final expected = Color.alphaBlend(
+          _newHeader.withValues(alpha: progress),
+          Color.alphaBlend(
+            _oldHeader.withValues(alpha: 1 - progress),
+            Colors.blue,
+          ),
+        );
+        final pixels = await _pixels(tester, surface, [
+          const Offset(40, 50),
+          const Offset(760, 50),
+        ]);
+        for (final pixel in pixels) {
+          expect(pixel.r, closeTo(expected.r, 0.02));
+          expect(pixel.g, closeTo(expected.g, 0.02));
+          expect(pixel.b, closeTo(expected.b, 0.02));
+        }
+      }
+
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 75));
+        await expectCrossfade();
+      }
+      await tester.pumpAndSettle();
+      navigator.currentState!.pop();
+      await tester.pump();
+      await tester.pump();
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 75));
+        await expectCrossfade();
+      }
+      await tester.pumpAndSettle();
+      await tester.pump(Duration.zero);
+      expect(find.byKey(const ValueKey('detail-header')), findsNothing);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets(
     'transparent header blocks sibling input within its live bounds',
     (tester) async {
@@ -220,6 +397,7 @@ void main() {
         await tester.pumpAndSettle();
         final detail = buildAppPageRoute<void>(
           context: navigator.currentContext!,
+          separateHeader: true,
           child: _page('detail', Colors.blue, _newHeader),
         );
         unawaited(navigator.currentState!.push(detail));
@@ -337,8 +515,11 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-    testWidgets('headers paint above both sliding route bodies ($platform)', (
+  for (final (platform, separateHeader) in [
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows])
+      for (final separated in [false, true]) (platform, separated),
+  ]) {
+    testWidgets('headers paint above both sliding route bodies ($platform, separate: $separateHeader)', (
       tester,
     ) async {
       final navigator = GlobalKey<NavigatorState>();
@@ -365,6 +546,7 @@ void main() {
       );
       final route = buildAppPageRoute<void>(
         context: navigator.currentContext!,
+        separateHeader: separateHeader,
         child: _page('new', Colors.blue, _newHeader, onTap: () => taps++),
       );
       unawaited(navigator.currentState!.push(route));
@@ -421,6 +603,7 @@ void main() {
         navigator.currentState!.push(
           buildAppPageRoute<void>(
             context: navigator.currentContext!,
+            separateHeader: separateHeader,
             child: _page('interrupted', Colors.blue, _newHeader),
           ),
         ),

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import 'app_edge_fade_mask.dart';
+import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 import 'marquee_text.dart';
 import 'windows_horizontal_wheel_scroll.dart';
@@ -147,6 +148,7 @@ class TopPageHeader extends StatefulWidget {
 class _TopPageHeaderState extends State<TopPageHeader> {
   static double _stableTopPadding = 0;
   final ValueNotifier<double> _collapseProgress = ValueNotifier<double>(0);
+  final BackdropKey _rowBackdropKey = BackdropKey();
   double _floatingReveal = 0;
   double _floatingRevealPendingDistance = 0;
   double? _lastOffset;
@@ -382,15 +384,20 @@ class _TopPageHeaderState extends State<TopPageHeader> {
         : wrapButton(widget.trailing!);
 
     Widget buildSecondaryCapsuleRow({double trailingOpacity = 1.0}) {
-      return Row(
-        children: [
-          if (widget.leading != null) ...[leading!, const SizedBox(width: 8)],
-          Expanded(child: titleContent),
-          if (widget.trailing != null) ...[
-            const SizedBox(width: 8),
-            Opacity(opacity: trailingOpacity, child: trailing!),
+      // Only siblings in this row share input. The upper capsule can overlap
+      // this row while collapsing and must keep its own backdrop.
+      return BackdropGroup(
+        backdropKey: _rowBackdropKey,
+        child: Row(
+          children: [
+            if (widget.leading != null) ...[leading!, const SizedBox(width: 8)],
+            Expanded(child: titleContent),
+            if (widget.trailing != null) ...[
+              const SizedBox(width: 8),
+              Opacity(opacity: trailingOpacity, child: trailing!),
+            ],
           ],
-        ],
+        ),
       );
     }
 
@@ -525,9 +532,16 @@ class _TopPageHeaderState extends State<TopPageHeader> {
         },
       ),
     );
-    return AppPageHeaderTransition(
-      child: _AppHeaderSurface(floating: widget.floating, child: headerContent),
+    final surface = _AppHeaderSurface(
+      floating: widget.floating,
+      child: headerContent,
     );
+    // The switcher fades each backdrop together with its controls and owns
+    // their route paint boundaries.
+    if (context.findAncestorWidgetOfExactType<AppHeaderTransition>() != null) {
+      return surface;
+    }
+    return AppPageHeaderTransition(child: surface);
   }
 }
 
@@ -540,11 +554,17 @@ class _AppHeaderSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (floating) {
+      if (context.findAncestorWidgetOfExactType<AppHeaderTransition>() != null) {
+        return child;
+      }
       return Stack(
         fit: StackFit.passthrough,
         children: [
           const Positioned.fill(
-            child: AppEdgeFadeMask(direction: AppEdgeFadeDirection.towardTop),
+            child: AppEdgeFadeMask(
+              direction: AppEdgeFadeDirection.towardTop,
+              opacity: 0.6,
+            ),
           ),
           child,
         ],
@@ -552,19 +572,21 @@ class _AppHeaderSurface extends StatelessWidget {
     }
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: cs.surface,
-        border: Border(
-          bottom: BorderSide(
-            color: cs.outlineVariant.withValues(
-              alpha: tokens.subtleBorderAlpha,
+    return AppGlassSurface(
+      backgroundColor: cs.surface,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: cs.outlineVariant.withValues(
+                alpha: tokens.subtleBorderAlpha,
+              ),
+              width: 0.5,
             ),
-            width: 0.5,
           ),
         ),
+        child: child,
       ),
-      child: child,
     );
   }
 }
@@ -593,9 +615,18 @@ class HeaderFloatingSurface extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
     final borderRadius = BorderRadius.circular(radius);
+    // The same capsules also appear in page content. Only the explicit header
+    // boundary opts them into blur, and a full-width glass bar owns its filter.
+    final useGlass =
+        context.findAncestorWidgetOfExactType<AppPageHeaderTransition>() != null &&
+        context.findAncestorWidgetOfExactType<_AppHeaderSurface>()?.floating !=
+            false;
+    final backgroundColor = background.withValues(
+      alpha: background.a * backgroundOpacity,
+    );
     final surface = DecoratedBox(
       decoration: BoxDecoration(
-        color: background.withValues(alpha: background.a * backgroundOpacity),
+        color: useGlass ? null : backgroundColor,
         borderRadius: borderRadius,
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
@@ -604,7 +635,16 @@ class HeaderFloatingSurface extends StatelessWidget {
       child: padding != null ? Padding(padding: padding!, child: child) : child,
     );
 
-    final content = ClipRRect(borderRadius: borderRadius, child: surface);
+    final content = useGlass
+        ? AppGlassSurface(
+            backgroundColor: backgroundColor,
+            borderRadius: borderRadius,
+            // The header gradient already occupies the fade's save layer.
+            // Replace its filtered pixels instead of blending it twice.
+            blendMode: BlendMode.src,
+            child: surface,
+          )
+        : ClipRRect(borderRadius: borderRadius, child: surface);
 
     if (width != null || height != null) {
       return SizedBox(width: width, height: height, child: content);

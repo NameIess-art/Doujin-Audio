@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/widgets/app_glass_surface.dart';
+
 class AppDockPanel extends StatelessWidget {
   const AppDockPanel({
     super.key,
@@ -18,12 +20,12 @@ class AppDockPanel extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? cs.surfaceContainer : cs.surfaceContainerHigh;
-    return ClipRRect(
+    return AppGlassSurface(
       borderRadius: BorderRadius.circular(radius),
+      backgroundColor: bgColor,
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(radius),
-          color: bgColor,
           border: Border.all(
             color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
           ),
@@ -49,7 +51,7 @@ class AppDockPanel extends StatelessWidget {
                   ),
                 ),
               ),
-            RepaintBoundary(child: child),
+            child,
           ],
         ),
       ),

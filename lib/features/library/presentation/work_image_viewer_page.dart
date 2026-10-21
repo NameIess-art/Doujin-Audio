@@ -8,6 +8,7 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_glass_surface.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -357,9 +358,17 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
         appBar: PreferredSize(
           preferredSize: const Size.fromHeight(kToolbarHeight),
           child: AppPageHeaderTransition(
-            child: AppBar(
+            child: AppGlassSurface(
               backgroundColor: cs.surface,
-              foregroundColor: cs.onSurface,
+              child: AppBar(
+                backgroundColor: Colors.transparent,
+                foregroundColor: cs.onSurface,
+                elevation: 0,
+                scrolledUnderElevation: 0,
+                surfaceTintColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                forceMaterialTransparency: true,
+              ),
             ),
           ),
         ),

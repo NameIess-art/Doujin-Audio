@@ -5,6 +5,7 @@ import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
+import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
@@ -239,7 +240,7 @@ void main() {
       expect(activated, 0);
       expect(resumed, isEmpty);
       expect(find.text('details'), findsOneWidget);
-      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.bySubtype<AlertDialog>(), findsNothing);
       await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
@@ -624,26 +625,28 @@ void main() {
         find.textContaining(language.tr('keyboard_shortcuts_status_error')),
         findsOneWidget,
       );
-      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.bySubtype<AlertDialog>(), findsOneWidget);
+      expect(find.byType(AppGlassSurface), findsOneWidget);
+      expect(find.byType(BackdropFilter), findsOneWidget);
 
       // Second F1 key press should not open a duplicate dialog.
       await tester.sendKeyEvent(LogicalKeyboardKey.f1);
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.bySubtype<AlertDialog>(), findsOneWidget);
 
       // Escape closes the dialog.
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.bySubtype<AlertDialog>(), findsNothing);
 
       // Can open again once closed.
       await tester.sendKeyEvent(LogicalKeyboardKey.f1);
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.bySubtype<AlertDialog>(), findsOneWidget);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.bySubtype<AlertDialog>(), findsNothing);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );

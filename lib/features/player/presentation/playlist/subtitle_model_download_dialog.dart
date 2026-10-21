@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/widgets/app_dialog.dart';
 import '../../application/subtitle_model_store.dart';
 
 class SubtitleModelDownloadDialog extends ConsumerStatefulWidget {
@@ -65,7 +66,7 @@ class _SubtitleModelDownloadDialogState
       builder: (context, _) {
         final progress = widget.store.snapshot(widget.spec);
         final downloading = progress.active || _waiting;
-        return AlertDialog(
+        return AppAlertDialog(
           title: Text(i18n.tr('subtitle_model_download_title')),
           content: Column(
             mainAxisSize: MainAxisSize.min,

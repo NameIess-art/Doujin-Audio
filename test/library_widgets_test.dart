@@ -977,6 +977,57 @@ void main() {
     }),
   );
 
+  testWidgets('entering selection retains a collapsed library projection', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _NoCoverArtworkCacheService(),
+    );
+    addTearDown(fixture.dispose);
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    final nodes = <LibraryNode>[
+      for (var index = 0; index < 500; index++)
+        TrackNode(
+          testMusicTrack(
+            name: 'Selection $index',
+            path: '/selection/$index.mp3',
+            groupKey: '/selection',
+            groupTitle: 'Selection',
+            isSingle: true,
+          ),
+        ),
+    ];
+    Widget page(bool selecting) => fixture.build(
+      libraryRows(fixture, nodes, scroll, selecting: selecting),
+    );
+    await tester.pumpWidget(page(false));
+    await _waitForLibraryProjection(
+      tester,
+      () => libraryRow(nodes.first.path).evaluate().isNotEmpty,
+    );
+    final order = tester
+        .widget<AnimatedReorder>(find.byType(AnimatedReorder))
+        .order;
+    final row = tester.element(libraryRow(nodes.first.path));
+
+    await tester.pumpWidget(page(true));
+    for (var index = 0; index < 20; index++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 5)),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    expect(
+      tester.widget<AnimatedReorder>(find.byType(AnimatedReorder)).order,
+      same(order),
+    );
+    expect(tester.element(libraryRow(nodes.first.path)), same(row));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
     'library fixed rows retain selection reorder and scroll anchors',
     (tester) async {

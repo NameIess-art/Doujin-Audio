@@ -184,9 +184,6 @@ class _DeferredDetailAsmrController extends ChangeNotifier
   bool isFavorite(int workId) => false;
 
   @override
-  bool isTrackHidden(int workId, AsmrTrackFile node) => false;
-
-  @override
   AsmrTrackTreeViewState trackTreeViewState(int workId) =>
       AsmrTrackTreeViewState(
         workId: workId,
@@ -2135,169 +2132,183 @@ void main() {
         ..clearLiveImages();
     });
 
-    _detailTestWidgets(
-      'audio and video menus add one item without starting playback and remove with undo',
-      (tester) async {
-        SharedPreferences.setMockInitialValues(const <String, Object>{});
-        final covers = _ControlledWorkDetailCoverService()
-          ..images.complete([])
-          ..cover.complete(null);
-        final fixture = AppRuntimeWidgetTestFixture(
-          coverArtworkCacheService: covers,
-        );
-        _detailFixtures.add(fixture);
-        addTearDown(fixture.dispose);
-        var prepareCount = 0;
-        var playSucceeds = true;
-        fixture.playback.detachCommandPort();
-        fixture.playback.attachPlaybackCommands(
-          prepareSession:
-              (
-                session, {
-                required nextPath,
-                autoPlay = true,
-                forceStartAtZero = false,
-                showLoading = true,
-                targetQueueIndex,
-              }) async {
-                prepareCount++;
-                session.currentTrackPath = nextPath;
-                return playSucceeds;
-              },
-          pauseSession: (_) async {},
-          startSession: (_, {required shouldStartTriggerCountdown}) async =>
-              true,
-          resolveAdvance: (_, {required forward}) => null,
-          hasAdjacent: (_, {required forward}) => false,
-        );
-        await tester.binding.setSurfaceSize(const Size(1000, 1200));
-        addTearDown(() => tester.binding.setSurfaceSize(null));
-        const folderPath = '/library/menu-work';
-        const target = AudioDetailTarget(
-          targetType: AudioDetailTargetType.libraryRootFolder,
-          targetPath: folderPath,
-        );
-        final tracks = [
-          for (final video in [false, true])
-            MusicTrack(
-              path: '$folderPath/${video ? 'video.mp4' : 'audio.mp3'}',
-              displayName: video ? 'Video entry' : 'Audio entry',
-              groupKey: folderPath,
-              groupTitle: 'Menu work',
-              groupSubtitle: '',
-              isSingle: false,
-              isVideo: video,
-            ),
-        ];
-        fixture.library.addWatchedFolder(folderPath, notify: false);
-        fixture.library.addTracks(tracks, persist: false);
-        await tester.runAsync(() => fixture.library.loadAudioDetail(target));
-        await tester.pumpWidget(
-          fixture.build(const WorkDetailPage.forLocal(target: target)),
-        );
-        for (
-          var i = 0;
-          i < 40 && find.text('Audio entry').evaluate().isEmpty;
-          i++
-        ) {
-          await tester.pump(const Duration(milliseconds: 50));
-          await tester.runAsync(
-            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    for (final fromLibrary in [false, true]) {
+      _detailTestWidgets(
+        '${fromLibrary ? 'library' : 'folder'} audio and video menus add one item and remove with undo',
+        (tester) async {
+          SharedPreferences.setMockInitialValues(const <String, Object>{});
+          final covers = _ControlledWorkDetailCoverService()
+            ..images.complete([])
+            ..cover.complete(null);
+          final fixture = AppRuntimeWidgetTestFixture(
+            coverArtworkCacheService: covers,
           );
-        }
-        expect(find.text('Audio entry'), findsOneWidget);
-        expect(find.byIcon(Icons.videocam_outlined), findsOneWidget);
-        expect(find.byIcon(Icons.more_vert_rounded), findsNWidgets(2));
-        final more = find.byKey(
-          ValueKey('work_entry_more_${tracks.first.path}'),
-        );
-        await tester.tap(more);
-        await _settleDetail(tester);
-        expect(find.text(fixture.languageProvider.tr('play')), findsOneWidget);
-        expect(
-          find.text(fixture.languageProvider.tr('rename')),
-          findsOneWidget,
-        );
-        await tester.tap(
-          find.text(fixture.languageProvider.tr('detail_add_to_queue')),
-        );
-        await _settleDetail(tester);
-        expect(fixture.playback.sessions.length, 1);
-        expect(fixture.playback.sessions.values.single.isTemporary, isFalse);
-        expect(
-          fixture.playback.sessions.values.single.effectivePlaying,
-          isFalse,
-        );
-        expect(
-          fixture.playback.sessions.values.single.currentTrackPath,
-          tracks.first.path,
-        );
-        expect(prepareCount, 0);
-
-        await tester.tap(find.text('Video entry'));
-        await _settleDetail(tester);
-        expect(prepareCount, 1);
-        expect(fixture.playback.sessions.length, 2);
-        final temporary = fixture.playback.sessions.values.singleWhere(
-          (session) => session.isTemporary,
-        );
-        expect(temporary.currentTrackPath, tracks.last.path);
-        expect(temporary.customQueueTracks?.length, 2);
-
-        await tester.tap(more);
-        await _settleDetail(tester);
-        await tester.tap(find.text(fixture.languageProvider.tr('exclude')));
-        await _settleDetail(tester);
-        expect(find.text('Audio entry'), findsNothing);
-        expect(find.text('Video entry'), findsOneWidget);
-        await fixture.undoableRemovalService.undoPending();
-        await _settleDetail(tester);
-        expect(find.text('Audio entry'), findsOneWidget);
-        playSucceeds = false;
-        await tester.tap(find.text('Video entry'));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 300));
-        expect(prepareCount, 2);
-        expect(
-          find.textContaining(
-            fixture.languageProvider.tr('operation_failed_retry'),
-          ),
-          findsOneWidget,
-        );
-
-        if (defaultTargetPlatform == TargetPlatform.windows) {
-          await tester.tap(
-            find.text('Audio entry'),
-            buttons: kSecondaryMouseButton,
-            kind: PointerDeviceKind.mouse,
+          _detailFixtures.add(fixture);
+          addTearDown(fixture.dispose);
+          var prepareCount = 0;
+          var playSucceeds = true;
+          fixture.playback.detachCommandPort();
+          fixture.playback.attachPlaybackCommands(
+            prepareSession:
+                (
+                  session, {
+                  required nextPath,
+                  autoPlay = true,
+                  forceStartAtZero = false,
+                  showLoading = true,
+                  targetQueueIndex,
+                }) async {
+                  prepareCount++;
+                  session.currentTrackPath = nextPath;
+                  return playSucceeds;
+                },
+            pauseSession: (_) async {},
+            startSession: (_, {required shouldStartTriggerCountdown}) async =>
+                true,
+            resolveAdvance: (_, {required forward}) => null,
+            hasAdjacent: (_, {required forward}) => false,
           );
-        } else {
+          await tester.binding.setSurfaceSize(const Size(1000, 1200));
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          const folderPath = '/library/menu-work';
+          const target = AudioDetailTarget(
+            targetType: AudioDetailTargetType.libraryRootFolder,
+            targetPath: folderPath,
+          );
+          final tracks = [
+            for (final video in [false, true])
+              MusicTrack(
+                path: '$folderPath/${video ? 'video.mp4' : 'audio.mp3'}',
+                displayName: video ? 'Video entry' : 'Audio entry',
+                groupKey: folderPath,
+                groupTitle: 'Menu work',
+                groupSubtitle: '',
+                isSingle: false,
+                isVideo: video,
+              ),
+          ];
+          if (fromLibrary) {
+            fixture.library.addWatchedLibrary(folderPath, notify: false);
+          } else {
+            fixture.library.addWatchedFolder(folderPath, notify: false);
+          }
+          final removalLabel = fixture.languageProvider.tr(
+            fromLibrary ? 'exclude' : 'remove',
+          );
+          final absentLabel = fixture.languageProvider.tr(
+            fromLibrary ? 'remove' : 'exclude',
+          );
+          fixture.library.addTracks(tracks, persist: false);
+          await tester.runAsync(() => fixture.library.loadAudioDetail(target));
+          await tester.pumpWidget(
+            fixture.build(const WorkDetailPage.forLocal(target: target)),
+          );
+          for (
+            var i = 0;
+            i < 40 && find.text('Audio entry').evaluate().isEmpty;
+            i++
+          ) {
+            await tester.pump(const Duration(milliseconds: 50));
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 10)),
+            );
+          }
+          expect(find.text('Audio entry'), findsOneWidget);
+          expect(find.byIcon(Icons.videocam_outlined), findsOneWidget);
+          expect(find.byIcon(Icons.more_vert_rounded), findsNWidgets(2));
+          final more = find.byKey(
+            ValueKey('work_entry_more_${tracks.first.path}'),
+          );
           await tester.tap(more);
-        }
-        await _settleDetail(tester);
-        await tester.tap(find.text(fixture.languageProvider.tr('exclude')));
-        await _settleDetail(tester);
-        expect(find.text('Audio entry'), findsNothing);
-        final failures = await tester.runAsync(
-          fixture.undoableRemovalService.commitPending,
-        );
-        await _settleDetail(tester);
-        expect(failures, 0);
-        expect(fixture.library.trackByPath(tracks.first.path), isNull);
-        expect(find.text('Audio entry'), findsNothing);
-        expect(find.text('Video entry'), findsOneWidget);
-        playSucceeds = true;
-        await tester.tap(find.text('Video entry'));
-        await _settleDetail(tester);
-        expect(temporary.customQueueTracks?.map((track) => track.path), [
-          tracks.last.path,
-        ]);
-      },
-      variant: const TargetPlatformVariant({
-        TargetPlatform.android,
-        TargetPlatform.windows,
-      }),
-    );
+          await _settleDetail(tester);
+          expect(find.text(fixture.languageProvider.tr('play')), findsOneWidget);
+          expect(find.text(removalLabel), findsOneWidget);
+          expect(find.text(absentLabel), findsNothing);
+          expect(
+            find.text(fixture.languageProvider.tr('rename')),
+            findsOneWidget,
+          );
+          await tester.tap(
+            find.text(fixture.languageProvider.tr('detail_add_to_queue')),
+          );
+          await _settleDetail(tester);
+          expect(fixture.playback.sessions.length, 1);
+          expect(fixture.playback.sessions.values.single.isTemporary, isFalse);
+          expect(
+            fixture.playback.sessions.values.single.effectivePlaying,
+            isFalse,
+          );
+          expect(
+            fixture.playback.sessions.values.single.currentTrackPath,
+            tracks.first.path,
+          );
+          expect(prepareCount, 0);
+
+          await tester.tap(find.text('Video entry'));
+          await _settleDetail(tester);
+          expect(prepareCount, 1);
+          expect(fixture.playback.sessions.length, 2);
+          final temporary = fixture.playback.sessions.values.singleWhere(
+            (session) => session.isTemporary,
+          );
+          expect(temporary.currentTrackPath, tracks.last.path);
+          expect(temporary.customQueueTracks?.length, 2);
+
+          await tester.tap(more);
+          await _settleDetail(tester);
+          await tester.tap(find.text(removalLabel));
+          await _settleDetail(tester);
+          expect(find.text('Audio entry'), findsNothing);
+          expect(find.text('Video entry'), findsOneWidget);
+          await fixture.undoableRemovalService.undoPending();
+          await _settleDetail(tester);
+          expect(find.text('Audio entry'), findsOneWidget);
+          playSucceeds = false;
+          await tester.tap(find.text('Video entry'));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+          expect(prepareCount, 2);
+          expect(
+            find.textContaining(
+              fixture.languageProvider.tr('operation_failed_retry'),
+            ),
+            findsOneWidget,
+          );
+
+          if (defaultTargetPlatform == TargetPlatform.windows) {
+            await tester.tap(
+              find.text('Audio entry'),
+              buttons: kSecondaryMouseButton,
+              kind: PointerDeviceKind.mouse,
+            );
+          } else {
+            await tester.tap(more);
+          }
+          await _settleDetail(tester);
+          await tester.tap(find.text(removalLabel));
+          await _settleDetail(tester);
+          expect(find.text('Audio entry'), findsNothing);
+          final failures = await tester.runAsync(
+            fixture.undoableRemovalService.commitPending,
+          );
+          await _settleDetail(tester);
+          expect(failures, 0);
+          expect(fixture.library.trackByPath(tracks.first.path), isNull);
+          expect(find.text('Audio entry'), findsNothing);
+          expect(find.text('Video entry'), findsOneWidget);
+          playSucceeds = true;
+          await tester.tap(find.text('Video entry'));
+          await _settleDetail(tester);
+          expect(temporary.customQueueTracks?.map((track) => track.path), [
+            tracks.last.path,
+          ]);
+        },
+        variant: const TargetPlatformVariant({
+          TargetPlatform.android,
+          TargetPlatform.windows,
+        }),
+      );
+    }
 
     _detailTestWidgets(
       'renders local work detail header, pinned RJ row and action buttons',
@@ -3318,6 +3329,62 @@ void main() {
           variant: TargetPlatformVariant({platform}),
         );
       }
+
+      _detailTestWidgets(
+        'breadcrumbs keep the file list stationary when changing directory depth',
+        (tester) async {
+          final fixture = AppRuntimeWidgetTestFixture();
+          _detailFixtures.add(fixture);
+          addTearDown(fixture.dispose);
+          for (final scale in [1.0, 1.5]) {
+            Widget page(List<String> segments) => fixture.build(
+              MediaQuery(
+                data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                child: SizedBox(
+                  width: 240,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      WorkDetailBreadcrumbs(
+                        segments: segments,
+                        entryCount: 1,
+                        i18n: fixture.languageProvider,
+                        onNavigate: (_) {},
+                      ),
+                      const SizedBox(
+                        key: ValueKey('breadcrumb-file-list'),
+                        height: 48,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+            await tester.pumpWidget(page([]));
+            final rootBounds = tester.getRect(
+              find.byType(WorkDetailBreadcrumbs),
+            );
+            final fileList = find.byKey(const ValueKey('breadcrumb-file-list'));
+            final rootListTop = tester.getTopLeft(fileList);
+            for (final segments in [
+              ['first long directory'],
+              ['first long directory', 'second long directory'],
+              <String>[],
+            ]) {
+              await tester.pumpWidget(page(segments));
+              await tester.pump(const Duration(milliseconds: 250));
+              expect(
+                tester.getRect(find.byType(WorkDetailBreadcrumbs)),
+                rootBounds,
+              );
+              expect(tester.getTopLeft(fileList), rootListTop);
+              expect(tester.takeException(), isNull);
+            }
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
 
       _detailTestWidgets(
         'library motion: reduced breadcrumbs reveal the newest segment immediately',

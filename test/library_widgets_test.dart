@@ -3110,6 +3110,10 @@ void main() {
       of: removedTrackFinder,
       matching: find.byType(SwipeRevealCard),
     );
+    expect(
+      tester.widget<SwipeRevealCard>(trackCard.first).actionLabel,
+      fixture.languageProvider.tr('remove'),
+    );
     tester.widget<SwipeRevealCard>(trackCard.first).onRemove();
 
     var removalCompleted = false;
@@ -3196,6 +3200,10 @@ void main() {
       final trackCard = find.ancestor(
         of: removedTrackFinder,
         matching: find.byType(SwipeRevealCard),
+      );
+      expect(
+        tester.widget<SwipeRevealCard>(trackCard.first).actionLabel,
+        fixture.languageProvider.tr('exclude'),
       );
       tester.widget<SwipeRevealCard>(trackCard.first).onRemove();
 

@@ -12,7 +12,6 @@ import 'asmr_download_planner.dart';
 List<MusicTrack> flattenAsmrPlayableTracks(
   AsmrWork work,
   Iterable<AsmrTrackFile> roots, {
-  required Set<String> hiddenTracks,
   bool Function(AsmrTrackFile node)? includeAudioNode,
 }) {
   final result = <MusicTrack>[];
@@ -62,7 +61,6 @@ List<MusicTrack> flattenAsmrPlayableTracks(
   void visit(Iterable<AsmrTrackFile> nodes) {
     for (final node in nodes) {
       if (node.isAudio) {
-        if (hiddenTracks.contains('${work.id}:${node.stableKey}')) continue;
         if (includeAudioNode != null && !includeAudioNode(node)) {
           continue;
         }

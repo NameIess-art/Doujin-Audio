@@ -293,8 +293,13 @@ void main() {
         service.calls.single.complete();
         await _batch(tester);
         expect(find.text('zh-CN:Original title'), findsOneWidget);
+        expect(
+          find.text('zh-CN:Original title', skipOffstage: false),
+          findsNWidgets(2),
+        );
         await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
         await _batch(tester);
+        expect(find.text('zh-CN:Original title'), findsOneWidget);
         expect(find.text('Voice actor'), findsOneWidget);
         expect(find.text('Original circle'), findsOneWidget);
         expect(find.text('zh-CN:Original circle'), findsNothing);

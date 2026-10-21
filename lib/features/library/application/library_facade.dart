@@ -541,6 +541,9 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
 
   void flushMetadataUpdates() => _metadataCoordinator.flushMetadataUpdates();
 
+  bool isLibraryTrack(String trackPath) =>
+      _mutationCoordinator.libraryRootForTrack(trackPath) != null;
+
   void setInteractionPaused(bool paused) {
     if (_interactionPaused == paused) return;
     _interactionPaused = paused;

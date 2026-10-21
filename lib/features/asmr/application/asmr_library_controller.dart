@@ -288,9 +288,6 @@ class AsmrLibraryController extends ChangeNotifier
     AsmrContentLanguage? defaultLanguage,
     required bool restoreAccountSession,
   }) async {
-    final hiddenTracks = await _preferencesStore.loadHiddenTracks();
-    if (_disposed) return;
-    _workContent.replaceHiddenTracks(hiddenTracks);
     final visibleCategories = await _preferencesStore.loadVisibleCategories();
     if (_disposed) return;
     _visibleCategories = visibleCategories;
@@ -712,27 +709,6 @@ class AsmrLibraryController extends ChangeNotifier
     );
   }
 
-  bool isTrackHidden(int workId, AsmrTrackFile node) =>
-      _workContent.hiddenTracks.contains('$workId:${node.stableKey}');
-
-  Future<void> setTrackHidden(int workId, AsmrTrackFile node, bool hidden) {
-    return _runStateMutation(() async {
-      await initializeForVisiblePage();
-      final key = '$workId:${node.stableKey}';
-      if (_workContent.hiddenTracks.contains(key) == hidden) return;
-      final next = {..._workContent.hiddenTracks};
-      if (hidden) {
-        next.add(key);
-      } else {
-        next.remove(key);
-      }
-      await _preferencesStore.saveHiddenTracks(next);
-      if (_disposed) return;
-      _workContent.replaceHiddenTracks(next, changedWorkId: workId);
-      notifyListeners();
-    });
-  }
-
   @override
   Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async {
     await initializeForVisiblePage();
@@ -741,11 +717,7 @@ class AsmrLibraryController extends ChangeNotifier
     if (cached != null) return cached;
     return _workContent.storePlayableTracks(
       work,
-      flattenAsmrPlayableTracks(
-        work,
-        tree,
-        hiddenTracks: _workContent.hiddenTracks,
-      ),
+      flattenAsmrPlayableTracks(work, tree),
     );
   }
 
@@ -766,14 +738,11 @@ class AsmrLibraryController extends ChangeNotifier
     AsmrTrackFile node,
   ) {
     if (node.isFolder) {
-      return flattenAsmrPlayableTracks(work, <AsmrTrackFile>[
-        node,
-      ], hiddenTracks: _workContent.hiddenTracks);
+      return flattenAsmrPlayableTracks(work, <AsmrTrackFile>[node]);
     }
     return flattenAsmrPlayableTracks(
       work,
       _workContent.cachedTrackTree(work.id) ?? <AsmrTrackFile>[node],
-      hiddenTracks: _workContent.hiddenTracks,
       includeAudioNode: (candidate) => candidate.stableKey == node.stableKey,
     );
   }

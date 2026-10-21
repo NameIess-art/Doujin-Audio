@@ -25,7 +25,6 @@ import '../../../core/platform/file_cache_platform_gateway.dart'
     show CoverImageReference;
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/visual_settings_providers.dart';
-import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_buttons.dart';
@@ -549,18 +548,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           )
           .toList(growable: false);
     } else {
-      final controller = ref.read(asmrLibraryControllerProvider);
-      _currentEntries = entries
-          .where(
-            (entry) =>
-                entry.type != WorkEntryType.audio ||
-                !(controller?.isTrackHidden(
-                      widget.asmrWork!.id,
-                      entry.asmrNode!,
-                    ) ??
-                    false),
-          )
-          .toList(growable: false);
+      _currentEntries = entries;
     }
     _entryIndices = {
       for (var index = 0; index < _currentEntries.length; index++)
@@ -675,32 +663,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               targetPath: item.track!.path,
               target: LibraryRemovalTarget.track,
             );
-          } else {
-            final controller = ref.read(asmrLibraryControllerProvider);
-            if (controller == null || item.asmrNode == null) return;
-            final workId = widget.asmrWork!.id;
-            final node = item.asmrNode!;
-            await showUndoableRemovalFeedback(
-              context,
-              service: ref.read(undoableRemovalServiceProvider),
-              action: UndoableRemovalAction(
-                key: UndoableRemovalKey(
-                  'asmr-track',
-                  '$workId:${node.stableKey}',
-                ),
-                prepare: () async {
-                  await controller.setTrackHidden(workId, node, true);
-                  return true;
-                },
-                commit: () {},
-                undo: () => controller.setTrackHidden(workId, node, false),
-              ),
-              message: i18n.tr('audio_removed'),
-              batchMessage: (count) =>
-                  i18n.tr('items_removed_count', {'count': count}),
-              undoLabel: i18n.tr('undo'),
-              failureMessage: i18n.tr('removal_failed'),
-            );
           }
         case WorkEntryAction.rename:
           await _renameLocalEntry(item);
@@ -812,9 +774,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     }
   }
 
-  List<UnifiedMenuEntry<WorkEntryAction>> _entryMenuItems(WorkEntryType type) {
+  List<UnifiedMenuEntry<WorkEntryAction>> _entryMenuItems(
+    WorkEntryItem item,
+    bool isLibraryAudio,
+  ) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final entries = switch (type) {
+    final entries = switch (item.type) {
       WorkEntryType.folder => [
         UnifiedMenuEntry<WorkEntryAction>.action(
           value: WorkEntryAction.open,
@@ -855,11 +820,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             icon: Icons.drive_file_rename_outline_rounded,
             label: i18n.tr('rename'),
           ),
-        UnifiedMenuEntry<WorkEntryAction>.action(
-          value: WorkEntryAction.remove,
-          icon: Icons.remove_circle_outline_rounded,
-          label: i18n.tr('exclude'),
-        ),
+        if (widget.isLocal && item.track != null)
+          UnifiedMenuEntry<WorkEntryAction>.action(
+            value: WorkEntryAction.remove,
+            icon: Icons.remove_circle_outline_rounded,
+            label: i18n.tr(isLibraryAudio ? 'exclude' : 'remove'),
+          ),
       ],
       WorkEntryType.text => [
         UnifiedMenuEntry<WorkEntryAction>.action(
@@ -1314,7 +1280,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       );
       final coverMinHeight = coverMaxHeight.clamp(0.0, 120.0);
       final entryMenus =
-          <WorkEntryType, List<UnifiedMenuEntry<WorkEntryAction>>>{};
+          <(WorkEntryType, bool), List<UnifiedMenuEntry<WorkEntryAction>>>{};
       final moreLabel = i18n.tr('more_actions');
       final currentEntries = _buildCurrentEntries(_directoryVisibilityKey(ref));
       final isLoading =
@@ -1462,6 +1428,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                               delegate: SliverChildBuilderDelegate(
                                 (context, index) {
                                   final item = currentEntries[index];
+                                  final isLibraryAudio =
+                                      widget.isLocal &&
+                                      item.track != null &&
+                                      ref
+                                          .read(libraryFacadeProvider)
+                                          .isLibraryTrack(item.track!.path);
                                   final id =
                                       '${item.type.name}:${item.relativePath}';
                                   return FadeTransition(
@@ -1474,8 +1446,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                                           ? asmrBlue
                                           : cs.primary,
                                       menuEntries: entryMenus.putIfAbsent(
-                                        item.type,
-                                        () => _entryMenuItems(item.type),
+                                        (item.type, isLibraryAudio),
+                                        () => _entryMenuItems(
+                                          item,
+                                          isLibraryAudio,
+                                        ),
                                       ),
                                       moreLabel: moreLabel,
                                       onAction: (action) =>

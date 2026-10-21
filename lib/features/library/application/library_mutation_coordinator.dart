@@ -119,14 +119,20 @@ final class LibraryMutationCoordinator {
     return null;
   }
 
+  String? libraryRootForTrack(String trackPath) {
+    final track = _service.trackByPath(trackPath);
+    if (track == null) return null;
+    return _watchedRootForEntity(
+      _service.watchedLibraries,
+      track.path,
+      alternatePath: track.groupKey,
+    );
+  }
+
   Future<LibraryRemovalKind?> removeTrack(String trackPath) async {
     final removedTrack = _service.trackByPath(trackPath);
     if (removedTrack == null) return null;
-    final libraryPath = _watchedRootForEntity(
-      _service.watchedLibraries,
-      removedTrack.path,
-      alternatePath: removedTrack.groupKey,
-    );
+    final libraryPath = libraryRootForTrack(trackPath);
     if (libraryPath != null) {
       if (_service.isLibraryPathExcluded(libraryPath, removedTrack.path)) {
         return null;

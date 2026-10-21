@@ -595,10 +595,16 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
         shape: cardShape,
         enabled: !isSelectionMode,
         closedColor: cs.surface,
-        actionLabel: i18n.tr('remove'),
+        actionLabel: i18n.tr(
+          !entry.isFolder && library.isLibraryTrack(entry.path)
+              ? 'exclude'
+              : 'remove',
+        ),
         removeTooltip: entry.isFolder
             ? i18n.tr('remove_audio_folder')
-            : i18n.tr('remove_audio'),
+            : i18n.tr(
+                library.isLibraryTrack(entry.path) ? 'exclude' : 'remove',
+              ),
         secondaryActionLabel: i18n.tr('download'),
         secondaryActionTooltip: i18n.tr('download'),
         secondaryActionIcon: Icons.download_rounded,

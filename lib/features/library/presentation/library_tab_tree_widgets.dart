@@ -760,6 +760,9 @@ class _TrackNodeWidget extends ConsumerWidget {
     final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final track = trackNode.track;
+    final removalLabel = i18n.tr(
+      library.isLibraryTrack(track.path) ? 'exclude' : 'remove',
+    );
     final nameParts = textTranslationText(track.displayName, fileName: true);
     final isPinned =
         track.isSingle &&
@@ -839,8 +842,8 @@ class _TrackNodeWidget extends ConsumerWidget {
         shape: cardShape,
         enabled: !isSelectionMode,
         closedColor: cs.surface,
-        actionLabel: i18n.tr('remove'),
-        removeTooltip: i18n.tr('remove_audio'),
+        actionLabel: removalLabel,
+        removeTooltip: removalLabel,
         secondaryActionLabel: i18n.tr('audio_detail_edit_info'),
         secondaryActionTooltip: i18n.tr('audio_detail_edit_info'),
         secondaryActionIcon: Icons.edit_rounded,
@@ -939,8 +942,8 @@ class _TrackNodeWidget extends ConsumerWidget {
             tertiaryActionTooltip: i18n.tr('open_containing_folder'),
             tertiaryActionIcon: Icons.folder_open_rounded,
             shape: cardShape,
-            actionLabel: i18n.tr('remove'),
-            removeTooltip: i18n.tr('remove_audio'),
+            actionLabel: removalLabel,
+            removeTooltip: removalLabel,
             onRemove: () => _removeTrack(context, ref, track),
             child: ColoredBox(
               color: Colors.transparent,

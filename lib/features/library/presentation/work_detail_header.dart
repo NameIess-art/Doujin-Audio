@@ -225,7 +225,26 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                   left: 16,
                   right: 16,
                   bottom: 10,
-                  child: progress > 0.5 ? _compactTitle : _expandedTitle,
+                  // Keep both paragraphs laid out in separate slots so crossing
+                  // the threshold does not replace the active text's font size.
+                  // Keep TickerMode stable for the translation subscriptions.
+                  child: Visibility(
+                    visible: progress <= 0.5,
+                    maintainState: true,
+                    maintainAnimation: true,
+                    child: _expandedTitle,
+                  ),
+                ),
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 10,
+                  child: Visibility(
+                    visible: progress > 0.5,
+                    maintainState: true,
+                    maintainAnimation: true,
+                    child: _compactTitle,
+                  ),
                 ),
               ],
             ),

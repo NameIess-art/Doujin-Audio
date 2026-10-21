@@ -302,7 +302,7 @@ void main() {
   );
 
   testWidgets(
-    'online audio/video menus add one work session and remove with undo',
+    'online audio/video menus add one work session without removal actions',
     (tester) async {
       await setActionViewport(tester);
       SharedPreferences.setMockInitialValues({});
@@ -341,7 +341,8 @@ void main() {
       await tester.tap(audioMore);
       await tester.pumpAndSettle();
       expect(find.text(fixture.languageProvider.tr('play')), findsOneWidget);
-      expect(find.text(fixture.languageProvider.tr('exclude')), findsOneWidget);
+      expect(find.text(fixture.languageProvider.tr('exclude')), findsNothing);
+      expect(find.text(fixture.languageProvider.tr('remove')), findsNothing);
       await tester.tap(
         find.text(fixture.languageProvider.tr('detail_add_to_queue')),
       );
@@ -368,13 +369,9 @@ void main() {
         find.text(fixture.languageProvider.tr('detail_add_to_queue')),
         findsOneWidget,
       );
-      await tester.tap(find.text(fixture.languageProvider.tr('exclude')));
-      await settleIo(tester);
-      expect(find.text('video'), findsNothing);
-      expect(find.text('audio'), findsOneWidget);
-      expect(find.text('notes'), findsOneWidget);
-      expect(find.text('cover'), findsOneWidget);
-      await tester.runAsync(fixture.undoableRemovalService.undoPending);
+      expect(find.text(fixture.languageProvider.tr('exclude')), findsNothing);
+      expect(find.text(fixture.languageProvider.tr('remove')), findsNothing);
+      await tester.tapAt(Offset.zero);
       await settleIo(tester);
       expect(find.text('video'), findsOneWidget);
       expect(fixture.playback.sessions, hasLength(1));
@@ -446,71 +443,6 @@ void main() {
       TargetPlatform.android,
       TargetPlatform.windows,
     }),
-  );
-
-  testWidgets(
-    'reopened online details respect persisted hidden tracks and retain other files',
-    (tester) async {
-      await setActionViewport(tester);
-      SharedPreferences.setMockInitialValues({});
-      final fixture = AppRuntimeWidgetTestFixture();
-      addTearDown(fixture.dispose);
-      AsmrLibraryController controller() {
-        final services = createTestAsmrServices(
-          persistenceRepository: fixture.persistenceRepository,
-          apiService: _TrackApi(),
-        );
-        final result = AsmrLibraryController(
-          preferencesStore: services.preferencesStore,
-          remoteCatalogService: services.remoteCatalogService,
-          accountSyncService: services.accountSyncService,
-        );
-        addTearDown(result.dispose);
-        return result;
-      }
-
-      await tester.runAsync(
-        () => fixture.persistenceRepository.saveSetting(
-          'asmr_hidden_tracks_v1',
-          null,
-        ),
-      );
-      final original = controller();
-      await tester.runAsync(
-        () => original.setTrackHidden(_work.id, _nodes.first, true),
-      );
-      final reopened = controller();
-      expect(reopened.initialized, isFalse);
-      await tester.pumpWidget(
-        fixture.build(
-          WorkDetailPage.forAsmr(work: _work),
-          overrides: [
-            asmrLibraryControllerProvider.overrideWithValue(reopened),
-          ],
-        ),
-      );
-      expect(find.text('audio'), findsNothing);
-      // Initialization starts in the widget's fake zone. Pump between real IO
-      // turns so each SQLite continuation can run before awaiting its tail.
-      var loaded = false;
-      final loading = reopened.initializeForVisiblePage().then((_) async {
-        await reopened.ensureTrackTree(_work);
-        loaded = true;
-      });
-      for (var i = 0; i < 100 && !loaded; i++) {
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)),
-        );
-        await tester.pump(const Duration(milliseconds: 50));
-      }
-      expect(loaded, isTrue);
-      await loading;
-      await settleIo(tester);
-      expect(find.text('audio'), findsNothing);
-      expect(find.text('video'), findsOneWidget);
-      expect(find.text('notes'), findsOneWidget);
-      expect(find.text('cover'), findsOneWidget);
-    },
   );
 
   testWidgets(

@@ -101,7 +101,7 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: cs.primary,
-                                fontSize: 12.5,
+                                fontSize: 13,
                               ),
                             ),
                           ],

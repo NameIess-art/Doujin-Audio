@@ -24,7 +24,6 @@ final class AsmrWorkContentStore {
   final LinkedHashMap<int, List<AsmrTrackFile>> _trackCache = LinkedHashMap();
   final LinkedHashMap<int, List<AsmrTrackFile>> _visibleTrackCache =
       LinkedHashMap();
-  Set<String> _hiddenTracks = <String>{};
   final Map<int, ({AsmrWork work, List<MusicTrack> tracks})>
   _playableTrackCache = {};
   final Set<int> _loadingTrackWorkIds = <int>{};
@@ -39,7 +38,6 @@ final class AsmrWorkContentStore {
   _trackTreeTasks = {};
   final Map<int, int> _trackRevisions = <int, int>{};
 
-  Set<String> get hiddenTracks => UnmodifiableSetView(_hiddenTracks);
   bool isLoading(int workId) => _loadingTrackWorkIds.contains(workId);
   List<MusicTrack>? cachedPlayableTracks(AsmrWork work) {
     final cached = _playableTrackCache[work.id];
@@ -52,18 +50,6 @@ final class AsmrWorkContentStore {
     final frozen = List<MusicTrack>.unmodifiable(tracks);
     _playableTrackCache[work.id] = (work: work, tracks: frozen);
     return frozen;
-  }
-
-  void replaceHiddenTracks(Set<String> tracks, {int? changedWorkId}) {
-    _hiddenTracks = tracks;
-    if (changedWorkId == null) {
-      _visibleTrackCache.clear();
-      _playableTrackCache.clear();
-    } else {
-      _visibleTrackCache.remove(changedWorkId);
-      _playableTrackCache.remove(changedWorkId);
-      bumpTrackRevision(changedWorkId);
-    }
   }
 
   void clearCaches({bool clearErrors = false}) {
@@ -185,8 +171,7 @@ final class AsmrWorkContentStore {
         if (node.isFolder) {
           final children = filter(node.children);
           if (children.isNotEmpty) result.add(node.withChildren(children));
-        } else if (node.hasBrowsableContent &&
-            !_hiddenTracks.contains('$workId:${node.stableKey}')) {
+        } else if (node.hasBrowsableContent) {
           result.add(node);
         }
       }

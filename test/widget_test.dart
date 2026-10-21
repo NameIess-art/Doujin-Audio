@@ -777,7 +777,7 @@ void main() {
     expect(fadeGradient.colors.first.a, 0);
     expect(
       fadeGradient.colors.last.a,
-      closeTo((maskTheme.brightness == Brightness.dark ? 0.86 : 0.82) * 0.6, 1e-6),
+      closeTo((maskTheme.brightness == Brightness.dark ? 0.86 : 0.82) * 0.9, 1e-6),
     );
     expect(
       tester.getSize(fadeMaskFinder).height,

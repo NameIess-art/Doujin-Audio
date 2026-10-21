@@ -125,24 +125,9 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
             left: 0,
             right: 0,
             height: MediaQuery.paddingOf(context).top + 104,
-            child: AnimatedSwitcher(
-              duration: MediaQuery.disableAnimationsOf(context)
-                  ? Duration.zero
-                  : kAppFadeDuration,
-              switchInCurve: kAppFadeCurve,
-              switchOutCurve: kAppFadeCurve,
-              layoutBuilder: (currentChild, previousChildren) => Stack(
-                fit: StackFit.passthrough,
-                children: [...previousChildren, ?currentChild],
-              ),
-              child: KeyedSubtree(
-                key: ValueKey(widget.controlsOverlay != null),
-                child: const AppEdgeFadeMask(
-                  key: ValueKey<String>('app_search_top_fade_mask'),
-                  direction: AppEdgeFadeDirection.towardTop,
-                  opacity: 0.6,
-                ),
-              ),
+            child: const AppEdgeFadeMask(
+              key: ValueKey<String>('app_search_top_fade_mask'),
+              direction: AppEdgeFadeDirection.towardTop,
             ),
           ),
           Positioned(
@@ -350,7 +335,7 @@ class _SearchFloatingCapsule extends StatelessWidget {
       child: child,
     );
     return AppGlassSurface(
-      backgroundColor: background,
+      backgroundColor: background.withValues(alpha: background.a * 0.9),
       borderRadius: borderRadius,
       child: capsuleSurface,
     );

@@ -37,6 +37,16 @@ void main() {
         find.byType(AppGlassSurface),
       );
       expect(glass.blurSigma, 6);
+      final tint = tester.widget<ColoredBox>(
+        find.descendant(
+          of: find.byType(AppGlassSurface),
+          matching: find.byType(ColoredBox),
+        ),
+      );
+      expect(
+        tint.color.a,
+        closeTo(brightness == Brightness.dark ? 0.756 : 0.72, 1e-6),
+      );
       expect(glass.borderRadius, BorderRadius.circular(100));
       final backgrounds = tester.widgetList<DecoratedBox>(
         find.descendant(

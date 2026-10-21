@@ -435,7 +435,6 @@ extension _MainScreenLayout on _MainScreenState {
               child: AppEdgeFadeMask(
                 key: ValueKey<String>('mobile_bottom_capsule_fade_mask'),
                 direction: AppEdgeFadeDirection.towardBottom,
-                opacity: 0.6,
               ),
             ),
           ),

@@ -871,7 +871,7 @@ class _SessionVideoFullscreenPageState
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Colors.black.withValues(alpha: 0.6 * 0.6),
+                        Colors.black.withValues(alpha: 0.6 * 0.9),
                         Colors.transparent,
                       ],
                     ),

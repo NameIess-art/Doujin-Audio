@@ -14,6 +14,21 @@ import 'package:flutter_test/flutter_test.dart';
 const _oldHeader = Color(0xff00ff00);
 const _newHeader = Color(0xffffff00);
 
+class _HeaderPaintProbe extends CustomPainter {
+  _HeaderPaintProbe(this.onPaint);
+
+  final VoidCallback onPaint;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    onPaint();
+    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.red);
+  }
+
+  @override
+  bool shouldRepaint(_HeaderPaintProbe oldDelegate) => false;
+}
+
 Widget _page(String name, Color body, Color header, {VoidCallback? onTap}) =>
     Scaffold(
       backgroundColor: Colors.transparent,
@@ -59,12 +74,25 @@ Future<List<Color>> _pixels(
 }))!;
 
 void main() {
-  for (final brightness in Brightness.values) {
+  for (final (brightness, showFadeMask) in [
+    for (final brightness in Brightness.values)
+      for (final showFadeMask in [false, true]) (brightness, showFadeMask),
+  ]) {
     testWidgets(
-      'glass header keeps its tint continuous at route fade endpoints in $brightness',
+      'glass header keeps its tint continuous at route fade endpoints in $brightness (mask: $showFadeMask)',
       (tester) async {
         final navigator = GlobalKey<NavigatorState>();
         final surface = GlobalKey();
+        var headerPaints = 0;
+        final backdrop = showFadeMask
+            ? const ColoredBox(color: Colors.blue)
+            : const Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(width: 35, child: ColoredBox(color: Colors.black)),
+                  Expanded(child: ColoredBox(color: Colors.white)),
+                ],
+              );
         await tester.pumpWidget(
           RepaintBoundary(
             key: surface,
@@ -75,45 +103,65 @@ void main() {
                 platform: defaultTargetPlatform,
               ),
               builder: (_, child) => AppPageTransitionHost(child: child!),
-              home: const Scaffold(backgroundColor: Colors.blue),
+              home: Scaffold(backgroundColor: Colors.blue, body: backdrop),
             ),
           ),
         );
         await tester.pumpAndSettle();
-        final detail = buildAppPageRoute<void>(
-          context: navigator.currentContext!,
-          separateHeader: true,
-          child: const Scaffold(
-            backgroundColor: Colors.transparent,
-            body: Stack(
-              fit: StackFit.expand,
-              children: [
-                AppPageContentTransition(child: ColoredBox(color: Colors.blue)),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  child: TopPageHeader(
-                    titleWidget: SizedBox.shrink(),
-                    leading: HeaderFloatingButton(
-                      backgroundOpacity: 0.5,
-                      child: SizedBox.shrink(),
-                    ),
+        final detailPage = Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              AppPageContentTransition(child: backdrop),
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: TopPageHeader(
+                  showFadeMask: showFadeMask,
+                  titleWidget: const SizedBox.shrink(),
+                  leading: HeaderFloatingButton(
+                    backgroundOpacity: 0.5,
+                    child: showFadeMask
+                        ? const SizedBox.shrink()
+                        : CustomPaint(
+                            size: const Size(12, 12),
+                            painter: _HeaderPaintProbe(() => headerPaints++),
+                          ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
+        PageRouteBuilder<void> route() => buildAppPageRoute<void>(
+          context: navigator.currentContext!,
+          separateHeader: true,
+          slide: false,
+          child: detailPage,
+        );
+        final detail = route();
         unawaited(navigator.currentState!.push(detail));
         await tester.pump();
         await tester.pump();
-        final samples = <({double progress, Color pixel})>[];
+        expect(detail.animation!.value, 0);
+        if (!showFadeMask) {
+          expect(
+            headerPaints,
+            1,
+            reason: 'Record the header before its first visible fade tick.',
+          );
+        }
+        final samples = <({double progress, List<Color> pixels})>[];
         Future<void> sampleTint() async {
           final progress = kAppFadeCurve.transform(detail.animation!.value);
           final center = tester.getCenter(find.byType(HeaderFloatingButton));
-          final pixel = (await _pixels(tester, surface, [center])).single;
-          samples.add((progress: progress, pixel: pixel));
+          final pixels = await _pixels(tester, surface, [
+            if (!showFadeMask) center + const Offset(0, -11),
+            center,
+          ]);
+          samples.add((progress: progress, pixels: pixels));
         }
 
         for (final milliseconds in [75, 75, 75, 45, 15, 15]) {
@@ -122,7 +170,7 @@ void main() {
         }
         await tester.pumpAndSettle();
         await sampleTint();
-        final settled = samples.last.pixel;
+        final settled = samples.last.pixels;
         navigator.currentState!.pop();
         await tester.pump();
         await tester.pump();
@@ -131,25 +179,46 @@ void main() {
           await sampleTint();
         }
         for (final sample in samples) {
-          final expected = Color.lerp(Colors.blue, settled, sample.progress)!;
-          expect(
-            sample.pixel.r,
-            closeTo(expected.r, 0.02),
-            reason: 'Progress ${sample.progress}',
-          );
-          expect(
-            sample.pixel.g,
-            closeTo(expected.g, 0.02),
-            reason: 'Progress ${sample.progress}',
-          );
-          expect(
-            sample.pixel.b,
-            closeTo(expected.b, 0.02),
-            reason: 'Progress ${sample.progress}',
-          );
+          for (var index = 0; index < settled.length; index++) {
+            final expected = Color.lerp(
+              showFadeMask ? Colors.blue : Colors.white,
+              settled[index],
+              sample.progress,
+            )!;
+            expect(
+              sample.pixels[index].r,
+              closeTo(expected.r, 0.02),
+              reason: 'Progress ${sample.progress}',
+            );
+            expect(
+              sample.pixels[index].g,
+              closeTo(expected.g, 0.02),
+              reason: 'Progress ${sample.progress}',
+            );
+            expect(
+              sample.pixels[index].b,
+              closeTo(expected.b, 0.02),
+              reason: 'Progress ${sample.progress}',
+            );
+          }
         }
         await tester.pumpAndSettle();
         await tester.pump(Duration.zero);
+        if (!showFadeMask) {
+          final interrupted = route();
+          unawaited(navigator.currentState!.push(interrupted));
+          await tester.pump();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 75));
+          final center = tester.getCenter(find.byType(HeaderFloatingButton));
+          final points = [center + const Offset(0, -11), center];
+          final before = await _pixels(tester, surface, points);
+          navigator.currentState!.pop();
+          await tester.pump();
+          expect(await _pixels(tester, surface, points), before);
+          await tester.pumpAndSettle();
+          await tester.pump(Duration.zero);
+        }
       },
       variant: const TargetPlatformVariant({
         TargetPlatform.android,

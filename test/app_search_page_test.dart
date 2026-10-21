@@ -10,7 +10,7 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 
 void main() {
-  testWidgets('search selection crossfades controls and mask for 300ms', (
+  testWidgets('search selection fades controls while keeping its mask steady', (
     tester,
   ) async {
     final controller = TextEditingController(text: 'query');
@@ -44,16 +44,14 @@ void main() {
       ),
     );
     final mask = find.byKey(const ValueKey('app_search_top_fade_mask'));
+    final maskElement = tester.element(mask);
     update(() => selecting = true);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
-    expect(mask, findsNWidgets(2));
+    expect(mask, findsOneWidget);
+    expect(tester.element(mask), same(maskElement));
     for (final switcher in tester.widgetList<AnimatedSwitcher>(find.byType(AnimatedSwitcher))) {
       expect(switcher.duration, const Duration(milliseconds: 300));
-    }
-    for (final element in mask.evaluate()) {
-      final fade = element.findAncestorWidgetOfExactType<FadeTransition>()!;
-      expect(fade.opacity.value, closeTo(kAppFadeCurve.transform(0.5), 0.001));
     }
     final fades = find.descendant(
       of: find.byType(AppHeaderTransition),
@@ -76,6 +74,7 @@ void main() {
     expect(controller.text, 'query');
     expect(find.byType(TextField), findsOneWidget);
     expect(mask, findsOneWidget);
+    expect(tester.element(mask), same(maskElement));
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -432,8 +431,8 @@ void main() {
       expect(fadeGradient.begin, Alignment.topCenter);
       expect(fadeGradient.end, Alignment.bottomCenter);
       expect(fadeGradient.stops, const <double>[0, 0.35, 0.58, 0.82, 1]);
-      expect(fadeMask.opacity, 0.6);
-      expect(fadeGradient.colors.first.a, closeTo(0.82 * 0.6, 1e-6));
+      expect(fadeMask.opacity, 1);
+      expect(fadeGradient.colors.first.a, closeTo(0.82 * 0.9, 1e-6));
       expect(fadeGradient.colors.last.a, 0);
       expect(
         tester

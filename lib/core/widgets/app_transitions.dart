@@ -949,8 +949,10 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
             child: header,
           );
           if (widget.separateHeader) {
+            // Record separated headers with the body before the first visible
+            // tick, instead of adding glass and control paint work mid-fade.
             return animatePage
-                ? FadeTransition(opacity: _opacity, child: fadedHeader)
+                ? AppPageFadeTransition(opacity: _opacity, child: fadedHeader)
                 : fadedHeader;
           }
           // Unseparated pages inherit their entrance fade and slide from the
@@ -1103,40 +1105,56 @@ class AppHeaderTransition extends StatelessWidget {
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : kAppFadeDuration;
-    // Preserve the positioned header's width through both stacks; loose
-    // constraints can shrink a supplied overlay to zero width.
-    return AnimatedSwitcher(
+    final controls = AnimatedSwitcher(
       duration: duration,
       switchInCurve: kAppFadeCurve,
       switchOutCurve: kAppFadeCurve,
       transitionBuilder: (child, animation) => FadeTransition(
         opacity: animation,
-        child: AppPageHeaderTransition(
-          child: Stack(
-            fit: StackFit.passthrough,
-            children: [
-              if (showBackground)
-                const Positioned.fill(
-                  child: AppEdgeFadeMask(
-                    direction: AppEdgeFadeDirection.towardTop,
-                    opacity: 0.6,
-                  ),
-                ),
-              child,
-            ],
-          ),
-        ),
+        child: AppPageHeaderTransition(child: child),
       ),
+      // Only the current header sets the target height. A taller outgoing
+      // header must not postpone shrinking until its fade completes.
       layoutBuilder: (currentChild, previousChildren) => Stack(
         fit: StackFit.passthrough,
         alignment: Alignment.topLeft,
+        clipBehavior: Clip.none,
         children: [
           for (final previous in previousChildren)
-            ExcludeSemantics(child: IgnorePointer(child: previous)),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ExcludeSemantics(child: IgnorePointer(child: previous)),
+            ),
           ?currentChild,
         ],
       ),
       child: child,
+    );
+    return Stack(
+      fit: StackFit.passthrough,
+      alignment: Alignment.topLeft,
+      children: [
+        if (showBackground)
+          const Positioned.fill(
+            child: AppPageHeaderTransition(
+              child: AppEdgeFadeMask(
+                direction: AppEdgeFadeDirection.towardTop,
+              ),
+            ),
+          ),
+        if (duration == Duration.zero)
+          controls
+        else
+          AnimatedSize(
+            alignment: Alignment.topCenter,
+            duration: duration,
+            curve: kAppFadeCurve,
+            clipBehavior: Clip.none,
+            child: controls,
+          ),
+      ],
     );
   }
 }

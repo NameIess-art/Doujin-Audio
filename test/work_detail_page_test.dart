@@ -24,6 +24,7 @@ import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
+import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
@@ -778,7 +779,9 @@ void main() {
               double headerOpacity() {
                 final fade = find.descendant(
                   of: headerFinder,
-                  matching: find.byType(FadeTransition),
+                  matching: find.byWidgetPredicate(
+                    (widget) => widget is FadeTransition,
+                  ),
                 ).first;
                 return tester.widget<FadeTransition>(fade).opacity.value;
               }
@@ -822,6 +825,13 @@ void main() {
               expect(find.text('Deferred voice actor'), findsOneWidget);
               await tester.pump(const Duration(milliseconds: 100));
               expect(headerFinder, findsOneWidget);
+              expect(
+                find.descendant(
+                  of: headerFinder,
+                  matching: find.byType(AppEdgeFadeMask),
+                ),
+                findsNothing,
+              );
               expect(headerOpacity(), inExclusiveRange(0.0, 1.0));
               expect(find.text('First detail title'), findsOneWidget);
               expect(

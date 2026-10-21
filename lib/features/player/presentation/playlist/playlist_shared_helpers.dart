@@ -78,22 +78,10 @@ class _PlaylistRowShape extends RoundedRectangleBorder {
   }
 }
 
-BorderSide playlistCapsuleBorderSide(BuildContext context) {
-  final cs = Theme.of(context).colorScheme;
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  return BorderSide(
-    color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
-  );
-}
-
 Color playlistTemporaryCardColor(BuildContext context) {
   final cs = Theme.of(context).colorScheme;
   final isDark = Theme.of(context).brightness == Brightness.dark;
   return isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
-}
-
-RoundedRectangleBorder playlistTemporaryRowShape(BuildContext context) {
-  return playlistRowShape.copyWith(side: playlistCapsuleBorderSide(context));
 }
 
 LinearGradient playlistActiveHighlightGradient([

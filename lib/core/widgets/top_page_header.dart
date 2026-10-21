@@ -103,6 +103,7 @@ class TopPageHeader extends StatefulWidget {
     ),
     this.collapsedBottomSpacing = AppSpacing.xs,
     this.floating = true,
+    this.showFadeMask = true,
     this.topCapsuleTitle,
     this.topCapsuleData,
     this.topCapsuleLeading,
@@ -135,6 +136,7 @@ class TopPageHeader extends StatefulWidget {
   final EdgeInsetsGeometry collapsedPadding;
   final double collapsedBottomSpacing;
   final bool floating;
+  final bool showFadeMask;
   final String? topCapsuleTitle;
   final String? topCapsuleData;
   final Widget? topCapsuleLeading;
@@ -534,10 +536,11 @@ class _TopPageHeaderState extends State<TopPageHeader> {
     );
     final surface = _AppHeaderSurface(
       floating: widget.floating,
+      showFadeMask: widget.showFadeMask,
       child: headerContent,
     );
-    // The switcher fades each backdrop together with its controls and owns
-    // their route paint boundaries.
+    // The switcher resizes the shared backdrop, fades only the controls, and
+    // owns their route paint boundaries.
     if (context.findAncestorWidgetOfExactType<AppHeaderTransition>() != null) {
       return surface;
     }
@@ -546,15 +549,21 @@ class _TopPageHeaderState extends State<TopPageHeader> {
 }
 
 class _AppHeaderSurface extends StatelessWidget {
-  const _AppHeaderSurface({required this.child, this.floating = true});
+  const _AppHeaderSurface({
+    required this.child,
+    this.floating = true,
+    this.showFadeMask = true,
+  });
 
   final Widget child;
   final bool floating;
+  final bool showFadeMask;
 
   @override
   Widget build(BuildContext context) {
     if (floating) {
-      if (context.findAncestorWidgetOfExactType<AppHeaderTransition>() != null) {
+      if (!showFadeMask ||
+          context.findAncestorWidgetOfExactType<AppHeaderTransition>() != null) {
         return child;
       }
       return Stack(
@@ -563,7 +572,6 @@ class _AppHeaderSurface extends StatelessWidget {
           const Positioned.fill(
             child: AppEdgeFadeMask(
               direction: AppEdgeFadeDirection.towardTop,
-              opacity: 0.6,
             ),
           ),
           child,
@@ -573,7 +581,7 @@ class _AppHeaderSurface extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     return AppGlassSurface(
-      backgroundColor: cs.surface,
+      backgroundColor: cs.surface.withValues(alpha: cs.surface.a * 0.9),
       child: DecoratedBox(
         decoration: BoxDecoration(
           border: Border(
@@ -617,12 +625,13 @@ class HeaderFloatingSurface extends StatelessWidget {
     final borderRadius = BorderRadius.circular(radius);
     // The same capsules also appear in page content. Only the explicit header
     // boundary opts them into blur, and a full-width glass bar owns its filter.
+    final headerSurface = context
+        .findAncestorWidgetOfExactType<_AppHeaderSurface>();
     final useGlass =
         context.findAncestorWidgetOfExactType<AppPageHeaderTransition>() != null &&
-        context.findAncestorWidgetOfExactType<_AppHeaderSurface>()?.floating !=
-            false;
+        headerSurface?.floating != false;
     final backgroundColor = background.withValues(
-      alpha: background.a * backgroundOpacity,
+      alpha: background.a * backgroundOpacity * (useGlass ? 0.9 : 1),
     );
     final surface = DecoratedBox(
       decoration: BoxDecoration(
@@ -639,9 +648,11 @@ class HeaderFloatingSurface extends StatelessWidget {
         ? AppGlassSurface(
             backgroundColor: backgroundColor,
             borderRadius: borderRadius,
-            // The header gradient already occupies the fade's save layer.
-            // Replace its filtered pixels instead of blending it twice.
-            blendMode: BlendMode.src,
+            // Only masked headers need to replace the gradient's filtered
+            // pixels; unmasked capsules keep normal backdrop compositing.
+            blendMode: headerSurface?.showFadeMask == false
+                ? BlendMode.srcOver
+                : BlendMode.src,
             child: surface,
           )
         : ClipRRect(borderRadius: borderRadius, child: surface);

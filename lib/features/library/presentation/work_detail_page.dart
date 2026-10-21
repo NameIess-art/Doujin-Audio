@@ -1520,6 +1520,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             right: 0,
             child: TopPageHeader(
               key: const ValueKey('work_detail_page_header'),
+              showFadeMask: false,
               titleWidget: const SizedBox.shrink(),
               leading: HeaderFloatingButton(
                 backgroundOpacity: 0.5,

@@ -9210,14 +9210,9 @@ void main() {
       );
       final theme = Theme.of(tester.element(temporaryCard));
       final isDark = theme.brightness == Brightness.dark;
-      final expectedBorderSide = BorderSide(
-        color: theme.colorScheme.outlineVariant.withValues(
-          alpha: isDark ? 0.24 : 0.42,
-        ),
-      );
       expect(
         (temporaryCardWidget.shape! as RoundedRectangleBorder).side,
-        expectedBorderSide,
+        BorderSide.none,
       );
       expect(
         (savedCardWidget.shape! as RoundedRectangleBorder).side,
@@ -9235,6 +9230,10 @@ void main() {
       final expectedTemporaryCardColor = isDark
           ? theme.colorScheme.surfaceBright
           : theme.colorScheme.surfaceContainerHigh;
+      expect(
+        (temporarySwipe.shape as RoundedRectangleBorder).side,
+        BorderSide.none,
+      );
       expect(temporarySwipe.closedColor, expectedTemporaryCardColor);
       expect(savedSwipe.closedColor, theme.colorScheme.surface);
       expect(temporaryCardWidget.color, Colors.transparent);

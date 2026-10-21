@@ -22,7 +22,7 @@ class AppDockPanel extends StatelessWidget {
     final bgColor = isDark ? cs.surfaceContainer : cs.surfaceContainerHigh;
     return AppGlassSurface(
       borderRadius: BorderRadius.circular(radius),
-      backgroundColor: bgColor,
+      backgroundColor: bgColor.withValues(alpha: bgColor.a * 0.9),
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(radius),

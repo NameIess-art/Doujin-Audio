@@ -40,9 +40,9 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Colors.black.withValues(alpha: 0.35 * 0.6),
+          Colors.black.withValues(alpha: 0.35 * 0.9),
           Colors.transparent,
-          Colors.black.withValues(alpha: 0.85 * 0.6),
+          Colors.black.withValues(alpha: 0.85 * 0.9),
         ],
         stops: const [0.0, 0.4, 1.0],
       ),

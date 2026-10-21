@@ -7,9 +7,76 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets(
+    'header mask stretches immediately in both directions without fading',
+    (tester) async {
+      late StateSetter update;
+      var tall = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (_, setState) {
+              update = setState;
+              return Stack(
+                children: [
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: AppHeaderTransition(
+                      child: SizedBox(
+                        key: ValueKey(tall),
+                        height: tall ? 88 : 44,
+                        child: const ColoredBox(color: Colors.blue),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+      final mask = find.byType(AppEdgeFadeMask);
+      final maskElement = tester.element(mask);
+      expect(tester.getSize(mask).height, 44);
+      update(() => tall = true);
+      await tester.pump();
+      expect(tester.getSize(mask).height, 44);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(tester.getSize(mask).height, inExclusiveRange(44, 88));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(mask).height, 88);
+      update(() => tall = false);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(tester.getSize(mask).height, inExclusiveRange(44, 88));
+      final reversingHeight = tester.getSize(mask).height;
+      update(() => tall = true);
+      await tester.pump();
+      expect(tester.getSize(mask).height, closeTo(reversingHeight, 1e-6));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(mask).height, 88);
+      update(() => tall = false);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(mask).height, 44);
+      expect(tester.element(mask), same(maskElement));
+      final fades = find.descendant(
+        of: find.byType(AppHeaderTransition),
+        matching: find.byType(FadeTransition),
+      );
+      expect(find.ancestor(of: mask, matching: fades), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final reducedMotion in [false, true]) {
     testWidgets(
-      'selection header and mask crossfade together for 300ms (reduced: $reducedMotion)',
+      'selection header fades for 300ms with an unfaded mask (reduced: $reducedMotion)',
       (tester) async {
         late StateSetter update;
         var selecting = false;
@@ -50,6 +117,7 @@ void main() {
         );
         final mask = find.byType(AppEdgeFadeMask);
         expect(mask, findsOneWidget);
+        final maskElement = tester.element(mask);
         update(() => selecting = true);
         await tester.pump();
         if (!reducedMotion) {
@@ -67,11 +135,8 @@ void main() {
             );
           }
           expect((normalBuilds, selectionBuilds), builds);
-          expect(mask, findsNWidgets(2));
-          for (final element in mask.evaluate()) {
-            final fade = element.findAncestorWidgetOfExactType<FadeTransition>()!;
-            expect(fade.opacity.value, closeTo(kAppFadeCurve.transform(0.5), 0.001));
-          }
+          expect(mask, findsOneWidget);
+          expect(find.ancestor(of: mask, matching: fades), findsNothing);
           await tester.pump(const Duration(milliseconds: 150));
         }
         await tester.pump(const Duration(milliseconds: 1));
@@ -83,14 +148,8 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 150));
         if (!reducedMotion) {
-          expect(mask, findsNWidgets(2));
-          for (final element in mask.evaluate()) {
-            final fade = element.findAncestorWidgetOfExactType<FadeTransition>()!;
-            expect(
-              fade.opacity.value,
-              closeTo(kAppFadeCurve.transform(0.5), 0.001),
-            );
-          }
+          expect(mask, findsOneWidget);
+          expect(tester.element(mask), same(maskElement));
         }
         update(() => selecting = true);
         await tester.pumpAndSettle();
@@ -162,7 +221,7 @@ void main() {
         of: find.byKey(const ValueKey('partial-header')),
         matching: find.byType(AppGlassSurface),
       )).backgroundColor.a,
-      0.5,
+      0.45,
     );
   });
 

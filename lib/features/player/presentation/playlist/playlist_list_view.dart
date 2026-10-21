@@ -435,16 +435,13 @@ class SessionListCard extends ConsumerWidget {
 
     final activeColor = isAsmrOne ? asmrBlue : localPlayRose;
 
-    final cardShape = isTemporary
-        ? playlistTemporaryRowShape(context)
-        : playlistRowShape;
     final cardColor = isTemporary
         ? playlistTemporaryCardColor(context)
         : cs.surface;
 
     final swipeCard = SwipeRevealCard(
       key: ValueKey(sessionId),
-      shape: cardShape,
+      shape: playlistRowShape,
       closedColor: cardColor,
       enabled: !isSelectionMode,
       actionLabel: i18n.tr('remove'),
@@ -467,7 +464,7 @@ class SessionListCard extends ConsumerWidget {
             type: MaterialType.card,
             animationDuration: kAppSelectionDuration,
             clipBehavior: Clip.antiAlias,
-            shape: cardShape,
+            shape: playlistRowShape,
             color: isSelected
                 ? cs.primaryContainer.withValues(alpha: 0.15)
                 : Colors.transparent,

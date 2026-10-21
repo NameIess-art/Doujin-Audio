@@ -20,9 +20,10 @@ class AppEdgeFadeMask extends StatelessWidget {
     final baseColor = color ?? theme.colorScheme.surface;
     final isDark = theme.brightness == Brightness.dark;
     final towardBottom = direction == AppEdgeFadeDirection.towardBottom;
-    final peakAlpha = (isDark ? 0.86 : 0.82) * opacity;
-    final midHighAlpha = (isDark ? 0.76 : 0.70) * opacity;
-    final lowAlpha = (isDark ? 0.28 : 0.22) * opacity;
+    final effectiveOpacity = opacity * 0.9;
+    final peakAlpha = (isDark ? 0.86 : 0.82) * effectiveOpacity;
+    final midHighAlpha = (isDark ? 0.76 : 0.70) * effectiveOpacity;
+    final lowAlpha = (isDark ? 0.28 : 0.22) * effectiveOpacity;
     final colors = towardBottom
         ? <Color>[
             baseColor.withValues(alpha: 0),

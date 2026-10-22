@@ -1,13 +1,23 @@
 import 'package:doujin_audio/app/presentation/listening_time_chart.dart';
 import 'package:doujin_audio/app/presentation/main_destination.dart';
 import 'package:doujin_audio/app/presentation/my_page.dart';
+import 'package:doujin_audio/app/presentation/my_tag_management_page.dart';
 import 'package:doujin_audio/app/state/listening_activity_provider.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/path_display.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
+import 'package:doujin_audio/core/widgets/app_feedback.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/app_runtime_test_fixture.dart';
+import 'support/asmr_controller_test_fixture.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -133,6 +143,258 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'interest removal can be undone before weight changes on $platform',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final controller = _InterestController(createTestAsmrServices());
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        tester.view.physicalSize = const Size(960, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          fixture.build(
+            Theme(
+              data: ThemeData(platform: platform),
+              child: const MyPage(tabIndex: 3),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+              listeningActivityProvider.overrideWith(
+                (ref) => Stream.value(const ListeningActivityView()),
+              ),
+            ],
+          ),
+        );
+        await pumpAndSettleWithAsync(tester);
+        await tester.ensureVisible(
+          find.text(fixture.languageProvider.tr('my_edit')),
+        );
+        await tester.tap(find.text(fixture.languageProvider.tr('my_edit')));
+        await tester.pump();
+        const chipKey = ValueKey('my-interest-local:sleep');
+        tester.widget<InputChip>(find.byKey(chipKey)).onDeleted!();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(find.byKey(chipKey), findsNothing);
+        expect(
+          find.text(fixture.languageProvider.tr('my_interest_removed')),
+          findsOneWidget,
+        );
+        expect(controller.removals, 0);
+        final undo = find.textContaining(fixture.languageProvider.tr('undo'));
+        expect(undo, findsOneWidget);
+        await tester.tap(undo);
+        await tester.pumpAndSettle();
+        expect(find.byKey(chipKey), findsOneWidget);
+        expect(controller.state.weights['local:sleep'], 200);
+        expect(controller.state.hiddenUntil, isEmpty);
+        tester.widget<InputChip>(find.byKey(chipKey)).onDeleted!();
+        await tester.pump();
+        await tester.pump(kUndoableRemovalFeedbackDuration);
+        await tester.pumpAndSettle();
+        expect(controller.removals, 1);
+        expect(controller.state.weights['local:sleep'], 180);
+        expect(find.byKey(chipKey), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'tag catalog uses floating header and retains search on $platform',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final controller = _InterestController(createTestAsmrServices());
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            Theme(
+              data: ThemeData(platform: platform),
+              child: const MyTagManagementPage(excluded: false),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(AppPageAppBar), findsNothing);
+        final header = tester.widget<TopPageHeader>(find.byType(TopPageHeader));
+        expect(header.floating, isTrue);
+        expect(header.leading, isA<BackButton>());
+        expect(
+          find.descendant(
+            of: find.byType(TopPageHeader),
+            matching: find.byType(TextField),
+          ),
+          findsOneWidget,
+        );
+        await tester.enterText(find.byType(TextField), 'not a known tag');
+        await tester.pump();
+        expect(find.byType(CheckboxListTile), findsNothing);
+        await tester.enterText(find.byType(TextField), 'sleep');
+        await tester.pump();
+        expect(find.byType(CheckboxListTile), findsOneWidget);
+        await tester.tap(find.byType(CheckboxListTile));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(
+          tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+          isFalse,
+        );
+        await tester.tap(
+          find.textContaining(fixture.languageProvider.tr('undo')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+          isTrue,
+        );
+        expect(controller.removals, 0);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'history uses metadata titles over the cover and rounds the scrolling viewport on $platform',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        tester.view.physicalSize = Size(
+          platform == TargetPlatform.android ? 390 : 960,
+          900,
+        );
+        tester.view.devicePixelRatio = 1;
+        tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        final track = MusicTrack(
+          path: '/unavailable/track.mp3',
+          displayName: 'Track',
+          groupKey: 'work',
+          groupTitle: 'Folder name instead of the work title',
+          groupSubtitle: '',
+          isSingle: false,
+        );
+        const workTitle =
+            'Actual metadata work title that wraps to two lines inside the cover';
+        final target = fixture.library.audioDetailTargetForTrack(track);
+        fixture.library.detailCacheService.markChanged(
+          AudioDetail.empty(target).copyWith(workTitle: workTitle),
+        );
+        final remote = MusicTrack(
+          path: 'https://example.com/track.mp3',
+          displayName: 'Remote track',
+          groupKey: 'remote',
+          groupTitle: 'Wrong legacy folder label',
+          groupSubtitle: '',
+          isSingle: false,
+          remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+          remoteMetadata: const {'title': 'Remote metadata work title'},
+        );
+        await tester.pumpWidget(
+          fixture.build(
+            Theme(
+              data: ThemeData(platform: platform),
+              child: const MyPage(tabIndex: 3),
+            ),
+            overrides: [
+              listeningActivityProvider.overrideWith(
+                (ref) => Stream.value(
+                  ListeningActivityView(
+                    history: [
+                      ListeningHistoryEntry(workKey: 'work', track: track),
+                      for (var i = 0; i < 8; i++)
+                        ListeningHistoryEntry(
+                          workKey: 'remote-$i',
+                          track: remote,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+        await pumpAndSettleWithAsync(tester);
+        final title = find.byKey(const ValueKey('my-history-title-work'));
+        await tester.ensureVisible(title);
+        final text = tester.widget<Text>(title);
+        expect(text.data, workTitle);
+        expect(find.text(track.groupTitle), findsNothing);
+        expect(text.maxLines, 2);
+        expect(text.style?.fontSize, 12);
+        expect(text.overflow, TextOverflow.ellipsis);
+        expect(text.style?.color, Colors.white);
+        expect(text.style?.backgroundColor, isNull);
+        expect(text.style?.shadows?.single.blurRadius, 4);
+        final card = find.byKey(const ValueKey('my-history-card-work'));
+        expect(tester.getSize(card), const Size(132, 99));
+        expect(
+          tester.getSize(
+            find.byKey(const ValueKey('my-history-card-remote-0')),
+          ),
+          const Size(132, 99),
+        );
+        expect(
+          tester.getBottomLeft(card).dy - tester.getBottomLeft(title).dy,
+          closeTo(8, .1),
+        );
+        expect(
+          tester.getBottomLeft(title).dy,
+          lessThan(tester.getBottomLeft(card).dy),
+        );
+        expect(find.text('Remote metadata work title'), findsWidgets);
+        final viewport = find.byKey(const ValueKey('my-history-viewport'));
+        expect(
+          tester.widget<ClipRRect>(viewport).borderRadius,
+          BorderRadius.circular(12),
+        );
+        expect(tester.getSize(viewport).height, 99);
+        fixture.library.detailCacheService.markChanged(
+          AudioDetail.empty(
+            target,
+          ).copyWith(workTitle: 'Edited actual work title'),
+        );
+        await pumpAndSettleWithAsync(tester);
+        expect(tester.widget<Text>(title).data, 'Edited actual work title');
+        await fixture.settings.setWorkNameDisplay(WorkNameDisplay.folderName);
+        await pumpAndSettleWithAsync(tester);
+        expect(
+          tester.widget<Text>(title).data,
+          PathDisplay.folderName(target.targetPath),
+        );
+        expect(find.text('Remote metadata work title'), findsWidgets);
+        await fixture.settings.setWorkNameDisplay(WorkNameDisplay.workTitle);
+        await pumpAndSettleWithAsync(tester);
+        expect(tester.widget<Text>(title).data, 'Edited actual work title');
+        fixture.library.detailCacheService.markChanged(
+          AudioDetail.empty(target),
+        );
+        await pumpAndSettleWithAsync(tester);
+        expect(
+          tester.widget<Text>(title).data,
+          PathDisplay.folderName(target.targetPath),
+        );
+        await tester.drag(viewport, const Offset(-100, 0));
+        await tester.pumpAndSettle();
+        final scrolling = find
+            .descendant(of: viewport, matching: find.byType(Scrollable))
+            .first;
+        expect(
+          tester.state<ScrollableState>(scrolling).position.pixels,
+          greaterThan(0),
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets('My page empty state and interval interaction on $platform', (
       tester,
     ) async {
@@ -159,6 +421,52 @@ void main() {
       final i18n = fixture.languageProvider;
       expect(find.text(i18n.tr('my_listening_time')), findsOneWidget);
       expect(find.text(i18n.tr('my_no_history')), findsOneWidget);
+      final headerHeights = <double>[];
+      for (final label in ['my_listening_time', 'my_history', 'my_interests']) {
+        final header = find.byKey(
+          ValueKey('my-section-header-${i18n.tr(label)}'),
+        );
+        await tester.ensureVisible(header);
+        final bounds = tester.getRect(header);
+        final card = find
+            .ancestor(of: header, matching: find.byType(Card))
+            .first;
+        expect(bounds.top - tester.getRect(card).top, closeTo(12, .1));
+        headerHeights.add(bounds.height);
+      }
+      expect(headerHeights.toSet().length, 1);
+      final heading = find.text(i18n.tr('my_listening_time'));
+      await tester.ensureVisible(heading);
+      final headingBounds = tester.getRect(heading);
+      final durationBounds = tester.getRect(
+        find.byKey(const ValueKey('listening-duration')),
+      );
+      expect(headingBounds.center.dy, closeTo(durationBounds.center.dy, .1));
+      expect(headingBounds.right, lessThan(durationBounds.left));
+      expect(
+        durationBounds.right,
+        closeTo(
+          tester
+              .getRect(
+                find.byKey(
+                  ValueKey('my-section-header-${i18n.tr('my_listening_time')}'),
+                ),
+              )
+              .right,
+          .1,
+        ),
+      );
+      expect(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('listening-chart-intervals')))
+            .dy,
+        greaterThanOrEqualTo(
+          tester
+              .getBottomLeft(find.byKey(const ValueKey('listening-chart-bars')))
+              .dy,
+        ),
+      );
+      await tester.ensureVisible(find.text(i18n.tr('my_interval_quarter')));
       await tester.tap(find.text(i18n.tr('my_interval_quarter')));
       await tester.pumpAndSettle();
       expect(
@@ -174,5 +482,32 @@ void main() {
       );
       expect(tester.takeException(), isNull);
     });
+  }
+}
+
+class _InterestController extends AsmrLibraryController {
+  _InterestController(TestAsmrServices services)
+    : super(
+        preferencesStore: services.preferencesStore,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: services.accountSyncService,
+      ) {
+    state.weights[state.resolve('Sleep')] = 200;
+  }
+  final state = AsmrTagPreferences();
+  int removals = 0;
+  @override
+  List<AsmrTagInterest> get interestTags => state.interests;
+  @override
+  List<AsmrTag> get allTags => state.tags.values.toList();
+  @override
+  bool get tagCatalogComplete => true;
+  @override
+  Future<void> ensureTagCatalog({bool force = false}) async {}
+  @override
+  Future<void> setTagInterested(String key, bool interested) async {
+    if (!interested) removals++;
+    state.setInterested(key, interested);
+    notifyListeners();
   }
 }

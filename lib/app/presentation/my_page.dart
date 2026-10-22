@@ -8,6 +8,7 @@ import '../state/app_runtime_providers.dart';
 import '../state/listening_activity_provider.dart';
 import '../theme/app_styles.dart';
 import '../../core/media/music_track.dart';
+import '../../core/media/path_display.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
@@ -22,6 +23,8 @@ import '../../features/asmr/presentation/asmr_providers.dart';
 import '../../features/asmr/presentation/asmr_work_detail_sheet.dart';
 import '../../features/library/presentation/audio_detail_sheet.dart';
 import '../../features/library/presentation/library_providers.dart';
+import '../../features/settings/application/settings_state.dart';
+import '../../features/settings/presentation/settings_providers.dart';
 import 'app_presentation_providers.dart';
 import 'listening_time_chart.dart';
 import 'main_tab_state_mixin.dart';
@@ -72,9 +75,7 @@ class _MyPageState extends ConsumerState<MyPage>
   Future<void> _removeInterest(String key) async {
     setState(() => _removingInterests.add(key));
     try {
-      await ref
-          .read(asmrLibraryControllerProvider)
-          ?.setTagInterested(key, false);
+      await removeInterestTagWithUndo(context, ref, key);
     } catch (error, stack) {
       AppLogService.error(
         'my_interest_remove_failed',
@@ -147,6 +148,7 @@ class _MyPageState extends ConsumerState<MyPage>
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final activity = ref.watch(listeningActivityProvider);
     final controller = ref.watch(asmrLibraryControllerProvider);
+    final removals = ref.watch(undoableRemovalStateProvider);
     final top =
         MediaQuery.paddingOf(context).top +
         AppPageHeaderMetrics.padding.vertical +
@@ -156,22 +158,30 @@ class _MyPageState extends ConsumerState<MyPage>
     Widget section(String title, Widget child, {Widget? trailing}) => Card(
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleMedium,
+            ConstrainedBox(
+              key: ValueKey('my-section-header-$title'),
+              constraints: const BoxConstraints(minHeight: 32),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                   ),
-                ),
-                ?trailing,
-              ],
+                  if (trailing != null) ...[
+                    const SizedBox(width: 8),
+                    Flexible(child: trailing),
+                  ],
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
             child,
           ],
         ),
@@ -193,14 +203,23 @@ class _MyPageState extends ConsumerState<MyPage>
                     MobileOverlayInset.of(context) + 16,
                   ),
                   children: [
-                    section(
-                      i18n.tr('my_listening_time'),
-                      activity.when(
-                        data: (view) =>
-                            ListeningTimeChart(days: view.days, i18n: i18n),
-                        loading: () =>
-                            const Center(child: CircularProgressIndicator()),
-                        error: (error, stack) => TextButton(
+                    activity.when(
+                      data: (view) => ListeningTimeChart(
+                        days: view.days,
+                        i18n: i18n,
+                        builder: (duration, chart) => section(
+                          i18n.tr('my_listening_time'),
+                          chart,
+                          trailing: duration,
+                        ),
+                      ),
+                      loading: () => section(
+                        i18n.tr('my_listening_time'),
+                        const Center(child: CircularProgressIndicator()),
+                      ),
+                      error: (error, stack) => section(
+                        i18n.tr('my_listening_time'),
+                        TextButton(
                           onPressed: _refreshActivity,
                           child: Text(i18n.tr('my_retry')),
                         ),
@@ -233,30 +252,41 @@ class _MyPageState extends ConsumerState<MyPage>
                                     Text(i18n.tr('my_no_interests')),
                                   Wrap(
                                     spacing: 8,
-                                    runSpacing: 8,
+                                    runSpacing: 2,
                                     children: [
                                       for (final interest
                                           in controller.interestTags)
-                                        InputChip(
-                                          label: Text(interest.tag.name),
-                                          onDeleted:
-                                              _editing &&
-                                                  !_removingInterests.contains(
-                                                    interest.tag.key,
+                                        if (!removals.isHidden(
+                                          interestTagRemovalKey(
+                                            interest.tag.key,
+                                          ),
+                                        ))
+                                          InputChip(
+                                            key: ValueKey(
+                                              'my-interest-${interest.tag.key}',
+                                            ),
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            label: Text(interest.tag.name),
+                                            onDeleted:
+                                                _editing &&
+                                                    !_removingInterests
+                                                        .contains(
+                                                          interest.tag.key,
+                                                        )
+                                                ? () => unawaited(
+                                                    _removeInterest(
+                                                      interest.tag.key,
+                                                    ),
                                                   )
-                                              ? () => unawaited(
-                                                  _removeInterest(
-                                                    interest.tag.key,
-                                                  ),
-                                                )
-                                              : null,
-                                        ),
+                                                : null,
+                                          ),
                                     ],
                                   ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 4),
                                   Wrap(
                                     spacing: 8,
-                                    runSpacing: 8,
+                                    runSpacing: 4,
                                     children: [
                                       OutlinedButton.icon(
                                         onPressed: () => _openTags(false),
@@ -276,6 +306,11 @@ class _MyPageState extends ConsumerState<MyPage>
                               ),
                             ),
                       trailing: TextButton(
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(0, 32),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                         onPressed: () => setState(() => _editing = !_editing),
                         child: Text(i18n.tr(_editing ? 'my_done' : 'my_edit')),
                       ),
@@ -352,77 +387,154 @@ class _HistoryStripState extends ConsumerState<_HistoryStrip> {
   @override
   Widget build(BuildContext context) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final library = ref.read(libraryFacadeProvider);
     return SizedBox(
-      height: 146,
-      child: WindowsHorizontalWheelScroll(
-        controller: _scroll,
-        builder: (controller) => ScrollConfiguration(
-          behavior: ScrollConfiguration.of(
-            context,
-          ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
-          child: ListView.separated(
-            controller: controller,
-            scrollDirection: Axis.horizontal,
-            itemCount:
-                widget.view.history.length +
-                (widget.view.hasMoreHistory ? 1 : 0),
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (context, index) {
-              if (index == widget.view.history.length) {
-                return SizedBox(
-                  width: 100,
-                  child: Center(
-                    child: _loading
-                        ? const CircularProgressIndicator()
-                        : TextButton(
-                            onPressed: _loadMore,
-                            child: Text(
-                              i18n.tr(
-                                _loadError == null
-                                    ? 'my_load_more'
-                                    : 'my_retry',
-                              ),
-                            ),
-                          ),
-                  ),
-                );
-              }
-              final entry = widget.view.history[index];
-              final track = entry.track;
-              return Tooltip(
-                message: track.groupTitle,
-                child: Semantics(
-                  label: track.groupTitle,
-                  button: true,
-                  child: SizedBox(
-                    width: 132,
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Material(
-                          child: InkWell(
-                            onTap: () => widget.onOpen(track),
-                            child: ExcludeSemantics(
-                              child: AsyncLocalCoverImage(
-                                requestKey: entry.workKey,
-                                future: library.coverPathFutureForTrack(track),
-                                initialPath: library.resolvedCoverPathForTrack(
-                                  track,
+      height: _HistoryWorkCard.coverHeight + 14,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: ClipRRect(
+          key: const ValueKey('my-history-viewport'),
+          borderRadius: BorderRadius.circular(12),
+          child: WindowsHorizontalWheelScroll(
+            controller: _scroll,
+            builder: (controller) => ScrollConfiguration(
+              behavior: ScrollConfiguration.of(
+                context,
+              ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+              child: ListView.separated(
+                controller: controller,
+                scrollDirection: Axis.horizontal,
+                itemCount:
+                    widget.view.history.length +
+                    (widget.view.hasMoreHistory ? 1 : 0),
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  if (index == widget.view.history.length) {
+                    return SizedBox(
+                      width: 100,
+                      child: Center(
+                        child: _loading
+                            ? const CircularProgressIndicator()
+                            : TextButton(
+                                onPressed: _loadMore,
+                                child: Text(
+                                  i18n.tr(
+                                    _loadError == null
+                                        ? 'my_load_more'
+                                        : 'my_retry',
+                                  ),
                                 ),
-                                fit: BoxFit.cover,
-                                cacheWidth: 320,
                               ),
-                            ),
+                      ),
+                    );
+                  }
+                  return _HistoryWorkCard(
+                    entry: widget.view.history[index],
+                    onOpen: widget.onOpen,
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+final _historyWorkTitleProvider = FutureProvider.autoDispose
+    .family<String?, MusicTrack>((ref, track) async {
+      final metadataTitle = track.remoteMetadata?['title']?.toString().trim();
+      if (track.isRemoteAsmr) {
+        return metadataTitle?.isNotEmpty == true
+            ? metadataTitle
+            : (track.groupTitle.trim().isEmpty ? null : track.groupTitle);
+      }
+      final displayMode = ref.watch(
+        settingsStateProvider.select(
+          (state) => state.value?.workNameDisplay ?? WorkNameDisplay.workTitle,
+        ),
+      );
+      final library = ref.watch(libraryFacadeProvider);
+      final target = library.audioDetailTargetForTrack(track);
+      final folderName = PathDisplay.folderName(target.targetPath);
+      if (displayMode == WorkNameDisplay.folderName) return folderName;
+      ref.watch(libraryDetailTargetRevisionProvider(target));
+      final cached =
+          library.resolvedAudioDetail(target) ??
+          library.categorySnapshot?.detailFor(target);
+      final detail = cached ?? (await library.loadAudioDetail(target)).detail;
+      final title = detail.workTitle.trim();
+      return title.isNotEmpty ? title : folderName;
+    });
+
+class _HistoryWorkCard extends ConsumerWidget {
+  const _HistoryWorkCard({required this.entry, required this.onOpen});
+  static const double coverWidth = 132;
+  static const double coverHeight = coverWidth * 3 / 4;
+  final ListeningHistoryEntry entry;
+  final Future<void> Function(MusicTrack track) onOpen;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final library = ref.read(libraryFacadeProvider);
+    final title =
+        ref.watch(_historyWorkTitleProvider(entry.track)).value ??
+        ref.read(appLanguageProviderInstanceProvider).tr('my_untitled_work');
+    return Tooltip(
+      message: title,
+      child: Semantics(
+        label: title,
+        button: true,
+        child: SizedBox(
+          width: coverWidth,
+          child: ClipRRect(
+            key: ValueKey('my-history-card-${entry.workKey}'),
+            borderRadius: BorderRadius.circular(12),
+            child: Material(
+              child: InkWell(
+                onTap: () => onOpen(entry.track),
+                child: ExcludeSemantics(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      AsyncLocalCoverImage(
+                        requestKey: entry.workKey,
+                        future: library.coverPathFutureForTrack(entry.track),
+                        initialPath: library.resolvedCoverPathForTrack(
+                          entry.track,
+                        ),
+                        fit: BoxFit.cover,
+                        cacheWidth: 320,
+                      ),
+                      Positioned(
+                        bottom: 8,
+                        left: 8,
+                        right: 8,
+                        child: Text(
+                          title,
+                          key: ValueKey('my-history-title-${entry.workKey}'),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            height: 1.25,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black87,
+                                blurRadius: 4,
+                                offset: Offset(0, 1),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
-              );
-            },
+              ),
+            ),
           ),
         ),
       ),

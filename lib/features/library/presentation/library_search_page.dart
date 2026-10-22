@@ -58,10 +58,12 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
 
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  final Map<AudioLibraryCategoryType, ScrollController> _scrollControllers = {
-    for (final category in _categories)
-      category: ScrollController(keepScrollOffset: false),
-  };
+  final ScrollController _allScrollController = ScrollController(
+    keepScrollOffset: false,
+  );
+  final ScrollController _categoryScrollController = ScrollController(
+    keepScrollOffset: false,
+  );
   // Retained pages keep these references in their content revision. Replace
   // collections on selection changes so hidden pages receive the latest inputs.
   Map<AudioLibraryCategoryType, Set<String>> _selectedCategoryTerms = const {};
@@ -69,6 +71,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   final Map<AudioLibraryCategoryType, String> _termSearchQueries = {};
 
   final ValueNotifier<int> _activeCategoryIndex = ValueNotifier<int>(0);
+  final ValueNotifier<int> _activeBodyIndex = ValueNotifier<int>(0);
+  AudioLibraryCategoryType _lastTermCategory = AudioLibraryCategoryType.tags;
+  final Set<AudioLibraryCategoryType> _visitedTermCategories = {};
 
   Timer? _debounceTimer;
   bool _isSelectionMode = false;
@@ -86,9 +91,14 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   AudioLibraryCategoryType get _categoryType =>
       _categories[_activeCategoryIndex.value];
 
+  ScrollController get _activeScrollController =>
+      _categoryType == AudioLibraryCategoryType.all
+      ? _allScrollController
+      : _categoryScrollController;
+
   void _resetScroll() {
-    final controller = _scrollControllers[_categoryType];
-    if (controller != null && controller.hasClients) {
+    final controller = _activeScrollController;
+    if (controller.hasClients) {
       controller.jumpTo(0);
     }
   }
@@ -142,23 +152,31 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
 
   void _selectCategory(AudioLibraryCategoryType category) {
     if (_categoryType == category) return;
-    final outgoing = _categoryFilterCaches[_categoryType];
-    if (outgoing != null) {
+    final outgoingKey = _categoryCacheKey(_categoryType);
+    final outgoing = _categoryFilterCaches[outgoingKey];
+    if (outgoing != null &&
+        (category == AudioLibraryCategoryType.all ||
+            outgoingKey != _categoryCacheKey(category))) {
       outgoing.requestId++;
       outgoing.pendingKey = null;
       UiInteractionCoordinator.instance.cancelCommit(
-        _categoryCommitKey(_categoryType),
+        _categoryCommitKey(outgoingKey),
       );
     }
     FocusManager.instance.primaryFocus?.unfocus();
-    final controller = _scrollControllers[_categoryType];
-    if (controller != null && controller.hasClients) {
+    final controller = _activeScrollController;
+    if (controller.hasClients) {
       controller.jumpTo(controller.offset);
     }
     if (_isSelectionMode) setState(_clearSelection);
     final targetIndex = _categories.indexOf(category);
     if (targetIndex >= 0) {
+      if (category != AudioLibraryCategoryType.all) {
+        _lastTermCategory = category;
+        _visitedTermCategories.add(category);
+      }
       _activeCategoryIndex.value = targetIndex;
+      _activeBodyIndex.value = category == AudioLibraryCategoryType.all ? 0 : 1;
     }
   }
 
@@ -287,9 +305,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     _controller.dispose();
     _focusNode.dispose();
     _activeCategoryIndex.dispose();
-    for (final controller in _scrollControllers.values) {
-      controller.dispose();
-    }
+    _activeBodyIndex.dispose();
+    _allScrollController.dispose();
+    _categoryScrollController.dispose();
     for (final cache in _categoryFilterCaches.entries) {
       UiInteractionCoordinator.instance.cancelCommit(
         _categoryCommitKey(cache.key),
@@ -345,7 +363,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
         final pinnedPaths = pinnedLibraryPaths.toSet();
         return AppFadeThroughIndexedStack.lazy(
           key: const ValueKey<String>('library_search_category_stack'),
-          indexListenable: _activeCategoryIndex,
+          indexListenable: _activeBodyIndex,
           contentRevision: (
             libraryFacade,
             structureRevision,
@@ -363,10 +381,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
             topInset,
             bottomInset,
           ),
-          itemCount: _categories.length,
+          itemCount: 2,
           itemBuilder: (context, index) {
-            final category = _categories[index];
-            if (category == AudioLibraryCategoryType.all) {
+            if (index == 0) {
               return LibrarySearchAllResults(
                 isActive: () => _categoryType == AudioLibraryCategoryType.all,
                 activityListenable: _activeCategoryIndex,
@@ -374,8 +391,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                 queryRevision: _queryRevision,
                 structureRevision: structureRevision,
                 detailRevision: detailRevision,
-                scrollController:
-                    _scrollControllers[AudioLibraryCategoryType.all]!,
+                scrollController: _allScrollController,
                 topPadding: topInset,
                 isSelectionMode: _isSelectionMode,
                 selectedPaths: _selectedLibraryPaths,
@@ -384,16 +400,19 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                 onTreeChanged: (tree) => _searchSelectionTree = tree,
               );
             }
-            return _buildCategoryBody(
-              categoryType: category,
-              libraryFacade: libraryFacade,
-              i18n: i18n,
-              topPadding: topInset,
-              bottomPadding: bottomInset,
-              cacheExtent: 120,
-              structureRevision: structureRevision,
-              detailRevision: detailRevision,
-              pinnedPaths: pinnedPaths,
+            return ValueListenableBuilder<int>(
+              valueListenable: _activeCategoryIndex,
+              builder: (context, _, _) => _buildCategoryBody(
+                categoryType: _lastTermCategory,
+                libraryFacade: libraryFacade,
+                i18n: i18n,
+                topPadding: topInset,
+                bottomPadding: bottomInset,
+                cacheExtent: 120,
+                structureRevision: structureRevision,
+                detailRevision: detailRevision,
+                pinnedPaths: pinnedPaths,
+              ),
             );
           },
         );
@@ -529,6 +548,35 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   String _categoryCommitKey(AudioLibraryCategoryType category) =>
       'library_category_search_${identityHashCode(this)}_${category.name}';
 
+  AudioLibraryCategoryType _categoryCacheKey(
+    AudioLibraryCategoryType category,
+  ) =>
+      // Without element filters, categories have identical rows and can share
+      // both completed results and requests that are still running.
+      _selectedTermsForCategory(category).isEmpty &&
+          (_termSearchQueries[category]?.trim().isEmpty ?? true)
+      ? AudioLibraryCategoryType.all
+      : category;
+
+  _CategoryFilterCache _cacheForCategory(AudioLibraryCategoryType category) =>
+      _categoryFilterCaches.putIfAbsent(
+        _categoryCacheKey(category),
+        () => _CategoryFilterCache()
+          ..result =
+              _categoryFilterCaches[AudioLibraryCategoryType.all]?.result,
+      );
+
+  List<String> _snapshotTerms(
+    AudioLibraryCategorySnapshot? snapshot,
+    AudioLibraryCategoryType category,
+  ) => switch (category) {
+    AudioLibraryCategoryType.tags => snapshot?.tagTerms ?? const [],
+    AudioLibraryCategoryType.voiceActors =>
+      snapshot?.voiceActorTerms ?? const [],
+    AudioLibraryCategoryType.circles => snapshot?.circleTerms ?? const [],
+    AudioLibraryCategoryType.all => const [],
+  };
+
   void _ensureCategoryEntries(
     LibraryFacade libraryFacade,
     AudioLibraryCategorySnapshot snapshot,
@@ -549,17 +597,15 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       normalizedSelectedTerms.join('\n'),
       pinnedPaths.join('\n'),
     ].join('|');
-    final cache = _categoryFilterCaches.putIfAbsent(
-      category,
-      _CategoryFilterCache.new,
-    );
+    final cacheKey = _categoryCacheKey(category);
+    final cache = _cacheForCategory(category);
     if (identical(snapshot, cache.snapshot) && filterKey == cache.filterKey) {
       if (cache.pendingKey != null) {
         cache.requestId++;
         cache.pendingKey = null;
         cache.error = null;
         UiInteractionCoordinator.instance.cancelCommit(
-          _categoryCommitKey(category),
+          _categoryCommitKey(cacheKey),
         );
       }
       return;
@@ -573,11 +619,14 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     cache.error = null;
     final requestId = ++cache.requestId;
     bool isCurrent() =>
-        mounted && _categoryType == category && cache.requestId == requestId;
+        mounted &&
+        _categoryType != AudioLibraryCategoryType.all &&
+        _categoryCacheKey(_categoryType) == cacheKey &&
+        cache.requestId == requestId;
     void commit(VoidCallback update) {
       if (!isCurrent()) return;
       UiInteractionCoordinator.instance.scheduleCommit(
-        key: _categoryCommitKey(category),
+        key: _categoryCommitKey(cacheKey),
         priority: 5,
         commit: () {
           if (!isCurrent()) return;
@@ -635,6 +684,54 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     };
   }
 
+  Widget _buildTermBox(
+    AudioLibraryCategoryType categoryType,
+    AppLanguageProvider i18n,
+    List<String> terms,
+  ) {
+    return LibraryCategoryTermBox(
+      key: ValueKey('library_category_term_box_${categoryType.name}'),
+      categoryType: categoryType,
+      collapseOnMount: true,
+      terms: terms,
+      selectedTerms: _selectedTermsForCategory(categoryType),
+      emptyText: _noTermsText(i18n, categoryType),
+      clearLabel: i18n.tr('clear'),
+      collapseLabel: i18n.tr('collapse'),
+      expandLabel: i18n.tr('expand'),
+      searchHintText: _termSearchHintText(i18n, categoryType),
+      searchQuery: _termSearchQueries[categoryType] ?? '',
+      onSearchQueryChanged: (val) {
+        setState(() {
+          if (val.isEmpty) {
+            _termSearchQueries.remove(categoryType);
+          } else {
+            _termSearchQueries[categoryType] = val;
+          }
+        });
+      },
+      onToggle: (term) {
+        setState(() {
+          final terms = Set<String>.of(_selectedTermsForCategory(categoryType));
+          if (!terms.remove(term)) terms.add(term);
+          _selectedCategoryTerms = {
+            ..._selectedCategoryTerms,
+            categoryType: terms,
+          };
+        });
+      },
+      onClear: () {
+        if (_selectedTermsForCategory(categoryType).isEmpty) {
+          return;
+        }
+        setState(() {
+          _selectedCategoryTerms = Map.of(_selectedCategoryTerms)
+            ..remove(categoryType);
+        });
+      },
+    );
+  }
+
   Widget _buildCategoryBody({
     required AudioLibraryCategoryType categoryType,
     required LibraryFacade libraryFacade,
@@ -654,14 +751,11 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       _categorySnapshotDetailRevision = detailRevision;
       _categorySnapshotFuture = libraryFacade.audioLibraryCategorySnapshot();
     }
-    final cache = _categoryFilterCaches.putIfAbsent(
-      categoryType,
-      _CategoryFilterCache.new,
-    );
+    final cache = _cacheForCategory(categoryType);
     return ValueListenableBuilder<int>(
       valueListenable: cache.revision,
       builder: (context, _, _) => FutureBuilder<AudioLibraryCategorySnapshot>(
-        key: ValueKey('category_future_${categoryType.name}'),
+        key: const ValueKey('category_future'),
         future: _categorySnapshotFuture,
         initialData:
             cachedSnapshot?.structureRevision == structureRevision &&
@@ -687,7 +781,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           final error = snapshotState.error ?? cache.error;
           final entries =
               cache.result?.entries ?? const <AudioLibraryCategoryEntry>[];
-          final terms = cache.result?.terms ?? const <String>[];
+          final terms = _termSearchKeywordsForCategory(categoryType).isEmpty
+              ? _snapshotTerms(snapshot, categoryType)
+              : cache.result?.terms ?? const <String>[];
           Map<String, FolderNode>? foldersByPath;
           FolderNode? folderForEntry(AudioLibraryCategoryEntry entry) {
             if (!entry.isFolder) return null;
@@ -699,10 +795,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
             return foldersByPath![PathMatcher.normalize(entry.path)];
           }
 
-          final hasTermBox = categoryType != AudioLibraryCategoryType.all;
-          final itemCount = entries.length + (hasTermBox ? 1 : 0) + 1;
+          final itemCount = entries.length + 2;
           final selectedTerms = _selectedTermsForCategory(categoryType);
-          final termQuery = _termSearchQueries[categoryType] ?? '';
 
           final highlightTerms = <String>{
             ...extractSearchTerms(_query),
@@ -714,8 +808,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           final list = SearchHighlightScope.withTerms(
             terms: highlightTerms,
             child: ListView.builder(
-              key: ValueKey('library_category_${categoryType.name}'),
-              controller: _scrollControllers[categoryType]!,
+              key: const ValueKey('library_category_results'),
+              controller: _categoryScrollController,
               padding: EdgeInsets.fromLTRB(
                 LibraryLikeCardMetrics.listHorizontalPadding,
                 topPadding,
@@ -731,69 +825,42 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                 if (key == const ValueKey('category_bottom')) {
                   return itemCount - 1;
                 }
-                if (key ==
-                    ValueKey(
-                      'library_category_term_box_${categoryType.name}',
-                    )) {
+                if (key == const ValueKey('library_category_term_selector')) {
                   return 0;
                 }
                 entryIndices ??= {
                   for (var index = 0; index < entries.length; index++)
                     ValueKey('category_${entries[index].target.targetPath}'):
-                        index + (hasTermBox ? 1 : 0),
+                        index + 1,
                 };
                 return entryIndices![key];
               },
               itemBuilder: (context, index) {
-                if (hasTermBox && index == 0) {
-                  return LibraryCategoryTermBox(
-                    key: ValueKey(
-                      'library_category_term_box_${categoryType.name}',
-                    ),
-                    categoryType: categoryType,
-                    collapseOnMount: true,
-                    terms: terms,
-                    selectedTerms: selectedTerms,
-                    emptyText: _noTermsText(i18n, categoryType),
-                    clearLabel: i18n.tr('clear'),
-                    collapseLabel: i18n.tr('collapse'),
-                    expandLabel: i18n.tr('expand'),
-                    searchHintText: _termSearchHintText(i18n, categoryType),
-                    searchQuery: termQuery,
-                    onSearchQueryChanged: (val) {
-                      setState(() {
-                        if (val.isEmpty) {
-                          _termSearchQueries.remove(categoryType);
-                        } else {
-                          _termSearchQueries[categoryType] = val;
-                        }
-                      });
-                    },
-                    onToggle: (term) {
-                      setState(() {
-                        final terms = Set<String>.of(
-                          _selectedTermsForCategory(categoryType),
-                        );
-                        if (!terms.remove(term)) terms.add(term);
-                        _selectedCategoryTerms = {
-                          ..._selectedCategoryTerms,
-                          categoryType: terms,
-                        };
-                      });
-                    },
-                    onClear: () {
-                      if (_selectedTermsForCategory(categoryType).isEmpty) {
-                        return;
-                      }
-                      setState(() {
-                        _selectedCategoryTerms = Map.of(_selectedCategoryTerms)
-                          ..remove(categoryType);
-                      });
-                    },
+                if (index == 0) {
+                  return Stack(
+                    key: const ValueKey('library_category_term_selector'),
+                    children: [
+                      for (final type in _categories.skip(1))
+                        if (_visitedTermCategories.contains(type))
+                          Offstage(
+                            key: ValueKey(type),
+                            offstage: type != categoryType,
+                            child: TickerMode(
+                              enabled: type == categoryType,
+                              child: _buildTermBox(
+                                type,
+                                i18n,
+                                type == categoryType
+                                    ? terms
+                                    : _snapshotTerms(snapshot, type),
+                              ),
+                            ),
+                          ),
+                    ],
                   );
                 }
 
-                final entryIndex = index - (hasTermBox ? 1 : 0);
+                final entryIndex = index - 1;
                 if (entryIndex == entries.length) {
                   return AppDeferredFade(
                     key: const ValueKey('category_bottom'),

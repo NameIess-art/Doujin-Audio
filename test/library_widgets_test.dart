@@ -3387,17 +3387,17 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     await pumpUntilFound(
       tester,
-      find.byKey(const ValueKey<String>('library_category_tags')),
+      find.byKey(const ValueKey<String>('library_category_results')),
     );
     await tester.pump(const Duration(milliseconds: 350));
     expect(
-      find.byKey(const ValueKey<String>('library_category_tags')),
+      find.byKey(const ValueKey<String>('library_category_results')),
       findsOneWidget,
     );
     expect(
       tester
           .widget<ListView>(
-            find.byKey(const ValueKey<String>('library_category_tags')),
+            find.byKey(const ValueKey<String>('library_category_results')),
           )
           .physics,
       isA<ClampingScrollPhysics>(),
@@ -3423,7 +3423,7 @@ void main() {
     final tagsSelector = find.byType(LibraryCategoryTermBox).evaluate().single;
     final outgoingScroll = tester
         .widget<ListView>(
-          find.byKey(const ValueKey<String>('library_category_tags')),
+          find.byKey(const ValueKey<String>('library_category_results')),
         )
         .controller!;
     expect(outgoingScroll.position.maxScrollExtent, greaterThan(80));
@@ -3545,7 +3545,7 @@ void main() {
     );
     await pumpUntilFound(
       tester,
-      find.byKey(const ValueKey<String>('library_category_tags')),
+      find.byKey(const ValueKey<String>('library_category_results')),
     );
     final entryCard = find.byKey(const ValueKey<String>('category_$trackPath'));
     await pumpUntilFound(tester, entryCard);
@@ -5450,7 +5450,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     await pumpUntilFound(
       tester,
-      find.byKey(const ValueKey<String>('library_category_tags')),
+      find.byKey(const ValueKey<String>('library_category_results')),
     );
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('healing-work', findRichText: true), findsOneWidget);

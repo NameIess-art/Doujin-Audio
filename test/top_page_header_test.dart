@@ -8,6 +8,38 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets(
+    'unmasked header keeps Android fades independent of grouped backdrops',
+    (tester) async {
+      await tester.pumpWidget(const MaterialApp(
+        home: Scaffold(
+          body: TopPageHeader(
+            showFadeMask: false,
+            titleWidget: SizedBox.shrink(),
+            leading: HeaderFloatingButton(child: SizedBox.shrink()),
+            trailing: HeaderFloatingButton(child: SizedBox.shrink()),
+          ),
+        ),
+      ));
+      expect(find.byType(AppEdgeFadeMask), findsNothing);
+      final filters = tester.renderObjectList<RenderBackdropFilter>(
+        find.byType(BackdropFilter),
+      ).toList();
+      expect(filters, hasLength(2));
+      if (Theme.of(tester.element(find.byType(TopPageHeader))).platform ==
+          TargetPlatform.android) {
+        expect(filters.map((filter) => filter.backdropKey), everyElement(isNull));
+      } else {
+        expect(filters.first.backdropKey, isNotNull);
+        expect(filters.last.backdropKey, same(filters.first.backdropKey));
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'header mask stretches immediately in both directions without fading',
     (tester) async {
       late StateSetter update;

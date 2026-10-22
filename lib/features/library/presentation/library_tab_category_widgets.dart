@@ -200,7 +200,11 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
     return AnimatedContainer(
       duration: motionStandard,
       curve: Curves.easeOutCubic,
-      margin: const EdgeInsets.only(bottom: 4),
+      margin: const EdgeInsets.only(
+        left: AppSpacing.xs,
+        right: AppSpacing.xs,
+        bottom: 4,
+      ),
       padding: EdgeInsets.fromLTRB(
         _expanded ? 10 : 12,
         5,

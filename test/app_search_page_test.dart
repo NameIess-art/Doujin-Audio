@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
@@ -196,7 +197,7 @@ void main() {
     expect(bodyTaps, 1);
   });
 
-  testWidgets('keyboard animation does not rebuild search result content', (
+  testWidgets('keyboard animation does not rebuild search controls or results', (
     tester,
   ) async {
     final controller = TextEditingController();
@@ -230,11 +231,106 @@ void main() {
     );
     await tester.pumpAndSettle();
     final initialBuilds = builds;
+    final fieldShell = tester.widget(
+      find.byKey(const ValueKey('app_search_field_shell')),
+    );
     for (final bottom in [80.0, 160.0, 240.0, 320.0, 0.0]) {
       tester.view.viewInsets = FakeViewPadding(bottom: bottom);
       await tester.pump();
+      expect(
+        tester.widget(find.byKey(const ValueKey('app_search_field_shell'))),
+        same(fieldShell),
+        reason: 'Keyboard metrics must not rebuild the search controls.',
+      );
     }
     expect(builds, initialBuilds);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('keyboard motion defers results and covers until metrics settle', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator.instance;
+    coordinator.resetForTest();
+    addTearDown(coordinator.resetForTest);
+    addTearDown(tester.view.resetViewInsets);
+    addTearDown(tester.view.resetPhysicalSize);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        home: AppSearchPageScaffold<int>(
+          controller: controller,
+          focusNode: focusNode,
+          hintText: 'Search',
+          categories: const [AppSearchCategory(value: 0, label: 'All')],
+          selectedCategory: 0,
+          onCategorySelected: (_) {},
+          onChanged: (_) {},
+          onSubmitted: (_) {},
+          onCloseOrClear: () {},
+          body: const SizedBox.expand(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    tester.view.physicalSize = const Size(1280, 800);
+    await tester.pump();
+    expect(coordinator.isInteracting, isFalse);
+
+    for (final insets in [
+      [80.0, 160.0, 320.0],
+      [160.0, 80.0, 0.0],
+    ]) {
+      var results = 0;
+      var covers = 0;
+      tester.view.viewInsets = FakeViewPadding(bottom: insets.first);
+      coordinator.scheduleCommit(key: 'search-results', commit: () => results++);
+      coordinator.scheduleCommit(
+        key: 'search-cover',
+        allowDuringScroll: true,
+        commit: () => covers++,
+      );
+      for (final bottom in insets) {
+        tester.view.viewInsets = FakeViewPadding(bottom: bottom);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(results, 0);
+        expect(covers, 0);
+        expect(coordinator.isVisualUpdateDeferred, isTrue);
+        expect(coordinator.navigationAllowed.value, isTrue);
+      }
+      await tester.pump(coordinator.idleDelay);
+      await tester.pump();
+      expect(results, 1);
+      expect(covers, 1);
+      expect(coordinator.isVisualUpdateDeferred, isFalse);
+    }
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 80);
+    expect(coordinator.isInteracting, isTrue);
+    unawaited(
+      navigatorKey.currentState!.push(
+        PageRouteBuilder<void>(
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+          pageBuilder: (_, _, _) => const SizedBox.expand(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(coordinator.isInteracting, isFalse);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 160);
+    expect(coordinator.isInteracting, isFalse);
+    navigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 240);
+    expect(coordinator.isInteracting, isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(coordinator.isInteracting, isFalse);
     expect(tester.takeException(), isNull);
   });
 

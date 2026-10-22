@@ -388,19 +388,23 @@ class _TopPageHeaderState extends State<TopPageHeader> {
     Widget buildSecondaryCapsuleRow({double trailingOpacity = 1.0}) {
       // Only siblings in this row share input. The upper capsule can overlap
       // this row while collapsing and must keep its own backdrop.
-      return BackdropGroup(
-        backdropKey: _rowBackdropKey,
-        child: Row(
-          children: [
-            if (widget.leading != null) ...[leading!, const SizedBox(width: 8)],
-            Expanded(child: titleContent),
-            if (widget.trailing != null) ...[
-              const SizedBox(width: 8),
-              Opacity(opacity: trailingOpacity, child: trailing!),
-            ],
+      final row = Row(
+        children: [
+          if (widget.leading != null) ...[leading!, const SizedBox(width: 8)],
+          Expanded(child: titleContent),
+          if (widget.trailing != null) ...[
+            const SizedBox(width: 8),
+            Opacity(opacity: trailingOpacity, child: trailing!),
           ],
-        ),
+        ],
       );
+      // Android's grouped backdrop can bypass route opacity for an unmasked
+      // header. Independent samples keep its glass and controls fading together.
+      if (!widget.showFadeMask &&
+          defaultTargetPlatform == TargetPlatform.android) {
+        return row;
+      }
+      return BackdropGroup(backdropKey: _rowBackdropKey, child: row);
     }
 
     final topCapsuleWidget =

@@ -1,6 +1,9 @@
+import 'dart:ui' show FlutterView;
+
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_design_tokens.dart';
+import '../ui/ui_interaction_coordinator.dart';
 import 'app_edge_fade_mask.dart';
 import 'app_glass_surface.dart';
 import 'app_transitions.dart';
@@ -53,14 +56,45 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
       _AppSearchPageScaffoldState<T>();
 }
 
-class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
+class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
+    with WidgetsBindingObserver {
   final BackdropKey _controlsBackdropKey = BackdropKey();
+  final _interaction = UiInteractionCoordinator.instance;
+  FlutterView? _view;
+  double? _keyboardInset;
   bool _requestedInitialFocus = false;
   bool _focusScheduled = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeMetrics() {
+    final inset = _view?.viewInsets.bottom;
+    if (inset == null || inset == _keyboardInset) return;
+    _keyboardInset = inset;
+    if (!TickerMode.valuesOf(context).enabled ||
+        readAppRoute(context)?.isCurrent == false) {
+      return;
+    }
+    // IME motion outlasts route entrance protection. Reuse the idle timer so
+    // result adoption and cover updates resume only after the metrics settle.
+    _interaction.beginInteraction(this, deferVisualUpdates: true);
+    _interaction.endInteraction(this);
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _view = View.of(context);
+    _keyboardInset ??= _view!.viewInsets.bottom;
+    if (!TickerMode.valuesOf(context).enabled ||
+        ModalRoute.isCurrentOf(context) == false) {
+      _interaction.cancelInteraction(this);
+    }
     if (_requestedInitialFocus ||
         _focusScheduled ||
         !TickerMode.valuesOf(context).enabled ||
@@ -89,9 +123,15 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
   }
 
   @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _interaction.cancelInteraction(this);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final mediaQuery = MediaQuery.of(context);
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
     final accent = widget.accentColor ?? cs.primary;
@@ -102,23 +142,28 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>> {
         key: const ValueKey<String>('app_search_stack'),
         fit: StackFit.expand,
         children: [
-          Positioned(
+          Builder(
             key: const ValueKey<String>('app_search_body_layer'),
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: MediaQuery.viewInsetsOf(context).bottom,
-            // The positioned layer already consumes the keyboard inset.
-            // Do not rebuild result cards for each keyboard animation frame.
-            child: MediaQuery(
-              data: mediaQuery.copyWith(
-                viewInsets: mediaQuery.viewInsets.copyWith(bottom: 0),
-              ),
-              child: PageHeaderInset(
-                topInset: AppSearchPageScaffold.controlsTopInset(context),
-                child: AppPageContentTransition(child: widget.body),
-              ),
-            ),
+            builder: (context) {
+              final mediaQuery = MediaQuery.of(context);
+              return Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: mediaQuery.viewInsets.bottom,
+                // Keep keyboard dependencies local to the viewport so neither
+                // the controls nor result cards rebuild on every IME tick.
+                child: MediaQuery(
+                  data: mediaQuery.copyWith(
+                    viewInsets: mediaQuery.viewInsets.copyWith(bottom: 0),
+                  ),
+                  child: PageHeaderInset(
+                    topInset: AppSearchPageScaffold.controlsTopInset(context),
+                    child: AppPageContentTransition(child: widget.body),
+                  ),
+                ),
+              );
+            },
           ),
           Positioned(
             top: 0,

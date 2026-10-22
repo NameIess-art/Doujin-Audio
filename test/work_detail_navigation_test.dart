@@ -873,6 +873,18 @@ void main() {
             target,
           ).then((_) => localFinished = true),
         );
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 75));
+        final header = find.byKey(const ValueKey('work_detail_page_header'));
+        double headerOpacity() => tester.widget<FadeTransition>(
+          find.descendant(
+            of: header,
+            matching: find.byWidgetPredicate((widget) => widget is FadeTransition),
+          ).first,
+        ).opacity.value;
+        expect(headerOpacity(), inExclusiveRange(0, 1));
         await _finishRouteAnimation(tester);
         final local = tester.widget<WorkDetailPage>(
           find.byType(WorkDetailPage),
@@ -902,6 +914,7 @@ void main() {
           same(work),
         );
         final asmrState = tester.state(find.byType(WorkDetailPage));
+        expect(headerOpacity(), 1);
         unawaited(
           showAsmrWorkDetailSheet(context, work.copyWith(isFavorite: true)),
         );
@@ -909,6 +922,10 @@ void main() {
         expect(tester.state(find.byType(WorkDetailPage)), same(asmrState));
         expect(asmrFinished, isFalse);
         navigation.navigatorKey.currentState!.pop();
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 75));
+        expect(headerOpacity(), inExclusiveRange(0, 1));
         await _settle(tester);
         expect(asmrFinished, isTrue);
         expect(navigation.isOpen, isFalse);

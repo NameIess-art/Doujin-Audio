@@ -99,6 +99,8 @@ Work information is stored in `doujin-audio.json` inside the folder, including t
 
 ### Personalization and data maintenance
 
+- My shows listening-time bars by day, week, month, quarter or year, a horizontal cover history, and your top 20 interest tags. Listening time uses actual elapsed playback time without counting simultaneous sessions twice.
+- Add or remove interests and search the online tag directory together with local tags. Excluded tags hide matching works across ASMR.ONE lists. The full directory needs an initial network fetch; cached tags remain available offline.
 - Choose light, dark, or system theme, a theme color, separate ASMR.ONE colors, the startup page, transition speed, reduced motion, and cover decoding quality. The interface supports Simplified Chinese, English, and Japanese.
 - On Android, configure behavior after headphone disconnection, temporary audio-focus loss, or calls, and choose exclusive audio focus or mixing with other applications.
 - `.dabackup` stores the library, settings, playback history and sessions, timeline markers, and ASMR.ONE credentials. Restores are validated before replacing data at the next cold start, with rollback on failure. **Restores are supported only on the same platform.**

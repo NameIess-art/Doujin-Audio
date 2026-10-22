@@ -17,6 +17,7 @@ class AsmrRecommendationEngine {
     int refreshSeed = 0,
     int? limit,
     Set<int> explorationWorkIds = const <int>{},
+    Map<String, double>? tagWeights,
   }) {
     final request = AsmrRecommendationRankRequest(
       candidates: candidates,
@@ -26,6 +27,7 @@ class AsmrRecommendationEngine {
       refreshSeed: refreshSeed,
       limit: limit,
       explorationWorkIds: explorationWorkIds,
+      tagWeights: tagWeights,
     );
     return compute(rankAsmrRecommendations, request);
   }
@@ -38,11 +40,13 @@ class AsmrRecommendationEngine {
     int refreshSeed = 0,
     int? limit,
     Set<int> explorationWorkIds = const <int>{},
+    Map<String, double>? tagWeights,
   }) {
     final profile = _RecommendationProfile.build(
       localTracks: localTracks,
       favoriteWorks: favoriteWorks,
       historyWorks: historyWorks,
+      tagWeights: tagWeights,
     );
     final stats = _CandidateStats.build(candidates);
     final scored = <_ScoredWork>[
@@ -62,6 +66,16 @@ class AsmrRecommendationEngine {
       explorationWorkIds: explorationWorkIds,
     );
   }
+
+  Map<String, double> initialTagWeights({
+    required List<MusicTrack> localTracks,
+    required List<AsmrWork> favoriteWorks,
+    required List<AsmrWork> historyWorks,
+  }) => _RecommendationProfile.build(
+    localTracks: localTracks,
+    favoriteWorks: favoriteWorks,
+    historyWorks: historyWorks,
+  ).tagWeights;
 
   double _score(
     AsmrWork work,
@@ -236,6 +250,7 @@ class AsmrRecommendationRankRequest {
     required this.refreshSeed,
     required this.limit,
     this.explorationWorkIds = const <int>{},
+    this.tagWeights,
   });
 
   final List<AsmrWork> candidates;
@@ -245,6 +260,7 @@ class AsmrRecommendationRankRequest {
   final int refreshSeed;
   final int? limit;
   final Set<int> explorationWorkIds;
+  final Map<String, double>? tagWeights;
 }
 
 List<AsmrWork> rankAsmrRecommendations(AsmrRecommendationRankRequest request) {
@@ -256,6 +272,7 @@ List<AsmrWork> rankAsmrRecommendations(AsmrRecommendationRankRequest request) {
     refreshSeed: request.refreshSeed,
     limit: request.limit,
     explorationWorkIds: request.explorationWorkIds,
+    tagWeights: request.tagWeights,
   );
 }
 
@@ -288,6 +305,7 @@ class _RecommendationProfile {
     required List<MusicTrack> localTracks,
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,
+    Map<String, double>? tagWeights,
   }) {
     final builder = _RecommendationProfileBuilder();
     final favoriteWeight = favoriteWorks.isEmpty
@@ -305,6 +323,11 @@ class _RecommendationProfile {
     final localWeight = localTracks.isEmpty ? 0.0 : 0.5 / localTracks.length;
     for (final track in localTracks) {
       builder.addTrack(track, localWeight);
+    }
+    if (tagWeights != null) {
+      builder.tagWeights
+        ..clear()
+        ..addAll(tagWeights);
     }
     return builder.build();
   }

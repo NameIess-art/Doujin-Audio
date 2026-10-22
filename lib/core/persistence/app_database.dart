@@ -17,13 +17,14 @@ part 'app_database_library_entries.dart';
 part 'app_database_asmr.dart';
 part 'app_database_schema.dart';
 part 'app_database_row_codecs.dart';
+part 'app_database_listening.dart';
 
 const int _sqliteInClauseBatchSize = 900;
 
 class AppDatabase {
   AppDatabase._();
 
-  static const int schemaVersion = 13;
+  static const int schemaVersion = 14;
   static const String fileName = 'audio_player.db';
 
   @visibleForTesting

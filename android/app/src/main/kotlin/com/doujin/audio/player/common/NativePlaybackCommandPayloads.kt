@@ -41,7 +41,7 @@ internal data class NativePrepareSessionArguments(
             audioEffects.eqBandLevels, audioEffects.volumeNormalizationEnabled, audioEffects.panning,
             repeatOne, repeatAll, shuffle, queueStartIndex,
             items.map { StoredNativePlaybackQueueItem(it.path, it.uri, it.title, it.subtitle,
-                it.artUri, it.candidateUris) }, audioEffects.channelSwapEnabled,
+                it.artUri, it.candidateUris, it.usageDescriptor) }, audioEffects.channelSwapEnabled,
             playing = false, playWhenReady = false, isTemporary = isTemporary
         )
     }
@@ -182,7 +182,8 @@ internal object NativePlaybackCommandPayloads {
                 uri = uri,
                 title = rawItem.requiredString("title"),
                 subtitle = rawItem.optionalString("subtitle"),
-                artUri = rawItem.optionalString("artUri")?.also(::requireSupportedUri)
+                artUri = rawItem.optionalString("artUri")?.also(::requireSupportedUri),
+                usageDescriptor = (rawItem["usageDescriptor"] as? Map<*, *>)?.entries?.associate { (key, value) -> key.toString() to value }
             ).withPlaybackCandidateUris(parseCandidateUris(rawItem["candidateUris"]))
         }
     }

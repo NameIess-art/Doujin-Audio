@@ -43,6 +43,7 @@ Future<StartupRestoreOutcome?> initializeAudioPlayerStartup({
     final nativePlayback = NativePlaybackRepository();
     try {
       await nativePlayback.clearAll();
+      await nativePlayback.resetUsage();
     } finally {
       await nativePlayback.dispose();
     }

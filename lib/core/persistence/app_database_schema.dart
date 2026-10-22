@@ -21,10 +21,12 @@ Future<void> _onCreate(Database db, int version) async {
   await _createAudioDetailsTable(db);
   await _createLibraryEntriesTable(db);
   await _createTimeSegmentLabelsTable(db);
+  await _createListeningTables(db);
 }
 
 Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
   if (oldVersion >= newVersion) return;
+  if (oldVersion < 14 && newVersion >= 14) await _createListeningTables(db);
   if (oldVersion < 2) {
     await _addColumnIfMissing(db, 'audio_details', 'card_cover_path', 'TEXT');
   }
@@ -107,6 +109,30 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
       await db.execute('DROP INDEX IF EXISTS $name');
     }
   }
+}
+
+Future<void> _createListeningTables(Database db) async {
+  await db.execute(
+    'CREATE TABLE IF NOT EXISTS listening_days ('
+    'date TEXT PRIMARY KEY, milliseconds INTEGER NOT NULL)',
+  );
+  await db.execute(
+    'CREATE TABLE IF NOT EXISTS listening_work_days ('
+    'date TEXT NOT NULL, work_key TEXT NOT NULL, milliseconds INTEGER NOT NULL, '
+    'PRIMARY KEY(date, work_key))',
+  );
+  await db.execute(
+    'CREATE TABLE IF NOT EXISTS listening_history ('
+    'work_key TEXT PRIMARY KEY, track_json TEXT NOT NULL, last_played_at_ms INTEGER NOT NULL, '
+    'legacy_order INTEGER NOT NULL DEFAULT 0)',
+  );
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_listening_history_recent '
+    'ON listening_history(last_played_at_ms DESC, work_key)',
+  );
+  await db.execute(
+    'CREATE TABLE IF NOT EXISTS listening_imports (batch_id TEXT PRIMARY KEY)',
+  );
 }
 
 Future<void> _addColumnIfMissing(

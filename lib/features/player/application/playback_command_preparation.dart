@@ -74,6 +74,7 @@ List<Map<String, Object?>> _buildNativePlaybackQueue(
       'title':
           track?.displayName ?? path.basenameWithoutExtension(descriptor.path),
       if (track != null) 'subtitle': track.groupTitle,
+      if (track != null) 'usageDescriptor': track.toJson(),
       if (artUri != null && artUri.isNotEmpty) 'artUri': artUri,
       if (candidates != null)
         'candidateUris': candidates

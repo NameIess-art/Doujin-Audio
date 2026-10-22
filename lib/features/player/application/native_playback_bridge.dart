@@ -9,6 +9,7 @@ import '../../../core/immutable_collections.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/platform_channels.dart';
 import '../domain/audio_effects.dart';
+import '../domain/playback_usage.dart';
 
 class NativePlaybackSnapshot {
   NativePlaybackSnapshot({
@@ -385,7 +386,8 @@ abstract interface class NativePlaybackBridgeBase {
   Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot();
 }
 
-class NativePlaybackBridge implements NativePlaybackBridgeBase {
+class NativePlaybackBridge
+    implements NativePlaybackBridgeBase, PlaybackUsageSource {
   NativePlaybackBridge._();
 
   static final NativePlaybackBridge instance = NativePlaybackBridge._();
@@ -803,6 +805,31 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
           ? NativePlaybackBundleSnapshot.fromMap(value)
           : NativePlaybackBundleSnapshot(sessions: <NativePlaybackSnapshot>[]),
     );
+  }
+
+  @override
+  Future<List<PlaybackUsageBatch>> readUsage() async {
+    final raw = await _invokeRaw('readUsage');
+    if (raw['ok'] != true) {
+      throw StateError(raw['error']?.toString() ?? 'Usage read failed');
+    }
+    return (raw['value'] as List)
+        .map((e) => PlaybackUsageBatch.fromMap(e as Map))
+        .toList();
+  }
+
+  @override
+  Future<void> acknowledgeUsage(List<String> batchIds) async {
+    final result = await _invokeVoid('acknowledgeUsage', {
+      'batchIds': batchIds,
+    });
+    if (result.isFailure) throw StateError(result.errorOrNull!);
+  }
+
+  @override
+  Future<void> resetUsage() async {
+    final result = await _invokeVoid('resetUsage');
+    if (result.isFailure) throw StateError(result.errorOrNull!);
   }
 
   Future<Map<dynamic, dynamic>> _invokeRaw(

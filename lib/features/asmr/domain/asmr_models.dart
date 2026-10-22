@@ -242,10 +242,12 @@ class AsmrWork {
     required this.rating,
     required List<String> voiceActors,
     required List<String> tags,
+    List<int> tagIds = const [],
     this.hasSubtitle = false,
     this.isFavorite = false,
   }) : voiceActors = immutableList(voiceActors),
-       tags = immutableList(tags);
+       tags = immutableList(tags),
+       tagIds = immutableList(tagIds);
 
   final int id;
   final String title;
@@ -264,6 +266,7 @@ class AsmrWork {
   final double rating;
   final List<String> voiceActors;
   final List<String> tags;
+  final List<int> tagIds;
   final bool hasSubtitle;
   final bool isFavorite;
 
@@ -295,6 +298,7 @@ class AsmrWork {
       rating: rating,
       voiceActors: voiceActors,
       tags: tags,
+      tagIds: tagIds,
       hasSubtitle: hasSubtitle,
       isFavorite: isFavorite ?? this.isFavorite,
     );
@@ -318,6 +322,7 @@ class AsmrWork {
     'rating': rating,
     'voiceActors': voiceActors,
     'tags': tags,
+    'tagIds': tagIds,
     'hasSubtitle': hasSubtitle,
     'isFavorite': isFavorite,
   };
@@ -393,6 +398,16 @@ class AsmrWork {
           0,
       voiceActors: voiceActors,
       tags: tags,
+      tagIds:
+          (json['tagIds'] as List? ??
+                  (json['tags'] as List? ?? [])
+                      .whereType<Map<Object?, Object?>>()
+                      .map((tag) => tag['id'])
+                      .whereType<num>()
+                      .toList())
+              .whereType<num>()
+              .map((id) => id.toInt())
+              .toList(),
       hasSubtitle:
           json['hasSubtitle'] as bool? ??
           json['has_subtitle'] as bool? ??

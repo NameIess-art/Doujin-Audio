@@ -68,6 +68,46 @@ void main() {
     expect(result.isOk, true, reason: result.errorOrNull);
   }
 
+  test(
+    'usage excludes buffering and pause, ignores seeks and speed, and unions sessions',
+    () async {
+      await prepare('RJ123456-a');
+      await prepare('RJ123456-b');
+      await Future<void>.delayed(Duration.zero);
+      elapsed += const Duration(seconds: 1);
+      players.first.setBuffering(true);
+      await bridge.pause('RJ123456-b');
+      await Future<void>.delayed(Duration.zero);
+      elapsed += const Duration(seconds: 10);
+      players.first.setBuffering(false);
+      await Future<void>.delayed(Duration.zero);
+      await bridge.setSpeed('RJ123456-a', 2);
+      await bridge.seek('RJ123456-a', const Duration(minutes: 4));
+      elapsed += const Duration(seconds: 2);
+      await bridge.pause('RJ123456-a');
+      final batches = await bridge.readUsage();
+      expect(
+        batches.expand((b) => b.days).fold<int>(0, (sum, d) => sum + d.totalMs),
+        3000,
+      );
+      expect(
+        batches
+            .expand((b) => b.days)
+            .expand((d) => d.works)
+            .fold<int>(0, (sum, w) => sum + w.milliseconds),
+        3000,
+      );
+      expect(
+        batches
+            .expand((b) => b.days)
+            .expand((d) => d.works)
+            .map((w) => w.key)
+            .toSet(),
+        {'rj:RJ123456'},
+      );
+    },
+  );
+
   test('a single item prepare reads the whole native playlist once', () async {
     await prepare('one');
     expect(playlistReads, 1);
@@ -2383,6 +2423,11 @@ void main() {
 }
 
 class _Player extends PlatformPlayer {
+  void setBuffering(bool value) {
+    state = state.copyWith(buffering: value);
+    bufferingController.add(value);
+  }
+
   _Player() : super(configuration: const PlayerConfiguration());
   void emitError(String error) => errorController.add(error);
   void completeBeforePlayingEvent() {

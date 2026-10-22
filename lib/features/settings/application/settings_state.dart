@@ -11,7 +11,7 @@ export '../../../core/media/cover_image_resolution.dart';
 export '../../library/domain/library_node.dart'
     show LibrarySortCriterion, WorkNameDisplay;
 
-enum StartupPage { asmrOne, library, playlist }
+enum StartupPage { asmrOne, library, playlist, my }
 
 enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
 

@@ -552,19 +552,33 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                                     state.lastError,
                                   )),
                                   padding: const EdgeInsets.only(top: 80),
-                                  child: AppEmptyState(
-                                    icon: state.lastError != null
-                                        ? Icons.error_outline_rounded
-                                        : Icons.search_off_rounded,
-                                    title: state.lastError != null
-                                        ? i18n.tr('error')
-                                        : i18n.tr('asmr_empty_category'),
-                                    message: state.lastError == null
-                                        ? ''
-                                        : localizedAsmrCatalogErrorText(
-                                            i18n,
-                                            state.lastError,
+                                  child: Column(
+                                    children: [
+                                      AppEmptyState(
+                                        icon: state.lastError != null
+                                            ? Icons.error_outline_rounded
+                                            : Icons.search_off_rounded,
+                                        title: state.lastError != null
+                                            ? i18n.tr('error')
+                                            : i18n.tr('asmr_empty_category'),
+                                        message: state.lastError == null
+                                            ? ''
+                                            : localizedAsmrCatalogErrorText(
+                                                i18n,
+                                                state.lastError,
+                                              ),
+                                      ),
+                                      if (hasLoadMore)
+                                        TextButton(
+                                          key: const ValueKey(
+                                            'asmr_empty_load_more',
                                           ),
+                                          onPressed: state.isLoadingMore
+                                              ? null
+                                              : _loadMore,
+                                          child: Text(i18n.tr('my_load_more')),
+                                        ),
+                                    ],
                                   ),
                                 )
                               : !hasLoadMore

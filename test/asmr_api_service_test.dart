@@ -8,6 +8,67 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 
 void main() {
   test(
+    'complete tag directory keeps stable ids and all language aliases',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        expect(request.uri.path, '/api/tags/');
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode([
+            {
+              'id': 509,
+              'name': '3D作品',
+              'i18n': {
+                'en-us': {'name': '3D Works'},
+                'ja-jp': {'name': '3D作品'},
+                'zh-cn': {'name': '3D作品'},
+              },
+              'count': 37,
+            },
+          ]),
+        );
+        await request.response.close();
+      });
+      final service = AsmrApiService(
+        baseUri: Uri.parse('http://${server.address.address}:${server.port}'),
+      );
+      try {
+        final tags = await service.fetchTagCatalog();
+        expect(tags.single.key, 'online:509');
+        expect(tags.single.onlineId, 509);
+        expect(tags.single.aliases, containsAll(['3D作品', '3D Works']));
+      } finally {
+        service.close();
+        await subscription.cancel();
+        await server.close(force: true);
+      }
+    },
+  );
+
+  test(
+    'tag directory rejects partial envelopes instead of marking complete',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write('{"tags":[],"pagination":{"hasMore":true}}');
+        await request.response.close();
+      });
+      final service = AsmrApiService(
+        baseUri: Uri.parse('http://${server.address.address}:${server.port}'),
+      );
+      try {
+        await expectLater(service.fetchTagCatalog(), throwsFormatException);
+      } finally {
+        service.close();
+        await subscription.cancel();
+        await server.close(force: true);
+      }
+    },
+  );
+
+  test(
     'cancelled requests abort an openUrl result that arrives late',
     () async {
       final client = _PendingOpenClient();

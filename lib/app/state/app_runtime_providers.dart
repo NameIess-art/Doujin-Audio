@@ -1,4 +1,5 @@
 import '../../features/library/application/work_text_service.dart';
+import 'listening_activity_provider.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
 import '../../features/library/presentation/library_providers.dart';
 import '../../features/player/presentation/playback_providers.dart';
@@ -113,6 +114,7 @@ final dataBackupServiceProvider = Provider<DataBackupService>((ref) {
   return DataBackupService(
     appUpdateService: ref.watch(appUpdateServiceProvider),
     beforeExport: () async {
+      await ref.read(listeningActivityServiceProvider)?.refresh();
       await ref.read(libraryFacadeProvider).flushPendingPersistence();
       await ref.read(playbackFacadeProvider).flushSessionStatePersistence();
       await ref.read(asmrDownloadManagerProvider)?.flushPersistence();

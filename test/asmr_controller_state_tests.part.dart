@@ -8,6 +8,70 @@ void registerAsmrControllerStateTests({
   late AsmrPreferencesStore preferences;
   setUp(() => preferences = preferencesStore());
 
+  test(
+    'tag exclusion caches visible lists and restores raw cached works',
+    () async {
+      await resetPrefs();
+      final state = AsmrTagPreferences();
+      state.resolve('sleep');
+      state.seeded = true;
+      await preferences.saveTagPreferences(state);
+      final api = _FakeAsmrApiService(
+        recommendationWorks: [
+          _work(id: 100, title: 'Sleep', tags: ['sleep']),
+          _work(id: 101, title: 'Other', tags: ['other']),
+        ],
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      await controller.ensureCategoryLoaded(AsmrCategoryType.release);
+      final original = controller.worksFor(AsmrCategoryType.release);
+      expect(controller.worksFor(AsmrCategoryType.release), same(original));
+      await controller.setTagExcluded('local:sleep', true);
+      final filtered = controller.worksFor(AsmrCategoryType.release);
+      expect(filtered.map((work) => work.id), [101]);
+      expect(controller.worksFor(AsmrCategoryType.release), same(filtered));
+      await controller.setTagExcluded('local:sleep', false);
+      expect(controller.worksFor(AsmrCategoryType.release), same(original));
+    },
+  );
+
+  test(
+    'adding interest updates already loaded recommendation ordering',
+    () async {
+      await resetPrefs();
+      final state = AsmrTagPreferences();
+      state.weights[state.resolve('first')] = .5;
+      state.resolve('second');
+      state.seeded = true;
+      await preferences.saveTagPreferences(state);
+      final api = _FakeAsmrApiService(
+        recommendationWorks: [
+          _work(id: 100, title: 'First', tags: ['first']),
+          _work(id: 101, title: 'Second', tags: ['second']),
+        ],
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      await controller.ensureCategoryLoaded(AsmrCategoryType.recommendation);
+      expect(
+        controller.worksFor(AsmrCategoryType.recommendation).first.id,
+        100,
+      );
+      await controller.setTagInterested('local:second', true);
+      expect(
+        controller.worksFor(AsmrCategoryType.recommendation).first.id,
+        101,
+      );
+    },
+  );
+
   for (final clearQuery in [true, false]) {
     test(
       '${clearQuery ? 'clearing' : 'closing'} search cancels requests and retains root pages',

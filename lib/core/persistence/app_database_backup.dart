@@ -84,9 +84,11 @@ extension AppDatabaseBackup on AppDatabase {
       if (sourceVersion < 1 || sourceVersion > AppDatabase.schemaVersion) {
         throw const FormatException('unsupported_database_schema');
       }
-      // Version 12 already has the current tables and columns. Inspect it
-      // before onUpgrade can recreate a missing table and hide data loss.
-      if (sourceVersion >= 12) await _validateRestoreSchema(inspection);
+      // Validate tables present in the source version before migration can
+      // recreate them and hide data loss. Listening tables first exist in v14.
+      if (sourceVersion >= 12) {
+        await _validateRestoreSchema(inspection, version: sourceVersion);
+      }
     } finally {
       await inspection.close();
     }
@@ -102,7 +104,9 @@ extension AppDatabaseBackup on AppDatabase {
       if (integrity.singleOrNull?['integrity_check'] != 'ok') {
         throw const FormatException('invalid_database');
       }
-      if (sourceVersion < 12) await _validateRestoreSchema(db);
+      if (sourceVersion < AppDatabase.schemaVersion) {
+        await _validateRestoreSchema(db);
+      }
       await db.update('track_assets', <String, Object?>{
         'cover_cache_path': null,
       });
@@ -121,7 +125,10 @@ extension AppDatabaseBackup on AppDatabase {
   }
 }
 
-Future<void> _validateRestoreSchema(Database candidate) async {
+Future<void> _validateRestoreSchema(
+  Database candidate, {
+  int version = AppDatabase.schemaVersion,
+}) async {
   // Derive requirements from the production schema so new persistence tables
   // and constraints cannot silently be omitted from restore validation.
   final reference = await openDatabase(
@@ -140,6 +147,7 @@ Future<void> _validateRestoreSchema(Database candidate) async {
     )).map((row) => row['name']).toSet();
     for (final table in requiredTables) {
       final name = table['name']! as String;
+      if (version < 14 && name.startsWith('listening_')) continue;
       if (!candidateTables.contains(name)) {
         throw const FormatException('missing_database_tables');
       }

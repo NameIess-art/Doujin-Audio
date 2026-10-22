@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -7,23 +9,29 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:meta/meta.dart';
 
 import '../../../core/errors/native_result.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/media_file_support.dart';
 import '../domain/audio_effects.dart';
+import '../domain/playback_usage.dart';
+import 'playback_usage_ledger.dart';
 import 'native_playback_bridge.dart';
 
 part 'windows_playback_session.dart';
 
 /// The desktop implementation of the existing playback transport. Each session
 /// owns one libmpv player; video surfaces borrow it without opening another source.
-class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
+class WindowsPlaybackBridge
+    implements NativePlaybackBridgeBase, PlaybackUsageSource {
   WindowsPlaybackBridge({
     Player Function()? createPlayer,
+    bool persistUsage = false,
     Future<String> Function(Player)? readNativePlaylist,
     Duration Function()? monotonicElapsed,
     VideoControllerConfiguration videoControllerConfiguration =
         const VideoControllerConfiguration(),
-  }) : _createPlayer = createPlayer ?? _defaultPlayer,
+  }) : _persistUsage = persistUsage,
+       _createPlayer = createPlayer ?? _defaultPlayer,
        _readNativePlaylist = readNativePlaylist,
        _monotonicElapsed = monotonicElapsed,
        _videoControllerConfiguration = videoControllerConfiguration;
@@ -31,7 +39,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   static WindowsPlaybackBridge? _instance;
   static WindowsPlaybackBridge get instance {
     if (_instance == null || _instance!._disposed) {
-      _instance = WindowsPlaybackBridge();
+      _instance = WindowsPlaybackBridge(persistUsage: true);
     }
     return _instance!;
   }
@@ -46,6 +54,65 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     return player;
   }
 
+  final bool _persistUsage;
+  File? _usageFile;
+  Future<void>? _usageLoaded;
+  Future<void> _usageSerial = Future.value();
+  Timer? _usageTimer;
+  bool _usageStarted = false;
+  String? _persistedUsage;
+
+  Future<void> _loadUsage() async {
+    if (!_persistUsage) return;
+    final directory = await getApplicationSupportDirectory();
+    await directory.create(recursive: true);
+    final file = File('${directory.path}/playback_usage.json');
+    _usageFile = file;
+    if (await file.exists()) {
+      final encoded = await file.readAsString();
+      final stored = jsonDecode(encoded) as Map<String, dynamic>;
+      _usage.restoreState(stored);
+      _persistedUsage = encoded;
+    }
+    if (_disposed) return;
+    _usageTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      unawaited(
+        readUsage().then<void>(
+          (_) {},
+          onError: (Object error, StackTrace stack) {
+            AppLogService.error(
+              'Playback usage checkpoint failed',
+              error: error,
+              stackTrace: stack,
+            );
+          },
+        ),
+      );
+    });
+  }
+
+  Future<T> _usageOperation<T>(T Function() operation) {
+    final result = _usageSerial.then((_) async {
+      await (_usageLoaded ??= _loadUsage());
+      final value = operation();
+      final file = _usageFile;
+      if (file != null) {
+        final encoded = jsonEncode(_usage.exportState());
+        if (encoded == _persistedUsage) return value;
+        final temporary = File('${file.path}.tmp');
+        await temporary.writeAsString(encoded, flush: true);
+        await temporary.rename(file.path);
+        _persistedUsage = encoded;
+      }
+      return value;
+    });
+    _usageSerial = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return result;
+  }
+
   final Player Function() _createPlayer;
   final Future<String> Function(Player)? _readNativePlaylist;
   final VideoControllerConfiguration _videoControllerConfiguration;
@@ -55,6 +122,38 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   final _clock = Stopwatch()..start();
   final Duration Function()? _monotonicElapsed;
   Duration get _elapsed => _monotonicElapsed?.call() ?? _clock.elapsed;
+  late final _usage = PlaybackUsageLedger(elapsed: () => _elapsed);
+
+  void _updateUsage(_WindowsPlaybackSession session) {
+    final state = session.player?.state;
+    final audible =
+        !session.retired &&
+        !session.opening &&
+        session.pendingStart == null &&
+        session.error == null &&
+        state?.playing == true &&
+        state?.buffering == false &&
+        state?.completed == false &&
+        session.queue.isNotEmpty;
+    if (audible) _usageStarted = true;
+    _usage.update(session.id, audible ? session.queue[session.index] : null);
+  }
+
+  @override
+  Future<List<PlaybackUsageBatch>> readUsage() => _usageOperation(() {
+    for (final session in _sessions.values) {
+      _updateUsage(session);
+    }
+    return _usage.read();
+  });
+
+  @override
+  Future<void> acknowledgeUsage(List<String> batchIds) =>
+      _usageOperation(() => _usage.acknowledge(batchIds));
+
+  @override
+  Future<void> resetUsage() => _usageOperation(_usage.reset);
+
   final _retiring = <Future<void>>{};
   String? _focusedSessionId;
   bool _listening = false;
@@ -164,6 +263,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   Future<void> stopListening() async => _listening = false;
 
   void _emit(_WindowsPlaybackSession session) {
+    _updateUsage(session);
     if (!_listening ||
         session.opening ||
         session.eventPending ||
@@ -966,6 +1066,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   });
   @override
   Future<NativeResult<void>> removeSession(String sessionId) {
+    _usage.update(sessionId, null);
     final session = _sessions.remove(sessionId);
     if (session != null) {
       session.retired = true;
@@ -1035,7 +1136,10 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     if (_disposed) return;
     _disposed = true;
     _listening = false;
+    _usageTimer?.cancel();
     await clearAll();
+    if (_usageLoaded != null || _usageStarted) await readUsage();
+    _usageTimer?.cancel();
     await Future.wait(_retiring.toList());
     await _snapshots.close();
     await _progress.close();

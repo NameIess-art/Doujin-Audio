@@ -40,6 +40,7 @@ import '../../features/player/presentation/bedtime_canvas_page.dart';
 
 import 'mobile_dock_capsule_content.dart';
 import 'main_destination.dart';
+import 'my_page.dart';
 import 'desktop_main_navigation.dart';
 import 'app_dock_panel.dart';
 import 'work_detail_navigation.dart';
@@ -352,6 +353,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                     ? MainDestinationType.library
                     : MainDestinationType.playlist),
         StartupPage.playlist => MainDestinationType.playlist,
+        StartupPage.my => MainDestinationType.my,
       };
       final savedDestination = ref
           .read(browsePageStateStoreProvider)
@@ -802,6 +804,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
           activeTabIndexListenable: _activePageIndex,
         ),
       ),
+      MainDestinationType.my => MyPage(tabIndex: index),
       MainDestinationType.settings => SettingsTab(tabIndex: index),
     };
   }

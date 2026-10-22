@@ -69,7 +69,8 @@ data class StoredNativePlaybackQueueItem(
     val title: String,
     val subtitle: String?,
     val artUri: String?,
-    val candidateUris: List<String> = emptyList()
+    val candidateUris: List<String> = emptyList(),
+    val usageDescriptor: Map<String, Any?>? = null
 )
 
 data class StoredPlaybackTimerRuntimeState(
@@ -289,6 +290,7 @@ object NativePlaybackStateStore {
                                         .put("title", queueItem.title)
                                         .put("subtitle", queueItem.subtitle)
                                         .put("artUri", queueItem.artUri)
+                                        .put("usageDescriptor", queueItem.usageDescriptor?.let { JSONObject(it) })
                                         .put(
                                             "candidateUris",
                                             JSONArray(queueItem.candidateUris)
@@ -691,7 +693,8 @@ private fun JSONObject.optQueueItems(): List<StoredNativePlaybackQueueItem> {
                     title = item.optString("title", "Audio"),
                     subtitle = item.optNullableString("subtitle"),
                     artUri = item.optNullableString("artUri"),
-                    candidateUris = item.optStringList("candidateUris")
+                    candidateUris = item.optStringList("candidateUris"),
+                    usageDescriptor = item.optJSONObject("usageDescriptor")?.let { NativePlaybackUsageLedger.jsonMap(it) }
                 )
             )
         }

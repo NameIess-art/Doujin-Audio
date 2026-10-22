@@ -22,7 +22,7 @@ void main() {
         await AppPreferences.init();
         final i18n = AppLanguageProvider();
         final activePage = ValueNotifier(0);
-        final iconKeys = List.generate(4, (_) => GlobalKey());
+        final iconKeys = List.generate(MainDestinationType.values.length, (_) => GlobalKey());
         final destinations = resolveMainDestinations(
           showLocalLibrary: true,
           showAsmrOne: true,
@@ -59,7 +59,7 @@ void main() {
                         isMenuCollapsed: collapsed,
                         activePageIndex: activePage,
                         menuIconKeys: iconKeys,
-                        menuIconLinks: List.generate(4, (_) => LayerLink()),
+                        menuIconLinks: List.generate(MainDestinationType.values.length, (_) => LayerLink()),
                         collapseOffset: (_, _) => Offset.zero,
                         onSwitchPage: (index) => activePage.value = index,
                         onToggleMenu: () =>
@@ -123,8 +123,8 @@ void main() {
         await AppPreferences.init();
         final i18n = AppLanguageProvider();
         final activePage = ValueNotifier(0);
-        final iconKeys = List.generate(4, (_) => GlobalKey());
-        final iconLinks = List.generate(4, (_) => LayerLink());
+        final iconKeys = List.generate(MainDestinationType.values.length, (_) => GlobalKey());
+        final iconLinks = List.generate(MainDestinationType.values.length, (_) => LayerLink());
         final destinations = resolveMainDestinations(
           showLocalLibrary: true,
           showAsmrOne: true,

@@ -1,5 +1,29 @@
 import '../media/music_track.dart';
 
+final class ListeningWorkRecord {
+  const ListeningWorkRecord({
+    required this.workKey,
+    required this.track,
+    required this.milliseconds,
+    required this.lastPlayedAtMs,
+  });
+  final String workKey;
+  final MusicTrack track;
+  final int milliseconds;
+  final int lastPlayedAtMs;
+}
+
+final class ListeningDayRecord {
+  const ListeningDayRecord({
+    required this.date,
+    required this.totalMs,
+    required this.works,
+  });
+  final String date;
+  final int totalMs;
+  final List<ListeningWorkRecord> works;
+}
+
 final class AudioEffectsRecord {
   AudioEffectsRecord({
     this.skipSilenceEnabled = false,

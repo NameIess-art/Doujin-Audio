@@ -237,6 +237,7 @@ class NativePlaybackBridge(
 }
 
 internal fun isSupportedNativePlaybackMethod(method: String): Boolean = method in setOf(
+    "readUsage", "acknowledgeUsage", "resetUsage",
     NativePlaybackMethods.PREPARE_SESSION,
     NativePlaybackMethods.PLAY,
     NativePlaybackMethods.PAUSE,
@@ -279,6 +280,23 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
         return value.toFloat()
     }
     return when (call.method) {
+        "readUsage" -> ParsedPlaybackCommand(dispatchInactive = { context ->
+            channelSuccess(NativePlaybackUsageLedger.get(context).read())
+        }) { service -> service.readUsage() }
+        "acknowledgeUsage" -> {
+            val ids = arguments.requiredList("batchIds")
+            require(ids.all { it is String && it.isNotEmpty() }) { "batchIds is required." }
+            val batchIds = ids.map { it as String }.toSet()
+            ParsedPlaybackCommand(dispatchInactive = { context ->
+                NativePlaybackUsageLedger.get(context).acknowledge(batchIds)
+                channelSuccess(null)
+            }) { service -> service.acknowledgeUsage(batchIds) }
+        }
+        "resetUsage" -> ParsedPlaybackCommand(dispatchInactive = { context ->
+            NativePlaybackUsageLedger.get(context).reset()
+            channelSuccess(null)
+        }) { service -> service.resetUsage() }
+
         NativePlaybackMethods.PREPARE_SESSION -> {
             val prepared = NativePlaybackCommandPayloads.parsePrepareSession(call.argumentsMap())
             if (prepared.deferPlayerCreation && !prepared.autoPlay) {

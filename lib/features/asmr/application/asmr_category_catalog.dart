@@ -37,6 +37,7 @@ final class _CategoryState {
   int? totalCount;
   bool hasMore = false;
   bool needsLoadMoreRetry = false;
+  bool preferencesStale = false;
   String? query;
   int revision = 0;
   Object? error;
@@ -65,18 +66,25 @@ final class AsmrCategoryCatalog {
     required AsmrCategoryRequestContext Function() currentContext,
     required List<AsmrWork> Function(AsmrCategoryType) localWorks,
     required Set<int> Function() favoriteIds,
+    bool Function(AsmrWork)? isWorkAllowed,
+    bool Function()? hasExclusions,
   }) : _remoteCatalogService = remoteCatalogService,
        _onChanged = onChanged,
        _isContextCurrent = isContextCurrent,
        _currentContext = currentContext,
        _localWorks = localWorks,
-       _favoriteIds = favoriteIds;
+       _favoriteIds = favoriteIds,
+       _isWorkAllowed = isWorkAllowed ?? ((_) => true),
+       _hasExclusions = hasExclusions ?? (() => false);
   final AsmrRemoteCatalogService _remoteCatalogService;
   final void Function() _onChanged;
   final bool Function(AsmrCategoryRequestContext) _isContextCurrent;
   final AsmrCategoryRequestContext Function() _currentContext;
   final List<AsmrWork> Function(AsmrCategoryType) _localWorks;
   final Set<int> Function() _favoriteIds;
+  final bool Function(AsmrWork) _isWorkAllowed;
+  final bool Function() _hasExclusions;
+  Expando<List<AsmrWork>> _visibleCache = Expando();
   final Map<_CategoryKey, _CategoryState> _categories = {};
   int _searchEpoch = 1;
   int get searchEpoch => _searchEpoch;
@@ -136,6 +144,7 @@ final class AsmrCategoryCatalog {
     bool searchSession = false,
   }) {
     final state = _state(category, searchQuery, searchSession);
+    if (state.preferencesStale) return false;
     if (!isRemote(category) &&
         normalizeSearchQuery(searchQuery).isNotEmpty &&
         !identical(state.localSource, _localWorks(category))) {
@@ -194,24 +203,48 @@ final class AsmrCategoryCatalog {
     );
   }
 
-  List<AsmrWork> worksFor(AsmrCategoryType category) => isRemote(category)
-      ? _state(category).works ?? const []
-      : _localWorks(category);
+  List<AsmrWork> _visible(List<AsmrWork> works) {
+    if (!_hasExclusions()) return works;
+    return _visibleCache[works] ??= works
+        .where(_isWorkAllowed)
+        .toList(growable: false);
+  }
+
+  List<AsmrWork> worksFor(AsmrCategoryType category) => _visible(
+    isRemote(category)
+        ? _state(category).works ?? const []
+        : _localWorks(category),
+  );
   List<AsmrWork> filteredWorksFor(
     AsmrCategoryType category, {
     String searchQuery = '',
     bool searchSession = false,
   }) {
     if (isRemote(category)) {
-      return _state(category, searchQuery, searchSession).works ?? const [];
+      return _visible(
+        _state(category, searchQuery, searchSession).works ?? const [],
+      );
     }
     final works = _localWorks(category);
     final query = normalizeSearchQuery(searchQuery);
-    if (query.isEmpty) return works;
+    if (query.isEmpty) return _visible(works);
     final state = _state(category, query, searchSession);
-    return identical(state.localSource, works)
-        ? state.works ?? const []
-        : const [];
+    return _visible(
+      identical(state.localSource, works) ? state.works ?? const [] : const [],
+    );
+  }
+
+  void preferencesChanged({bool interruptRecommendations = false}) {
+    _visibleCache = Expando();
+    for (final entry in _categories.entries) {
+      final state = entry.value;
+      if (entry.key.category == AsmrCategoryType.recommendation) {
+        if (interruptRecommendations) state.invalidateRequest();
+        state.preferencesStale = true;
+      }
+      state.revision++;
+    }
+    _onChanged();
   }
 
   void bumpRevision(AsmrCategoryType category) {
@@ -489,6 +522,7 @@ final class AsmrCategoryCatalog {
     AsmrRequestCancellationToken cancellationToken,
   ) async {
     state.isLoading = true;
+    state.preferencesStale = false;
     state.needsLoadMoreRetry = false;
     state.error = null;
     if (_isCurrent(cacheKey, request)) _onChanged();

@@ -29,7 +29,7 @@ internal class NativePlaybackQueue(val descriptors: List<NativeMediaItemDescript
         descriptors.map { descriptor ->
             StoredNativePlaybackQueueItem(
                 descriptor.path, descriptor.uri, descriptor.title, descriptor.subtitle,
-                descriptor.artUri, descriptor.candidateUris
+                descriptor.artUri, descriptor.candidateUris, descriptor.usageDescriptor
             )
         }
     }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum MainDestinationType { library, asmrOne, playlist, settings }
+enum MainDestinationType { library, asmrOne, playlist, my, settings }
 
 class MainDestination {
   const MainDestination({
@@ -40,6 +40,12 @@ List<MainDestination> resolveMainDestinations({
       icon: Icons.featured_play_list_outlined,
       selectedIcon: Icons.featured_play_list_rounded,
       labelKey: 'nav_sessions',
+    ),
+    const MainDestination(
+      type: MainDestinationType.my,
+      icon: Icons.person_outline_rounded,
+      selectedIcon: Icons.person_rounded,
+      labelKey: 'nav_my',
     ),
     const MainDestination(
       type: MainDestinationType.settings,

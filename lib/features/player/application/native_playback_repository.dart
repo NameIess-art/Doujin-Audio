@@ -3,6 +3,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/errors/native_result.dart';
 import '../domain/audio_effects.dart';
+import '../domain/playback_usage.dart';
 import 'native_playback_bridge.dart';
 import 'windows_playback_bridge.dart';
 
@@ -15,6 +16,27 @@ class NativePlaybackRepository {
               : NativePlaybackBridge.instance);
 
   final NativePlaybackBridgeBase _bridge;
+
+  Future<List<PlaybackUsageBatch>> readUsage() async {
+    final source = _bridge;
+    return source is PlaybackUsageSource
+        ? (source as PlaybackUsageSource).readUsage()
+        : const [];
+  }
+
+  Future<void> acknowledgeUsage(List<String> batchIds) async {
+    final source = _bridge;
+    if (source is PlaybackUsageSource) {
+      await (source as PlaybackUsageSource).acknowledgeUsage(batchIds);
+    }
+  }
+
+  Future<void> resetUsage() async {
+    final source = _bridge;
+    if (source is PlaybackUsageSource) {
+      await (source as PlaybackUsageSource).resetUsage();
+    }
+  }
 
   Stream<NativePlaybackSnapshot> get snapshots => _bridge.snapshots;
 

@@ -1,3 +1,4 @@
+import '../domain/asmr_tag_interest.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -43,6 +44,12 @@ class AsmrRemoteCatalogService {
   final AsmrApiService _apiService;
   final AsmrPersistenceRepository _persistenceRepository;
   final AsmrRecommendationEngine _recommendationEngine;
+
+  bool Function(AsmrWork) isWorkAllowed = (_) => true;
+  Map<String, double>? Function() tagWeights = () => null;
+  Future<List<AsmrTag>> loadTagCatalog() => _apiService.fetchTagCatalog();
+  Future<List<MusicTrack>> loadLocalTracksForInterests() =>
+      _persistenceRepository.loadTracksForRecommendations();
 
   Future<AsmrWorkPage> loadPage(
     AsmrCategoryType category, {
@@ -124,7 +131,9 @@ class AsmrRemoteCatalogService {
     final promotedIds = searchQuery.isEmpty && refreshSeed > 1
         ? explorationIds
         : const <int>{};
-    final candidateList = candidates.values.toList(growable: false);
+    final candidateList = candidates.values
+        .where(isWorkAllowed)
+        .toList(growable: false);
     final localTracks =
         await (cancellationToken?.waitFor(localTracksFuture) ??
             localTracksFuture);
@@ -138,6 +147,7 @@ class AsmrRemoteCatalogService {
         historyWorks: historyWorks,
         refreshSeed: refreshSeed,
         explorationWorkIds: promotedIds,
+        tagWeights: tagWeights(),
       ),
       details: <String, Object?>{
         'candidates': candidateList.length,

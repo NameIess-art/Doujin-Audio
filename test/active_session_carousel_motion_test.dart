@@ -147,8 +147,8 @@ void main() {
         final geometryKey = GlobalKey();
         final index = ValueNotifier<int>(0);
         addTearDown(index.dispose);
-        final iconKeys = List.generate(4, (_) => GlobalKey());
-        final iconLinks = List.generate(4, (_) => LayerLink());
+        final iconKeys = List.generate(MainDestinationType.values.length, (_) => GlobalKey());
+        final iconLinks = List.generate(MainDestinationType.values.length, (_) => LayerLink());
         var expanded = false;
         var visible = true;
         var reduced = false;

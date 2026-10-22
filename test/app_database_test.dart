@@ -35,8 +35,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 13', () {
-    expect(AppDatabase.schemaVersion, 13);
+  test('schema starts from version 14', () {
+    expect(AppDatabase.schemaVersion, 14);
   });
 
   test('version 13 removes only duplicate constraint indexes', () async {

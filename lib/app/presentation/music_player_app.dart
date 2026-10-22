@@ -2,6 +2,7 @@ import '../../core/widgets/drag_only_scrollbar.dart';
 import 'package:flutter/foundation.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
 import '../../features/settings/presentation/settings_providers.dart';
+import '../state/listening_activity_provider.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -60,6 +61,7 @@ Widget createAudioPlayerApp({
 
   final app = ProviderScope(
     overrides: [
+      listeningActivityServiceProvider.overrideWithValue(runtimeGraph.listeningActivity!),
       ...createAppRuntimeOverrides(
         persistence: runtimeGraph.persistence,
         runtime: runtimeGraph.runtime,

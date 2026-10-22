@@ -1,0 +1,186 @@
+import 'dart:async';
+
+import '../../../core/media/audio_detail.dart';
+import '../../../core/media/music_track.dart';
+import '../../../core/logging/app_log_service.dart';
+import '../domain/listening_activity.dart';
+import '../domain/playback_usage.dart';
+
+typedef ListeningInterestRecorder =
+    Future<void> Function({
+      required String batchId,
+      required List<({List<String> tags, Duration duration})> contributions,
+    });
+
+/// Imports durable player batches before acknowledging them at their source.
+final class ListeningActivityService {
+  ListeningActivityService({
+    required ListeningActivityRepository repository,
+    required Future<List<PlaybackUsageBatch>> Function() readUsage,
+    required Future<void> Function(List<String>) acknowledgeUsage,
+    required MusicTrack? Function(String) resolveTrack,
+    required ListeningInterestRecorder recordInterests,
+  }) : _repository = repository,
+       _readUsage = readUsage,
+       _acknowledgeUsage = acknowledgeUsage,
+       _resolveTrack = resolveTrack,
+       _recordInterests = recordInterests;
+
+  final ListeningActivityRepository _repository;
+  final Future<List<PlaybackUsageBatch>> Function() _readUsage;
+  final Future<void> Function(List<String>) _acknowledgeUsage;
+  final MusicTrack? Function(String) _resolveTrack;
+  final ListeningInterestRecorder _recordInterests;
+  final _changes = StreamController<ListeningActivityView>.broadcast();
+  ListeningActivityView _view = const ListeningActivityView();
+  Future<void> _tail = Future.value();
+  Timer? _timer;
+  bool _disposed = false;
+  int _historyLimit = 40;
+
+  Stream<ListeningActivityView> get states => Stream.multi((events) {
+    final subscription = _changes.stream.listen(
+      events.addSync,
+      onError: events.addErrorSync,
+    );
+    events.addSync(_view);
+    events.onCancel = subscription.cancel;
+  }, isBroadcast: true);
+
+  Future<void> _serialize(Future<void> Function() action) {
+    final task = _tail.then((_) async {
+      if (!_disposed) await action();
+    });
+    _tail = task.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return task;
+  }
+
+  Future<void> start() async {
+    if (_disposed || _timer != null) return;
+    try {
+      await refresh();
+    } catch (error, stack) {
+      AppLogService.error(
+        'listening_activity_import_failed',
+        error: error,
+        stackTrace: stack,
+      );
+      if (!_disposed) _changes.addError(error, stack);
+    }
+    if (_disposed) return;
+    _timer ??= Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(
+        refresh().catchError((Object error, StackTrace stack) {
+          AppLogService.error(
+            'listening_activity_import_failed',
+            error: error,
+            stackTrace: stack,
+          );
+          if (!_disposed) _changes.addError(error, stack);
+        }),
+      );
+    });
+  }
+
+  Future<void> refresh() => _serialize(() async {
+    final batches = await _readUsage();
+    for (final batch in batches) {
+      final days = <ListeningDayContribution>[];
+      final interests = <({List<String> tags, Duration duration})>[];
+      for (final day in batch.days) {
+        final works = <ListeningWorkContribution>[];
+        for (final work in day.works) {
+          final track = await _resolveUsageTrack(work);
+          works.add(
+            ListeningWorkContribution(
+              workKey: work.key,
+              track: track,
+              milliseconds: work.milliseconds,
+              lastPlayedAtMs: work.lastPlayedAtMs,
+            ),
+          );
+          final tags = <String>{
+            ...track.tags,
+            ..._metadataTags(track.remoteMetadata?['tags']),
+          }.toList();
+          if (tags.isNotEmpty) {
+            interests.add((
+              tags: tags,
+              duration: Duration(milliseconds: work.milliseconds),
+            ));
+          }
+        }
+        days.add(
+          ListeningDayContribution(
+            date: day.date,
+            totalMs: day.totalMs,
+            works: works,
+          ),
+        );
+      }
+      await _repository.importBatch(batch.id, days);
+      // Retry the complete batch if either the preference write or native ack
+      // failed. Both database and interest imports are independently idempotent.
+      await _recordInterests(batchId: batch.id, contributions: interests);
+      await _acknowledgeUsage([batch.id]);
+    }
+    await _reload();
+  });
+
+  Future<void> loadMoreHistory() => _serialize(() async {
+    _historyLimit += 40;
+    await _reload();
+  });
+
+  Future<void> seedHistory(List<ListeningHistoryEntry> entries) =>
+      _serialize(() async {
+        await _repository.seedHistory(entries);
+        await _reload();
+      });
+
+  Future<void> _reload() async {
+    final days = await _repository.loadDays();
+    final history = await _repository.loadHistory(limit: _historyLimit + 1);
+    _view = ListeningActivityView(
+      days: List.unmodifiable(days),
+      history: List.unmodifiable(history.take(_historyLimit)),
+      hasMoreHistory: history.length > _historyLimit,
+    );
+    _changes.add(_view);
+  }
+
+  Future<MusicTrack> _resolveUsageTrack(PlaybackUsageWork work) async {
+    final path = work.path ?? work.uri ?? work.key;
+    final live = _resolveTrack(path);
+    if (live != null) return live;
+    if (work.descriptor != null) {
+      return MusicTrack.fromJson(Map<String, dynamic>.from(work.descriptor!));
+    }
+    final previous = await _repository.findTrack(work.key);
+    if (previous != null) return previous;
+    return MusicTrack(
+      path: path,
+      displayName: work.title ?? path,
+      groupKey: work.key,
+      groupTitle: work.subtitle ?? work.title ?? path,
+      groupSubtitle: AudioDetail.findRjCodeInText(work.key) ?? '',
+      isSingle: false,
+      remoteCoverUrl: work.artUri,
+    );
+  }
+
+  Future<void> dispose() async {
+    _timer?.cancel();
+    await _tail;
+    _disposed = true;
+    await _changes.close();
+  }
+}
+
+Iterable<String> _metadataTags(Object? value) sync* {
+  if (value is! List) return;
+  for (final tag in value) {
+    if (tag is String) yield tag;
+    if (tag is Map && tag['name'] is String) yield tag['name'] as String;
+  }
+}

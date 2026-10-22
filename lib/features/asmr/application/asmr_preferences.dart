@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import '../domain/asmr_tag_interest.dart';
 import '../../../core/app_language.dart';
 import '../domain/asmr_models.dart';
 import '../domain/asmr_persistence_repository.dart';
@@ -6,6 +9,7 @@ class AsmrPreferencesStore {
   AsmrPreferencesStore({required AsmrPersistenceRepository repository})
     : _repository = repository;
 
+  static const String _tagPreferencesKey = 'asmr_tag_preferences_v1';
   static const String _lastSyncAtKey = 'asmr_last_sync_at_v1';
   static const String _syncOutboxSeededKey = 'asmr_sync_outbox_seeded_v2';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
@@ -16,12 +20,23 @@ class AsmrPreferencesStore {
     await _repository.clearForTest();
     for (final key in [
       _contentLanguageKey,
+      _tagPreferencesKey,
       _lastSyncAtKey,
       _syncOutboxSeededKey,
     ]) {
       await _repository.saveSetting(key, null);
     }
   }
+
+  Future<AsmrTagPreferences> loadTagPreferences() async {
+    final raw = await _repository.loadSetting(_tagPreferencesKey);
+    return raw == null
+        ? AsmrTagPreferences()
+        : AsmrTagPreferences.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+  }
+
+  Future<void> saveTagPreferences(AsmrTagPreferences value) =>
+      _repository.saveSetting(_tagPreferencesKey, jsonEncode(value.toJson()));
 
   Future<List<AsmrCategoryType>> loadVisibleCategories() async {
     final stored = await _repository.loadVisibleCategoryNames();

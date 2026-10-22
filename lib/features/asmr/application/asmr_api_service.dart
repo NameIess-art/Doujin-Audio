@@ -1,3 +1,4 @@
+import '../domain/asmr_tag_interest.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -77,6 +78,52 @@ class AsmrApiService {
 
   static const String _acceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
   static const Duration _requestTimeout = Duration(seconds: 15);
+
+  /// The public tag directory is an unpaginated array; reject partial envelopes.
+  Future<List<AsmrTag>> fetchTagCatalog() async {
+    final response = await _send(method: 'GET', path: '/api/tags/');
+    if (response is! List || response.isEmpty) {
+      throw const FormatException('Expected complete ASMR tag array');
+    }
+    return response
+        .map((raw) {
+          final json = Map<String, dynamic>.from(raw as Map);
+          final id = (json['id'] as num).toInt();
+          final aliases = <String>{};
+          void collect(Object? value) {
+            if (value is String && value.trim().isNotEmpty) {
+              aliases.add(value.trim());
+            }
+            if (value is Map) {
+              collect(value['name']);
+              for (final language in [
+                'zh-cn',
+                'zh-tw',
+                'zh',
+                'en-us',
+                'en',
+                'ja-jp',
+                'ja',
+              ]) {
+                collect(value[language]);
+              }
+            }
+          }
+
+          collect(json);
+          collect(json['i18n']);
+          if (aliases.isEmpty) {
+            throw const FormatException('Tag is missing a name');
+          }
+          return AsmrTag(
+            key: 'online:$id',
+            onlineId: id,
+            name: json['name'] as String? ?? aliases.first,
+            aliases: aliases,
+          );
+        })
+        .toList(growable: false);
+  }
 
   Future<AsmrAuthSession> login({
     required String name,

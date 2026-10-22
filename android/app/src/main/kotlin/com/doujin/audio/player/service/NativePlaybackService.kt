@@ -123,6 +123,18 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
+    private val usageLedger by lazy { NativePlaybackUsageLedger.get(this) }
+    private fun updateUsage() = usageLedger.update(sessionManager.allSessions.mapNotNull { it.usageItem() })
+    private val usageHeartbeat = object : Runnable {
+        override fun run() {
+            updateUsage()
+            mainHandler.postDelayed(this, 15_000L)
+        }
+    }
+    fun readUsage(): Map<String, Any?> { updateUsage(); return okResult(usageLedger.read()) }
+    fun acknowledgeUsage(ids: Set<String>): Map<String, Any?> { usageLedger.acknowledge(ids); return okResult(null) }
+    fun resetUsage(): Map<String, Any?> { updateUsage(); usageLedger.reset(); return okResult(null) }
+
     private val sessionManager by lazy { NativePlaybackSessionManager(::createNativePlaybackSession) }
     private val timerExecution by lazy {
         NativePlaybackTimerExecution(
@@ -202,10 +214,12 @@ class NativePlaybackService : MediaSessionService() {
             isCurrentPlayer = { id, player -> sessionManager.get(id)?.playerOrNull() === player },
             callbacks = object : NativePlayerEventCallbacks {
                 override fun onPlaybackStateChanged(sessionId: String, playbackState: Int) {
+                    updateUsage()
                     handlePlaybackStateChanged(sessionId, playbackState)
                 }
 
                 override fun onMediaItemTransition(sessionId: String, reason: Int) {
+                    updateUsage()
                     handleMediaItemTransition(sessionId, reason)
                 }
 
@@ -224,6 +238,7 @@ class NativePlaybackService : MediaSessionService() {
                 }
 
                 override fun onIsPlayingChanged(sessionId: String, isPlaying: Boolean) {
+                    updateUsage()
                     handleIsPlayingChanged(sessionId, isPlaying)
                 }
 
@@ -567,6 +582,7 @@ class NativePlaybackService : MediaSessionService() {
     private var playbackBehavior = StoredPlaybackBehavior()
     override fun onCreate() {
         super.onCreate()
+        mainHandler.post(usageHeartbeat)
         playbackBehavior = NativePlaybackStateStore.loadPlaybackBehavior(this)
         audioDeviceDisconnectMonitor.start()
         progressHeartbeat.start()
@@ -641,6 +657,9 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        updateUsage()
+        usageLedger.update(emptyList())
+        mainHandler.removeCallbacks(usageHeartbeat)
         logInfo(
             "on_destroy_begin sessions=${sessionManager.size} " +
                 "foregroundStarted=${foregroundCoordinator.isStarted} " +
@@ -1052,7 +1071,9 @@ class NativePlaybackService : MediaSessionService() {
         clearPlaybackIntent(sessionId)
         val wasFocused = focusedSessionId == sessionId
         videoOutputs.detachPlayer(sessionId)
+        updateUsage()
         sessionManager.remove(sessionId)?.release()
+        updateUsage()
         statePersistence.removeSession(sessionId)
         if (wasFocused) {
             updateMediaSessionPlayer()
@@ -1106,6 +1127,7 @@ class NativePlaybackService : MediaSessionService() {
         videoOutputs.clear()
         sessionManager.forEach { it.release() }
         sessionManager.clear()
+        updateUsage()
         mediaSessionHost.release("clear_all")
         foregroundCoordinator.cancelGrace()
         foregroundCoordinator.stopWatchdog()
@@ -1560,6 +1582,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun publishSessionState(sessionId: String): Map<String, Any?>? {
+        updateUsage()
         pendingStateSessions.remove(sessionId)
         val session = sessionManager.get(sessionId) ?: return null
         val snapshot = publishNativePlaybackSessionState(session, stateListeners.values)

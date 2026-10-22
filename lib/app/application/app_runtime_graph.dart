@@ -1,6 +1,10 @@
 import '../../features/library/application/work_text_service.dart';
+import '../../core/media/music_track.dart';
 import '../localization/app_language_provider.dart';
 import 'windows_runtime_binding.dart';
+import '../../features/player/application/listening_activity_service.dart';
+import '../../features/player/domain/listening_activity.dart';
+import '../../infrastructure/sqlite/sqlite_listening_activity_repository.dart';
 import '../../features/asmr/application/asmr_library_controller.dart';
 import '../../features/asmr/application/asmr_api_service.dart';
 import '../../features/asmr/application/asmr_metadata_service.dart';
@@ -68,6 +72,7 @@ typedef ProductionAppRuntime = ({
 });
 
 typedef AppRuntimeGraph = ({
+  ListeningActivityService? listeningActivity,
   WorkTextService workTexts,
   BrowsePageStateStore browsePageStates,
   AudioPathCoordinator audioPaths,
@@ -96,6 +101,7 @@ AppRuntimeGraph createAppRuntimeGraph({
   PlaybackTrackCache? asmrPlaybackCacheService,
   FileCachePlatformGateway? fileCacheGateway,
   bool persistenceEnabled = true,
+  ListeningActivityService? listeningActivity,
 }) {
   if (asmrDownloads != null && libraryScanLabels == null) {
     throw ArgumentError('ASMR downloads require libraryScanLabels.');
@@ -253,6 +259,7 @@ AppRuntimeGraph createAppRuntimeGraph({
     asmrDownloads: asmrDownloads,
     disposeWorkTexts: workTexts.dispose,
     bindings: bindings,
+    listeningActivity: listeningActivity,
   );
   playback.configureUserLaunchInitialization(
     persistenceEnabled
@@ -268,6 +275,7 @@ AppRuntimeGraph createAppRuntimeGraph({
   );
   syncAllState();
   return (
+    listeningActivity: listeningActivity,
     browsePageStates: browsePageStates,
     workTexts: workTexts,
     audioPaths: audioPaths,
@@ -340,7 +348,26 @@ ProductionAppRuntime createProductionAppRuntime({
     source: asmrLibraryController,
     launcher: PlaybackFacadeSessionLauncher(playbackFacade),
   );
-  final runtimeGraph = createAppRuntimeGraph(
+  late final AppRuntimeGraph runtimeGraph;
+  final listeningActivity = ListeningActivityService(
+    repository: SqliteListeningActivityRepository(database: database),
+    readUsage: nativePlaybackRepository.readUsage,
+    acknowledgeUsage: nativePlaybackRepository.acknowledgeUsage,
+    resolveTrack: (path) => runtimeGraph.audioPaths.trackByPath(path),
+    recordInterests: ({required batchId, required contributions}) async {
+      await asmrLibraryController.initialize(
+        defaultLanguage: AsmrContentLanguage.fromAppLanguage(
+          appLanguageProvider.language,
+        ),
+      );
+      await asmrLibraryController.recordTagListeningBatch(
+        batchId: batchId,
+        contributions: contributions,
+      );
+    },
+  );
+  runtimeGraph = createAppRuntimeGraph(
+    listeningActivity: listeningActivity,
     library: libraryFacade,
     playback: playbackFacade,
     timer: timerFacade,
@@ -367,6 +394,7 @@ ProductionAppRuntime createProductionAppRuntime({
   }
 
   Future<void> initializeSecondaryData() async {
+    await runtimeGraph.runtime.start();
     await Future.wait<void>([
       asmrDownloadManager.initialize(),
       asmrLibraryController.initialize(
@@ -375,6 +403,34 @@ ProductionAppRuntime createProductionAppRuntime({
         ),
       ),
     ]);
+    final legacyHistory = <ListeningHistoryEntry>[
+      for (final track in libraryFacade.library)
+        if (track.lastPlayedAt != null)
+          ListeningHistoryEntry(
+            workKey: listeningWorkKey(track),
+            track: track,
+            lastPlayedAt: track.lastPlayedAt,
+          ),
+      for (final work in await asmrPreferences.loadHistoryWorks())
+        ListeningHistoryEntry(
+          workKey: work.rjCode.isNotEmpty
+              ? 'rj:${work.rjCode.toUpperCase()}'
+              : 'asmr:${work.id}',
+          track: MusicTrack(
+            path: 'asmr-work:${work.id}',
+            displayName: work.title,
+            groupKey: 'asmr:${work.id}',
+            groupTitle: work.title,
+            groupSubtitle: work.rjCode,
+            isSingle: false,
+            remoteCoverUrl: work.preferredCoverUrl,
+            tags: work.tags,
+            remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+            remoteMetadata: work.toJson(),
+          ),
+        ),
+    ];
+    await listeningActivity.seedHistory(legacyHistory);
   }
 
   Future<void> initializeRuntimeData() =>

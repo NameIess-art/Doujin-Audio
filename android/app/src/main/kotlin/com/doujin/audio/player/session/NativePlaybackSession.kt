@@ -22,7 +22,8 @@ internal data class NativeMediaItemDescriptor(
     val title: String,
     val subtitle: String?,
     val artUri: String?,
-    val candidateUris: List<String> = emptyList()
+    val candidateUris: List<String> = emptyList(),
+    val usageDescriptor: Map<String, Any?>? = null
 ) {
     fun withPlaybackCandidateUris(candidates: List<String>): NativeMediaItemDescriptor {
         val ordered = LinkedHashSet<String>()
@@ -603,6 +604,15 @@ internal class NativePlaybackSession(
         val currentIndex = (playerOrNull()?.currentMediaItemIndex
             ?: currentQueueIndexFor(descriptors)).coerceIn(0, descriptors.lastIndex)
         return descriptors[currentIndex]
+    }
+
+    fun usageItem(): Map<String, Any?>? {
+        val player = _player ?: return null
+        if (!player.isPlaying || player.playbackState != Player.STATE_READY) return null
+        val descriptor = currentQueueDescriptor() ?: return null
+        return mapOf("uri" to descriptor.uri, "path" to descriptor.path,
+            "title" to descriptor.title, "subtitle" to descriptor.subtitle,
+            "artUri" to descriptor.artUri, "usageDescriptor" to descriptor.usageDescriptor)
     }
 
     override fun snapshot(): Map<String, Any?> = snapshot(includeRetainedUris = false)

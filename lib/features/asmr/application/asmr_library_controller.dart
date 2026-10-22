@@ -1,3 +1,5 @@
+import '../domain/asmr_tag_interest.dart';
+import 'asmr_recommendation_engine.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 
@@ -18,6 +20,7 @@ import 'asmr_work_content_store.dart';
 import '../../../core/app_language.dart';
 
 export 'asmr_library_view_state.dart';
+export '../domain/asmr_tag_interest.dart';
 export 'asmr_work_content_mapping.dart' show collectAsmrWorkTextFiles;
 
 typedef _AsmrSyncRequestKey = ({int authEpoch, String token});
@@ -30,7 +33,11 @@ class AsmrLibraryController extends ChangeNotifier
     required AsmrAccountSyncService accountSyncService,
   }) : _preferencesStore = preferencesStore,
        _remoteCatalogService = remoteCatalogService,
-       _accountSyncService = accountSyncService;
+       _accountSyncService = accountSyncService {
+    _remoteCatalogService.isWorkAllowed = _isWorkAllowed;
+    _remoteCatalogService.tagWeights = () =>
+        _tagPreferences.seeded ? _tagPreferences.recommendationWeights : null;
+  }
 
   final AsmrPreferencesStore _preferencesStore;
   final AsmrRemoteCatalogService _remoteCatalogService;
@@ -49,8 +56,153 @@ class AsmrLibraryController extends ChangeNotifier
     localWorks: (category) =>
         category == AsmrCategoryType.favorites ? _favoriteWorks : _historyWorks,
     favoriteIds: () => _favoriteIds,
+    isWorkAllowed: _isWorkAllowed,
+    hasExclusions: () => _tagPreferences.excluded.isNotEmpty,
     currentContext: () => _categoryRequestContext,
   );
+
+  AsmrTagPreferences _tagPreferences = AsmrTagPreferences();
+  Future<void>? _tagCatalogTask;
+  Object? _tagCatalogError;
+  List<AsmrTagInterest> get interestTags => _tagPreferences.interests;
+  List<AsmrTag> get allTags {
+    final tags = _tagPreferences.tags.values.toList();
+    tags.sort((a, b) => a.name.compareTo(b.name));
+    return tags;
+  }
+
+  Set<String> get excludedTagKeys => Set.unmodifiable(_tagPreferences.excluded);
+  bool get tagCatalogComplete => _tagPreferences.catalogComplete;
+  bool get isLoadingTagCatalog => _tagCatalogTask != null;
+  Object? get tagCatalogError => _tagCatalogError;
+  bool _isWorkAllowed(AsmrWork work) =>
+      !_tagPreferences.excludes(names: work.tags, ids: work.tagIds);
+
+  Future<void> _mutateTagPreferences(
+    void Function(AsmrTagPreferences) mutate, {
+    bool interruptRecommendations = false,
+  }) => _runStateMutation(() async {
+    final next = AsmrTagPreferences.fromJson(_tagPreferences.toJson());
+    mutate(next);
+    await _preferencesStore.saveTagPreferences(next);
+    if (_disposed) return;
+    _tagPreferences = next;
+    _catalog.preferencesChanged(
+      interruptRecommendations: interruptRecommendations,
+    );
+    _bumpGlobalRevision();
+    notifyListeners();
+  });
+
+  Future<void> setTagInterested(String key, bool interested) async {
+    await initializeForVisiblePage();
+    await _mutateTagPreferences(
+      (state) => state.setInterested(key, interested),
+      interruptRecommendations: true,
+    );
+    await _refreshRecommendationsAfterPreferenceChange();
+  }
+
+  Future<void> _refreshRecommendationsAfterPreferenceChange() async {
+    if (!_catalog.hasLoaded(AsmrCategoryType.recommendation)) return;
+    await refreshCategory(
+      AsmrCategoryType.recommendation,
+      searchQuery: _catalog.activeQuery(AsmrCategoryType.recommendation),
+    );
+  }
+
+  Future<void> setTagExcluded(String key, bool excluded) async {
+    await initializeForVisiblePage();
+    await _mutateTagPreferences((state) {
+      if (!state.tags.containsKey(key)) throw ArgumentError.value(key, 'key');
+      if (excluded) {
+        state.excluded.add(key);
+      } else {
+        state.excluded.remove(key);
+      }
+    }, interruptRecommendations: true);
+    await _refreshRecommendationsAfterPreferenceChange();
+  }
+
+  Future<void> recordTagListeningBatch({
+    required String batchId,
+    required List<({List<String> tags, Duration duration})> contributions,
+  }) async {
+    await initializeForVisiblePage();
+    await _mutateTagPreferences(
+      (state) => state.recordListeningBatch(batchId, contributions),
+    );
+  }
+
+  Future<void> recordTagListening({
+    required String batchId,
+    required List<String> tags,
+    required Duration duration,
+  }) => recordTagListeningBatch(
+    batchId: batchId,
+    contributions: [(tags: tags, duration: duration)],
+  );
+
+  Future<void> ensureTagCatalog({bool force = false}) {
+    final pending = _tagCatalogTask;
+    if (pending != null) return pending;
+    if (!force && tagCatalogComplete) return Future.value();
+    late final Future<void> task;
+    task = _loadTagCatalog().whenComplete(() {
+      if (identical(task, _tagCatalogTask)) _tagCatalogTask = null;
+      notifyListeners();
+    });
+    _tagCatalogTask = task;
+    notifyListeners();
+    return task;
+  }
+
+  Future<void> _loadTagCatalog() async {
+    await initializeForVisiblePage();
+    final epoch = _runtimeCacheEpoch;
+    _tagCatalogError = null;
+    try {
+      final tags = await _remoteCatalogService.loadTagCatalog();
+      if (_disposed || epoch != _runtimeCacheEpoch) return;
+      await _mutateTagPreferences((state) {
+        for (final tag in tags) {
+          state.mergeTag(tag);
+        }
+        state.catalogComplete = true;
+      });
+    } catch (error) {
+      _tagCatalogError = error;
+    }
+  }
+
+  Future<void> _initializeTagPreferences() async {
+    final state = await _preferencesStore.loadTagPreferences();
+    final tracks = await _remoteCatalogService.loadLocalTracksForInterests();
+    for (final track in tracks) {
+      for (final tag in track.tags) {
+        if (tag.trim().isNotEmpty) state.resolve(tag);
+      }
+    }
+    for (final work in [..._favoriteWorks, ..._historyWorks]) {
+      for (final tag in work.tags) {
+        if (tag.trim().isNotEmpty) state.resolve(tag);
+      }
+    }
+    if (!state.seeded) {
+      final seed = const AsmrRecommendationEngine().initialTagWeights(
+        localTracks: tracks,
+        favoriteWorks: _favoriteWorks,
+        historyWorks: _historyWorks,
+      );
+      for (final entry in seed.entries) {
+        final key = state.resolve(entry.key);
+        state.weights[key] = (state.weights[key] ?? 0) + entry.value;
+      }
+      state.seeded = true;
+    }
+    await _preferencesStore.saveTagPreferences(state);
+    _tagPreferences = state;
+  }
 
   List<AsmrCategoryType> _visibleCategories = kDefaultVisibleAsmrCategories;
   ContentLanguagePreference _contentLanguagePreference =
@@ -302,6 +454,7 @@ class AsmrLibraryController extends ChangeNotifier
     final accountSnapshot = await _accountSyncService.initialize();
     if (_disposed) return;
     _applyAccountSnapshot(accountSnapshot);
+    await _initializeTagPreferences();
     if (_disposed) return;
     _catalog.updateLocalCounts();
     _initialized = true;

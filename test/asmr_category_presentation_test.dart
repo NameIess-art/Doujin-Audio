@@ -43,6 +43,36 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
+      'ASMR empty filtered page allows explicit paging on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices())
+          ..workCount = 0
+          ..hasMore = true;
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        final button = find.byKey(const ValueKey('asmr_empty_load_more'));
+        await pumpUntilFound(tester, button);
+        await tester.pumpAndSettle();
+        expect(controller.loadMoreCount, 0);
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        expect(controller.loadMoreCount, 1);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
       'ASMR route transitions retain cards while data theme and width stay reactive on $platform',
       (tester) async {
         tester.view.devicePixelRatio = 1;
@@ -88,7 +118,9 @@ void main() {
         final previous = debugOnRebuildDirtyWidget;
         debugOnRebuildDirtyWidget = (element, builtOnce) {
           previous?.call(element, builtOnce);
-          if (element.widget is LibraryLikeMetadataWorkCardContent) cardBuilds++;
+          if (element.widget is LibraryLikeMetadataWorkCardContent) {
+            cardBuilds++;
+          }
         };
         addTearDown(() => debugOnRebuildDirtyWidget = previous);
         for (var round = 0; round < 2; round++) {

@@ -12,7 +12,6 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/player/application/listening_activity_service.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
-import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
@@ -481,10 +480,15 @@ void main() {
     );
 
     testWidgets(
-      'interest removal can be undone before weight changes on $platform',
+      'My shows only the twenty most listened interests on $platform',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
         final controller = _InterestController(createTestAsmrServices());
+        for (var index = 0; index < 25; index++) {
+          final key = controller.state.resolve('Tag $index');
+          controller.state.setInterested(key, true);
+          controller.state.learned[key] = index.toDouble();
+        }
         addTearDown(fixture.dispose);
         addTearDown(controller.dispose);
         tester.view.physicalSize = const Size(960, 1000);
@@ -507,39 +511,29 @@ void main() {
         );
         await pumpAndSettleWithAsync(tester);
         await tester.ensureVisible(
-          find.text(fixture.languageProvider.tr('my_edit')),
+          find.text(fixture.languageProvider.tr('my_interests')),
         );
-        await tester.tap(find.text(fixture.languageProvider.tr('my_edit')));
-        await tester.pump();
-        const chipKey = ValueKey('my-interest-local:sleep');
-        tester.widget<InputChip>(find.byKey(chipKey)).onDeleted!();
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 350));
-        expect(find.byKey(chipKey), findsNothing);
+        final chips = tester
+            .widgetList<InputChip>(find.byType(InputChip))
+            .toList();
+        expect(chips, hasLength(20));
+        expect((chips.first.label as Text).data, 'Tag 24');
+        expect((chips.last.label as Text).data, 'Tag 5');
+        expect(chips.every((chip) => chip.onDeleted == null), isTrue);
+        final header = find.byKey(
+          ValueKey(
+            'my-section-header-${fixture.languageProvider.tr('my_interests')}',
+          ),
+        );
         expect(
-          find.text(fixture.languageProvider.tr('my_interest_removed')),
-          findsOneWidget,
+          find.descendant(of: header, matching: find.byType(TextButton)),
+          findsNothing,
         );
-        expect(controller.removals, 0);
-        final undo = find.textContaining(fixture.languageProvider.tr('undo'));
-        expect(undo, findsOneWidget);
-        await tester.tap(undo);
-        await tester.pumpAndSettle();
-        expect(find.byKey(chipKey), findsOneWidget);
-        expect(controller.state.weights['local:sleep'], 200);
-        expect(controller.state.hiddenUntil, isEmpty);
-        tester.widget<InputChip>(find.byKey(chipKey)).onDeleted!();
-        await tester.pump();
-        await tester.pump(kUndoableRemovalFeedbackDuration);
-        await tester.pumpAndSettle();
-        expect(controller.removals, 1);
-        expect(controller.state.weights['local:sleep'], 180);
-        expect(find.byKey(chipKey), findsNothing);
+        expect(controller.interestTags, hasLength(26));
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
       },
     );
-
     testWidgets(
       'tag catalog uses floating header and retains search on $platform',
       (tester) async {
@@ -772,6 +766,12 @@ void main() {
         headerHeights.add(bounds.height);
       }
       expect(headerHeights.toSet().length, 1);
+      final interestLimit = find.text(i18n.tr('my_interest_limit'));
+      expect(interestLimit, findsOneWidget);
+      expect(
+        tester.widget<Text>(interestLimit).style?.color?.a,
+        closeTo(0.7, 0.01),
+      );
       final heading = find.text(i18n.tr('my_listening_time'));
       await tester.ensureVisible(heading);
       final headingBounds = tester.getRect(heading);

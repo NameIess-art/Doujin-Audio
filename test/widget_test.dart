@@ -6323,6 +6323,16 @@ void main() {
         tester.getTopLeft(content).dy,
         closeTo(height * (1 - Curves.easeOutCubic.transform(0.25)), 0.1),
       );
+      for (final fade in tester.widgetList<FadeTransition>(
+        find.ancestor(of: content, matching: find.byType(FadeTransition)),
+      )) {
+        expect(fade.opacity.value, 1);
+      }
+      for (final opacity in tester.widgetList<Opacity>(
+        find.ancestor(of: content, matching: find.byType(Opacity)),
+      )) {
+        expect(opacity.opacity, 1);
+      }
       await tester.pump(const Duration(milliseconds: 226));
       expect(route.animation!.status, AnimationStatus.completed);
       expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));

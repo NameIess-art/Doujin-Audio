@@ -44,8 +44,6 @@ class MyPage extends ConsumerStatefulWidget {
 class _MyPageState extends ConsumerState<MyPage>
     with MainTabStateMixin<MyPage> {
   final _scroll = ScrollController();
-  bool _editing = false;
-  final _removingInterests = <String>{};
   late final _refreshCommitKey =
       'my_activity_refresh_${identityHashCode(this)}';
   @override
@@ -104,29 +102,6 @@ class _MyPageState extends ConsumerState<MyPage>
               .tr('operation_failed_retry'),
         );
       }
-    }
-  }
-
-  Future<void> _removeInterest(String key) async {
-    setState(() => _removingInterests.add(key));
-    try {
-      await removeInterestTagWithUndo(context, ref, key);
-    } catch (error, stack) {
-      AppLogService.error(
-        'my_interest_remove_failed',
-        error: error,
-        stackTrace: stack,
-      );
-      if (mounted) {
-        showAppSnackBar(
-          context,
-          ref
-              .read(appLanguageProviderInstanceProvider)
-              .tr('operation_failed_retry'),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _removingInterests.remove(key));
     }
   }
 
@@ -193,62 +168,71 @@ class _MyPageState extends ConsumerState<MyPage>
       String title,
       Widget child, {
       Widget? trailing,
+      String? titleNote,
       bool skeleton = false,
-    }) => Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ConstrainedBox(
-              key: ValueKey('my-section-header-$title'),
-              constraints: const BoxConstraints(minHeight: 32),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: skeleton
-                        ? Stack(
-                            children: [
-                              Opacity(
-                                opacity: 0,
-                                child: Text(
-                                  title,
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                              ),
-                              const Positioned.fill(
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: ShimmerContainer(
-                                    width: 80,
-                                    height: 18,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          )
-                        : Text(
-                            title,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                  ),
-                  if (trailing != null) ...[
-                    const SizedBox(width: 8),
-                    Flexible(child: trailing),
-                  ],
-                ],
+    }) {
+      final titleLabel = Wrap(
+        spacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          if (titleNote != null)
+            Text(
+              titleNote,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
             ),
-            const SizedBox(height: 4),
-            child,
-          ],
+        ],
+      );
+      return Card(
+        margin: const EdgeInsets.only(bottom: 16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ConstrainedBox(
+                key: ValueKey('my-section-header-$title'),
+                constraints: const BoxConstraints(minHeight: 32),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: skeleton
+                          ? Stack(
+                              children: [
+                                Opacity(opacity: 0, child: titleLabel),
+                                const Positioned.fill(
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: ShimmerContainer(
+                                      width: 80,
+                                      height: 18,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : titleLabel,
+                    ),
+                    if (trailing != null) ...[
+                      const SizedBox(width: 8),
+                      Flexible(child: trailing),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              child,
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    }
+
     Widget pageList(
       List<Widget> children, {
       ScrollController? controller,
@@ -372,7 +356,7 @@ class _MyPageState extends ConsumerState<MyPage>
                   ],
                 ),
                 skeleton: true,
-                trailing: const ShimmerContainer(width: 32, height: 16),
+                titleNote: i18n.tr('my_interest_limit'),
               ),
             ], scrollable: false),
           ),
@@ -422,9 +406,6 @@ class _MyPageState extends ConsumerState<MyPage>
                               final interests =
                                   ref.watch(asmrTagInterestsProvider).value ??
                                   const [];
-                              final removals = ref.watch(
-                                undoableRemovalStateProvider,
-                              );
                               return Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -434,32 +415,14 @@ class _MyPageState extends ConsumerState<MyPage>
                                     spacing: 8,
                                     runSpacing: 2,
                                     children: [
-                                      for (final interest in interests)
-                                        if (!removals.isHidden(
-                                          interestTagRemovalKey(
-                                            interest.tag.key,
+                                      for (final interest in interests.take(20))
+                                        InputChip(
+                                          key: ValueKey(
+                                            'my-interest-${interest.tag.key}',
                                           ),
-                                        ))
-                                          InputChip(
-                                            key: ValueKey(
-                                              'my-interest-${interest.tag.key}',
-                                            ),
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                            label: Text(interest.tag.name),
-                                            onDeleted:
-                                                _editing &&
-                                                    !_removingInterests
-                                                        .contains(
-                                                          interest.tag.key,
-                                                        )
-                                                ? () => unawaited(
-                                                    _removeInterest(
-                                                      interest.tag.key,
-                                                    ),
-                                                  )
-                                                : null,
-                                          ),
+                                          visualDensity: VisualDensity.compact,
+                                          label: Text(interest.tag.name),
+                                        ),
                                     ],
                                   ),
                                   const SizedBox(height: 4),
@@ -485,15 +448,7 @@ class _MyPageState extends ConsumerState<MyPage>
                               );
                             },
                           ),
-                    trailing: TextButton(
-                      style: TextButton.styleFrom(
-                        minimumSize: const Size(0, 32),
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      onPressed: () => setState(() => _editing = !_editing),
-                      child: Text(i18n.tr(_editing ? 'my_done' : 'my_edit')),
-                    ),
+                    titleNote: i18n.tr('my_interest_limit'),
                   ),
                 ], controller: _scroll),
               ),

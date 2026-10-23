@@ -97,10 +97,6 @@ void main() {
           await tester.ensureVisible(month);
           await tester.tap(month);
           await pumpAndSettleWithAsync(tester);
-          final edit = find.text(fixture.languageProvider.tr('my_edit'));
-          await tester.ensureVisible(edit);
-          await tester.tap(edit);
-          await tester.pump();
           final myScroll = _verticalScroll(tester, my);
           myScroll.jumpTo(myScroll.maxScrollExtent);
           final myOffset = myScroll.pixels;
@@ -127,10 +123,6 @@ void main() {
           expect(tester.state(chart), same(chartState));
           expect(tester.widget<ChoiceChip>(month).selected, isTrue);
           expect(myScroll.pixels, myOffset);
-          expect(
-            find.text(fixture.languageProvider.tr('my_done')),
-            findsOneWidget,
-          );
           expect(activitySubscriptions, 1);
           expect(
             TickerMode.valuesOf(tester.element(settings)).enabled,

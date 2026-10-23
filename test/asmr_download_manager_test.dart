@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/persistence/json_document_store.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -2719,6 +2720,278 @@ void main() {
       }
     },
   );
+
+  group('download metadata lookup', () {
+    final preferred = DlsiteMetadata(
+      rjCode: 'RJ123456',
+      workTitle: 'DLsite 作品',
+      circleName: 'DLsite 社团',
+      voiceActors: ['DLsite 声优'],
+      tags: ['DLsite 标签'],
+      releaseDate: DateTime(2026, 10, 3),
+      rating: 4.9,
+    );
+
+    for (final usesSaf in [false, true]) {
+      for (final fails in [false, true]) {
+        test('saves ${fails ? "catalog fallback" : "preferred lookup data"} '
+            'before media (SAF: $usesSaf)', () async {
+          final root = await Directory.systemTemp.createTemp('lookup_backup_');
+          final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+          final documents = _CompletionMetadataStore(root.path)
+            ..releaseWrite.complete();
+          final json = File(path.join(root.path, 'doujin-audio.json'));
+          final codes = <String>[];
+          var requests = 0;
+          server.listen((request) async {
+            requests++;
+            expect(await json.exists(), isTrue);
+            request.response
+              ..contentLength = 1
+              ..add([7]);
+            await request.response.close();
+          });
+          final manager = AsmrDownloadManager(
+            fileCacheGateway: _StatefulSafGateway(),
+            jsonDocumentStore: documents,
+            stagingDirectoryProvider: () async => root,
+            persistTasks: false,
+            metadataLookup: (code) async {
+              codes.add(code);
+              if (fails) throw const SocketException('metadata unavailable');
+              return preferred;
+            },
+          );
+          try {
+            await manager.startDownload(
+              work: _work(
+                voiceActors: ['Catalog actor'],
+                tags: ['Catalog tag'],
+                releaseDate: DateTime(2024, 5, 6),
+                duration: const Duration(minutes: 20),
+                dlCount: 1234,
+                rating: 3.5,
+              ),
+              selectedRoots: [
+                _file(downloadUrl: 'http://127.0.0.1:${server.port}/track.mp3'),
+              ],
+              destinationRoot: usesSaf
+                  ? 'content://downloads/tree/root'
+                  : root.path,
+              conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+              saveCover: false,
+            );
+            await _waitForTaskStatus(
+              manager,
+              1,
+              AsmrDownloadTaskStatus.completed,
+            );
+            final task = manager.getTask(_key(1))!;
+            final bytes = await json.readAsBytes();
+            final detail = const AudioDetailJsonCodec().decode(
+              bytes,
+              AudioDetailTarget.libraryRootFolder(task.workRootPath),
+            );
+            expect(codes, ['RJ123456']);
+            expect(requests, 1);
+            expect(detail.workTitle, fails ? 'Work' : preferred.workTitle);
+            expect(detail.circleName, fails ? 'Circle' : preferred.circleName);
+            expect(
+              detail.voiceActors,
+              fails ? ['Catalog actor'] : preferred.voiceActors,
+            );
+            expect(detail.tags, fails ? ['Catalog tag'] : preferred.tags);
+            expect(
+              detail.releaseDate,
+              fails ? DateTime(2024, 5, 6) : preferred.releaseDate,
+            );
+            expect(detail.rating, fails ? 3.5 : preferred.rating);
+            expect(detail.duration, const Duration(minutes: 20));
+            expect(detail.salesCount, 1234);
+            expect(task.totalBytes, bytes.length + 1);
+            expect(task.downloadedBytes, task.totalBytes);
+            expect(task.completedFiles, 2);
+          } finally {
+            await manager.shutdown();
+            await server.close(force: true);
+            await root.delete(recursive: true);
+          }
+        });
+      }
+    }
+
+    for (final missingRj in [false, true]) {
+      test(
+        'skips lookup when ${missingRj ? "RJ is absent" : "metadata is disabled"}',
+        () async {
+          final root = await Directory.systemTemp.createTemp(
+            'lookup_disabled_',
+          );
+          var calls = 0;
+          final manager = _manager(
+            metadataLookup: (code) async {
+              calls++;
+              return preferred;
+            },
+          );
+          final work = _work(sourceId: missingRj ? '' : null);
+          try {
+            await manager.startDownload(
+              work: work,
+              selectedRoots: [
+                AsmrTrackFile.fromJson(const {
+                  'type': 'folder',
+                  'title': 'Empty',
+                  'children': <Object?>[],
+                }),
+              ],
+              destinationRoot: root.path,
+              conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+              saveMetadata: missingRj,
+              saveCover: false,
+            );
+            await _waitForTaskStatus(
+              manager,
+              1,
+              AsmrDownloadTaskStatus.completed,
+              workKey: work.workKey,
+            );
+            expect(calls, 0);
+            final json = File(
+              path.join(
+                manager.getTask(work.workKey)!.workRootPath,
+                'doujin-audio.json',
+              ),
+            );
+            expect(await json.exists(), missingRj);
+          } finally {
+            await manager.shutdown();
+            await root.delete(recursive: true);
+          }
+        },
+      );
+    }
+
+    test('preserves existing JSON despite preferred lookup data', () async {
+      final root = await Directory.systemTemp.createTemp('lookup_existing_');
+      final json = File(path.join(root.path, 'Work', 'doujin-audio.json'));
+      const saved = '{"workTitle":"User edited metadata"}';
+      await json.parent.create(recursive: true);
+      await json.writeAsString(saved);
+      final manager = _manager(metadataLookup: (_) async => preferred);
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: [
+            AsmrTrackFile.fromJson(const {
+              'type': 'folder',
+              'title': 'Empty',
+              'children': <Object?>[],
+            }),
+          ],
+          destinationRoot: root.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveCover: false,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+        expect(await json.readAsString(), saved);
+      } finally {
+        await manager.shutdown();
+        await root.delete(recursive: true);
+      }
+    });
+
+    for (final usesSaf in [false, true]) {
+      for (final action in ['pause', 'cancel', 'shutdown']) {
+        test('$action interrupts lookup before JSON or media '
+            '(SAF: $usesSaf)', () async {
+          final root = await Directory.systemTemp.createTemp(
+            'lookup_interrupt_',
+          );
+          final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+          final documents = _CompletionMetadataStore(root.path)
+            ..releaseWrite.complete();
+          final firstLookup = Completer<DlsiteMetadata>();
+          final lookupStarted = Completer<void>();
+          var calls = 0;
+          var requests = 0;
+          server.listen((request) async {
+            requests++;
+            request.response
+              ..contentLength = 1
+              ..add([7]);
+            await request.response.close();
+          });
+          final manager = AsmrDownloadManager(
+            fileCacheGateway: _StatefulSafGateway(),
+            jsonDocumentStore: documents,
+            stagingDirectoryProvider: () async => root,
+            persistTasks: false,
+            metadataLookup: (_) {
+              calls++;
+              if (calls != 1) return Future.value(preferred);
+              lookupStarted.complete();
+              return firstLookup.future;
+            },
+          );
+          Future<void> start() => manager.startDownload(
+            work: _work(),
+            selectedRoots: [
+              _file(downloadUrl: 'http://127.0.0.1:${server.port}/track.mp3'),
+            ],
+            destinationRoot: usesSaf
+                ? 'content://downloads/tree/root'
+                : root.path,
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+            saveCover: false,
+          );
+          try {
+            await start();
+            await lookupStarted.future.timeout(const Duration(seconds: 5));
+            final interrupt = switch (action) {
+              'pause' => manager.pauseTask(_key(1)),
+              'cancel' => manager.cancelTask(_key(1)),
+              _ => manager.shutdown(),
+            };
+            await interrupt.timeout(const Duration(seconds: 2));
+            expect(documents.writeStarted.isCompleted, isFalse);
+            expect(requests, 0);
+            firstLookup.complete(preferred.copyWith(workTitle: 'Stale result'));
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            expect(documents.writeStarted.isCompleted, isFalse);
+            expect(requests, 0);
+            if (action == 'shutdown') return;
+            if (action == 'pause') {
+              await manager.resumeTask(_key(1));
+            } else {
+              await start();
+            }
+            await _waitForTaskStatus(
+              manager,
+              1,
+              AsmrDownloadTaskStatus.completed,
+            );
+            expect(calls, 2);
+            expect(requests, 1);
+            final detail = const AudioDetailJsonCodec().decode(
+              await File(
+                path.join(root.path, 'doujin-audio.json'),
+              ).readAsBytes(),
+              AudioDetailTarget.libraryRootFolder(
+                manager.getTask(_key(1))!.workRootPath,
+              ),
+            );
+            expect(detail.workTitle, preferred.workTitle);
+          } finally {
+            if (!firstLookup.isCompleted) firstLookup.complete(preferred);
+            await manager.shutdown();
+            await server.close(force: true);
+            await root.delete(recursive: true);
+          }
+        });
+      }
+    }
+  });
 
   test('download backup includes ASMR.ONE extended metadata', () async {
     final tempDir = await Directory.systemTemp.createTemp(
@@ -5458,8 +5731,11 @@ _downloadUnknownSizeResponse({
   }
 }
 
-AsmrDownloadManager _manager() {
+AsmrDownloadManager _manager({
+  Future<DlsiteMetadata> Function(String)? metadataLookup,
+}) {
   return AsmrDownloadManager(
+    metadataLookup: metadataLookup,
     temporaryDirectoryProvider: () async => Directory.systemTemp,
     automaticFileRetryDelay: const Duration(milliseconds: 200),
     persistTasks: false,
@@ -5820,6 +6096,8 @@ AsmrWork _work({
   Duration duration = Duration.zero,
   int dlCount = 0,
   double rating = 0,
+  List<String> voiceActors = const [],
+  List<String> tags = const [],
 }) {
   return AsmrWork(
     id: id,
@@ -5837,8 +6115,8 @@ AsmrWork _work({
     dlCount: dlCount,
     reviewCount: 0,
     rating: rating,
-    voiceActors: const <String>[],
-    tags: const <String>[],
+    voiceActors: voiceActors,
+    tags: tags,
   );
 }
 

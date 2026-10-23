@@ -147,6 +147,62 @@ void main() {
     }
   }
 
+  testWidgets('more than twenty interests remain selected after confirmation', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    final controller = _TagController(createTestAsmrServices());
+    addTearDown(fixture.dispose);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const MyTagManagementPage(excluded: false),
+              ),
+            ),
+            child: const Text('Open tags'),
+          ),
+        ),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open tags'));
+    await tester.pumpAndSettle();
+    for (var index = 0; index < 25; index++) {
+      await tester.enterText(
+        find.byType(TextField),
+        'Tag ${index.toString().padLeft(2, '0')}',
+      );
+      await tester.pump();
+      await tester.tap(find.byType(CheckboxListTile));
+      await tester.pump();
+    }
+    expect(controller.interestTags, isEmpty);
+    await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+    await tester.pumpAndSettle();
+    expect(controller.interestTags, hasLength(25));
+    await tester.tap(find.text('Open tags'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Tag 24');
+    await tester.pump();
+    expect(
+      tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+      isTrue,
+    );
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.pump();
+    expect(controller.interestTags, hasLength(25));
+    await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+    await tester.pumpAndSettle();
+    expect(controller.interestTags, hasLength(24));
+  });
+
   for (final excluded in [false, true]) {
     testWidgets(
       'tag drafts require confirmation, retry failures, and discard on back: $excluded',
@@ -180,6 +236,10 @@ void main() {
         }
 
         await open();
+        final limit = find.text(
+          fixture.languageProvider.tr('my_interest_limit'),
+        );
+        expect(limit, findsNothing);
         await tester.tap(find.byType(CheckboxListTile));
         await tester.pumpAndSettle();
         expect(controller.saveCalls, 0);

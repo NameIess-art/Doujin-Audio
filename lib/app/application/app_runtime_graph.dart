@@ -310,9 +310,6 @@ ProductionAppRuntime createProductionAppRuntime({
   final notificationCoordinatorService = NotificationCoordinatorService();
   final settingsRepository = SettingsRepository();
   final jsonDocumentStore = DefaultJsonDocumentStore();
-  final asmrDownloadManager = AsmrDownloadManager(
-    jsonDocumentStore: jsonDocumentStore,
-  );
   final appLanguageProvider = AppLanguageProvider();
   final appUpdateService = AppUpdateService();
   final asmrApiService = AsmrApiService();
@@ -325,6 +322,15 @@ ProductionAppRuntime createProductionAppRuntime({
     asmrMetadataService: asmrMetadataService,
     japaneseMetadataService: AsmrMetadataService.japanese(
       apiService: japaneseAsmrApiService,
+    ),
+  );
+  final asmrDownloadManager = AsmrDownloadManager(
+    jsonDocumentStore: jsonDocumentStore,
+    metadataLookup: (rjCode) => libraryFacade.fetchPreferredMetadata(
+      rjCode,
+      language: settingsRepository.dlsiteMetadataLanguage.resolve(
+        appLanguageProvider.language,
+      ),
     ),
   );
   final playbackFacade = PlaybackFacade.create(

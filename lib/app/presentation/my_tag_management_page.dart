@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/app_runtime_providers.dart';
 import '../theme/app_styles.dart';
-import '../../core/ui/undoable_removal_service.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
@@ -13,33 +12,6 @@ import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/scroll_activity_gate.dart';
 import '../../core/widgets/top_page_header.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
-
-UndoableRemovalKey interestTagRemovalKey(String key) =>
-    UndoableRemovalKey('asmr-interest-tag', key);
-
-Future<void> removeInterestTagWithUndo(
-  BuildContext context,
-  WidgetRef ref,
-  String key,
-) async {
-  final controller = ref.read(asmrLibraryControllerProvider);
-  if (controller == null) return;
-  final i18n = ref.read(appLanguageProviderInstanceProvider);
-  await showUndoableRemovalFeedback(
-    context,
-    service: ref.read(undoableRemovalServiceProvider),
-    action: UndoableRemovalAction(
-      key: interestTagRemovalKey(key),
-      commit: () => controller.setTagInterested(key, false),
-      undo: () {},
-    ),
-    message: i18n.tr('my_interest_removed'),
-    batchMessage: (count) => i18n.tr('items_removed_count', {'count': count}),
-    undoLabel: i18n.tr('undo'),
-    failureMessage: i18n.tr('removal_failed'),
-    icon: Icons.sell_outlined,
-  );
-}
 
 /// Both preference editors share the same searchable catalog and state owner.
 class MyTagManagementPage extends ConsumerStatefulWidget {
@@ -90,7 +62,6 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final controller = ref.watch(asmrLibraryControllerProvider);
-    final removals = ref.watch(undoableRemovalStateProvider);
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     const searchHeight = 38.0;
@@ -109,10 +80,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
             builder: (context, _) {
               final interests = {
                 for (final interest in controller.interestTags)
-                  if (!removals.isHidden(
-                    interestTagRemovalKey(interest.tag.key),
-                  ))
-                    interest.tag.key: interest.weight,
+                  interest.tag.key: interest.weight,
               };
               final selected = widget.excluded
                   ? controller.excludedTagKeys
@@ -183,12 +151,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                           title: Text(tag.name),
                           value:
                               _changes[tag.key] ?? selected.contains(tag.key),
-                          onChanged:
-                              _saving ||
-                                  (!widget.excluded &&
-                                      removals.isHidden(
-                                        interestTagRemovalKey(tag.key),
-                                      ))
+                          onChanged: _saving
                               ? null
                               : (value) => setState(() {
                                   if (value == selected.contains(tag.key)) {

@@ -110,18 +110,20 @@ class AsmrTagPreferences {
         .map((e) => AsmrTagInterest(tag: tags[e.key]!, weight: e.value))
         .toList();
     values.sort((a, b) {
+      final listening = (learned[b.tag.key] ?? 0).compareTo(
+        learned[a.tag.key] ?? 0,
+      );
+      if (listening != 0) return listening;
       final order = b.weight.compareTo(a.weight);
       return order == 0 ? a.tag.name.compareTo(b.tag.name) : order;
     });
-    return values.take(20).toList(growable: false);
+    return values;
   }
 
   void setInterested(String key, bool value) {
     if (!tags.containsKey(key)) throw ArgumentError.value(key, 'key');
     if (value) {
-      final top = interests;
-      final cutoff = top.length < 20 ? 0.0 : top.last.weight;
-      weights[key] = max(weights[key] ?? 0, cutoff + 1);
+      weights[key] = max(weights[key] ?? 0, 1);
       hiddenUntil.remove(key);
     } else {
       final reduction = (weights[key] ?? 0) * .1;

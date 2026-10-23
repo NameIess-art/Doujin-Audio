@@ -36,20 +36,35 @@ void main() {
     },
   );
 
-  test('manual add enters top twenty without permanent pinning', () {
-    final state = AsmrTagPreferences();
-    for (var i = 0; i < 22; i++) {
-      state.weights[state.resolve('tag$i')] = 50.0 + i;
-    }
-    final key = state.resolve('new tag');
-    state.setInterested(key, true);
-    expect(state.interests, hasLength(20));
-    expect(state.interests.map((e) => e.tag.key), contains(key));
-    expect(state.weights[key], lessThan(70));
-    state.setInterested(key, false);
-    state.setInterested(key, true);
-    expect(state.hiddenUntil.containsKey(key), isFalse);
-  });
+  test(
+    'all selected interests persist while listening determines the top twenty',
+    () {
+      final state = AsmrTagPreferences();
+      for (var i = 0; i < 22; i++) {
+        final key = state.resolve('tag$i');
+        state.weights[key] = 50.0 + i;
+        state.learned[key] = i.toDouble();
+      }
+      final key = state.resolve('new tag');
+      state.setInterested(key, true);
+      expect(state.interests, hasLength(23));
+      expect(state.interests.map((e) => e.tag.key), contains(key));
+      expect(
+        state.interests.take(20).map((e) => e.tag.key),
+        isNot(contains(key)),
+      );
+      expect(state.weights[key], 1);
+      final restored = AsmrTagPreferences.fromJson(state.toJson());
+      expect(restored.interests, hasLength(23));
+      restored.recordListeningBatch('test:1', [
+        (tags: ['new tag'], duration: const Duration(minutes: 100)),
+      ]);
+      expect(restored.interests.first.tag.key, key);
+      state.setInterested(key, false);
+      state.setInterested(key, true);
+      expect(state.hiddenUntil.containsKey(key), isFalse);
+    },
+  );
 
   test(
     'listening divides unique tag minutes and round trips batch cursors',

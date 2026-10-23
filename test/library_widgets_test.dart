@@ -4136,31 +4136,17 @@ void main() {
       TopPageHeader,
       languageProvider.tr('batch_metadata'),
     );
-    final batchHeaderFade = find.ancestor(
-      of: batchHeader,
-      matching: find.byType(AppPageFadeTransition),
-    ).first;
-    expect(
-      tester.widget<AppPageFadeTransition>(batchHeaderFade).opacity.value,
-      inExclusiveRange(0, 1),
-    );
-    final batchHeaderPosition = find.descendant(
-      of: batchHeader,
-      matching: find.byType(Opacity),
-    ).first;
-    final headerLeft = tester.getRect(batchHeaderPosition).left;
+    final enteringLeft = tester.getRect(batchHeader).left;
+    expect(enteringLeft, greaterThan(0));
     await tester.pumpAndSettle();
-    expect(tester.widget<AppPageFadeTransition>(batchHeaderFade).opacity.value, 1);
+    final settledLeft = tester.getRect(batchHeader).left;
+    expect(settledLeft, lessThan(enteringLeft));
     await tester.tap(
       find.descendant(of: batchHeader, matching: find.byType(BackButton)),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 225));
-    expect(
-      tester.widget<AppPageFadeTransition>(batchHeaderFade).opacity.value,
-      inExclusiveRange(0, 1),
-    );
-    expect(tester.getRect(batchHeaderPosition).left, closeTo(headerLeft, 0.01));
+    expect(tester.getRect(batchHeader).left, greaterThan(settledLeft));
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 100));
     expect(batchHeader, findsNothing);

@@ -15,6 +15,7 @@ import '../../../core/persistence/app_preferences.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/media/dlsite_metadata.dart';
 import '../../library/data/audio_detail_json_codec.dart';
 import 'asmr_download_models.dart';
 import 'asmr_download_task_store.dart';
@@ -39,6 +40,7 @@ class AsmrDownloadManager {
   AsmrDownloadManager({
     FileCachePlatformGateway? fileCacheGateway,
     JsonDocumentStore? jsonDocumentStore,
+    Future<DlsiteMetadata> Function(String rjCode)? metadataLookup,
     Future<Directory> Function()? temporaryDirectoryProvider,
     Future<Directory> Function()? stagingDirectoryProvider,
     Duration automaticFileRetryDelay = const Duration(seconds: 2),
@@ -55,6 +57,7 @@ class AsmrDownloadManager {
          maxConcurrentDownloads,
        ),
        _persistenceReader = persistenceReader,
+       _metadataLookup = metadataLookup,
        _persistTasks = persistTasks {
     _outputs = AsmrDownloadOutputStore(
       fileCacheGateway: _fileCacheGateway,
@@ -85,6 +88,7 @@ class AsmrDownloadManager {
       AudioDetailJsonCodec();
   final bool _persistTasks;
   final Future<String?> Function()? _persistenceReader;
+  final Future<DlsiteMetadata> Function(String rjCode)? _metadataLookup;
   late final AsmrDownloadTaskStore _store;
   final StreamController<AsmrDownloadTaskSnapshot> _completedTasksController =
       StreamController<AsmrDownloadTaskSnapshot>.broadcast();
@@ -599,8 +603,16 @@ class AsmrDownloadManager {
       _transfers.throwIfCancelled(workId);
 
       final workRootPath = taskSnapshot.workRootPath;
+      final metadata = taskSnapshot.saveMetadata
+          ? await _lookupTaskMetadata(workId, taskSnapshot.work)
+          : null;
+      _transfers.throwIfCancelled(workId);
       final backup = taskSnapshot.saveMetadata
-          ? _planner.buildBackupDetail(taskSnapshot.work, workRootPath)
+          ? _planner.buildBackupDetail(
+              taskSnapshot.work,
+              workRootPath,
+              metadata: metadata,
+            )
           : null;
       final backupBytes = backup == null
           ? 0
@@ -643,6 +655,18 @@ class AsmrDownloadManager {
           taskSnapshot,
           backup,
         );
+        final current = _store[workId]!;
+        final mediaBytes = current.fileTotalBytes.values.fold<int>(
+          0,
+          (sum, bytes) => sum + bytes,
+        );
+        if (metadataCreated || !metadataAccounted) {
+          final byteDelta = backupBytes - (current.totalBytes - mediaBytes);
+          _store[workId] = current.copyWith(
+            totalBytes: current.totalBytes + byteDelta,
+          );
+          if (metadataAccounted) downloadedBytes += byteDelta;
+        }
         if (!metadataAccounted) {
           if (metadataCreated) {
             completed++;
@@ -861,6 +885,44 @@ class AsmrDownloadManager {
 
   void dispose() {
     unawaited(shutdown());
+  }
+
+  Future<DlsiteMetadata?> _lookupTaskMetadata(
+    String workId,
+    AsmrWork work,
+  ) async {
+    final lookup = _metadataLookup;
+    if (lookup == null || work.rjCode.isEmpty) return null;
+    final interrupted = Completer<DlsiteMetadata>();
+    // Lookup uses the shared clients; stopping one task must not close them.
+    final timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      try {
+        _transfers.throwIfCancelled(workId);
+      } on DownloadCancelled catch (error, stackTrace) {
+        if (!interrupted.isCompleted) {
+          interrupted.completeError(error, stackTrace);
+        }
+      }
+    });
+    try {
+      final metadata = await Future.any([
+        lookup(work.rjCode),
+        interrupted.future,
+      ]);
+      _transfers.throwIfCancelled(workId);
+      return metadata;
+    } on DownloadCancelled {
+      rethrow;
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'asmr_download_metadata_lookup_failed rj=${work.rjCode}',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    } finally {
+      timer.cancel();
+    }
   }
 
   bool _canScheduleTask(String workId) =>

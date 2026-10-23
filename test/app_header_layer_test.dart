@@ -79,7 +79,7 @@ void main() {
       for (final showFadeMask in [false, true]) (brightness, showFadeMask),
   ]) {
     testWidgets(
-      'glass header keeps its tint continuous at route fade endpoints in $brightness (mask: $showFadeMask)',
+      'glass header keeps its tint constant during route transitions in $brightness (mask: $showFadeMask)',
       (tester) async {
         final navigator = GlobalKey<NavigatorState>();
         final surface = GlobalKey();
@@ -150,7 +150,7 @@ void main() {
           expect(
             headerPaints,
             1,
-            reason: 'Record the header before its first visible fade tick.',
+            reason: 'Record the header before its first transition tick.',
           );
         }
         final samples = <({double progress, List<Color> pixels})>[];
@@ -180,11 +180,7 @@ void main() {
         }
         for (final sample in samples) {
           for (var index = 0; index < settled.length; index++) {
-            final expected = Color.lerp(
-              showFadeMask ? Colors.blue : Colors.white,
-              settled[index],
-              sample.progress,
-            )!;
+            final expected = settled[index];
             expect(
               sample.pixels[index].r,
               closeTo(expected.r, 0.02),
@@ -228,7 +224,7 @@ void main() {
   }
 
   testWidgets(
-    'route header crossfades across its full width on push and pop',
+    'route header slides at full opacity on push and pop',
     (tester) async {
       final navigator = GlobalKey<NavigatorState>();
       final surface = GlobalKey();
@@ -261,29 +257,22 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      Future<void> expectCrossfade() async {
-        final progress = kAppFadeCurve.transform(detail.animation!.value);
-        final expected = Color.alphaBlend(
-          _newHeader.withValues(alpha: progress),
-          Color.alphaBlend(
-            _oldHeader.withValues(alpha: 1 - progress),
-            Colors.blue,
-          ),
+      Future<void> expectOpaqueSlidingHeader() async {
+        final headerRect = tester.getRect(
+          find.byKey(const ValueKey('detail-header')),
         );
+        expect(headerRect.left, inExclusiveRange(0, 800));
         final pixels = await _pixels(tester, surface, [
-          const Offset(40, 50),
-          const Offset(760, 50),
+          Offset((headerRect.left + 800) / 2, 50),
         ]);
         for (final pixel in pixels) {
-          expect(pixel.r, closeTo(expected.r, 0.02));
-          expect(pixel.g, closeTo(expected.g, 0.02));
-          expect(pixel.b, closeTo(expected.b, 0.02));
+          expect(pixel, _newHeader);
         }
       }
 
       for (var i = 0; i < 3; i++) {
         await tester.pump(const Duration(milliseconds: 75));
-        await expectCrossfade();
+        await expectOpaqueSlidingHeader();
       }
       await tester.pumpAndSettle();
       navigator.currentState!.pop();
@@ -291,7 +280,7 @@ void main() {
       await tester.pump();
       for (var i = 0; i < 3; i++) {
         await tester.pump(const Duration(milliseconds: 75));
-        await expectCrossfade();
+        await expectOpaqueSlidingHeader();
       }
       await tester.pumpAndSettle();
       await tester.pump(Duration.zero);
@@ -398,7 +387,7 @@ void main() {
       for (final reducedMotion in [false, true]) (platform, reducedMotion),
   ]) {
     testWidgets(
-      'instant search header fades behind work details on $platform (reduced: $reducedMotion)',
+      'instant search header slides behind work details on $platform (reduced: $reducedMotion)',
       (tester) async {
         final navigator = GlobalKey<NavigatorState>();
         final surface = GlobalKey();
@@ -473,25 +462,8 @@ void main() {
         await tester.pump();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 150));
-        final sampled = await _pixels(tester, surface, [
-          const Offset(790, 50),
-          const Offset(790, 140),
-        ]);
-        final pixel = sampled.first;
-        final incoming = kAppFadeCurve.transform(detail.animation!.value);
-        final expected = Color.alphaBlend(
-          _newHeader.withValues(alpha: incoming),
-          Color.alphaBlend(
-            _oldHeader.withValues(alpha: 1 - incoming),
-            sampled.last,
-          ),
-        );
-        // The search top mask also blends the body into the theme surface.
-        // Red isolates header opacity because both underlying bodies have the
-        // same red contribution here; green verifies the retained header wins.
-        expect(pixel.r, closeTo(expected.r, 0.02));
-        expect(pixel.g, greaterThan(0.6));
-        expect(pixel.b, lessThan(0.4));
+        final sampled = await _pixels(tester, surface, [const Offset(790, 50)]);
+        expect(sampled.single, _newHeader);
         await tester.pumpAndSettle();
         // This area belongs only to the search header, outside the detail header.
         expect(
@@ -588,7 +560,7 @@ void main() {
     for (final platform in [TargetPlatform.android, TargetPlatform.windows])
       for (final separated in [false, true]) (platform, separated),
   ]) {
-    testWidgets('headers paint above both sliding route bodies ($platform, separate: $separateHeader)', (
+    testWidgets('headers slide with route bodies without fading ($platform, separate: $separateHeader)', (
       tester,
     ) async {
       final navigator = GlobalKey<NavigatorState>();
@@ -622,50 +594,30 @@ void main() {
       await tester.pump();
       await tester.pump();
       final header = find.byKey(const ValueKey('new-header'));
-      final rect = tester.getRect(header);
+      var previousLeft = tester.getRect(header).left;
       for (final elapsed in [50, 50, 50]) {
         await tester.pump(Duration(milliseconds: elapsed));
-        expect(tester.getRect(header), rect);
+        final rect = tester.getRect(header);
+        expect(rect.left, lessThan(previousLeft));
+        previousLeft = rect.left;
         final colors = await _pixels(tester, surface, [
-          const Offset(8, 50),
-          const Offset(790, 50),
-          const Offset(790, 140),
+          Offset((rect.left + 800) / 2, 50),
         ]);
-        // Both edges retain the old green header while the new yellow header
-        // fades in; the blue body's moving edge cannot wipe either header.
-        final incoming = kAppFadeCurve.transform(route.animation!.value);
-        final expected = Color.alphaBlend(
-          _newHeader.withValues(alpha: incoming),
-          Color.alphaBlend(
-            _oldHeader.withValues(alpha: 1 - incoming),
-            colors.last,
-          ),
-        );
-        expect(colors[1].r, closeTo(expected.r, 0.02));
-        expect(colors[1].g, closeTo(expected.g, 0.02));
-        expect(colors[1].b, closeTo(expected.b, 0.02));
-        expect(
-          colors.take(2).every((color) => color.g > 0.6 && color.b < 0.4),
-          isTrue,
-          reason: '$colors',
-        );
+        expect(colors.single, _newHeader);
       }
       await tester.pumpAndSettle();
+      final settledRect = tester.getRect(header);
       await tester.tap(header);
       expect(taps, 1);
       navigator.currentState!.pop();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 150));
-      expect(tester.getRect(header), rect);
+      expect(tester.getRect(header).left, greaterThan(settledRect.left));
+      final returningRect = tester.getRect(header);
       final colors = await _pixels(tester, surface, [
-        const Offset(8, 50),
-        const Offset(790, 50),
+        Offset((returningRect.left + 800) / 2, 50),
       ]);
-      expect(
-        colors.every((color) => color.g > 0.6 && color.b < 0.4),
-        isTrue,
-        reason: '$colors',
-      );
+      expect(colors.single, _newHeader);
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('old-header')), findsOneWidget);
       unawaited(
@@ -781,7 +733,7 @@ void main() {
     },
   );
 
-  testWidgets('tab headers stay above both full-size page backgrounds', (
+  testWidgets('tab headers slide above page backgrounds at full opacity', (
     tester,
   ) async {
     final selected = ValueNotifier(0);
@@ -809,35 +761,25 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
+    final incomingRect = tester.getRect(find.byKey(const ValueKey('1-header')));
+    expect(incomingRect.left, inExclusiveRange(0, 800));
     final colors = await _pixels(tester, surface, [
-      const Offset(8, 50),
-      const Offset(790, 50),
+      Offset((incomingRect.left + 800) / 2, 50),
     ]);
-    expect(
-      colors.every((color) => color.g > 0.6 && color.b < 0.4),
-      isTrue,
-      reason: '$colors',
-    );
+    expect(colors.single, _newHeader);
     await tester.pumpAndSettle();
     selected.value = 0;
     await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
-    final returningColors = await _pixels(tester, surface, [
-      const Offset(8, 50),
-      const Offset(790, 50),
-      const Offset(8, 140),
-    ]);
-    final incoming = kAppFadeCurve.transform(0.5);
-    // Revisited tabs must follow the current Stack paint order, not mount order.
-    final expected = Color.alphaBlend(
-      _oldHeader.withValues(alpha: incoming),
-      Color.alphaBlend(
-        _newHeader.withValues(alpha: 1 - incoming),
-        returningColors.last,
-      ),
+    final returningRect = tester.getRect(
+      find.byKey(const ValueKey('0-header')),
     );
-    expect(returningColors.first.r, closeTo(expected.r, 0.02));
+    expect(returningRect.left, inExclusiveRange(-800, 0));
+    final returningColors = await _pixels(tester, surface, [
+      Offset(returningRect.right / 2, 50),
+    ]);
+    expect(returningColors.single, _oldHeader);
     await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox.shrink());
   });

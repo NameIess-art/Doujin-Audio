@@ -2,6 +2,7 @@ import '../../../core/media/playback_media_reference.dart';
 import 'dart:io';
 import 'package:path/path.dart' as path;
 import '../../../core/media/audio_detail.dart';
+import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';
 import '../domain/asmr_models.dart';
@@ -216,9 +217,12 @@ class AsmrDownloadPlanner {
     }
   }
 
-  AudioDetail buildBackupDetail(AsmrWork work, String workRootPath) {
-    return AudioDetail(
-      target: AudioDetailTarget.libraryRootFolder(workRootPath),
+  AudioDetail buildBackupDetail(
+    AsmrWork work,
+    String workRootPath, {
+    DlsiteMetadata? metadata,
+  }) {
+    final catalog = DlsiteMetadata(
       rjCode: work.rjCode,
       workTitle: work.title,
       circleName: work.circleName,
@@ -228,6 +232,19 @@ class AsmrDownloadPlanner {
       duration: work.duration > Duration.zero ? work.duration : null,
       salesCount: work.dlCount > 0 ? work.dlCount : null,
       rating: work.rating > 0 ? work.rating.clamp(0, 5).toDouble() : null,
+    );
+    final resolved = metadata?.fillMissingFrom(catalog) ?? catalog;
+    return AudioDetail(
+      target: AudioDetailTarget.libraryRootFolder(workRootPath),
+      rjCode: resolved.rjCode,
+      workTitle: resolved.workTitle,
+      circleName: resolved.circleName,
+      voiceActors: resolved.voiceActors,
+      tags: resolved.tags,
+      releaseDate: resolved.releaseDate,
+      duration: resolved.duration,
+      salesCount: resolved.salesCount,
+      rating: resolved.rating,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     ).normalizedForSave(DateTime.now());

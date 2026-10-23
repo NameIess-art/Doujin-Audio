@@ -415,7 +415,6 @@ class _LibrarySearchAllResultsState
           ),
           cacheExtent: 120,
           physics: const ClampingScrollPhysics(),
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           itemCount: visibleItems.length + errorItemCount,
           itemBuilder: (context, index) {
             if (hasCurrentError && index == 0) {

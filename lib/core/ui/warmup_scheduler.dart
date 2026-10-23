@@ -83,18 +83,18 @@ class WarmupScheduler {
     );
 
     if (_pending.length >= maxQueueSize) {
-      final worstTask = _pending.isEmpty
-          ? null
-          : _pending.reduce(
-              (left, right) => left.effectivePriority >= right.effectivePriority
-                  ? left
-                  : right,
-            );
-      if (worstTask == null ||
-          worstTask.effectivePriority <= queuedTask.effectivePriority) {
-        return false;
+      if (_pending.isEmpty) return false;
+      var worstIndex = 0;
+      var worstPriority = _pending.first.effectivePriority;
+      for (var index = 1; index < _pending.length; index++) {
+        final priority = _pending[index].effectivePriority;
+        if (priority > worstPriority) {
+          worstIndex = index;
+          worstPriority = priority;
+        }
       }
-      _pending.remove(worstTask);
+      if (worstPriority <= queuedTask.effectivePriority) return false;
+      final worstTask = _pending.removeAt(worstIndex);
       _queuedKeys.remove(worstTask.key);
       worstTask.onDiscard?.call();
     }
@@ -136,11 +136,16 @@ class WarmupScheduler {
   void _pump() {
     if (_isShutDown || _isCoolingDown || _isPaused) return;
     while (_activeKeys.length < maxConcurrent && _pending.isNotEmpty) {
-      _pending.sort(
-        (left, right) =>
-            left.effectivePriority.compareTo(right.effectivePriority),
-      );
-      final nextTask = _pending.removeAt(0);
+      var nextIndex = 0;
+      var nextPriority = _pending.first.effectivePriority;
+      for (var index = 1; index < _pending.length; index++) {
+        final priority = _pending[index].effectivePriority;
+        if (priority < nextPriority) {
+          nextIndex = index;
+          nextPriority = priority;
+        }
+      }
+      final nextTask = _pending.removeAt(nextIndex);
       _queuedKeys.remove(nextTask.key);
       _completeCapacityIfAvailable();
       if (nextTask.generation != _currentGeneration) {

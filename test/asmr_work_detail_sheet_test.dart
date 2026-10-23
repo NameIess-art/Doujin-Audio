@@ -193,7 +193,7 @@ void main() {
         await tester.pump();
         expect(opacityFor(2), 1);
 
-        final list = tester.widget<ListView>(find.byType(ListView));
+        final list = tester.widget<ScrollView>(find.byType(CustomScrollView));
         list.controller!.jumpTo(list.controller!.position.maxScrollExtent);
         await tester.pump();
         expect(opacityFor(35), 1);
@@ -222,7 +222,9 @@ void main() {
         await tester.pump();
         await tester.pump();
         expect(opacityFor(2), 1);
-        final restoredList = tester.widget<ListView>(find.byType(ListView));
+        final restoredList = tester.widget<ScrollView>(
+          find.byType(CustomScrollView),
+        );
         restoredList.controller!.jumpTo(
           restoredList.controller!.position.maxScrollExtent,
         );
@@ -283,7 +285,7 @@ void main() {
       await tester.pumpAndSettle();
 
       List<String> nearestVisibleCovers({Set<String> excluded = const {}}) {
-        final viewport = tester.getRect(find.byType(ListView));
+        final viewport = tester.getRect(find.byType(CustomScrollView));
         final covers = find.byType(AsyncRemoteCoverImage).evaluate().where((
           element,
         ) {
@@ -323,7 +325,7 @@ void main() {
       );
       expect(cache.started, initialCovers);
 
-      final list = tester.widget<ListView>(find.byType(ListView));
+      final list = tester.widget<ScrollView>(find.byType(CustomScrollView));
       list.controller!.jumpTo(600);
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
@@ -811,19 +813,21 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('收藏'));
       await tester.pumpAndSettle();
-      final originalList = tester.widget<ListView>(find.byType(ListView));
+      final originalList = tester.widget<ScrollView>(
+        find.byType(CustomScrollView),
+      );
       final scrollController = originalList.controller!;
       scrollController.jumpTo(400);
       await tester.pump();
       await tester.tap(find.text('推荐'));
       await tester.pump();
-      expect(find.byType(ListView), findsNWidgets(2));
+      expect(find.byType(CustomScrollView), findsNWidgets(2));
       await tester.pumpAndSettle();
-      expect(find.byType(ListView), findsOneWidget);
+      expect(find.byType(CustomScrollView), findsOneWidget);
       await tester.tap(find.text('收藏'));
       await tester.pumpAndSettle();
       expect(
-        tester.widget<ListView>(find.byType(ListView)).controller,
+        tester.widget<ScrollView>(find.byType(CustomScrollView)).controller,
         same(scrollController),
       );
       expect(scrollController.offset, closeTo(400, 1));
@@ -887,7 +891,9 @@ void main() {
       await tester.tap(find.text('收藏'));
       await tester.pumpAndSettle();
       final rootScroll = tester
-          .widget<ListView>(find.byType(ListView))
+          .widget<ScrollView>(
+            find.byKey(const PageStorageKey(AsmrCategoryType.favorites)),
+          )
           .controller!;
       rootScroll.jumpTo(320);
       await tester.pump();
@@ -935,7 +941,7 @@ void main() {
 
       await query('shared');
       final searchScroll = tester
-          .widget<ListView>(
+          .widget<ScrollView>(
             find.descendant(
               of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
               matching: find.byKey(
@@ -973,7 +979,7 @@ void main() {
       await tester.tap(find.text('收藏'));
       await tester.pumpAndSettle();
       final reopenedScroll = tester
-          .widget<ListView>(
+          .widget<ScrollView>(
             find.descendant(
               of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
               matching: find.byKey(
@@ -1253,15 +1259,17 @@ void main() {
         await tester.pump();
         await tester.pump(UiInteractionCoordinator.instance.idleDelay);
         await tester.pump();
-        final retiringList = tester.widget<ListView>(
-          find.byKey(const PageStorageKey(AsmrCategoryType.favorites)),
+        final retiringRows = tester.widget<SliverList>(
+          find.descendant(
+            of: find.byKey(const PageStorageKey(AsmrCategoryType.favorites)),
+            matching: find.byType(SliverList),
+          ),
         );
         expect(
-          (retiringList.childrenDelegate as SliverChildBuilderDelegate)
-              .childCount,
-          lessThanOrEqualTo(mountedCardCount + 2),
+          (retiringRows.delegate as SliverChildBuilderDelegate).childCount,
+          lessThanOrEqualTo(mountedCardCount + 1),
           reason:
-              'Only mounted cards, the new work and footer stay in the list '
+              'Only mounted cards and the new work stay in the list '
               'while removed cards collapse.',
         );
         await tester.pumpAndSettle();

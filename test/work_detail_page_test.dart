@@ -605,6 +605,127 @@ void main() {
     expect(remote.extension, '.flac');
   });
 
+  test('Japanese ASMR detail projection hides only the site wrapper', () {
+    final wrapper = AsmrTrackFile.fromJson(const {
+      'type': 'folder',
+      'title': 'japaneseasmr.com',
+      'children': [
+        {
+          'type': 'audio',
+          'title': 'Opening.m4a',
+          'mediaStreamUrl':
+              'https://v.weeab0o.xyz/work.m3u8#eara-chapter=0,1000',
+        },
+        {
+          'type': 'folder',
+          'title': 'Bonus',
+          'children': [
+            {
+              'type': 'audio',
+              'title': 'Extra.m4a',
+              'mediaStreamUrl': 'https://example.test/extra.m4a',
+            },
+            {
+              'type': 'text',
+              'title': 'Notes.txt',
+              'mediaDownloadUrl': 'https://example.test/notes.txt',
+            },
+          ],
+        },
+      ],
+    });
+    final directory = buildWorkDirectorySnapshot(
+      WorkDirectoryInput.asmr([wrapper]),
+    );
+    final root = directory.entriesAt([]);
+    expect(root.map((entry) => entry.name), ['Bonus', 'Opening']);
+    expect(directory.directories.containsKey('japaneseasmr.com'), isFalse);
+    expect(root.last.asmrNode, same(wrapper.children.first));
+    expect(root.last.relativePath, 'japaneseasmr.com/Opening.m4a');
+    expect(directory.entriesAt(['Bonus']).map((entry) => entry.name), [
+      'Extra',
+      'Notes.txt',
+    ]);
+    expect(directory.validDepth(['Bonus']), 1);
+    expect(wrapper.children.last.relativePath, 'japaneseasmr.com/Bonus');
+  });
+
+  for (final cached in [false, true]) {
+    _detailTestWidgets(
+      'Japanese ASMR detail opens directly into tracks cached=$cached',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final fixture = AppRuntimeWidgetTestFixture();
+        _detailFixtures.add(fixture);
+        addTearDown(fixture.dispose);
+        final tree = [
+          AsmrTrackFile.fromJson(const {
+            'type': 'folder',
+            'title': 'japaneseasmr.com',
+            'children': [
+              {
+                'type': 'audio',
+                'title': 'Opening.m4a',
+                'mediaStreamUrl':
+                    'https://v.weeab0o.xyz/work.m3u8#eara-chapter=0,1000',
+              },
+              {
+                'type': 'folder',
+                'title': 'Bonus',
+                'children': [
+                  {
+                    'type': 'audio',
+                    'title': 'Extra.m4a',
+                    'mediaStreamUrl': 'https://example.test/extra.m4a',
+                  },
+                ],
+              },
+            ],
+          }),
+        ];
+        final controller = _DeferredDetailAsmrController(tree, cached: cached);
+        addTearDown(controller.dispose);
+        final work = AsmrWork.fromJson(const {
+          'id': 42,
+          'title': 'Japanese Work',
+          'sourceId': 'RJ000042',
+          'resources': [
+            {
+              'source': 'japaneseAsmr',
+              'id': 42,
+              'code': 'RJ000042',
+              'pageUrl': '',
+            },
+          ],
+        });
+        await tester.pumpWidget(
+          fixture.build(
+            WorkDetailPage.forAsmr(work: work),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await _settleDetail(tester);
+        expect(find.text('japaneseasmr.com'), findsNothing);
+        expect(find.text('Opening'), findsOneWidget);
+        expect(find.text('Bonus'), findsOneWidget);
+        await tester.tap(find.text('Bonus'));
+        await _settleDetail(tester);
+        expect(find.text('Extra'), findsOneWidget);
+        expect(find.text('japaneseasmr.com'), findsNothing);
+        expect(
+          controller.tree.single.children.first.relativePath,
+          'japaneseasmr.com/Opening.m4a',
+        );
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   group('WorkDetailPage', () {
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       for (final local in [false, true]) {

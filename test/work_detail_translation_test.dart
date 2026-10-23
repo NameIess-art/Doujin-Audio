@@ -318,7 +318,9 @@ void main() {
         );
         expect(service.calls.last.texts, contains('Original audio'));
         service.calls.last.complete();
-        await _batch(tester);
+        // The directory transition can still protect this scrollable when
+        // translation returns. Its text commits after that interaction ends.
+        await pumpUntilFound(tester, find.text('zh-CN:Original audio'));
         expect(find.text('zh-CN:Original audio'), findsOneWidget);
         final tile = tester.widget<WorkDetailEntryTile>(
           find.byType(WorkDetailEntryTile),

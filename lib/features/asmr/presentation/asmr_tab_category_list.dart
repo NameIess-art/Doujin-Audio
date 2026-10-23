@@ -504,153 +504,111 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   }
                   final rowCount = (visibleWorks.length / columnCount).ceil();
                   final hasLoadMore = state.isLoadingMore || state.hasMore;
-                  return workList = ListView.builder(
-                    key: PageStorageKey(widget.category),
-                    controller: widget.scrollController,
-                    cacheExtent: widget.searchSession ? 120 : 320,
-                    physics: AlwaysScrollableScrollPhysics(
-                      parent: GlassRefreshIndicatorScrollPhysics(
-                        isIndicatorVisible: () =>
-                            _refreshIndicatorKey
-                                .currentState
-                                ?.isIndicatorVisible ??
-                            false,
-                      ),
-                    ),
-                    padding: EdgeInsets.fromLTRB(
-                      LibraryLikeCardMetrics.listHorizontalPadding,
-                      widget.topInset,
-                      LibraryLikeCardMetrics.listHorizontalPadding,
-                      widget.bottomInset + 24,
-                    ),
-                    itemCount: rowCount + 1,
-                    findChildIndexCallback: (key) {
-                      if (key ==
-                          const ValueKey<String>('asmr_load_more_footer')) {
-                        return rowCount;
-                      }
-                      if (columnCount != 1) return null;
-                      return workKeyIndices[key];
-                    },
-                    itemBuilder: (context, rowIndex) {
-                      if (rowIndex >= rowCount) {
-                        if (visibleWorks.isNotEmpty &&
-                            !state.needsLoadMoreRetry) {
-                          _scheduleAutomaticLoadMore(state);
-                        }
-                        final partialError =
-                            state.operationError ?? state.lastError;
-                        if (visibleWorks.isNotEmpty &&
-                            partialError is AsmrPartialCatalogException) {
-                          return Padding(
-                            key: const ValueKey<String>(
-                              'asmr_load_more_footer',
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: OperationStatusBanner(
-                              key: const ValueKey<String>(
-                                'online_library_partial_failure',
-                              ),
-                              label: localizedAsmrCatalogErrorText(
-                                i18n,
-                                partialError,
-                              ),
-                              error: partialError,
-                              icon: Icons.cloud_off_rounded,
-                              tone: OperationStatusTone.warning,
-                              retryTooltip: i18n.tr('retry'),
-                              onRetry: () => unawaited(widget.onRefresh()),
-                            ),
-                          );
-                        }
-                        return AnimatedSwitcher(
-                          key: const ValueKey<String>('asmr_load_more_footer'),
-                          duration: reduceMotion
-                              ? Duration.zero
-                              : kAppFadeDuration,
-                          switchInCurve: kAppFadeCurve,
-                          switchOutCurve: kAppFadeCurve,
-                          child: visibleWorks.isEmpty
-                              ? Padding(
-                                  key: ValueKey((
-                                    'asmr_empty',
-                                    state.lastError,
-                                  )),
-                                  padding: const EdgeInsets.only(top: 80),
-                                  child: Column(
-                                    children: [
-                                      AppEmptyState(
-                                        icon: state.lastError != null
-                                            ? Icons.error_outline_rounded
-                                            : Icons.search_off_rounded,
-                                        title: state.lastError != null
-                                            ? i18n.tr('error')
-                                            : i18n.tr('asmr_empty_category'),
-                                        message: state.lastError == null
-                                            ? ''
-                                            : localizedAsmrCatalogErrorText(
-                                                i18n,
-                                                state.lastError,
-                                              ),
+                  Widget buildFooter(BuildContext context) {
+                    final partialError =
+                        state.operationError ?? state.lastError;
+                    if (visibleWorks.isNotEmpty &&
+                        partialError is AsmrPartialCatalogException) {
+                      return Padding(
+                        key: const ValueKey<String>('asmr_load_more_footer'),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: OperationStatusBanner(
+                          key: const ValueKey<String>(
+                            'online_library_partial_failure',
+                          ),
+                          label: localizedAsmrCatalogErrorText(
+                            i18n,
+                            partialError,
+                          ),
+                          error: partialError,
+                          icon: Icons.cloud_off_rounded,
+                          tone: OperationStatusTone.warning,
+                          retryTooltip: i18n.tr('retry'),
+                          onRetry: () => unawaited(widget.onRefresh()),
+                        ),
+                      );
+                    }
+                    return AnimatedSwitcher(
+                      key: const ValueKey<String>('asmr_load_more_footer'),
+                      duration: reduceMotion ? Duration.zero : kAppFadeDuration,
+                      switchInCurve: kAppFadeCurve,
+                      switchOutCurve: kAppFadeCurve,
+                      child: visibleWorks.isEmpty
+                          ? Padding(
+                              key: ValueKey(('asmr_empty', state.lastError)),
+                              padding: const EdgeInsets.only(top: 80),
+                              child: Column(
+                                children: [
+                                  AppEmptyState(
+                                    icon: state.lastError != null
+                                        ? Icons.error_outline_rounded
+                                        : Icons.search_off_rounded,
+                                    title: state.lastError != null
+                                        ? i18n.tr('error')
+                                        : i18n.tr('asmr_empty_category'),
+                                    message: state.lastError == null
+                                        ? ''
+                                        : localizedAsmrCatalogErrorText(
+                                            i18n,
+                                            state.lastError,
+                                          ),
+                                  ),
+                                  if (hasLoadMore)
+                                    TextButton(
+                                      key: const ValueKey(
+                                        'asmr_empty_load_more',
                                       ),
-                                      if (hasLoadMore)
-                                        TextButton(
-                                          key: const ValueKey(
-                                            'asmr_empty_load_more',
-                                          ),
-                                          onPressed: state.isLoadingMore
-                                              ? null
-                                              : _loadMore,
-                                          child: Text(i18n.tr('my_load_more')),
+                                      onPressed: state.isLoadingMore
+                                          ? null
+                                          : _loadMore,
+                                      child: Text(i18n.tr('my_load_more')),
+                                    ),
+                                ],
+                              ),
+                            )
+                          : !hasLoadMore
+                          ? const SizedBox.shrink(
+                              key: ValueKey<String>('asmr_load_more_complete'),
+                            )
+                          : Padding(
+                              key: ValueKey((
+                                'asmr_load_more_visible',
+                                state.needsLoadMoreRetry,
+                              )),
+                              padding: const EdgeInsets.only(top: 4, bottom: 4),
+                              child: Center(
+                                child: state.needsLoadMoreRetry
+                                    ? Text(
+                                        i18n.tr('asmr_load_more_hint'),
+                                        key: const ValueKey<String>(
+                                          'asmr_load_more_retry_hint',
                                         ),
-                                    ],
-                                  ),
-                                )
-                              : !hasLoadMore
-                              ? const SizedBox.shrink(
-                                  key: ValueKey<String>(
-                                    'asmr_load_more_complete',
-                                  ),
-                                )
-                              : Padding(
-                                  key: ValueKey((
-                                    'asmr_load_more_visible',
-                                    state.needsLoadMoreRetry,
-                                  )),
-                                  padding: const EdgeInsets.only(
-                                    top: 4,
-                                    bottom: 4,
-                                  ),
-                                  child: Center(
-                                    child: state.needsLoadMoreRetry
-                                        ? Text(
-                                            i18n.tr('asmr_load_more_hint'),
-                                            key: const ValueKey<String>(
-                                              'asmr_load_more_retry_hint',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                              fontWeight: FontWeight.w600,
                                             ),
-                                            style: theme.textTheme.bodySmall
-                                                ?.copyWith(
-                                                  color: theme
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                          )
-                                        : SizedBox(
-                                            key: const ValueKey<String>(
-                                              'asmr_load_more_progress',
-                                            ),
-                                            width: 22,
-                                            height: 22,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2.2,
-                                              color: asmrBlue,
-                                            ),
-                                          ),
-                                  ),
-                                ),
-                        );
-                      }
+                                      )
+                                    : SizedBox(
+                                        key: const ValueKey<String>(
+                                          'asmr_load_more_progress',
+                                        ),
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.2,
+                                          color: asmrBlue,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                    );
+                  }
+
+                  final rows = SliverChildBuilderDelegate(
+                    (context, rowIndex) {
                       if (columnCount == 1) {
                         return buildWorkCard(visibleWorks[rowIndex]);
                       }
@@ -680,6 +638,74 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         ],
                       );
                     },
+                    childCount: rowCount,
+                    findChildIndexCallback: columnCount == 1
+                        ? (key) => workKeyIndices[key]
+                        : null,
+                  );
+                  final footer = RepaintBoundary(
+                    child: Builder(builder: buildFooter),
+                  );
+                  return workList = CustomScrollView(
+                    key: PageStorageKey(widget.category),
+                    controller: widget.scrollController,
+                    cacheExtent: widget.searchSession ? 120 : 320,
+                    physics: AlwaysScrollableScrollPhysics(
+                      parent: GlassRefreshIndicatorScrollPhysics(
+                        isIndicatorVisible: () =>
+                            _refreshIndicatorKey
+                                .currentState
+                                ?.isIndicatorVisible ??
+                            false,
+                      ),
+                    ),
+                    semanticChildCount: rowCount + 1,
+                    slivers: [
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          LibraryLikeCardMetrics.listHorizontalPadding,
+                          widget.topInset,
+                          LibraryLikeCardMetrics.listHorizontalPadding,
+                          0,
+                        ),
+                        // Retiring favorites shrink below the normal row height.
+                        sliver: _collapsingWorks.isEmpty
+                            ? SliverFixedExtentList(
+                                itemExtent:
+                                    LibraryLikeCardMetrics.rootTileHeight,
+                                delegate: rows,
+                              )
+                            : SliverList(delegate: rows),
+                      ),
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          LibraryLikeCardMetrics.listHorizontalPadding,
+                          0,
+                          LibraryLikeCardMetrics.listHorizontalPadding,
+                          widget.bottomInset + 24,
+                        ),
+                        sliver: SliverLayoutBuilder(
+                          builder: (context, constraints) {
+                            if (constraints.remainingCacheExtent > 0 &&
+                                visibleWorks.isNotEmpty &&
+                                !state.needsLoadMoreRetry) {
+                              _scheduleAutomaticLoadMore(state);
+                            }
+                            return SliverToBoxAdapter(
+                              // The footer is measured offscreen too; keep its
+                              // progress indicator idle until it can be painted.
+                              child: TickerMode(
+                                enabled: constraints.remainingPaintExtent > 0,
+                                child: IndexedSemantics(
+                                  index: rowCount,
+                                  child: footer,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),

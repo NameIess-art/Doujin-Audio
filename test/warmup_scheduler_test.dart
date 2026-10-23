@@ -4,6 +4,109 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/ui/warmup_scheduler.dart';
 
 void main() {
+  test('dispatch reads each queued priority once', () async {
+    final scheduler = WarmupScheduler(maxQueueSize: 32);
+    scheduler.setPaused(true);
+    scheduler.beginGeneration(1);
+    final release = Completer<void>();
+    final calls = List<int>.filled(32, 0);
+    final started = <int>[];
+    for (var index = 0; index < calls.length; index++) {
+      final coverIndex = index;
+      scheduler.schedule(
+        key: 'cover:$index',
+        priority: index,
+        priorityResolver: () {
+          calls[coverIndex]++;
+          return -coverIndex;
+        },
+        generation: 1,
+        task: () async {
+          started.add(coverIndex);
+          await release.future;
+        },
+      );
+    }
+
+    scheduler.setPaused(false);
+    expect(started, <int>[31]);
+    expect(calls, everyElement(1));
+    final shutdown = scheduler.shutdown();
+    release.complete();
+    await shutdown;
+  });
+
+  test('each dispatch reads the latest queued priorities again', () async {
+    final scheduler = WarmupScheduler(maxQueueSize: 3);
+    scheduler.setPaused(true);
+    scheduler.beginGeneration(1);
+    final release = List<Completer<void>>.generate(3, (_) => Completer<void>());
+    final secondStarted = Completer<void>();
+    final calls = List<int>.filled(3, 0);
+    final started = <int>[];
+    var focus = 0;
+    for (var index = 0; index < calls.length; index++) {
+      final coverIndex = index;
+      scheduler.schedule(
+        key: 'cover:$index',
+        priority: index,
+        priorityResolver: () {
+          calls[coverIndex]++;
+          return (coverIndex - focus).abs();
+        },
+        generation: 1,
+        task: () async {
+          started.add(coverIndex);
+          if (started.length == 2) secondStarted.complete();
+          await release[coverIndex].future;
+        },
+      );
+    }
+
+    scheduler.setPaused(false);
+    expect(started, <int>[0]);
+    expect(calls, <int>[1, 1, 1]);
+    focus = 2;
+    release[0].complete();
+    await secondStarted.future;
+    expect(started, <int>[0, 2]);
+    expect(calls, <int>[1, 2, 2]);
+    release[1].complete();
+    release[2].complete();
+    await scheduler.idle;
+    expect(started, <int>[0, 2, 1]);
+  });
+
+  test('full queue admission reads each candidate priority once', () async {
+    final scheduler = WarmupScheduler(maxQueueSize: 4);
+    scheduler.setPaused(true);
+    scheduler.beginGeneration(1);
+    final calls = List<int>.filled(5, 0);
+    final discarded = <int>[];
+    for (var index = 0; index < calls.length; index++) {
+      final coverIndex = index;
+      expect(
+        scheduler.schedule(
+          key: 'cover:$index',
+          priority: index,
+          priorityResolver: () {
+            calls[coverIndex]++;
+            return coverIndex == 4 ? -1 : coverIndex;
+          },
+          generation: 1,
+          onDiscard: () => discarded.add(coverIndex),
+          task: () async {},
+        ),
+        isTrue,
+      );
+    }
+
+    expect(calls, everyElement(1));
+    expect(discarded, <int>[3]);
+    expect(scheduler.pendingCount, 4);
+    await scheduler.shutdown();
+  });
+
   test('capacity waiter wakes before the remaining queue is idle', () async {
     final scheduler = WarmupScheduler(maxQueueSize: 2);
     scheduler.beginGeneration(1);

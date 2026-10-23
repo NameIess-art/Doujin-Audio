@@ -225,6 +225,12 @@ WorkDirectorySnapshot buildWorkDirectorySnapshot(WorkDirectoryInput input) {
     final entries = directories.putIfAbsent(path, () => []);
     for (final node in nodes) {
       hasSubtitle |= node.isSubtitle;
+      // Japanese ASMR wraps its catalog in a site-name folder. It is not a
+      // work directory; keep the source nodes and paths for playback/downloads.
+      if (path.isEmpty && node.isFolder && node.title == 'japaneseasmr.com') {
+        remoteTree(node.children, path);
+        continue;
+      }
       if (node.isFolder) {
         entries.add(
           WorkEntryItem(

@@ -1206,6 +1206,17 @@ void main() {
 
             expect(responsiveLibraryCardColumnCount(1280), greaterThan(1));
             expect(responsiveLibraryCardColumnCount(640), 1);
+            final workSliver = tester.widget<SliverFixedExtentList>(
+              find.byType(SliverFixedExtentList),
+            );
+            expect(
+              workSliver.itemExtent,
+              LibraryLikeCardMetrics.rootTileHeight,
+            );
+            expect(
+              (workSliver.delegate as SliverChildBuilderDelegate).childCount,
+              (count / responsiveLibraryCardColumnCount(1280)).ceil(),
+            );
             await scrollToBottom();
             for (final width in [640.0, 1280.0, 640.0, 1280.0]) {
               tester.view.physicalSize = Size(width, 800);
@@ -1216,6 +1227,15 @@ void main() {
               );
               expect(tester.takeException(), isNull);
               await scrollToBottom();
+              expect(find.byType(SliverFixedExtentList), findsOneWidget);
+              expect(
+                find
+                    .byType(LibraryLikeMetadataWorkCardContent)
+                    .evaluate()
+                    .length,
+                lessThan(60),
+                reason: 'Jumping to the end must retain only nearby cards.',
+              );
               expect(interaction.navigationAllowed.value, isTrue);
             }
             expect(controller.loadMoreCount, 0);
@@ -1225,6 +1245,45 @@ void main() {
         );
       }
     }
+
+    testWidgets(
+      'ASMR offscreen load-more progress stays idle until visible on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices())
+          ..workCount = 1000
+          ..hasMore = true;
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        final progress = find.byKey(
+          const ValueKey<String>('asmr_load_more_progress'),
+        );
+        for (final element in progress.evaluate()) {
+          expect(TickerMode.valuesOf(element).enabled, isFalse);
+        }
+        expect(tester.binding.hasScheduledFrame, isFalse);
+        final list = tester.widget<ScrollView>(
+          find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
+        );
+        list.controller!.jumpTo(list.controller!.position.maxScrollExtent);
+        await tester.pump();
+        expect(TickerMode.valuesOf(tester.element(progress)).enabled, isTrue);
+        expect(tester.binding.hasScheduledFrame, isTrue);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
 
     testWidgets(
       'ASMR search builds only nearby cards and retains them during keyboard resize on $platform',
@@ -1414,6 +1473,12 @@ void main() {
         Finder card(int id) =>
             find.byKey(ValueKey<String>('asmr-work-source:asmrOne:$id'));
         final retainedCard = tester.element(card(2));
+        final favoriteList = find.byKey(
+          const PageStorageKey(AsmrCategoryType.favorites),
+        );
+        Finder favoriteSliver(Type type) =>
+            find.descendant(of: favoriteList, matching: find.byType(type));
+        expect(favoriteSliver(SliverFixedExtentList), findsOneWidget);
 
         controller
           ..publishedWorks = [works[2], works[0], works[1], works[3]]
@@ -1430,9 +1495,16 @@ void main() {
         await tester.pump();
         expect(card(1), findsOneWidget);
         expect(tester.element(card(2)), same(retainedCard));
+        expect(favoriteSliver(SliverList), findsOneWidget);
+        expect(favoriteSliver(SliverFixedExtentList), findsNothing);
+        final nextTop = tester.getTopLeft(card(2)).dy;
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.getTopLeft(card(2)).dy, lessThan(nextTop));
+        expect(card(1), findsOneWidget);
         await tester.pumpAndSettle();
         expect(card(1), findsNothing);
         expect(tester.element(card(2)), same(retainedCard));
+        expect(favoriteSliver(SliverFixedExtentList), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       },
@@ -1474,7 +1546,7 @@ void main() {
         final list = find.byKey(
           const PageStorageKey(AsmrCategoryType.favorites),
         );
-        tester.widget<ListView>(list).controller!.jumpTo(1800);
+        tester.widget<ScrollView>(list).controller!.jumpTo(1800);
         await tester.pumpAndSettle();
         await tester.pump(interaction.idleDelay);
         await tester.pumpAndSettle();

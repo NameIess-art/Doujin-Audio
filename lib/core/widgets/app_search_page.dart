@@ -1,6 +1,7 @@
 import 'dart:ui' show FlutterView;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../app/theme/app_design_tokens.dart';
 import '../ui/ui_interaction_coordinator.dart';
@@ -159,7 +160,17 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                   ),
                   child: PageHeaderInset(
                     topInset: AppSearchPageScaffold.controlsTopInset(context),
-                    child: AppPageContentTransition(child: widget.body),
+                    child: NotificationListener<UserScrollNotification>(
+                      onNotification: (notification) {
+                        if (notification.metrics.axis == Axis.vertical &&
+                            notification.direction != ScrollDirection.idle &&
+                            widget.focusNode.hasFocus) {
+                          widget.focusNode.unfocus();
+                        }
+                        return false;
+                      },
+                      child: AppPageContentTransition(child: widget.body),
+                    ),
                   ),
                 ),
               );

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +12,99 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 
 void main() {
+  testWidgets(
+    'vertical result scrolling dismisses keyboard and preserves query',
+    (tester) async {
+      final controller = TextEditingController(text: 'query');
+      final focusNode = FocusNode();
+      final scroll = ScrollController();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+      addTearDown(scroll.dispose);
+      const verticalKey = ValueKey('vertical_results');
+      const horizontalKey = ValueKey('horizontal_results');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppSearchPageScaffold<int>(
+            controller: controller,
+            focusNode: focusNode,
+            hintText: 'Search',
+            categories: const [AppSearchCategory(value: 0, label: 'All')],
+            selectedCategory: 0,
+            onCategorySelected: (_) {},
+            onChanged: (_) {},
+            onSubmitted: (_) {},
+            onCloseOrClear: () {},
+            body: Column(
+              children: [
+                const SizedBox(height: 120),
+                SizedBox(
+                  height: 60,
+                  child: ListView.builder(
+                    key: horizontalKey,
+                    scrollDirection: Axis.horizontal,
+                    itemCount: 30,
+                    itemExtent: 100,
+                    itemBuilder: (_, index) => Text('Tag $index'),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    key: verticalKey,
+                    controller: scroll,
+                    itemCount: 100,
+                    itemExtent: 60,
+                    itemBuilder: (_, index) => Text('Result $index'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final field = find.byKey(const ValueKey('app_search_field'));
+      await tester.showKeyboard(field);
+      expect(tester.testTextInput.isVisible, isTrue);
+      scroll.jumpTo(120);
+      await tester.pumpAndSettle();
+      expect(focusNode.hasFocus, isTrue);
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: tester.getCenter(find.byKey(horizontalKey)),
+          scrollDelta: const Offset(150, 0),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(focusNode.hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      await tester.drag(find.byKey(verticalKey), const Offset(0, -180));
+      await tester.pumpAndSettle();
+      expect(focusNode.hasFocus, isFalse);
+      expect(tester.testTextInput.isVisible, isFalse);
+      expect(controller.text, 'query');
+      expect(scroll.offset, greaterThan(120));
+
+      await tester.showKeyboard(field);
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: tester.getCenter(find.byKey(verticalKey)),
+          scrollDelta: const Offset(0, 120),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(focusNode.hasFocus, isFalse);
+      expect(tester.testTextInput.isVisible, isFalse);
+      expect(controller.text, 'query');
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('search selection fades controls while keeping its mask steady', (
     tester,
   ) async {

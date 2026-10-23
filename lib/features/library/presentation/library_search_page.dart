@@ -819,7 +819,6 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
               cacheExtent: cacheExtent,
               clipBehavior: Clip.none,
               physics: const ClampingScrollPhysics(),
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               itemCount: itemCount,
               findChildIndexCallback: (key) {
                 if (key == const ValueKey('category_bottom')) {

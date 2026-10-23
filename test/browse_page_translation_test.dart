@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/app_language.dart';
@@ -44,10 +45,12 @@ class _TranslationCall {
 
 class _Translations extends TextTranslationService {
   bool hold = false;
+  bool cachedResults = false;
   final calls = <_TranslationCall>[];
 
   @override
-  String? cached(String text, String target, {String source = 'auto'}) => null;
+  String? cached(String text, String target, {String source = 'auto'}) =>
+      cachedResults ? '$target:$text' : null;
 
   @override
   Future<TextTranslationResult> translate(
@@ -61,6 +64,29 @@ class _Translations extends TextTranslationService {
     if (!hold) call.complete();
     return call.result.future;
   }
+}
+
+class _CountingTexts extends ListBase<String> {
+  int reads = 0;
+
+  @override
+  int get length {
+    reads++;
+    return 1;
+  }
+
+  @override
+  String operator [](int index) {
+    reads++;
+    return 'Original title';
+  }
+
+  @override
+  set length(int value) => throw UnsupportedError('read only');
+
+  @override
+  void operator []=(int index, String value) =>
+      throw UnsupportedError('read only');
 }
 
 class _AsmrController extends AsmrLibraryController {
@@ -202,10 +228,7 @@ void _expectHeader(WidgetTester tester, String page) {
     final metadata = tester.getRect(
       find.byKey(const ValueKey('library_batch_metadata_button')),
     );
-    expect(
-      metadata.center.dx - edit.center.dx,
-      inInclusiveRange(28, 48),
-    );
+    expect(metadata.center.dx - edit.center.dx, inInclusiveRange(28, 48));
     expect(metadata.right, lessThanOrEqualTo(search.left - 12));
     expect(find.byIcon(Icons.video_library_rounded), findsNothing);
   }
@@ -225,6 +248,137 @@ void main() {
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final (cancel, cached) in const [
+      (false, false),
+      (true, false),
+      (false, true),
+      (true, true),
+    ]) {
+      testWidgets(
+        'translation prepares on demand and ${cancel ? 'cancels' : 'publishes'} scroll-deferred ${cached ? 'cached' : 'network'} results on $platform',
+        (tester) async {
+          _screen(tester, platform);
+          final fixture = AppRuntimeWidgetTestFixture();
+          final translations = _Translations()
+            ..hold = true
+            ..cachedResults = cached;
+          final texts = _CountingTexts();
+          final rebuild = ValueNotifier(0);
+          final interaction = UiInteractionCoordinator.instance;
+          final scroll = Object();
+          addTearDown(fixture.dispose);
+          addTearDown(rebuild.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              WorkPageTranslationHost(
+                child: Column(
+                  children: [
+                    const WorkPageTranslationButton(),
+                    ValueListenableBuilder<int>(
+                      valueListenable: rebuild,
+                      builder: (context, _, _) => WorkPageTranslationBuilder(
+                        texts: texts,
+                        builder: (context, translate, _) =>
+                            Text(translate('Original title')),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              overrides: [
+                textTranslationServiceProvider.overrideWithValue(translations),
+              ],
+            ),
+          );
+          await _batch(tester);
+          expect(texts.reads, 0);
+          expect(translations.calls, isEmpty);
+          final button = find.byKey(const ValueKey('work_detail_translation'));
+          interaction.beginInteraction(scroll);
+          await tester.tap(button);
+          await _batch(tester);
+          expect(texts.reads, greaterThan(0));
+          if (!cached) {
+            expect(translations.calls.single.texts, ['Original title']);
+            translations.calls.single.complete();
+          }
+          await _batch(tester);
+          // Other card updates must not expose queued translations early.
+          rebuild.value++;
+          await tester.pump();
+          expect(find.text('Original title'), findsOneWidget);
+          expect(find.text('zh-CN:Original title'), findsNothing);
+          expect(translations.calls, hasLength(cached ? 0 : 1));
+          if (cancel) {
+            await tester.tap(button);
+            await tester.pump();
+          }
+          interaction.endInteraction(scroll);
+          await _batch(tester);
+          expect(
+            find.text(cancel ? 'Original title' : 'zh-CN:Original title'),
+            findsOneWidget,
+          );
+          expect(translations.calls, hasLength(cached ? 0 : 1));
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
+    testWidgets(
+      'partial translations survive background while scrolling without retry on $platform',
+      (tester) async {
+        _screen(tester, platform);
+        final fixture = AppRuntimeWidgetTestFixture();
+        final translations = _Translations()..hold = true;
+        final interaction = UiInteractionCoordinator.instance;
+        final scroll = Object();
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const WorkPageTranslationHost(
+              child: Column(
+                children: [
+                  WorkPageTranslationButton(),
+                  WorkPageTranslationText('Original title'),
+                ],
+              ),
+            ),
+            overrides: [
+              textTranslationServiceProvider.overrideWithValue(translations),
+            ],
+          ),
+        );
+        await tester.tap(find.byKey(const ValueKey('work_detail_translation')));
+        await _batch(tester);
+        interaction.beginInteraction(scroll);
+        translations.calls.single.result.complete(
+          TextTranslationResult(
+            translations: const {'Original title': 'Translated title'},
+            failure: TextTranslationFailure.unavailable,
+          ),
+        );
+        await _batch(tester);
+        expect(find.text('Original title'), findsOneWidget);
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        await _batch(tester);
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await _batch(tester);
+        expect(find.text('Translated title'), findsNothing);
+        interaction.endInteraction(scroll);
+        await _batch(tester);
+        expect(find.text('Translated title'), findsOneWidget);
+        expect(translations.calls, hasLength(1));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     testWidgets(
       'browse headers translate metadata, retain independent switches and play original paths on $platform',
       (tester) async {

@@ -2463,7 +2463,7 @@ void main() {
     );
     await _waitForAsmrContent(tester);
 
-    final collectedList = tester.widget<ListView>(
+    final collectedList = tester.widget<ScrollView>(
       find.descendant(
         of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
         matching: find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
@@ -2523,7 +2523,7 @@ void main() {
     );
     expect(recommendationView, findsOneWidget);
     final recommendationController = tester
-        .widget<ListView>(
+        .widget<ScrollView>(
           find.descendant(
             of: recommendationView,
             matching: find.byKey(
@@ -2539,7 +2539,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 400));
     final restoredCollectedController = tester
-        .widget<ListView>(
+        .widget<ScrollView>(
           find.descendant(
             of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
             matching: find.byKey(
@@ -3483,7 +3483,7 @@ void main() {
       of: searchPage,
       matching: find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
     );
-    final scrollController = tester.widget<ListView>(contentList).controller!;
+    final scrollController = tester.widget<ScrollView>(contentList).controller!;
     expect(scrollController.position.maxScrollExtent, greaterThan(0));
     scrollController.jumpTo(scrollController.position.maxScrollExtent);
     await tester.pump();
@@ -3661,8 +3661,17 @@ void main() {
       of: collectedCategory,
       matching: find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
     );
-    final contentList = tester.widget<ListView>(contentListFinder);
-    final listPadding = contentList.padding!.resolve(TextDirection.ltr);
+    final listPadding = tester
+        .widget<SliverPadding>(
+          find
+              .descendant(
+                of: contentListFinder,
+                matching: find.byType(SliverPadding),
+              )
+              .first,
+        )
+        .padding
+        .resolve(TextDirection.ltr);
     expect(listPadding.left, LibraryLikeCardMetrics.listHorizontalPadding);
     expect(listPadding.right, LibraryLikeCardMetrics.listHorizontalPadding);
     final workCards = find.descendant(
@@ -3704,7 +3713,9 @@ void main() {
       matching: find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
     );
 
-    final scrollController = tester.widget<ListView>(contentList()).controller!;
+    final scrollController = tester
+        .widget<ScrollView>(contentList())
+        .controller!;
     scrollController.jumpTo(120);
     await tester.pump();
 
@@ -4026,7 +4037,7 @@ void main() {
             ),
           );
           final outgoingScroll = tester
-              .widget<ListView>(collectedList)
+              .widget<ScrollView>(collectedList)
               .controller!;
           unawaited(
             outgoingScroll.animateTo(

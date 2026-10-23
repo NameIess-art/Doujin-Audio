@@ -9,6 +9,7 @@ import '../../app/state/app_runtime_providers.dart';
 import 'app_feedback.dart';
 import 'top_page_header.dart';
 import '../translation/text_translation_service.dart';
+import '../ui/ui_interaction_coordinator.dart';
 
 class WorkPageTranslationHost extends ConsumerStatefulWidget {
   const WorkPageTranslationHost({super.key, required this.child});
@@ -26,19 +27,21 @@ class _WorkPageTranslationHostState
   final _listeners = <String, Set<VoidCallback>>{};
   final _translations = <String, String>{};
   final _status = ValueNotifier(0);
+  final _enabled = ValueNotifier(false);
+  final _pendingTranslations = <String, String>{};
+  late final _textCommitKey = 'page_translation_${identityHashCode(this)}';
   late final AppLanguageProvider _i18n;
   late String _target;
   Timer? _timer;
   TextTranslationRequest? _request;
   ValueListenable<TickerModeData>? _tickerModeNotifier;
-  bool _enabled = false;
   bool _busy = false;
   bool _failed = false;
   bool _routeVisible = true;
   bool _foreground = true;
 
   bool get _active =>
-      _enabled &&
+      _enabled.value &&
       _routeVisible &&
       _foreground &&
       (_tickerModeNotifier?.value.enabled ?? true);
@@ -86,6 +89,7 @@ class _WorkPageTranslationHostState
     _stop();
     _target = target;
     _failed = false;
+    _pendingTranslations.clear();
     _translations.clear();
     _notifyTexts();
     _updateActivity();
@@ -93,9 +97,9 @@ class _WorkPageTranslationHostState
 
   void _toggle() {
     _stop();
-    _enabled = !_enabled;
+    _pendingTranslations.clear();
+    _enabled.value = !_enabled.value;
     _failed = false;
-    _notifyTexts();
     _updateActivity();
   }
 
@@ -106,10 +110,12 @@ class _WorkPageTranslationHostState
     } else {
       _stop();
     }
+    _scheduleTextNotification();
     _status.value++;
   }
 
   void _stop() {
+    UiInteractionCoordinator.instance.cancelCommit(_textCommitKey);
     _timer?.cancel();
     _timer = null;
     _request?.cancel();
@@ -129,6 +135,7 @@ class _WorkPageTranslationHostState
     if (listeners?.isEmpty == true) {
       _listeners.remove(text);
       _translations.remove(text);
+      _pendingTranslations.remove(text);
     }
   }
 
@@ -142,9 +149,37 @@ class _WorkPageTranslationHostState
     }
   }
 
+  void _queueTranslations(Map<String, String> translations) {
+    _pendingTranslations.addEntries(
+      translations.entries.where((entry) => _listeners.containsKey(entry.key)),
+    );
+    _scheduleTextNotification();
+  }
+
+  void _scheduleTextNotification() {
+    if (!_active || _pendingTranslations.isEmpty) return;
+    // Batch translated cards after scrolling, rather than rebuilding them in
+    // the frame where a network or cache result happens to arrive.
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _textCommitKey,
+      structural: true,
+      commit: () {
+        if (!mounted || !_active) return;
+        final texts = _pendingTranslations.keys.toList(growable: false);
+        _translations.addAll(_pendingTranslations);
+        _pendingTranslations.clear();
+        _notifyTexts(texts);
+      },
+    );
+  }
+
   void _schedule() {
     if (!_active || _failed || _busy || _timer != null) return;
-    if (!_listeners.keys.any((text) => !_translations.containsKey(text))) {
+    if (!_listeners.keys.any(
+      (text) =>
+          !_translations.containsKey(text) &&
+          !_pendingTranslations.containsKey(text),
+    )) {
       return;
     }
     _timer = Timer(const Duration(milliseconds: 180), () {
@@ -162,18 +197,20 @@ class _WorkPageTranslationHostState
     if (!_active || _failed || request == null || request.cancelled) return;
     final service = ref.read(textTranslationServiceProvider);
     final missing = <String>[];
-    final cached = <String>[];
+    final cached = <String, String>{};
     for (final text in _listeners.keys) {
-      if (_translations.containsKey(text)) continue;
+      if (_translations.containsKey(text) ||
+          _pendingTranslations.containsKey(text)) {
+        continue;
+      }
       final value = service.cached(text, _target);
       if (value == null) {
         missing.add(text);
       } else {
-        _translations[text] = value;
-        cached.add(text);
+        cached[text] = value;
       }
     }
-    _notifyTexts(cached);
+    _queueTranslations(cached);
     if (missing.isEmpty) {
       _status.value++;
       return;
@@ -194,12 +231,7 @@ class _WorkPageTranslationHostState
       }
     }
     if (!mounted || request != _request || request.cancelled) return;
-    _translations.addEntries(
-      result.translations.entries.where(
-        (entry) => _listeners.containsKey(entry.key),
-      ),
-    );
-    _notifyTexts(result.translations.keys);
+    _queueTranslations(result.translations);
     final failure = result.failure;
     if (failure != null) {
       _failed = true;
@@ -224,6 +256,7 @@ class _WorkPageTranslationHostState
     WidgetsBinding.instance.removeObserver(this);
     _i18n.removeListener(_languageChanged);
     _status.dispose();
+    _enabled.dispose();
     super.dispose();
   }
 
@@ -276,7 +309,7 @@ class WorkPageTranslationButton extends StatelessWidget {
           tooltip: state._i18n.tr(
             state._loading
                 ? 'work_translation_loading'
-                : state._enabled
+                : state._enabled.value
                 ? 'work_translation_original'
                 : 'work_translation_translate',
           ),
@@ -288,7 +321,11 @@ class WorkPageTranslationButton extends StatelessWidget {
                     strokeWidth: 2,
                   ),
                 )
-              : Icon(state._enabled ? Icons.restore_rounded : Icons.translate),
+              : Icon(
+                  state._enabled.value
+                      ? Icons.restore_rounded
+                      : Icons.translate,
+                ),
         ),
       ),
     );
@@ -364,7 +401,12 @@ class _WorkPageTranslationBuilderState
 
   void _activityChanged() {
     _bind();
-    if (_host?._enabled == true) _changed();
+    if (_host?._enabled.value == true) _changed();
+  }
+
+  void _translationModeChanged() {
+    _bind();
+    _changed();
   }
 
   @override
@@ -377,9 +419,16 @@ class _WorkPageTranslationBuilderState
     final host = context
         .dependOnInheritedWidgetOfExactType<_WorkTranslationScope>()
         ?.state;
-    if (host == null) {
-      // Search results have no translation host; keep their original text
-      // without segmenting every card as the route becomes active.
+    if (host != _host) {
+      _host?._enabled.removeListener(_translationModeChanged);
+      host?._enabled.addListener(_translationModeChanged);
+    }
+    final active =
+        host?._enabled.value == true &&
+        (_tickerModeNotifier?.value.enabled ?? true);
+    if (!active) {
+      // Ordinary browsing does not need translation segmentation or per-text
+      // subscriptions. The mode listener prepares mounted cards on demand.
       _parts.clear();
     } else {
       _parts.removeWhere((text, _) => !widget.texts.contains(text));
@@ -389,7 +438,7 @@ class _WorkPageTranslationBuilderState
     }
     // Retained categories stay mounted, so only their active text may enqueue
     // translation. Re-entering a category reuses the service cache.
-    final sources = host != null && (_tickerModeNotifier?.value.enabled ?? true)
+    final sources = active
         ? _parts.values.expand((parts) => parts).where(canTranslateText).toSet()
         : <String>{};
     for (final source in _sources) {
@@ -413,6 +462,7 @@ class _WorkPageTranslationBuilderState
   @override
   void dispose() {
     _tickerModeNotifier?.removeListener(_activityChanged);
+    _host?._enabled.removeListener(_translationModeChanged);
     for (final source in _sources) {
       _host?._unregister(source, _changed);
     }
@@ -421,7 +471,7 @@ class _WorkPageTranslationBuilderState
 
   @override
   Widget build(BuildContext context) {
-    final enabled = _host?._enabled == true;
+    final enabled = _host?._enabled.value == true;
     String translate(String text) => !enabled
         ? text
         : (_parts[text] ?? [text])

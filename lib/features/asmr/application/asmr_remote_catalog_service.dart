@@ -47,6 +47,7 @@ class AsmrRemoteCatalogService {
 
   bool Function(AsmrWork) isWorkAllowed = (_) => true;
   Map<String, double>? Function() tagWeights = () => null;
+  Future<void> Function(List<MusicTrack>)? prepareTagInterests;
   Future<List<AsmrTag>> loadTagCatalog() => _apiService.fetchTagCatalog();
   Future<List<MusicTrack>> loadLocalTracksForInterests() =>
       _persistenceRepository.loadTracksForRecommendations();
@@ -134,10 +135,19 @@ class AsmrRemoteCatalogService {
     final candidateList = candidates.values
         .where(isWorkAllowed)
         .toList(growable: false);
-    final localTracks =
+    final loadedTracks =
         await (cancellationToken?.waitFor(localTracksFuture) ??
             localTracksFuture);
     cancellationToken?.throwIfCancelled();
+    // A failed read must not permanently seed interests from an empty library.
+    if (loadedTracks != null) {
+      final preparation = prepareTagInterests?.call(loadedTracks);
+      if (preparation != null) {
+        await (cancellationToken?.waitFor(preparation) ?? preparation);
+      }
+    }
+    cancellationToken?.throwIfCancelled();
+    final localTracks = loadedTracks ?? const <MusicTrack>[];
     final ranking = AppLogService.measureAsync(
       'asmr_recommendation_rank',
       () => _recommendationEngine.rankAsync(
@@ -223,16 +233,16 @@ class AsmrRemoteCatalogService {
     }
   }
 
-  Future<List<MusicTrack>> _loadLocalTracks() async {
+  Future<List<MusicTrack>?> _loadLocalTracks() async {
     try {
-      return await _persistenceRepository.loadTracksForRecommendations();
+      return await loadLocalTracksForInterests();
     } catch (error, stackTrace) {
       AppLogService.error(
         'asmr_recommendation_local_tracks_failed',
         error: error,
         stackTrace: stackTrace,
       );
-      return const <MusicTrack>[];
+      return null;
     }
   }
 

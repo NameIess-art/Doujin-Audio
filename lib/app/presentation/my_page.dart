@@ -504,9 +504,15 @@ class _MyPageState extends ConsumerState<MyPage>
               right: 0,
               child: TopPageHeader(
                 key: headerKey,
-                icon: Icons.person_rounded,
-                topCapsuleTitle: i18n.tr('nav_my'),
-                topCapsuleTrailing: widget.onSwitchPage == null
+                titleWidget: HeaderTopCapsule(
+                  title: i18n.tr('nav_my'),
+                  leading: Icon(
+                    Icons.person_rounded,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                trailing: widget.onSwitchPage == null
                     ? null
                     : IconButton(
                         key: const ValueKey('switch-to-settings'),

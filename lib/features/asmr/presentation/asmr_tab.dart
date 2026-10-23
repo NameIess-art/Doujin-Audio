@@ -316,6 +316,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   bool _categoryContentMounted = false;
   bool _activationScheduled = false;
   bool _accountHydrationScheduled = false;
+  bool _accountHydrationRunning = false;
   bool _accountHydrationCompleted = false;
   late final String _categoryLoadCommitKey =
       'asmr_category_load_${identityHashCode(this)}';
@@ -552,6 +553,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   ) {
     if (_accountHydrationCompleted ||
         _accountHydrationScheduled ||
+        _accountHydrationRunning ||
         !mounted ||
         !_isActive) {
       return;
@@ -567,22 +569,31 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         if (!mounted || !_isActive || generation != coordinator.generation) {
           return;
         }
-        try {
-          await controller.restoreAsmrAccountSession();
-          if (controller.isAsmrAccountLoggedIn) {
-            await controller.syncAsmrAccount();
-          }
-          _accountHydrationCompleted = true;
-        } catch (error, stackTrace) {
-          AppLogService.warning(
-            'asmr_account_hydration_failed',
-            error: error,
-            stackTrace: stackTrace,
-          );
-        }
+        // Only gate the start on idle. Network pagination must not hold the
+        // shared scheduler slot needed by other pages' local queries.
+        unawaited(_hydrateAccount(controller));
       },
     );
     if (!accepted) _accountHydrationScheduled = false;
+  }
+
+  Future<void> _hydrateAccount(AsmrLibraryController controller) async {
+    _accountHydrationRunning = true;
+    try {
+      await controller.restoreAsmrAccountSession();
+      if (controller.isAsmrAccountLoggedIn) {
+        await controller.syncAsmrAccount();
+      }
+      if (mounted) _accountHydrationCompleted = true;
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'asmr_account_hydration_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } finally {
+      _accountHydrationRunning = false;
+    }
   }
 
   @override

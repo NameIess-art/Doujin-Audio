@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/ui/interaction_deferred_stream.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/app_language.dart';
 import '../application/asmr_download_manager.dart';
 import '../application/asmr_library_controller.dart';
@@ -21,6 +22,18 @@ final asmrTagInterestsProvider =
     StreamProvider.autoDispose<List<AsmrTagInterest>>((ref) {
       final controller = ref.watch(asmrLibraryControllerProvider);
       if (controller == null) return Stream.value(const []);
+      unawaited(
+        controller.ensureTagInterests().catchError((
+          Object error,
+          StackTrace stack,
+        ) {
+          AppLogService.warning(
+            'asmr_tag_interests_load_failed',
+            error: error,
+            stackTrace: stack,
+          );
+        }),
+      );
       return interactionDeferredListenableStream(
         source: controller,
         read: () => controller.interestTags,

@@ -92,7 +92,13 @@ void main() {
           expect(find.byType(CheckboxListTile), findsOneWidget);
           await tester.tap(find.byType(CheckboxListTile));
           await tester.pumpAndSettle();
-          expect(controller.excludedTagKeys, contains('local:tag 05'));
+          expect(controller.excludedTagKeys, isEmpty);
+          expect(
+            tester
+                .widget<CheckboxListTile>(find.byType(CheckboxListTile))
+                .value,
+            isTrue,
+          );
           await tester.tap(find.byIcon(Icons.clear_rounded));
           await tester.pumpAndSettle();
           expect(tester.widget<TextField>(field).controller!.text, isEmpty);
@@ -113,11 +119,93 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byType(CheckboxListTile), findsNothing);
           expect(tester.takeException(), isNull);
+          tester.testTextInput.hide();
+          tester.view.resetViewInsets();
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+          await tester.pumpAndSettle();
+          expect(controller.excludedTagKeys, contains('local:tag 05'));
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pumpAndSettle();
         },
       );
     }
+  }
+
+  for (final excluded in [false, true]) {
+    testWidgets(
+      'tag drafts require confirmation, retry failures, and discard on back: $excluded',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final controller = _TagController(createTestAsmrServices());
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            Builder(
+              builder: (context) => TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MyTagManagementPage(excluded: excluded),
+                  ),
+                ),
+                child: const Text('Open tags'),
+              ),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        Future<void> open() async {
+          await tester.tap(find.text('Open tags'));
+          await tester.pumpAndSettle();
+          await tester.enterText(find.byType(TextField), 'Tag 05');
+          await tester.pumpAndSettle();
+        }
+
+        await open();
+        await tester.tap(find.byType(CheckboxListTile));
+        await tester.pumpAndSettle();
+        expect(controller.saveCalls, 0);
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+        await open();
+        expect(
+          tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+          isFalse,
+        );
+        await tester.tap(find.byType(CheckboxListTile));
+        await tester.pumpAndSettle();
+        controller.failSave = true;
+        await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+        await tester.pumpAndSettle();
+        expect(find.byType(MyTagManagementPage), findsOneWidget);
+        expect(
+          tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+          isTrue,
+        );
+        expect(controller.excludedTagKeys, isEmpty);
+        expect(controller.interestTags, isEmpty);
+        controller.failSave = false;
+        await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+        await tester.pumpAndSettle();
+        expect(find.byType(MyTagManagementPage), findsNothing);
+        expect(controller.saveCalls, 2);
+        await open();
+        expect(
+          tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+          isTrue,
+        );
+        await tester.tap(find.byType(CheckboxListTile));
+        await tester.pumpAndSettle();
+        expect(controller.saveCalls, 2);
+        await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+        await tester.pumpAndSettle();
+        expect(controller.excludedTagKeys, isEmpty);
+        expect(controller.interestTags, isEmpty);
+      },
+    );
   }
 }
 
@@ -134,6 +222,10 @@ class _TagController extends AsmrLibraryController {
   }
 
   final _state = AsmrTagPreferences();
+  bool failSave = false;
+  int saveCalls = 0;
+  @override
+  List<AsmrTagInterest> get interestTags => _state.interests;
   @override
   List<AsmrTag> get allTags => _state.tags.values.toList();
   @override
@@ -143,11 +235,20 @@ class _TagController extends AsmrLibraryController {
   @override
   Future<void> ensureTagCatalog({bool force = false}) async {}
   @override
-  Future<void> setTagExcluded(String key, bool excluded) async {
-    if (excluded) {
-      _state.excluded.add(key);
-    } else {
-      _state.excluded.remove(key);
+  Future<void> applyTagSelections({
+    required bool excluded,
+    required Map<String, bool> changes,
+  }) async {
+    saveCalls++;
+    if (failSave) throw StateError('save failed');
+    for (final entry in changes.entries) {
+      if (!excluded) {
+        _state.setInterested(entry.key, entry.value);
+      } else if (entry.value) {
+        _state.excluded.add(entry.key);
+      } else {
+        _state.excluded.remove(entry.key);
+      }
     }
     notifyListeners();
   }

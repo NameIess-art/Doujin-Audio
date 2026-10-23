@@ -233,9 +233,15 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
               right: 0,
               child: TopPageHeader(
                 key: headerKey,
-                icon: Icons.settings_rounded,
-                topCapsuleTitle: i18n.tr('settings'),
-                topCapsuleTrailing: widget.onSwitchPage == null
+                titleWidget: HeaderTopCapsule(
+                  title: i18n.tr('settings'),
+                  leading: Icon(
+                    Icons.settings_rounded,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                trailing: widget.onSwitchPage == null
                     ? null
                     : IconButton(
                         key: const ValueKey('switch-to-my'),

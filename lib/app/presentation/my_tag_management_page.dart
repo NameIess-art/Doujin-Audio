@@ -52,7 +52,8 @@ class MyTagManagementPage extends ConsumerStatefulWidget {
 
 class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
   final _search = TextEditingController();
-  final _pending = <String>{};
+  final _changes = <String, bool>{};
+  bool _saving = false;
 
   @override
   void initState() {
@@ -66,24 +67,20 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     super.dispose();
   }
 
-  Future<void> _set(String key, bool selected) async {
+  Future<void> _confirm() async {
     final controller = ref.read(asmrLibraryControllerProvider);
-    if (controller == null) return;
-    setState(() => _pending.add(key));
+    if (controller == null || _saving) return;
+    setState(() => _saving = true);
     try {
-      if (widget.excluded) {
-        await controller.setTagExcluded(key, selected);
-      } else {
-        if (selected) {
-          await controller.setTagInterested(key, true);
-        } else {
-          await removeInterestTagWithUndo(context, ref, key);
-        }
-      }
+      await controller.applyTagSelections(
+        excluded: widget.excluded,
+        changes: _changes,
+      );
+      if (mounted) Navigator.of(context).pop();
     } catch (error) {
       if (mounted) showAppSnackBar(context, error.toString());
     } finally {
-      if (mounted) setState(() => _pending.remove(key));
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -174,7 +171,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                       16,
                       0,
                       16,
-                      MobileOverlayInset.of(context) + 16,
+                      MobileOverlayInset.of(context) + 88,
                     ),
                     sliver: SliverList.builder(
                       itemCount: tags.length,
@@ -183,24 +180,22 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                         return CheckboxListTile(
                           key: ValueKey(tag.key),
                           title: Text(tag.name),
-                          value: selected.contains(tag.key),
+                          value:
+                              _changes[tag.key] ?? selected.contains(tag.key),
                           onChanged:
-                              _pending.contains(tag.key) ||
+                              _saving ||
                                   (!widget.excluded &&
                                       removals.isHidden(
                                         interestTagRemovalKey(tag.key),
                                       ))
                               ? null
-                              : (value) => unawaited(_set(tag.key, value!)),
-                          secondary: _pending.contains(tag.key)
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : null,
+                              : (value) => setState(() {
+                                  if (value == selected.contains(tag.key)) {
+                                    _changes.remove(tag.key);
+                                  } else {
+                                    _changes[tag.key] = value!;
+                                  }
+                                }),
                         );
                       },
                     ),
@@ -209,83 +204,103 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
               );
             },
           );
-    return Scaffold(
-      body: ScrollActivityGate(
-        child: PageHeaderInset(
-          topInset: headerTopInset,
-          child: Stack(
-            children: [
-              Positioned.fill(child: content),
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: TopPageHeader(
-                  title: i18n.tr(
-                    widget.excluded ? 'my_excluded_tags' : 'my_add_interest',
-                  ),
-                  icon: widget.excluded
-                      ? Icons.block_rounded
-                      : Icons.sell_outlined,
-                  leading: const BackButton(),
-                  additionalChild: Padding(
-                    padding: searchPadding,
-                    child: HeaderFloatingSurface(
-                      key: const ValueKey('my_tag_search_capsule'),
-                      child: TextField(
-                        controller: _search,
-                        onChanged: (_) => setState(() {}),
-                        textInputAction: TextInputAction.search,
-                        textAlignVertical: TextAlignVertical.center,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontSize: 14,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: i18n.tr('my_search_tags'),
-                          hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                            color: cs.onSurfaceVariant,
+    return PopScope(
+      canPop: !_saving,
+      child: Scaffold(
+        floatingActionButton: Padding(
+          padding: EdgeInsets.only(bottom: MobileOverlayInset.of(context)),
+          child: FloatingActionButton.extended(
+            key: const ValueKey('my_tags_confirm'),
+            onPressed: controller == null || _saving ? null : _confirm,
+            icon: _saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check_rounded),
+            label: Text(i18n.tr('confirm')),
+          ),
+        ),
+        body: ScrollActivityGate(
+          child: PageHeaderInset(
+            topInset: headerTopInset,
+            child: Stack(
+              children: [
+                Positioned.fill(child: content),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: TopPageHeader(
+                    title: i18n.tr(
+                      widget.excluded ? 'my_excluded_tags' : 'my_add_interest',
+                    ),
+                    icon: widget.excluded
+                        ? Icons.block_rounded
+                        : Icons.sell_outlined,
+                    leading: const BackButton(),
+                    additionalChild: Padding(
+                      padding: searchPadding,
+                      child: HeaderFloatingSurface(
+                        key: const ValueKey('my_tag_search_capsule'),
+                        child: TextField(
+                          controller: _search,
+                          onChanged: (_) => setState(() {}),
+                          textInputAction: TextInputAction.search,
+                          textAlignVertical: TextAlignVertical.center,
+                          style: theme.textTheme.bodyMedium?.copyWith(
                             fontSize: 14,
                           ),
-                          filled: false,
-                          fillColor: Colors.transparent,
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          isDense: true,
-                          contentPadding: const EdgeInsets.only(right: 10),
-                          prefixIcon: Icon(
-                            Icons.search_rounded,
-                            color: cs.onSurfaceVariant,
-                            size: 20,
-                          ),
-                          prefixIconConstraints: const BoxConstraints.tightFor(
-                            width: searchHeight,
-                            height: searchHeight,
-                          ),
-                          suffixIconConstraints: const BoxConstraints.tightFor(
-                            width: searchHeight,
-                            height: searchHeight,
-                          ),
-                          suffixIcon: _search.text.isEmpty
-                              ? null
-                              : IconButton(
-                                  onPressed: () => setState(_search.clear),
-                                  padding: EdgeInsets.zero,
-                                  tooltip: MaterialLocalizations.of(
-                                    context,
-                                  ).deleteButtonTooltip,
-                                  icon: const Icon(
-                                    Icons.clear_rounded,
-                                    size: 20,
-                                  ),
+                          decoration: InputDecoration(
+                            hintText: i18n.tr('my_search_tags'),
+                            hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              fontSize: 14,
+                            ),
+                            filled: false,
+                            fillColor: Colors.transparent,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.only(right: 10),
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: cs.onSurfaceVariant,
+                              size: 20,
+                            ),
+                            prefixIconConstraints:
+                                const BoxConstraints.tightFor(
+                                  width: searchHeight,
+                                  height: searchHeight,
                                 ),
+                            suffixIconConstraints:
+                                const BoxConstraints.tightFor(
+                                  width: searchHeight,
+                                  height: searchHeight,
+                                ),
+                            suffixIcon: _search.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    onPressed: () => setState(_search.clear),
+                                    padding: EdgeInsets.zero,
+                                    tooltip: MaterialLocalizations.of(
+                                      context,
+                                    ).deleteButtonTooltip,
+                                    icon: const Icon(
+                                      Icons.clear_rounded,
+                                      size: 20,
+                                    ),
+                                  ),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

@@ -8,6 +8,7 @@ import 'package:doujin_audio/app/state/listening_activity_provider.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
@@ -72,6 +73,7 @@ void main() {
           expect(settings, findsOneWidget);
           expect(my, findsNothing);
           expect(activitySubscriptions, 0);
+          _expectSeparateSwitch(tester, 'switch-to-my');
           final settingsState = tester.state(settings);
           final settingsScroll = _verticalScroll(tester, settings);
           settingsScroll.jumpTo(settingsScroll.maxScrollExtent);
@@ -83,6 +85,7 @@ void main() {
           expect(fixture.settings.mySettingsPageMode, MySettingsPageMode.my);
           expect(find.byType(MyPage), findsOneWidget);
           expect(find.byType(SettingsTab), findsNothing);
+          _expectSeparateSwitch(tester, 'switch-to-settings');
           expect(activitySubscriptions, 1);
           final myState = tester.state(my);
           final chart = find.byType(ListeningTimeChart);
@@ -253,6 +256,33 @@ void main() {
 class _FailingSettingsRepository extends SettingsRepository {
   @override
   Future<void> persist() async => throw StateError('save failed');
+}
+
+void _expectSeparateSwitch(WidgetTester tester, String key) {
+  final button = find.byKey(ValueKey(key));
+  final floatingButton = find.ancestor(
+    of: button,
+    matching: find.byType(HeaderFloatingButton),
+  );
+  expect(floatingButton, findsOneWidget);
+  final header = find.ancestor(
+    of: button,
+    matching: find.byType(TopPageHeader),
+  );
+  final title = find
+      .descendant(of: header, matching: find.byType(HeaderFloatingSurface))
+      .evaluate()
+      .where(
+        (element) =>
+            element.findAncestorWidgetOfExactType<HeaderFloatingButton>() ==
+            null,
+      );
+  expect(title, hasLength(1));
+  final titleRect = tester.getRect(find.byWidget(title.single.widget));
+  final buttonRect = tester.getRect(floatingButton);
+  expect(buttonRect.left - titleRect.right, closeTo(8, 0.01));
+  expect(buttonRect.center.dy, closeTo(titleRect.center.dy, 0.01));
+  expect(buttonRect.width, buttonRect.height);
 }
 
 ScrollPosition _verticalScroll(WidgetTester tester, Finder page) => tester

@@ -9,6 +9,206 @@ void registerAsmrControllerStateTests({
   setUp(() => preferences = preferencesStore());
 
   test(
+    'interest provider initializes and publishes first local interests',
+    () async {
+      await resetPrefs();
+      final repository = _InterestTracksRepository(
+        () async => [
+          _track(groupTitle: 'Local', tags: ['sleep']),
+        ],
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: repository,
+        apiService: _FakeAsmrApiService(),
+      );
+      final ready = Completer<void>();
+      controller.addListener(() {
+        if (controller.interestTags.isNotEmpty && !ready.isCompleted) {
+          ready.complete();
+        }
+      });
+      final container = ProviderContainer(
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      );
+      addTearDown(container.dispose);
+      final published = Completer<List<AsmrTagInterest>>();
+      container.listen(asmrTagInterestsProvider, (_, next) {
+        final interests = next.asData?.value;
+        if (interests != null &&
+            interests.isNotEmpty &&
+            !published.isCompleted) {
+          published.complete(interests);
+        }
+      }, fireImmediately: true);
+      await ready.future.timeout(const Duration(seconds: 5));
+      UiInteractionCoordinator.instance.flushPendingCommitsForTest();
+      final interests = await published.future.timeout(
+        const Duration(seconds: 5),
+      );
+      expect(
+        interests.map((interest) => interest.tag.key),
+        contains('local:sleep'),
+      );
+      expect(repository.reads, 1);
+    },
+  );
+
+  test(
+    'cancelled recommendation does not seed from pending local tracks',
+    () async {
+      await resetPrefs();
+      final local = Completer<List<MusicTrack>>();
+      final started = Completer<void>();
+      final repository = _InterestTracksRepository(() {
+        started.complete();
+        return local.future;
+      });
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: repository,
+        apiService: _FakeAsmrApiService(),
+      );
+      controller.beginSearchSession();
+      final task = controller.ensureCategoryLoaded(
+        AsmrCategoryType.recommendation,
+        searchQuery: 'old',
+        searchSession: true,
+      );
+      await started.future;
+      controller.endSearchSession();
+      await task.timeout(const Duration(seconds: 1));
+      local.complete([
+        _track(groupTitle: 'Old', tags: ['old']),
+      ]);
+      await Future<void>.delayed(Duration.zero);
+      expect((await preferences.loadTagPreferences()).seeded, isFalse);
+    },
+  );
+
+  test(
+    'visible initialization and release page do not read local interests',
+    () async {
+      await resetPrefs();
+      final repository = _InterestTracksRepository(
+        () async => throw StateError('unused'),
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: repository,
+        apiService: _FakeAsmrApiService(),
+      );
+      await controller.initializeForVisiblePage();
+      await controller.ensureCategoryLoaded(AsmrCategoryType.release);
+      expect(repository.reads, 0);
+      expect((await preferences.loadTagPreferences()).seeded, isFalse);
+    },
+  );
+
+  test(
+    'recommendations reuse local tracks and failed reads leave interests retryable',
+    () async {
+      await resetPrefs();
+      var fail = true;
+      final repository = _InterestTracksRepository(() async {
+        if (fail) throw StateError('local library unavailable');
+        return [
+          _track(groupTitle: 'Local', tags: ['sleep']),
+        ];
+      });
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: repository,
+        apiService: _FakeAsmrApiService(),
+      );
+      await controller.ensureCategoryLoaded(AsmrCategoryType.recommendation);
+      expect(repository.reads, 1);
+      expect((await preferences.loadTagPreferences()).seeded, isFalse);
+      fail = false;
+      await controller.reloadPersistedState();
+      await controller.ensureCategoryLoaded(AsmrCategoryType.recommendation);
+      expect(repository.reads, 2);
+      expect((await preferences.loadTagPreferences()).seeded, isTrue);
+      expect(
+        controller.interestTags.map((interest) => interest.tag.key),
+        contains('local:sleep'),
+      );
+      await controller.ensureTagInterests();
+      expect(repository.reads, 2);
+    },
+  );
+
+  test(
+    'failed interest initialization can retry and shares concurrent requests',
+    () async {
+      await resetPrefs();
+      var fail = true;
+      final repository = _InterestTracksRepository(() async {
+        if (fail) throw StateError('read failed');
+        return [
+          _track(groupTitle: 'Local', tags: ['sleep']),
+        ];
+      });
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: repository,
+        apiService: _FakeAsmrApiService(),
+      );
+      await expectLater(controller.ensureTagInterests(), throwsStateError);
+      expect((await preferences.loadTagPreferences()).seeded, isFalse);
+      fail = false;
+      await Future.wait([
+        controller.ensureTagInterests(),
+        controller.ensureTagInterests(),
+      ]);
+      expect(repository.reads, 2);
+      expect(
+        controller.interestTags.map((interest) => interest.tag.key),
+        contains('local:sleep'),
+      );
+    },
+  );
+
+  test(
+    'reload discards pending interest input and reads the new library',
+    () async {
+      await resetPrefs();
+      final oldRead = Completer<List<MusicTrack>>();
+      final started = Completer<void>();
+      var first = true;
+      final repository = _InterestTracksRepository(() {
+        if (first) {
+          first = false;
+          started.complete();
+          return oldRead.future;
+        }
+        return Future.value([
+          _track(groupTitle: 'New', tags: ['new']),
+        ]);
+      });
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: repository,
+        apiService: _FakeAsmrApiService(),
+      );
+      final oldTask = controller.ensureTagInterests();
+      await started.future;
+      await controller.reloadPersistedState();
+      await controller.ensureTagInterests();
+      oldRead.complete([
+        _track(groupTitle: 'Old', tags: ['old']),
+      ]);
+      await oldTask;
+      final saved = await preferences.loadTagPreferences();
+      expect(repository.reads, 2);
+      expect(saved.tags.keys, contains('local:new'));
+      expect(saved.tags.keys, isNot(contains('local:old')));
+    },
+  );
+
+  test(
     'tag exclusion caches visible lists and restores raw cached works',
     () async {
       await resetPrefs();
@@ -38,6 +238,44 @@ void registerAsmrControllerStateTests({
       expect(controller.worksFor(AsmrCategoryType.release), same(original));
     },
   );
+
+  for (final excluded in [false, true]) {
+    test('tag editor commits a batch atomically: excluded=$excluded', () async {
+      await resetPrefs();
+      final state = AsmrTagPreferences();
+      final first = state.resolve('first');
+      final second = state.resolve('second');
+      state.seeded = true;
+      await preferences.saveTagPreferences(state);
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: _FakeAsmrApiService(),
+      );
+      await controller.ensureTagInterests();
+      await expectLater(
+        controller.applyTagSelections(
+          excluded: excluded,
+          changes: {first: true, 'missing': true},
+        ),
+        throwsArgumentError,
+      );
+      expect(controller.interestTags, isEmpty);
+      expect(controller.excludedTagKeys, isEmpty);
+      final failed = await preferences.loadTagPreferences();
+      expect(failed.weights, isEmpty);
+      expect(failed.excluded, isEmpty);
+      await controller.applyTagSelections(
+        excluded: excluded,
+        changes: {first: true, second: true},
+      );
+      final saved = await preferences.loadTagPreferences();
+      expect(
+        excluded ? saved.excluded : saved.interests.map((e) => e.tag.key),
+        unorderedEquals([first, second]),
+      );
+    });
+  }
 
   test(
     'adding interest updates already loaded recommendation ordering',
@@ -2446,5 +2684,17 @@ class _BrowseChangingApi extends AsmrApiService {
       pageSize: 2,
       totalCount: total,
     );
+  }
+}
+
+class _InterestTracksRepository extends TestPersistenceRepository {
+  _InterestTracksRepository(this.readTracks);
+  final Future<List<MusicTrack>> Function() readTracks;
+  int reads = 0;
+
+  @override
+  Future<List<MusicTrack>> loadTracksForRecommendations() {
+    reads++;
+    return readTracks();
   }
 }

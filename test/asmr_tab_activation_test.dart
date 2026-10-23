@@ -30,6 +30,13 @@ class _ActivationController extends AsmrLibraryController {
   int attempts = 0;
   int categoryLoads = 0;
   Completer<void>? barrier;
+  Completer<void>? accountRestoreBarrier;
+  Completer<void>? accountSyncBarrier;
+  int accountRestores = 0;
+  int accountSyncs = 0;
+
+  @override
+  bool get isAsmrAccountLoggedIn => true;
 
   @override
   bool get initialized => _initialized || hasCachedWork;
@@ -57,7 +64,16 @@ class _ActivationController extends AsmrLibraryController {
   }
 
   @override
-  Future<void> restoreAsmrAccountSession({bool force = false}) async {}
+  Future<void> restoreAsmrAccountSession({bool force = false}) async {
+    accountRestores++;
+    await accountRestoreBarrier?.future;
+  }
+
+  @override
+  Future<void> syncAsmrAccount({bool force = false}) async {
+    accountSyncs++;
+    await accountSyncBarrier?.future;
+  }
 
   @override
   Future<void> ensureCategoryLoaded(
@@ -137,6 +153,97 @@ void main() {
     TargetPlatform.android,
     TargetPlatform.windows,
   });
+
+  for (final syncing in [false, true]) {
+    testWidgets(
+      'account ${syncing ? 'sync' : 'restore'} releases idle queue and stays deduplicated on return',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final pending = Completer<void>();
+        final controller = _ActivationController(createTestAsmrServices());
+        if (syncing) {
+          controller.accountSyncBarrier = pending;
+        } else {
+          controller.accountRestoreBarrier = pending;
+        }
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await _pumpFrames(tester);
+        expect(controller.accountRestores, 1);
+        expect(controller.accountSyncs, syncing ? 1 : 0);
+
+        final navigator = _coverPage(tester);
+        await tester.pump();
+        final coordinator = UiInteractionCoordinator.instance;
+        final generation = coordinator.beginGeneration();
+        var queryCompleted = false;
+        coordinator.scheduleAfterIdle(
+          key: 'other_page_local_query',
+          generation: generation,
+          priority: 20,
+          task: () async => queryCompleted = true,
+        );
+        await _pumpFrames(tester);
+        expect(queryCompleted, isTrue);
+        expect(pending.isCompleted, isFalse);
+
+        navigator.pop();
+        await _pumpFrames(tester);
+        expect(controller.accountRestores, 1);
+        expect(controller.accountSyncs, syncing ? 1 : 0);
+        pending.complete();
+        await _pumpFrames(tester);
+        expect(controller.accountSyncs, 1);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: platforms,
+    );
+  }
+
+  testWidgets(
+    'failed account hydration retries on return and can finish after disposal',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final failed = Completer<void>();
+      final controller = _ActivationController(createTestAsmrServices())
+        ..accountRestoreBarrier = failed;
+      addTearDown(fixture.dispose);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await _pumpFrames(tester);
+      failed.completeError(StateError('Account temporarily unavailable'));
+      await _pumpFrames(tester);
+      final retry = Completer<void>();
+      controller.accountRestoreBarrier = retry;
+      final navigator = _coverPage(tester);
+      await tester.pump();
+      navigator.pop();
+      await _pumpFrames(tester);
+      expect(controller.accountRestores, 2);
+      await tester.pumpWidget(const SizedBox.shrink());
+      retry.complete();
+      await tester.pump();
+      expect(controller.accountSyncs, 1);
+      expect(tester.takeException(), isNull);
+    },
+    variant: platforms,
+  );
 
   testWidgets('cached works wait for visible page activation', (tester) async {
     final fixture = AppRuntimeWidgetTestFixture();

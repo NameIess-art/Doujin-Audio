@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">Doujin Audio</string>
-    <string name="keep_alive_playback_active">Background playback service is running</string>
+    <string name="keep_alive_playback_active">Background playback active</string>
     <string name="playback_notification_channel_name">Background playback</string>
-    <string name="playback_notification_channel_description">Notification required for background playback</string>
+    <string name="playback_notification_channel_description">Required for background playback</string>
 </resources>

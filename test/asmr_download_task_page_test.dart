@@ -55,11 +55,11 @@ void main() {
     );
     await tester.pump();
     expect(find.byType(OperationSkeletonList), findsNothing);
-    expect(find.text('No download tasks'), findsOneWidget);
+    expect(find.text('No downloads'), findsOneWidget);
     restored.complete();
     await tester.pumpAndSettle();
     expect(find.byType(OperationSkeletonList), findsNothing);
-    expect(find.text('No download tasks'), findsOneWidget);
+    expect(find.text('No downloads'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -102,7 +102,7 @@ void main() {
         );
         await tester.pump();
         expect(find.byType(OperationSkeletonList), findsNothing);
-        expect(find.text('No download tasks'), findsOneWidget);
+        expect(find.text('No downloads'), findsOneWidget);
         expect(taskReads, 1);
 
         read.completeError(StateError('read_failed'));
@@ -112,7 +112,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(reads, 2);
         expect(taskReads, 1);
-        expect(find.text('No download tasks'), findsOneWidget);
+        expect(find.text('No downloads'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
         final shutdown = manager.shutdown();
@@ -171,10 +171,7 @@ void main() {
           ),
         );
         await tester.pump();
-        expect(
-          find.text('Download tasks', skipOffstage: false),
-          findsOneWidget,
-        );
+        expect(find.text('Downloads', skipOffstage: false), findsOneWidget);
         expect(taskReads, 1);
         await tester.pumpAndSettle();
         expect(find.byType(OperationSkeletonList), findsNothing);
@@ -275,7 +272,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Remove task entry'), findsOneWidget);
+    expect(find.text('Remove entry'), findsOneWidget);
     expect(find.text('Also delete downloaded content'), findsOneWidget);
 
     await tester.tap(

@@ -474,7 +474,7 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
     if (LOWORD(lp) == WM_RBUTTONUP) {
       auto menu = CreatePopupMenu();
       AppendMenuW(menu,MF_STRING,1,L"Open / 打开");
-      AppendMenuW(menu,MF_STRING,2,L"Play / Pause / 播放暂停");
+      AppendMenuW(menu,MF_STRING,2,L"Play/pause / 播放暂停");
       AppendMenuW(menu,MF_STRING,3,L"Previous / 上一曲");
       AppendMenuW(menu,MF_STRING,4,L"Next / 下一曲");
       AppendMenuW(menu,MF_SEPARATOR,0,nullptr);

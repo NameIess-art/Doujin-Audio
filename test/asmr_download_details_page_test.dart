@@ -112,14 +112,14 @@ void main() {
     await tester.pump();
 
     expect(find.text('Download details'), findsOneWidget);
-    expect(find.text('Download task not found'), findsOneWidget);
+    expect(find.text('Download not found'), findsOneWidget);
 
     await languageProvider.setLanguage(AppLanguage.ja);
     await tester.pump();
 
     expect(find.text('ダウンロード詳細'), findsOneWidget);
     expect(find.text('ダウンロードが見つかりません'), findsOneWidget);
-    expect(find.text('Download task not found'), findsNothing);
+    expect(find.text('Download not found'), findsNothing);
   });
 
   testWidgets('folder tile uses the shared file tree style', (tester) async {
@@ -588,7 +588,7 @@ void main() {
     manager.debugRemoveTaskForTesting(1);
     await tester.pump();
     await tester.pump();
-    expect(find.text('Download task not found'), findsOneWidget);
+    expect(find.text('Download not found'), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsNothing);
   });
 

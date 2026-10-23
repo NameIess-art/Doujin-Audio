@@ -62,7 +62,7 @@ void SyncScheduledTasks(const flutter::EncodableMap& payload) {
   check_hresult(service->NewTask(0,task.put()));
   winrt::com_ptr<IRegistrationInfo> registration;
   check_hresult(task->get_RegistrationInfo(registration.put()));
-  check_hresult(registration->put_Description(_bstr_t(L"Restore pending Doujin Audio playback timers for the current user.")));
+  check_hresult(registration->put_Description(_bstr_t(L"Restore pending playback timers for this user.")));
   winrt::com_ptr<IPrincipal> principal;
   check_hresult(task->get_Principal(principal.put()));
   check_hresult(principal->put_LogonType(TASK_LOGON_INTERACTIVE_TOKEN));

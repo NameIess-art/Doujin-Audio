@@ -141,6 +141,6 @@ void main() {
 
     expect(appLanguageZh['subtitle_global_display'], '字幕悬浮窗');
     expect(appLanguageJa['subtitle_global_display'], '字幕ウィンドウ');
-    expect(appLanguageEn['subtitle_global_display'], 'Show subtitles globally');
+    expect(appLanguageEn['subtitle_global_display'], 'Subtitle window');
   });
 }

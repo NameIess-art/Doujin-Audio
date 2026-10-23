@@ -996,7 +996,7 @@ void main() {
     );
 
     expect(find.text('Local library'), findsOneWidget);
-    expect(find.text('Loading...'), findsNothing);
+    expect(find.text('Loading…'), findsNothing);
   });
 
   testWidgets('marquee text forwards custom edge padding', (tester) async {

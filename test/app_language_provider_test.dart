@@ -61,19 +61,19 @@ void main() {
       expect(provider.tr('asmr_category_rating'), '评分');
 
       await provider.setLanguage(AppLanguage.en);
-      expect(provider.tr('add_playback_queue'), 'Create playback queue');
+      expect(provider.tr('add_playback_queue'), 'Create queue');
       expect(provider.tr('edit_queue_color'), 'Edit queue color');
-      expect(provider.tr('multi_select'), 'Multi-select mode');
+      expect(provider.tr('multi_select'), 'Select multiple');
       expect(
         provider.tr('batch_added_to_playlist', {'count': '2'}),
-        'Added 2 works to the playlist',
+        'Added 2 works to playlist',
       );
       expect(
         provider.tr('batch_metadata_completion_skipped', {'count': '3'}),
-        'Skipped 3 work data entries',
+        '3 works skipped',
       );
       expect(provider.tr('audio_detail_title'), 'Details');
-      expect(provider.tr('asmr_detail_other'), 'Other information');
+      expect(provider.tr('asmr_detail_other'), 'Other info');
 
       await provider.setLanguage(AppLanguage.ja);
       expect(provider.tr('add_playback_queue'), 'キューを作成');
@@ -240,12 +240,12 @@ void main() {
     expect(provider.tr('sequential_playback'), 'Sequential');
     expect(provider.tr('loop_playback'), 'Sequential');
     expect(provider.tr('shuffle_playback'), 'Shuffle');
-    expect(provider.tr('single_loop'), 'Single loop');
-    expect(provider.tr('pause_after_playback'), 'Pause after one round');
+    expect(provider.tr('single_loop'), 'Repeat one');
+    expect(provider.tr('pause_after_playback'), 'Pause after one pass');
     expect(provider.tr('cross_folder'), 'Cross-folder');
     expect(provider.tr('current_folder'), 'Current folder');
     expect(provider.tr('eq_delete_preset'), 'Delete preset');
-    expect(provider.tr('segment_delete_title'), 'Delete segment label');
+    expect(provider.tr('segment_delete_title'), 'Delete label');
     expect(provider.tr('mute'), 'Mute');
     expect(provider.tr('unmute'), 'Unmute');
 

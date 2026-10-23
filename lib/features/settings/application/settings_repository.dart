@@ -34,6 +34,7 @@ class SettingsRepository {
   bool showLocalLibrary = true;
   bool showAsmrOne = true;
   WorkNameDisplay workNameDisplay = WorkNameDisplay.workTitle;
+  ListeningChartStyle listeningChartStyle = ListeningChartStyle.bar;
   StartupPage startupPage = StartupPage.library;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
   bool preferEmbeddedCover = false;
@@ -87,6 +88,10 @@ class SettingsRepository {
       workNameDisplay = WorkNameDisplay.values.firstWhere(
         (value) => value.name == playback['workNameDisplay'],
         orElse: () => WorkNameDisplay.workTitle,
+      );
+      listeningChartStyle = ListeningChartStyle.values.firstWhere(
+        (value) => value.name == playback['listeningChartStyle'],
+        orElse: () => ListeningChartStyle.bar,
       );
       if (!showLocalLibrary && !showAsmrOne) {
         showLocalLibrary = true;
@@ -207,6 +212,7 @@ class SettingsRepository {
         'showLocalLibrary': showLocalLibrary,
         'showAsmrOne': showAsmrOne,
         'workNameDisplay': workNameDisplay.name,
+        'listeningChartStyle': listeningChartStyle.name,
         'coverImageResolution': coverImageResolution.name,
         'preferEmbeddedCover': preferEmbeddedCover,
         'asmrDownloadDestinationRoot': asmrDownloadDestinationRoot,
@@ -433,6 +439,11 @@ class SettingsRepository {
     update: () => workNameDisplay = mode,
   );
 
+  Future<void> setListeningChartStyle(ListeningChartStyle style) => _setValue(
+    unchanged: () => listeningChartStyle == style,
+    update: () => listeningChartStyle = style,
+  );
+
   Future<void> setPreferEmbeddedCover(
     bool enabled, {
     Future<void> Function()? afterSave,
@@ -592,6 +603,7 @@ class SettingsRepository {
     showLocalLibrary = snapshot.showLocalLibrary;
     showAsmrOne = snapshot.showAsmrOne;
     workNameDisplay = snapshot.workNameDisplay;
+    listeningChartStyle = snapshot.listeningChartStyle;
     startupPage = snapshot.startupPage;
     coverImageResolution = snapshot.coverImageResolution;
     preferEmbeddedCover = snapshot.preferEmbeddedCover;
@@ -633,6 +645,7 @@ class SettingsRepository {
     showLocalLibrary = true;
     showAsmrOne = true;
     workNameDisplay = WorkNameDisplay.workTitle;
+    listeningChartStyle = ListeningChartStyle.bar;
     startupPage = StartupPage.library;
     coverImageResolution = CoverImageResolution.balanced;
     preferEmbeddedCover = false;
@@ -700,6 +713,7 @@ class SettingsRepository {
       showLocalLibrary: showLocalLibrary,
       showAsmrOne: showAsmrOne,
       workNameDisplay: workNameDisplay,
+      listeningChartStyle: listeningChartStyle,
       startupPage: startupPage,
       coverImageResolution: coverImageResolution,
       preferEmbeddedCover: preferEmbeddedCover,

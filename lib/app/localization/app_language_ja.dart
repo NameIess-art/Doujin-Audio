@@ -1,6 +1,8 @@
 const Map<String, String> appLanguageJa = {
   'nav_my': 'マイページ',
   'my_listening_time': '再生時間',
+  'my_chart_style_bar': '棒グラフ',
+  'my_chart_style_heatmap': 'ヒートマップ',
   'my_history': '再生履歴',
   'my_interests': '興味のあるタグ',
   'my_interest_removed': '興味タグを削除しました',

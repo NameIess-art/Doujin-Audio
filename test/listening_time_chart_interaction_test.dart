@@ -3,8 +3,11 @@ import 'dart:collection';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/listening_time_chart.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
+import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/features/player/domain/listening_activity.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -29,32 +32,41 @@ void main() {
     bool reducedMotion = false,
     double textScale = 1,
     List<ListeningDay> days = const [],
+    ListeningChartStyle style = ListeningChartStyle.bar,
+    Brightness brightness = Brightness.light,
+    double width = 320,
   }) async {
+    var selectedStyle = style;
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData(platform: platform),
+        theme: ThemeData(platform: platform, brightness: brightness),
         home: Scaffold(
           body: Center(
             child: SizedBox(
-              width: 320,
+              width: width,
               child: MediaQuery(
                 data: MediaQueryData(
                   disableAnimations: reducedMotion,
                   textScaler: TextScaler.linear(textScale),
                 ),
-                child: ListeningTimeChart(
-                  days: days,
-                  i18n: i18n,
-                  builder: (duration, chart) => Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(child: Text(i18n.tr('my_listening_time'))),
-                          Flexible(child: duration),
-                        ],
-                      ),
-                      chart,
-                    ],
+                child: StatefulBuilder(
+                  builder: (context, update) => ListeningTimeChart(
+                    days: days,
+                    i18n: i18n,
+                    style: selectedStyle,
+                    onStyleChanged: (value) =>
+                        update(() => selectedStyle = value),
+                    builder: (duration, chart) => Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(child: Text(i18n.tr('my_listening_time'))),
+                            Flexible(child: duration),
+                          ],
+                        ),
+                        chart,
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -130,6 +142,393 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(DatePickerDialog), findsNothing);
   }
+
+  final heatmapSwitch = find.byKey(const ValueKey('listening-style-heatmap'));
+  final barSwitch = find.byKey(const ValueKey('listening-style-bar'));
+
+  for (final width in [280.0, 720.0]) {
+    testWidgets(
+      'heatmap fills five rows and anchors latest at bottom right at width $width',
+      (tester) async {
+        await pumpChart(
+          tester,
+          style: ListeningChartStyle.heatmap,
+          width: width,
+        );
+        for (final interval in ListeningInterval.values) {
+          await tester.ensureVisible(
+            find.text(i18n.tr('my_interval_${interval.name}')),
+          );
+          await tester.tap(find.text(i18n.tr('my_interval_${interval.name}')));
+          await tester.pumpAndSettle();
+          final latest = aggregateListeningPeriods(
+            const [],
+            interval,
+            now: today,
+          ).last;
+          final bounds = tester.getRect(
+            find.byKey(const ValueKey('listening-chart-bars')),
+          );
+          final last = tester.getRect(find.byKey(ValueKey(latest.start)));
+          expect(last.width, greaterThan(18));
+          expect(last.width, last.height);
+          expect(last.right, closeTo(bounds.right, 0.1));
+          expect(last.bottom, closeTo(bounds.bottom, 0.1));
+          final cells = find.descendant(
+            of: find.byKey(const ValueKey('listening-chart-heatmap')),
+            matching: find.byType(InkWell),
+          );
+          final rows =
+              cells
+                  .evaluate()
+                  .map((e) => tester.getRect(find.byWidget(e.widget)).top)
+                  .toSet()
+                  .toList()
+                ..sort();
+          expect(rows, hasLength(5));
+          expect(rows.first, closeTo(bounds.top, 0.1));
+          final starts =
+              cells
+                  .evaluate()
+                  .map((e) => tester.getRect(find.byWidget(e.widget)).left)
+                  .toSet()
+                  .toList()
+                ..sort();
+          expect(starts.first - bounds.left, lessThan(last.width));
+          for (var i = 2; i < starts.length; i++) {
+            expect(
+              starts[i] - starts[i - 1],
+              closeTo(starts[1] - starts[0], 0.1),
+            );
+          }
+          expect(tester.takeException(), isNull);
+        }
+      },
+    );
+  }
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'heatmap keeps chronological rows and pads older periods on $platform',
+      (tester) async {
+        final first = DateTime(today.year, today.month, today.day - 30);
+        await pumpChart(
+          tester,
+          platform: platform,
+          style: ListeningChartStyle.heatmap,
+          days: [
+            ListeningDay(date: first, duration: const Duration(minutes: 1)),
+          ],
+        );
+        final firstCell = find.byKey(ValueKey(first));
+        expect(tester.getSize(firstCell).width, greaterThan(18));
+        final last = find.byKey(ValueKey(today));
+        final origin = tester.getTopLeft(last);
+        final size = tester.getSize(last).width;
+        final extent = tester
+            .widget<ListView>(find.byType(ListView))
+            .itemExtent!;
+        for (var i = 1; i <= 14; i++) {
+          final date = DateTime(today.year, today.month, today.day - i);
+          expect(
+            tester.getTopLeft(find.byKey(ValueKey(date))),
+            origin + Offset(-extent * (i ~/ 5), -(size + 3) * (i % 5)),
+          );
+        }
+        final column = find
+            .ancestor(of: last, matching: find.byType(Column))
+            .first;
+        expect(
+          find.descendant(of: column, matching: find.byType(InkWell)),
+          findsNWidgets(5),
+        );
+        final older = DateTime(first.year, first.month, first.day - 1);
+        await tester.tap(find.byKey(ValueKey(older)));
+        await tester.pumpAndSettle();
+        expect(
+          find.text(listeningDurationText(i18n, Duration.zero)),
+          findsOneWidget,
+        );
+        await chooseDate(tester, older);
+        await tester.tap(last);
+        await tester.pumpAndSettle();
+        expect(
+          find.text(listeningDurationText(i18n, Duration.zero)),
+          findsOneWidget,
+        );
+        final tooltip = tester.widget<Tooltip>(
+          find.ancestor(of: last, matching: find.byType(Tooltip)).first,
+        );
+        expect(
+          tooltip.message,
+          contains(listeningDurationText(i18n, Duration.zero)),
+        );
+        expect(
+          tester.getRect(heatmapSwitch).right,
+          closeTo(
+            tester
+                .getRect(find.byKey(const ValueKey('listening-chart-bars')))
+                .right,
+            0.1,
+          ),
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'heatmap date and interval selection survives style changes on $platform',
+      (tester) async {
+        final days = _CountingDays(
+          List.generate(
+            3650,
+            (i) => ListeningDay(
+              date: DateTime(today.year, today.month, today.day - i),
+              duration: const Duration(minutes: 1),
+            ),
+          ),
+        );
+        await pumpChart(tester, platform: platform, days: days, textScale: 1.6);
+        await chooseDate(tester, earlier);
+        final height = tester
+            .getSize(find.byKey(const ValueKey('listening-chart-bars')))
+            .height;
+        final date = tester
+            .widget<Text>(
+              find.descendant(of: selector, matching: find.byType(Text)),
+            )
+            .data;
+        days.reads = 0;
+        await tester.tap(heatmapSwitch);
+        await tester.pumpAndSettle();
+        expect(days.reads, 0);
+        expect(
+          tester
+              .getSize(find.byKey(const ValueKey('listening-chart-bars')))
+              .height,
+          height,
+        );
+        expect(
+          tester
+              .widget<Text>(
+                find.descendant(of: selector, matching: find.byType(Text)),
+              )
+              .data,
+          date,
+        );
+        expect(controller(tester).offset, greaterThan(0));
+        expect(find.byKey(ValueKey(earlier)).hitTestable(), findsOneWidget);
+        await tester.tap(barSwitch);
+        await tester.pumpAndSettle();
+        expect(days.reads, 0);
+        expect(find.byKey(ValueKey(earlier)).hitTestable(), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'heatmap resizing fills the viewport without rescanning history',
+    (tester) async {
+      final days = _CountingDays([
+        ListeningDay(date: today, duration: const Duration(minutes: 2)),
+      ]);
+      await pumpChart(tester, style: ListeningChartStyle.heatmap, days: days);
+      days.reads = 0;
+      await pumpChart(
+        tester,
+        style: ListeningChartStyle.heatmap,
+        days: days,
+        width: 720,
+        textScale: 1.6,
+      );
+      expect(days.reads, 0);
+      final bounds = tester.getRect(
+        find.byKey(const ValueKey('listening-chart-bars')),
+      );
+      final latest = tester.getRect(find.byKey(ValueKey(today)));
+      expect(latest.bottomRight, bounds.bottomRight);
+      expect(latest.width, greaterThan(30));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final brightness in Brightness.values) {
+    testWidgets(
+      'heatmap uses stable zero and four theme color levels in $brightness',
+      (tester) async {
+        const values = [0, 1, 250, 251, 500, 501, 750, 751, 1000];
+        const levels = [0, 1, 1, 2, 2, 3, 3, 4, 4];
+        final days = List.generate(
+          values.length,
+          (i) => ListeningDay(
+            date: DateTime(today.year, today.month, today.day - i),
+            duration: Duration(milliseconds: values[i]),
+          ),
+        );
+        await pumpChart(
+          tester,
+          style: ListeningChartStyle.heatmap,
+          brightness: brightness,
+          days: days,
+        );
+        final colors = Theme.of(tester.element(selector)).colorScheme;
+        for (var i = 0; i < days.length; i++) {
+          final cell = find.byKey(ValueKey(days[i].date));
+          final decoration =
+              tester
+                      .widget<Container>(
+                        find.descendant(
+                          of: cell,
+                          matching: find.byType(Container),
+                        ),
+                      )
+                      .decoration
+                  as BoxDecoration;
+          expect(
+            decoration.color,
+            Color.lerp(
+              colors.surfaceContainerHighest,
+              colors.primary,
+              levels[i] / 4,
+            ),
+          );
+          expect(decoration.borderRadius, BorderRadius.circular(3));
+        }
+        await tester.tap(find.byKey(ValueKey(days[3].date)));
+        await tester.pumpAndSettle();
+        expect(
+          find.text(listeningDurationText(i18n, days[3].duration)),
+          findsOneWidget,
+        );
+        final selected =
+            tester
+                    .widget<Container>(
+                      find.descendant(
+                        of: find.byKey(ValueKey(days[3].date)),
+                        matching: find.byType(Container),
+                      ),
+                    )
+                    .decoration
+                as BoxDecoration;
+        expect(selected.border, isNotNull);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('heatmap follows all five aggregated intervals', (tester) async {
+    final days = [
+      ListeningDay(date: today, duration: const Duration(minutes: 2)),
+      ListeningDay(
+        date: DateTime(today.year, today.month, today.day - 1),
+        duration: const Duration(minutes: 3),
+      ),
+    ];
+    await pumpChart(tester, days: days, style: ListeningChartStyle.heatmap);
+    for (final interval in ListeningInterval.values) {
+      await tester.ensureVisible(
+        find.text(i18n.tr('my_interval_${interval.name}')),
+      );
+      await tester.tap(find.text(i18n.tr('my_interval_${interval.name}')));
+      await tester.pumpAndSettle();
+      final period = aggregateListeningPeriods(days, interval, now: today).last;
+      final cell = find.byKey(ValueKey(period.start));
+      await tester.tap(cell);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(listeningDurationText(i18n, period.duration)),
+        findsOneWidget,
+      );
+      final message = tester
+          .widget<Tooltip>(
+            find.ancestor(of: cell, matching: find.byType(Tooltip)).first,
+          )
+          .message!;
+      expect(message, contains(listeningDurationText(i18n, period.duration)));
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets(
+    'Windows heatmap supports mouse drag, wheel, trackpad and hover',
+    (tester) async {
+      final days = List.generate(
+        1000,
+        (i) => ListeningDay(
+          date: DateTime(today.year, today.month, today.day - i),
+          duration: const Duration(minutes: 1),
+        ),
+      );
+      await pumpChart(
+        tester,
+        platform: TargetPlatform.windows,
+        style: ListeningChartStyle.heatmap,
+        days: days,
+      );
+      final list = find.byKey(const ValueKey('listening-chart-heatmap'));
+      final scroll = controller(tester);
+      expect(find.byType(DragOnlyScrollbar), findsOneWidget);
+      expect(find.byKey(ValueKey(days.last.date)), findsNothing);
+      final cell = find.byKey(ValueKey(today));
+      final message = tester
+          .widget<Tooltip>(
+            find.ancestor(of: cell, matching: find.byType(Tooltip)).first,
+          )
+          .message!;
+      await tester.sendEventToBinding(
+        const PointerAddedEvent(device: 42, kind: PointerDeviceKind.mouse),
+      );
+      await tester.sendEventToBinding(
+        PointerHoverEvent(
+          device: 42,
+          kind: PointerDeviceKind.mouse,
+          position: tester.getCenter(cell),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+      expect(find.text(message, findRichText: true), findsOneWidget);
+      await tester.sendEventToBinding(
+        const PointerRemovedEvent(device: 42, kind: PointerDeviceKind.mouse),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(
+        list,
+        const Offset(150, 0),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(scroll.offset, greaterThan(0));
+      scroll.jumpTo(0);
+      await tester.pump();
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: tester.getCenter(list),
+          scrollDelta: const Offset(0, 120),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(scroll.offset, greaterThan(0));
+      scroll.jumpTo(0);
+      await tester.pump();
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: tester.getCenter(list),
+          scrollDelta: const Offset(-120, 0),
+          kind: PointerDeviceKind.trackpad,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(scroll.offset, greaterThan(0));
+      scroll.jumpTo(0);
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.windows}),
+  );
 
   testWidgets(
     'unchanged chart data does not rescan a large listening history',

@@ -4,6 +4,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../features/player/domain/listening_activity.dart';
+import '../../features/settings/application/settings_state.dart';
+import '../../core/widgets/drag_only_scrollbar.dart';
 import '../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../core/widgets/shimmer_loading.dart';
 import '../localization/app_language_provider.dart';
@@ -16,6 +18,22 @@ class ListeningPeriod {
   final DateTime end;
   final Duration duration;
 }
+
+DateTime _moveListeningPeriod(
+  DateTime date,
+  ListeningInterval interval,
+  int amount,
+) => switch (interval) {
+  ListeningInterval.day => DateTime(date.year, date.month, date.day + amount),
+  ListeningInterval.week => DateTime(
+    date.year,
+    date.month,
+    date.day + amount * 7,
+  ),
+  ListeningInterval.month => DateTime(date.year, date.month + amount),
+  ListeningInterval.quarter => DateTime(date.year, date.month + amount * 3),
+  ListeningInterval.year => DateTime(date.year + amount),
+};
 
 /// Calendar arithmetic preserves local midnight through daylight-saving changes.
 List<ListeningPeriod> aggregateListeningPeriods(
@@ -38,17 +56,8 @@ List<ListeningPeriod> aggregateListeningPeriods(
     ),
     ListeningInterval.year => DateTime(date.year),
   };
-  DateTime move(DateTime date, int amount) => switch (interval) {
-    ListeningInterval.day => DateTime(date.year, date.month, date.day + amount),
-    ListeningInterval.week => DateTime(
-      date.year,
-      date.month,
-      date.day + amount * 7,
-    ),
-    ListeningInterval.month => DateTime(date.year, date.month + amount),
-    ListeningInterval.quarter => DateTime(date.year, date.month + amount * 3),
-    ListeningInterval.year => DateTime(date.year + amount),
-  };
+  DateTime move(DateTime date, int amount) =>
+      _moveListeningPeriod(date, interval, amount);
   final totals = <DateTime, Duration>{};
   for (final day in days) {
     final key = startOf(day.date);
@@ -97,16 +106,22 @@ class ListeningTimeChart extends StatefulWidget {
     required this.days,
     required this.i18n,
     required this.builder,
+    this.style = ListeningChartStyle.bar,
+    this.onStyleChanged,
   }) : _skeleton = false;
 
   const ListeningTimeChart.skeleton({
     super.key,
     required this.i18n,
     required this.builder,
+    this.style = ListeningChartStyle.bar,
   }) : days = const [],
+       onStyleChanged = null,
        _skeleton = true;
 
   final bool _skeleton;
+  final ListeningChartStyle style;
+  final ValueChanged<ListeningChartStyle>? onStyleChanged;
   final List<ListeningDay> days;
   final AppLanguageProvider i18n;
   final Widget Function(Widget duration, Widget chart) builder;
@@ -117,6 +132,9 @@ class ListeningTimeChart extends StatefulWidget {
 
 class _ListeningTimeChartState extends State<ListeningTimeChart> {
   static const double _itemExtent = 48;
+  double _heatmapExtent = 0;
+  int _heatmapColumnCount = 0;
+  static const int _heatmapRows = 5;
   final ScrollController _scrollController = ScrollController();
   ListeningInterval _interval = ListeningInterval.day;
   DateTime? _selected;
@@ -153,6 +171,12 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
   }
 
   @override
+  void didUpdateWidget(ListeningTimeChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.style != widget.style) _revealSelection();
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
@@ -165,13 +189,17 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       final selectedIndex = periods.indexWhere(
         (period) => _containsSelection(period),
       );
-      final reversedIndex = selectedIndex < 0
+      final heatmap = widget.style == ListeningChartStyle.heatmap;
+      final extent = heatmap ? _heatmapExtent : _itemExtent;
+      final periodsAfterSelection = selectedIndex < 0
           ? 0
-          : periods.length - selectedIndex - 1;
+          : periods.length - 1 - selectedIndex;
+      final reversedIndex = heatmap
+          ? periodsAfterSelection ~/ _heatmapRows
+          : periodsAfterSelection;
       final position = _scrollController.position;
       final offset =
-          (reversedIndex * _itemExtent -
-                  (position.viewportDimension - _itemExtent) / 2)
+          (reversedIndex * extent - (position.viewportDimension - extent) / 2)
               .clamp(position.minScrollExtent, position.maxScrollExtent);
       if (MediaQuery.disableAnimationsOf(context)) {
         _scrollController.jumpTo(offset);
@@ -198,7 +226,13 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
     final date = await showDatePicker(
       context: context,
       initialDate: _containsSelection(selected) ? _selected : selected.start,
-      firstDate: periods.first.start,
+      firstDate: widget.style == ListeningChartStyle.heatmap
+          ? _moveListeningPeriod(
+              latest.start,
+              _interval,
+              1 - _heatmapColumnCount * _heatmapRows,
+            )
+          : periods.first.start,
       lastDate: DateTime(latest.end.year, latest.end.month, latest.end.day - 1),
       initialEntryMode: DatePickerEntryMode.input,
     );
@@ -257,6 +291,89 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
         '${period.start.year} Q${(period.start.month - 1) ~/ 3 + 1}',
       ListeningInterval.year => '${period.start.year}',
     };
+    Widget selectablePeriod(
+      ListeningPeriod period,
+      Widget child, {
+      double radius = 8,
+    }) {
+      final description =
+          '${range(period)}: ${listeningDurationText(i18n, period.duration)}';
+      return Tooltip(
+        message: description,
+        child: Semantics(
+          label: description,
+          selected: selected.start == period.start,
+          button: true,
+          child: InkWell(
+            key: ValueKey(period.start),
+            onTap: () => setState(() => _selected = period.start),
+            borderRadius: BorderRadius.circular(radius),
+            child: ExcludeSemantics(child: child),
+          ),
+        ),
+      );
+    }
+
+    final colors = Theme.of(context).colorScheme;
+    Widget heatmapCell(int index) {
+      if (widget._skeleton) return const ShimmerContainer(borderRadius: 3);
+      final period = index >= 0
+          ? periods[index]
+          : ListeningPeriod(
+              _moveListeningPeriod(periods.first.start, _interval, index),
+              _moveListeningPeriod(periods.first.start, _interval, index + 1),
+              Duration.zero,
+            );
+      final milliseconds = period.duration.inMilliseconds;
+      final level = milliseconds <= 0
+          ? 0
+          : ((milliseconds * 4 + _maximum - 1) ~/ _maximum).clamp(1, 4);
+      return selectablePeriod(
+        period,
+        Container(
+          decoration: BoxDecoration(
+            color: Color.lerp(
+              colors.surfaceContainerHighest,
+              colors.primary,
+              level / 4,
+            ),
+            borderRadius: BorderRadius.circular(3),
+            border: selected.start == period.start
+                ? Border.all(color: colors.onSurface, width: 1.5)
+                : null,
+          ),
+        ),
+        radius: 3,
+      );
+    }
+
+    Widget heatmapColumn(int reversedColumn, double cellSize) {
+      return Align(
+        alignment: Alignment.centerRight,
+        child: SizedBox(
+          width: cellSize,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              for (var row = 0; row < _heatmapRows; row++)
+                SizedBox(
+                  width: cellSize,
+                  height: cellSize,
+                  child: heatmapCell(
+                    periods.length -
+                        1 -
+                        (reversedColumn * _heatmapRows +
+                            _heatmapRows -
+                            1 -
+                            row),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final duration = placeholderFor(
       Text(
         listeningDurationText(i18n, selected.duration),
@@ -272,29 +389,72 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
     final chart = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: placeholderFor(
-            TextButton.icon(
-              key: const ValueKey('listening-date-selector'),
-              onPressed: () => _selectDate(periods, selected),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                minimumSize: const Size(0, 28),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        Row(
+          children: [
+            Expanded(
+              child: Align(
                 alignment: Alignment.centerLeft,
-                foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                textStyle: Theme.of(context).textTheme.bodySmall,
-              ),
-              icon: const Icon(Icons.calendar_month_outlined, size: 16),
-              label: Text(
-                range(selected),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                child: placeholderFor(
+                  TextButton.icon(
+                    key: const ValueKey('listening-date-selector'),
+                    onPressed: () => _selectDate(periods, selected),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      minimumSize: const Size(0, 28),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      alignment: Alignment.centerLeft,
+                      foregroundColor: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant,
+                      textStyle: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    icon: const Icon(Icons.calendar_month_outlined, size: 16),
+                    label: Text(
+                      range(selected),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  width: 140,
+                ),
               ),
             ),
-            width: 140,
-          ),
+            const SizedBox(width: 8),
+            for (final style in ListeningChartStyle.values)
+              placeholderFor(
+                Semantics(
+                  selected: widget.style == style,
+                  child: IconButton(
+                    key: ValueKey('listening-style-${style.name}'),
+                    tooltip: i18n.tr('my_chart_style_${style.name}'),
+                    onPressed: widget.onStyleChanged == null
+                        ? null
+                        : () => widget.onStyleChanged!(style),
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(28, 28),
+                      maximumSize: const Size(28, 28),
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      backgroundColor: widget.style == style
+                          ? Theme.of(context).colorScheme.secondaryContainer
+                          : Colors.transparent,
+                      foregroundColor: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant,
+                    ),
+                    icon: Icon(
+                      style == ListeningChartStyle.bar
+                          ? Icons.bar_chart_rounded
+                          : Icons.grid_view_rounded,
+                      size: 18,
+                    ),
+                  ),
+                ),
+                width: 24,
+                height: 20,
+                alignment: Alignment.center,
+              ),
+          ],
         ),
         const SizedBox(height: 2),
         SizedBox(
@@ -303,81 +463,98 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
           child: WindowsHorizontalWheelScroll(
             controller: _scrollController,
             builder: (controller) => ScrollConfiguration(
-              behavior: ScrollConfiguration.of(
-                context,
-              ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
-              child: ListView.builder(
-                controller: controller,
-                reverse: true,
-                scrollDirection: Axis.horizontal,
-                itemExtent: _itemExtent,
-                itemCount: periods.length,
-                itemBuilder: (context, index) {
-                  final period = periods[periods.length - index - 1];
-                  final active = selected.start == period.start;
-                  final color = Theme.of(context).colorScheme;
-                  final description =
-                      '${range(period)}: ${listeningDurationText(i18n, period.duration)}';
-                  return Tooltip(
-                    message: description,
-                    child: Semantics(
-                      label: description,
-                      selected: active,
-                      button: true,
-                      child: InkWell(
-                        key: ValueKey(period.start),
-                        onTap: () => setState(() => _selected = period.start),
-                        borderRadius: BorderRadius.circular(8),
-                        child: ExcludeSemantics(
-                          child: Column(
-                            children: [
-                              SizedBox(
-                                height: 138,
-                                child: Align(
-                                  alignment: Alignment.bottomCenter,
-                                  child: widget._skeleton
-                                      ? ShimmerContainer(
-                                          width: 18,
-                                          height: 28.0 + (index % 4) * 30,
-                                          borderRadius: 5,
-                                        )
-                                      : Container(
-                                          width: 18,
-                                          height: math.max(
-                                            2,
-                                            132 *
-                                                period.duration.inMilliseconds /
-                                                _maximum,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: active
-                                                ? color.primary
-                                                : color.primaryContainer,
-                                            borderRadius:
-                                                const BorderRadius.vertical(
-                                                  top: Radius.circular(5),
-                                                ),
-                                          ),
-                                        ),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              placeholderFor(
-                                Text(
-                                  label(period),
-                                  maxLines: 1,
-                                  style: labelStyle,
-                                ),
-                                width: 30,
-                                height: 12,
-                                alignment: Alignment.center,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: PointerDeviceKind.values.toSet(),
+                scrollbars: false,
+              ),
+              child: LayoutBuilder(
+                builder: (_, constraints) {
+                  final heatmap = widget.style == ListeningChartStyle.heatmap;
+                  final cellSize = math.min(
+                    constraints.maxWidth,
+                    (constraints.maxHeight - 3 * (_heatmapRows - 1)) /
+                        _heatmapRows,
                   );
+                  if (heatmap) {
+                    final visibleColumns = math.max(
+                      1,
+                      ((constraints.maxWidth + 3) / (cellSize + 3)).floor(),
+                    );
+                    _heatmapExtent = constraints.maxWidth / visibleColumns;
+                    _heatmapColumnCount = math.max(
+                      visibleColumns,
+                      (periods.length + _heatmapRows - 1) ~/ _heatmapRows,
+                    );
+                  }
+                  final list = ListView.builder(
+                    key: ValueKey('listening-chart-${widget.style.name}'),
+                    controller: controller,
+                    reverse: true,
+                    scrollDirection: Axis.horizontal,
+                    itemExtent: heatmap ? _heatmapExtent : _itemExtent,
+                    itemCount: heatmap ? _heatmapColumnCount : periods.length,
+                    itemBuilder: (context, index) {
+                      if (heatmap) return heatmapColumn(index, cellSize);
+                      final period = periods[periods.length - index - 1];
+                      final active = selected.start == period.start;
+                      final color = Theme.of(context).colorScheme;
+                      return selectablePeriod(
+                        period,
+                        Column(
+                          children: [
+                            SizedBox(
+                              height: 138,
+                              child: Align(
+                                alignment: Alignment.bottomCenter,
+                                child: widget._skeleton
+                                    ? ShimmerContainer(
+                                        width: 18,
+                                        height: 28.0 + (index % 4) * 30,
+                                        borderRadius: 5,
+                                      )
+                                    : Container(
+                                        width: 18,
+                                        height: math.max(
+                                          2,
+                                          132 *
+                                              period.duration.inMilliseconds /
+                                              _maximum,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: active
+                                              ? color.primary
+                                              : color.primaryContainer,
+                                          borderRadius:
+                                              const BorderRadius.vertical(
+                                                top: Radius.circular(5),
+                                              ),
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            placeholderFor(
+                              Text(
+                                label(period),
+                                maxLines: 1,
+                                style: labelStyle,
+                              ),
+                              width: 30,
+                              height: 12,
+                              alignment: Alignment.center,
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                  return Theme.of(context).platform == TargetPlatform.windows
+                      ? DragOnlyScrollbar(
+                          controller: controller,
+                          padding: EdgeInsets.zero,
+                          child: list,
+                        )
+                      : list;
                 },
               ),
             ),

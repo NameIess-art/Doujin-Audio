@@ -226,6 +226,18 @@ void main() {
               .duration,
           const Duration(minutes: 3),
         );
+        final readsBeforeStyleChange = usageReads;
+        await tester.tap(find.byKey(const ValueKey('listening-style-heatmap')));
+        await pumpAndSettleWithAsync(tester);
+        expect(
+          fixture.settings.listeningChartStyle,
+          ListeningChartStyle.heatmap,
+        );
+        expect(
+          find.byKey(const ValueKey('listening-chart-heatmap')),
+          findsOneWidget,
+        );
+        expect(usageReads, readsBeforeStyleChange);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
         final disposing = activity.dispose();
@@ -234,159 +246,183 @@ void main() {
       },
     );
 
-    for (final reducedMotion in [false, true]) {
-      testWidgets(
-        'My skeleton matches sections and resolves on $platform, reduced motion $reducedMotion',
-        (tester) async {
-          final fixture = AppRuntimeWidgetTestFixture();
-          final activity = StreamController<ListeningActivityView>();
-          addTearDown(fixture.dispose);
-          addTearDown(activity.close);
-          tester.view.physicalSize = Size(
-            platform == TargetPlatform.android ? 390 : 960,
-            900,
-          );
-          tester.view.devicePixelRatio = 1;
-          addTearDown(tester.view.resetPhysicalSize);
-          addTearDown(tester.view.resetDevicePixelRatio);
-          await tester.pumpWidget(
-            fixture.build(
-              Theme(
-                data: ThemeData(platform: platform),
-                child: Builder(
-                  builder: (context) => MediaQuery(
-                    data: MediaQuery.of(context).copyWith(
-                      disableAnimations: reducedMotion,
-                      textScaler: TextScaler.linear(reducedMotion ? 1.6 : 1),
+    for (final style in ListeningChartStyle.values) {
+      for (final reducedMotion in [false, true]) {
+        testWidgets(
+          'My skeleton matches sections and resolves on $platform, reduced motion $reducedMotion, style $style',
+          (tester) async {
+            final fixture = AppRuntimeWidgetTestFixture(
+              configureSettingsRepository: (settings) {
+                settings.listeningChartStyle = style;
+                settings.syncSlice();
+              },
+            );
+            final activity = StreamController<ListeningActivityView>();
+            addTearDown(fixture.dispose);
+            addTearDown(activity.close);
+            tester.view.physicalSize = Size(
+              platform == TargetPlatform.android ? 390 : 960,
+              900,
+            );
+            tester.view.devicePixelRatio = 1;
+            addTearDown(tester.view.resetPhysicalSize);
+            addTearDown(tester.view.resetDevicePixelRatio);
+            await tester.pumpWidget(
+              fixture.build(
+                Theme(
+                  data: ThemeData(platform: platform),
+                  child: Builder(
+                    builder: (context) => MediaQuery(
+                      data: MediaQuery.of(context).copyWith(
+                        disableAnimations: reducedMotion,
+                        textScaler: TextScaler.linear(reducedMotion ? 1.6 : 1),
+                      ),
+                      child: const MyPage(tabIndex: 3),
                     ),
-                    child: const MyPage(tabIndex: 3),
                   ),
                 ),
+                overrides: [
+                  listeningActivityProvider.overrideWith(
+                    (ref) => activity.stream,
+                  ),
+                ],
               ),
-              overrides: [
-                listeningActivityProvider.overrideWith(
-                  (ref) => activity.stream,
-                ),
-              ],
-            ),
-          );
-          await tester.pump(const Duration(milliseconds: 400));
-          final skeleton = find.byKey(const ValueKey('my-page-skeleton'));
-          expect(skeleton, findsOneWidget);
-          expect(find.byType(TopPageHeader), findsOneWidget);
-          expect(find.byType(CircularProgressIndicator), findsNothing);
-          expect(
-            find.text(fixture.languageProvider.tr('my_no_history')),
-            findsNothing,
-          );
-          final history = find.byKey(const ValueKey('my-skeleton-history'));
-          expect(tester.getSize(history).height, 113);
-          final covers = find.descendant(
-            of: history,
-            matching: find.byType(ShimmerContainer),
-          );
-          expect(tester.getSize(covers.first), const Size(132, 99));
-          final timeHeader = find.byKey(
-            ValueKey(
-              'my-section-header-${fixture.languageProvider.tr('my_listening_time')}',
-            ),
-          );
-          final timeHeaderBounds = tester.getRect(timeHeader);
-          final skeletonTimeBounds = tester.getRect(
-            find.ancestor(of: timeHeader, matching: find.byType(Card)),
-          );
-          final verticalScroll = find.descendant(
-            of: skeleton,
-            matching: find.byWidgetPredicate(
-              (widget) => widget is Scrollable && widget.axis == Axis.vertical,
-            ),
-          );
-          final skeletonPosition = tester
-              .state<ScrollableState>(verticalScroll)
-              .position;
-          expect(skeletonPosition.physics.allowUserScrolling, isFalse);
-          await tester.dragFrom(
-            tester.getCenter(skeleton),
-            const Offset(0, -250),
-          );
-          await tester.pump(const Duration(milliseconds: 300));
-          expect(skeletonPosition.pixels, 0);
-          activity.add(
-            ListeningActivityView(
-              days: [
-                ListeningDay(
-                  date: DateTime.now(),
-                  duration: const Duration(minutes: 5, seconds: 38),
-                ),
-              ],
-            ),
-          );
-          if (!reducedMotion) {
-            final content = find.byKey(const ValueKey('deferred_content'));
-            for (
-              var frame = 0;
-              frame < 10 && content.evaluate().isEmpty;
-              frame++
-            ) {
-              await tester.pump();
-            }
-            expect(content, findsOneWidget);
-            await tester.pump();
-            final skeletonFade = find
-                .ancestor(of: skeleton, matching: find.byType(FadeTransition))
-                .first;
-            final contentFade = find
-                .ancestor(of: content, matching: find.byType(FadeTransition))
-                .first;
-            expect(
-              tester.widget<FadeTransition>(skeletonFade).opacity.value,
-              1,
             );
-            expect(tester.widget<FadeTransition>(contentFade).opacity.value, 0);
-            await tester.pump(const Duration(milliseconds: 150));
-            expect(
-              tester.widget<FadeTransition>(skeletonFade).opacity.value,
-              closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
-            );
-            expect(
-              tester.widget<FadeTransition>(contentFade).opacity.value,
-              closeTo(kAppFadeCurve.transform(0.5), 0.001),
-            );
-            await tester.pump(const Duration(milliseconds: 149));
+            await tester.pump(const Duration(milliseconds: 400));
+            final skeleton = find.byKey(const ValueKey('my-page-skeleton'));
             expect(skeleton, findsOneWidget);
             expect(
-              tester.widget<FadeTransition>(skeletonFade).opacity.value,
-              greaterThan(0),
+              find.byKey(ValueKey('listening-chart-${style.name}')),
+              findsOneWidget,
             );
-            await tester.pump(const Duration(milliseconds: 1));
+            expect(find.byType(TopPageHeader), findsOneWidget);
+            expect(find.byType(CircularProgressIndicator), findsNothing);
             expect(
-              tester.widget<FadeTransition>(skeletonFade).opacity.value,
-              closeTo(0, 0.000001),
+              find.text(fixture.languageProvider.tr('my_no_history')),
+              findsNothing,
             );
-            // Give the ticker's floating-point endpoint its final microsecond.
-            await tester.pump(const Duration(microseconds: 1));
-            expect(skeleton, findsNothing);
-          }
-          await pumpAndSettleWithAsync(tester);
-          expect(skeleton, findsNothing);
-          expect(find.byType(ListeningTimeChart), findsOneWidget);
-          expect(
-            find.text(fixture.languageProvider.tr('my_no_history')),
-            findsOneWidget,
-          );
-          expect(tester.getRect(timeHeader).topLeft, timeHeaderBounds.topLeft);
-          expect(tester.getRect(timeHeader).width, timeHeaderBounds.width);
-          expect(
-            tester.getRect(
+            final history = find.byKey(const ValueKey('my-skeleton-history'));
+            expect(tester.getSize(history).height, 113);
+            final covers = find.descendant(
+              of: history,
+              matching: find.byType(ShimmerContainer),
+            );
+            expect(tester.getSize(covers.first), const Size(132, 99));
+            final timeHeader = find.byKey(
+              ValueKey(
+                'my-section-header-${fixture.languageProvider.tr('my_listening_time')}',
+              ),
+            );
+            final timeHeaderBounds = tester.getRect(timeHeader);
+            final skeletonTimeBounds = tester.getRect(
               find.ancestor(of: timeHeader, matching: find.byType(Card)),
-            ),
-            skeletonTimeBounds,
-          );
-          expect(tester.takeException(), isNull);
-          await tester.pumpWidget(const SizedBox.shrink());
-          await tester.pumpAndSettle();
-        },
-      );
+            );
+            final verticalScroll = find.descendant(
+              of: skeleton,
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is Scrollable && widget.axis == Axis.vertical,
+              ),
+            );
+            final skeletonPosition = tester
+                .state<ScrollableState>(verticalScroll)
+                .position;
+            expect(skeletonPosition.physics.allowUserScrolling, isFalse);
+            await tester.dragFrom(
+              tester.getCenter(skeleton),
+              const Offset(0, -250),
+            );
+            await tester.pump(const Duration(milliseconds: 300));
+            expect(skeletonPosition.pixels, 0);
+            activity.add(
+              ListeningActivityView(
+                days: [
+                  ListeningDay(
+                    date: DateTime.now(),
+                    duration: const Duration(minutes: 5, seconds: 38),
+                  ),
+                ],
+              ),
+            );
+            if (!reducedMotion) {
+              final content = find.byKey(const ValueKey('deferred_content'));
+              for (
+                var frame = 0;
+                frame < 10 && content.evaluate().isEmpty;
+                frame++
+              ) {
+                await tester.pump();
+              }
+              expect(content, findsOneWidget);
+              await tester.pump();
+              final skeletonFade = find
+                  .ancestor(of: skeleton, matching: find.byType(FadeTransition))
+                  .first;
+              final contentFade = find
+                  .ancestor(of: content, matching: find.byType(FadeTransition))
+                  .first;
+              expect(
+                tester.widget<FadeTransition>(skeletonFade).opacity.value,
+                1,
+              );
+              expect(
+                tester.widget<FadeTransition>(contentFade).opacity.value,
+                0,
+              );
+              await tester.pump(const Duration(milliseconds: 150));
+              expect(
+                tester.widget<FadeTransition>(skeletonFade).opacity.value,
+                closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
+              );
+              expect(
+                tester.widget<FadeTransition>(contentFade).opacity.value,
+                closeTo(kAppFadeCurve.transform(0.5), 0.001),
+              );
+              await tester.pump(const Duration(milliseconds: 149));
+              expect(skeleton, findsOneWidget);
+              expect(
+                tester.widget<FadeTransition>(skeletonFade).opacity.value,
+                greaterThan(0),
+              );
+              await tester.pump(const Duration(milliseconds: 1));
+              expect(
+                tester.widget<FadeTransition>(skeletonFade).opacity.value,
+                closeTo(0, 0.000001),
+              );
+              // Give the ticker's floating-point endpoint its final microsecond.
+              await tester.pump(const Duration(microseconds: 1));
+              expect(skeleton, findsNothing);
+            }
+            await pumpAndSettleWithAsync(tester);
+            expect(skeleton, findsNothing);
+            expect(find.byType(ListeningTimeChart), findsOneWidget);
+            expect(
+              tester
+                  .widget<ListeningTimeChart>(find.byType(ListeningTimeChart))
+                  .style,
+              style,
+            );
+            expect(
+              find.text(fixture.languageProvider.tr('my_no_history')),
+              findsOneWidget,
+            );
+            expect(
+              tester.getRect(timeHeader).topLeft,
+              timeHeaderBounds.topLeft,
+            );
+            expect(tester.getRect(timeHeader).width, timeHeaderBounds.width);
+            expect(
+              tester.getRect(
+                find.ancestor(of: timeHeader, matching: find.byType(Card)),
+              ),
+              skeletonTimeBounds,
+            );
+            expect(tester.takeException(), isNull);
+            await tester.pumpWidget(const SizedBox.shrink());
+            await tester.pumpAndSettle();
+          },
+        );
+      }
     }
 
     testWidgets(

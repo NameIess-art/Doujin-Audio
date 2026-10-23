@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/ui/app_interaction_feedback_settings.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
@@ -42,6 +43,84 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     AppInteractionFeedbackSettings.hapticFeedbackEnabled = true;
   });
+
+  test('listening chart style is persisted and restored on restart', () async {
+    expect(settings.slice.state.listeningChartStyle, ListeningChartStyle.bar);
+    await settings.setListeningChartStyle(ListeningChartStyle.heatmap);
+    expect(
+      settings.slice.state.listeningChartStyle,
+      ListeningChartStyle.heatmap,
+    );
+    expect(preferences.writes.single['listeningChartStyle'], 'heatmap');
+
+    final restarted = SettingsRepository();
+    addTearDown(restarted.dispose);
+    await restarted.loadPersistedState(enforceCacheLimit: false);
+    expect(
+      restarted.slice.state.listeningChartStyle,
+      ListeningChartStyle.heatmap,
+    );
+    expect(restarted.slice.state.isInitialized, isTrue);
+    await restarted.setListeningChartStyle(ListeningChartStyle.heatmap);
+    expect(preferences.writes, hasLength(1));
+  });
+
+  for (final stored in <Object?>[null, 'unknown', 2]) {
+    test('legacy or unknown chart style $stored defaults to bars', () async {
+      await AppPreferences.writeJson('playback_settings_v1', {
+        'listeningChartStyle': ?stored,
+        'workNameDisplay': 'folderName',
+      });
+      settings.listeningChartStyle = ListeningChartStyle.heatmap;
+      await settings.loadPersistedState(enforceCacheLimit: false);
+      expect(settings.listeningChartStyle, ListeningChartStyle.bar);
+      expect(settings.slice.state.listeningChartStyle, ListeningChartStyle.bar);
+      expect(settings.workNameDisplay, WorkNameDisplay.folderName);
+    });
+  }
+
+  test('chart style follows preference backup restore and reset', () async {
+    await settings.setListeningChartStyle(ListeningChartStyle.heatmap);
+    final backup = await AppPreferences.snapshot();
+    await settings.setListeningChartStyle(ListeningChartStyle.bar);
+    await AppPreferences.replaceSnapshot(backup);
+    await settings.loadPersistedState(enforceCacheLimit: false);
+    expect(
+      settings.slice.state.listeningChartStyle,
+      ListeningChartStyle.heatmap,
+    );
+
+    await settings.resetPersistedState();
+    expect(settings.listeningChartStyle, ListeningChartStyle.bar);
+    expect(settings.slice.state.listeningChartStyle, ListeningChartStyle.bar);
+    await AppPreferences.replaceSnapshot({});
+    await settings.loadPersistedState(enforceCacheLimit: false);
+    expect(settings.slice.state.listeningChartStyle, ListeningChartStyle.bar);
+  });
+
+  test(
+    'failed chart style save rolls back and later updates preserve it',
+    () async {
+      await settings.setListeningChartStyle(ListeningChartStyle.heatmap);
+      final original = settings.slice.state;
+      preferences.beforeSave = () async => false;
+      await expectLater(
+        settings.setListeningChartStyle(ListeningChartStyle.bar),
+        throwsStateError,
+      );
+      expect(settings.listeningChartStyle, ListeningChartStyle.heatmap);
+      expect(settings.slice.state, original);
+
+      preferences.beforeSave = null;
+      await settings.setAllowVideoPlayback(false);
+      expect(preferences.writes.last['listeningChartStyle'], 'heatmap');
+      final persisted = await AppPreferences.readJson(
+        'playback_settings_v1',
+        (value) => value as Map<String, dynamic>,
+      );
+      expect(persisted?['listeningChartStyle'], 'heatmap');
+    },
+  );
 
   for (final throwing in [false, true]) {
     test(

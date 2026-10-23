@@ -13,6 +13,8 @@ export '../../library/domain/library_node.dart'
 
 enum StartupPage { asmrOne, library, playlist, my }
 
+enum ListeningChartStyle { bar, heatmap }
+
 enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
 
 enum AudioFocusStrategy { standard, mixWithOthers }
@@ -53,6 +55,7 @@ class SettingsState {
     this.showLocalLibrary = true,
     this.showAsmrOne = true,
     this.workNameDisplay = WorkNameDisplay.workTitle,
+    this.listeningChartStyle = ListeningChartStyle.bar,
     this.startupPage = StartupPage.library,
     this.coverImageResolution = CoverImageResolution.balanced,
     this.preferEmbeddedCover = false,
@@ -97,6 +100,7 @@ class SettingsState {
   final bool showLocalLibrary;
   final bool showAsmrOne;
   final WorkNameDisplay workNameDisplay;
+  final ListeningChartStyle listeningChartStyle;
   final StartupPage startupPage;
   final CoverImageResolution coverImageResolution;
   final bool preferEmbeddedCover;
@@ -137,6 +141,7 @@ class SettingsState {
         other.showLocalLibrary == showLocalLibrary &&
         other.showAsmrOne == showAsmrOne &&
         other.workNameDisplay == workNameDisplay &&
+        other.listeningChartStyle == listeningChartStyle &&
         other.startupPage == startupPage &&
         other.coverImageResolution == coverImageResolution &&
         other.preferEmbeddedCover == preferEmbeddedCover &&
@@ -181,6 +186,7 @@ class SettingsState {
     showLocalLibrary,
     showAsmrOne,
     workNameDisplay,
+    listeningChartStyle,
     startupPage,
     coverImageResolution,
     preferEmbeddedCover,

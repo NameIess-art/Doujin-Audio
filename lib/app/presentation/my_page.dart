@@ -83,6 +83,26 @@ class _MyPageState extends ConsumerState<MyPage>
     ),
   );
 
+  Future<void> _setChartStyle(ListeningChartStyle style) async {
+    try {
+      await ref.read(settingsRepositoryProvider).setListeningChartStyle(style);
+    } catch (error, stack) {
+      AppLogService.error(
+        'my_chart_style_save_failed',
+        error: error,
+        stackTrace: stack,
+      );
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          ref
+              .read(appLanguageProviderInstanceProvider)
+              .tr('operation_failed_retry'),
+        );
+      }
+    }
+  }
+
   Future<void> _removeInterest(String key) async {
     setState(() => _removingInterests.add(key));
     try {
@@ -241,21 +261,47 @@ class _MyPageState extends ConsumerState<MyPage>
       ),
       children: children,
     );
+    Widget listeningChart(ListeningActivityView? view) => Consumer(
+      builder: (context, ref, _) {
+        final style =
+            ref.watch(
+              settingsStateProvider.select(
+                (state) => state.value?.listeningChartStyle,
+              ),
+            ) ??
+            ref
+                .read(settingsRepositoryProvider)
+                .slice
+                .state
+                .listeningChartStyle;
+        Widget buildSection(Widget duration, Widget chart) => section(
+          i18n.tr('my_listening_time'),
+          chart,
+          trailing: duration,
+          skeleton: view == null,
+        );
+        return view == null
+            ? ListeningTimeChart.skeleton(
+                i18n: i18n,
+                style: style,
+                builder: buildSection,
+              )
+            : ListeningTimeChart(
+                days: view.days,
+                i18n: i18n,
+                style: style,
+                onStyleChanged: _setChartStyle,
+                builder: buildSection,
+              );
+      },
+    );
     final skeleton = Builder(
       builder: (context) => IgnorePointer(
         child: ExcludeSemantics(
           child: ShimmerLoader(
             key: const ValueKey('my-page-skeleton'),
             child: pageList([
-              ListeningTimeChart.skeleton(
-                i18n: i18n,
-                builder: (duration, chart) => section(
-                  i18n.tr('my_listening_time'),
-                  chart,
-                  skeleton: true,
-                  trailing: duration,
-                ),
-              ),
+              listeningChart(null),
               section(
                 i18n.tr('my_history'),
                 SizedBox(
@@ -340,15 +386,7 @@ class _MyPageState extends ConsumerState<MyPage>
                 placeholder: skeleton,
                 builder: (_) => pageList([
                   activity.when(
-                    data: (view) => ListeningTimeChart(
-                      days: view.days,
-                      i18n: i18n,
-                      builder: (duration, chart) => section(
-                        i18n.tr('my_listening_time'),
-                        chart,
-                        trailing: duration,
-                      ),
-                    ),
+                    data: listeningChart,
                     loading: () => const SizedBox.shrink(),
                     error: (error, stack) => section(
                       i18n.tr('my_listening_time'),

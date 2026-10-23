@@ -1,6 +1,8 @@
 const Map<String, String> appLanguageEn = {
   'nav_my': 'My',
   'my_listening_time': 'Listening time',
+  'my_chart_style_bar': 'Bar chart',
+  'my_chart_style_heatmap': 'Heatmap',
   'my_history': 'Listening history',
   'my_interests': 'Interest tags',
   'my_interest_removed': 'Interest tag removed',

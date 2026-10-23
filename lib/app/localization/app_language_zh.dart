@@ -1,6 +1,8 @@
 const Map<String, String> appLanguageZh = {
   'nav_my': '我的',
   'my_listening_time': '播放时长',
+  'my_chart_style_bar': '柱状图',
+  'my_chart_style_heatmap': '方格图',
   'my_history': '播放历史',
   'my_interests': '兴趣标签',
   'my_interest_removed': '已移除兴趣标签',

@@ -376,6 +376,7 @@ class _LibraryEditFolderTreeTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     ref.watch(
       libraryStateProvider.select((value) => value.value?.contentRevision ?? 0),
     );
@@ -493,6 +494,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,

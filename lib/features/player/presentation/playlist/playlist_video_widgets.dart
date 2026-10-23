@@ -586,6 +586,7 @@ class _SessionVideoFullscreenPageState
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final detail = ref.watch(sessionDetailTransportProvider(widget.sessionId));
     ref.watch(
       playbackSessionProvider(widget.sessionId).select(

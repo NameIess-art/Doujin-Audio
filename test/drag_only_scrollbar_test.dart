@@ -6,6 +6,72 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets(
+    'disabled scrolling blocks thumb dragging and resumes with data',
+    (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      var loading = true;
+      late StateSetter update;
+      await tester.pumpWidget(
+        MaterialApp(
+          scrollBehavior: const AppScrollBehavior(),
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              update = setState;
+              return Scaffold(
+                body: SizedBox(
+                  width: 200,
+                  height: 400,
+                  child: ListView.builder(
+                    controller: controller,
+                    physics: loading
+                        ? const NeverScrollableScrollPhysics()
+                        : null,
+                    itemExtent: 40,
+                    itemCount: 100,
+                    itemBuilder: (_, index) => Text('Item $index'),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      Future<void> dragThumb() async {
+        final origin = tester.getTopLeft(find.byType(ListView));
+        final drag = await tester.startGesture(
+          origin + const Offset(196, 20),
+          kind: PointerDeviceKind.mouse,
+        );
+        await drag.moveBy(const Offset(0, 140));
+        await drag.up();
+        await tester.pumpAndSettle();
+      }
+
+      await tester.drag(find.byType(ListView), const Offset(0, -250));
+      await tester.pumpAndSettle();
+      await tester.sendEventToBinding(
+        const PointerScrollEvent(
+          position: Offset(100, 200),
+          scrollDelta: Offset(0, 200),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await dragThumb();
+      expect(controller.offset, 0);
+
+      update(() => loading = false);
+      await tester.pumpAndSettle();
+      expect(find.byType(DragOnlyScrollbar), findsOneWidget);
+      await dragThumb();
+      expect(controller.offset, greaterThan(0));
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
     'track clicks do not scroll, thumb dragging and wheel still work',
     (tester) async {
       final controller = ScrollController();

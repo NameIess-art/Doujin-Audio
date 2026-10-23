@@ -32,7 +32,7 @@ final class ListeningActivityService {
   final MusicTrack? Function(String) _resolveTrack;
   final ListeningInterestRecorder _recordInterests;
   final _changes = StreamController<ListeningActivityView>.broadcast();
-  ListeningActivityView _view = const ListeningActivityView();
+  ListeningActivityView? _view;
   Future<void> _tail = Future.value();
   Timer? _timer;
   bool _disposed = false;
@@ -43,13 +43,20 @@ final class ListeningActivityService {
       events.addSync,
       onError: events.addErrorSync,
     );
-    events.addSync(_view);
+    final view = _view;
+    if (view != null) events.addSync(view);
     events.onCancel = subscription.cancel;
   }, isBroadcast: true);
 
   Future<void> _serialize(Future<void> Function() action) {
     final task = _tail.then((_) async {
-      if (!_disposed) await action();
+      if (_disposed) return;
+      try {
+        await action();
+      } catch (error, stack) {
+        _changes.addError(error, stack);
+        rethrow;
+      }
     });
     _tail = task.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return task;
@@ -65,7 +72,6 @@ final class ListeningActivityService {
         error: error,
         stackTrace: stack,
       );
-      if (!_disposed) _changes.addError(error, stack);
     }
     if (_disposed) return;
     _timer ??= Timer.periodic(const Duration(seconds: 30), (_) {
@@ -76,7 +82,6 @@ final class ListeningActivityService {
             error: error,
             stackTrace: stack,
           );
-          if (!_disposed) _changes.addError(error, stack);
         }),
       );
     });
@@ -141,12 +146,13 @@ final class ListeningActivityService {
   Future<void> _reload() async {
     final days = await _repository.loadDays();
     final history = await _repository.loadHistory(limit: _historyLimit + 1);
-    _view = ListeningActivityView(
+    final view = ListeningActivityView(
       days: List.unmodifiable(days),
       history: List.unmodifiable(history.take(_historyLimit)),
       hasMoreHistory: history.length > _historyLimit,
     );
-    _changes.add(_view);
+    _view = view;
+    _changes.add(view);
   }
 
   Future<MusicTrack> _resolveUsageTrack(PlaybackUsageWork work) async {

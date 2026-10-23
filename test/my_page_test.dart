@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:doujin_audio/app/presentation/listening_time_chart.dart';
 import 'package:doujin_audio/app/presentation/main_destination.dart';
 import 'package:doujin_audio/app/presentation/my_page.dart';
@@ -6,10 +8,14 @@ import 'package:doujin_audio/app/state/listening_activity_provider.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/path_display.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/features/player/application/listening_activity_service.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:flutter/material.dart';
@@ -143,6 +149,285 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'My refresh and interest sorting wait until navigation ends on $platform',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final controller = _InterestController(createTestAsmrServices());
+        final repository = _ListeningRepository();
+        var usageReads = 0;
+        final activity = ListeningActivityService(
+          repository: repository,
+          readUsage: () async {
+            usageReads++;
+            return const [];
+          },
+          acknowledgeUsage: (_) async {},
+          resolveTrack: (_) => null,
+          recordInterests:
+              ({required batchId, required contributions}) async {},
+        );
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        final interaction = UiInteractionCoordinator.instance;
+        final motion = Object();
+        addTearDown(() => interaction.cancelNavigation(motion));
+        interaction.beginNavigation(motion);
+        await tester.pumpWidget(
+          fixture.build(
+            Theme(
+              data: ThemeData(platform: platform),
+              child: const MyPage(tabIndex: 3),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+              listeningActivityServiceProvider.overrideWithValue(activity),
+            ],
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(usageReads, 0);
+        expect(find.byKey(const ValueKey('my-page-skeleton')), findsOneWidget);
+        interaction.cancelNavigation(motion);
+        await pumpUntilUiIdle(tester);
+        await pumpAndSettleWithAsync(tester);
+        expect(usageReads, 1);
+        final chart = tester.widget<ListeningTimeChart>(
+          find.byType(ListeningTimeChart),
+        );
+        expect(chart.days, isEmpty);
+        controller.interestReads = 0;
+        interaction.beginNavigation(motion);
+        for (var i = 0; i < 20; i++) {
+          controller.notifyListeners();
+        }
+        repository.days = [
+          ListeningDay(
+            date: DateTime.now(),
+            duration: const Duration(minutes: 3),
+          ),
+        ];
+        await activity.refresh();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(controller.interestReads, 0);
+        expect(
+          tester.widget<ListeningTimeChart>(find.byType(ListeningTimeChart)),
+          same(chart),
+        );
+        interaction.cancelNavigation(motion);
+        await pumpUntilUiIdle(tester);
+        await pumpAndSettleWithAsync(tester);
+        expect(controller.interestReads, 1);
+        expect(
+          tester
+              .widget<ListeningTimeChart>(find.byType(ListeningTimeChart))
+              .days
+              .single
+              .duration,
+          const Duration(minutes: 3),
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        final disposing = activity.dispose();
+        await tester.pump();
+        await disposing;
+      },
+    );
+
+    for (final reducedMotion in [false, true]) {
+      testWidgets(
+        'My skeleton matches sections and resolves on $platform, reduced motion $reducedMotion',
+        (tester) async {
+          final fixture = AppRuntimeWidgetTestFixture();
+          final activity = StreamController<ListeningActivityView>();
+          addTearDown(fixture.dispose);
+          addTearDown(activity.close);
+          tester.view.physicalSize = Size(
+            platform == TargetPlatform.android ? 390 : 960,
+            900,
+          );
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          await tester.pumpWidget(
+            fixture.build(
+              Theme(
+                data: ThemeData(platform: platform),
+                child: Builder(
+                  builder: (context) => MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      disableAnimations: reducedMotion,
+                      textScaler: TextScaler.linear(reducedMotion ? 1.6 : 1),
+                    ),
+                    child: const MyPage(tabIndex: 3),
+                  ),
+                ),
+              ),
+              overrides: [
+                listeningActivityProvider.overrideWith(
+                  (ref) => activity.stream,
+                ),
+              ],
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 400));
+          final skeleton = find.byKey(const ValueKey('my-page-skeleton'));
+          expect(skeleton, findsOneWidget);
+          expect(find.byType(TopPageHeader), findsOneWidget);
+          expect(find.byType(CircularProgressIndicator), findsNothing);
+          expect(
+            find.text(fixture.languageProvider.tr('my_no_history')),
+            findsNothing,
+          );
+          final history = find.byKey(const ValueKey('my-skeleton-history'));
+          expect(tester.getSize(history).height, 113);
+          final covers = find.descendant(
+            of: history,
+            matching: find.byType(ShimmerContainer),
+          );
+          expect(tester.getSize(covers.first), const Size(132, 99));
+          final timeHeader = find.byKey(
+            ValueKey(
+              'my-section-header-${fixture.languageProvider.tr('my_listening_time')}',
+            ),
+          );
+          final timeHeaderBounds = tester.getRect(timeHeader);
+          final skeletonTimeBounds = tester.getRect(
+            find.ancestor(of: timeHeader, matching: find.byType(Card)),
+          );
+          final verticalScroll = find.descendant(
+            of: skeleton,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Scrollable && widget.axis == Axis.vertical,
+            ),
+          );
+          final skeletonPosition = tester
+              .state<ScrollableState>(verticalScroll)
+              .position;
+          expect(skeletonPosition.physics.allowUserScrolling, isFalse);
+          await tester.dragFrom(
+            tester.getCenter(skeleton),
+            const Offset(0, -250),
+          );
+          await tester.pump(const Duration(milliseconds: 300));
+          expect(skeletonPosition.pixels, 0);
+          activity.add(
+            ListeningActivityView(
+              days: [
+                ListeningDay(
+                  date: DateTime.now(),
+                  duration: const Duration(minutes: 5, seconds: 38),
+                ),
+              ],
+            ),
+          );
+          if (!reducedMotion) {
+            final content = find.byKey(const ValueKey('deferred_content'));
+            for (
+              var frame = 0;
+              frame < 10 && content.evaluate().isEmpty;
+              frame++
+            ) {
+              await tester.pump();
+            }
+            expect(content, findsOneWidget);
+            await tester.pump();
+            final skeletonFade = find
+                .ancestor(of: skeleton, matching: find.byType(FadeTransition))
+                .first;
+            final contentFade = find
+                .ancestor(of: content, matching: find.byType(FadeTransition))
+                .first;
+            expect(
+              tester.widget<FadeTransition>(skeletonFade).opacity.value,
+              1,
+            );
+            expect(tester.widget<FadeTransition>(contentFade).opacity.value, 0);
+            await tester.pump(const Duration(milliseconds: 150));
+            expect(
+              tester.widget<FadeTransition>(skeletonFade).opacity.value,
+              closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
+            );
+            expect(
+              tester.widget<FadeTransition>(contentFade).opacity.value,
+              closeTo(kAppFadeCurve.transform(0.5), 0.001),
+            );
+            await tester.pump(const Duration(milliseconds: 149));
+            expect(skeleton, findsOneWidget);
+            expect(
+              tester.widget<FadeTransition>(skeletonFade).opacity.value,
+              greaterThan(0),
+            );
+            await tester.pump(const Duration(milliseconds: 1));
+            expect(
+              tester.widget<FadeTransition>(skeletonFade).opacity.value,
+              closeTo(0, 0.000001),
+            );
+            // Give the ticker's floating-point endpoint its final microsecond.
+            await tester.pump(const Duration(microseconds: 1));
+            expect(skeleton, findsNothing);
+          }
+          await pumpAndSettleWithAsync(tester);
+          expect(skeleton, findsNothing);
+          expect(find.byType(ListeningTimeChart), findsOneWidget);
+          expect(
+            find.text(fixture.languageProvider.tr('my_no_history')),
+            findsOneWidget,
+          );
+          expect(tester.getRect(timeHeader).topLeft, timeHeaderBounds.topLeft);
+          expect(tester.getRect(timeHeader).width, timeHeaderBounds.width);
+          expect(
+            tester.getRect(
+              find.ancestor(of: timeHeader, matching: find.byType(Card)),
+            ),
+            skeletonTimeBounds,
+          );
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pumpAndSettle();
+        },
+      );
+    }
+
+    testWidgets(
+      'My initial load error leaves the skeleton and can recover on $platform',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final activity = StreamController<ListeningActivityView>();
+        addTearDown(fixture.dispose);
+        addTearDown(activity.close);
+        await tester.pumpWidget(
+          fixture.build(
+            Theme(
+              data: ThemeData(platform: platform),
+              child: const MyPage(tabIndex: 3),
+            ),
+            overrides: [
+              listeningActivityProvider.overrideWith((ref) => activity.stream),
+            ],
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 400));
+        activity.addError(StateError('initial read failed'));
+        await pumpAndSettleWithAsync(tester);
+        expect(find.byKey(const ValueKey('my-page-skeleton')), findsNothing);
+        expect(
+          find.text(fixture.languageProvider.tr('my_retry')),
+          findsWidgets,
+        );
+        activity.add(const ListeningActivityView());
+        await pumpAndSettleWithAsync(tester);
+        expect(find.byType(ListeningTimeChart), findsOneWidget);
+        expect(
+          find.text(fixture.languageProvider.tr('my_retry')),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+
     testWidgets(
       'interest removal can be undone before weight changes on $platform',
       (tester) async {
@@ -357,6 +642,7 @@ void main() {
           BorderRadius.circular(12),
         );
         expect(tester.getSize(viewport).height, 99);
+        await pumpUntilUiIdle(tester);
         fixture.library.detailCacheService.markChanged(
           AudioDetail.empty(
             target,
@@ -496,8 +782,13 @@ class _InterestController extends AsmrLibraryController {
   }
   final state = AsmrTagPreferences();
   int removals = 0;
+  int interestReads = 0;
   @override
-  List<AsmrTagInterest> get interestTags => state.interests;
+  List<AsmrTagInterest> get interestTags {
+    interestReads++;
+    return state.interests;
+  }
+
   @override
   List<AsmrTag> get allTags => state.tags.values.toList();
   @override
@@ -510,4 +801,24 @@ class _InterestController extends AsmrLibraryController {
     state.setInterested(key, interested);
     notifyListeners();
   }
+}
+
+class _ListeningRepository implements ListeningActivityRepository {
+  List<ListeningDay> days = const [];
+  @override
+  Future<List<ListeningDay>> loadDays() async => days;
+  @override
+  Future<List<ListeningHistoryEntry>> loadHistory({
+    int offset = 0,
+    int limit = 40,
+  }) async => const [];
+  @override
+  Future<MusicTrack?> findTrack(String workKey) async => null;
+  @override
+  Future<bool> importBatch(
+    String batchId,
+    List<ListeningDayContribution> days,
+  ) async => false;
+  @override
+  Future<void> seedHistory(List<ListeningHistoryEntry> entries) async {}
 }

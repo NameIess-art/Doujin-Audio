@@ -812,7 +812,8 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final i18n = ref.watch(appLanguageProviderInstanceProvider);
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final subtitles = ref.watch(playbackSubtitleServiceProvider);
     final subtitleSettings = ref.watch(subtitleSettingsProvider);
 

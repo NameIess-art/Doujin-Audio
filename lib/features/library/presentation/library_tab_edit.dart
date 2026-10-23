@@ -36,6 +36,7 @@ class LibraryEditPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,

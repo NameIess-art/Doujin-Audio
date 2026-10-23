@@ -207,7 +207,8 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = ref.watch(appLanguageProviderInstanceProvider);
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final file = _currentFile;

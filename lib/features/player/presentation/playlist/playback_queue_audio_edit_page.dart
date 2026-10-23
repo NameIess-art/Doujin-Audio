@@ -68,6 +68,7 @@ class _PlaybackQueueAudioEditPageState
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final sessionId = widget.sessionId;
     final structure = ref.watch(playlistStructureUiProvider);
     final playback = ref.read(playbackFacadeProvider);

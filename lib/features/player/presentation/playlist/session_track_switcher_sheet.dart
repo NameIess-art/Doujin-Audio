@@ -21,7 +21,7 @@ class SessionTrackSelection {
   final int queueIndex;
 }
 
-class SessionTrackSwitcherSheet extends StatefulWidget {
+class SessionTrackSwitcherSheet extends ConsumerStatefulWidget {
   const SessionTrackSwitcherSheet({
     super.key,
     required this.session,
@@ -39,11 +39,12 @@ class SessionTrackSwitcherSheet extends StatefulWidget {
   final ValueChanged<SessionTrackSelection> onSelected;
 
   @override
-  State<SessionTrackSwitcherSheet> createState() =>
+  ConsumerState<SessionTrackSwitcherSheet> createState() =>
       _SessionTrackSwitcherSheetState();
 }
 
-class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet>
+class _SessionTrackSwitcherSheetState
+    extends ConsumerState<SessionTrackSwitcherSheet>
     with SingleTickerProviderStateMixin {
   Set<String> _expandedFolders = <String>{};
   Key _listKey = UniqueKey();
@@ -345,6 +346,7 @@ class _SessionTrackSwitcherSheetState extends State<SessionTrackSwitcherSheet>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     return LayoutBuilder(
       builder: (context, constraints) {
         final height = constraints.hasBoundedHeight

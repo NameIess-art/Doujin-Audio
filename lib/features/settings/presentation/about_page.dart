@@ -226,15 +226,13 @@ class _AboutCard extends StatelessWidget {
   }
 }
 
-class _AboutIdentity extends StatelessWidget {
+class _AboutIdentity extends ConsumerWidget {
   const _AboutIdentity();
 
   @override
-  Widget build(BuildContext context) {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
       child: Column(

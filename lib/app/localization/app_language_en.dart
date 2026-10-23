@@ -2,7 +2,7 @@ const Map<String, String> appLanguageEn = {
   'nav_my': 'My',
   'my_listening_time': 'Listening time',
   'my_history': 'Listening history',
-  'my_interests': 'Interests',
+  'my_interests': 'Interest tags',
   'my_interest_removed': 'Interest tag removed',
   'my_interval_day': 'Day',
   'my_interval_week': 'Week',

@@ -54,6 +54,7 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final playback = ref.read(playbackFacadeProvider);
     final queue = ref.watch(
       playbackSessionProvider(

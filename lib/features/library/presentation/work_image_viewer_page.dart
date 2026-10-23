@@ -267,6 +267,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final windowMediaQuery = MediaQueryData.fromView(
       View.of(context),
       platformData: MediaQuery.of(context),
@@ -348,7 +349,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
   }
 
   Widget _buildViewer(BuildContext context) {
-    final i18n = ref.watch(appLanguageProviderInstanceProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     if (widget.images.isEmpty) {

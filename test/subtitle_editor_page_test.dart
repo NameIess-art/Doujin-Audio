@@ -75,6 +75,40 @@ void main() {
     matching: find.byType(TextField),
   );
 
+  testWidgets(
+    'subtitle editor updates language without resetting cues',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final service = _RecordingSubtitleService(const [
+        SubtitleCue(
+          start: Duration(seconds: 1),
+          end: Duration(seconds: 3),
+          text: 'Keep this subtitle',
+        ),
+      ]);
+      await _showEditor(tester, service);
+      final editor = find.byType(SubtitleEditorPage);
+      final state = tester.state(editor);
+      final language = ProviderScope.containerOf(
+        tester.element(editor),
+      ).read(appLanguageProviderInstanceProvider);
+      addTearDown(language.dispose);
+      for (final value in [AppLanguage.en, AppLanguage.ja]) {
+        await language.setLanguage(value);
+        await tester.pumpAndSettle();
+        expect(find.text(language.tr('subtitle_edit')), findsOneWidget);
+        expect(find.byTooltip(language.tr('save')), findsOneWidget);
+        expect(find.text('Keep this subtitle'), findsOneWidget);
+        expect(tester.state(editor), same(state));
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final original in ['Changed original', 'Changed\noriginal\nlines']) {
     testWidgets('bilingual text edits preserve updated source $original', (
       tester,

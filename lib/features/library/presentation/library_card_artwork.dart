@@ -362,6 +362,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -404,6 +405,7 @@ class SingleAudioFileCardContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,

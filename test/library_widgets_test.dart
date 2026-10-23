@@ -4416,6 +4416,22 @@ void main() {
       expect(resizedSkeletonBounds.bottom, lessThan(1200 - 24 + 64));
       expect(tester.getSize(skeletonRow).height, 64.0);
       expect(find.byType(CircularProgressIndicator), findsNothing);
+      final skeletonScroll = find.ancestor(
+        of: skeleton,
+        matching: find.byType(ListView),
+      );
+      final skeletonPosition = tester
+          .state<ScrollableState>(
+            find.descendant(
+              of: skeletonScroll,
+              matching: find.byType(Scrollable),
+            ),
+          )
+          .position;
+      await tester.drag(skeletonScroll, const Offset(0, -200));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(skeletonPosition.pixels, 0);
+      expect(tester.getRect(skeleton), resizedSkeletonBounds);
       expect(tester.widget<PlaceholderContentTransition>(loadingRegion)
           .showPlaceholder, isTrue);
       coordinator.endInteraction(transition);

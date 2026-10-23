@@ -527,6 +527,7 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     final isHidden = ref.watch(
       isUndoableRemovalHiddenProvider(libraryRemovalKey(entry.path)),
     );

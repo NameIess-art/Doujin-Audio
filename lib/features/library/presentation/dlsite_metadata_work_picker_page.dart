@@ -10,7 +10,7 @@ import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/top_page_header.dart';
 
-class DlsiteMetadataWorkPickerPage extends StatefulWidget {
+class DlsiteMetadataWorkPickerPage extends ConsumerStatefulWidget {
   const DlsiteMetadataWorkPickerPage({
     super.key,
     required this.entries,
@@ -21,12 +21,12 @@ class DlsiteMetadataWorkPickerPage extends StatefulWidget {
   final List<AudioLibraryCategoryEntry> initialSelection;
 
   @override
-  State<DlsiteMetadataWorkPickerPage> createState() =>
+  ConsumerState<DlsiteMetadataWorkPickerPage> createState() =>
       _DlsiteMetadataWorkPickerPageState();
 }
 
 class _DlsiteMetadataWorkPickerPageState
-    extends State<DlsiteMetadataWorkPickerPage> {
+    extends ConsumerState<DlsiteMetadataWorkPickerPage> {
   late final Set<String> _selectedIds;
   String _searchQuery = '';
   late final TextEditingController _searchController;
@@ -72,6 +72,7 @@ class _DlsiteMetadataWorkPickerPageState
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,

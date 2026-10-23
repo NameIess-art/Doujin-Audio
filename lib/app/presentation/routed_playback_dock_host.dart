@@ -652,6 +652,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : _duration;
+    ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
     Widget dockContent() => AppDockPanel(

@@ -58,6 +58,7 @@ class AudioFeaturesPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     final detail = ref.watch(
       sessionDetailTransportProvider(
         session.id,
@@ -220,6 +221,7 @@ class VolumeBalancePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     final panning =
         ref.watch(
           sessionDetailTransportProvider(
@@ -339,6 +341,7 @@ class EqualizerPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     final detail = ref.watch(
       sessionDetailTransportProvider(
         session.id,

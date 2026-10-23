@@ -109,6 +109,106 @@ void main() {
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   testWidgets(
+    'cached pages update language without losing state',
+    (tester) async {
+      _setLogicalTestViewSize(
+        tester,
+        defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(1280, 800)
+            : const Size(390, 820),
+      );
+      final sessions = List<PlaybackSession>.generate(12, (index) {
+        final session = PlaybackSession(
+          id: 'language_session_$index',
+          currentTrackPath: '/audio/language-$index.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 1,
+          createdAt: DateTime(2026, 1, index + 1),
+          state: const PlayerState(false, ProcessingState.idle),
+        );
+        addTearDown(session.shutdown);
+        return session;
+      });
+      final harness = await _pumpAppShell(
+        tester,
+        includePlaybackSession: false,
+        additionalPlaybackSessions: sessions,
+      );
+      final library = find.byType(LibraryTab, skipOffstage: false);
+      final libraryState = tester.state(library);
+      final stack = tester.widget<AppFadeThroughIndexedStack>(
+        find.byKey(const ValueKey<String>('main_page_stack')),
+      );
+      final pageIndex = stack.indexListenable as ValueNotifier<int>;
+      final libraryIndex = pageIndex.value;
+      Future<void> selectPage(int index) async {
+        pageIndex.value = index;
+        await _pumpMainScreenAnimations(tester);
+        await pumpUntilUiIdle(tester);
+      }
+
+      await selectPage(2);
+      final playlist = find.byType(PlaylistTab, skipOffstage: false);
+      final playlistState = tester.state(playlist);
+      final scroll = tester.state<ScrollableState>(
+        find
+            .descendant(
+              of: find.byKey(const PageStorageKey<String>('playlist_list')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      scroll.position.jumpTo(
+        120.0.clamp(0.0, scroll.position.maxScrollExtent / 2),
+      );
+      await _pumpMainScreenAnimations(tester);
+      final offset = scroll.position.pixels;
+      expect(offset, greaterThan(0));
+      for (final language in AppLanguage.values) {
+        await _tapSettingsDestination(tester);
+        await harness.language.setLanguage(language);
+        await _pumpMainScreenAnimations(tester);
+        await pumpUntilUiIdle(tester);
+        expect(
+          tester.widget<MaterialApp>(find.byType(MaterialApp)).locale,
+          harness.language.locale,
+        );
+        await selectPage(libraryIndex);
+        expect(
+          tester
+              .widgetList<TopPageHeader>(find.byType(TopPageHeader))
+              .any(
+                (header) =>
+                    header.topCapsuleTitle ==
+                    harness.language.tr('music_library'),
+              ),
+          isTrue,
+        );
+        expect(tester.state(library), same(libraryState));
+        await selectPage(2);
+        expect(
+          tester
+              .widgetList<TopPageHeader>(find.byType(TopPageHeader))
+              .any(
+                (header) =>
+                    header.topCapsuleTitle ==
+                    harness.language.tr('playback_sessions'),
+              ),
+          isTrue,
+        );
+        expect(tester.state(playlist), same(playlistState));
+        expect(scroll.position.pixels, offset);
+      }
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'main pages load on demand and retain state without activating paused playback sessions',
     (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;

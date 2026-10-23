@@ -23,7 +23,7 @@ Future<void> showLoopModeBottomSheet({
   );
 }
 
-class LoopModeSheet extends StatefulWidget {
+class LoopModeSheet extends ConsumerStatefulWidget {
   const LoopModeSheet({
     super.key,
     required this.session,
@@ -34,10 +34,10 @@ class LoopModeSheet extends StatefulWidget {
   final PlaybackFacade playback;
 
   @override
-  State<LoopModeSheet> createState() => _LoopModeSheetState();
+  ConsumerState<LoopModeSheet> createState() => _LoopModeSheetState();
 }
 
-class _LoopModeSheetState extends State<LoopModeSheet> {
+class _LoopModeSheetState extends ConsumerState<LoopModeSheet> {
   late bool _single;
   late bool _pauseAfterPlay;
   late bool _shuffle;
@@ -70,6 +70,7 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,

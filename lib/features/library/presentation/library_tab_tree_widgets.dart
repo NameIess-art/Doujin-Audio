@@ -361,6 +361,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final isHidden = ref.watch(
       isUndoableRemovalHiddenProvider(libraryRemovalKey(widget.folder.path)),
     );
@@ -749,6 +750,7 @@ class _TrackNodeWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     final isHidden = ref.watch(
       isUndoableRemovalHiddenProvider(libraryRemovalKey(trackNode.track.path)),
     );

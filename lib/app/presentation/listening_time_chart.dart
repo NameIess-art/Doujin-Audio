@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../features/player/domain/listening_activity.dart';
 import '../../core/widgets/windows_horizontal_wheel_scroll.dart';
+import '../../core/widgets/shimmer_loading.dart';
 import '../localization/app_language_provider.dart';
 
 enum ListeningInterval { day, week, month, quarter, year }
@@ -96,7 +97,16 @@ class ListeningTimeChart extends StatefulWidget {
     required this.days,
     required this.i18n,
     required this.builder,
-  });
+  }) : _skeleton = false;
+
+  const ListeningTimeChart.skeleton({
+    super.key,
+    required this.i18n,
+    required this.builder,
+  }) : days = const [],
+       _skeleton = true;
+
+  final bool _skeleton;
   final List<ListeningDay> days;
   final AppLanguageProvider i18n;
   final Widget Function(Widget duration, Widget chart) builder;
@@ -110,6 +120,37 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
   final ScrollController _scrollController = ScrollController();
   ListeningInterval _interval = ListeningInterval.day;
   DateTime? _selected;
+  List<ListeningDay>? _aggregatedDays;
+  ListeningInterval? _aggregatedInterval;
+  DateTime? _aggregatedSelection;
+  DateTime? _aggregatedDay;
+  List<ListeningPeriod> _periods = const [];
+  int _maximum = 1;
+
+  List<ListeningPeriod> _currentPeriods() {
+    final now = DateTime.now();
+    final day = DateTime(now.year, now.month, now.day);
+    if (!identical(_aggregatedDays, widget.days) ||
+        _aggregatedInterval != _interval ||
+        _aggregatedSelection != _selected ||
+        _aggregatedDay != day) {
+      _periods = aggregateListeningPeriods(
+        widget.days,
+        _interval,
+        now: now,
+        includeDate: _selected,
+      );
+      _maximum = _periods.fold<int>(
+        1,
+        (value, period) => math.max(value, period.duration.inMilliseconds),
+      );
+      _aggregatedDays = widget.days;
+      _aggregatedInterval = _interval;
+      _aggregatedSelection = _selected;
+      _aggregatedDay = day;
+    }
+    return _periods;
+  }
 
   @override
   void dispose() {
@@ -120,12 +161,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
   void _revealSelection() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
-      final periods = aggregateListeningPeriods(
-        widget.days,
-        _interval,
-        now: DateTime.now(),
-        includeDate: _selected,
-      );
+      final periods = _currentPeriods();
       final selectedIndex = periods.indexWhere(
         (period) => _containsSelection(period),
       );
@@ -174,23 +210,39 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
   @override
   Widget build(BuildContext context) {
     final i18n = widget.i18n;
-    final periods = aggregateListeningPeriods(
-      widget.days,
-      _interval,
-      now: DateTime.now(),
-      includeDate: _selected,
-    );
-    final maximum = periods.fold<int>(
-      1,
-      (value, p) => math.max(value, p.duration.inMilliseconds),
-    );
-    final selected =
-        periods.where(_containsSelection).firstOrNull ?? periods.last;
+    final periods = _currentPeriods();
+    final selected = _selected == null
+        ? periods.last
+        : periods.where(_containsSelection).firstOrNull ?? periods.last;
     final localizations = MaterialLocalizations.of(context);
     final labelStyle = Theme.of(context).textTheme.labelSmall!;
     final labelHeight =
         MediaQuery.textScalerOf(context).scale(labelStyle.fontSize!) *
         (labelStyle.height ?? 1.2);
+    // Keep the real controls' theme and text metrics in the loading layout.
+    Widget placeholderFor(
+      Widget child, {
+      double? width,
+      double height = 16,
+      double radius = 6,
+      Alignment alignment = Alignment.centerLeft,
+    }) => widget._skeleton
+        ? Stack(
+            children: [
+              Opacity(opacity: 0, child: child),
+              Positioned.fill(
+                child: Align(
+                  alignment: alignment,
+                  child: ShimmerContainer(
+                    width: width,
+                    height: height,
+                    borderRadius: radius,
+                  ),
+                ),
+              ),
+            ],
+          )
+        : child;
     String range(ListeningPeriod period) {
       final start = localizations.formatMediumDate(period.start);
       if (_interval == ListeningInterval.day) return start;
@@ -205,35 +257,43 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
         '${period.start.year} Q${(period.start.month - 1) ~/ 3 + 1}',
       ListeningInterval.year => '${period.start.year}',
     };
-    final duration = Text(
-      listeningDurationText(i18n, selected.duration),
-      key: const ValueKey('listening-duration'),
-      style: Theme.of(context).textTheme.titleMedium,
-      textAlign: TextAlign.right,
-      maxLines: 2,
+    final duration = placeholderFor(
+      Text(
+        listeningDurationText(i18n, selected.duration),
+        key: const ValueKey('listening-duration'),
+        style: Theme.of(context).textTheme.titleMedium,
+        textAlign: TextAlign.right,
+        maxLines: 2,
+      ),
+      width: 116,
+      height: 18,
+      alignment: Alignment.centerRight,
     );
     final chart = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Align(
           alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            key: const ValueKey('listening-date-selector'),
-            onPressed: () => _selectDate(periods, selected),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              minimumSize: const Size(0, 28),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              alignment: Alignment.centerLeft,
-              foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-              textStyle: Theme.of(context).textTheme.bodySmall,
+          child: placeholderFor(
+            TextButton.icon(
+              key: const ValueKey('listening-date-selector'),
+              onPressed: () => _selectDate(periods, selected),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                minimumSize: const Size(0, 28),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                alignment: Alignment.centerLeft,
+                foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                textStyle: Theme.of(context).textTheme.bodySmall,
+              ),
+              icon: const Icon(Icons.calendar_month_outlined, size: 16),
+              label: Text(
+                range(selected),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            icon: const Icon(Icons.calendar_month_outlined, size: 16),
-            label: Text(
-              range(selected),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            width: 140,
           ),
         ),
         const SizedBox(height: 2),
@@ -275,30 +335,42 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                                 height: 138,
                                 child: Align(
                                   alignment: Alignment.bottomCenter,
-                                  child: Container(
-                                    width: 18,
-                                    height: math.max(
-                                      2,
-                                      132 *
-                                          period.duration.inMilliseconds /
-                                          maximum,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: active
-                                          ? color.primary
-                                          : color.primaryContainer,
-                                      borderRadius: const BorderRadius.vertical(
-                                        top: Radius.circular(5),
-                                      ),
-                                    ),
-                                  ),
+                                  child: widget._skeleton
+                                      ? ShimmerContainer(
+                                          width: 18,
+                                          height: 28.0 + (index % 4) * 30,
+                                          borderRadius: 5,
+                                        )
+                                      : Container(
+                                          width: 18,
+                                          height: math.max(
+                                            2,
+                                            132 *
+                                                period.duration.inMilliseconds /
+                                                _maximum,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: active
+                                                ? color.primary
+                                                : color.primaryContainer,
+                                            borderRadius:
+                                                const BorderRadius.vertical(
+                                                  top: Radius.circular(5),
+                                                ),
+                                          ),
+                                        ),
                                 ),
                               ),
                               const SizedBox(height: 6),
-                              Text(
-                                label(period),
-                                maxLines: 1,
-                                style: labelStyle,
+                              placeholderFor(
+                                Text(
+                                  label(period),
+                                  maxLines: 1,
+                                  style: labelStyle,
+                                ),
+                                width: 30,
+                                height: 12,
+                                alignment: Alignment.center,
                               ),
                             ],
                           ),
@@ -325,14 +397,19 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                 spacing: 8,
                 children: [
                   for (final interval in ListeningInterval.values)
-                    ChoiceChip(
-                      visualDensity: VisualDensity.compact,
-                      label: Text(i18n.tr('my_interval_${interval.name}')),
-                      selected: _interval == interval,
-                      onSelected: (_) {
-                        setState(() => _interval = interval);
-                        _revealSelection();
-                      },
+                    placeholderFor(
+                      ChoiceChip(
+                        visualDensity: VisualDensity.compact,
+                        label: Text(i18n.tr('my_interval_${interval.name}')),
+                        selected: _interval == interval,
+                        onSelected: (_) {
+                          setState(() => _interval = interval);
+                          _revealSelection();
+                        },
+                      ),
+                      radius: 12,
+                      height: 32,
+                      alignment: Alignment.center,
                     ),
                 ],
               ),

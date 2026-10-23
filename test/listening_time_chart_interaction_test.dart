@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/listening_time_chart.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
@@ -128,6 +130,60 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(DatePickerDialog), findsNothing);
   }
+
+  testWidgets(
+    'unchanged chart data does not rescan a large listening history',
+    (tester) async {
+      final days = _CountingDays(
+        List.generate(
+          3650,
+          (index) => ListeningDay(
+            date: DateTime(today.year, today.month, today.day - index),
+            duration: const Duration(minutes: 1),
+          ),
+        ),
+      );
+      await pumpChart(tester, days: days);
+      expect(days.reads, days.length);
+      days.reads = 0;
+
+      await pumpChart(tester, days: days, textScale: 1.6);
+      expect(days.reads, 0);
+      await chooseDate(tester, earlier);
+      expect(days.reads, days.length);
+      days.reads = 0;
+
+      await tester.ensureVisible(find.text(i18n.tr('my_interval_month')));
+      await tester.tap(find.text(i18n.tr('my_interval_month')));
+      await tester.pumpAndSettle();
+      expect(days.reads, days.length);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('a new day snapshot refreshes the selected period and scale', (
+    tester,
+  ) async {
+    final original = _CountingDays([
+      ListeningDay(date: today, duration: const Duration(minutes: 1)),
+    ]);
+    await pumpChart(tester, days: original);
+    expect(
+      find.text(listeningDurationText(i18n, const Duration(minutes: 1))),
+      findsOneWidget,
+    );
+    final updated = _CountingDays([
+      ListeningDay(date: today, duration: const Duration(minutes: 12)),
+    ]);
+    await pumpChart(tester, days: updated);
+    expect(updated.reads, 1);
+    expect(
+      find.text(listeningDurationText(i18n, const Duration(minutes: 12))),
+      findsOneWidget,
+    );
+    expect(original.reads, 1);
+    expect(tester.takeException(), isNull);
+  });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final reducedMotion in [false, true]) {
@@ -278,4 +334,26 @@ void main() {
     expect(controller(tester).offset, greaterThan(0));
     expect(tester.takeException(), isNull);
   });
+}
+
+class _CountingDays extends ListBase<ListeningDay> {
+  _CountingDays(this._days);
+  final List<ListeningDay> _days;
+  int reads = 0;
+
+  @override
+  int get length => _days.length;
+
+  @override
+  set length(int value) => throw UnsupportedError('read-only history');
+
+  @override
+  ListeningDay operator [](int index) {
+    reads++;
+    return _days[index];
+  }
+
+  @override
+  void operator []=(int index, ListeningDay value) =>
+      throw UnsupportedError('read-only history');
 }

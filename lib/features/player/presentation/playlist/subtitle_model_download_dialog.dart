@@ -57,7 +57,8 @@ class _SubtitleModelDownloadDialogState
 
   @override
   Widget build(BuildContext context) {
-    final i18n = ref.watch(appLanguageProviderInstanceProvider);
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final free = widget.status.availableBytes == null
         ? i18n.tr('subtitle_model_space_unknown')
         : '${(widget.status.availableBytes! / 1048576).ceil()} MiB';

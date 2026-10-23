@@ -592,6 +592,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     ref.listen(coreRuntimeReadyProvider, (_, ready) {
       if (ready) _ensureStartupRefreshStarted();
     });

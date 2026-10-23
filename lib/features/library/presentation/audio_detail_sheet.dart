@@ -588,6 +588,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -612,6 +613,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     final content = SizedBox(
       width: double.infinity,
       child: SingleChildScrollView(
+        physics: _loading ? const NeverScrollableScrollPhysics() : null,
         padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,

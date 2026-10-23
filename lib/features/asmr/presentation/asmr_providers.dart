@@ -17,6 +17,17 @@ final asmrLibraryControllerProvider = Provider<AsmrLibraryController?>((ref) {
   return null;
 });
 
+final asmrTagInterestsProvider =
+    StreamProvider.autoDispose<List<AsmrTagInterest>>((ref) {
+      final controller = ref.watch(asmrLibraryControllerProvider);
+      if (controller == null) return Stream.value(const []);
+      return interactionDeferredListenableStream(
+        source: controller,
+        read: () => controller.interestTags,
+        structural: true,
+      );
+    });
+
 final asmrWorkFinderProvider =
     Provider<
       Future<AsmrWork?> Function(String, {required AppLanguage language})

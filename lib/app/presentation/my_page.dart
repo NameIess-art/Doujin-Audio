@@ -10,12 +10,14 @@ import '../theme/app_styles.dart';
 import '../../core/media/music_track.dart';
 import '../../core/media/path_display.dart';
 import '../../core/logging/app_log_service.dart';
+import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/async_cover_image.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
 import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/scroll_activity_gate.dart';
+import '../../core/widgets/shimmer_loading.dart';
 import '../../core/widgets/top_page_header.dart';
 import '../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../features/asmr/domain/asmr_models.dart';
@@ -43,6 +45,8 @@ class _MyPageState extends ConsumerState<MyPage>
   final _scroll = ScrollController();
   bool _editing = false;
   final _removingInterests = <String>{};
+  late final _refreshCommitKey =
+      'my_activity_refresh_${identityHashCode(this)}';
   @override
   int get tabIndex => widget.tabIndex;
   @override
@@ -54,13 +58,20 @@ class _MyPageState extends ConsumerState<MyPage>
     final controller = ref.read(mainScreenControllerProvider);
     initTabState(controller.scrollToTopTab, controller.stopScrollTab);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_refreshActivity());
+      if (!mounted) return;
+      UiInteractionCoordinator.instance.scheduleCommit(
+        key: _refreshCommitKey,
+        canRun: () =>
+            mounted && TickerMode.getValuesNotifier(context).value.enabled,
+        commit: () => unawaited(_refreshActivity()),
+      );
     });
   }
 
   @override
   void dispose() {
     disposeTabState();
+    UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
     _scroll.dispose();
     super.dispose();
   }
@@ -148,14 +159,18 @@ class _MyPageState extends ConsumerState<MyPage>
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final activity = ref.watch(listeningActivityProvider);
     final controller = ref.watch(asmrLibraryControllerProvider);
-    final removals = ref.watch(undoableRemovalStateProvider);
     final top =
         MediaQuery.paddingOf(context).top +
         AppPageHeaderMetrics.padding.vertical +
         AppPageHeaderMetrics.contentHeight +
         AppPageHeaderMetrics.bottomSpacing +
         AppPageHeaderMetrics.firstContentSpacing;
-    Widget section(String title, Widget child, {Widget? trailing}) => Card(
+    Widget section(
+      String title,
+      Widget child, {
+      Widget? trailing,
+      bool skeleton = false,
+    }) => Card(
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -169,10 +184,33 @@ class _MyPageState extends ConsumerState<MyPage>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
+                    child: skeleton
+                        ? Stack(
+                            children: [
+                              Opacity(
+                                opacity: 0,
+                                child: Text(
+                                  title,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
+                              ),
+                              const Positioned.fill(
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: ShimmerContainer(
+                                    width: 80,
+                                    height: 18,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        : Text(
+                            title,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
                   ),
                   if (trailing != null) ...[
                     const SizedBox(width: 8),
@@ -187,75 +225,174 @@ class _MyPageState extends ConsumerState<MyPage>
         ),
       ),
     );
+    Widget pageList(
+      List<Widget> children, {
+      ScrollController? controller,
+      bool scrollable = true,
+    }) => ListView(
+      controller: controller,
+      primary: false,
+      physics: scrollable ? null : const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        top,
+        16,
+        MobileOverlayInset.of(context) + 16,
+      ),
+      children: children,
+    );
+    final skeleton = Builder(
+      builder: (context) => IgnorePointer(
+        child: ExcludeSemantics(
+          child: ShimmerLoader(
+            key: const ValueKey('my-page-skeleton'),
+            child: pageList([
+              ListeningTimeChart.skeleton(
+                i18n: i18n,
+                builder: (duration, chart) => section(
+                  i18n.tr('my_listening_time'),
+                  chart,
+                  skeleton: true,
+                  trailing: duration,
+                ),
+              ),
+              section(
+                i18n.tr('my_history'),
+                SizedBox(
+                  key: const ValueKey('my-skeleton-history'),
+                  height: _HistoryWorkCard.coverHeight + 14,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 12,
+                      children: List.generate(
+                        8,
+                        (_) => const ShimmerContainer(
+                          width: _HistoryWorkCard.coverWidth,
+                          height: _HistoryWorkCard.coverHeight,
+                          borderRadius: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                skeleton: true,
+              ),
+              section(
+                i18n.tr('my_interests'),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 2,
+                      children: List.generate(
+                        20,
+                        (index) => SizedBox(
+                          height: 40,
+                          child: Center(
+                            widthFactor: 1,
+                            child: ShimmerContainer(
+                              width: 48.0 + (index % 3) * 24,
+                              height: 28,
+                              borderRadius: 8,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        ShimmerContainer(
+                          width: 160,
+                          height: 40,
+                          borderRadius: 20,
+                        ),
+                        ShimmerContainer(
+                          width: 192,
+                          height: 40,
+                          borderRadius: 20,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                skeleton: true,
+                trailing: const ShimmerContainer(width: 32, height: 16),
+              ),
+            ], scrollable: false),
+          ),
+        ),
+      ),
+    );
     return ScrollActivityGate(
       child: PageHeaderInset(
         topInset: top,
         child: Stack(
           children: [
             Positioned.fill(
-              child: AppPageContentTransition(
-                child: ListView(
-                  controller: _scroll,
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    top,
-                    16,
-                    MobileOverlayInset.of(context) + 16,
+              child: AppPageContentTransition.deferred(
+                isReady: activity.hasValue || activity.hasError,
+                placeholder: skeleton,
+                builder: (_) => pageList([
+                  activity.when(
+                    data: (view) => ListeningTimeChart(
+                      days: view.days,
+                      i18n: i18n,
+                      builder: (duration, chart) => section(
+                        i18n.tr('my_listening_time'),
+                        chart,
+                        trailing: duration,
+                      ),
+                    ),
+                    loading: () => const SizedBox.shrink(),
+                    error: (error, stack) => section(
+                      i18n.tr('my_listening_time'),
+                      TextButton(
+                        onPressed: _refreshActivity,
+                        child: Text(i18n.tr('my_retry')),
+                      ),
+                    ),
                   ),
-                  children: [
+                  section(
+                    i18n.tr('my_history'),
                     activity.when(
-                      data: (view) => ListeningTimeChart(
-                        days: view.days,
-                        i18n: i18n,
-                        builder: (duration, chart) => section(
-                          i18n.tr('my_listening_time'),
-                          chart,
-                          trailing: duration,
-                        ),
-                      ),
-                      loading: () => section(
-                        i18n.tr('my_listening_time'),
-                        const Center(child: CircularProgressIndicator()),
-                      ),
-                      error: (error, stack) => section(
-                        i18n.tr('my_listening_time'),
-                        TextButton(
-                          onPressed: _refreshActivity,
-                          child: Text(i18n.tr('my_retry')),
-                        ),
+                      data: (view) => view.history.isEmpty
+                          ? Text(i18n.tr('my_no_history'))
+                          : _HistoryStrip(view: view, onOpen: _openHistory),
+                      loading: () => const SizedBox.shrink(),
+                      error: (error, stack) => TextButton(
+                        onPressed: _refreshActivity,
+                        child: Text(i18n.tr('my_retry')),
                       ),
                     ),
-                    section(
-                      i18n.tr('my_history'),
-                      activity.when(
-                        data: (view) => view.history.isEmpty
-                            ? Text(i18n.tr('my_no_history'))
-                            : _HistoryStrip(view: view, onOpen: _openHistory),
-                        loading: () =>
-                            const Center(child: CircularProgressIndicator()),
-                        error: (error, stack) => TextButton(
-                          onPressed: _refreshActivity,
-                          child: Text(i18n.tr('my_retry')),
-                        ),
-                      ),
-                    ),
-                    section(
-                      i18n.tr('my_interests'),
-                      controller == null
-                          ? Text(i18n.tr('my_no_interests'))
-                          : ListenableBuilder(
-                              listenable: controller,
-                              builder: (context, _) => Column(
+                  ),
+                  section(
+                    i18n.tr('my_interests'),
+                    controller == null
+                        ? Text(i18n.tr('my_no_interests'))
+                        : Consumer(
+                            builder: (context, ref, _) {
+                              final interests =
+                                  ref.watch(asmrTagInterestsProvider).value ??
+                                  const [];
+                              final removals = ref.watch(
+                                undoableRemovalStateProvider,
+                              );
+                              return Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  if (controller.interestTags.isEmpty)
+                                  if (interests.isEmpty)
                                     Text(i18n.tr('my_no_interests')),
                                   Wrap(
                                     spacing: 8,
                                     runSpacing: 2,
                                     children: [
-                                      for (final interest
-                                          in controller.interestTags)
+                                      for (final interest in interests)
                                         if (!removals.isHidden(
                                           interestTagRemovalKey(
                                             interest.tag.key,
@@ -303,20 +440,20 @@ class _MyPageState extends ConsumerState<MyPage>
                                     ],
                                   ),
                                 ],
-                              ),
-                            ),
-                      trailing: TextButton(
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(0, 32),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        onPressed: () => setState(() => _editing = !_editing),
-                        child: Text(i18n.tr(_editing ? 'my_done' : 'my_edit')),
+                              );
+                            },
+                          ),
+                    trailing: TextButton(
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(0, 32),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
+                      onPressed: () => setState(() => _editing = !_editing),
+                      child: Text(i18n.tr(_editing ? 'my_done' : 'my_edit')),
                     ),
-                  ],
-                ),
+                  ),
+                ], controller: _scroll),
               ),
             ),
             Positioned(
@@ -499,11 +636,14 @@ class _HistoryWorkCard extends ConsumerWidget {
                     children: [
                       AsyncLocalCoverImage(
                         requestKey: entry.workKey,
-                        future: library.coverPathFutureForTrack(entry.track),
+                        future: ref
+                            .read(libraryCoverUiControllerProvider)
+                            .deferredTrackCover(entry.track, context: context),
                         initialPath: library.resolvedCoverPathForTrack(
                           entry.track,
                         ),
                         fit: BoxFit.cover,
+                        deferLoadDuringInteraction: true,
                         cacheWidth: 320,
                       ),
                       Positioned(

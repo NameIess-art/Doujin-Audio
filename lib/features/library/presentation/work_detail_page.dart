@@ -1110,7 +1110,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   }
 
   Widget _buildPage(BuildContext context) {
-    final i18n = ref.watch(appLanguageProviderInstanceProvider);
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
@@ -1298,6 +1299,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             ).copyWith(scrollbars: false),
             child: CustomScrollView(
               controller: _scrollController,
+              physics: isLoading ? const NeverScrollableScrollPhysics() : null,
               slivers: [
                 // 1. Collapsible Sticky Header
                 SliverPersistentHeader(

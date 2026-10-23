@@ -362,6 +362,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,

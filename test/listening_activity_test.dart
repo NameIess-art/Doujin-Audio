@@ -1,15 +1,20 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/player/application/listening_activity_service.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/features/player/domain/listening_activity.dart';
 import 'package:doujin_audio/features/player/domain/playback_usage.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_listening_activity_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late Database db;
   late SqliteListeningActivityRepository repository;
   setUpAll(() {
@@ -24,6 +29,124 @@ void main() {
     );
   });
   tearDown(() => db.close());
+
+  test(
+    'Android channel remote usage imports metadata and can be retried',
+    () async {
+      const channel = MethodChannel(NativePlaybackChannel.name);
+      final remote = MusicTrack(
+        path: 'https://example.com/audio.mp3',
+        displayName: 'Remote track',
+        groupKey: 'asmr:123',
+        groupTitle: 'Remote work',
+        groupSubtitle: 'RJ123456',
+        isSingle: false,
+        remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+        remoteMetadata: {
+          'id': 123,
+          'title': 'Remote work',
+          'tags': [
+            {'id': 7, 'name': 'ASMR'},
+          ],
+          'circle': {'id': 8, 'name': 'Circle'},
+        },
+      );
+      final batch = PlaybackUsageBatch(
+        id: 'android:channel:1',
+        days: [
+          PlaybackUsageDay(
+            date: '2026-10-23',
+            totalMs: 60000,
+            works: [
+              PlaybackUsageWork(
+                key: 'rj:RJ123456',
+                milliseconds: 60000,
+                lastPlayedAtMs: 1000,
+                path: remote.path,
+                descriptor: remote.toJson(),
+              ),
+            ],
+          ),
+        ],
+      );
+      final acknowledged = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'readUsage') {
+              return {
+                'ok': true,
+                'value': [batch.toMap()],
+              };
+            }
+            expect(call.method, 'acknowledgeUsage');
+            acknowledged.addAll(
+              List<String>.from((call.arguments as Map)['batchIds'] as List),
+            );
+            return {'ok': true, 'value': null};
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final bridge = NativePlaybackBridge.instance;
+      final service = ListeningActivityService(
+        repository: repository,
+        readUsage: bridge.readUsage,
+        acknowledgeUsage: bridge.acknowledgeUsage,
+        resolveTrack: (_) => null,
+        recordInterests: ({required batchId, required contributions}) async {
+          expect(contributions.single.tags, ['ASMR']);
+          expect(contributions.single.duration, const Duration(minutes: 1));
+        },
+      );
+      addTearDown(service.dispose);
+      await service.refresh();
+      await service.refresh();
+      final view = await service.states.first;
+      expect(view.days.single.duration, const Duration(minutes: 1));
+      expect(view.history.single.track.remoteMetadata, remote.remoteMetadata);
+      expect(view.history.single.track.groupTitle, 'Remote work');
+      expect(acknowledged, [batch.id, batch.id]);
+    },
+  );
+
+  test(
+    'activity waits for the first read and replays only loaded snapshots',
+    () async {
+      var usage = Completer<List<PlaybackUsageBatch>>();
+      final service = ListeningActivityService(
+        repository: repository,
+        readUsage: () => usage.future,
+        acknowledgeUsage: (_) async {},
+        resolveTrack: (_) => null,
+        recordInterests: ({required batchId, required contributions}) async {},
+      );
+      addTearDown(service.dispose);
+      final snapshots = <ListeningActivityView>[];
+      final errors = <Object>[];
+      final subscription = service.states.listen(
+        snapshots.add,
+        onError: (Object error, StackTrace stack) => errors.add(error),
+      );
+      addTearDown(subscription.cancel);
+      final refresh = service.refresh();
+      await Future<void>.delayed(Duration.zero);
+      expect(snapshots, isEmpty);
+      usage.completeError(StateError('first read failed'));
+      await expectLater(refresh, throwsStateError);
+      await Future<void>.delayed(Duration.zero);
+      expect(errors, hasLength(1));
+      expect(snapshots, isEmpty);
+      usage = Completer<List<PlaybackUsageBatch>>();
+      final retry = service.refresh();
+      usage.complete([]);
+      await retry;
+      await Future<void>.delayed(Duration.zero);
+      expect(snapshots, hasLength(1));
+      expect(snapshots.single.history, isEmpty);
+      expect(await service.states.first, same(snapshots.single));
+    },
+  );
 
   test(
     'real version 13 backup without listening tables validates and migrates',

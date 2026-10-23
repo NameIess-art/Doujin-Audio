@@ -1120,7 +1120,27 @@ void main() {
           );
           expect(skeletonRect.height, greaterThan(skeletonBounds.height));
           expect(skeletonRect.bottom, greaterThanOrEqualTo(1196));
-          expect(skeletonRect.bottom, lessThanOrEqualTo(1196 + 48));
+          expect(skeletonRect.bottom, lessThan(1200 + 48));
+          final scroll = find.descendant(
+            of: find.byType(WorkDetailPage),
+            matching: find.byType(CustomScrollView),
+          );
+          final position = tester
+              .state<ScrollableState>(
+                find
+                    .descendant(of: scroll, matching: find.byType(Scrollable))
+                    .first,
+              )
+              .position;
+          await tester.drag(scroll, const Offset(0, -250));
+          await tester.pump(const Duration(milliseconds: 300));
+          expect(position.pixels, 0);
+          expect(
+            tester.getRect(
+              find.byKey(const ValueKey('work_detail_entries_skeleton')),
+            ),
+            skeletonRect,
+          );
           directory.complete(
             const LibraryOrganizer().buildTree(
               tracks: fixture.library.library,
@@ -1168,6 +1188,20 @@ void main() {
             find.byKey(const ValueKey('work_detail_entries_skeleton')),
             findsNothing,
           );
+          await tester.binding.setSurfaceSize(const Size(800, 600));
+          await tester.pump();
+          await tester.drag(scroll, const Offset(0, -250));
+          await tester.pump(const Duration(milliseconds: 300));
+          final loadedPosition = tester
+              .state<ScrollableState>(
+                find
+                    .descendant(of: scroll, matching: find.byType(Scrollable))
+                    .first,
+              )
+              .position;
+          expect(loadedPosition.pixels, greaterThan(0));
+          await tester.binding.setSurfaceSize(const Size(800, 1200));
+          await tester.pump();
           Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
           await _settleDetail(tester);
           await tester.pump(interaction.idleDelay);

@@ -173,6 +173,13 @@ class _SubmittedDetails extends AudioDetailRepository {
       pendingLoad?.future ?? super.load(target);
 
   @override
+  Future<List<AudioDetailLoadResult>> loadMany(
+    Iterable<AudioDetailTarget> targets,
+  ) => pendingLoad == null
+      ? super.loadMany(targets)
+      : Future.wait(targets.map(load));
+
+  @override
   Future<AudioDetailSaveResult> save(AudioDetail detail) async {
     submitted = detail;
     return AudioDetailSaveResult(
@@ -360,6 +367,67 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  testWidgets(
+    'audio detail skeleton blocks scrolling until data arrives',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 500));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final repository = _SubmittedDetails(fixture)
+        ..pendingLoad = Completer<AudioDetailLoadResult>();
+      final library = LibraryFacade.create(
+        databaseRepository: fixture.persistenceRepository,
+        detailRepository: repository,
+        service: fixture.libraryService,
+        coverArtworkCacheService: fixture.library.coverArtworkCacheService,
+      );
+      const target = AudioDetailTarget(
+        targetType: AudioDetailTargetType.singleAudioFile,
+        targetPath: '/library/skeleton.mp3',
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          const Scaffold(body: AudioDetailSheet(target: target)),
+          overrides: [libraryFacadeProvider.overrideWithValue(library)],
+        ),
+      );
+      await tester.pump();
+      final scroll = find.byType(SingleChildScrollView);
+      ScrollPosition position() => tester
+          .state<ScrollableState>(
+            find
+                .descendant(of: scroll, matching: find.byType(Scrollable))
+                .first,
+          )
+          .position;
+      expect(find.byType(OperationSkeletonList), findsOneWidget);
+      expect(position().maxScrollExtent, greaterThan(0));
+      await tester.drag(scroll, const Offset(0, -200));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(position().pixels, 0);
+
+      repository.pendingLoad!.complete(
+        AudioDetailLoadResult(
+          detail: AudioDetail.empty(target).copyWith(
+            workTitle: 'Loaded detail',
+            duration: const Duration(minutes: 1),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(OperationSkeletonList), findsNothing);
+      await tester.drag(scroll, const Offset(0, -200));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(position().pixels, greaterThan(0));
+      await _drainAudioDetailFixture(tester, fixture);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('audio detail cleanup releases delayed SQLite work', (tester) async {
     final fixture = AppRuntimeWidgetTestFixture();
@@ -573,6 +641,20 @@ void main() {
       );
       await tester.enterText(field, 'Unsaved title');
       final state = tester.state(find.byType(DlsiteMetadataReviewPage));
+      await fixture.languageProvider.setLanguage(AppLanguage.zh);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(fixture.languageProvider.tr('audio_detail_work_title')),
+        findsWidgets,
+      );
+      await fixture.languageProvider.setLanguage(AppLanguage.en);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(fixture.languageProvider.tr('audio_detail_work_title')),
+        findsWidgets,
+      );
+      expect(tester.state(find.byType(DlsiteMetadataReviewPage)), same(state));
+      expect(tester.widget<TextField>(field).controller!.text, 'Unsaved title');
       tester.view.physicalSize = const Size(510, 800);
       await tester.pumpAndSettle();
       expect(tester.state(find.byType(DlsiteMetadataReviewPage)), same(state));

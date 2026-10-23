@@ -18,7 +18,8 @@ class SubtitleGenerationDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = ref.watch(appLanguageProviderInstanceProvider);
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     return ListenableBuilder(
       listenable: Listenable.merge([_service, _service.modelStore]),
       builder: (context, _) {

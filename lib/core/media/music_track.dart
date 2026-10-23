@@ -142,7 +142,7 @@ class MusicTrack {
     manualCoverPath: json['manualCoverPath'] as String?,
     remoteCoverUrl: json['remoteCoverUrl'] as String?,
     remoteMetadataKind: json['remoteMetadataKind'] as String?,
-    remoteMetadata: json['remoteMetadata'] as Map<String, Object?>?,
+    remoteMetadata: (json['remoteMetadata'] as Map?)?.cast<String, Object?>(),
     duration: Duration(
       milliseconds: (json['durationMs'] as num?)?.toInt() ?? 0,
     ),

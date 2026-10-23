@@ -199,6 +199,7 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -303,6 +304,7 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
                   builder: (context, constraints) => ListView(
                     // Both lists mount during the fade; content owns primary.
                     primary: false,
+                    physics: const NeverScrollableScrollPhysics(),
                     padding: EdgeInsets.fromLTRB(16, headerTopInset, 16, 24),
                     children: [
                       LibraryEditTreeSkeleton(

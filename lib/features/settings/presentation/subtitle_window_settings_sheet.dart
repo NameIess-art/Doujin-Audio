@@ -62,6 +62,7 @@ class _SubtitleWindowSettingsSheetState
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final cs = Theme.of(context).colorScheme;
     final i18n = ProviderScope.containerOf(
       context,

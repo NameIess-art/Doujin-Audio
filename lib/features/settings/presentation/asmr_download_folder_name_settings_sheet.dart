@@ -72,6 +72,7 @@ class _AsmrDownloadFolderNameSettingsSheetState
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final optionShape = RoundedRectangleBorder(

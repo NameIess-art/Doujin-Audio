@@ -160,6 +160,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final session = widget.session;
     final paths = ref.read(audioPathCoordinatorProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);

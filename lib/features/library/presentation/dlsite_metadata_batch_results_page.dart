@@ -16,18 +16,18 @@ import '../../../core/widgets/top_page_header.dart';
 
 import 'dlsite_metadata_batch_review_page.dart';
 
-class DlsiteMetadataBatchResultsPage extends StatefulWidget {
+class DlsiteMetadataBatchResultsPage extends ConsumerStatefulWidget {
   const DlsiteMetadataBatchResultsPage({super.key, required this.session});
 
   final DlsiteMetadataBatchSession session;
 
   @override
-  State<DlsiteMetadataBatchResultsPage> createState() =>
+  ConsumerState<DlsiteMetadataBatchResultsPage> createState() =>
       _DlsiteMetadataBatchResultsPageState();
 }
 
 class _DlsiteMetadataBatchResultsPageState
-    extends State<DlsiteMetadataBatchResultsPage> {
+    extends ConsumerState<DlsiteMetadataBatchResultsPage> {
   bool _savingAll = false;
   final List<Timer> _pendingTimers = <Timer>[];
 
@@ -87,6 +87,7 @@ class _DlsiteMetadataBatchResultsPageState
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -329,13 +330,14 @@ class _DlsiteMetadataBatchResultsPageState
   }
 }
 
-class _BatchMetadataCompletionDialog extends StatelessWidget {
+class _BatchMetadataCompletionDialog extends ConsumerWidget {
   const _BatchMetadataCompletionDialog({required this.result});
 
   final DlsiteMetadataBatchApplyResult result;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,

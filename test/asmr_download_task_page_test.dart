@@ -94,7 +94,7 @@ void main() {
               undoableRemovalServiceProvider.overrideWithValue(removals),
               asmrDownloadTaskIdsProvider.overrideWith((ref) {
                 taskReads++;
-                return Stream.value(const <int>[]);
+                return Stream.value(const <String>[]);
               }),
             ],
             child: const MaterialApp(home: AsmrDownloadTaskPage()),
@@ -148,7 +148,7 @@ void main() {
               undoableRemovalServiceProvider.overrideWithValue(removals),
               asmrDownloadTaskIdsProvider.overrideWith((ref) {
                 taskReads++;
-                return Stream.value([1]);
+                return Stream.value(['code:RJ123456']);
               }),
             ],
             child: RepaintBoundary(
@@ -268,7 +268,9 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('asmr_download_remove_task_1')),
+      find.byKey(
+        const ValueKey<String>('asmr_download_remove_task_code:RJ123456'),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -281,14 +283,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(manager.getTask(1), isNotNull);
+    expect(manager.getTask('code:RJ123456'), isNotNull);
     expect(find.text('Work'), findsNothing);
     expect(find.textContaining('Undo'), findsOneWidget);
 
     await tester.tap(find.textContaining('Undo'));
     await tester.pumpAndSettle();
 
-    expect(manager.getTask(1), isNotNull);
+    expect(manager.getTask('code:RJ123456'), isNotNull);
     expect(find.text('Work'), findsOneWidget);
   });
 

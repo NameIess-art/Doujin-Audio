@@ -112,7 +112,7 @@ class AsmrCategoryViewState {
 
 class AsmrTrackTreeViewState {
   AsmrTrackTreeViewState({
-    required this.workId,
+    required this.workKey,
     required List<AsmrTrackFile>? tree,
     required List<AsmrTrackFile>? visibleTree,
     required this.isLoading,
@@ -123,7 +123,7 @@ class AsmrTrackTreeViewState {
   }) : tree = tree == null ? null : immutableList(tree),
        visibleTree = visibleTree == null ? null : immutableList(visibleTree);
 
-  final int workId;
+  final String workKey;
   final List<AsmrTrackFile>? tree;
   final List<AsmrTrackFile>? visibleTree;
   final bool isLoading;
@@ -135,7 +135,7 @@ class AsmrTrackTreeViewState {
   @override
   bool operator ==(Object other) {
     return other is AsmrTrackTreeViewState &&
-        workId == other.workId &&
+        workKey == other.workKey &&
         identical(tree, other.tree) &&
         identical(visibleTree, other.visibleTree) &&
         isLoading == other.isLoading &&
@@ -147,7 +147,7 @@ class AsmrTrackTreeViewState {
 
   @override
   int get hashCode => Object.hash(
-    workId,
+    workKey,
     identityHashCode(tree),
     identityHashCode(visibleTree),
     isLoading,

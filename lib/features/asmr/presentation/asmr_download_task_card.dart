@@ -105,7 +105,7 @@ class _AsmrDownloadTaskCardState extends State<AsmrDownloadTaskCard> {
                       height: 32,
                       child: IconButton(
                         key: ValueKey<String>(
-                          'asmr_download_remove_task_${task.work.id}',
+                          'asmr_download_remove_task_${task.work.workKey}',
                         ),
                         padding: EdgeInsets.zero,
                         icon: const Icon(Icons.delete_outline_rounded),

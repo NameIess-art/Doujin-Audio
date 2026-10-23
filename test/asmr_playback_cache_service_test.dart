@@ -6,9 +6,100 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/playback_media_reference.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_media_transfer.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_internal_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 
 void main() {
+  test(
+    'HLS chapters share a stream but cache separate playable M4A outputs',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('cache_hls_');
+      final transfer = _HlsCacheTransfer();
+      final service = AsmrPlaybackCacheService(
+        temporaryDirectory: () async => directory,
+        hlsAudioTransfer: transfer,
+        httpClientFactory: () =>
+            throw StateError('HLS must not download the manifest as audio'),
+      );
+      try {
+        final outputs = <String>[];
+        for (final start in [0, 1000]) {
+          final reference = PlaybackMediaReference(
+            streamUrl: 'https://v.weeab0o.xyz/work/audio.m3u8',
+            startMs: start,
+            endMs: start + 1000,
+          );
+          final track = _track(reference.logicalUrl, fileSizeBytes: 999999);
+          final output = await service.cacheTrack(
+          track, playedPath: reference.streamUrl,
+        );
+          expect(output, endsWith('.m4a'));
+          expect(await File(output!).readAsBytes(), _hlsAudio);
+          expect(await service.cacheTrack(track), output);
+          outputs.add(output);
+        }
+        expect(outputs.toSet(), hasLength(2));
+        expect(transfer.references.map((reference) => reference.startMs), [
+          0,
+          1000,
+        ]);
+        expect(
+          transfer.references.every(
+            (reference) =>
+                reference.httpHeaders['Referer'] == 'https://japaneseasmr.com/',
+          ),
+          isTrue,
+        );
+        await File(
+          outputs.first,
+        ).writeAsString('#EXTM3U\nhttps://cdn.invalid/segment.ts');
+        await service.cacheTrack(
+          _track(
+            const PlaybackMediaReference(
+              streamUrl: 'https://v.weeab0o.xyz/work/audio.m3u8',
+              endMs: 1000,
+            ).logicalUrl,
+          ),
+        );
+        expect(transfer.references, hasLength(3));
+        expect(await File(outputs.first).readAsBytes(), _hlsAudio);
+      } finally {
+        await service.dispose();
+        await directory.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'cache disposal interrupts HLS and never commits a partial chapter',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cache_hls_cancel_',
+      );
+      final started = Completer<void>();
+      final transfer = _HlsCacheTransfer(started: started);
+      final service = AsmrPlaybackCacheService(
+        temporaryDirectory: () async => directory,
+        hlsAudioTransfer: transfer,
+      );
+      try {
+        final caching = service.cacheTrack(
+          _track('https://media.test/audio.m3u8'),
+        );
+        await started.future;
+        await service.dispose();
+        expect(await caching, isNull);
+        expect(transfer.cancelled, isTrue);
+        expect(directory.listSync(recursive: true).whereType<File>(), isEmpty);
+      } finally {
+        await service.dispose();
+        await directory.delete(recursive: true);
+      }
+    },
+  );
+
   for (final testCase
       in <({int status, int length, int? expected, bool success})>[
         (status: 200, length: 3, expected: 3, success: true),
@@ -555,4 +646,31 @@ class _Headers implements HttpHeaders {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+const _hlsAudio = [0, 0, 0, 24, 102, 116, 121, 112, 77, 52, 65, 32];
+
+class _HlsCacheTransfer extends AsmrHlsAudioTransfer {
+  _HlsCacheTransfer({this.started});
+  final Completer<void>? started;
+  final references = <PlaybackMediaReference>[];
+  bool cancelled = false;
+  @override
+  Future<void> save({
+    required PlaybackMediaReference reference,
+    required File output,
+    required bool Function() isCancelled,
+    void Function(double fraction)? onProgress,
+  }) async {
+    references.add(reference);
+    await output.writeAsBytes(_hlsAudio);
+    if (started != null) {
+      started!.complete();
+      while (!isCancelled()) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      cancelled = true;
+      throw const DownloadCancelled();
+    }
+  }
 }

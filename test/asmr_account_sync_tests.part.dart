@@ -7,6 +7,53 @@ void registerAsmrAccountSyncTests({
   late AsmrPreferencesStore preferences;
   setUp(() => preferences = preferencesStore());
 
+  test(
+    'Japanese ASMR favorites and history stay local across sync and logout',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final service = AsmrAccountSyncService(
+        authService: AsmrAuthService(
+          apiService: api,
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+        apiService: api,
+        preferencesStore: preferences,
+      );
+      await service.initialize();
+      final jp = _work(id: 1, title: 'Local Japanese ASMR').copyWith(
+        resources: [
+          const AsmrWorkResource(
+            source: AsmrCatalogSource.japaneseAsmr,
+            id: 1,
+            code: 'RJ000001',
+            pageUrl: 'https://example.com/jp/1',
+          ),
+        ],
+      );
+      await service.toggleFavorite(jp);
+      await service.recordHistory(jp);
+      expect(service.snapshot.pendingOperations, isEmpty);
+      await service.login('alice', 'password');
+      final result = await service.synchronize(
+        language: AsmrContentLanguage.zh,
+        cancellationToken: AsmrRequestCancellationToken(),
+      );
+      expect(result.succeeded, isTrue);
+      expect(result.snapshot.favoriteIds, contains(jp.workKey));
+      expect(result.snapshot.historyWorks.single.workKey, jp.workKey);
+      expect(api.reviewPuts, isEmpty);
+      await service.logout();
+      final reloaded = await service.initialize();
+      expect(reloaded.favoriteIds, contains(jp.workKey));
+      expect(
+        reloaded.historyWorks.single.resources.single.source,
+        AsmrCatalogSource.japaneseAsmr,
+      );
+      expect(reloaded.pendingOperations, isEmpty);
+    },
+  );
+
   test('ASMR auth service stores restores and clears token', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();
@@ -568,17 +615,21 @@ void registerAsmrAccountSyncTests({
         await services.accountSyncService.setFavorites([
           work,
         ], favorite: !controllerFavorite);
-        expect(controller.isFavorite(work.id), controllerFavorite);
+        expect(controller.isFavorite(work.workKey), controllerFavorite);
         expect(
-          services.accountSyncService.snapshot.favoriteIds.contains(work.id),
+          services.accountSyncService.snapshot.favoriteIds.contains(
+            work.workKey,
+          ),
           !controllerFavorite,
         );
         await controller.toggleFavorite(work);
         expect(
-          services.accountSyncService.snapshot.favoriteIds.contains(work.id),
+          services.accountSyncService.snapshot.favoriteIds.contains(
+            work.workKey,
+          ),
           controllerFavorite,
         );
-        expect(controller.isFavorite(work.id), controllerFavorite);
+        expect(controller.isFavorite(work.workKey), controllerFavorite);
         expect(
           (await preferences.loadFavoriteWorks()).isNotEmpty,
           controllerFavorite,
@@ -1315,7 +1366,7 @@ void registerAsmrAccountSyncTests({
       final snapshot = await logoutFuture;
 
       expect(snapshot.session, isNull);
-      expect(snapshot.favoriteIds, contains(favorite.id));
+      expect(snapshot.favoriteIds, contains(favorite.workKey));
       expect(tokenStore.token, isNull);
     },
   );

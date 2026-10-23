@@ -8,6 +8,7 @@ import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_remote_catalog_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_coordinator.dart';
@@ -42,6 +43,107 @@ void main() {
       );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'online library retains separate cards for equal source IDs on $platform',
+      (tester) async {
+        final one = AsmrWork.fromJson(const {
+          'id': 7,
+          'title': 'ASMR ONE work',
+        });
+        final japanese = AsmrWork.fromJson(const {
+          'id': 7,
+          'title': 'Japanese work',
+          'resources': [
+            {
+              'source': 'japaneseAsmr',
+              'id': 7,
+              'code': '',
+              'pageUrl': 'https://example.invalid/work/7',
+            },
+          ],
+        });
+        final controller = _PresentationController(createTestAsmrServices())
+          ..publishedWorks = [one, japanese];
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        final oneCard = find.byKey(ValueKey('asmr-work-${one.workKey}'));
+        final japaneseCard = find.byKey(
+          ValueKey('asmr-work-${japanese.workKey}'),
+        );
+        await pumpUntilFound(tester, japaneseCard);
+        await tester.pumpAndSettle();
+        final oneElement = tester.element(oneCard);
+        final japaneseElement = tester.element(japaneseCard);
+        controller
+          ..publishedWorks = [japanese, one]
+          ..publish('Reordered sources');
+        await tester.pumpAndSettle();
+        expect(tester.element(oneCard), same(oneElement));
+        expect(tester.element(japaneseCard), same(japaneseElement));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'online library keeps available cards and retries a partial failure on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices())
+          ..catalogError = AsmrPartialCatalogException([
+            AsmrCatalogSource.japaneseAsmr,
+          ]);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        final notice = find.byKey(
+          const ValueKey<String>('online_library_partial_failure'),
+        );
+        await pumpUntilFound(tester, notice);
+        await tester.pumpAndSettle();
+        expect(find.text('Published work'), findsOneWidget);
+        expect(
+          find.text(fixture.languageProvider.tr('online_audio_library')),
+          findsWidgets,
+        );
+        expect(
+          find.text(
+            fixture.languageProvider.tr('online_library_partial_failure'),
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.descendant(of: notice, matching: find.byType(IconButton)),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
+        expect(controller.refreshCount, 1);
+        expect(find.text('Published work'), findsOneWidget);
+        expect(notice, findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     testWidgets(
       'ASMR empty filtered page allows explicit paging on $platform',
       (tester) async {
@@ -1021,7 +1123,9 @@ void main() {
         );
         await pumpUntilFound(tester, find.text('Published work'));
         await tester.pumpAndSettle();
-        final card = find.byKey(const ValueKey<String>('asmr-work-3'));
+        final card = find.byKey(
+          const ValueKey<String>('asmr-work-source:asmrOne:3'),
+        );
         Finder statefulCard() => find
             .descendant(
               of: card,
@@ -1307,7 +1411,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.pump(interaction.idleDelay);
         await tester.pumpAndSettle();
-        Finder card(int id) => find.byKey(ValueKey<String>('asmr-work-$id'));
+        Finder card(int id) =>
+            find.byKey(ValueKey<String>('asmr-work-source:asmrOne:$id'));
         final retainedCard = tester.element(card(2));
 
         controller
@@ -1374,7 +1479,8 @@ void main() {
         await tester.pump(interaction.idleDelay);
         await tester.pumpAndSettle();
 
-        Finder card(int id) => find.byKey(ValueKey<String>('asmr-work-$id'));
+        Finder card(int id) =>
+            find.byKey(ValueKey<String>('asmr-work-source:asmrOne:$id'));
         expect(card(1), findsNothing);
         final viewport = tester.getRect(list);
         final retiring = works.firstWhere((work) {
@@ -1443,7 +1549,7 @@ void main() {
         await tester.pumpAndSettle();
         final initialReads = controller.categoryReads;
         final originalCard = tester.element(
-          find.byKey(const ValueKey<String>('asmr-work-1')),
+          find.byKey(const ValueKey<String>('asmr-work-source:asmrOne:1')),
         );
         for (var i = 0; i < 3; i++) {
           activeTab.value = 1;
@@ -1453,7 +1559,9 @@ void main() {
         }
         expect(controller.categoryReads, initialReads);
         expect(
-          tester.element(find.byKey(const ValueKey<String>('asmr-work-1'))),
+          tester.element(
+            find.byKey(const ValueKey<String>('asmr-work-source:asmrOne:1')),
+          ),
           same(originalCard),
         );
         await tester.pumpWidget(const SizedBox.shrink());
@@ -1537,7 +1645,7 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 60));
         final card = find.byKey(
-          const ValueKey<String>('asmr-work-2'),
+          const ValueKey<String>('asmr-work-source:asmrOne:2'),
           skipOffstage: false,
         );
         final animation = tester.widget<FadeTransition>(card).opacity;
@@ -1576,7 +1684,7 @@ void main() {
       searchQuery: '',
       searchSession: false,
     ));
-    final tree = asmrTrackTreeStateProvider(1);
+    final tree = asmrTrackTreeStateProvider('source:asmrOne:1');
     final categorySubscription = container.listen(category, (_, _) {});
     final treeSubscription = container.listen(tree, (_, _) {});
     controller.publish('Latest work');
@@ -1618,6 +1726,8 @@ class _PresentationController extends AsmrLibraryController {
   int workCount = 1;
   List<AsmrWork>? publishedWorks;
   int loadMoreCount = 0;
+  int refreshCount = 0;
+  Object? catalogError;
   String lastSearchQuery = '';
   final searchQueries = <String>[];
   int initializations = 0;
@@ -1704,14 +1814,14 @@ class _PresentationController extends AsmrLibraryController {
       needsLoadMoreRetry: needsRetry,
       totalCount: publishedWorks?.length ?? workCount,
       activeQuery: searchQuery,
-      lastError: null,
-      operationError: null,
+      lastError: catalogError,
+      operationError: catalogError,
       revision: revision,
     );
   }
 
   @override
-  AsmrTrackTreeViewState trackTreeViewState(int workId) {
+  AsmrTrackTreeViewState trackTreeViewState(String workId) {
     treeReads++;
     return super.trackTreeViewState(workId);
   }
@@ -1757,6 +1867,18 @@ class _PresentationController extends AsmrLibraryController {
   }) async {
     loadMoreCount++;
     hasMore = false;
+    revision++;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> refreshCategory(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool searchSession = false,
+  }) async {
+    refreshCount++;
+    catalogError = null;
     revision++;
     notifyListeners();
   }

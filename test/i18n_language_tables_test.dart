@@ -4,6 +4,28 @@ import 'package:doujin_audio/app/localization/app_language_ja.dart';
 import 'package:doujin_audio/app/localization/app_language_zh.dart';
 
 void main() {
+  test(
+    'online library names share the existing navigation and startup keys',
+    () {
+      final tables = {
+        '在线音频库': appLanguageZh,
+        'Online Audio Library': appLanguageEn,
+        'オンライン音声ライブラリ': appLanguageJa,
+      };
+      for (final entry in tables.entries) {
+        for (final key in [
+          'online_audio_library',
+          'show_asmr_one',
+          'startup_page_asmrOne',
+        ]) {
+          expect(entry.value[key], entry.key, reason: key);
+        }
+        expect(entry.value['asmr_account_title'], contains('ASMR.ONE'));
+        expect(entry.value['asmr_download_hls_notice'], contains('M4A'));
+      }
+    },
+  );
+
   test('localized language tables expose the same keys as Chinese', () {
     final zhKeys = appLanguageZh.keys.toSet();
 

@@ -41,6 +41,7 @@ class AsmrDownloadTaskSnapshot {
     Map<String, int> fileTotalBytes = const {},
     Map<String, int> fileRetryAttempts = const {},
     Map<String, String> fileEntityTags = const {},
+    Map<String, String> actualOutputPaths = const {},
     Set<String> completedFilePaths = const {},
     Set<String> failedFilePaths = const {},
     Set<String> manuallyRetryingFilePaths = const {},
@@ -50,6 +51,7 @@ class AsmrDownloadTaskSnapshot {
        fileTotalBytes = immutableMap(fileTotalBytes),
        fileRetryAttempts = immutableMap(fileRetryAttempts),
        fileEntityTags = immutableMap(fileEntityTags),
+       actualOutputPaths = immutableMap(actualOutputPaths),
        completedFilePaths = immutableSet(completedFilePaths),
        failedFilePaths = immutableSet(failedFilePaths),
        manuallyRetryingFilePaths = immutableSet(manuallyRetryingFilePaths),
@@ -79,6 +81,8 @@ class AsmrDownloadTaskSnapshot {
   final Map<String, int> fileTotalBytes;
   final Map<String, int> fileRetryAttempts;
   final Map<String, String> fileEntityTags;
+  final Map<String, String> actualOutputPaths;
+  String get workKey => work.workKey;
   final Set<String> completedFilePaths;
   final Set<String> failedFilePaths;
   final Set<String> manuallyRetryingFilePaths;
@@ -132,6 +136,7 @@ class AsmrDownloadTaskSnapshot {
     Map<String, int>? fileTotalBytes,
     Map<String, int>? fileRetryAttempts,
     Map<String, String>? fileEntityTags,
+    Map<String, String>? actualOutputPaths,
     Set<String>? completedFilePaths,
     Set<String>? failedFilePaths,
     Set<String>? manuallyRetryingFilePaths,
@@ -162,6 +167,7 @@ class AsmrDownloadTaskSnapshot {
       fileTotalBytes: fileTotalBytes ?? this.fileTotalBytes,
       fileRetryAttempts: fileRetryAttempts ?? this.fileRetryAttempts,
       fileEntityTags: fileEntityTags ?? this.fileEntityTags,
+      actualOutputPaths: actualOutputPaths ?? this.actualOutputPaths,
       completedFilePaths: completedFilePaths ?? this.completedFilePaths,
       failedFilePaths: failedFilePaths ?? this.failedFilePaths,
       manuallyRetryingFilePaths:

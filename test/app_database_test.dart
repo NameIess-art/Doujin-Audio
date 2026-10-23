@@ -35,8 +35,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 14', () {
-    expect(AppDatabase.schemaVersion, 14);
+  test('schema starts from version 15', () {
+    expect(AppDatabase.schemaVersion, 15);
   });
 
   test('version 13 removes only duplicate constraint indexes', () async {
@@ -553,7 +553,11 @@ void main() {
         );
         await appDatabase.saveAppSetting('user_setting', 'keep');
         await repository.seedSessions([_playbackSession('kept')]);
-        await db.insert('asmr_works', {'id': 72, 'title': 'Favorite work'});
+        await db.insert('asmr_works', {
+          'work_key': 'source:asmrOne:72',
+          'id': 72,
+          'title': 'Favorite work',
+        });
         await db.insert('tracks', {
           'path': '/audio/one.mp3',
           'display_name': 'One',
@@ -626,7 +630,11 @@ void main() {
         'target_path': '/audio/one.mp3',
         'work_title': 'Kept',
       });
-      await db.insert('asmr_works', {'id': 123, 'title': 'Remote work'});
+      await db.insert('asmr_works', {
+        'work_key': 'source:asmrOne:123',
+        'id': 123,
+        'title': 'Remote work',
+      });
       const redundant = {
         'idx_track_scan_generation': 'track_scan_info(scan_generation)',
         'idx_track_playback_last_played':
@@ -706,7 +714,11 @@ void main() {
       addTearDown(() => directory.delete(recursive: true));
       await appDatabase.saveAppSetting('user_setting', 'keep');
       await repository.seedSessions([_playbackSession('kept')]);
-      await db.insert('asmr_works', {'id': 72, 'title': 'Favorite work'});
+      await db.insert('asmr_works', {
+        'work_key': 'source:asmrOne:72',
+        'id': 72,
+        'title': 'Favorite work',
+      });
       final candidate = await appDatabase.createPortableSnapshot(
         '${directory.path}/candidate.db',
       );
@@ -1158,8 +1170,8 @@ void main() {
           final row = mutation == 'DELETE' ? 'OLD' : 'NEW';
           final protected = switch (table) {
             'asmr_works' => '$row.id <= 1000',
-            'asmr_work_voice_actors' ||
-            'asmr_work_tags' => '$row.work_id <= 1000',
+            'asmr_work_voice_actors' || 'asmr_work_tags' =>
+              "CAST(SUBSTR($row.work_id, 8) AS INTEGER) <= 1000",
             'asmr_work_lists' => "$row.list_type = 'favorites'",
             _ => '$row.work_id NOT IN (2000, 2)',
           };
@@ -1176,14 +1188,17 @@ void main() {
       ];
       await repository.saveHistoryState(
         work: _asmrWork(2000, 'New history'),
-        historyWorkIds: historyIds,
+        historyWorkKeys: historyIds.map((id) => _asmrWork(id, '').workKey).toList(),
         operation: operation(2000, listening, 4),
       );
       expect(await repository.loadWorkList('favorites'), hasLength(1000));
       expect(await db.query('asmr_works', where: 'id = 1'), hasLength(1));
       await repository.saveHistoryState(
         work: _asmrWork(2, 'Stale favorite metadata'),
-        historyWorkIds: [2, ...historyIds.take(59)],
+        historyWorkKeys: [
+          2,
+          ...historyIds.take(59),
+        ].map((id) => _asmrWork(id, '').workKey).toList(),
         operation: operation(2, listening, 5),
       );
       final history = await repository.loadWorkList('history');
@@ -1231,7 +1246,7 @@ void main() {
       await expectLater(
         repository.saveHistoryState(
           work: _asmrWork(2, 'Rejected', tags: ['Rejected']),
-          historyWorkIds: [2],
+          historyWorkKeys: ['code:RJ000002'],
           operation: AsmrSyncOperation(
             type: AsmrSyncOperationType.historyListening,
             workId: 2,
@@ -1299,10 +1314,11 @@ void main() {
           final protected = switch (table) {
             'asmr_works' => '$row.id NOT IN (1, 2, 2000, 2001)',
             'asmr_work_lists' =>
-              "$row.list_type = 'history' OR $row.work_id NOT IN (1, 2, 2000, 2001)",
+              "$row.list_type = 'history' OR $row.work_id NOT IN ('code:RJ000001', 'code:RJ000002', 'code:RJ002000', 'code:RJ002001')",
             'asmr_sync_operations' =>
               "$row.type = 'historyListening' OR $row.work_id NOT IN (1, 2, 2000, 2001)",
-            _ => '$row.work_id NOT IN (1, 2, 2000, 2001)',
+            _ =>
+              "$row.work_id NOT IN ('code:RJ000001', 'code:RJ000002', 'code:RJ002000', 'code:RJ002001')",
           };
           await db.execute('''
         CREATE TEMP TRIGGER guard_favorites_${table}_$mutation BEFORE $mutation ON $table
@@ -1323,7 +1339,10 @@ void main() {
       expect(history.first.isFavorite, isFalse);
       expect(history.last.title, 'History only');
       expect(await db.query('asmr_works', where: 'id = 2'), isEmpty);
-      expect(await db.query('asmr_work_tags', where: 'work_id = 2'), isEmpty);
+      expect(
+        await db.query('asmr_work_tags', where: "work_id = 'code:RJ000002'"),
+        isEmpty,
+      );
       await repository.saveFavoriteState(
         works: [_asmrWork(2000, 'First'), _asmrWork(2001, 'Second')],
         favorite: true,
@@ -1498,17 +1517,20 @@ void main() {
 
     expect(await db.query('asmr_works', where: 'id = 1'), isEmpty);
     expect(
-      await db.query('asmr_work_voice_actors', where: 'work_id = 1'),
+      await db.query('asmr_work_voice_actors', where: "work_id = 'code:RJ000001'"),
       isEmpty,
     );
-    expect(await db.query('asmr_work_tags', where: 'work_id = 1'), isEmpty);
+    expect(
+      await db.query('asmr_work_tags', where: "work_id = 'code:RJ000001'"),
+      isEmpty,
+    );
     expect(await db.query('asmr_works', where: 'id = 2'), hasLength(1));
     expect(
-      await db.query('asmr_work_voice_actors', where: 'work_id = 2'),
+      await db.query('asmr_work_voice_actors', where: "work_id = 'code:RJ000002'"),
       hasLength(1),
     );
     expect(
-      await db.query('asmr_work_tags', where: 'work_id = 2'),
+      await db.query('asmr_work_tags', where: "work_id = 'code:RJ000002'"),
       hasLength(1),
     );
     expect(await repository.loadWorkList('history'), hasLength(60));
@@ -1561,7 +1583,7 @@ void main() {
       await db.execute('''
       CREATE TRIGGER fail_orphan_tag_delete
       BEFORE DELETE ON asmr_work_tags
-      WHEN OLD.work_id = 2
+      WHEN OLD.work_id = 'code:RJ000002'
       BEGIN
         SELECT RAISE(ABORT, 'forced orphan cleanup failure');
       END
@@ -1582,11 +1604,11 @@ void main() {
       );
       expect((await repository.loadWorkList('history')).single.title, 'Stale');
       expect(
-        await db.query('asmr_work_voice_actors', where: 'work_id = 2'),
+        await db.query('asmr_work_voice_actors', where: "work_id = 'code:RJ000002'"),
         hasLength(1),
       );
       expect(
-        await db.query('asmr_work_tags', where: 'work_id = 2'),
+        await db.query('asmr_work_tags', where: "work_id = 'code:RJ000002'"),
         hasLength(1),
       );
       expect(await repository.loadSyncOperations(), hasLength(1));

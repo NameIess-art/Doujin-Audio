@@ -29,8 +29,8 @@ class AsmrAccountSnapshot {
   final Map<int, String> remoteProgressByWorkId;
   final DateTime? lastSyncAt;
 
-  Set<int> get favoriteIds =>
-      immutableSet(favoriteWorks.map((work) => work.id));
+  Set<String> get favoriteIds =>
+      immutableSet(favoriteWorks.map((work) => work.workKey));
 
   AsmrAccountSnapshot copyWith({
     AsmrAuthSession? session,
@@ -128,7 +128,9 @@ class AsmrAccountSyncService {
 
   Future<AsmrAccountSnapshot> toggleFavorite(AsmrWork work) {
     return _serialize(
-      () => _setFavoritesNow([work], !_snapshot.favoriteIds.contains(work.id)),
+      () => _setFavoritesNow([
+        work,
+      ], !_snapshot.favoriteIds.contains(work.workKey)),
     );
   }
 
@@ -143,28 +145,36 @@ class AsmrAccountSyncService {
   ) async {
     final current = _snapshot;
     final favoriteIds = current.favoriteIds;
-    final changed = <int, AsmrWork>{};
+    final changed = <String, AsmrWork>{};
     for (final work in works) {
-      if (favoriteIds.contains(work.id) == favorite) continue;
-      changed.putIfAbsent(work.id, () => work.copyWith(isFavorite: favorite));
+      if (favoriteIds.contains(work.workKey) == favorite) continue;
+      changed.putIfAbsent(
+        work.workKey,
+        () => work.copyWith(isFavorite: favorite),
+      );
     }
     if (changed.isEmpty) return current;
     final changedWorks = changed.values.toList(growable: false);
     final newOperations = [
       for (final work in changedWorks)
-        AsmrSyncOperation(
-          type: favorite
-              ? AsmrSyncOperationType.favoriteAdd
-              : AsmrSyncOperationType.favoriteRemove,
-          workId: work.id,
-          sourceId: work.sourceId,
-          createdAt: DateTime.now(),
-        ),
+        if (work.resourceFor(AsmrCatalogSource.asmrOne) != null)
+          AsmrSyncOperation(
+            type: favorite
+                ? AsmrSyncOperationType.favoriteAdd
+                : AsmrSyncOperationType.favoriteRemove,
+            workId: work.resourceFor(AsmrCatalogSource.asmrOne)!.id,
+            sourceId: work.sourceId,
+            createdAt: DateTime.now(),
+          ),
     ];
     final operations = [
       ...current.pendingOperations.where(
         (operation) =>
-            !changed.containsKey(operation.workId) ||
+            !changedWorks.any(
+              (work) =>
+                  work.resourceFor(AsmrCatalogSource.asmrOne)?.id ==
+                  operation.workId,
+            ) ||
             (operation.type != AsmrSyncOperationType.favoriteAdd &&
                 operation.type != AsmrSyncOperationType.favoriteRemove),
       ),
@@ -178,16 +188,18 @@ class AsmrAccountSyncService {
     _snapshot = current.copyWith(
       favoriteWorks: [
         if (favorite) ...changedWorks.reversed,
-        ...current.favoriteWorks.where((work) => !changed.containsKey(work.id)),
+        ...current.favoriteWorks.where(
+          (work) => !changed.containsKey(work.workKey),
+        ),
       ],
       historyWorks:
-          current.historyWorks.any((work) => changed.containsKey(work.id))
+          current.historyWorks.any((work) => changed.containsKey(work.workKey))
           ? current.historyWorks
                 .map((work) {
-                  if (!changed.containsKey(work.id)) return work;
+                  if (!changed.containsKey(work.workKey)) return work;
                   // Favorites own shared metadata; removal retains that saved history row.
                   return favorite
-                      ? changed[work.id]!
+                      ? changed[work.workKey]!
                       : work.copyWith(isFavorite: false);
                 })
                 .toList(growable: false)
@@ -201,28 +213,32 @@ class AsmrAccountSyncService {
     return _serialize(() async {
       final current = _snapshot;
       final favorite = current.favoriteWorks
-          .where((item) => item.id == work.id)
+          .where((item) => item.workKey == work.workKey)
           .firstOrNull;
       final historyWork =
-          favorite ??
+          favorite?.mergedWith(work) ??
           (work.isFavorite ? work.copyWith(isFavorite: false) : work);
       final history = <AsmrWork>[
         historyWork,
-        ...current.historyWorks.where((item) => item.id != work.id),
+        ...current.historyWorks.where((item) => item.workKey != work.workKey),
       ].take(_historyLimit).toList(growable: false);
-      final operation = AsmrSyncOperation(
-        type: AsmrSyncOperationType.historyListening,
-        workId: work.id,
-        sourceId: work.sourceId,
-        createdAt: DateTime.now(),
-      );
-      final operations = _operationsAfterEnqueue(
-        current.pendingOperations,
-        operation,
-      );
+      final one = work.resourceFor(AsmrCatalogSource.asmrOne);
+      final operation = one == null
+          ? null
+          : AsmrSyncOperation(
+              type: AsmrSyncOperationType.historyListening,
+              workId: one.id,
+              sourceId: work.sourceId,
+              createdAt: DateTime.now(),
+            );
+      final operations = operation == null
+          ? current.pendingOperations
+          : _operationsAfterEnqueue(current.pendingOperations, operation);
       await _preferencesStore.saveHistoryState(
         work: historyWork,
-        historyWorkIds: history.map((item) => item.id).toList(growable: false),
+        historyWorkKeys: history
+            .map((item) => item.workKey)
+            .toList(growable: false),
         operation: operation,
       );
       _snapshot = current.copyWith(
@@ -346,12 +362,18 @@ class AsmrAccountSyncService {
               );
             }
             if (_snapshot.historyWorks.any(
-              (work) => work.id == operation.workId,
+              (work) =>
+                  work.resourceFor(AsmrCatalogSource.asmrOne)?.id ==
+                  operation.workId,
             )) {
               await _putProgress(operation.workId, 'listening', tokenValue);
             }
           case AsmrSyncOperationType.historyListening:
-            if (_snapshot.favoriteIds.contains(operation.workId)) {
+            if (_snapshot.favoriteWorks.any(
+              (work) =>
+                  work.resourceFor(AsmrCatalogSource.asmrOne)?.id ==
+                  operation.workId,
+            )) {
               await _putProgress(operation.workId, 'marked', tokenValue);
             } else if (!_isProtected(operation.workId)) {
               await _putProgress(operation.workId, 'listening', tokenValue);
@@ -499,10 +521,12 @@ class AsmrAccountSyncService {
         .where((item) => item.type == AsmrSyncOperationType.favoriteRemove)
         .map((item) => item.workId)
         .toSet();
-    final favoriteById = <int, AsmrWork>{};
+    final favoriteById = <String, AsmrWork>{};
     for (final work in current.favoriteWorks) {
-      if (!pendingRemoves.contains(work.id)) {
-        favoriteById[work.id] = work.copyWith(isFavorite: true);
+      if (!pendingRemoves.contains(
+        work.resourceFor(AsmrCatalogSource.asmrOne)?.id,
+      )) {
+        favoriteById[work.workKey] = work.copyWith(isFavorite: true);
       }
     }
     final remoteFavorites =
@@ -512,13 +536,17 @@ class AsmrAccountSyncService {
           ..sort(_newestFirst);
     for (final record in remoteFavorites) {
       if (!pendingRemoves.contains(record.work.id)) {
-        favoriteById[record.work.id] = record.work.copyWith(isFavorite: true);
+        favoriteById.update(
+          record.work.workKey,
+          (local) => local.mergedWith(record.work).copyWith(isFavorite: true),
+          ifAbsent: () => record.work.copyWith(isFavorite: true),
+        );
       }
     }
     final history = <AsmrWork>[];
-    final seen = <int>{};
+    final seen = <String>{};
     for (final work in current.historyWorks) {
-      if (seen.add(work.id)) history.add(work);
+      if (seen.add(work.workKey)) history.add(work);
     }
     final remoteHistory =
         records
@@ -526,7 +554,14 @@ class AsmrAccountSyncService {
             .toList(growable: false)
           ..sort(_newestFirst);
     for (final record in remoteHistory) {
-      if (seen.add(record.work.id)) history.add(record.work);
+      if (seen.add(record.work.workKey)) {
+        history.add(record.work);
+      } else {
+        final index = history.indexWhere(
+          (work) => work.workKey == record.work.workKey,
+        );
+        history[index] = history[index].mergedWith(record.work);
+      }
     }
     final normalized = _normalizeAccountWorks((
       favoriteWorks: favoriteById.values.toList(growable: false),
@@ -545,16 +580,23 @@ class AsmrAccountSyncService {
   _normalizeAccountWorks(
     ({List<AsmrWork> favoriteWorks, List<AsmrWork> historyWorks}) works,
   ) {
-    final favoriteById = <int, AsmrWork>{};
+    final favoriteById = <String, AsmrWork>{};
     for (final work in works.favoriteWorks) {
-      favoriteById.putIfAbsent(work.id, () => work.copyWith(isFavorite: true));
+      favoriteById.update(
+        work.workKey,
+        (existing) => existing.mergedWith(work).copyWith(isFavorite: true),
+        ifAbsent: () => work.copyWith(isFavorite: true),
+      );
     }
     final normalizedHistory = <AsmrWork>[];
-    final seenHistoryIds = <int>{};
+    final seenHistoryIds = <String>{};
     for (final work in works.historyWorks) {
-      if (!seenHistoryIds.add(work.id)) continue;
+      if (!seenHistoryIds.add(work.workKey)) continue;
       normalizedHistory.add(
-        favoriteById[work.id] ?? work.copyWith(isFavorite: false),
+        favoriteById[work.workKey]
+                ?.mergedWith(work)
+                .copyWith(isFavorite: true) ??
+            work.copyWith(isFavorite: false),
       );
     }
     return (
@@ -576,12 +618,13 @@ class AsmrAccountSyncService {
       ),
     );
     for (final work in _snapshot.historyWorks.reversed) {
+      if (work.resourceFor(AsmrCatalogSource.asmrOne) == null) continue;
       final key = '${AsmrSyncOperationType.historyListening.name}:${work.id}';
       if (keys.add(key)) {
         operations.add(
           AsmrSyncOperation(
             type: AsmrSyncOperationType.historyListening,
-            workId: work.id,
+            workId: work.resourceFor(AsmrCatalogSource.asmrOne)!.id,
             sourceId: work.sourceId,
             createdAt: createdAt,
           ),
@@ -590,12 +633,13 @@ class AsmrAccountSyncService {
       }
     }
     for (final work in _snapshot.favoriteWorks.reversed) {
+      if (work.resourceFor(AsmrCatalogSource.asmrOne) == null) continue;
       final key = '${AsmrSyncOperationType.favoriteAdd.name}:${work.id}';
       if (keys.add(key)) {
         operations.add(
           AsmrSyncOperation(
             type: AsmrSyncOperationType.favoriteAdd,
-            workId: work.id,
+            workId: work.resourceFor(AsmrCatalogSource.asmrOne)!.id,
             sourceId: work.sourceId,
             createdAt: createdAt,
           ),

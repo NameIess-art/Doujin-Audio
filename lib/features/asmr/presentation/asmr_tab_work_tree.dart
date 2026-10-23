@@ -166,11 +166,12 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                 ratingLabel: i18n.tr('card_info_rating'),
                 listSeparator: '\u3001',
                 coverBuilder: (coverWidth) => _AsmrWorkCover(
+                  workKey: widget.work.workKey,
                   url: _asmrWorkListCoverUrl(widget.work),
                   width: coverWidth,
                   duration: widget.work.duration,
                   isSelected: widget.isSelected,
-                  rjCode: widget.work.rjCode,
+                  rjCode: widget.work.workCode,
                 ),
                 accentColor: asmrBlue,
                 trailingActions: LibraryLikeCardActions(

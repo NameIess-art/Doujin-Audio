@@ -88,11 +88,11 @@ class AsmrPreferencesStore {
 
   Future<void> saveHistoryState({
     required AsmrWork work,
-    required List<int> historyWorkIds,
-    required AsmrSyncOperation operation,
+    required List<String> historyWorkKeys,
+    AsmrSyncOperation? operation,
   }) => _repository.saveHistoryState(
     work: work,
-    historyWorkIds: historyWorkIds,
+    historyWorkKeys: historyWorkKeys,
     operation: operation,
   );
 

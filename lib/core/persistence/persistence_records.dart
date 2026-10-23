@@ -189,6 +189,8 @@ final class AudioDetailRecord {
 final class AsmrWorkRecord {
   AsmrWorkRecord({
     required this.id,
+    String? workKey,
+    this.resourcesJson,
     required this.title,
     required this.circleName,
     required this.sourceId,
@@ -207,10 +209,13 @@ final class AsmrWorkRecord {
     required List<String> tags,
     required this.hasSubtitle,
     required this.isFavorite,
-  }) : voiceActors = List<String>.unmodifiable(voiceActors),
+  }) : workKey = workKey ?? asmrLegacyWorkKey(sourceId, id),
+       voiceActors = List<String>.unmodifiable(voiceActors),
        tags = List<String>.unmodifiable(tags);
 
   final int id;
+  final String workKey;
+  final String? resourcesJson;
   final String title;
   final String circleName;
   final String sourceId;
@@ -291,4 +296,16 @@ final class TimeSegmentLabelRecord {
       updatedAtMs: (row['updated_at_ms'] as num).toInt(),
     );
   }
+}
+
+/// Identity conversion for pre-online-library database records.
+String asmrLegacyWorkKey(String sourceId, int id) {
+  final code = sourceId.trim().toUpperCase();
+  final match = RegExp(r'^(RJ|UND|UN)[-_ ]?(\d+)$').firstMatch(code);
+  if (match != null) {
+    final digits = match[1] == 'RJ' ? match[2]!.padLeft(6, '0') : match[2]!;
+    return 'code:${match[1]}$digits';
+  }
+  final dmm = RegExp(r'^D_(\d+)$').firstMatch(code);
+  return dmm == null ? 'source:asmrOne:$id' : 'code:UND${dmm[1]}';
 }

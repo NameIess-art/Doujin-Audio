@@ -3,14 +3,19 @@ import '../domain/asmr_models.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import 'asmr_api_service.dart';
+import 'japanese_asmr_api_service.dart';
 import '../../library/application/dlsite_metadata_service.dart';
 import '../../library/application/library_metadata_source.dart';
 
 class AsmrMetadataService implements LibraryMetadataSource {
-  AsmrMetadataService({AsmrApiService? apiService})
-    : _apiService = apiService ?? AsmrApiService();
+  AsmrMetadataService({
+    AsmrApiService? apiService,
+    JapaneseAsmrApiService? japaneseApiService,
+  }) : _apiService = apiService ?? AsmrApiService(),
+       _japaneseApiService = japaneseApiService;
 
   final AsmrApiService _apiService;
+  final JapaneseAsmrApiService? _japaneseApiService;
 
   @override
   Future<DlsiteMetadata> fetchByRjCode(
@@ -21,18 +26,12 @@ class AsmrMetadataService implements LibraryMetadataSource {
     if (normalizedRjCode == null) {
       throw const DlsiteMetadataException('Invalid RJ code');
     }
-    final page = await _apiService.searchWorks(
-      keyword: normalizedRjCode,
-      order: 'release',
-      sort: 'desc',
-      pageSize: 20,
-      language: _asmrLanguage(language),
-    );
-    final exact = page.works.where(
+    final works = await _search(normalizedRjCode, language);
+    final exact = works.where(
       (work) => work.rjCode.toUpperCase() == normalizedRjCode,
     );
     if (exact.isEmpty) {
-      throw const DlsiteMetadataException('No ASMR.ONE metadata found');
+      throw const DlsiteMetadataException('No online library metadata found');
     }
     return _metadataFromWork(exact.first);
   }
@@ -44,14 +43,8 @@ class AsmrMetadataService implements LibraryMetadataSource {
     final normalizedRjCode = AudioDetail.findRjCodeInText(rjCode);
     if (normalizedRjCode == null) return null;
     try {
-      final page = await _apiService.searchWorks(
-        keyword: normalizedRjCode,
-        order: 'release',
-        sort: 'desc',
-        pageSize: 20,
-        language: _asmrLanguage(language),
-      );
-      final exact = page.works.where(
+      final works = await _search(normalizedRjCode, language);
+      final exact = works.where(
         (work) => work.rjCode.toUpperCase() == normalizedRjCode,
       );
       return exact.firstOrNull;
@@ -73,15 +66,9 @@ class AsmrMetadataService implements LibraryMetadataSource {
         .toList(growable: false);
 
     for (final title in normalizedTitles) {
-      final page = await _apiService.searchWorks(
-        keyword: title,
-        order: 'release',
-        sort: 'desc',
-        pageSize: 20,
-        language: _asmrLanguage(language),
-      );
+      final works = await _search(title, language);
       final keywords = extractDlsiteTitleKeywords(title);
-      for (final work in page.works) {
+      for (final work in works) {
         final metadata = _metadataFromWork(work);
         final score = _scoreTitleMatch(metadata.workTitle, keywords);
         if (score <= 0) continue;
@@ -98,9 +85,48 @@ class AsmrMetadataService implements LibraryMetadataSource {
     final results = resultsByRjCode.values.toList(growable: false)
       ..sort((a, b) => b.score.compareTo(a.score));
     if (results.isEmpty) {
-      throw const DlsiteMetadataException('No ASMR.ONE metadata found');
+      throw const DlsiteMetadataException('No online library metadata found');
     }
     return results.map((item) => item.metadata).toList(growable: false);
+  }
+
+  Future<List<AsmrWork>> _search(String query, AppLanguage language) async {
+    final works = <String, AsmrWork>{};
+    Object? firstError;
+    var succeeded = false;
+    try {
+      final page = await _apiService.searchWorks(
+        keyword: query,
+        order: 'release',
+        sort: 'desc',
+        pageSize: 20,
+        language: _asmrLanguage(language),
+      );
+      succeeded = true;
+      for (final work in page.works) {
+        works[work.workKey] = work;
+      }
+    } catch (error) {
+      firstError = error;
+    }
+    final japanese = _japaneseApiService;
+    if (japanese != null) {
+      try {
+        final page = await japanese.searchWorks(keyword: query, pageSize: 20);
+        succeeded = true;
+        for (final work in page.works) {
+          works.update(
+            work.workKey,
+            (old) => old.mergedWith(work),
+            ifAbsent: () => work,
+          );
+        }
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (!succeeded && firstError != null) throw firstError;
+    return works.values.toList(growable: false);
   }
 
   DlsiteMetadata _metadataFromWork(AsmrWork work) {

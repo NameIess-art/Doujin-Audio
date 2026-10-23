@@ -254,9 +254,7 @@ extension _MainScreenLayout on _MainScreenState {
       final index = entry.key;
       final item = destinations[index];
       final selected = index == activeIndex;
-      final label = item.labelKey == 'show_asmr_one'
-          ? 'ASMR.ONE'
-          : i18n.tr(item.labelKey);
+      final label = i18n.tr(item.labelKey);
       final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
 
       final activeColor = cs.primary;

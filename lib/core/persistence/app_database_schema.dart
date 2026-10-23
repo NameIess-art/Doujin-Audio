@@ -80,6 +80,7 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
   await _createTrackDetailTables(db);
   await _createTrackIndexes(db);
   await _createSessionDetailTables(db);
+  if (oldVersion < 15 && newVersion >= 15) await _migrateAsmrIdentity(db);
   await _createAsmrTables(db);
   await _createAudioDetailsTable(db);
   await _createLibraryEntriesTable(db);
@@ -346,7 +347,9 @@ Future<void> _createAsmrTables(Database db) async {
     ''');
   await db.execute('''
       CREATE TABLE IF NOT EXISTS asmr_works (
-        id INTEGER PRIMARY KEY,
+        work_key TEXT PRIMARY KEY,
+        id INTEGER NOT NULL,
+        resources_json TEXT,
         title TEXT NOT NULL DEFAULT '',
         circle_name TEXT NOT NULL DEFAULT '',
         source_id TEXT NOT NULL DEFAULT '',
@@ -367,7 +370,7 @@ Future<void> _createAsmrTables(Database db) async {
     ''');
   await db.execute('''
       CREATE TABLE IF NOT EXISTS asmr_work_voice_actors (
-        work_id INTEGER NOT NULL,
+        work_id TEXT NOT NULL,
         name TEXT NOT NULL,
         sort_order INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY(work_id, name)
@@ -375,7 +378,7 @@ Future<void> _createAsmrTables(Database db) async {
     ''');
   await db.execute('''
       CREATE TABLE IF NOT EXISTS asmr_work_tags (
-        work_id INTEGER NOT NULL,
+        work_id TEXT NOT NULL,
         tag TEXT NOT NULL,
         sort_order INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY(work_id, tag)
@@ -384,7 +387,7 @@ Future<void> _createAsmrTables(Database db) async {
   await db.execute('''
       CREATE TABLE IF NOT EXISTS asmr_work_lists (
         list_type TEXT NOT NULL,
-        work_id INTEGER NOT NULL,
+        work_id TEXT NOT NULL,
         sort_order INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY(list_type, work_id)
       )
@@ -629,4 +632,62 @@ Future<void> _backfillTimeSegmentMatchKeys(Database db) async {
     }
     await batch.commit(noResult: true);
   }
+}
+
+Future<void> _migrateAsmrIdentity(Database db) async {
+  final columns = await db.rawQuery('PRAGMA table_info(asmr_works)');
+  if (columns.isEmpty || columns.any((row) => row['name'] == 'work_key')) {
+    return;
+  }
+  final works = await db.query('asmr_works');
+  final actors = await db.query('asmr_work_voice_actors');
+  final tags = await db.query('asmr_work_tags');
+  final lists = await db.query('asmr_work_lists', orderBy: 'sort_order ASC');
+  final keys = <int, String>{
+    for (final work in works)
+      work['id'] as int: asmrLegacyWorkKey(
+        work['source_id'] as String? ?? '',
+        work['id'] as int,
+      ),
+  };
+  for (final table in [
+    'asmr_work_voice_actors',
+    'asmr_work_tags',
+    'asmr_work_lists',
+    'asmr_works',
+  ]) {
+    await db.execute('DROP TABLE $table');
+  }
+  await _createAsmrTables(db);
+  final batch = db.batch();
+  for (final work in works) {
+    final id = work['id'] as int;
+    batch.insert('asmr_works', {
+      ...work,
+      'work_key': keys[id],
+      'resources_json': jsonEncode([
+        {
+          'source': 'asmrOne',
+          'id': id,
+          'code': work['source_id'] ?? '',
+          'pageUrl': work['source_url'] ?? '',
+        },
+      ]),
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+  for (final entry in [
+    ('asmr_work_voice_actors', actors),
+    ('asmr_work_tags', tags),
+    ('asmr_work_lists', lists),
+  ]) {
+    for (final row in entry.$2) {
+      final key = keys[row['work_id']];
+      if (key == null) continue;
+      batch.insert(entry.$1, {
+        ...row,
+        'work_id': key,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+  }
+  await batch.commit(noResult: true);
 }

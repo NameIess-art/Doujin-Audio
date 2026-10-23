@@ -63,14 +63,16 @@ extension AppDatabaseAsmr on AppDatabase {
         '''
       SELECT w.*
       FROM asmr_work_lists l
-      INNER JOIN asmr_works w ON w.id = l.work_id
+      INNER JOIN asmr_works w ON w.work_key = l.work_id
       WHERE l.list_type = ?
       ORDER BY l.sort_order ASC
     ''',
         [listType],
       );
       if (rows.isEmpty) return const <AsmrWorkRecord>[];
-      final ids = rows.map((row) => row['id'] as int).toList(growable: false);
+      final ids = rows
+          .map((row) => row['work_key'] as String)
+          .toList(growable: false);
       final voiceActorsById = await _loadAsmrWorkTextValues(
         db,
         table: 'asmr_work_voice_actors',
@@ -89,8 +91,8 @@ extension AppDatabaseAsmr on AppDatabase {
           .map(
             (row) => _asmrWorkFromRow(
               row,
-              voiceActors: voiceActorsById[row['id'] as int],
-              tags: tagsById[row['id'] as int],
+              voiceActors: voiceActorsById[row['work_key'] as String],
+              tags: tagsById[row['work_key'] as String],
             ),
           )
           .toList(growable: false);
@@ -152,18 +154,21 @@ extension AppDatabaseAsmr on AppDatabase {
     await _runDatabaseWrite((db) async {
       await db.transaction((txn) async {
         final batch = txn.batch();
-        final historyById = <int, AsmrWorkRecord>{
-          for (final work in historyWorks) work.id: work,
+        final historyById = <String, AsmrWorkRecord>{
+          for (final work in historyWorks) work.workKey: work,
         };
-        final favoriteById = <int, AsmrWorkRecord>{
-          for (final work in favoriteWorks) work.id: work,
+        final favoriteById = <String, AsmrWorkRecord>{
+          for (final work in favoriteWorks) work.workKey: work,
         };
-        final workById = <int, AsmrWorkRecord>{...historyById, ...favoriteById};
+        final workById = <String, AsmrWorkRecord>{
+          ...historyById,
+          ...favoriteById,
+        };
         for (final work in workById.values) {
           _writeAsmrWorkToBatch(
             batch,
             work,
-            isFavorite: favoriteById.containsKey(work.id),
+            isFavorite: favoriteById.containsKey(work.workKey),
           );
         }
         _replaceAsmrWorkListMembershipInBatch(
@@ -185,8 +190,8 @@ extension AppDatabaseAsmr on AppDatabase {
 
   Future<void> saveAsmrHistoryState(
     AsmrWorkRecord work,
-    List<int> historyWorkIds,
-    AsmrSyncOperationRecord operation,
+    List<String> historyWorkIds,
+    AsmrSyncOperationRecord? operation,
   ) async {
     await _runDatabaseWrite((db) async {
       await db.transaction((txn) async {
@@ -196,12 +201,11 @@ extension AppDatabaseAsmr on AppDatabase {
           where: 'list_type = ?',
           whereArgs: ['history'],
         );
-        final favorite = await txn.query(
-          'asmr_work_lists',
-          columns: ['work_id'],
-          where: 'list_type = ? AND work_id = ?',
-          whereArgs: ['favorites', work.id],
-          limit: 1,
+        final favorite = await txn.rawQuery(
+          'SELECT w.resources_json FROM asmr_works w '
+          'INNER JOIN asmr_work_lists l ON l.work_id = w.work_key '
+          'WHERE l.list_type = ? AND l.work_id = ? LIMIT 1',
+          ['favorites', work.workKey],
         );
         final lastOperation = await txn.query(
           'asmr_sync_operations',
@@ -216,22 +220,26 @@ extension AppDatabaseAsmr on AppDatabase {
         // A favorite's saved metadata is authoritative for the shared work row.
         if (favorite.isEmpty) {
           _writeAsmrWorkToBatch(batch, work, isFavorite: false);
+        } else if (favorite.single['resources_json'] != work.resourcesJson) {
+          batch.update('asmr_works', {'resources_json': work.resourcesJson}, where: 'work_key = ?', whereArgs: [work.workKey]);
         }
         _replaceAsmrWorkListMembershipInBatch(batch, 'history', historyWorkIds);
         final retainedIds = historyWorkIds.toSet();
         _deleteUnreferencedAsmrWorksInBatch(
           batch,
           workIds: previousHistory
-              .map((row) => row['work_id'] as int)
+              .map((row) => row['work_id'] as String)
               .where((id) => !retainedIds.contains(id))
               .toList(growable: false),
         );
-        batch.delete(
-          'asmr_sync_operations',
-          where: 'type = ? AND work_id = ?',
-          whereArgs: [operation.type, operation.workId],
-        );
-        _writeAsmrSyncOperationToBatch(batch, operation, nextOrder);
+        if (operation != null) {
+          batch.delete(
+            'asmr_sync_operations',
+            where: 'type = ? AND work_id = ?',
+            whereArgs: [operation.type, operation.workId],
+          );
+          _writeAsmrSyncOperationToBatch(batch, operation, nextOrder);
+        }
         await batch.commit(noResult: true);
       });
     });
@@ -272,25 +280,27 @@ extension AppDatabaseAsmr on AppDatabase {
             // Prepending does not require rewriting every existing membership.
             batch.insert('asmr_work_lists', {
               'list_type': 'favorites',
-              'work_id': work.id,
+              'work_id': work.workKey,
               'sort_order': --favoriteOrder,
             }, conflictAlgorithm: ConflictAlgorithm.replace);
           } else {
             batch.delete(
               'asmr_work_lists',
               where: 'list_type = ? AND work_id = ?',
-              whereArgs: ['favorites', work.id],
+              whereArgs: ['favorites', work.workKey],
             );
             batch.update(
               'asmr_works',
               {'is_favorite': 0},
-              where: 'id = ?',
-              whereArgs: [work.id],
+              where: 'work_key = ?',
+              whereArgs: [work.workKey],
             );
           }
         }
         if (!favorite) {
-          final workIds = works.map((work) => work.id).toList(growable: false);
+          final workIds = works
+              .map((work) => work.workKey)
+              .toList(growable: false);
           for (
             var start = 0;
             start < workIds.length;

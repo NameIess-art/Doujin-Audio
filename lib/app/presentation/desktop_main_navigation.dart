@@ -344,9 +344,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                               final index = entry.key;
                               final item = entry.value;
                               final isSelected = activeIndex == index;
-                              final label = item.labelKey == 'show_asmr_one'
-                                  ? 'ASMR.ONE'
-                                  : i18n.tr(item.labelKey);
+                              final label = i18n.tr(item.labelKey);
 
                               return NavigationRailDestination(
                                 icon: CompositedTransformTarget(

@@ -2698,7 +2698,7 @@ void main() {
     await _waitForMainPage(tester, 2);
 
     final mainHeaderTitles = <String>{
-      'ASMR.ONE',
+      harness.language.tr('online_audio_library'),
       harness.language.tr('music_library'),
       harness.language.tr('playback_sessions'),
     };
@@ -2735,7 +2735,7 @@ void main() {
         findsNothing,
       );
 
-      // Switch to ASMR.ONE tab
+      // Switch to the online audio library tab.
       final asmrDestination = find.byKey(
         const ValueKey<String>('main_destination_ink_show_asmr_one'),
       );
@@ -7577,12 +7577,12 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   }
 
   @override
-  AsmrTrackTreeViewState trackTreeViewState(int workId) {
-    final tree = workId == _collectedWork.id
+  AsmrTrackTreeViewState trackTreeViewState(String workId) {
+    final tree = workId == _collectedWork.workKey
         ? trackTree ?? <AsmrTrackFile>[_trackFolder]
         : const <AsmrTrackFile>[];
     return AsmrTrackTreeViewState(
-      workId: workId,
+      workKey: workId,
       tree: tree,
       visibleTree: tree,
       isLoading: false,

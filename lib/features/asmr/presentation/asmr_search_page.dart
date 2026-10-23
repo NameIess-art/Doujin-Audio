@@ -22,7 +22,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   String _inputQuery = '';
   bool _showSearchPlaceholder = false;
   bool _isSelectionMode = false;
-  final Set<int> _selectedWorkIds = <int>{};
+  final Set<String> _selectedWorkIds = <String>{};
   int _requestSerial = 0;
   bool _refreshPending = false;
   ModalRoute<dynamic>? _route;
@@ -144,7 +144,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       _isSelectionMode = true;
       _selectedWorkIds
         ..clear()
-        ..add(work.id);
+        ..add(work.workKey);
     });
   }
 
@@ -156,8 +156,8 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   void _toggleWorkSelection(AsmrWork work) {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
-      if (!_selectedWorkIds.add(work.id)) {
-        _selectedWorkIds.remove(work.id);
+      if (!_selectedWorkIds.add(work.workKey)) {
+        _selectedWorkIds.remove(work.workKey);
         if (_selectedWorkIds.isEmpty) _isSelectionMode = false;
       }
     });

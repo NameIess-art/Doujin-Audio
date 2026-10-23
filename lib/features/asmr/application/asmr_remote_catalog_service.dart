@@ -7,16 +7,21 @@ import '../../../core/media/music_track.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'asmr_api_service.dart';
 import 'asmr_recommendation_engine.dart';
+import 'japanese_asmr_api_service.dart';
 import '../domain/asmr_persistence_repository.dart';
+
+part 'asmr_catalog_merge.dart';
 
 class AsmrRemoteCatalogService {
   AsmrRemoteCatalogService({
     required AsmrApiService apiService,
     required AsmrPersistenceRepository persistenceRepository,
+    JapaneseAsmrApiService? japaneseApiService,
     AsmrRecommendationEngine recommendationEngine =
         const AsmrRecommendationEngine(),
   }) : _apiService = apiService,
        _persistenceRepository = persistenceRepository,
+       _japaneseApiService = japaneseApiService,
        _recommendationEngine = recommendationEngine;
 
   static const Map<AsmrCategoryType, int> _pageSizes = <AsmrCategoryType, int>{
@@ -42,6 +47,7 @@ class AsmrRemoteCatalogService {
   ];
 
   final AsmrApiService _apiService;
+  final JapaneseAsmrApiService? _japaneseApiService;
   final AsmrPersistenceRepository _persistenceRepository;
   final AsmrRecommendationEngine _recommendationEngine;
 
@@ -53,6 +59,39 @@ class AsmrRemoteCatalogService {
       _persistenceRepository.loadTracksForRecommendations();
 
   Future<AsmrWorkPage> loadPage(
+    AsmrCategoryType category, {
+    required String searchQuery,
+    required int page,
+    required AsmrContentLanguage language,
+    required String? token,
+    AsmrRequestCancellationToken? cancellationToken,
+    AsmrCatalogCursor? cursor,
+  }) {
+    if (_japaneseApiService != null &&
+        (category == AsmrCategoryType.collected ||
+            category == AsmrCategoryType.release ||
+            category == AsmrCategoryType.recommendation)) {
+      return _loadMergedPage(
+        category,
+        searchQuery: searchQuery,
+        page: page,
+        language: language,
+        token: token,
+        cancellationToken: cancellationToken,
+        cursor: cursor,
+      );
+    }
+    return _loadOnePage(
+      category,
+      searchQuery: searchQuery,
+      page: page,
+      language: language,
+      token: token,
+      cancellationToken: cancellationToken,
+    );
+  }
+
+  Future<AsmrWorkPage> _loadOnePage(
     AsmrCategoryType category, {
     required String searchQuery,
     required int page,
@@ -98,6 +137,7 @@ class AsmrRemoteCatalogService {
     required List<AsmrWork> historyWorks,
     required int refreshSeed,
     AsmrRequestCancellationToken? cancellationToken,
+    void Function(AsmrPartialCatalogException?)? onPartialError,
   }) async {
     cancellationToken?.throwIfCancelled();
     final localTracksFuture = _loadLocalTracks();
@@ -114,24 +154,36 @@ class AsmrRemoteCatalogService {
       ),
     );
     cancellationToken?.throwIfCancelled();
-    final candidates = <int, AsmrWork>{};
-    final firstPageIds = <int>{};
-    final explorationIds = <int>{};
+    final candidates = <String, AsmrWork>{};
+    final firstPageIds = <String>{};
+    final explorationIds = <String>{};
     Object? firstError;
     for (final result in results) {
       firstError ??= result.error;
       for (var index = 0; index < result.pages.length; index++) {
         for (final work in result.pages[index].works) {
-          candidates.putIfAbsent(work.id, () => work);
-          (index == 0 ? firstPageIds : explorationIds).add(work.id);
+          candidates.update(
+            work.workKey,
+            (old) => old.mergedWith(work),
+            ifAbsent: () => work,
+          );
+          (index == 0 ? firstPageIds : explorationIds).add(work.workKey);
         }
       }
     }
     if (candidates.isEmpty && firstError != null) throw firstError;
+    final failedSources = <AsmrCatalogSource>{
+      for (final result in results)
+        for (final page in result.pages.whereType<AsmrMergedWorkPage>())
+          ...?page.partialError?.sources,
+    };
+    onPartialError?.call(
+      failedSources.isEmpty ? null : AsmrPartialCatalogException(failedSources),
+    );
     explorationIds.removeAll(firstPageIds);
     final promotedIds = searchQuery.isEmpty && refreshSeed > 1
         ? explorationIds
-        : const <int>{};
+        : const <String>{};
     final candidateList = candidates.values
         .where(isWorkAllowed)
         .toList(growable: false);
@@ -171,15 +223,86 @@ class AsmrRemoteCatalogService {
   }
 
   Future<List<AsmrTrackFile>> loadTrackTree(
-    int workId, {
+    AsmrWork work, {
     required String? token,
     AsmrRequestCancellationToken? cancellationToken,
-  }) {
-    return _apiService.fetchTrackTree(
-      workId,
-      token: token,
-      cancellationToken: cancellationToken,
-    );
+  }) async {
+    final one = work.resourceFor(AsmrCatalogSource.asmrOne);
+    Object? firstError;
+    if (one != null) {
+      try {
+        final tree = await _apiService.fetchTrackTree(
+          one.id,
+          token: token,
+          cancellationToken: cancellationToken,
+        );
+        cancellationToken?.throwIfCancelled();
+        if (tree.any((node) => node.hasBrowsableContent)) {
+          if (_japaneseApiService != null && work.workCode.isNotEmpty) {
+            await _verifyOneMedia(tree, cancellationToken);
+          }
+          return tree;
+        }
+      } on AsmrRequestCancelled {
+        rethrow;
+      } catch (error) {
+        firstError = error;
+      }
+    }
+    final japanese = _japaneseApiService;
+    if (japanese != null && work.workCode.isNotEmpty) {
+      try {
+        final tree = await japanese.fetchTrackTree(
+          work,
+          cancellationToken: cancellationToken,
+        );
+        if (tree.any((node) => node.hasBrowsableContent)) return tree;
+      } on AsmrRequestCancelled {
+        rethrow;
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (firstError != null) throw firstError;
+    return const [];
+  }
+
+  Future<void> _verifyOneMedia(
+    List<AsmrTrackFile> tree,
+    AsmrRequestCancellationToken? cancellationToken,
+  ) async {
+    AsmrTrackFile? firstAudio(Iterable<AsmrTrackFile> nodes) {
+      for (final node in nodes) {
+        if (node.isAudio) return node;
+        final child = firstAudio(node.children);
+        if (child != null) return child;
+      }
+      return null;
+    }
+
+    final node = firstAudio(tree);
+    if (node == null) return;
+    final candidates = <String>{
+      if (node.streamUrl?.isNotEmpty == true) node.streamUrl!,
+      if (node.downloadUrl?.isNotEmpty == true) node.downloadUrl!,
+      if (AsmrApiService.isOfficialMediaUrl(node.streamUrl))
+        ...AsmrApiService.mediaStreamUrlsForHash(node.hash),
+    }.take(3);
+    Object? firstError;
+    for (final url in candidates) {
+      try {
+        await _apiService.verifyMediaStream(
+          url,
+          cancellationToken: cancellationToken,
+        );
+        return;
+      } on AsmrRequestCancelled {
+        rethrow;
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (firstError != null) throw firstError;
   }
 
   Future<_RecommendationPagesResult> _loadRecommendationPagesSafely(
@@ -191,6 +314,7 @@ class AsmrRemoteCatalogService {
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
     final pages = <AsmrWorkPage>[];
+    final cursor = AsmrCatalogCursor();
     try {
       final firstPage = await loadPage(
         category,
@@ -199,6 +323,7 @@ class AsmrRemoteCatalogService {
         language: language,
         token: token,
         cancellationToken: cancellationToken,
+        cursor: cursor,
       );
       cancellationToken?.throwIfCancelled();
       pages.add(firstPage);
@@ -206,7 +331,10 @@ class AsmrRemoteCatalogService {
         final totalPages =
             (firstPage.totalCount + firstPage.pageSize - 1) ~/
             firstPage.pageSize;
-        final nextPage = searchQuery.isNotEmpty || refreshSeed <= 1
+        final nextPage =
+            firstPage is AsmrMergedWorkPage ||
+                searchQuery.isNotEmpty ||
+                refreshSeed <= 1
             ? 2
             : 2 + (refreshSeed - 1) % (totalPages - 1);
         pages.add(
@@ -217,6 +345,7 @@ class AsmrRemoteCatalogService {
             language: language,
             token: token,
             cancellationToken: cancellationToken,
+            cursor: cursor,
           ),
         );
       }

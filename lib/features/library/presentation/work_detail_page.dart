@@ -169,7 +169,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     } else {
       _asmrTree = ref
           .read(asmrLibraryControllerProvider)
-          ?.trackTreeFor(widget.asmrWork!.id);
+          ?.trackTreeFor(widget.asmrWork!.workKey);
       _loadingAsmr = _asmrTree == null;
     }
     _directory = _directoryInput.resolved;
@@ -1023,11 +1023,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final work = widget.asmrWork!;
-    final isFav = controller.isFavorite(work.id);
+    final isFav = controller.isFavorite(work.workKey);
     final shouldFavorite = !isFav;
     final scope = UiOperationScope.asmrWork(
       AsmrOperationKind.favorite,
-      work.id,
+      work.workKey,
     );
     final operations = ref.read(uiOperationServiceProvider);
     if (operations.isBusy(scope)) return;
@@ -1102,7 +1102,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       // Observe user removals and undo without replacing this page's file tree.
       visibilityKey = ref.watch(
         asmrTrackTreeStateProvider(
-          widget.asmrWork!.id,
+          widget.asmrWork!.workKey,
         ).select((state) => state.value?.revision),
       );
     }
@@ -1147,7 +1147,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     } else {
       final work = widget.asmrWork!;
       displayTitle = work.title;
-      displayRj = work.rjCode;
+      displayRj = work.workCode;
       displayCircle = work.circleName;
       hasSubtitle = work.hasSubtitle || (_directory?.hasSubtitle ?? false);
       displayVoiceActors = work.voiceActors;
@@ -1339,7 +1339,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                             final isFavorite = widget.isAsmr
                                 ? ref
                                           .watch(asmrLibraryControllerProvider)
-                                          ?.isFavorite(widget.asmrWork!.id) ??
+                                          ?.isFavorite(widget.asmrWork!.workKey) ??
                                       widget.asmrWork!.isFavorite
                                 : false;
                             return WorkDetailActions(

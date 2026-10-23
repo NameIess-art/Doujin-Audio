@@ -23,8 +23,8 @@ class AsmrDownloadOutputStore {
   final FileCachePlatformGateway _fileCacheGateway;
   final JsonDocumentStore _jsonDocumentStore;
   final Future<Directory> Function() _stagingDirectoryProvider;
-  final Map<int, Set<String>> createdOutputPaths = {};
-  final Map<int, Map<String, CreatedDownloadJsonDocument>>
+  final Map<String, Set<String>> createdOutputPaths = {};
+  final Map<String, Map<String, CreatedDownloadJsonDocument>>
   createdJsonDocuments = {};
   static const _planner = AsmrDownloadPlanner();
   static const _audioDetailJsonCodec = AudioDetailJsonCodec();
@@ -38,16 +38,16 @@ class AsmrDownloadOutputStore {
     // Transfers can mutate ownership while this snapshot waits for an older
     // write. Freeze ownership now; the task and its tree are already immutable.
     createdOutputPaths: Set<String>.unmodifiable(
-      createdOutputPaths[task.work.id] ?? const <String>{},
+      createdOutputPaths[task.work.workKey] ?? const <String>{},
     ),
     createdJsonDocuments: Map<String, CreatedDownloadJsonDocument>.unmodifiable(
-      createdJsonDocuments[task.work.id] ??
+      createdJsonDocuments[task.work.workKey] ??
           const <String, CreatedDownloadJsonDocument>{},
     ),
   );
 
   Future<String> prepareTask(AsmrDownloadTaskSnapshot task) async {
-    final workId = task.work.id;
+    final workId = task.work.workKey;
     final normalizedDestination = task.destinationRoot;
     final workFolderName = task.workFolderName;
     final conflictPolicy = task.conflictPolicy;
@@ -88,8 +88,8 @@ class AsmrDownloadOutputStore {
     final write = await writeWorkDetailBackup(backup, location);
     final metadataCreated = write.status == JsonDocumentWriteStatus.created;
     if (metadataCreated) {
-      createdOutputPaths[task.work.id]?.add(backupPath);
-      recordCreatedJson(task.work.id, backupPath, location, write);
+      createdOutputPaths[task.work.workKey]?.add(backupPath);
+      recordCreatedJson(task.work.workKey, backupPath, location, write);
     }
     return metadataCreated;
   }
@@ -104,7 +104,7 @@ class AsmrDownloadOutputStore {
 
     final filesToDelete = <String>{
       ...extraCreatedPaths,
-      ...?createdOutputPaths[task.work.id],
+      ...?createdOutputPaths[task.work.workKey],
     };
 
     // JSON documents must be deleted with their recorded revision. A skipped
@@ -216,7 +216,7 @@ class AsmrDownloadOutputStore {
     return File(outputPath).exists();
   }
 
-  Future<void> cleanupCancelledTask(int workId) async {
+  Future<void> cleanupCancelledTask(String workId) async {
     for (final createdPath in createdOutputPaths[workId] ?? const <String>{}) {
       try {
         final createdJson = createdJsonDocuments[workId]?[createdPath];
@@ -294,7 +294,7 @@ class AsmrDownloadOutputStore {
   }
 
   void recordCreatedJson(
-    int workId,
+    String workId,
     String path,
     JsonDocumentLocation location,
     JsonDocumentWriteResult result,
@@ -343,6 +343,7 @@ class AsmrDownloadOutputStore {
     String workRootPath,
     PlannedDownloadFile item, {
     String? coverOutputPath,
+    String? actualOutputPath,
   }) async {
     if (item.isCover) {
       if (coverOutputPath != null && await outputPathExists(coverOutputPath)) {
@@ -366,7 +367,7 @@ class AsmrDownloadOutputStore {
       return false;
     }
     final normalized = _planner.validatedDownloadRelativePath(
-      item.relativePath,
+      actualOutputPath ?? item.relativePath,
     );
     final targetPath = _planner.joinFolderPath(workRootPath, normalized);
     return outputPathExists(targetPath);

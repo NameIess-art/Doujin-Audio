@@ -7,6 +7,7 @@ import '../state/app_runtime_providers.dart';
 import '../theme/app_styles.dart';
 import '../../core/ui/undoable_removal_service.dart';
 import '../../core/widgets/app_feedback.dart';
+import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
 import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/scroll_activity_gate.dart';
@@ -207,27 +208,68 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     return PopScope(
       canPop: !_saving,
       child: Scaffold(
-        floatingActionButton: Padding(
-          padding: EdgeInsets.only(bottom: MobileOverlayInset.of(context)),
-          child: FloatingActionButton.extended(
-            key: const ValueKey('my_tags_confirm'),
-            onPressed: controller == null || _saving ? null : _confirm,
-            icon: _saving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.check_rounded),
-            label: Text(i18n.tr('confirm')),
-          ),
-        ),
         body: ScrollActivityGate(
           child: PageHeaderInset(
             topInset: headerTopInset,
             child: Stack(
               children: [
                 Positioned.fill(child: content),
+                Positioned(
+                  right: 16,
+                  bottom:
+                      16 +
+                      MediaQuery.paddingOf(context).bottom +
+                      MobileOverlayInset.of(context),
+                  child: AppPageContentTransition(
+                    child: HeaderFloatingSurface(
+                      key: const ValueKey('my_tags_confirm'),
+                      height: 46,
+                      radius: 23,
+                      padding: EdgeInsets.zero,
+                      child: Material(
+                        color: cs.primary,
+                        borderRadius: BorderRadius.circular(23),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(23),
+                          onTap: controller == null || _saving
+                              ? null
+                              : _confirm,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 18),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_saving)
+                                  SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: cs.onPrimary,
+                                    ),
+                                  )
+                                else
+                                  Icon(
+                                    Icons.check_rounded,
+                                    size: 18,
+                                    color: cs.onPrimary,
+                                  ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  i18n.tr('confirm'),
+                                  style: TextStyle(
+                                    color: cs.onPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
                 Positioned(
                   top: 0,
                   left: 0,

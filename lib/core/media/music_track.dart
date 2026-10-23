@@ -49,13 +49,15 @@ class MusicTrack {
   final Duration duration;
 
   static const String remoteMetadataKindAsmrOne = 'asmr.one';
+  static const String remoteMetadataKindJapaneseAsmr = 'jp-asmr';
 
   /// Whether this track originates from the remote ASMR catalog.
-  bool get isRemoteAsmr => remoteMetadataKind == remoteMetadataKindAsmrOne;
+  bool get isRemoteAsmr =>
+      remoteMetadataKind == remoteMetadataKindAsmrOne ||
+      remoteMetadataKind == remoteMetadataKindJapaneseAsmr;
 
   /// Whether this track uses specialized ASMR visual styling and accent.
   bool get usesAsmrVisualTheme => isRemoteAsmr;
-
 
   MusicTrack copyWith({
     Duration? duration,

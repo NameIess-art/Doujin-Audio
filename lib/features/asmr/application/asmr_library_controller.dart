@@ -143,25 +143,22 @@ class AsmrLibraryController extends ChangeNotifier
     if (changes.isEmpty) return;
     final selections = Map<String, bool>.of(changes);
     await ensureTagInterests();
-    await _mutateTagPreferences(
-      (state) {
-        for (final entry in selections.entries) {
-          if (!excluded) {
-            state.setInterested(entry.key, entry.value);
+    await _mutateTagPreferences((state) {
+      for (final entry in selections.entries) {
+        if (!excluded) {
+          state.setInterested(entry.key, entry.value);
+        } else {
+          if (!state.tags.containsKey(entry.key)) {
+            throw ArgumentError.value(entry.key, 'key');
+          }
+          if (entry.value) {
+            state.excluded.add(entry.key);
           } else {
-            if (!state.tags.containsKey(entry.key)) {
-              throw ArgumentError.value(entry.key, 'key');
-            }
-            if (entry.value) {
-              state.excluded.add(entry.key);
-            } else {
-              state.excluded.remove(entry.key);
-            }
+            state.excluded.remove(entry.key);
           }
         }
-      },
-      interruptRecommendations: true,
-    );
+      }
+    }, interruptRecommendations: true);
     await _refreshRecommendationsAfterPreferenceChange();
   }
 
@@ -271,7 +268,7 @@ class AsmrLibraryController extends ChangeNotifier
   AppLanguage _pageLanguage = AppLanguage.zh;
   AsmrContentLanguage _contentLanguage = AsmrContentLanguage.zh;
   List<AsmrWork> _favoriteWorks = const <AsmrWork>[];
-  Set<int> _favoriteIds = const <int>{};
+  Set<String> _favoriteIds = const <String>{};
   List<AsmrWork> _historyWorks = const <AsmrWork>[];
   List<AsmrSyncOperation> _syncOperations = const <AsmrSyncOperation>[];
   AsmrAuthSession? _authSession;
@@ -323,8 +320,8 @@ class AsmrLibraryController extends ChangeNotifier
     return result;
   }
 
-  AsmrWorkRequestKey _workRequestKey(int workId) => (
-    workId: workId,
+  AsmrWorkRequestKey _workRequestKey(String workKey) => (
+    workKey: workKey,
     contentEpoch: _contentEpoch,
     authEpoch: _authEpoch,
     runtimeCacheEpoch: _runtimeCacheEpoch,
@@ -378,7 +375,7 @@ class AsmrLibraryController extends ChangeNotifier
       _contentLanguagePreference;
   AppLanguage get pageLanguage => _pageLanguage;
   AsmrContentLanguage get contentLanguage => _contentLanguage;
-  bool isFavorite(int workId) => _favoriteIds.contains(workId);
+  bool isFavorite(String workKey) => _favoriteIds.contains(workKey);
   bool get isAsmrAccountLoggedIn {
     final session = _authSession;
     return session != null &&
@@ -402,9 +399,9 @@ class AsmrLibraryController extends ChangeNotifier
   int totalCountFor(AsmrCategoryType category) => _catalog.totalCount(category);
   String activeQueryFor(AsmrCategoryType category) =>
       _catalog.activeQuery(category);
-  bool isTrackTreeLoading(int workId) => _workContent.isLoading(workId);
-  List<AsmrTrackFile>? trackTreeFor(int workId) =>
-      _workContent.cachedTrackTree(workId);
+  bool isTrackTreeLoading(String workKey) => _workContent.isLoading(workKey);
+  List<AsmrTrackFile>? trackTreeFor(String workKey) =>
+      _workContent.cachedTrackTree(workKey);
 
   AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
     initialized: _initialized,
@@ -439,8 +436,8 @@ class AsmrLibraryController extends ChangeNotifier
     searchSession: searchSession,
   );
 
-  AsmrTrackTreeViewState trackTreeViewState(int workId) =>
-      _workContent.trackTreeViewState(workId);
+  AsmrTrackTreeViewState trackTreeViewState(String workKey) =>
+      _workContent.trackTreeViewState(workKey);
 
   List<AsmrWork> worksFor(AsmrCategoryType category) =>
       _catalog.worksFor(category);
@@ -948,7 +945,7 @@ class AsmrLibraryController extends ChangeNotifier
     return collectAsmrWorkTextFiles(
       tree,
       downloadManager: downloadManager,
-      workId: work.id,
+      workKey: work.workKey,
     );
   }
 
@@ -961,7 +958,7 @@ class AsmrLibraryController extends ChangeNotifier
     }
     return flattenAsmrPlayableTracks(
       work,
-      _workContent.cachedTrackTree(work.id) ?? <AsmrTrackFile>[node],
+      _workContent.cachedTrackTree(work.workKey) ?? <AsmrTrackFile>[node],
       includeAudioNode: (candidate) => candidate.stableKey == node.stableKey,
     );
   }
@@ -999,11 +996,11 @@ class AsmrLibraryController extends ChangeNotifier
     AsmrWork work, {
     bool forceRefresh = false,
   }) {
-    final cached = _workContent.cachedTrackTree(work.id);
+    final cached = _workContent.cachedTrackTree(work.workKey);
     if (!forceRefresh && cached != null) {
       return SynchronousFuture<List<AsmrTrackFile>>(cached);
     }
-    final key = _workRequestKey(work.id);
+    final key = _workRequestKey(work.workKey);
     return _workContent.requestTrackTree(
       key,
       (cancellationToken) => _loadTrackTreeOnce(work, key, cancellationToken),
@@ -1018,7 +1015,7 @@ class AsmrLibraryController extends ChangeNotifier
     try {
       final tree = await cancellationToken.waitFor(
         _remoteCatalogService.loadTrackTree(
-          work.id,
+          work,
           token: _authSession?.token,
           cancellationToken: cancellationToken,
         ),
@@ -1027,9 +1024,12 @@ class AsmrLibraryController extends ChangeNotifier
         final sortedTree = await compute(sortAsmrTrackTreeNaturally, tree);
         // Account, language or cache invalidation can occur during sorting.
         if (_isWorkRequestCurrent(key)) {
-          _workContent.clearTrackTreeError(work.id);
-          final storedTree = _workContent.storeTrackTree(work.id, sortedTree);
-          _workContent.bumpTrackRevision(work.id);
+          _workContent.clearTrackTreeError(work.workKey);
+          final storedTree = _workContent.storeTrackTree(
+            work.workKey,
+            sortedTree,
+          );
+          _workContent.bumpTrackRevision(work.workKey);
           return storedTree;
         }
       }
@@ -1045,8 +1045,8 @@ class AsmrLibraryController extends ChangeNotifier
       return ensureTrackTree(work);
     } catch (error) {
       if (_isWorkRequestCurrent(key)) {
-        _workContent.setTrackTreeError(work.id, error);
-        _workContent.bumpTrackRevision(work.id);
+        _workContent.setTrackTreeError(work.workKey, error);
+        _workContent.bumpTrackRevision(work.workKey);
       }
       rethrow;
     }
@@ -1074,8 +1074,9 @@ class AsmrLibraryController extends ChangeNotifier
     _applyAccountSnapshot(snapshot);
     final changedIds = {
       for (final work in works)
-        if (previousIds.contains(work.id) != _favoriteIds.contains(work.id))
-          work.id: _favoriteIds.contains(work.id),
+        if (previousIds.contains(work.workKey) !=
+            _favoriteIds.contains(work.workKey))
+          work.workKey: _favoriteIds.contains(work.workKey),
     };
     _catalog.updateFavorites(changedIds);
     _bumpGlobalRevision();

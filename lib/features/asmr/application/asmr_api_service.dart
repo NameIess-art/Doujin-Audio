@@ -298,6 +298,72 @@ class AsmrApiService {
     throw const HttpException('Unexpected API response list.');
   }
 
+  /// Check a media response before fixing a work to one catalog's queue. Never
+  /// forward account authorization to a media host or consume the full file.
+  Future<void> verifyMediaStream(
+    String url, {
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
+    HttpClientRequest? request;
+    StreamSubscription<List<int>>? subscription;
+    var retired = false;
+    final removeListener = cancellationToken?.addListener(() {
+      request?.abort(const AsmrRequestCancelled());
+      unawaited(subscription?.cancel());
+    });
+    try {
+      final opening = _httpClient.getUrl(Uri.parse(url)).then((value) {
+        if (retired || cancellationToken?.isCancelled == true) {
+          value.abort();
+          throw const AsmrRequestCancelled();
+        }
+        return request = value;
+      });
+      request = await (cancellationToken?.waitFor(opening) ?? opening).timeout(
+        _requestTimeout,
+      );
+      request!.headers.set(HttpHeaders.rangeHeader, 'bytes=0-15');
+      final closing = request!.close();
+      final response = await (cancellationToken?.waitFor(closing) ?? closing)
+          .timeout(_requestTimeout);
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          response.headers.contentType?.mimeType == 'text/html') {
+        await response.listen(null).cancel();
+        throw AsmrApiException(
+          'Media is unavailable (${response.statusCode}).',
+          statusCode: response.statusCode,
+          uri: Uri.parse(url),
+        );
+      }
+      final received = Completer<void>();
+      subscription = response.listen(
+        (chunk) {
+          if (chunk.isNotEmpty && !received.isCompleted) received.complete();
+        },
+        onDone: () {
+          if (!received.isCompleted) {
+            received.completeError(
+              const HttpException('Empty media response.'),
+            );
+          }
+        },
+        onError: (Object error, StackTrace stack) {
+          if (!received.isCompleted) received.completeError(error, stack);
+        },
+        cancelOnError: true,
+      );
+      await (cancellationToken?.waitFor(received.future) ?? received.future)
+          .timeout(_requestTimeout);
+    } finally {
+      retired = true;
+      removeListener?.call();
+      request?.abort();
+      await subscription?.cancel();
+    }
+  }
+
   Future<Map<String, dynamic>> _sendJsonRequest({
     required String method,
     required String path,

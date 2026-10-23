@@ -351,7 +351,7 @@ void main() {
   );
 
   test(
-    'paged backup restores sparse rowids and all primary key shapes',
+    'paged backup restores sparse rowids and text and composite primary keys',
     () async {
       final rowIds = [
         -9223372036854775808,
@@ -361,9 +361,10 @@ void main() {
       await sourceDatabase.transaction((txn) async {
         final batch = txn.batch();
         for (var index = 0; index < rowIds.length; index++) {
-          // Integer primary keys alias rowid; the other two tables exercise
-          // independent rowids with text and composite primary keys.
+          // Text and composite primary keys retain their independent sparse rowids.
           batch.insert('asmr_works', {
+            'rowid': rowIds[index],
+            'work_key': 'source:asmrOne:${rowIds[index]}',
             'id': rowIds[index],
             'title': 'Work $index',
           });
@@ -505,6 +506,16 @@ void main() {
           final legacyDatabase = await databaseFactoryFfi.openDatabase(
             legacyDatabaseFile.path,
           );
+          for (final table in ['asmr_works', 'asmr_work_lists', 'asmr_work_tags', 'asmr_work_voice_actors']) {
+            var sql = (await legacyDatabase.rawQuery("SELECT sql FROM sqlite_master WHERE name = ?", [table])).single['sql']! as String;
+            if (table == 'asmr_works') {
+              sql = sql.replaceFirst('work_key TEXT PRIMARY KEY,', '').replaceFirst('resources_json TEXT,', '').replaceFirst('id INTEGER NOT NULL,', 'id INTEGER PRIMARY KEY,');
+            } else {
+              sql = sql.replaceFirst('work_id TEXT NOT NULL', 'work_id INTEGER NOT NULL');
+            }
+            await legacyDatabase.execute('DROP TABLE $table');
+            await legacyDatabase.execute(sql);
+          }
           await legacyDatabase.setVersion(schemaVersion);
           final legacyIndexes = schemaVersion == 8
               ? {

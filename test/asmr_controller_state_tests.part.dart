@@ -645,7 +645,7 @@ void registerAsmrControllerStateTests({
         isContextCurrent: (_) => true,
         currentContext: () => context,
         localWorks: (_) => works,
-        favoriteIds: () => const <int>{},
+        favoriteIds: () => const <String>{},
       );
       List<AsmrWork> filter(String query) => catalog.filteredWorksFor(
         AsmrCategoryType.favorites,
@@ -753,7 +753,7 @@ void registerAsmrControllerStateTests({
         isContextCurrent: (_) => true,
         currentContext: () => context,
         localWorks: (_) => works,
-        favoriteIds: () => const <int>{},
+        favoriteIds: () => const <String>{},
       );
       catalog.setSearchQuery('sleep', AsmrCategoryType.favorites);
       Future<void>? pending() => catalog.pendingRefresh(
@@ -811,7 +811,7 @@ void registerAsmrControllerStateTests({
         isContextCurrent: (_) => true,
         currentContext: () => context,
         localWorks: (_) => works,
-        favoriteIds: () => const <int>{},
+        favoriteIds: () => const <String>{},
       );
       Future<void> refresh() => catalog.refresh(
         AsmrCategoryType.history,
@@ -857,7 +857,7 @@ void registerAsmrControllerStateTests({
       isContextCurrent: (request) => request == context,
       currentContext: () => context,
       localWorks: (_) => works,
-      favoriteIds: () => const <int>{},
+      favoriteIds: () => const <String>{},
     );
     Future<void> search(String query) {
       catalog.setSearchQuery(query, AsmrCategoryType.favorites);
@@ -1577,8 +1577,8 @@ void registerAsmrControllerStateTests({
     await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
     await controller.ensureTrackTree(work);
 
-    final first = controller.trackTreeViewState(work.id);
-    final second = controller.trackTreeViewState(work.id);
+    final first = controller.trackTreeViewState(work.workKey);
+    final second = controller.trackTreeViewState(work.workKey);
 
     expect(first, second);
     expect(identical(first.visibleTree, second.visibleTree), isTrue);
@@ -1610,7 +1610,7 @@ void registerAsmrControllerStateTests({
       final request = controller.ensureTrackTree(work);
       await started.future;
 
-      final loading = controller.trackTreeViewState(work.id);
+      final loading = controller.trackTreeViewState(work.workKey);
       expect(loading.isLoading, isTrue);
       expect(loading.tree, isNull);
       expect(loading.operationError, isNull);
@@ -1618,7 +1618,7 @@ void registerAsmrControllerStateTests({
       release.complete();
       await request;
 
-      final loaded = controller.trackTreeViewState(work.id);
+      final loaded = controller.trackTreeViewState(work.workKey);
       expect(loaded.isLoading, isFalse);
       expect(loaded.tree, isEmpty);
       expect(loaded.operationError, isNull);
@@ -1653,14 +1653,14 @@ void registerAsmrControllerStateTests({
         throwsA(isA<SocketException>()),
       );
 
-      final failed = controller.trackTreeViewState(work.id);
+      final failed = controller.trackTreeViewState(work.workKey);
       expect(failed.isLoading, isFalse);
       expect(failed.tree, isNull);
       expect(failed.operationError, isA<SocketException>());
 
       await controller.ensureTrackTree(work);
 
-      final empty = controller.trackTreeViewState(work.id);
+      final empty = controller.trackTreeViewState(work.workKey);
       expect(empty.isLoading, isFalse);
       expect(empty.tree, isEmpty);
       expect(empty.visibleTree, isEmpty);
@@ -2019,11 +2019,11 @@ void registerAsmrControllerStateTests({
         await Future<void>.value();
       }
       expect(api.trackFetchWorkIds, [72]);
-      expect(controller.trackTreeFor(72), isNull);
-      expect(controller.trackTreeViewState(72).isLoading, isTrue);
+      expect(controller.trackTreeFor('code:RJ000072'), isNull);
+      expect(controller.trackTreeViewState('code:RJ000072').isLoading, isTrue);
       controller.clearRuntimeCaches();
       await rejected;
-      expect(controller.trackTreeFor(72), isNull);
+      expect(controller.trackTreeFor('code:RJ000072'), isNull);
       expect(api.trackFetchWorkIds, [72]);
     },
   );
@@ -2057,18 +2057,18 @@ void registerAsmrControllerStateTests({
         for (var i = 0; i < 8; i++) {
           await Future<void>.value();
         }
-        expect(controller.trackTreeFor(72), isNull);
+        expect(controller.trackTreeFor('code:RJ000072'), isNull);
         final authUpdate = accountChange
             ? controller.logoutAsmrAccount()
             : null;
         if (!accountChange) controller.setPageLanguage(AppLanguage.en);
         await replacementStarted.future;
         await authUpdate;
-        expect(controller.trackTreeFor(72), isNull);
+        expect(controller.trackTreeFor('code:RJ000072'), isNull);
         replacementReleased.complete();
         final tree = await request;
         expect(tree.single.title, 'Track 2.mp3');
-        expect(controller.trackTreeFor(72), same(tree));
+        expect(controller.trackTreeFor('code:RJ000072'), same(tree));
         expect(api.trackFetchWorkIds, [72, 72]);
       },
     );
@@ -2105,7 +2105,7 @@ void registerAsmrControllerStateTests({
         await rejected.timeout(const Duration(seconds: 2));
         expect(api.trackCancellationTokens.single!.isCancelled, isTrue);
         expect(api.trackFetchWorkIds, [72]);
-        expect(controller.trackTreeFor(72), isNull);
+        expect(controller.trackTreeFor('code:RJ000072'), isNull);
         release.complete();
       },
     );
@@ -2156,7 +2156,7 @@ void registerAsmrControllerStateTests({
         expect(api.trackCancellationTokens.first!.isCancelled, isTrue);
         expect(api.trackCancellationTokens.last!.isCancelled, isFalse);
         expect(trees.last, same(trees.first));
-        expect(controller.trackTreeFor(73), same(trees.first));
+        expect(controller.trackTreeFor('code:RJ000073'), same(trees.first));
         releaseOldTree.complete();
       },
     );
@@ -2323,7 +2323,7 @@ void registerAsmrControllerStateTests({
       language: AsmrContentLanguage.en,
       scope: 'page-preparation-test',
     );
-    var favorites = const <int>{};
+    var favorites = const <String>{};
     Completer<void>? preparationStarted;
     final catalog = AsmrCategoryCatalog(
       remoteCatalogService: services.remoteCatalogService,
@@ -2350,8 +2350,8 @@ void registerAsmrControllerStateTests({
       context: context,
     );
     await preparationStarted.future;
-    favorites = const <int>{3001, 3041};
-    catalog.updateFavorites({3001: true});
+    favorites = const <String>{'code:RJ003001', 'code:RJ003041'};
+    catalog.updateFavorites({'code:RJ003001': true});
     await pagination;
 
     final works = catalog.worksFor(AsmrCategoryType.release);
@@ -2392,7 +2392,7 @@ void registerAsmrControllerStateTests({
         favoriteIds: () {
           final started = preparationStarted;
           if (started != null && !started.isCompleted) started.complete();
-          return const <int>{};
+          return const <String>{};
         },
       );
       Future<void> load() => append

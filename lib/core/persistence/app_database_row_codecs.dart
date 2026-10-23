@@ -289,23 +289,23 @@ LibraryEntryRecord _libraryEntryFromRow(Map<String, dynamic> row) {
   );
 }
 
-Future<Map<int, List<String>>> _loadAsmrWorkTextValues(
+Future<Map<String, List<String>>> _loadAsmrWorkTextValues(
   DatabaseExecutor db, {
   required String table,
   required String idColumn,
   required String valueColumn,
-  required List<int> ids,
+  required List<String> ids,
 }) async {
-  if (ids.isEmpty) return const <int, List<String>>{};
+  if (ids.isEmpty) return const <String, List<String>>{};
   final placeholders = List.filled(ids.length, '?').join(', ');
   final rows = await db.rawQuery(
     'SELECT $idColumn, $valueColumn FROM $table '
     'WHERE $idColumn IN ($placeholders) ORDER BY sort_order ASC',
     ids,
   );
-  final valuesById = <int, List<String>>{};
+  final valuesById = <String, List<String>>{};
   for (final row in rows) {
-    final id = (row[idColumn] as num?)?.toInt();
+    final id = row[idColumn] as String?;
     final value = row[valueColumn] as String?;
     if (id == null || value == null) continue;
     valuesById.putIfAbsent(id, () => <String>[]).add(value);
@@ -321,7 +321,9 @@ void _writeAsmrWorkToBatch(
   bool? isFavorite,
 }) {
   batch.insert('asmr_works', {
+    'work_key': work.workKey,
     'id': work.id,
+    'resources_json': work.resourcesJson,
     'title': work.title,
     'circle_name': work.circleName,
     'source_id': work.sourceId,
@@ -342,19 +344,23 @@ void _writeAsmrWorkToBatch(
   batch.delete(
     'asmr_work_voice_actors',
     where: 'work_id = ?',
-    whereArgs: [work.id],
+    whereArgs: [work.workKey],
   );
   for (var i = 0; i < work.voiceActors.length; i++) {
     batch.insert('asmr_work_voice_actors', {
-      'work_id': work.id,
+      'work_id': work.workKey,
       'name': work.voiceActors[i],
       'sort_order': i,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
-  batch.delete('asmr_work_tags', where: 'work_id = ?', whereArgs: [work.id]);
+  batch.delete(
+    'asmr_work_tags',
+    where: 'work_id = ?',
+    whereArgs: [work.workKey],
+  );
   for (var i = 0; i < work.tags.length; i++) {
     batch.insert('asmr_work_tags', {
-      'work_id': work.id,
+      'work_id': work.workKey,
       'tag': work.tags[i],
       'sort_order': i,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -372,14 +378,14 @@ void _replaceAsmrWorkListInBatch(
   _replaceAsmrWorkListMembershipInBatch(
     batch,
     listType,
-    works.map((work) => work.id).toList(growable: false),
+    works.map((work) => work.workKey).toList(growable: false),
   );
 }
 
 void _replaceAsmrWorkListMembershipInBatch(
   Batch batch,
   String listType,
-  List<int> workIds,
+  List<String> workIds,
 ) {
   batch.delete(
     'asmr_work_lists',
@@ -395,7 +401,7 @@ void _replaceAsmrWorkListMembershipInBatch(
   }
 }
 
-void _deleteUnreferencedAsmrWorksInBatch(Batch batch, {List<int>? workIds}) {
+void _deleteUnreferencedAsmrWorksInBatch(Batch batch, {List<String>? workIds}) {
   if (workIds != null && workIds.isEmpty) return;
   const referencedWorkIds = 'SELECT work_id FROM asmr_work_lists';
   final placeholders = workIds == null
@@ -414,7 +420,11 @@ void _deleteUnreferencedAsmrWorksInBatch(Batch batch, {List<int>? workIds}) {
     where: unreferenced('work_id'),
     whereArgs: workIds,
   );
-  batch.delete('asmr_works', where: unreferenced('id'), whereArgs: workIds);
+  batch.delete(
+    'asmr_works',
+    where: unreferenced('work_key'),
+    whereArgs: workIds,
+  );
 }
 
 void _replaceAsmrSyncOperationsInBatch(
@@ -449,6 +459,8 @@ AsmrWorkRecord _asmrWorkFromRow(
 }) {
   return AsmrWorkRecord(
     id: (row['id'] as num?)?.toInt() ?? 0,
+    workKey: row['work_key'] as String?,
+    resourcesJson: row['resources_json'] as String?,
     title: row['title'] as String? ?? '',
     circleName: row['circle_name'] as String? ?? '',
     sourceId: row['source_id'] as String? ?? '',

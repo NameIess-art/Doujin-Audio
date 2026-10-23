@@ -53,6 +53,21 @@ void main() {
           final header = find.byType(TopPageHeader);
           expect(find.descendant(of: header, matching: field), findsOneWidget);
           expect(tester.getSize(capsule).height, 38);
+          final confirm = find.byKey(const ValueKey('my_tags_confirm'));
+          final confirmSurface = tester.widget<HeaderFloatingSurface>(confirm);
+          expect(confirmSurface.height, 46);
+          expect(confirmSurface.radius, 23);
+          expect(tester.getSize(confirm).height, 46);
+          expect(
+            tester
+                .widget<Material>(
+                  find
+                      .descendant(of: confirm, matching: find.byType(Material))
+                      .first,
+                )
+                .color,
+            Theme.of(tester.element(confirm)).colorScheme.primary,
+          );
           final titleCapsule = find
               .descendant(
                 of: header,

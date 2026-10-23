@@ -97,7 +97,7 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
                                   ref
                                       .read(asmrDownloadManagerProvider)
                                       ?.taskIds ??
-                                  const <int>[])
+                                  const <String>[])
                               .where(
                                 (workId) => !removalState.isHidden(
                                   _asmrDownloadTaskRemovalKey(workId),
@@ -154,8 +154,8 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
 
 enum _TaskRemovalAction { removeEntry, deleteDownloaded }
 
-UndoableRemovalKey _asmrDownloadTaskRemovalKey(int workId) =>
-    UndoableRemovalKey('asmr-download-task', '$workId');
+UndoableRemovalKey _asmrDownloadTaskRemovalKey(String workId) =>
+    UndoableRemovalKey('asmr-download-task', workId);
 
 Future<void> _stageAsmrDownloadTaskRemoval(
   BuildContext context,
@@ -172,19 +172,19 @@ Future<void> _stageAsmrDownloadTaskRemoval(
     context,
     service: service,
     action: UndoableRemovalAction(
-      key: _asmrDownloadTaskRemovalKey(task.work.id),
+      key: _asmrDownloadTaskRemovalKey(task.work.workKey),
       prepare: () async {
-        if (wasRunning) await manager.pauseTask(task.work.id);
-        return manager.getTask(task.work.id) != null;
+        if (wasRunning) await manager.pauseTask(task.work.workKey);
+        return manager.getTask(task.work.workKey) != null;
       },
       undo: () async {
-        if (wasRunning && manager.getTask(task.work.id) != null) {
-          await manager.resumeTask(task.work.id);
+        if (wasRunning && manager.getTask(task.work.workKey) != null) {
+          await manager.resumeTask(task.work.workKey);
         }
       },
       commit: () => removalAction == _TaskRemovalAction.removeEntry
-          ? manager.cancelTask(task.work.id, deleteDownloaded: false)
-          : manager.deleteTask(task.work.id),
+          ? manager.cancelTask(task.work.workKey, deleteDownloaded: false)
+          : manager.deleteTask(task.work.workKey),
     ),
     message: ref
         .read(appLanguageProviderInstanceProvider)
@@ -266,7 +266,7 @@ Future<_TaskRemovalAction?> _showTaskRemovalMenu(
 
 class _DownloadTaskItem extends ConsumerWidget {
   const _DownloadTaskItem({required this.workId});
-  final int workId;
+  final String workId;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final task = ref.watch(asmrDownloadTaskProvider(workId));

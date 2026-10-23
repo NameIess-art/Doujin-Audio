@@ -8,7 +8,7 @@ import 'asmr_download_io.dart';
 
 String encodePersistedDownloadTasks(List<PersistedDownloadTask> tasks) =>
     jsonEncode(<String, Object?>{
-      'version': 2,
+      'version': 3,
       'tasks': tasks
           .map(
             (snapshot) => downloadTaskToJson(
@@ -33,7 +33,9 @@ decodePersistedDownloadTasks(String payload) {
         throw const FormatException('Invalid download task entry.');
       }
       final taskJson = Map<String, dynamic>.from(value);
-      if (decoded['version'] != 2) taskJson.remove('fileEntityTags');
+      if (!const [2, 3].contains(decoded['version'])) {
+        taskJson.remove('fileEntityTags');
+      }
       final restored = downloadTaskFromJson(taskJson);
       tasks.add(
         PersistedDownloadTask(
@@ -83,6 +85,7 @@ Map<String, Object?> downloadTaskToJson(
   'fileDownloadedBytes': task.fileDownloadedBytes,
   'fileTotalBytes': task.fileTotalBytes,
   'fileEntityTags': task.fileEntityTags,
+  'actualOutputPaths': task.actualOutputPaths,
   'completedFilePaths': task.completedFilePaths.toList(growable: false),
   'failedFilePaths': task.failedFilePaths.toList(growable: false),
   'selectedRoots': task.selectedRoots.map(_downloadTrackToJson).toList(),
@@ -141,6 +144,9 @@ PersistedDownloadTask downloadTaskFromJson(Map<String, dynamic> json) {
       fileDownloadedBytes: _jsonIntMap(json['fileDownloadedBytes']),
       fileTotalBytes: _jsonIntMap(json['fileTotalBytes']),
       fileEntityTags: _jsonEntityTags(json['fileEntityTags']),
+      actualOutputPaths: (json['actualOutputPaths'] as Map? ?? const {}).map(
+        (key, value) => MapEntry(key as String, value as String),
+      ),
       completedFilePaths:
           (json['completedFilePaths'] as List? ?? const <Object>[])
               .whereType<String>()
@@ -187,6 +193,7 @@ Map<String, Object?> _downloadTrackToJson(AsmrTrackFile track) =>
       'durationMs': track.duration.inMilliseconds,
       'size': track.size,
       'workId': track.workId,
+      'workKey': track.workKey,
       'workTitle': track.workTitle,
       'sourceId': track.sourceId,
       'relativePath': track.relativePath,
@@ -210,6 +217,7 @@ AsmrTrackFile _downloadTrackFromJson(Map<String, dynamic> json) =>
           )
           .toList(growable: false),
       workId: _jsonInt(json['workId']),
+      workKey: json['workKey'] as String?,
       workTitle: json['workTitle'] as String? ?? '',
       sourceId: json['sourceId'] as String? ?? '',
       relativePath: json['relativePath'] as String? ?? '',

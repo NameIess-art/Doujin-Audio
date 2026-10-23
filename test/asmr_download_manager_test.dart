@@ -77,7 +77,7 @@ void main() {
           customWorkFolderName: 'Work?',
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
-        final task = manager.getTask(1)!;
+        final task = manager.getTask(_key(1))!;
         expect(task.completedFilePaths, {
           'Folder?/01?.mp3',
           'Folder?/info?.json.',
@@ -99,7 +99,7 @@ void main() {
         final textFiles = collectAsmrWorkTextFiles(
           task.selectedRoots,
           downloadManager: manager,
-          workId: 1,
+          workKey: _key(1),
         );
         expect(
           textFiles.singleWhere((file) => file.name == 'CON.txt').path,
@@ -107,7 +107,7 @@ void main() {
         );
         final target = File(path.join(task.workRootPath, 'Folder_', '01_.mp3'));
         expect(await target.readAsBytes(), [1]);
-        await manager.deleteTask(1);
+        await manager.deleteTask(_key(1));
         expect(await target.exists(), isFalse);
         expect(await existingJson.readAsString(), preservedJson);
       } finally {
@@ -219,7 +219,7 @@ void main() {
       persistenceWriter: (payload) async => writes.add(payload),
     );
     addTearDown(manager.shutdown);
-    final cancel = manager.cancelTask(1, deleteDownloaded: false);
+    final cancel = manager.cancelTask(_key(1), deleteDownloaded: false);
     await Future<void>.delayed(Duration.zero);
     expect(writes, isEmpty);
     read.complete(_restorableTaskPayload());
@@ -383,17 +383,17 @@ void main() {
           automaticFileRetryCount: 3,
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
-        expect(manager.getTask(1)?.destinationRoot, destination);
+        expect(manager.getTask(_key(1))?.destinationRoot, destination);
         expect(
-          manager.getTask(1)?.conflictPolicy,
+          manager.getTask(_key(1))?.conflictPolicy,
           AsmrDownloadConflictPolicy.skip,
         );
-        expect(manager.getTask(1)?.automaticFileRetryCount, 3);
+        expect(manager.getTask(_key(1))?.automaticFileRetryCount, 3);
         expect(
           await File(path.join(destination, 'Work', 'New.mp3')).readAsBytes(),
           [7],
         );
-        await manager.deleteTask(1);
+        await manager.deleteTask(_key(1));
         expect(await original.readAsBytes(), [7]);
       } finally {
         await manager.shutdown();
@@ -456,7 +456,7 @@ void main() {
         releaseCopy.complete();
         await replacement;
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
-        await manager.deleteTask(1);
+        await manager.deleteTask(_key(1));
         expect(
           gateway.existingPaths,
           contains('content://downloads/old::Work/Old.mp3'),
@@ -547,7 +547,7 @@ void main() {
             DateTime.now().isBefore(deadline)) {
           await Future<void>.delayed(const Duration(milliseconds: 10));
         }
-        await manager.pauseTask(1);
+        await manager.pauseTask(_key(1));
         final pausedBytes = await partial.length();
         expect(pausedBytes, greaterThan(0));
           expect(pausedBytes, lessThan(size));
@@ -559,7 +559,7 @@ void main() {
             ? path.join(temp.path, 'New')
             : temp.path;
         if (action == 'resume') {
-          await manager.resumeTask(1);
+          await manager.resumeTask(_key(1));
         } else {
           await start(destination: destination);
         }
@@ -655,7 +655,7 @@ void main() {
           );
           expect(completions, isEmpty);
           rejectWrite = false;
-          await manager.resumeTask(1);
+          await manager.resumeTask(_key(1));
         }
         final snapshot = await completed.future.timeout(
           const Duration(seconds: 5),
@@ -750,7 +750,7 @@ void main() {
         expect(await staging.exists(), isFalse);
         expect(await target.readAsBytes(), [9]);
         final interrupted = outcome == 'pause'
-            ? manager.pauseTask(1)
+            ? manager.pauseTask(_key(1))
             : outcome == 'shutdown'
             ? manager.shutdown()
             : null;
@@ -774,7 +774,7 @@ void main() {
             outcome == 'success' ? [1, 2, 3] : [9],
           );
           if (outcome != 'pause') {
-            expect(manager.getTask(1)?.fileEntityTags, isEmpty);
+            expect(manager.getTask(_key(1))?.fileEntityTags, isEmpty);
           }
         }
         expect(await staging.exists(), isFalse);
@@ -962,7 +962,7 @@ void main() {
         expect(gateway.ensuredRelativePaths.toSet(), hasLength(2));
         expect(gateway.ensuredRelativePaths, contains(endsWith('Work')));
         expect(gateway.ensuredRelativePaths, contains(endsWith('Work 2')));
-        expect(manager.getTask(2)?.workRootPath, endsWith('Work 2'));
+        expect(manager.getTask(_key(2))?.workRootPath, endsWith('Work 2'));
       } finally {
         manager.dispose();
       }
@@ -1075,7 +1075,7 @@ void main() {
       final notifications = <AsmrDownloadTaskSnapshot?>[];
       final completions = <AsmrDownloadTaskSnapshot>[];
       manager.completedTasks.listen(completions.add);
-      manager.taskStream(1).listen((task) {
+      manager.taskStream(_key(1)).listen((task) {
         if (task != null) notifications.add(task);
       });
       await Future<void>.delayed(Duration.zero);
@@ -1142,7 +1142,8 @@ void main() {
 
       expect(notifications, hasLength(3));
       expect(notifications.last?.status, AsmrDownloadTaskStatus.completed);
-      expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.completed);
+      expect(manager.getTask(_key(1))?.status, AsmrDownloadTaskStatus.completed,
+      );
       expect(completions, isEmpty);
       expect(manager.taskIds, isEmpty);
       expect(manager.buttonViewState.visible, isFalse);
@@ -1187,7 +1188,7 @@ void main() {
       ),
     );
 
-    expect(manager.taskIds, <int>[2]);
+    expect(manager.taskIds, [_key(2)]);
     expect(manager.buttonViewState.visible, isTrue);
     expect(manager.buttonViewState.progress, 0.5);
     expect(manager.taskShellViewState.hasTask, isTrue);
@@ -1218,8 +1219,8 @@ void main() {
     manager.debugSetCurrentTaskForTesting(completedTask(1));
     manager.debugSetCurrentTaskForTesting(completedTask(2));
 
-    expect(manager.getTask(1), isNull);
-    expect(manager.getTask(2)?.status, AsmrDownloadTaskStatus.completed);
+    expect(manager.getTask(_key(1)), isNull);
+    expect(manager.getTask(_key(2))?.status, AsmrDownloadTaskStatus.completed);
     expect(manager.tasks, hasLength(1));
     expect(manager.taskIds, isEmpty);
     manager.dispose();
@@ -1253,7 +1254,7 @@ void main() {
         ),
       );
 
-      expect(manager.taskIds, <int>[1], reason: '$status');
+      expect(manager.taskIds, [_key(1)], reason: '$status');
       expect(manager.buttonViewState.visible, isTrue, reason: '$status');
       expect(manager.taskShellViewState.hasTask, isTrue, reason: '$status');
       manager.dispose();
@@ -1281,23 +1282,23 @@ void main() {
       );
       manager.debugSetCurrentTaskForTesting(initial);
       var notifications = 0;
-      manager.taskStream(1).skip(1).listen((_) => notifications++);
+      manager.taskStream(_key(1)).skip(1).listen((_) => notifications++);
 
       for (var index = 0; index < 20; index++) {
         manager.debugRecordDownloadChunkForTesting(
-          1,
+          _key(1),
           'track.mp3',
           1,
           index + 1,
         );
       }
 
-      expect(identical(manager.getTask(1), initial), isTrue);
+      expect(identical(manager.getTask(_key(1)), initial), isTrue);
       expect(notifications, 0);
       await Future<void>.delayed(const Duration(milliseconds: 150));
       expect(notifications, 1);
-      expect(manager.getTask(1)?.downloadedBytes, 20);
-      expect(manager.getTask(1)?.fileDownloadedBytes['track.mp3'], 20);
+      expect(manager.getTask(_key(1))?.downloadedBytes, 20);
+      expect(manager.getTask(_key(1))?.fileDownloadedBytes['track.mp3'], 20);
       manager.dispose();
     },
   );
@@ -1324,11 +1325,11 @@ void main() {
         ),
       );
       var notifications = 0;
-      manager.taskStream(1).skip(1).listen((_) => notifications++);
+      manager.taskStream(_key(1)).skip(1).listen((_) => notifications++);
 
       for (var index = 0; index < 4; index++) {
         manager.debugRecordDownloadChunkForTesting(
-          1,
+          _key(1),
           'track.mp3',
           256 * 1024,
           (index + 1) * 256 * 1024,
@@ -1338,7 +1339,7 @@ void main() {
       expect(notifications, 0);
       await Future<void>.delayed(const Duration(milliseconds: 150));
       expect(notifications, 1);
-      expect(manager.getTask(1)?.downloadedBytes, 1024 * 1024);
+      expect(manager.getTask(_key(1))?.downloadedBytes, 1024 * 1024);
       manager.dispose();
     },
   );
@@ -1369,12 +1370,12 @@ void main() {
       var targetEvents = 0;
       var unrelatedEvents = 0;
       var taskIdEvents = 0;
-      manager.taskStream(1).skip(1).listen((_) => targetEvents++);
-      manager.taskStream(2).skip(1).listen((_) => unrelatedEvents++);
+      manager.taskStream(_key(1)).skip(1).listen((_) => targetEvents++);
+      manager.taskStream(_key(2)).skip(1).listen((_) => unrelatedEvents++);
       manager.taskIdsStream.skip(1).listen((_) => taskIdEvents++);
 
       manager.debugSetCurrentTaskForTesting(
-        manager.getTask(1)!.copyWith(downloadedBytes: 1),
+        manager.getTask(_key(1))!.copyWith(downloadedBytes: 1),
         progressOnly: true,
       );
       await Future<void>.delayed(const Duration(milliseconds: 150));
@@ -1412,7 +1413,9 @@ void main() {
     );
 
     for (var index = 0; index < 20; index++) {
-      manager.debugRecordDownloadChunkForTesting(1, 'track.mp3', 1, index + 1);
+      manager.debugRecordDownloadChunkForTesting(
+        _key(1), 'track.mp3', 1, index + 1,
+      );
     }
     await Future<void>.delayed(const Duration(milliseconds: 150));
 
@@ -1528,15 +1531,15 @@ void main() {
       );
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-      final task = manager.getTask(1)!;
+      final task = manager.getTask(_key(1))!;
       final cover = File(path.join(task.workRootPath, 'cover', 'cover.png'));
       expect(await cover.readAsBytes(), const <int>[1, 2, 3, 4]);
-      expect(manager.getTask(1)?.totalFiles, 2);
-      expect(manager.getTask(1)?.totalBytes, 3);
-      expect(manager.getTask(1)?.downloadedBytes, 3);
-      expect(manager.getTask(1)?.coverOutputPath, cover.path);
+      expect(manager.getTask(_key(1))?.totalFiles, 2);
+      expect(manager.getTask(_key(1))?.totalBytes, 3);
+      expect(manager.getTask(_key(1))?.downloadedBytes, 3);
+      expect(manager.getTask(_key(1))?.coverOutputPath, cover.path);
 
-      await manager.deleteTask(1);
+      await manager.deleteTask(_key(1));
       expect(await cover.exists(), isFalse);
     } finally {
       manager.dispose();
@@ -1602,7 +1605,7 @@ void main() {
         );
         expect(audioRequests, 1);
         expect(coverRequests, 4);
-        expect(manager.getTask(1)?.failedFiles, 1);
+        expect(manager.getTask(_key(1))?.failedFiles, 1);
 
         coverSucceeds = true;
         await manager.startDownload(
@@ -1621,7 +1624,8 @@ void main() {
         expect(coverRequests, 5);
         expect(
           await File(
-            path.join(manager.getTask(1)!.workRootPath, 'cover', 'cover.jpg'),
+            path.join(manager.getTask(_key(1))!.workRootPath, 'cover', 'cover.jpg',
+            ),
           ).readAsBytes(),
           const <int>[8, 9],
         );
@@ -1670,10 +1674,11 @@ void main() {
         allowFailure: true,
       );
 
-      expect(manager.getTask(1)?.failedFiles, 1);
+      expect(manager.getTask(_key(1))?.failedFiles, 1);
       expect(
         await File(
-          path.join(manager.getTask(1)!.workRootPath, 'cover', 'cover.jpg'),
+          path.join(manager.getTask(_key(1))!.workRootPath, 'cover', 'cover.jpg',
+          ),
         ).exists(),
         isFalse,
       );
@@ -1753,11 +1758,11 @@ void main() {
       );
       await firstCoverStarted.future.timeout(const Duration(seconds: 5));
       await Future<void>.delayed(const Duration(milliseconds: 30));
-      await manager.pauseTask(1);
+      await manager.pauseTask(_key(1));
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.paused);
       final staging = File(
         path.join(
-          manager.getTask(1)!.workRootPath,
+          manager.getTask(_key(1))!.workRootPath,
           'cover',
           'cover.cover.doujin.part',
         ),
@@ -1766,7 +1771,7 @@ void main() {
       expect(pausedBytes, greaterThan(0));
       expect(pausedBytes, lessThan(coverBytes));
 
-      await manager.resumeTask(1);
+      await manager.resumeTask(_key(1));
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       expect(coverRequests, greaterThanOrEqualTo(2));
@@ -1774,7 +1779,8 @@ void main() {
       expect(await staging.exists(), isFalse);
       expect(
         await File(
-          path.join(manager.getTask(1)!.workRootPath, 'cover', 'cover.jpg'),
+          path.join(manager.getTask(_key(1))!.workRootPath, 'cover', 'cover.jpg',
+          ),
         ).length(),
         coverBytes,
       );
@@ -1823,7 +1829,7 @@ void main() {
       expect(gateway.copiedRelativePaths, contains('cover/cover.png'));
       expect(gateway.ensuredRelativePaths, contains('cover'));
 
-      await manager.deleteTask(1);
+      await manager.deleteTask(_key(1));
       expect(
         gateway.deletedPaths.any((p) => p.endsWith('cover/cover.png')),
         isTrue,
@@ -1933,7 +1939,7 @@ void main() {
       );
       final manager = _manager();
       final observed = <int>[];
-      manager.taskStream(1).skip(1).listen((task) {
+      manager.taskStream(_key(1)).skip(1).listen((task) {
         if (task != null && task.status == AsmrDownloadTaskStatus.downloading) {
           observed.add(task.downloadedBytes);
         }
@@ -1964,7 +1970,7 @@ void main() {
             reason: 'aggregate progress regressed: $observed',
           );
         }
-        expect(manager.getTask(1)?.downloadedBytes, 3072);
+        expect(manager.getTask(_key(1))?.downloadedBytes, 3072);
       } finally {
         manager.dispose();
         await server.close(force: true);
@@ -2009,7 +2015,7 @@ void main() {
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       expect(cacheDirectoryRequests, 0);
-      expect(manager.getTask(1)?.workFolderName, 'Work');
+      expect(manager.getTask(_key(1))?.workFolderName, 'Work');
       expect(
         await File(
           '${tempDir.path}${Platform.pathSeparator}Work'
@@ -2017,7 +2023,7 @@ void main() {
         ).length(),
         256,
       );
-      expect(manager.getTask(1)?.progress, 1);
+      expect(manager.getTask(_key(1))?.progress, 1);
     } finally {
       manager.dispose();
       await server.close(force: true);
@@ -2086,8 +2092,8 @@ void main() {
         expect(cacheDirectoryRequests, 0);
         expect(coverRequests, 1);
         expect(trackRequests, 2);
-        expect(manager.getTask(1)?.failedFiles, 0);
-        expect(manager.getTask(1)?.skippedFiles, 1);
+        expect(manager.getTask(_key(1))?.failedFiles, 0);
+        expect(manager.getTask(_key(1))?.skippedFiles, 1);
         expect(await metadata.readAsString(), metadataJson);
         expect(
           await File(path.join(workDir.path, 'Track.mp3')).readAsBytes(),
@@ -2182,7 +2188,7 @@ void main() {
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-        final task = manager.getTask(1);
+        final task = manager.getTask(_key(1));
         expect(requestCount, 0);
         expect(await target.readAsBytes(), <int>[1, 2, 3]);
         expect(await File('${target.path}.doujin.part').exists(), isFalse);
@@ -2258,8 +2264,11 @@ void main() {
         try {
           expect(utf8.encode(longTitle), hasLength(261));
           expect(utf8.encode(actualName), hasLength(255));
+          final work = _work(
+            id: 1716098, title: longTitle, sourceId: 'RJ01716098',
+          );
           await manager.startDownload(
-            work: _work(id: 1716098, title: longTitle, sourceId: 'RJ01716098'),
+            work: work,
             selectedRoots: [
               _file(
                 downloadUrl:
@@ -2274,8 +2283,9 @@ void main() {
             manager,
             1716098,
             AsmrDownloadTaskStatus.completed,
+            workKey: work.workKey,
           );
-          final task = manager.getTask(1716098)!;
+          final task = manager.getTask(work.workKey)!;
           expect(task.workFolderName, actualName);
           expect(task.requestedWorkFolderName, longTitle);
           expect(task.workRootPath, actualRoot);
@@ -2306,7 +2316,7 @@ void main() {
                 .workFolderName,
             actualName,
           );
-          await manager.deleteTask(1716098);
+          await manager.deleteTask(work.workKey);
           expect(gateway.deletedPaths, contains('$actualRoot/Track.mp3'));
         } finally {
           await manager.shutdown();
@@ -2376,27 +2386,25 @@ void main() {
             conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
           );
           await documents.writeStarted.future.timeout(
-            const Duration(seconds: 5),
-          );
+            const Duration(seconds: 5));
           expect(requests, 0);
-          expect(manager.getTask(1)?.completedFilePaths, isEmpty);
+          expect(manager.getTask(_key(1))?.completedFilePaths, isEmpty);
           if (usesSaf) {
             expect(gateway.copiedRelativePaths, isEmpty);
           } else {
             expect(
               await File(
-                path.join(tempDir.path, 'Work', 'Track.mp3'),
-              ).exists(),
+                path.join(tempDir.path, 'Work', 'Track.mp3')).exists(),
               isFalse,
             );
           }
           expect(
             documents.location?.basePath,
-            manager.getTask(1)?.workRootPath,
+            manager.getTask(_key(1))?.workRootPath,
           );
           expect(documents.location?.usesSaf, usesSaf);
           expect(
-            manager.getTask(1)?.status,
+            manager.getTask(_key(1))?.status,
             AsmrDownloadTaskStatus.preparing,
           );
           expect(await metadata.exists(), isFalse);
@@ -2410,13 +2418,14 @@ void main() {
             AsmrDownloadTaskStatus.failed,
             allowFailure: true,
           );
-          expect(manager.getTask(1)?.error, contains('metadata_write_failed'));
-          expect(manager.getTask(1)?.completedFiles, 0);
+          expect(manager.getTask(_key(1))?.error, contains('metadata_write_failed'),
+        );
+          expect(manager.getTask(_key(1))?.completedFiles, 0);
           expect(requests, 0);
           expect(completions, isEmpty);
 
           documents.rejectWrite = false;
-          final startedAt = manager.getTask(1)!.startedAt;
+          final startedAt = manager.getTask(_key(1))!.startedAt;
           await manager.startDownload(
             work: _work(),
             selectedRoots: [
@@ -2431,22 +2440,21 @@ void main() {
           await _waitForTaskStatus(
             manager,
             1,
-            AsmrDownloadTaskStatus.completed,
-          );
+            AsmrDownloadTaskStatus.completed);
           await completed.future.timeout(const Duration(seconds: 5));
           expect(completions, hasLength(1));
           expect(requests, 1);
           expect(titleAtFirstRequest, 'Work');
-          expect(manager.getTask(1)!.startedAt, startedAt);
-          expect(manager.getTask(1)?.completedFiles, 2);
+          expect(manager.getTask(_key(1))!.startedAt, startedAt);
+          expect(manager.getTask(_key(1))?.completedFiles, 2);
           expect(
-            manager.getTask(1)?.downloadedBytes,
-            manager.getTask(1)?.totalBytes,
+            manager.getTask(_key(1))?.downloadedBytes,
+            manager.getTask(_key(1))?.totalBytes,
           );
           final detail = const AudioDetailJsonCodec().decode(
             await metadata.readAsBytes(),
             AudioDetailTarget.libraryRootFolder(
-              manager.getTask(1)!.workRootPath,
+              manager.getTask(_key(1))!.workRootPath,
             ),
           );
           expect(detail.rjCode, 'RJ123456');
@@ -2459,8 +2467,7 @@ void main() {
           await server.close(force: true);
           await tempDir.delete(recursive: true);
         }
-      },
-    );
+      });
   }
 
   for (final usesSaf in [false, true]) {
@@ -2493,25 +2500,25 @@ void main() {
             const Duration(seconds: 5),
           );
           final interrupted = action == 'pause'
-              ? manager.pauseTask(1)
+              ? manager.pauseTask(_key(1))
               : manager.cancelTask(
-                  1,
+                  _key(1),
                   deleteDownloaded: action == 'cancel_delete',
                 );
           documents.releaseWrite.complete();
           await interrupted.timeout(const Duration(seconds: 5));
           expect(await metadata.exists(), action != 'cancel_delete');
           if (action == 'pause') {
-            final paused = manager.getTask(1)!;
+            final paused = manager.getTask(_key(1))!;
             expect(paused.status, AsmrDownloadTaskStatus.paused);
             expect(paused.completedFiles, 1);
             expect(paused.skippedFiles, 0);
             expect(paused.completedFilePaths, isEmpty);
             expect(paused.downloadedBytes, await metadata.length());
-            await manager.deleteTask(1);
+            await manager.deleteTask(_key(1));
             expect(await metadata.exists(), isFalse);
           } else {
-            expect(manager.getTask(1), isNull);
+            expect(manager.getTask(_key(1)), isNull);
           }
         } finally {
           if (!documents.releaseWrite.isCompleted) {
@@ -2572,18 +2579,18 @@ void main() {
           allowFailure: true,
         );
         expect(await metadata.exists(), isTrue);
-        expect(manager.getTask(1)?.completedFiles, 1);
+        expect(manager.getTask(_key(1))?.completedFiles, 1);
         expect(completions, isEmpty);
         await metadata.delete();
         failDownload = false;
-        expect(await manager.retryFailedFile(1, 'Track.mp3'), isTrue);
+        expect(await manager.retryFailedFile(_key(1), 'Track.mp3'), isTrue);
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
         await completed.future.timeout(const Duration(seconds: 5));
         expect(completions, hasLength(1));
         expect(await metadata.exists(), isTrue);
-        expect(manager.getTask(1)?.completedFiles, 2);
-        expect(manager.getTask(1)?.skippedFiles, 0);
-        expect(manager.getTask(1)?.failedFiles, 0);
+        expect(manager.getTask(_key(1))?.completedFiles, 2);
+        expect(manager.getTask(_key(1))?.skippedFiles, 0);
+        expect(manager.getTask(_key(1))?.failedFiles, 0);
       } finally {
         await manager.shutdown();
         await server.close(force: true);
@@ -2612,15 +2619,15 @@ void main() {
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
-        final workRoot = manager.getTask(1)!.workRootPath;
+        final workRoot = manager.getTask(_key(1))!.workRootPath;
         final detail = const AudioDetailJsonCodec().decode(
           await File(path.join(workRoot, 'doujin-audio.json')).readAsBytes(),
           AudioDetailTarget.libraryRootFolder(workRoot),
         );
         expect(detail.rjCode, 'RJ123456');
         expect(detail.workTitle, 'Work');
-        expect(manager.getTask(1)?.completedFiles, 1);
-        expect(manager.getTask(1)?.skippedFiles, 1);
+        expect(manager.getTask(_key(1))?.completedFiles, 1);
+        expect(manager.getTask(_key(1))?.skippedFiles, 1);
       } finally {
         await manager.shutdown();
         await tempDir.delete(recursive: true);
@@ -2741,7 +2748,7 @@ void main() {
 
             expect(await jsonFile.readAsString(), originalJson);
             expect(await backup.readAsString(), originalBackup);
-            expect(manager.getTask(1)?.skippedFiles, 2);
+            expect(manager.getTask(_key(1))?.skippedFiles, 2);
           } finally {
             manager.dispose();
             if (await tempDir.exists()) await tempDir.delete(recursive: true);
@@ -2792,8 +2799,8 @@ void main() {
       );
       expect(await target.readAsString(), payload);
       expect(await File('${target.path}.doujin.part').exists(), isFalse);
-      expect(manager.getTask(1)?.completedFiles, 1);
-      expect(manager.getTask(1)?.skippedFiles, 0);
+      expect(manager.getTask(_key(1))?.completedFiles, 1);
+      expect(manager.getTask(_key(1))?.skippedFiles, 0);
     } finally {
       manager.dispose();
       await server.close(force: true);
@@ -2826,7 +2833,7 @@ void main() {
       );
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-      expect(manager.getTask(1)?.skippedFiles, 1);
+      expect(manager.getTask(_key(1))?.skippedFiles, 1);
       expect(gateway.copyCount, 0);
     } finally {
       manager.dispose();
@@ -2863,8 +2870,8 @@ void main() {
         allowFailure: true,
       );
 
-      final workRoot = manager.getTask(1)!.workRootPath;
-      await manager.cancelTask(1);
+      final workRoot = manager.getTask(_key(1))!.workRootPath;
+      await manager.cancelTask(_key(1));
 
       expect(gateway.deletedPaths, isNot(contains(workRoot)));
     } finally {
@@ -2909,7 +2916,7 @@ void main() {
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-        final task = manager.getTask(1)!;
+        final task = manager.getTask(_key(1))!;
         expect(task.workFolderName, 'RJ123456 - Work');
         expect(task.saveMetadata, isFalse);
         expect(task.totalFiles, 0);
@@ -2944,9 +2951,9 @@ void main() {
     manager.debugSetCurrentTaskForTesting(_failedTaskSnapshot(tempDir.path));
 
     try {
-      await manager.cancelTask(1, deleteDownloaded: false);
+      await manager.cancelTask(_key(1), deleteDownloaded: false);
 
-      expect(manager.getTask(1), isNull);
+      expect(manager.getTask(_key(1)), isNull);
       expect(await downloadedFile.readAsBytes(), const <int>[1, 2, 3]);
     } finally {
       manager.dispose();
@@ -2966,12 +2973,14 @@ void main() {
     await downloadedFile.writeAsBytes(const <int>[1, 2, 3]);
     final manager = _manager();
     manager.debugSetCurrentTaskForTesting(_failedTaskSnapshot(tempDir.path));
-    manager.debugRecordCreatedOutputPathForTesting(1, downloadedFile.path);
+    manager.debugRecordCreatedOutputPathForTesting(
+      _key(1), downloadedFile.path,
+    );
 
     try {
-      await manager.deleteTask(1);
+      await manager.deleteTask(_key(1));
 
-      expect(manager.getTask(1), isNull);
+      expect(manager.getTask(_key(1)), isNull);
       expect(await workDir.exists(), isFalse);
     } finally {
       manager.dispose();
@@ -3011,9 +3020,9 @@ void main() {
     );
 
     try {
-      await manager.deleteTask(1);
+      await manager.deleteTask(_key(1));
 
-      expect(manager.getTask(1), isNull);
+      expect(manager.getTask(_key(1)), isNull);
       expect(await existingFile.readAsBytes(), const <int>[1, 2, 3]);
       expect(await existingMetadata.readAsString(), 'user metadata');
       expect(await existingCover.readAsBytes(), const <int>[4, 5, 6]);
@@ -3021,11 +3030,14 @@ void main() {
       manager.dispose();
       if (await tempDir.exists()) await tempDir.delete(recursive: true);
     }
-  });
+  },
+  );
 
   test('starting the same work again does not retain old output ownership', () async {
-    final oldRoot = await Directory.systemTemp.createTemp('asmr_download_old_');
-    final newRoot = await Directory.systemTemp.createTemp('asmr_download_new_');
+    final oldRoot = await Directory.systemTemp.createTemp('asmr_download_old_',
+      );
+    final newRoot = await Directory.systemTemp.createTemp('asmr_download_new_',
+      );
     final oldFile = File(path.join(oldRoot.path, 'Work', 'Track.mp3'));
     final newFile = File(path.join(newRoot.path, 'Work', 'Track.mp3'));
     await oldFile.create(recursive: true);
@@ -3034,11 +3046,11 @@ void main() {
     await newFile.writeAsBytes(const <int>[4, 5, 6]);
     final manager = _manager();
     manager.debugSetCurrentTaskForTesting(
-      _failedTaskSnapshot(oldRoot.path).copyWith(
-        status: AsmrDownloadTaskStatus.completed,
-      ),
+      _failedTaskSnapshot(oldRoot.path,
+        ).copyWith(
+        status: AsmrDownloadTaskStatus.completed),
     );
-    manager.debugRecordCreatedOutputPathForTesting(1, oldFile.path);
+    manager.debugRecordCreatedOutputPathForTesting(_key(1), oldFile.path);
 
     try {
       await manager.startDownload(
@@ -3052,7 +3064,7 @@ void main() {
         saveCover: false,
       );
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
-      await manager.deleteTask(1);
+      await manager.deleteTask(_key(1));
 
       expect(await oldFile.readAsBytes(), const <int>[1, 2, 3]);
       expect(await newFile.readAsBytes(), const <int>[4, 5, 6]);
@@ -3061,7 +3073,8 @@ void main() {
       if (await oldRoot.exists()) await oldRoot.delete(recursive: true);
       if (await newRoot.exists()) await newRoot.delete(recursive: true);
     }
-  });
+  },
+  );
 
   test('restored task deletes only files it created before restart', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -3094,7 +3107,7 @@ void main() {
         ),
       );
       firstManager.debugRecordCreatedOutputPathForTesting(
-        1,
+        _key(1),
         createdFile.path,
       );
       await firstManager.flushPersistence();
@@ -3102,8 +3115,9 @@ void main() {
 
       restoredManager = AsmrDownloadManager();
       await restoredManager.initialize();
-      expect(restoredManager.getTask(1)?.status, AsmrDownloadTaskStatus.paused);
-      await restoredManager.deleteTask(1);
+      expect(restoredManager.getTask(_key(1))?.status, AsmrDownloadTaskStatus.paused,
+      );
+      await restoredManager.deleteTask(_key(1));
 
       expect(await createdFile.exists(), isFalse);
       expect(await skippedFile.readAsBytes(), const <int>[4, 5, 6]);
@@ -3126,7 +3140,8 @@ void main() {
     final unrelatedFile = File(
       '${workDir.path}${Platform.pathSeparator}unrelated_user_note.txt',
     );
-    final subDir = Directory('${workDir.path}${Platform.pathSeparator}SubFolder');
+    final subDir = Directory('${workDir.path}${Platform.pathSeparator}SubFolder',
+      );
     final unrelatedSubFile = File(
       '${subDir.path}${Platform.pathSeparator}other.txt',
     );
@@ -3139,14 +3154,15 @@ void main() {
 
     final manager = _manager();
     manager.debugSetCurrentTaskForTesting(
-      _failedTaskSnapshot(tempDir.path),
-    );
-    manager.debugRecordCreatedOutputPathForTesting(1, downloadedTrack.path);
+      _failedTaskSnapshot(tempDir.path));
+    manager.debugRecordCreatedOutputPathForTesting(
+        _key(1), downloadedTrack.path,
+      );
 
     try {
-      await manager.deleteTask(1);
+      await manager.deleteTask(_key(1));
 
-      expect(manager.getTask(1), isNull);
+      expect(manager.getTask(_key(1)), isNull);
       expect(await downloadedTrack.exists(), isFalse);
       expect(await unrelatedFile.exists(), isTrue);
       expect(await unrelatedFile.readAsString(), 'keep me');
@@ -3157,15 +3173,18 @@ void main() {
       manager.dispose();
       if (await tempDir.exists()) await tempDir.delete(recursive: true);
     }
-  });
+  },
+  );
 
   test('deleting a task prunes empty subdirectories but keeps folder if other files exist', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_prune_sub_',
     );
     final workDir = Directory('${tempDir.path}${Platform.pathSeparator}Work');
-    final discDir = Directory('${workDir.path}${Platform.pathSeparator}Disc1');
-    final trackFile = File('${discDir.path}${Platform.pathSeparator}Track.mp3');
+    final discDir = Directory('${workDir.path}${Platform.pathSeparator}Disc1',
+      );
+    final trackFile = File('${discDir.path}${Platform.pathSeparator}Track.mp3',
+      );
     final userFile = File('${workDir.path}${Platform.pathSeparator}user.txt');
 
     await trackFile.create(recursive: true);
@@ -3180,12 +3199,12 @@ void main() {
         completedFilePaths: const {'Disc1/Track.mp3'},
       ),
     );
-    manager.debugRecordCreatedOutputPathForTesting(1, trackFile.path);
+    manager.debugRecordCreatedOutputPathForTesting(_key(1), trackFile.path);
 
     try {
-      await manager.deleteTask(1);
+      await manager.deleteTask(_key(1));
 
-      expect(manager.getTask(1), isNull);
+      expect(manager.getTask(_key(1)), isNull);
       expect(await trackFile.exists(), isFalse);
       expect(await discDir.exists(), isFalse);
       expect(await userFile.exists(), isTrue);
@@ -3194,7 +3213,8 @@ void main() {
       manager.dispose();
       if (await tempDir.exists()) await tempDir.delete(recursive: true);
     }
-  });
+  },
+  );
 
   test(
     'canceling a paused download removes task and downloaded files',
@@ -3243,7 +3263,7 @@ void main() {
         );
         await _waitForTaskStatus(manager, 2, AsmrDownloadTaskStatus.completed);
         final otherFile = File(
-          path.join(manager.getTask(2)!.workRootPath, 'Track.mp3'),
+          path.join(manager.getTask(_key(2))!.workRootPath, 'Track.mp3'),
         );
         await manager.startDownload(
           work: _work(),
@@ -3260,11 +3280,11 @@ void main() {
 
         await _waitForLiveTask(manager);
         await Future<void>.delayed(const Duration(milliseconds: 100));
-        await manager.pauseTask(1);
+        await manager.pauseTask(_key(1));
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.paused);
-        await manager.cancelTask(1).timeout(const Duration(seconds: 5));
+        await manager.cancelTask(_key(1)).timeout(const Duration(seconds: 5));
 
-        expect(manager.getTask(1), isNull);
+        expect(manager.getTask(_key(1)), isNull);
         final workDirectory = Directory(
           '${tempDir.path}${Platform.pathSeparator}Work',
         );
@@ -3323,7 +3343,7 @@ void main() {
         );
         await _waitForLiveTask(manager);
         await Future<void>.delayed(const Duration(milliseconds: 80));
-        await manager.cancelTask(1).timeout(const Duration(seconds: 5));
+        await manager.cancelTask(_key(1)).timeout(const Duration(seconds: 5));
 
         expect(await sentinel.readAsString(), 'keep');
         expect(
@@ -3390,7 +3410,7 @@ void main() {
           AsmrDownloadTaskStatus.downloading,
         );
         await firstRequestStarted.future.timeout(const Duration(seconds: 5));
-        await manager.cancelTask(1);
+        await manager.cancelTask(_key(1));
 
         await manager.startDownload(
           work: _work(),
@@ -3490,7 +3510,7 @@ void main() {
       );
       final manager = _manager();
       var observedRetry = false;
-      manager.taskStream(1).skip(1).listen((task) {
+      manager.taskStream(_key(1)).skip(1).listen((task) {
         observedRetry =
             observedRetry || task?.fileRetryAttempts['retry.mp3'] == 1;
       });
@@ -3516,7 +3536,7 @@ void main() {
         await _waitForFileRetryAttempt(manager, 1, 'retry.mp3', 1);
         await retryResponseStarted.future.timeout(const Duration(seconds: 5));
 
-        final retryingTask = manager.getTask(1);
+        final retryingTask = manager.getTask(_key(1));
         expect(retryingTask?.status, AsmrDownloadTaskStatus.downloading);
         expect(retryingTask?.fileRetryAttempts, isEmpty);
 
@@ -3526,8 +3546,8 @@ void main() {
         expect(retryRequests, 2);
         expect(siblingRequests, 1);
         expect(observedRetry, isTrue);
-        expect(manager.getTask(1)?.failedFiles, 0);
-        expect(manager.getTask(1)?.fileRetryAttempts, isEmpty);
+        expect(manager.getTask(_key(1))?.failedFiles, 0);
+        expect(manager.getTask(_key(1))?.fileRetryAttempts, isEmpty);
         expect(
           await File(
             '${tempDir.path}${Platform.pathSeparator}Work'
@@ -3594,8 +3614,8 @@ void main() {
 
       expect(rangeStarts, <int>[0, 128]);
       expect(
-        manager.getTask(1)?.downloadedBytes,
-        manager.getTask(1)?.totalBytes,
+        manager.getTask(_key(1))?.downloadedBytes,
+        manager.getTask(_key(1))?.totalBytes,
       );
       expect(
         await File(
@@ -3683,8 +3703,7 @@ void main() {
         await server.close(force: true);
         if (await tempDir.exists()) await tempDir.delete(recursive: true);
       }
-    },
-  );
+    });
 
   test('a ranged request receiving 200 overwrites the partial file', () async {
     final tempDir = await Directory.systemTemp.createTemp(
@@ -3883,8 +3902,8 @@ void main() {
             await File(path.join(temp.path, 'Work', 'Track.mp3')).readAsBytes(),
             bytes,
           );
-          expect(manager.getTask(1)?.downloadedBytes, bytes.length);
-          expect(manager.getTask(1)?.fileEntityTags, isEmpty);
+          expect(manager.getTask(_key(1))?.downloadedBytes, bytes.length);
+          expect(manager.getTask(_key(1))?.fileEntityTags, isEmpty);
         } finally {
           await manager.shutdown();
           await server.close(force: true);
@@ -4025,8 +4044,7 @@ void main() {
       await staging.parent.create(recursive: true);
       await staging.writeAsBytes(
         List<int>.filled(bytes.length, 1),
-        flush: true,
-      );
+        flush: true);
       final manager = _manager();
       try {
         await manager.startDownload(
@@ -4046,15 +4064,13 @@ void main() {
         expect(ranges, <String?>[null]);
         expect(
           await File(path.join(workRoot, 'Track.mp3')).readAsBytes(),
-          bytes,
-        );
+          bytes);
       } finally {
         manager.dispose();
         await server.close(force: true);
         if (await tempDir.exists()) await tempDir.delete(recursive: true);
       }
-    },
-  );
+    });
 
   test(
     'transient failures exhaust configured retries and count one failure',
@@ -4093,10 +4109,11 @@ void main() {
         );
 
         expect(requests, 4);
-        expect(manager.getTask(1)?.automaticFileRetryCount, 3);
-        expect(manager.getTask(1)?.failedFiles, 1);
-        expect(manager.getTask(1)?.failedFilePaths, <String>{'Track.mp3'});
-        expect(manager.getTask(1)?.fileRetryAttempts, isEmpty);
+        expect(manager.getTask(_key(1))?.automaticFileRetryCount, 3);
+        expect(manager.getTask(_key(1))?.failedFiles, 1);
+        expect(manager.getTask(_key(1))?.failedFilePaths, <String>{'Track.mp3',
+        });
+        expect(manager.getTask(_key(1))?.fileRetryAttempts, isEmpty);
       } finally {
         manager.dispose();
         await server.close(force: true);
@@ -4149,18 +4166,19 @@ void main() {
         );
 
         expect(requests, 4);
-        expect(manager.getTask(1)?.failedFilePaths, <String>{'Track.mp3'});
+        expect(manager.getTask(_key(1))?.failedFilePaths, <String>{'Track.mp3',
+        });
         manualRetryStarted = true;
-        expect(await manager.retryFailedFile(1, 'Track.mp3'), isTrue);
-        expect(await manager.retryFailedFile(1, 'Track.mp3'), isFalse);
+        expect(await manager.retryFailedFile(_key(1), 'Track.mp3'), isTrue);
+        expect(await manager.retryFailedFile(_key(1), 'Track.mp3'), isFalse);
         await _waitForFileRetryAttempt(manager, 1, 'Track.mp3', 1);
         expect(
-          manager.getTask(1)?.manuallyRetryingFilePaths,
+          manager.getTask(_key(1))?.manuallyRetryingFilePaths,
           contains('Track.mp3'),
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-        final completed = manager.getTask(1);
+        final completed = manager.getTask(_key(1));
         expect(requests, 6);
         expect(completed?.failedFiles, 0);
         expect(completed?.failedFilePaths, isEmpty);
@@ -4227,12 +4245,13 @@ void main() {
         );
         await _waitForFailedFilePath(manager, 1, 'Failed.mp3');
 
-        expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.downloading);
-        expect(await manager.retryFailedFile(1, 'Failed.mp3'), isTrue);
+        expect(manager.getTask(_key(1))?.status, AsmrDownloadTaskStatus.downloading,
+        );
+        expect(await manager.retryFailedFile(_key(1), 'Failed.mp3'), isTrue);
         await retryStarted.future.timeout(const Duration(seconds: 5));
         expect(releaseSlow.isCompleted, isFalse);
         expect(
-          manager.getTask(1)?.manuallyRetryingFilePaths,
+          manager.getTask(_key(1))?.manuallyRetryingFilePaths,
           contains('Failed.mp3'),
         );
 
@@ -4301,16 +4320,16 @@ void main() {
         AsmrDownloadTaskStatus.failed,
         allowFailure: true,
       );
-      expect(manager.getTask(1)?.failedFilePaths, <String>{
+      expect(manager.getTask(_key(1))?.failedFilePaths, <String>{
         'First.mp3',
         'Second.mp3',
       });
 
       retryFirstFile = true;
-      expect(await manager.retryFailedFile(1, 'First.mp3'), isTrue);
+      expect(await manager.retryFailedFile(_key(1), 'First.mp3'), isTrue);
       await _waitForFailedFilePaths(manager, 1, <String>{'Second.mp3'});
 
-      final task = manager.getTask(1);
+      final task = manager.getTask(_key(1));
       expect(firstRequests, 2);
       expect(secondRequests, 1);
       expect(task?.status, AsmrDownloadTaskStatus.failed);
@@ -4358,7 +4377,7 @@ void main() {
       );
 
       expect(requests, 1);
-      expect(manager.getTask(1)?.failedFiles, 1);
+      expect(manager.getTask(_key(1))?.failedFiles, 1);
     } finally {
       manager.dispose();
       await server.close(force: true);
@@ -4393,11 +4412,11 @@ void main() {
         conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
       );
       await _waitForFileRetryAttempt(manager, 1, 'Track.mp3', 1);
-      await manager.pauseTask(1);
+      await manager.pauseTask(_key(1));
 
       expect(requests, 1);
-      expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.paused);
-      expect(manager.getTask(1)?.fileRetryAttempts, isEmpty);
+      expect(manager.getTask(_key(1))?.status, AsmrDownloadTaskStatus.paused);
+      expect(manager.getTask(_key(1))?.fileRetryAttempts, isEmpty);
     } finally {
       manager.dispose();
       await server.close(force: true);
@@ -4476,9 +4495,8 @@ void main() {
           await _waitForFileRetryAttempt(manager, 1, 'Retry.mp3', 1);
           var interruptionReturned = false;
           final interruption =
-              (cancel ? manager.cancelTask(1) : manager.pauseTask(1)).then(
-                (_) => interruptionReturned = true,
-              );
+              (cancel ? manager.cancelTask(_key(1)) : manager.pauseTask(_key(1))).then(
+                (_) => interruptionReturned = true);
           await Future<void>.delayed(const Duration(milliseconds: 100));
           expect(interruptionReturned, isFalse);
           expect(gateway.deletedPaths, isEmpty);
@@ -4487,12 +4505,13 @@ void main() {
           expect(completions, isEmpty);
           expect(retryRequests, 1);
           if (cancel) {
-            expect(manager.getTask(1), isNull);
+            expect(manager.getTask(_key(1)), isNull);
             expect(gateway.existingPaths, isEmpty);
           } else {
-            expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.paused);
+            expect(manager.getTask(_key(1))?.status, AsmrDownloadTaskStatus.paused,
+            );
             expect(
-              manager.getTask(1)?.completedFilePaths,
+              manager.getTask(_key(1))?.completedFilePaths,
               contains('Copy.mp3'),
             );
           }
@@ -4506,7 +4525,7 @@ void main() {
           await completed.future.timeout(const Duration(seconds: 5));
           expect(completions, hasLength(1));
           expect(retryRequests, 2);
-          expect(manager.getTask(1)?.completedFiles, 3);
+          expect(manager.getTask(_key(1))?.completedFiles, 3);
           expect(
             gateway.copiedRelativePaths.where((p) => p == 'Copy.mp3').length,
             cancel ? 2 : 1,
@@ -4559,7 +4578,7 @@ void main() {
           '${Platform.pathSeparator}track.mp3',
         );
         expect(await output.exists(), isFalse);
-        final task = manager.getTask(1);
+        final task = manager.getTask(_key(1));
         expect(task?.failedFiles, 1);
         expect(task?.downloadedBytes, lessThan(task!.totalBytes));
         expect(task.progress, lessThan(1));
@@ -4693,8 +4712,8 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 20));
         }
 
-        await manager.pauseTask(1);
-        final paused = manager.getTask(1);
+        await manager.pauseTask(_key(1));
+        final paused = manager.getTask(_key(1));
         expect(paused?.status, AsmrDownloadTaskStatus.paused);
         expect(paused?.completedFiles, 1);
         expect(paused?.completedFilePaths, contains('Fast.mp3'));
@@ -4710,7 +4729,7 @@ void main() {
           saveMetadata: false,
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
-        final completed = manager.getTask(1);
+        final completed = manager.getTask(_key(1));
         expect(completed?.completedFiles, 2);
         expect(completed?.skippedFiles, 0);
         expect(fastRequests, 1);
@@ -4792,8 +4811,8 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 20));
         }
 
-        await manager.pauseTask(1);
-        final paused = manager.getTask(1);
+        await manager.pauseTask(_key(1));
+        final paused = manager.getTask(_key(1));
         expect(paused?.status, AsmrDownloadTaskStatus.paused);
         expect(paused?.completedFiles, 1);
         expect(paused?.completedFilePaths, contains('Fast.mp3'));
@@ -4811,7 +4830,7 @@ void main() {
           saveMetadata: false,
         );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
-        final completed = manager.getTask(1);
+        final completed = manager.getTask(_key(1));
         expect(completed?.completedFiles, 2);
         expect(completed?.skippedFiles, 0);
         // Fast.mp3 must NOT have been requested again
@@ -4888,13 +4907,14 @@ void main() {
       );
 
       try {
-        await manager.resumeTask(1);
+        await manager.resumeTask(_key(1));
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
         expect(requestCount, 1);
-        expect(manager.getTask(1)?.completedFiles, 1);
-        expect(manager.getTask(1)?.skippedFiles, 0);
-        expect(manager.getTask(1)?.completedFilePaths, contains('Track.mp3'));
+        expect(manager.getTask(_key(1))?.completedFiles, 1);
+        expect(manager.getTask(_key(1))?.skippedFiles, 0);
+        expect(manager.getTask(_key(1))?.completedFilePaths, contains('Track.mp3'),
+        );
         expect(await target.readAsBytes(), List<int>.filled(fileBytes, 9));
       } finally {
         manager.dispose();
@@ -4953,16 +4973,16 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(completions, isEmpty);
 
-      expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.paused);
-      expect(manager.getTask(1)?.workFolderName, 'Work');
-      expect(manager.getTask(1)?.saveCover, isFalse);
-      expect(manager.getTask(1)?.failedFilePaths, isEmpty);
+      expect(manager.getTask(_key(1))?.status, AsmrDownloadTaskStatus.paused);
+      expect(manager.getTask(_key(1))?.workFolderName, 'Work');
+      expect(manager.getTask(_key(1))?.saveCover, isFalse);
+      expect(manager.getTask(_key(1))?.failedFilePaths, isEmpty);
       expect(
-        manager.getTask(1)?.automaticFileRetryCount,
+        manager.getTask(_key(1))?.automaticFileRetryCount,
         kMaxAsmrDownloadRetryCount,
       );
       expect(
-        manager.getTask(1)?.workRootPath,
+        manager.getTask(_key(1))?.workRootPath,
         path.join(Directory.systemTemp.path, 'Work'),
       );
       await manager.flushPersistence();
@@ -5031,10 +5051,11 @@ void main() {
       await manager.shutdown();
       restoredManager = AsmrDownloadManager();
       await restoredManager.initialize();
-      expect(restoredManager.getTask(1)?.failedFilePaths, <String>{
+      expect(restoredManager.getTask(_key(1))?.failedFilePaths, <String>{
         'Track.mp3',
       });
-      expect(restoredManager.getTask(1)?.manuallyRetryingFilePaths, isEmpty);
+      expect(restoredManager.getTask(_key(1))?.manuallyRetryingFilePaths, isEmpty,
+      );
     } finally {
       await restoredManager?.shutdown();
       await manager.shutdown();
@@ -5147,16 +5168,16 @@ void main() {
           temporaryDirectoryProvider: () async => Directory.systemTemp,
         );
         await restoredManager.initialize();
-        final restoredTask = restoredManager.getTask(1);
+        final restoredTask = restoredManager.getTask(_key(1));
         expect(restoredTask?.fileEntityTags['Track.mp3'], '"resume"');
         expect(restoredTask?.status, AsmrDownloadTaskStatus.paused);
-        expect(restoredManager.taskIds, <int>[1]);
+        expect(restoredManager.taskIds, [_key(1)]);
         expect(restoredManager.buttonViewState.visible, isTrue);
         expect(
           restoredTask?.fileDownloadedBytes['Track.mp3'],
           greaterThanOrEqualTo(pausedBytes),
         );
-        await restoredManager.resumeTask(1);
+        await restoredManager.resumeTask(_key(1));
         await _waitForTaskStatus(
           restoredManager,
           1,
@@ -5166,8 +5187,8 @@ void main() {
         expect(rangeStarts.last, 0);
         expect(await target.length(), totalBytes);
         expect(
-          restoredManager.getTask(1)?.downloadedBytes,
-          restoredManager.getTask(1)?.totalBytes,
+          restoredManager.getTask(_key(1))?.downloadedBytes,
+          restoredManager.getTask(_key(1))?.totalBytes,
         );
       } finally {
         firstManager.dispose();
@@ -5256,8 +5277,11 @@ void main() {
       final manager = _manager();
       addTearDown(manager.dispose);
 
+      final work = _work(
+        id: 777, title: 'Remote Work Title', sourceId: 'RJ777777',
+      );
       await manager.startDownload(
-        work: _work(id: 777, title: 'Remote Work Title', sourceId: 'RJ777777'),
+        work: work,
         selectedRoots: <AsmrTrackFile>[
           _file(downloadUrl: 'https://example.invalid/track.mp3'),
         ],
@@ -5267,7 +5291,7 @@ void main() {
         customWorkFolderName: 'MyCustomLocalFolder',
       );
 
-      final task = manager.getTask(777);
+      final task = manager.getTask(work.workKey);
       expect(task, isNotNull);
       expect(task!.workFolderName, 'MyCustomLocalFolder');
       expect(task.destinationRoot, 'E:\\Audio\\Works');
@@ -5337,7 +5361,7 @@ _downloadUnknownSizeResponse({
     final outputExists = await output.exists();
     return (
       requests: requests,
-      failedFiles: manager.getTask(1)?.failedFiles,
+      failedFiles: manager.getTask(_key(1))?.failedFiles,
       outputExists: outputExists,
       stagingExists: await File('${output.path}.doujin.part').exists(),
       outputBytes: outputExists ? await output.readAsBytes() : const <int>[],
@@ -5631,12 +5655,12 @@ Future<void> _waitForFileRetryAttempt(
 ) async {
   final deadline = DateTime.now().add(const Duration(seconds: 5));
   while (DateTime.now().isBefore(deadline)) {
-    if (manager.getTask(workId)?.fileRetryAttempts[relativePath] == attempt) {
+    if (manager.getTask(_key(workId))?.fileRetryAttempts[relativePath] == attempt) {
       return;
     }
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
-  final task = manager.getTask(workId);
+  final task = manager.getTask(_key(workId));
   fail(
     'Timed out waiting for retry $attempt of $relativePath; '
     'status=${task?.status} retries=${task?.fileRetryAttempts} '
@@ -5651,7 +5675,7 @@ Future<void> _waitForFailedFilePath(
 ) async {
   final deadline = DateTime.now().add(const Duration(seconds: 5));
   while (DateTime.now().isBefore(deadline)) {
-    if (manager.getTask(workId)?.failedFilePaths.contains(relativePath) ==
+    if (manager.getTask(_key(workId))?.failedFilePaths.contains(relativePath) ==
         true) {
       return;
     }
@@ -5667,7 +5691,7 @@ Future<void> _waitForFailedFilePaths(
 ) async {
   final deadline = DateTime.now().add(const Duration(seconds: 5));
   while (DateTime.now().isBefore(deadline)) {
-    final actualPaths = manager.getTask(workId)?.failedFilePaths;
+    final actualPaths = manager.getTask(_key(workId))?.failedFilePaths;
     if (actualPaths != null &&
         actualPaths.length == expectedPaths.length &&
         actualPaths.containsAll(expectedPaths)) {
@@ -5677,7 +5701,7 @@ Future<void> _waitForFailedFilePaths(
   }
   fail(
     'Timed out waiting for failed download paths $expectedPaths; '
-    'actual=${manager.getTask(workId)?.failedFilePaths}.',
+    'actual=${manager.getTask(_key(workId))?.failedFilePaths}.',
   );
 }
 
@@ -5686,10 +5710,11 @@ Future<void> _waitForTaskStatus(
   int workId,
   AsmrDownloadTaskStatus status, {
   bool allowFailure = false,
+  String? workKey,
 }) async {
   final deadline = DateTime.now().add(const Duration(seconds: 5));
   while (DateTime.now().isBefore(deadline)) {
-    final task = manager.getTask(workId);
+    final task = manager.getTask(workKey ?? _key(workId));
     if (task?.status == status) return;
     if (!allowFailure && task?.status == AsmrDownloadTaskStatus.failed) {
       fail('Download task failed: ${task?.error ?? task?.message}');
@@ -5754,3 +5779,5 @@ AsmrTrackFile _file({
     relativePath: title,
   );
 }
+
+String _key(int id) => _work(id: id).workKey;

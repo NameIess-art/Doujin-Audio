@@ -98,7 +98,9 @@ void main() {
           const ValueKey<String>('asmr_load_more_footer'),
         );
         final footerState = tester.state(footer);
-        final oldCard = find.byKey(const ValueKey<String>('asmr-work-1'));
+        final oldCard = find.byKey(
+          ValueKey<String>('asmr-work-${_work(id: 1).workKey}'),
+        );
         final oldCardElement = tester.element(oldCard);
         final progress = find.byKey(
           const ValueKey<String>('asmr_load_more_progress'),
@@ -146,7 +148,9 @@ void main() {
 
         double opacityFor(int id) => tester
             .widget<FadeTransition>(
-              find.byKey(ValueKey<String>('asmr-work-$id')),
+              find.byKey(
+                ValueKey<String>('asmr-work-${_work(id: id).workKey}'),
+              ),
             )
             .opacity
             .value;
@@ -921,7 +925,9 @@ void main() {
           tester,
           find.descendant(
             of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
-            matching: find.byKey(const ValueKey<String>('asmr-work-1')),
+            matching: find.byKey(
+              ValueKey<String>('asmr-work-${_work(id: 1).workKey}'),
+            ),
           ),
         );
         await tester.pumpAndSettle();
@@ -1217,7 +1223,7 @@ void main() {
         await tester.longPress(find.text('Work 0'));
         await tester.pump();
         final badge = find.byKey(
-          ValueKey('asmr_selection_indicator_${_work(id: 0).rjCode}'),
+          ValueKey('asmr_selection_indicator_${_work(id: 0).workKey}'),
         );
         await tester.pump(kAppSelectionDuration ~/ 2);
         expect(badge, findsNothing);
@@ -1458,12 +1464,12 @@ void main() {
       final favoriteLeft = tester.getTopLeft(favoriteButtonFinder).dx;
       expect(downloadRight, lessThanOrEqualTo(favoriteLeft));
 
-      expect(controller.isFavorite(work.id), isTrue);
+      expect(controller.isFavorite(work.workKey), isTrue);
 
       await tester.tap(favoriteButtonFinder);
       await tester.pump();
 
-      expect(controller.isFavorite(work.id), isFalse);
+      expect(controller.isFavorite(work.workKey), isFalse);
 
       expect(find.text('已取消收藏。'), findsOneWidget);
       final undoButtonFinder = find.text('撤销 (5s)');
@@ -1472,7 +1478,7 @@ void main() {
       await tester.tap(undoButtonFinder);
       await tester.pump();
 
-      expect(controller.isFavorite(work.id), isTrue);
+      expect(controller.isFavorite(work.workKey), isTrue);
     },
   );
 
@@ -1508,8 +1514,12 @@ void main() {
     await tester.tap(find.text('收藏'));
     await tester.pumpAndSettle();
 
-    final first = find.byKey(const ValueKey<String>('asmr-work-91'));
-    final second = find.byKey(const ValueKey<String>('asmr-work-92'));
+    final first = find.byKey(
+      ValueKey<String>('asmr-work-${_work(id: 91).workKey}'),
+    );
+    final second = find.byKey(
+      ValueKey<String>('asmr-work-${_work(id: 92).workKey}'),
+    );
     expect(first, findsOneWidget);
     expect(second, findsOneWidget);
     expect(
@@ -1567,7 +1577,7 @@ void main() {
       expect(find.text('Second Favorite Work'), findsOneWidget);
 
       final sizeTransitionFinder = find.ancestor(
-        of: find.byKey(const ValueKey<String>('asmr-work-101')),
+        of: find.byKey(ValueKey<String>('asmr-work-${_work(id: 101).workKey}')),
         matching: find.byType(SizeTransition),
       );
       expect(sizeTransitionFinder, findsOneWidget);
@@ -1625,7 +1635,9 @@ void main() {
       await tester.tap(find.text('收藏'));
       await tester.pumpAndSettle();
 
-      final card = find.byKey(const ValueKey<String>('asmr-work-201'));
+      final card = find.byKey(
+        ValueKey<String>('asmr-work-${_work(id: 201).workKey}'),
+      );
       expect(card, findsOneWidget);
       final swipeCard = find.descendant(
         of: card,
@@ -1800,13 +1812,14 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
   }
 
   @override
-  bool isFavorite(int workId) => favoriteWorks.any((w) => w.id == workId);
+  bool isFavorite(String workId) =>
+      favoriteWorks.any((w) => w.workKey == workId);
 
   @override
   Future<void> toggleFavorite(AsmrWork work) async {
-    final contains = favoriteWorks.any((w) => w.id == work.id);
+    final contains = favoriteWorks.any((w) => w.workKey == work.workKey);
     if (contains) {
-      favoriteWorks.removeWhere((w) => w.id == work.id);
+      favoriteWorks.removeWhere((w) => w.workKey == work.workKey);
     } else {
       favoriteWorks.add(work.copyWith(isFavorite: true));
     }
@@ -1819,15 +1832,15 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
     List<AsmrWork> works, {
     required bool favorite,
   }) async {
-    final ids = works.map((w) => w.id).toSet();
+    final ids = works.map((w) => w.workKey).toSet();
     if (favorite) {
       for (final work in works) {
-        if (!favoriteWorks.any((w) => w.id == work.id)) {
+        if (!favoriteWorks.any((w) => w.workKey == work.workKey)) {
           favoriteWorks.add(work.copyWith(isFavorite: true));
         }
       }
     } else {
-      favoriteWorks.removeWhere((w) => ids.contains(w.id));
+      favoriteWorks.removeWhere((w) => ids.contains(w.workKey));
     }
     _revision++;
     notifyListeners();

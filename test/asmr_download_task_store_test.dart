@@ -32,7 +32,7 @@ void main() {
           ),
         );
         addTearDown(store.shutdown);
-        store[1] = _task(1);
+        store[_key(1)] = _task(1);
         store.notifyTaskChanged();
         await store.runStructuralPersistenceForTesting();
         await store.flushPersistence();
@@ -90,7 +90,7 @@ void main() {
       });
 
       final decoded = jsonDecode(payload) as Map<String, dynamic>;
-      expect(decoded['version'], 2);
+      expect(decoded['version'], 3);
       final taskJson = (decoded['tasks'] as List).single as Map;
       taskJson['fileEntityTags'] = {
         'track.mp3': '"entity-a"',
@@ -140,10 +140,10 @@ void main() {
       manager.debugSetCurrentTaskForTesting(_task(1));
       final first = manager.flushPersistence();
       await firstStarted.future;
-      manager.debugRecordCreatedOutputPathForTesting(1, 'first.mp3');
-      manager.debugRecordDownloadChunkForTesting(1, 'track.mp3', 1, 1);
+      manager.debugRecordCreatedOutputPathForTesting(_key(1), 'first.mp3');
+      manager.debugRecordDownloadChunkForTesting(_key(1), 'track.mp3', 1, 1);
       final second = manager.flushPersistence();
-      manager.debugRecordCreatedOutputPathForTesting(1, 'later.mp3');
+      manager.debugRecordCreatedOutputPathForTesting(_key(1), 'later.mp3');
       firstWrite.complete();
       await Future.wait([first, second]);
       final restored = decodePersistedDownloadTasks(writes[1]!);
@@ -164,13 +164,13 @@ void main() {
     final taskDone = Completer<void>();
     final buttonDone = Completer<void>();
     store.taskIdsStream.listen(null, onDone: taskIdsDone.complete);
-    store.taskStream(1).listen(null, onDone: taskDone.complete);
+    store.taskStream(_key(1)).listen(null, onDone: taskDone.complete);
     store.buttonViewStateStream.listen(null, onDone: buttonDone.complete);
 
-    store[1] = _task(1);
-    store.notifyTaskChanged(changedWorkIds: const <int>{1});
+    store[_key(1)] = _task(1);
+    store.notifyTaskChanged(changedWorkIds: {_key(1)});
     expect(store.tasks, hasLength(1));
-    expect(store.taskIds, <int>[1]);
+    expect(store.taskIds, [_key(1)]);
 
     final firstShutdown = store.shutdown();
     final secondShutdown = store.shutdown();
@@ -199,7 +199,7 @@ void main() {
     expect(manager.persistedUriReferenceRevision, 1);
 
     operations.clear();
-    manager.debugRemoveTaskForTesting(1);
+    manager.debugRemoveTaskForTesting(_key(1));
     expect(manager.persistedContentUris, <String>{safRoot});
     expect(manager.persistedUriReferenceRevision, 1);
     expect(
@@ -211,7 +211,7 @@ void main() {
     );
 
     operations.clear();
-    manager.debugRemoveTaskForTesting(2);
+    manager.debugRemoveTaskForTesting(_key(2));
     expect(manager.persistedContentUris, isEmpty);
     expect(manager.persistedUriReferenceRevision, 2);
     expect(
@@ -236,7 +236,7 @@ void main() {
       }
 
       operations.clear();
-      manager.debugRecordDownloadChunkForTesting(1, 'track.mp3', 1, 1);
+      manager.debugRecordDownloadChunkForTesting(_key(1), 'track.mp3', 1, 1);
       manager.debugFlushProgressNotificationsForTesting();
 
       expect(
@@ -274,7 +274,7 @@ void main() {
     await manager.debugRunStructuralPersistenceForTesting();
     expect(writes, hasLength(1));
     final payload = jsonDecode(writes.single!) as Map<String, Object?>;
-    expect(payload['version'], 2);
+    expect(payload['version'], 3);
     expect(payload['tasks'], hasLength(2));
   });
 
@@ -292,7 +292,7 @@ void main() {
     operations.clear();
 
     for (var byte = 1; byte <= 100; byte++) {
-      manager.debugRecordDownloadChunkForTesting(1, 'track.mp3', 1, byte);
+      manager.debugRecordDownloadChunkForTesting(_key(1), 'track.mp3', 1, byte);
     }
     manager.debugFlushProgressNotificationsForTesting();
 
@@ -312,7 +312,7 @@ void main() {
       hasLength(1),
     );
     final payload = jsonDecode(writes.single!) as Map<String, Object?>;
-    expect(payload['version'], 2);
+    expect(payload['version'], 3);
     final task = (payload['tasks'] as List<Object?>).single as Map;
     expect(task['downloadedBytes'], 100);
 
@@ -329,12 +329,12 @@ void main() {
     manager.debugSetCurrentTaskForTesting(_task(1), queued: true);
     writes.clear();
 
-    await manager.pauseTask(1);
+    await manager.pauseTask(_key(1));
     expect(writes, hasLength(1));
     expect(_persistedMessage(writes.single), 'paused');
 
     writes.clear();
-    await manager.cancelTask(1, deleteDownloaded: false);
+    await manager.cancelTask(_key(1), deleteDownloaded: false);
     expect(writes, <String?>[null]);
   });
 
@@ -372,7 +372,7 @@ void main() {
     );
     shuttingDownManager.debugSetCurrentTaskForTesting(_task(2));
     shuttingDownManager.debugRecordDownloadChunkForTesting(
-      2,
+      _key(2),
       'track.mp3',
       64,
       64,
@@ -382,7 +382,7 @@ void main() {
     expect(shutdownWrites, hasLength(1));
     expect(
       (jsonDecode(shutdownWrites.single!) as Map<String, Object?>)['version'],
-      2,
+      3,
     );
     await shuttingDownManager.shutdown();
     expect(shutdownWrites, hasLength(1));
@@ -473,5 +473,7 @@ Future<void> _waitForStatus(
   int workId,
   AsmrDownloadTaskStatus status,
 ) async {
-  await manager.taskStream(workId).firstWhere((task) => task?.status == status);
+  await manager.taskStream(_key(workId)).firstWhere((task) => task?.status == status);
 }
+
+String _key(int id) => _work(id).workKey;

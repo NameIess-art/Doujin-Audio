@@ -20,7 +20,7 @@ import '../../../core/widgets/top_page_header.dart';
 class AsmrDownloadDetailsPage extends ConsumerStatefulWidget {
   const AsmrDownloadDetailsPage({super.key, required this.workId});
 
-  final int workId;
+  final String workId;
 
   @override
   ConsumerState<AsmrDownloadDetailsPage> createState() =>
@@ -315,7 +315,7 @@ class _AsmrDownloadDetailsPageState
 class _AsmrDownloadDetailsTotals extends ConsumerWidget {
   const _AsmrDownloadDetailsTotals({required this.workId});
 
-  final int workId;
+  final String workId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -362,7 +362,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
 
   final AsmrTrackFile node;
   final int depth;
-  final int workId;
+  final String workId;
   final AppLanguageProvider i18n;
   final Future<bool> Function(String relativePath)? onRetryFile;
 
@@ -377,6 +377,11 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
             (task?.completedFilePaths.contains(node.relativePath) ?? false) ||
             (total > 0 && downloaded >= total);
         return (
+          outputName:
+              task?.actualOutputPaths[node.relativePath]
+                  ?.split(RegExp(r'[\\/]'))
+                  .last ??
+              node.title,
           total: total,
           downloaded: downloaded,
           retryAttempt: task?.isActive == true && !completed
@@ -408,7 +413,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
     }
 
     return FileTreeRow(
-      title: node.title,
+      title: state.outputName,
       minHeight: 52,
       depth: depth,
       leading: Icon(

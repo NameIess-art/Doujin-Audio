@@ -2,6 +2,7 @@ part of 'asmr_tab.dart';
 
 class _AsmrWorkCover extends ConsumerWidget {
   const _AsmrWorkCover({
+    required this.workKey,
     required this.url,
     required this.width,
     this.isSelected = false,
@@ -10,6 +11,7 @@ class _AsmrWorkCover extends ConsumerWidget {
   });
 
   final String url;
+  final String workKey;
   final double width;
   final bool isSelected;
   final Duration? duration;
@@ -99,7 +101,7 @@ class _AsmrWorkCover extends ConsumerWidget {
             left: -2,
             bottom: -2,
             child: _AsmrSelectionIndicator(
-              workId: rjCode.isNotEmpty ? rjCode : url,
+              workId: workKey,
               isSelected: isSelected,
             ),
           ),

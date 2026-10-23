@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:path/path.dart' as path;
 
 import '../../../core/media/music_track.dart';
+import '../../../core/media/playback_media_reference.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../library/application/work_text_service.dart';
 import '../domain/asmr_models.dart';
@@ -34,6 +35,10 @@ List<MusicTrack> flattenAsmrPlayableTracks(
 
   Map<String, Object?> remoteMetadataForTrack(AsmrTrackFile node) {
     final metadata = Map<String, Object?>.from(work.toJson());
+    final reference = PlaybackMediaReference.parse(node.streamUrl ?? '');
+    if (reference.isHls || reference.isChapter) {
+      metadata['mediaReference'] = reference.toJson();
+    }
     metadata['trackRelativePath'] = node.relativePath;
     metadata['trackStableKey'] = node.stableKey;
     metadata['trackDirectoryPath'] = path.dirname(node.relativePath);
@@ -69,15 +74,32 @@ List<MusicTrack> flattenAsmrPlayableTracks(
           node.downloadUrl,
           node.lowQualityUrl,
         ].any(AsmrApiService.isOfficialMediaUrl);
-        final track = node.toMusicTrack(
+        var track = node.toMusicTrack(
           groupTitleOverride: work.title,
           remoteCoverUrl: work.preferredCoverUrl,
-          remoteMetadataKind: 'asmr.one',
+          remoteMetadataKind:
+              PlaybackMediaReference.parse(node.streamUrl ?? '').isHls ||
+                  work.preferredResource.source ==
+                      AsmrCatalogSource.japaneseAsmr
+              ? 'jp-asmr'
+              : 'asmr.one',
           remoteMetadata: remoteMetadataForTrack(node),
           preferredPlaybackUrls: usesOfficialMedia
               ? AsmrApiService.mediaStreamUrlsForHash(node.hash)
               : const <String>[],
         );
+        final reference = PlaybackMediaReference.parse(node.streamUrl ?? '');
+        if (reference.isHls) {
+          // The original download is already one chapter. It cannot be a
+          // candidate for a whole-work HLS URI carrying chapter offsets.
+          track = track.copyWith(
+            remoteMetadata: {
+              ...?track.remoteMetadata,
+              'playbackUrls': [node.streamUrl!],
+              'fullQualityPlaybackUrls': [node.streamUrl!],
+            },
+          );
+        }
         if (track.path.isNotEmpty) {
           result.add(track);
         }
@@ -96,10 +118,10 @@ List<MusicTrack> flattenAsmrPlayableTracks(
 List<WorkTextFile> collectAsmrWorkTextFiles(
   Iterable<AsmrTrackFile> tree, {
   AsmrDownloadManager? downloadManager,
-  int? workId,
+  String? workKey,
 }) {
   final result = <WorkTextFile>[];
-  final task = workId != null ? downloadManager?.getTask(workId) : null;
+  final task = workKey != null ? downloadManager?.getTask(workKey) : null;
   final destinationRoot = task?.destinationRoot;
   final workFolderName = task?.workFolderName;
 
@@ -115,10 +137,12 @@ List<WorkTextFile> collectAsmrWorkTextFiles(
             workFolderName.isNotEmpty &&
             !PathMatcher.isContentUri(destinationRoot)) {
           try {
-            final candidate = const AsmrDownloadPlanner().resolveLocalPathWithin(
-              task!.workRootPath,
-              node.relativePath,
-            );
+            final candidate = const AsmrDownloadPlanner()
+                .resolveLocalPathWithin(
+                  task!.workRootPath,
+                  task.actualOutputPaths[node.relativePath] ??
+                      node.relativePath,
+                );
             if (File(candidate).existsSync()) localPath = candidate;
           } on FormatException {
             // A malformed remote filename can still be opened through its URL.

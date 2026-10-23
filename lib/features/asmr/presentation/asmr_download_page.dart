@@ -176,9 +176,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
             ? currentWork.title.trim()
             : (currentWork.sourceId.trim().isNotEmpty
                   ? currentWork.sourceId.trim()
-                  : currentWork.id.toString());
+                  : currentWork.workKey);
         final workRootFolder = AsmrTrackFile(
-          hash: 'work_root_${currentWork.id}',
+          hash: 'work_root_${currentWork.workKey}',
           title: workTitle,
           type: 'folder',
           streamUrl: null,
@@ -188,9 +188,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
           size: 0,
           children: result.tree,
           workId: currentWork.id,
+          workKey: currentWork.workKey,
           workTitle: currentWork.title,
           sourceId: currentWork.sourceId,
-          relativePath: '__work_root_${currentWork.id}__',
+          relativePath: '__work_root_${currentWork.workKey}__',
         );
         setState(() {
           _selection = AsmrDownloadSelectionModel([workRootFolder]);
@@ -261,7 +262,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     if (downloadManager == null) return;
     final settings = ref.read(settingsRepositoryProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final task = downloadManager.getTask(work.id);
+    final task = downloadManager.getTask(work.workKey);
     if (task != null &&
         task.status != AsmrDownloadTaskStatus.completed &&
         task.status != AsmrDownloadTaskStatus.failed) {

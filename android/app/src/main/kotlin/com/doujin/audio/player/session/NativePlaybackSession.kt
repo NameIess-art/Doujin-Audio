@@ -23,7 +23,10 @@ internal data class NativeMediaItemDescriptor(
     val subtitle: String?,
     val artUri: String?,
     val candidateUris: List<String> = emptyList(),
-    val usageDescriptor: Map<String, Any?>? = null
+    val usageDescriptor: Map<String, Any?>? = null,
+    val clipStartMs: Long = 0L,
+    val clipEndMs: Long? = null,
+    val httpHeaders: Map<String, String> = emptyMap()
 ) {
     fun withPlaybackCandidateUris(candidates: List<String>): NativeMediaItemDescriptor {
         val ordered = LinkedHashSet<String>()

@@ -2949,12 +2949,14 @@ final class _ProfileAsmrController extends AsmrLibraryController {
   );
 
   @override
-  AsmrTrackTreeViewState trackTreeViewState(int workId) {
-    final visibleTree = workId == 1 && trackTree.isNotEmpty
+  AsmrTrackTreeViewState trackTreeViewState(String workId) {
+    final visibleTree = works.isNotEmpty &&
+            workId == works.first.workKey &&
+            trackTree.isNotEmpty
         ? trackTree
         : const <AsmrTrackFile>[];
     return AsmrTrackTreeViewState(
-      workId: workId,
+      workKey: workId,
       tree: visibleTree,
       visibleTree: visibleTree,
       isLoading: false,

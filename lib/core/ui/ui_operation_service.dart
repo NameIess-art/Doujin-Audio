@@ -52,8 +52,8 @@ class UiOperationScope {
     return UiOperationScope('asmr:${kind.name}:$name');
   }
 
-  static UiOperationScope asmrWork(AsmrOperationKind kind, int workId) {
-    return UiOperationScope('asmr:${kind.name}:$workId');
+  static UiOperationScope asmrWork(AsmrOperationKind kind, String workKey) {
+    return UiOperationScope('asmr:${kind.name}:$workKey');
   }
 
   @override

@@ -14,6 +14,7 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/browse_page_scroll.dart';
 import '../application/asmr_download_models.dart';
 import '../application/asmr_api_service.dart';
+import '../application/asmr_remote_catalog_service.dart';
 import '../application/asmr_library_controller.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/immutable_collections.dart';
@@ -79,7 +80,7 @@ List<AsmrWork> _selectedAsmrWorks(
   required AsmrCategoryType category,
   required String searchQuery,
   bool searchSession = false,
-  required Set<int> selectedWorkIds,
+  required Set<String> selectedWorkIds,
 }) {
   if (selectedWorkIds.isEmpty) return const <AsmrWork>[];
   final controller = ref.read(asmrLibraryControllerProvider);
@@ -90,7 +91,7 @@ List<AsmrWork> _selectedAsmrWorks(
     searchQuery: searchQuery,
     searchSession: searchSession,
   )) {
-    if (!selectedWorkIds.contains(work.id)) continue;
+    if (!selectedWorkIds.contains(work.workKey)) continue;
     selected.add(work);
     if (selected.length == selectedWorkIds.length) break;
   }
@@ -326,7 +327,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       'asmr_page_language_${identityHashCode(this)}';
   late final AppLanguageProvider _languageProvider;
   bool _isSelectionMode = false;
-  final Set<int> _selectedWorkIds = <int>{};
+  final Set<String> _selectedWorkIds = <String>{};
 
   AsmrCategoryType get _selectedCategory =>
       _headerCategories[_activeCategoryIndex.value];
@@ -721,7 +722,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       _isSelectionMode = true;
       _selectedWorkIds
         ..clear()
-        ..add(work.id);
+        ..add(work.workKey);
     });
   }
 
@@ -736,8 +737,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   void _toggleWorkSelection(AsmrWork work) {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
-      if (!_selectedWorkIds.add(work.id)) {
-        _selectedWorkIds.remove(work.id);
+      if (!_selectedWorkIds.add(work.workKey)) {
+        _selectedWorkIds.remove(work.workKey);
         if (_selectedWorkIds.isEmpty) _isSelectionMode = false;
       }
     });
@@ -793,7 +794,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final beforeIds = controller
         .filteredWorksFor(_selectedCategory)
-        .map((work) => work.id)
+        .map((work) => work.workKey)
         .toList(growable: false);
 
     if (showSnackbar) {
@@ -825,7 +826,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
     final afterIds = controller
         .filteredWorksFor(_selectedCategory)
-        .map((work) => work.id)
+        .map((work) => work.workKey)
         .toList(growable: false);
     final hasUpdates = !listEquals(beforeIds, afterIds);
     showAppSnackBar(
@@ -1054,9 +1055,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                             icon: Icons.cloud_rounded,
                             iconColor: AppDesignTokens.of(context).asmrAccent,
                             collapseController: _scrollController,
-                            topCapsuleTitle: 'ASMR.ONE',
+                            topCapsuleTitle: i18n.tr('online_audio_library'),
                             topCapsuleData: asmrStatsText,
-                            title: 'ASMR.ONE',
+                            title: i18n.tr('online_audio_library'),
                             titleWidget: _buildCategorySwitcher(i18n),
                             trailing: SizedBox(
                               height: 38,

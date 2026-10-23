@@ -69,7 +69,9 @@ void main() {
       states.add(SettingsState(reduceAnimations: true));
       await container.pump();
       expect(resolutions, [CoverImageResolution.balanced]);
-      states.add(SettingsState(coverImageResolution: CoverImageResolution.high));
+      states.add(
+        SettingsState(coverImageResolution: CoverImageResolution.high),
+      );
       await container.pump();
       expect(resolutions, [
         CoverImageResolution.balanced,
@@ -97,7 +99,7 @@ void main() {
       addTearDown(operations.dispose);
       const scope = UiOperationScope('test:lifecycle');
       final operationProvider = uiOperationForScopeProvider(scope);
-      final downloadProvider = asmrDownloadTaskProvider(42);
+      final downloadProvider = asmrDownloadTaskProvider('code:RJ000042');
 
       final operationSubscription = container.listen(
         operationProvider,
@@ -164,7 +166,7 @@ void main() {
       );
       final languageValues = <AppLanguageState>[];
       final themeValues = <ThemeProvider>[];
-      final downloadValues = <List<int>>[];
+      final downloadValues = <List<String>>[];
       final subscriptions = [
         container.listen(appLanguageStateProvider, (_, next) {
           if (next case AsyncData(:final value)) languageValues.add(value);
@@ -184,11 +186,11 @@ void main() {
 
       await language.setLanguage(AppLanguage.en);
       await theme.setDifferentiateAsmrTheme(false);
-      downloads.emit(const <int>[42]);
+      downloads.emit(const <String>['code:RJ000042']);
       await container.pump();
       expect(languageValues.last.language, AppLanguage.en);
       expect(themeValues.last.differentiateAsmrTheme, isFalse);
-      expect(downloadValues.last, const <int>[42]);
+      expect(downloadValues.last, const <String>['code:RJ000042']);
 
       for (final subscription in subscriptions) {
         subscription.close();
@@ -222,22 +224,22 @@ final class _TrackingThemeProvider extends ThemeProvider
 
 final class _TrackingDownloadManager extends AsmrDownloadManager {
   _TrackingDownloadManager() : super(persistTasks: false) {
-    _taskIdsController = StreamController<List<int>>.broadcast(
+    _taskIdsController = StreamController<List<String>>.broadcast(
       sync: true,
       onCancel: () => cancelCalls++,
     );
   }
 
-  late final StreamController<List<int>> _taskIdsController;
+  late final StreamController<List<String>> _taskIdsController;
   int cancelCalls = 0;
 
   @override
-  Stream<List<int>> get taskIdsStream async* {
-    yield const <int>[];
+  Stream<List<String>> get taskIdsStream async* {
+    yield const <String>[];
     yield* _taskIdsController.stream;
   }
 
-  void emit(List<int> taskIds) => _taskIdsController.add(taskIds);
+  void emit(List<String> taskIds) => _taskIdsController.add(taskIds);
 
   @override
   void dispose() {

@@ -1102,6 +1102,16 @@ void main() {
       remoteCoverRequestHeadersForUrl('https://example.com/cover.jpg'),
       isEmpty,
     );
+    expect(
+      remoteCoverRequestHeadersForUrl('https://pic.weeabo0.xyz/RJ000001.jpg'),
+      {'Referer': 'https://japaneseasmr.com/'},
+    );
+    expect(
+      remoteCoverRequestHeadersForUrl(
+        'https://pic.weeabo0.xyz.example.com/a.jpg',
+      ),
+      isEmpty,
+    );
   });
 
   test(

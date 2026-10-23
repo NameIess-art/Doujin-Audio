@@ -20,6 +20,7 @@ import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 
 import 'windows_video_playback_test.dart';
 import 'windows_end_session_test.dart';
+import 'windows_chapter_playback_test.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -538,4 +539,5 @@ void main() {
   );
   registerWindowsVideoPlaybackTest();
   registerWindowsEndSessionTest();
+  registerWindowsChapterPlaybackTest();
 }

@@ -18,9 +18,11 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MediaSource
 
 /**
  * Wake mode for a specific playback URI.
@@ -93,6 +95,10 @@ private const val ASMR_ACCEPT_LANGUAGE = "zh-CN,zh;q=0.9,en;q=0.8"
 
 internal fun nativePlaybackRequestHeadersForHost(host: String?): Map<String, String> {
     val normalized = host?.trim()?.lowercase().orEmpty()
+    if (normalized == "japaneseasmr.com" || normalized.endsWith(".japaneseasmr.com") ||
+        normalized == "v.weeab0o.xyz" || normalized == "pic.weeabo0.xyz") {
+        return mapOf("Referer" to "https://japaneseasmr.com/")
+    }
     val isAsmrMediaHost = normalized == "asmr.one" ||
         normalized.endsWith(".asmr.one") ||
         normalized == "asmr-100.com" ||
@@ -107,6 +113,17 @@ internal fun nativePlaybackRequestHeadersForHost(host: String?): Map<String, Str
     return mapOf(
         "Accept-Language" to ASMR_ACCEPT_LANGUAGE
     )
+}
+
+internal fun nativePlaybackMediaDataSourceFactory(
+    delegate: DataSource.Factory,
+    mediaItem: MediaItem
+): DataSource.Factory {
+    val headers = (mediaItem.localConfiguration?.tag as? NativeMediaItemDescriptor)?.httpHeaders.orEmpty()
+    if (headers.isEmpty()) return delegate
+    // Scope the factory to the item so HLS playlists, keys and segments inherit
+    // its headers even when the player preloads another queue item concurrently.
+    return ResolvingDataSource.Factory(delegate) { it.withAdditionalHeaders(headers) }
 }
 
 internal interface NativePlayerEventCallbacks {
@@ -162,9 +179,17 @@ internal class NativePlayerFactory(
                 }?.let { dataSpec.withUri(Uri.fromFile(it)) } ?: dataSpec
             } else dataSpec
             val headers = nativePlaybackRequestHeadersForHost(resolved.uri.host)
-            if (headers.isEmpty()) resolved else resolved.withAdditionalHeaders(headers)
+            if (headers.isEmpty()) resolved else resolved.withAdditionalHeaders(headers + resolved.httpRequestHeaders)
         }
-        val mediaSourceFactory = DefaultMediaSourceFactory(resolvingDataSourceFactory)
+        val defaultMediaSourceFactory = DefaultMediaSourceFactory(resolvingDataSourceFactory)
+        val mediaSourceFactory = object : MediaSource.Factory by defaultMediaSourceFactory {
+            override fun createMediaSource(mediaItem: MediaItem): MediaSource {
+                val dataSources = nativePlaybackMediaDataSourceFactory(resolvingDataSourceFactory, mediaItem)
+                return if (dataSources === resolvingDataSourceFactory) {
+                    defaultMediaSourceFactory.createMediaSource(mediaItem)
+                } else DefaultMediaSourceFactory(dataSources).createMediaSource(mediaItem)
+            }
+        }
 
         return ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)

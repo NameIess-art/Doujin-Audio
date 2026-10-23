@@ -30,46 +30,47 @@ class AsmrDownloadTransferExecutor {
   final AsmrDownloadTaskStore _store;
   final AsmrDownloadOutputStore _outputs;
   late final AsmrDownloadTransferService _service;
-  final Map<int, HttpClient> _activeHttpClients = {};
-  final Map<int, void Function(PlannedDownloadFile)>
+  final Map<String, HttpClient> _activeHttpClients = {};
+  final Map<String, void Function(PlannedDownloadFile)>
   _activeFileRetryDispatchers = {};
-  final Map<int, Completer<void>> _completions = {};
-  final Set<int> _cancelled = {};
-  final Set<int> _paused = {};
+  final Map<String, Completer<void>> _completions = {};
+  final Set<String> _cancelled = {};
+  final Set<String> _paused = {};
   bool _disposed = false;
 
-  void begin(int workId) {
+  void begin(String workId) {
     _completions[workId] = Completer<void>();
     _cancelled.remove(workId);
   }
 
-  bool isCancelled(int workId) => _cancelled.contains(workId);
-  bool isPaused(int workId) => _paused.contains(workId);
-  void throwIfCancelled(int workId) {
+  bool isCancelled(String workId) => _cancelled.contains(workId);
+  bool isPaused(String workId) => _paused.contains(workId);
+  void throwIfCancelled(String workId) {
     if (_disposed || isCancelled(workId) || isPaused(workId)) {
       throw const DownloadCancelled();
     }
   }
 
-  void pause(int workId) {
+  void pause(String workId) {
     _paused.add(workId);
     _activeHttpClients[workId]?.close(force: true);
   }
 
-  void cancel(int workId) {
+  void cancel(String workId) {
     _paused.remove(workId);
     _cancelled.add(workId);
     _activeHttpClients[workId]?.close(force: true);
   }
 
-  Future<void> waitFor(int workId) =>
+  Future<void> waitFor(String workId) =>
       _completions[workId]?.future ?? Future<void>.value();
   Future<void> get pendingTasks =>
       Future.wait<void>(_completions.values.map((value) => value.future));
-  bool canRetry(int workId) => _activeFileRetryDispatchers.containsKey(workId);
-  void retry(int workId, PlannedDownloadFile item) =>
+  bool canRetry(String workId) =>
+      _activeFileRetryDispatchers.containsKey(workId);
+  void retry(String workId, PlannedDownloadFile item) =>
       _activeFileRetryDispatchers[workId]!(item);
-  void finish(int workId) {
+  void finish(String workId) {
     _activeFileRetryDispatchers.remove(workId);
     _cancelled.remove(workId);
     _paused.remove(workId);
@@ -92,7 +93,7 @@ class AsmrDownloadTransferExecutor {
     required List<PlannedDownloadFile> plannedFiles,
     required AsmrDownloadFileProgress progress,
   }) async {
-    final workId = taskSnapshot.work.id;
+    final workId = taskSnapshot.work.workKey;
     final workRootPath = taskSnapshot.workRootPath;
     final conflictPolicy = taskSnapshot.conflictPolicy;
 
@@ -109,6 +110,7 @@ class AsmrDownloadTransferExecutor {
             workRootPath,
             item,
             coverOutputPath: taskSnapshot.coverOutputPath,
+            actualOutputPath: taskSnapshot.actualOutputPaths[item.relativePath],
           );
           if (exists) {
             continue;

@@ -1,3 +1,4 @@
+import '../../../core/media/playback_media_reference.dart';
 import 'dart:io';
 import 'package:path/path.dart' as path;
 import '../../../core/media/audio_detail.dart';
@@ -68,9 +69,15 @@ class AsmrDownloadPlanner {
         url: url,
         relativePath: node.relativePath,
         size: node.size,
+        mediaReference: node.streamUrl == null
+            ? null
+            : PlaybackMediaReference.parse(node.streamUrl!),
       ),
     );
   }
+
+  String hlsOutputPath(String relativePath) =>
+      '${path.posix.withoutExtension(validatedDownloadRelativePath(relativePath))}.m4a';
 
   String joinFolderPath(String basePath, String relativePath) {
     final normalizedRelative = validatedDownloadRelativePath(relativePath);
@@ -143,19 +150,20 @@ class AsmrDownloadPlanner {
     List<PlannedDownloadFile> files, {
     required bool saveMetadata,
   }) {
-    if (!Platform.isWindows) return;
     final owners = <String, String>{};
     final kinds = <String, bool>{};
     void register(
       String original, {
       bool directory = false,
       bool generated = false,
+      String? origin,
     }) {
-      final output = localRelativePath(original).toLowerCase();
-      final owner = generated ? 'generated:$original' : original;
+      final local = localRelativePath(original);
+      final output = Platform.isWindows ? local.toLowerCase() : local;
+      final owner = generated ? 'generated:${origin ?? original}' : original;
       if ((owners.containsKey(output) && owners[output] != owner) ||
           (kinds.containsKey(output) && kinds[output] != directory)) {
-        throw FormatException('Download paths collide on Windows: $original');
+        throw FormatException('Download output paths collide: $original');
       }
       owners[output] = owner;
       kinds[output] = directory;
@@ -173,6 +181,10 @@ class AsmrDownloadPlanner {
         register(segments.take(count).join('/'), directory: true);
       }
       register(original);
+      if (file.mediaReference?.isHls == true &&
+          hlsOutputPath(original) != original) {
+        register(hlsOutputPath(original), generated: true, origin: original);
+      }
       if (file.isCover) {
         for (final extension in ['.jpg', '.jpeg', '.png', '.webp', '.gif']) {
           register('cover/${file.coverFileStem}$extension', generated: true);
@@ -199,6 +211,10 @@ class AsmrDownloadPlanner {
   }
 
   String? downloadUrlFor(AsmrTrackFile node) {
+    final reference = node.streamUrl == null
+        ? null
+        : PlaybackMediaReference.parse(node.streamUrl!);
+    if (reference?.isHls == true) return reference!.logicalUrl;
     final candidates = <String?>[
       if (<String?>[
         node.streamUrl,

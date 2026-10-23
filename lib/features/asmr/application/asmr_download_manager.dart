@@ -88,13 +88,13 @@ class AsmrDownloadManager {
   late final AsmrDownloadTaskStore _store;
   final StreamController<AsmrDownloadTaskSnapshot> _completedTasksController =
       StreamController<AsmrDownloadTaskSnapshot>.broadcast();
-  final List<int> _queue = [];
-  final Set<int> _startingTasks = {};
-  final Set<int> _activeTasks = {};
-  final Map<int, List<PlannedDownloadFile>> _plannedFilesMap = {};
-  final Map<int, Set<String>> _manualRetryOnlyPaths = {};
+  final List<String> _queue = [];
+  final Set<String> _startingTasks = {};
+  final Set<String> _activeTasks = {};
+  final Map<String, List<PlannedDownloadFile>> _plannedFilesMap = {};
+  final Map<String, Set<String>> _manualRetryOnlyPaths = {};
 
-  final Map<int, bool> _deleteDownloadedOnCancel = {};
+  final Map<String, bool> _deleteDownloadedOnCancel = {};
   late final AsmrDownloadOutputStore _outputs;
   static const _planner = AsmrDownloadPlanner();
 
@@ -108,10 +108,10 @@ class AsmrDownloadManager {
   Object? _initializationError;
 
   List<AsmrDownloadTaskSnapshot> get tasks => _store.tasks;
-  List<int> get taskIds => _store.taskIds;
-  AsmrDownloadTaskSnapshot? getTask(int workId) => _store[workId];
-  Stream<List<int>> get taskIdsStream => _store.taskIdsStream;
-  Stream<AsmrDownloadTaskSnapshot?> taskStream(int workId) =>
+  List<String> get taskIds => _store.taskIds;
+  AsmrDownloadTaskSnapshot? getTask(String workId) => _store[workId];
+  Stream<List<String>> get taskIdsStream => _store.taskIdsStream;
+  Stream<AsmrDownloadTaskSnapshot?> taskStream(String workId) =>
       _store.taskStream(workId);
   Stream<AsmrDownloadButtonViewState> get buttonViewStateStream =>
       _store.buttonViewStateStream;
@@ -147,29 +147,29 @@ class AsmrDownloadManager {
     bool queued = false,
   }) {
     if (task != null) {
-      _store[task.work.id] = task;
-      if (queued && !_queue.contains(task.work.id)) {
-        _queue.add(task.work.id);
+      _store[task.work.workKey] = task;
+      if (queued && !_queue.contains(task.work.workKey)) {
+        _queue.add(task.work.workKey);
       }
       if (task.status == AsmrDownloadTaskStatus.completed) {
-        _retainOnlyLatestCompletedTask(task.work.id);
+        _retainOnlyLatestCompletedTask(task.work.workKey);
       }
     }
     if (progressOnly && task != null) {
-      _store.notifyProgressChanged(task.work.id);
+      _store.notifyProgressChanged(task.work.workKey);
     } else {
       _store.notifyTaskChanged(
         changedWorkIds:
             task == null || task.status == AsmrDownloadTaskStatus.completed
             ? null
-            : {task.work.id},
+            : {task.work.workKey},
       );
     }
   }
 
   @visibleForTesting
   void debugRecordDownloadChunkForTesting(
-    int workId,
+    String workId,
     String relativePath,
     int chunkLength,
     int fileDownloadedBytes,
@@ -183,7 +183,10 @@ class AsmrDownloadManager {
   }
 
   @visibleForTesting
-  void debugRecordCreatedOutputPathForTesting(int workId, String outputPath) {
+  void debugRecordCreatedOutputPathForTesting(
+    String workId,
+    String outputPath,
+  ) {
     _outputs.createdOutputPaths
         .putIfAbsent(workId, () => <String>{})
         .add(outputPath);
@@ -252,7 +255,7 @@ class AsmrDownloadManager {
     return Directory(normalized).exists();
   }
 
-  Future<void> cancelTask(int workId, {bool deleteDownloaded = true}) async {
+  Future<void> cancelTask(String workId, {bool deleteDownloaded = true}) async {
     if (_disposed || _shutdownFuture != null) return;
     await initialize();
     if (_disposed || _shutdownFuture != null) return;
@@ -291,7 +294,7 @@ class AsmrDownloadManager {
     await flushPersistence();
   }
 
-  void _removeTask(int workId) {
+  void _removeTask(String workId) {
     _manualRetryOnlyPaths.remove(workId);
     _plannedFilesMap.remove(workId);
     _outputs.createdOutputPaths.remove(workId);
@@ -304,10 +307,10 @@ class AsmrDownloadManager {
       _outputs.discardTaskStaging(
         task,
         _planner.collectTaskFiles(task),
-        _outputs.createdOutputPaths[task.work.id] ?? const {},
+        _outputs.createdOutputPaths[task.work.workKey] ?? const {},
       );
 
-  Future<void> deleteTask(int workId) async {
+  Future<void> deleteTask(String workId) async {
     if (_disposed || _shutdownFuture != null) return;
     await initialize();
     if (_disposed || _shutdownFuture != null) return;
@@ -333,7 +336,7 @@ class AsmrDownloadManager {
     );
   }
 
-  Future<void> pauseTask(int workId) async {
+  Future<void> pauseTask(String workId) async {
     if (_disposed || _shutdownFuture != null) return;
     await initialize();
     if (_disposed || _shutdownFuture != null) return;
@@ -362,7 +365,7 @@ class AsmrDownloadManager {
     await initialize();
     if (_disposed || _shutdownFuture != null) return;
 
-    final queuedWorkIds = List<int>.of(_queue);
+    final queuedWorkIds = List<String>.of(_queue);
     _queue.clear();
     for (final workId in queuedWorkIds) {
       final task = _store[workId];
@@ -375,7 +378,7 @@ class AsmrDownloadManager {
       );
     }
 
-    final activeWorkIds = List<int>.of(_activeTasks);
+    final activeWorkIds = List<String>.of(_activeTasks);
     for (final workId in activeWorkIds) {
       _transfers.pause(workId);
     }
@@ -419,7 +422,7 @@ class AsmrDownloadManager {
     await initialize();
     if (_disposed || _shutdownFuture != null) return;
 
-    final workId = work.id;
+    final workId = work.workKey;
     if (!_startingTasks.add(workId)) return;
     try {
       var workFolderName =
@@ -495,10 +498,6 @@ class AsmrDownloadManager {
                 .encodeNew(_planner.buildBackupDetail(work, workRootPath))
                 .length
           : 0;
-      final fileTotalBytes = <String, int>{};
-      for (final file in plannedFiles) {
-        if (!file.isCover) fileTotalBytes[file.relativePath] = file.size;
-      }
       _plannedFilesMap[workId] = plannedFiles;
 
       _store[workId] = AsmrDownloadTaskSnapshot(
@@ -521,8 +520,10 @@ class AsmrDownloadManager {
         downloadedBytes: 0,
         startedAt: DateTime.now(),
         message: 'queued',
-        fileTotalBytes: fileTotalBytes,
-        fileDownloadedBytes: {},
+        fileTotalBytes: {
+          for (final file in plannedFiles)
+            if (!file.isCover) file.relativePath: file.size,
+        },
         selectedRoots: selectedRoots,
       );
 
@@ -546,7 +547,7 @@ class AsmrDownloadManager {
     }
   }
 
-  Future<void> _runTask(int workId) async {
+  Future<void> _runTask(String workId) async {
     if (_disposed) {
       _activeTasks.remove(workId);
       return;
@@ -806,12 +807,12 @@ class AsmrDownloadManager {
   }
 
   @visibleForTesting
-  void debugRemoveTaskForTesting(int workId) {
+  void debugRemoveTaskForTesting(String workId) {
     _store.remove(workId);
     _queue.remove(workId);
     _manualRetryOnlyPaths.remove(workId);
     _plannedFilesMap.remove(workId);
-    _store.notifyTaskChanged(changedWorkIds: <int>{workId});
+    _store.notifyTaskChanged(changedWorkIds: <String>{workId});
   }
 
   @visibleForTesting
@@ -845,7 +846,7 @@ class AsmrDownloadManager {
         stackTrace: stackTrace,
       );
     }
-    final runningWorkIds = <int>{..._queue, ..._activeTasks};
+    final runningWorkIds = <String>{..._queue, ..._activeTasks};
     final activeCompletions = _transfers.pendingTasks;
     _disposed = true;
     _queue.clear();
@@ -861,10 +862,10 @@ class AsmrDownloadManager {
     unawaited(shutdown());
   }
 
-  bool _canScheduleTask(int workId) =>
+  bool _canScheduleTask(String workId) =>
       !_disposed && _shutdownFuture == null && !_startingTasks.contains(workId);
 
-  Future<void> resumeTask(int workId) async {
+  Future<void> resumeTask(String workId) async {
     if (!_canScheduleTask(workId)) return;
     await initialize();
     if (!_canScheduleTask(workId)) return;
@@ -877,7 +878,7 @@ class AsmrDownloadManager {
     _enqueueExistingTask(task);
   }
 
-  Future<bool> retryFailedFile(int workId, String relativePath) async {
+  Future<bool> retryFailedFile(String workId, String relativePath) async {
     if (!_canScheduleTask(workId)) return false;
     await initialize();
     if (!_canScheduleTask(workId)) return false;
@@ -908,7 +909,7 @@ class AsmrDownloadManager {
       manuallyRetryingFilePaths: retryingPaths,
     );
     _store[workId] = retryingTask;
-    _store.notifyTaskChanged(changedWorkIds: <int>{workId});
+    _store.notifyTaskChanged(changedWorkIds: <String>{workId});
 
     if (canRetryActiveTask) {
       _transfers.retry(workId, plannedFile);
@@ -921,7 +922,7 @@ class AsmrDownloadManager {
   }
 
   void _enqueueExistingTask(AsmrDownloadTaskSnapshot task) {
-    final workId = task.work.id;
+    final workId = task.work.workKey;
 
     _store[workId] = task.copyWith(
       status: AsmrDownloadTaskStatus.idle,
@@ -950,11 +951,10 @@ class AsmrDownloadManager {
         Error.throwWithStackTrace(restored.error!, restored.stackTrace!);
       }
       for (final snapshot in restored.tasks) {
-        final task = snapshot.task;
-        _store[task.work.id] = task;
-        _outputs.createdOutputPaths[task.work.id] = snapshot.createdOutputPaths;
-        _outputs.createdJsonDocuments[task.work.id] =
-            snapshot.createdJsonDocuments;
+        final workKey = snapshot.task.work.workKey;
+        _store[workKey] = snapshot.task;
+        _outputs.createdOutputPaths[workKey] = snapshot.createdOutputPaths;
+        _outputs.createdJsonDocuments[workKey] = snapshot.createdJsonDocuments;
       }
     } catch (error, stackTrace) {
       AppLogService.warning(
@@ -966,7 +966,7 @@ class AsmrDownloadManager {
     }
   }
 
-  void _retainOnlyLatestCompletedTask(int workId) {
+  void _retainOnlyLatestCompletedTask(String workId) {
     for (final obsoleteWorkId in _store.retainOnlyLatestCompletedTask(workId)) {
       _outputs.createdOutputPaths.remove(obsoleteWorkId);
       _outputs.createdJsonDocuments.remove(obsoleteWorkId);

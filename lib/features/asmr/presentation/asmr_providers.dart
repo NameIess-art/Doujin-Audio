@@ -95,7 +95,7 @@ final asmrAuthStateProvider = StreamProvider<AsmrAuthViewState?>((ref) {
 });
 
 final asmrTrackTreeStateProvider = StreamProvider.autoDispose
-    .family<AsmrTrackTreeViewState?, int>((ref, workId) {
+    .family<AsmrTrackTreeViewState?, String>((ref, workId) {
       final controller = ref.watch(asmrLibraryControllerProvider);
       if (controller == null) return Stream.value(null);
       return interactionDeferredListenableStream(
@@ -119,9 +119,9 @@ final asmrPlaybackCoordinatorProvider = Provider<AsmrPlaybackCoordinator?>(
   (ref) => null,
 );
 
-final asmrDownloadTaskIdsProvider = StreamProvider<List<int>>((ref) {
+final asmrDownloadTaskIdsProvider = StreamProvider<List<String>>((ref) {
   final manager = ref.watch(asmrDownloadManagerProvider);
-  return manager?.taskIdsStream ?? Stream.value(const <int>[]);
+  return manager?.taskIdsStream ?? Stream.value(const <String>[]);
 });
 
 final asmrDownloadButtonViewStateProvider =
@@ -134,13 +134,13 @@ final asmrDownloadButtonViewStateProvider =
     });
 
 final _asmrDownloadTaskSnapshotProvider = StreamProvider.autoDispose
-    .family<AsmrDownloadTaskSnapshot?, int>((ref, workId) {
+    .family<AsmrDownloadTaskSnapshot?, String>((ref, workId) {
       final manager = ref.watch(asmrDownloadManagerProvider);
       return manager?.taskStream(workId) ?? Stream.value(null);
     });
 
 final asmrDownloadTaskProvider = Provider.autoDispose
-    .family<AsmrDownloadTaskSnapshot?, int>((ref, workId) {
+    .family<AsmrDownloadTaskSnapshot?, String>((ref, workId) {
       final manager = ref.watch(asmrDownloadManagerProvider);
       return ref.watch(_asmrDownloadTaskSnapshotProvider(workId)).value ??
           manager?.getTask(workId);

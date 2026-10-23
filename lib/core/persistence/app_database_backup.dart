@@ -151,9 +151,36 @@ Future<void> _validateRestoreSchema(
       if (!candidateTables.contains(name)) {
         throw const FormatException('missing_database_tables');
       }
-      final requiredColumns = await reference.rawQuery(
+      var requiredColumns = await reference.rawQuery(
         'PRAGMA table_info("$name")',
       );
+      if (version < 15 && name == 'asmr_works') {
+        requiredColumns = requiredColumns
+            .where(
+              (column) =>
+                  column['name'] != 'work_key' &&
+                  column['name'] != 'resources_json',
+            )
+            .map(
+              (column) => column['name'] == 'id'
+                  ? {...column, 'notnull': 0, 'pk': 1}
+                  : column,
+            )
+            .toList();
+      } else if (version < 15 &&
+          const {
+            'asmr_work_voice_actors',
+            'asmr_work_tags',
+            'asmr_work_lists',
+          }.contains(name)) {
+        requiredColumns = requiredColumns
+            .map(
+              (column) => column['name'] == 'work_id'
+                  ? {...column, 'type': 'INTEGER'}
+                  : column,
+            )
+            .toList();
+      }
       final actualColumns = await candidate.rawQuery(
         'PRAGMA table_info("$name")',
       );
@@ -180,7 +207,9 @@ Future<void> _validateRestoreSchema(
       if (requiredPrimaryKey != actualPrimaryKey) {
         throw const FormatException('invalid_database_primary_key');
       }
-      final requiredUniqueKeys = await _restoreUniqueKeys(reference, name);
+      final requiredUniqueKeys = version < 15 && name == 'asmr_works'
+          ? <String>{}
+          : await _restoreUniqueKeys(reference, name);
       final actualUniqueKeys = await _restoreUniqueKeys(candidate, name);
       if (!actualUniqueKeys.containsAll(requiredUniqueKeys)) {
         throw const FormatException('invalid_database_unique_constraints');

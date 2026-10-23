@@ -2,6 +2,7 @@ package com.doujin.audio
 
 import com.doujin.audio.channel.NativePlaybackMethods
 import com.doujin.audio.player.common.*
+import com.doujin.audio.player.session.restoredQueue
 import io.flutter.plugin.common.MethodCall
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,6 +11,34 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativePlaybackCommandPayloadsTest {
+    @Test
+    fun `chapters preserve range and headers through native queue persistence and restore`() {
+        val queue = NativePlaybackCommandPayloads.parseQueue(listOf(
+            mapOf("uri" to "https://v.weeab0o.xyz/a.m3u8", "path" to "chapter-a", "title" to "A",
+                "clipStartMs" to 10_000L, "clipEndMs" to 20_000L,
+                "httpHeaders" to mapOf("Referer" to "https://japaneseasmr.com/")),
+            mapOf("uri" to "https://v.weeab0o.xyz/a.m3u8", "path" to "chapter-b", "title" to "B",
+                "clipStartMs" to 20_000L, "clipEndMs" to 40_000L)))
+        assertEquals(10_000L, queue[0].clipStartMs)
+        assertEquals(40_000L, queue[1].clipEndMs)
+        val parsed = NativePlaybackCommandPayloads.parsePrepareSession(validPreparePayload())
+            .copy(queue = queue)
+        val stored = parsed.storedDefinition()
+        assertEquals(queue, stored.restoredQueue())
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `invalid header collection is rejected rather than silently ignored`() {
+        NativePlaybackCommandPayloads.parseQueue(listOf(mapOf("uri" to "https://example.com/a.m3u8",
+            "title" to "A", "httpHeaders" to "Referer: invalid")))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `reversed chapter range is rejected`() {
+        NativePlaybackCommandPayloads.parseQueue(listOf(mapOf("uri" to "https://example.com/a.m3u8",
+            "title" to "A", "clipStartMs" to 1000L, "clipEndMs" to 500L)))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `track stop requires enabled rather than silently disabling`() {
         parsePlaybackCommand(MethodCall(NativePlaybackMethods.SET_STOP_AFTER_CURRENT_TRACK,

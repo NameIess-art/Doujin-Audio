@@ -22,6 +22,15 @@ internal class NativePlaybackQueue(val descriptors: List<NativeMediaItemDescript
                 metadata.setArtworkUri(android.net.Uri.parse(it))
             }
             MediaItem.Builder().setMediaId(descriptor.path).setUri(descriptor.uri)
+                .setTag(descriptor)
+                .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(descriptor.clipStartMs)
+                    .apply { descriptor.clipEndMs?.let(::setEndPositionMs) }.build())
+                .apply {
+                    if (android.net.Uri.parse(descriptor.uri).path?.endsWith(".m3u8", true) == true) {
+                        setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+                    }
+                }
                 .setMediaMetadata(metadata.build()).build()
         }
     }
@@ -29,7 +38,8 @@ internal class NativePlaybackQueue(val descriptors: List<NativeMediaItemDescript
         descriptors.map { descriptor ->
             StoredNativePlaybackQueueItem(
                 descriptor.path, descriptor.uri, descriptor.title, descriptor.subtitle,
-                descriptor.artUri, descriptor.candidateUris, descriptor.usageDescriptor
+                descriptor.artUri, descriptor.candidateUris, descriptor.usageDescriptor,
+                descriptor.clipStartMs, descriptor.clipEndMs, descriptor.httpHeaders
             )
         }
     }

@@ -1,3 +1,4 @@
+import '../../../core/media/playback_media_reference.dart';
 import '../../../core/persistence/json_document_store.dart';
 import 'asmr_download_models.dart';
 
@@ -55,6 +56,7 @@ class PlannedDownloadFile {
     required this.url,
     required this.relativePath,
     required this.size,
+    this.mediaReference,
   }) : isCover = false,
        coverFileStem = null,
        maxBytes = null,
@@ -67,8 +69,10 @@ class PlannedDownloadFile {
     required int this.maxBytes,
   }) : size = 0,
        isCover = true,
-       countsTowardByteProgress = false;
+       countsTowardByteProgress = false,
+       mediaReference = null;
 
+  final PlaybackMediaReference? mediaReference;
   final String url;
   final String relativePath;
   final int size;

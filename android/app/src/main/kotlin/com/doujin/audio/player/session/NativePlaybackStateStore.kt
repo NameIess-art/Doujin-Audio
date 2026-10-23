@@ -70,7 +70,10 @@ data class StoredNativePlaybackQueueItem(
     val subtitle: String?,
     val artUri: String?,
     val candidateUris: List<String> = emptyList(),
-    val usageDescriptor: Map<String, Any?>? = null
+    val usageDescriptor: Map<String, Any?>? = null,
+    val clipStartMs: Long = 0L,
+    val clipEndMs: Long? = null,
+    val httpHeaders: Map<String, String> = emptyMap()
 )
 
 data class StoredPlaybackTimerRuntimeState(
@@ -291,6 +294,9 @@ object NativePlaybackStateStore {
                                         .put("subtitle", queueItem.subtitle)
                                         .put("artUri", queueItem.artUri)
                                         .put("usageDescriptor", queueItem.usageDescriptor?.let { JSONObject(it) })
+                                        .put("clipStartMs", queueItem.clipStartMs)
+                                        .put("clipEndMs", queueItem.clipEndMs)
+                                        .put("httpHeaders", JSONObject(queueItem.httpHeaders))
                                         .put(
                                             "candidateUris",
                                             JSONArray(queueItem.candidateUris)
@@ -694,7 +700,12 @@ private fun JSONObject.optQueueItems(): List<StoredNativePlaybackQueueItem> {
                     subtitle = item.optNullableString("subtitle"),
                     artUri = item.optNullableString("artUri"),
                     candidateUris = item.optStringList("candidateUris"),
-                    usageDescriptor = item.optJSONObject("usageDescriptor")?.let { NativePlaybackUsageLedger.jsonMap(it) }
+                    usageDescriptor = item.optJSONObject("usageDescriptor")?.let { NativePlaybackUsageLedger.jsonMap(it) },
+                    clipStartMs = item.optLong("clipStartMs", 0L).coerceAtLeast(0L),
+                    clipEndMs = if (item.has("clipEndMs") && !item.isNull("clipEndMs")) item.getLong("clipEndMs") else null,
+                    httpHeaders = item.optJSONObject("httpHeaders")?.let { headers ->
+                        headers.keys().asSequence().associateWith { headers.getString(it) }
+                    } ?: emptyMap()
                 )
             )
         }

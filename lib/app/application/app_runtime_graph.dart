@@ -7,6 +7,7 @@ import '../../features/player/domain/listening_activity.dart';
 import '../../infrastructure/sqlite/sqlite_listening_activity_repository.dart';
 import '../../features/asmr/application/asmr_library_controller.dart';
 import '../../features/asmr/application/asmr_api_service.dart';
+import '../../features/asmr/application/japanese_asmr_api_service.dart';
 import '../../features/asmr/application/asmr_metadata_service.dart';
 import '../../features/asmr/application/asmr_auth_service.dart';
 import '../../features/asmr/application/asmr_remote_catalog_service.dart';
@@ -66,6 +67,7 @@ typedef ProductionAppRuntime = ({
   AsmrLibraryController asmrLibraryController,
   AsmrPlaybackCoordinator asmrPlaybackCoordinator,
   AsmrApiService asmrApiService,
+  JapaneseAsmrApiService japaneseAsmrApiService,
   Future<void> Function() initializePresentation,
   Future<void> Function() initializeRuntimeData,
   Future<void> Function() initializeSecondaryData,
@@ -314,7 +316,11 @@ ProductionAppRuntime createProductionAppRuntime({
   final appLanguageProvider = AppLanguageProvider();
   final appUpdateService = AppUpdateService();
   final asmrApiService = AsmrApiService();
-  final asmrMetadataService = AsmrMetadataService(apiService: asmrApiService);
+  final japaneseAsmrApiService = JapaneseAsmrApiService();
+  final asmrMetadataService = AsmrMetadataService(
+    apiService: asmrApiService,
+    japaneseApiService: japaneseAsmrApiService,
+  );
   final libraryFacade = LibraryFacade.create(
     databaseRepository: libraryRepository,
     jsonDocumentStore: jsonDocumentStore,
@@ -336,6 +342,7 @@ ProductionAppRuntime createProductionAppRuntime({
     preferencesStore: asmrPreferences,
     remoteCatalogService: AsmrRemoteCatalogService(
       apiService: asmrApiService,
+      japaneseApiService: japaneseAsmrApiService,
       persistenceRepository: asmrRepository,
     ),
     accountSyncService: AsmrAccountSyncService(
@@ -415,17 +422,20 @@ ProductionAppRuntime createProductionAppRuntime({
         ListeningHistoryEntry(
           workKey: work.rjCode.isNotEmpty
               ? 'rj:${work.rjCode.toUpperCase()}'
-              : 'asmr:${work.id}',
+              : 'asmr:${work.workKey}',
           track: MusicTrack(
-            path: 'asmr-work:${work.id}',
+            path: 'asmr-work:${work.workKey}',
             displayName: work.title,
-            groupKey: 'asmr:${work.id}',
+            groupKey: 'asmr:${work.workKey}',
             groupTitle: work.title,
-            groupSubtitle: work.rjCode,
+            groupSubtitle: work.workCode,
             isSingle: false,
             remoteCoverUrl: work.preferredCoverUrl,
             tags: work.tags,
-            remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+            remoteMetadataKind:
+                work.preferredResource.source == AsmrCatalogSource.asmrOne
+                ? MusicTrack.remoteMetadataKindAsmrOne
+                : 'jp-asmr',
             remoteMetadata: work.toJson(),
           ),
         ),
@@ -446,6 +456,7 @@ ProductionAppRuntime createProductionAppRuntime({
     asmrLibraryController: asmrLibraryController,
     asmrPlaybackCoordinator: asmrPlaybackCoordinator,
     asmrApiService: asmrApiService,
+    japaneseAsmrApiService: japaneseAsmrApiService,
     initializePresentation: initializePresentation,
     initializeRuntimeData: initializeRuntimeData,
     initializeSecondaryData: initializeSecondaryData,

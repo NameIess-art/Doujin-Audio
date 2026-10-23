@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'cover_image_cache_policy.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/media/playback_media_reference.dart';
 
 const String _asmrOneAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
 
@@ -138,5 +139,5 @@ Map<String, String> remoteCoverRequestHeadersForUrl(String url) {
       ? const <String, String>{
           HttpHeaders.acceptLanguageHeader: _asmrOneAcceptLanguage,
         }
-      : const <String, String>{};
+      : PlaybackMediaReference.requestHeadersForUri(Uri.parse(url));
 }

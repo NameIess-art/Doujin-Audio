@@ -161,7 +161,7 @@ class _DeferredDetailAsmrController extends ChangeNotifier
   int requests = 0;
 
   @override
-  List<AsmrTrackFile>? trackTreeFor(int workId) {
+  List<AsmrTrackFile>? trackTreeFor(String workId) {
     cacheReads++;
     return cached ? tree : null;
   }
@@ -182,12 +182,12 @@ class _DeferredDetailAsmrController extends ChangeNotifier
   }
 
   @override
-  bool isFavorite(int workId) => false;
+  bool isFavorite(String workId) => false;
 
   @override
-  AsmrTrackTreeViewState trackTreeViewState(int workId) =>
+  AsmrTrackTreeViewState trackTreeViewState(String workId) =>
       AsmrTrackTreeViewState(
-        workId: workId,
+        workKey: workId,
         tree: cached ? tree : null,
         visibleTree: cached ? tree : null,
         isLoading: false,

@@ -1,4 +1,9 @@
 const Map<String, String> appLanguageEn = {
+  'online_audio_library': 'Online Audio Library',
+  'online_library_partial_failure':
+      'Some sources are unavailable. Available works are shown. Please retry.',
+  'asmr_download_hls_notice':
+      'If the Japanese ASMR original file is unavailable, the chapter will be saved as M4A audio.',
   'nav_my': 'My',
   'my_listening_time': 'Listening time',
   'my_chart_style_bar': 'Bar chart',
@@ -50,7 +55,8 @@ const Map<String, String> appLanguageEn = {
   'onboarding_title': 'Doujin Audio',
   'onboarding_subtitle': 'A local-first ASMR and voice player.',
   'onboarding_local': 'Your library and playback state stay on this device.',
-  'onboarding_online_optional': 'Online features like ASMR.ONE are optional.',
+  'onboarding_online_optional':
+      'Online features like Online Audio Library are optional.',
   'onboarding_permissions':
       'Permissions are requested only for features you use.',
   'onboarding_start': 'Get started',
@@ -61,7 +67,7 @@ const Map<String, String> appLanguageEn = {
       'Your library, settings, and playback state stay on this device.',
   'privacy_summary_network_title': 'Optional online features',
   'privacy_summary_network_body':
-      'Only online features like ASMR.ONE, metadata, page translation, and updates use the network.',
+      'Only online features like Online Audio Library, metadata, page translation, and updates use the network.',
   'privacy_summary_diagnostics_title': 'You control diagnostics',
   'privacy_summary_diagnostics_body':
       'Sanitized reports are created only when you export them.',
@@ -118,7 +124,7 @@ const Map<String, String> appLanguageEn = {
   'sort_group_by_library': 'Group by library',
   'batch_metadata': 'Batch metadata',
   'batch_metadata_hint':
-      'Fetch from ASMR.ONE, or DLsite if it fails, from top to bottom. Confirm each work to continue.',
+      'Fetch from Online Audio Library, or DLsite if it fails, from top to bottom. Confirm each work to continue.',
   'batch_metadata_no_metadata': 'Works with no metadata',
   'batch_metadata_any_missing': 'Works missing data',
   'batch_metadata_has_rj_code': 'Works with an RJ code',
@@ -191,9 +197,9 @@ const Map<String, String> appLanguageEn = {
   'refresh_done_added': 'Refreshed: {count} tracks added',
   'refresh_done_no_new': 'No new audio found',
   'asmr_refresh_done_updated': 'Category updated',
-  'asmr_online_playback': 'ASMR.ONE online playback',
+  'asmr_online_playback': 'Online Audio Library playback',
   'asmr_online_optional_notice':
-      'ASMR.ONE is optional and uses the network only when in use.',
+      'Online Audio Library is optional and uses the network only when in use.',
   'asmr_refresh_no_updates': 'No updates',
   'asmr_refresh_failed': 'Sync failed. Pull down to retry.',
   'asmr_favorite_added': 'Added to favorites',
@@ -228,7 +234,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_account_pending_count': '{count} changes to sync',
   'asmr_categories_title': 'Categories',
   'follow_interface_language': 'Same as app',
-  'asmr_page_language': 'ASMR.ONE language',
+  'asmr_page_language': 'Online Audio Library language',
   'asmr_language_zh': 'Chinese',
   'asmr_language_ja': 'Japanese',
   'asmr_language_en': 'English',
@@ -396,7 +402,7 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_fetch_info': 'Fetch data',
   'audio_detail_fetch_scope_title': 'Choose data to fetch',
   'audio_detail_fetch_scope_hint':
-      'Fetch from ASMR.ONE, or DLsite if it fails. Choose which fields to save.',
+      'Fetch from Online Audio Library, or DLsite if it fails. Choose which fields to save.',
   'audio_detail_fetch_scope_all_hint':
       'Overwrite current details with fetched metadata.',
   'audio_detail_fetch_scope_missing_hint':
@@ -405,9 +411,10 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_fetch_missing_query':
       'Enter an RJ number, folder/file name, or work title first.',
   'audio_detail_missing_rj_for_download':
-      'RJ number needed to find downloads on ASMR.ONE',
-  'audio_detail_asmr_work_not_found': 'Work not found on ASMR.ONE: {rj}',
-  'audio_detail_searching_asmr': 'Searching ASMR.ONE…',
+      'RJ number needed to find downloads on Online Audio Library',
+  'audio_detail_asmr_work_not_found':
+      'Work not found on Online Audio Library: {rj}',
+  'audio_detail_searching_asmr': 'Searching Online Audio Library…',
   'script_text_tooltip': 'View document',
   'script_text_not_found': 'No documents or text files in this work',
   'script_text_viewer_title': 'Document',
@@ -517,9 +524,9 @@ const Map<String, String> appLanguageEn = {
   'theme_light': 'Light',
   'theme_dark': 'Dark',
   'black_theme': 'Pure black theme',
-  'differentiate_asmr_theme': 'Separate ASMR.ONE colors',
+  'differentiate_asmr_theme': 'Separate Online Audio Library colors',
   'app_theme_color': 'App color',
-  'asmr_theme_color': 'ASMR.ONE color',
+  'asmr_theme_color': 'Online Audio Library color',
   'theme_color_coral': 'Coral',
   'theme_color_rose': 'Rose',
   'theme_color_pink': 'Pink',
@@ -555,7 +562,7 @@ const Map<String, String> appLanguageEn = {
   'interruption_resume_behavior': 'After calls',
   'interruption_resume_stayPaused': 'Stay paused',
   'interruption_resume_resume': 'Auto-resume',
-  'asmr_playback_cache': 'Cache ASMR.ONE audio',
+  'asmr_playback_cache': 'Cache Online Audio Library audio',
   'record_playback_progress': 'Remember playback position',
   'section_language': 'Language',
   'section_language_subtitle': 'Interface and content language',
@@ -568,7 +575,7 @@ const Map<String, String> appLanguageEn = {
   'work_name_display_workTitle': 'Work title',
   'work_name_display_folderName': 'Folder name',
   'show_local_library': 'Audio library',
-  'show_asmr_one': 'ASMR.ONE',
+  'show_asmr_one': 'Online Audio Library',
   'settings_group_theme_layout': 'Theme and layout',
   'settings_group_cover_background': 'Cover and background',
   'settings_group_playback_detail': 'Playback details',
@@ -584,7 +591,7 @@ const Map<String, String> appLanguageEn = {
   'section_appearance_subtitle': 'Theme, layout, and subtitle appearance',
   'section_playback': 'Playback',
   'section_playback_subtitle': 'Playback controls, audio, and recovery',
-  'section_asmr_download': 'ASMR.ONE downloads',
+  'section_asmr_download': 'Online Audio Library downloads',
   'section_asmr_download_subtitle': 'Downloads and file naming',
   'asmr_download_path_setting': 'Download folder',
   'asmr_download_path_not_set': 'Not set',
@@ -726,7 +733,7 @@ const Map<String, String> appLanguageEn = {
   'interface_language': 'App language',
   'follow_system': 'Follow system',
   'startup_page': 'Startup page',
-  'startup_page_asmrOne': 'ASMR.ONE',
+  'startup_page_asmrOne': 'Online Audio Library',
   'startup_page_library': 'Audio library',
   'startup_page_playlist': 'Playlist',
   'reduce_animations': 'Reduce animations',

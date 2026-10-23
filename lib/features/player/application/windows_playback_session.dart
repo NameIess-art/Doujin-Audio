@@ -67,6 +67,51 @@ class _WindowsPlaybackSession {
   Timer? retryTimer;
   Duration? retryStartedAt;
 
+  static PlaybackMediaReference referenceFor(Map<String, Object?> item) {
+    final parsed = PlaybackMediaReference.parse(item['uri'] as String);
+    return PlaybackMediaReference(
+      streamUrl: parsed.streamUrl,
+      startMs: (item['clipStartMs'] as num?)?.toInt() ?? parsed.startMs,
+      endMs: (item['clipEndMs'] as num?)?.toInt() ?? parsed.endMs,
+      httpHeaders:
+          (item['httpHeaders'] as Map?)?.cast<String, String>() ??
+          parsed.httpHeaders,
+    );
+  }
+
+  static Media mediaFor(Map<String, Object?> item) {
+    final reference = referenceFor(item);
+    return Media(
+      reference.streamUrl,
+      start: reference.isChapter
+          ? Duration(milliseconds: reference.startMs)
+          : null,
+      end: reference.endMs == null
+          ? null
+          : Duration(milliseconds: reference.endMs!),
+      httpHeaders: reference.httpHeaders,
+    );
+  }
+
+  PlaybackMediaReference get reference => referenceFor(queue[index]);
+  Duration absolutePosition(Duration relative) =>
+      relative + Duration(milliseconds: reference.startMs);
+  Duration clampPosition(Duration position) {
+    final end = reference.durationMs;
+    final milliseconds = position.inMilliseconds;
+    return Duration(
+      milliseconds: milliseconds.clamp(0, end ?? 0x7fffffffffffffff),
+    );
+  }
+
+  Duration relativePosition(Duration absolute) =>
+      clampPosition(absolute - Duration(milliseconds: reference.startMs));
+  Duration? relativeDuration(Duration? absolute) {
+    final chapterDuration = reference.durationMs;
+    if (chapterDuration != null) return Duration(milliseconds: chapterDuration);
+    return absolute == null ? null : relativePosition(absolute);
+  }
+
   void cancelRetry() {
     retryGeneration++;
     retryTimer?.cancel();
@@ -90,14 +135,14 @@ class _WindowsPlaybackSession {
           ? completed
                 ? 'completed'
                 : 'idle'
-          : state.completed
+          : completed || (!reference.isChapter && state.completed)
           ? 'completed'
           : state.buffering
           ? 'buffering'
           : 'ready',
       position: position,
-      bufferedPosition: state?.buffer ?? Duration.zero,
-      duration: state?.duration ?? duration,
+      bufferedPosition: relativePosition(state?.buffer ?? Duration.zero),
+      duration: relativeDuration(state?.duration) ?? duration,
       volume: volume,
       speed: speed,
       boostGain: volume > 1 ? volume : 1,
@@ -291,7 +336,7 @@ class _WindowsPlaybackSession {
         var newToken = -1;
         for (var i = 0; i < desired.length; i++) {
           if (desired[i] == null) {
-            await player.add(Media(items[i]['uri'] as String));
+            await player.add(mediaFor(items[i]));
             if (!isCurrent()) return;
             desired[i] = newToken;
             order.add(newToken--);
@@ -344,7 +389,7 @@ class _WindowsPlaybackSession {
       final position = pendingStart!;
       final generation = this.generation;
       pendingStart = null;
-      await player.seek(position);
+      await player.seek(absolutePosition(position));
       if (isCurrent() && generation == this.generation && wantsPlay) {
         await player.play();
       }
@@ -357,7 +402,7 @@ class _WindowsPlaybackSession {
     final current = player;
     if (current == null) return;
     if (current.state.duration > Duration.zero) {
-      duration = current.state.duration;
+      duration = relativeDuration(current.state.duration);
     }
     player = null;
     nativeQueueIndices.clear();

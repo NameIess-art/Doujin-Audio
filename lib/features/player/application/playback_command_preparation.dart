@@ -64,13 +64,18 @@ List<Map<String, Object?>> _buildNativePlaybackQueue(
         ? track?.remoteCoverUrl
         : Uri.file(descriptor.coverPath!).toString();
     final candidates = _candidatePlaybackUris(track);
+    final reference = PlaybackMediaReference.parse(descriptor.path);
     return <String, Object?>{
       'path': descriptor.path,
       'uri':
           PathMatcher.isContentUri(descriptor.path) ||
               PathMatcher.isRemoteUri(descriptor.path)
-          ? descriptor.path
+          ? reference.streamUrl
           : Uri.file(descriptor.path).toString(),
+      if (reference.isChapter) 'clipStartMs': reference.startMs,
+      if (reference.endMs != null) 'clipEndMs': reference.endMs,
+      if (reference.httpHeaders.isNotEmpty)
+        'httpHeaders': reference.httpHeaders,
       'title':
           track?.displayName ?? path.basenameWithoutExtension(descriptor.path),
       if (track != null) 'subtitle': track.groupTitle,
@@ -90,7 +95,10 @@ List<Uri>? _candidatePlaybackUris(MusicTrack? track) {
   if (raw is! List) return null;
   final candidates = raw
       .whereType<String>()
-      .map((value) => Uri.tryParse(value.trim()))
+      .map(
+        (value) =>
+            Uri.tryParse(PlaybackMediaReference.parse(value.trim()).streamUrl),
+      )
       .whereType<Uri>()
       .where((uri) => uri.scheme == 'http' || uri.scheme == 'https')
       .expand<Uri>((uri) {

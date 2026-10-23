@@ -133,6 +133,18 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
               ),
             ],
           ),
+          if (currentWork.resources.any(
+            (resource) => resource.source == AsmrCatalogSource.japaneseAsmr,
+          )) ...[
+            const SizedBox(height: 8),
+            Text(
+              i18n.tr('asmr_download_hls_notice'),
+              key: const ValueKey<String>('asmr_download_hls_notice'),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+          ],
           if (customWorkFolderName != null &&
               customWorkFolderName!.trim().isNotEmpty) ...[
             const SizedBox(height: 6),

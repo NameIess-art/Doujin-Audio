@@ -30,7 +30,8 @@ typedef _CategoryRequestKey = ({
 final class _CategoryState {
   List<AsmrWork>? works;
   List<AsmrWork>? localSource;
-  Set<int> workIds = const <int>{};
+  AsmrCatalogCursor cursor = AsmrCatalogCursor();
+  Set<String> workIds = const <String>{};
   bool isLoading = false;
   bool isLoadingMore = false;
   int page = 1;
@@ -65,7 +66,7 @@ final class AsmrCategoryCatalog {
     required bool Function(AsmrCategoryRequestContext) isContextCurrent,
     required AsmrCategoryRequestContext Function() currentContext,
     required List<AsmrWork> Function(AsmrCategoryType) localWorks,
-    required Set<int> Function() favoriteIds,
+    required Set<String> Function() favoriteIds,
     bool Function(AsmrWork)? isWorkAllowed,
     bool Function()? hasExclusions,
   }) : _remoteCatalogService = remoteCatalogService,
@@ -81,7 +82,7 @@ final class AsmrCategoryCatalog {
   final bool Function(AsmrCategoryRequestContext) _isContextCurrent;
   final AsmrCategoryRequestContext Function() _currentContext;
   final List<AsmrWork> Function(AsmrCategoryType) _localWorks;
-  final Set<int> Function() _favoriteIds;
+  final Set<String> Function() _favoriteIds;
   final bool Function(AsmrWork) _isWorkAllowed;
   final bool Function() _hasExclusions;
   Expando<List<AsmrWork>> _visibleCache = Expando();
@@ -321,18 +322,18 @@ final class AsmrCategoryCatalog {
     }
   }
 
-  void updateFavorites(Map<int, bool> favorites) {
+  void updateFavorites(Map<String, bool> favorites) {
     for (final entry in _categories.entries) {
       if (!isRemote(entry.key.category)) continue;
       final works = entry.value.works;
       if (works == null ||
-          !works.any((work) => favorites.containsKey(work.id))) {
+          !works.any((work) => favorites.containsKey(work.workKey))) {
         continue;
       }
       entry.value.works = immutableList(
         works.map(
-          (work) => favorites.containsKey(work.id)
-              ? work.copyWith(isFavorite: favorites[work.id])
+          (work) => favorites.containsKey(work.workKey)
+              ? work.copyWith(isFavorite: favorites[work.workKey])
               : work,
         ),
       );
@@ -489,6 +490,7 @@ final class AsmrCategoryCatalog {
     AsmrRequestCancellationToken cancellationToken,
   ) async {
     if (key.category == AsmrCategoryType.recommendation) {
+      AsmrPartialCatalogException? partialError;
       final ranked = await _remoteCatalogService.loadRecommendations(
         searchQuery: key.query,
         language: context.language,
@@ -497,12 +499,14 @@ final class AsmrCategoryCatalog {
         historyWorks: _localWorks(AsmrCategoryType.history),
         refreshSeed: serial,
         cancellationToken: cancellationToken,
+        onPartialError: (error) => partialError = error,
       );
-      return AsmrWorkPage(
+      return AsmrMergedWorkPage(
         works: ranked,
         currentPage: 1,
         pageSize: ranked.length,
-        totalCount: ranked.length,
+        hasMore: false,
+        partialError: partialError,
       );
     }
     return _remoteCatalogService.loadPage(
@@ -512,6 +516,7 @@ final class AsmrCategoryCatalog {
       language: context.language,
       token: context.token,
       cancellationToken: cancellationToken,
+      cursor: _categories[key]?.cursor,
     );
   }
 
@@ -558,6 +563,7 @@ final class AsmrCategoryCatalog {
         state.revision++;
         return;
       }
+      state.cursor = AsmrCatalogCursor();
       final result = await _fetch(
         cacheKey,
         request.context,
@@ -670,7 +676,22 @@ final class AsmrCategoryCatalog {
       if (!_isCurrent(key, request)) return;
       // Retain existing model identities and any favorites changed while the
       // worker prepared this page. Only the new page crosses the isolate back.
-      state.works = immutableList([...state.works!, ...prepared.additions]);
+      final resourceUpdates = {
+        for (final work in [
+          ...result.works,
+          if (result is AsmrMergedWorkPage) ...result.resourceUpdates,
+        ])
+          work.workKey: work,
+      };
+      state.works = immutableList([
+        for (final previous in state.works!)
+          resourceUpdates.containsKey(previous.workKey)
+              ? previous
+                    .mergedWith(resourceUpdates[previous.workKey]!)
+                    .copyWith(isFavorite: previous.isFavorite)
+              : previous,
+        ...prepared.additions,
+      ]);
       state.workIds = prepared.ids;
       state.revision++;
       _applyPageResult(state, query, result);
@@ -705,7 +726,7 @@ final class AsmrCategoryCatalog {
       final favorites = _favoriteIds();
       final prepared = await cancellationToken.waitFor(
         compute(_prepareCategoryPage, (
-          existingIds: append ? state.workIds : const <int>{},
+          existingIds: append ? state.workIds : const <String>{},
           incoming: page.works,
           favoriteIds: favorites,
         )),
@@ -722,9 +743,12 @@ final class AsmrCategoryCatalog {
   ) {
     state.query = query;
     state.page = result.currentPage;
-    state.totalCount = result.totalCount;
+    state.totalCount = result is AsmrMergedWorkPage ? null : result.totalCount;
     state.hasMore =
-        result.hasMore && (state.works?.length ?? 0) < result.totalCount;
+        result.hasMore &&
+        (result is AsmrMergedWorkPage ||
+            (state.works?.length ?? 0) < result.totalCount);
+    if (result is AsmrMergedWorkPage) state.error = result.partialError;
   }
 }
 
@@ -739,7 +763,8 @@ final class AsmrCategoryCatalog {
           [
                 work.title,
                 work.circleName,
-                work.rjCode,
+                work.workCode,
+                work.sourceId,
                 ...work.tags,
                 ...work.voiceActors,
               ]
@@ -759,17 +784,17 @@ final class AsmrCategoryCatalog {
   );
 }
 
-typedef _PreparedCategoryPage = ({List<AsmrWork> additions, Set<int> ids});
+typedef _PreparedCategoryPage = ({List<AsmrWork> additions, Set<String> ids});
 
 _PreparedCategoryPage _prepareCategoryPage(
-  ({Set<int> existingIds, List<AsmrWork> incoming, Set<int> favoriteIds})
+  ({Set<String> existingIds, List<AsmrWork> incoming, Set<String> favoriteIds})
   request,
 ) {
-  final ids = <int>{...request.existingIds};
+  final ids = <String>{...request.existingIds};
   final additions = <AsmrWork>[];
   for (final work in request.incoming) {
-    if (!ids.add(work.id)) continue;
-    final favorite = request.favoriteIds.contains(work.id);
+    if (!ids.add(work.workKey)) continue;
+    final favorite = request.favoriteIds.contains(work.workKey);
     additions.add(
       work.isFavorite == favorite ? work : work.copyWith(isFavorite: favorite),
     );

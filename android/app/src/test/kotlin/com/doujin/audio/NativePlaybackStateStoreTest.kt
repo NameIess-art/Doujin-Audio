@@ -33,6 +33,21 @@ class NativePlaybackStateStoreTest {
     }
 
     @Test
+    fun `chapter identity and clipping survive structural JSON and progress recovery`() {
+        val queue = listOf(
+            StoredNativePlaybackQueueItem("chapter-a", "https://example.com/a.m3u8", "A", null, null,
+                clipStartMs = 10_000L, clipEndMs = 20_000L,
+                httpHeaders = mapOf("Referer" to "https://japaneseasmr.com/")),
+            StoredNativePlaybackQueueItem("chapter-b", "https://example.com/a.m3u8", "B", null, null,
+                clipStartMs = 20_000L, clipEndMs = 40_000L))
+        NativePlaybackStateStore.saveSessions(context, listOf(session("A", 1_000L).copy(queue = queue)))
+        NativePlaybackStateStore.saveSessionProgress(context, listOf(playingProgress("A", 4_000L)))
+        val restored = NativePlaybackStateStore.loadSessions(context).single()
+        assertEquals(queue, restored.queue)
+        assertEquals(4_000L, restored.positionMs)
+    }
+
+    @Test
     fun `progress updates touch only the small container and restore over unchanged queues`() {
         val stored = session("A", 1_000L)
         NativePlaybackStateStore.saveSessions(context, listOf(stored))

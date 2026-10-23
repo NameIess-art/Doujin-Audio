@@ -41,7 +41,7 @@ internal data class NativePrepareSessionArguments(
             audioEffects.eqBandLevels, audioEffects.volumeNormalizationEnabled, audioEffects.panning,
             repeatOne, repeatAll, shuffle, queueStartIndex,
             items.map { StoredNativePlaybackQueueItem(it.path, it.uri, it.title, it.subtitle,
-                it.artUri, it.candidateUris, it.usageDescriptor) }, audioEffects.channelSwapEnabled,
+                it.artUri, it.candidateUris, it.usageDescriptor, it.clipStartMs, it.clipEndMs, it.httpHeaders) }, audioEffects.channelSwapEnabled,
             playing = false, playWhenReady = false, isTemporary = isTemporary
         )
     }
@@ -183,6 +183,17 @@ internal object NativePlaybackCommandPayloads {
                 title = rawItem.requiredString("title"),
                 subtitle = rawItem.optionalString("subtitle"),
                 artUri = rawItem.optionalString("artUri")?.also(::requireSupportedUri),
+                clipStartMs = if (rawItem.containsKey("clipStartMs")) rawItem.requiredLong("clipStartMs", 0L) else 0L,
+                clipEndMs = if (rawItem["clipEndMs"] != null) rawItem.requiredLong("clipEndMs", 1L).also { end ->
+                    require(end > ((rawItem["clipStartMs"] as? Number)?.toLong() ?: 0L)) { "Invalid chapter range." }
+                } else null,
+                httpHeaders = rawItem["httpHeaders"]?.let { headers ->
+                    require(headers is Map<*, *>) { "Invalid HTTP headers." }
+                    headers.entries.associate { (key, value) ->
+                        require(key is String && value is String) { "Invalid HTTP header." }
+                        key to value
+                    }
+                } ?: emptyMap(),
                 usageDescriptor = (rawItem["usageDescriptor"] as? Map<*, *>)?.entries?.associate { (key, value) -> key.toString() to value }
             ).withPlaybackCandidateUris(parseCandidateUris(rawItem["candidateUris"]))
         }

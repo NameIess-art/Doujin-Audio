@@ -13,6 +13,8 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../player/domain/playback_track_cache.dart';
 import '../domain/asmr_media_sources.dart';
+import '../../../core/media/playback_media_reference.dart';
+import 'asmr_download_media_transfer.dart';
 
 class AsmrPlaybackCacheService implements PlaybackTrackCache {
   AsmrPlaybackCacheService({
@@ -20,12 +22,15 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
     Future<Directory> Function()? temporaryDirectory,
     this.requestTimeout = const Duration(seconds: 15),
     this.downloadIdleTimeout = const Duration(seconds: 30),
+    AsmrHlsAudioTransfer? hlsAudioTransfer,
   }) : _httpClientFactory = httpClientFactory ?? HttpClient.new,
+       _hlsAudioTransfer = hlsAudioTransfer ?? AsmrHlsAudioTransfer(),
        _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory;
 
   static const String cacheDirectoryName = 'asmr_playback_cache';
 
   final HttpClient Function() _httpClientFactory;
+  final AsmrHlsAudioTransfer _hlsAudioTransfer;
   final Future<Directory> Function() _temporaryDirectory;
   final Duration requestTimeout;
   final Duration downloadIdleTimeout;
@@ -38,12 +43,13 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
   @override
   Future<String?> cacheTrack(MusicTrack track, {String? playedPath}) async {
     if (_disposed) return null;
-    if (track.remoteMetadataKind != 'asmr.one') return null;
-
-    final source = _cacheableSource(track, playedPath: playedPath);
-    if (source == null) return null;
+    if (!const {'asmr.one', 'jp-asmr'}.contains(track.remoteMetadataKind)) {
+      return null;
+    }
 
     try {
+      final source = _cacheableSource(track, playedPath: playedPath);
+      if (source == null) return null;
       final root = await _cacheRoot();
       if (_disposed) return null;
       final target = File(path.join(root.path, _fileNameFor(source, track)));
@@ -82,6 +88,7 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
       target.path,
     ]);
     try {
+      final reference = PlaybackMediaReference.parse(source);
       if (_disposed) return null;
       await root.create(recursive: true);
       final legacy = File(
@@ -91,8 +98,18 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
       if (await target.exists()) {
         final length = await target.length();
         if (length > 0 && (expectedBytes == null || length == expectedBytes)) {
-          await target.setLastModified(DateTime.now());
-          return target.path;
+          var valid = true;
+          if (reference.isHls) {
+            try {
+              await validateAsmrAudioFile(target);
+            } on FormatException {
+              valid = false;
+            }
+          }
+          if (valid) {
+            await target.setLastModified(DateTime.now());
+            return target.path;
+          }
         }
         await target.delete();
       }
@@ -100,7 +117,20 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
       if (await temp.exists()) {
         await temp.delete();
       }
-      await _download(source, temp, expectedBytes: expectedBytes);
+      if (reference.isHls) {
+        if (!await _acquireTransfer()) return null;
+        try {
+          await _hlsAudioTransfer.save(
+            reference: reference,
+            output: temp,
+            isCancelled: () => _disposed,
+          );
+        } finally {
+          _releaseTransfer();
+        }
+      } else {
+        await _download(source, temp, expectedBytes: expectedBytes);
+      }
       if (_disposed) return null;
       final length = await temp.length();
       if (length <= 0 || (expectedBytes != null && length != expectedBytes)) {
@@ -121,6 +151,12 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
   }
 
   static String? _cacheableSource(MusicTrack track, {String? playedPath}) {
+    if (PathMatcher.isRemoteUri(track.path)) {
+      final reference = PlaybackMediaReference.parse(track.path);
+      // A native player can report the transport URI without its chapter
+      // fragment. Caching must keep the track's logical chapter identity.
+      if (reference.isHls && reference.isChapter) return track.path;
+    }
     final candidates = <String>[
       ?playedPath,
       track.path,
@@ -142,6 +178,7 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
   }
 
   static int? _expectedBytes(MusicTrack track, String source) {
+    if (PlaybackMediaReference.parse(source).isHls) return null;
     final size = track.fileSizeBytes;
     if (size == null || size <= 0) return null;
     final raw = track.remoteMetadata?['fullQualityPlaybackUrls'];
@@ -169,7 +206,10 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
 
   static String _fileNameFor(String source, MusicTrack track) {
     final hash = sha1.convert(utf8.encode(source)).toString();
-    final extension = _extensionFor(source, track.displayName);
+    final reference = PlaybackMediaReference.parse(source);
+    final extension = reference.isHls
+        ? '.m4a'
+        : _extensionFor(source, track.displayName);
     return 'v2-$hash$extension';
   }
 
@@ -208,6 +248,11 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
       }
       request = await client.getUrl(Uri.parse(source)).timeout(requestTimeout);
       request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+      for (final header in PlaybackMediaReference.requestHeadersForUri(
+        Uri.parse(source),
+      ).entries) {
+        request.headers.set(header.key, header.value);
+      }
       final response = await request.close().timeout(requestTimeout);
       if (response.statusCode != HttpStatus.ok) {
         throw HttpException(

@@ -12,6 +12,7 @@ import '../../../core/errors/native_result.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/media_file_support.dart';
+import '../../../core/media/playback_media_reference.dart';
 import '../domain/audio_effects.dart';
 import '../domain/playback_usage.dart';
 import 'playback_usage_ledger.dart';
@@ -198,7 +199,7 @@ class WindowsPlaybackBridge
                 position > Duration.zero &&
                 current.pendingStart == null &&
                 player.state.position != position) {
-              await player.seek(position);
+              await player.seek(current.absolutePosition(position));
               current.position = position;
             }
             final controller = current.videoController;
@@ -531,9 +532,10 @@ class WindowsPlaybackBridge
       }
       final playlist = Playlist([
         if (session.stopAfterCurrentTrack)
-          Media(session.queue[session.index]['uri'] as String)
+          _WindowsPlaybackSession.mediaFor(session.queue[session.index])
         else
-          for (final item in session.queue) Media(item['uri'] as String),
+          for (final item in session.queue)
+            _WindowsPlaybackSession.mediaFor(item),
       ], index: session.stopAfterCurrentTrack ? 0 : session.index);
       await player.open(playlist, play: false);
       session.nativeQueueLimited = session.stopAfterCurrentTrack;
@@ -564,6 +566,28 @@ class WindowsPlaybackBridge
   }
 
   void _subscribe(_WindowsPlaybackSession session, Player player) {
+    final platform = player.platform;
+    if (platform is NativePlayer) {
+      platform.onLoadHooks.add(() async {
+        if (!_isCurrent(session) || !identical(session.player, player)) return;
+        final index = int.parse(await platform.getProperty('playlist-pos'));
+        if (index < 0) return;
+        final id = int.parse(await platform.getProperty('playlist/$index/id'));
+        final queueIndex =
+            session.nativeQueueIndices[id] ??
+            (session.stopAfterCurrentTrack ? session.index : index);
+        final reference = _WindowsPlaybackSession.referenceFor(
+          session.queue[queueIndex],
+        );
+        if (!reference.isChapter) return;
+        // media_kit rebuilds Media objects from URLs when shuffling, dropping
+        // their clipping fields. Reapply bounds before mpv opens each entry.
+        await platform.setProperty('start', '${reference.startMs / 1000}');
+        if (reference.endMs != null) {
+          await platform.setProperty('end', '${reference.endMs! / 1000}');
+        }
+      });
+    }
     session.subscriptions.addAll([
       player.stream.playlist.listen((playlist) {
         if (!_isCurrent(session) ||
@@ -640,9 +664,21 @@ class WindowsPlaybackBridge
             session.opening) {
           return;
         }
+        // mpv emits eof-reached before advancing a clipped playlist entry.
+        // Keep playback intent alive until the physical queue really ends.
+        final continues =
+            session.reference.isChapter &&
+            !session.stopAfterCurrentTrack &&
+            (session.repeatOne ||
+                session.repeatAll ||
+                player.state.playlist.index <
+                    player.state.playlist.medias.length - 1);
+        if (completed && continues) return;
         if (completed && session.error == null) {
           session.wantsPlay = false;
           session.completed = true;
+        } else if (!completed) {
+          session.completed = false;
         }
         _emit(session);
         if (completed) unawaited(_change(session.id, _releaseIfIdle));
@@ -650,7 +686,7 @@ class WindowsPlaybackBridge
       player.stream.buffering.listen((_) => _emit(session)),
       player.stream.duration.listen((duration) {
         if (!_isCurrent(session) || !identical(session.player, player)) return;
-        session.duration = duration;
+        session.duration = session.relativeDuration(duration);
         if (duration > Duration.zero && session.pendingStart != null) {
           final generation = session.generation;
           unawaited(
@@ -662,7 +698,7 @@ class WindowsPlaybackBridge
               }
               final position = current.pendingStart!;
               current.pendingStart = null;
-              await player.seek(position);
+              await player.seek(current.absolutePosition(position));
               if (_isCurrent(current) &&
                   generation == current.generation &&
                   current.wantsPlay) {
@@ -673,7 +709,8 @@ class WindowsPlaybackBridge
         }
         _emit(session);
       }),
-      player.stream.position.listen((position) {
+      player.stream.position.listen((absolutePosition) {
+        final position = session.relativePosition(absolutePosition);
         if (!_isCurrent(session) ||
             !identical(session.player, player) ||
             session.opening ||
@@ -696,8 +733,8 @@ class WindowsPlaybackBridge
             NativePlaybackProgressUpdate(
               sessionId: session.id,
               position: position,
-              bufferedPosition: player.state.buffer,
-              duration: player.state.duration,
+              bufferedPosition: session.relativePosition(player.state.buffer),
+              duration: session.relativeDuration(player.state.duration),
               nativeElapsedRealtimeMs: _elapsed.inMilliseconds,
             ),
           );
@@ -865,7 +902,7 @@ class WindowsPlaybackBridge
       session.pendingStart = null;
       session.completed = false;
       await session.player?.pause();
-      await session.player?.seek(Duration.zero);
+      await session.player?.seek(session.absolutePosition(Duration.zero));
       session.position = Duration.zero;
       await session.releasePlayer();
     });
@@ -876,11 +913,11 @@ class WindowsPlaybackBridge
     String sessionId,
     Duration position,
   ) => _change(sessionId, (session) async {
-    final target = position < Duration.zero ? Duration.zero : position;
+    final target = session.clampPosition(position);
     if (session.pendingStart != null) {
       session.pendingStart = target;
     } else {
-      await session.player?.seek(target);
+      await session.player?.seek(session.absolutePosition(target));
     }
     session.position = target;
   }, markPlaybackError: false);

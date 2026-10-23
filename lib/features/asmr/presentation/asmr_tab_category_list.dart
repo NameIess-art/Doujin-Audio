@@ -58,7 +58,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
   final double bottomInset;
   final Future<void> Function() onRefresh;
   final bool isSelectionMode;
-  final Set<int> selectedWorkIds;
+  final Set<String> selectedWorkIds;
   final ValueChanged<AsmrWork> onEnterSelectionMode;
   final ValueChanged<AsmrWork> onToggleSelection;
 
@@ -78,20 +78,20 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   AsmrCategoryViewState? _lastPresentedState;
   late final String _automaticLoadMoreCommitKey =
       'asmr_load_more_${identityHashCode(this)}';
-  final Map<int, _CollapsingAsmrWork> _collapsingWorks =
-      <int, _CollapsingAsmrWork>{};
+  final Map<String, _CollapsingAsmrWork> _collapsingWorks =
+      <String, _CollapsingAsmrWork>{};
   List<AsmrWork>? _lastFavoritesWorks;
   String? _lastFavoritesQuery;
   int? _lastFavoritesRevision;
   AsmrCategoryViewState? _lastLoadState;
-  final Map<int, Animation<double>> _loadingWorkAnimations = {};
+  final Map<String, Animation<double>> _loadingWorkAnimations = {};
   final Set<AnimationController> _loadingBatchControllers = {};
-  final Map<int, GlobalKey> _itemKeys = {};
+  final Map<String, GlobalKey> _itemKeys = {};
   List<AsmrWork>? _visibleWorksSource;
   List<AsmrWork> _visibleWorksCache = const [];
-  Map<int, _CollapsingAsmrWork> _visibleCollapsing = const {};
+  Map<String, _CollapsingAsmrWork> _visibleCollapsing = const {};
   List<String> _anchorIds = const [];
-  Map<int, int> _workIndexById = {};
+  Map<String, int> _workIndexById = {};
   Map<Key, int> _workKeyIndices = {};
 
   List<AsmrWork> _prepareVisibleWorks(List<AsmrWork> works) {
@@ -120,9 +120,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     _workKeyIndices = {};
     final anchors = <String>[];
     for (var index = 0; index < visible.length; index++) {
-      final id = visible[index].id;
+      final id = visible[index].workKey;
       _workIndexById[id] = index;
-      anchors.add('$id');
+      anchors.add(id);
       final key = _itemKeys[id];
       if (key != null) _workKeyIndices[key] = index;
     }
@@ -231,7 +231,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       return;
     }
     for (var i = 0; i < previous.works.length; i++) {
-      if (previous.works[i].id != works[i].id) return;
+      if (previous.works[i].workKey != works[i].workKey) return;
     }
     // Start once when a page enters the rendered data, including offscreen
     // records. Lazy card creation then observes the batch's current opacity.
@@ -242,7 +242,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final animation = controller.drive(CurveTween(curve: kAppFadeCurve));
     _loadingBatchControllers.add(controller);
     for (final work in works.skip(previous.works.length)) {
-      _loadingWorkAnimations[work.id] = animation;
+      _loadingWorkAnimations[work.workKey] = animation;
     }
     controller.forward().then((_) {
       if (!mounted) return;
@@ -323,7 +323,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
           !state.isLoading &&
           !state.isRefreshing &&
           !reduceMotion) {
-        final currentWorkIds = <int>{for (final w in works) w.id};
+        final currentWorkIds = <String>{for (final w in works) w.workKey};
         _collapsingWorks.removeWhere((id, entry) {
           if (currentWorkIds.contains(id)) {
             entry.dispose();
@@ -334,18 +334,18 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         var skippedRemovals = 0;
         for (var i = 0; i < _lastFavoritesWorks!.length; i++) {
           final previousWork = _lastFavoritesWorks![i];
-          if (currentWorkIds.contains(previousWork.id) ||
-              _collapsingWorks.containsKey(previousWork.id)) {
+          if (currentWorkIds.contains(previousWork.workKey) ||
+              _collapsingWorks.containsKey(previousWork.workKey)) {
             continue;
           }
           // Zero-height retiring rows make a lazy list build further rows to
           // fill its viewport. Retaining offscreen removals would build the
           // entire old collection on the final animation frame.
-          if (_itemKeys[previousWork.id]?.currentContext == null) {
+          if (_itemKeys[previousWork.workKey]?.currentContext == null) {
             skippedRemovals++;
             continue;
           }
-          final workId = previousWork.id;
+          final workId = previousWork.workKey;
           _collapsingWorks[workId] = _CollapsingAsmrWork(
             work: previousWork,
             originalIndex: i - skippedRemovals,
@@ -376,22 +376,22 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         work: work,
         searchQuery: widget.searchQuery,
         isSelectionMode: widget.isSelectionMode,
-        isSelected: widget.selectedWorkIds.contains(work.id),
+        isSelected: widget.selectedWorkIds.contains(work.workKey),
         onLongPress: () => widget.onEnterSelectionMode(work),
         onToggleSelect: () => widget.onToggleSelection(work),
       );
       Widget workCard = FadeTransition(
-        key: ValueKey<String>('asmr-work-${work.id}'),
+        key: ValueKey<String>('asmr-work-${work.workKey}'),
         opacity:
-            _loadingWorkAnimations[work.id] ??
+            _loadingWorkAnimations[work.workKey] ??
             const AlwaysStoppedAnimation<double>(1),
         child: RepaintBoundary(
           child: widget.searchSession
               ? card
-              : BrowseAnchor(id: '${work.id}', child: card),
+              : BrowseAnchor(id: work.workKey, child: card),
         ),
       );
-      final collapsing = _collapsingWorks[work.id];
+      final collapsing = _collapsingWorks[work.workKey];
       if (collapsing != null) {
         workCard = AnimatedBuilder(
           animation: collapsing.controller,
@@ -410,8 +410,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       }
       // Rows regroup on resize; retain the complete card, including its
       // removal host and decoded cover, when it moves to another row.
-      final key = _itemKeys.putIfAbsent(work.id, GlobalKey.new);
-      workKeyIndices[key] = workIndexById[work.id]!;
+      final key = _itemKeys.putIfAbsent(work.workKey, GlobalKey.new);
+      workKeyIndices[key] = workIndexById[work.workKey]!;
       return KeyedSubtree(key: key, child: workCard);
     }
 
@@ -537,6 +537,31 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         if (visibleWorks.isNotEmpty &&
                             !state.needsLoadMoreRetry) {
                           _scheduleAutomaticLoadMore(state);
+                        }
+                        final partialError =
+                            state.operationError ?? state.lastError;
+                        if (visibleWorks.isNotEmpty &&
+                            partialError is AsmrPartialCatalogException) {
+                          return Padding(
+                            key: const ValueKey<String>(
+                              'asmr_load_more_footer',
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: OperationStatusBanner(
+                              key: const ValueKey<String>(
+                                'online_library_partial_failure',
+                              ),
+                              label: localizedAsmrCatalogErrorText(
+                                i18n,
+                                partialError,
+                              ),
+                              error: partialError,
+                              icon: Icons.cloud_off_rounded,
+                              tone: OperationStatusTone.warning,
+                              retryTooltip: i18n.tr('retry'),
+                              onRetry: () => unawaited(widget.onRefresh()),
+                            ),
+                          );
                         }
                         return AnimatedSwitcher(
                           key: const ValueKey<String>('asmr_load_more_footer'),
@@ -708,6 +733,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   void _scheduleAutomaticLoadMore(AsmrCategoryViewState state) {
     if (_automaticLoadMoreScheduled ||
         !_isActive ||
+        state.works.isEmpty ||
         state.isLoadingMore ||
         !state.hasMore ||
         state.needsLoadMoreRetry) {
@@ -729,6 +755,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               searchSession: widget.searchSession,
             );
         if (currentState == null ||
+            currentState.works.isEmpty ||
             currentState.isLoadingMore ||
             !currentState.hasMore ||
             currentState.needsLoadMoreRetry) {

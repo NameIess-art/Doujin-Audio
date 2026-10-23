@@ -16,7 +16,7 @@ class AsmrRecommendationEngine {
     required List<AsmrWork> historyWorks,
     int refreshSeed = 0,
     int? limit,
-    Set<int> explorationWorkIds = const <int>{},
+    Set<String> explorationWorkIds = const <String>{},
     Map<String, double>? tagWeights,
   }) {
     final request = AsmrRecommendationRankRequest(
@@ -39,7 +39,7 @@ class AsmrRecommendationEngine {
     required List<AsmrWork> historyWorks,
     int refreshSeed = 0,
     int? limit,
-    Set<int> explorationWorkIds = const <int>{},
+    Set<String> explorationWorkIds = const <String>{},
     Map<String, double>? tagWeights,
   }) {
     final profile = _RecommendationProfile.build(
@@ -57,7 +57,7 @@ class AsmrRecommendationEngine {
     scored.sort((a, b) {
       final scoreOrder = b.score.compareTo(a.score);
       if (scoreOrder != 0) return scoreOrder;
-      return a.work.id.compareTo(b.work.id);
+      return a.work.workKey.compareTo(b.work.workKey);
     });
     return _rankForRefresh(
       scored,
@@ -163,7 +163,7 @@ class AsmrRecommendationEngine {
     List<_ScoredWork> scored, {
     required int refreshSeed,
     required int? limit,
-    required Set<int> explorationWorkIds,
+    required Set<String> explorationWorkIds,
   }) {
     if (scored.isEmpty) {
       return const <AsmrWork>[];
@@ -175,13 +175,13 @@ class AsmrRecommendationEngine {
     if (refreshSeed > 1 && explorationWorkIds.isNotEmpty) {
       final quota = min(40, ranked.length) ~/ 4;
       final promoted = scored
-          .where((item) => explorationWorkIds.contains(item.work.id))
+          .where((item) => explorationWorkIds.contains(item.work.workKey))
           .take(quota)
           .toList(growable: false);
       if (promoted.isNotEmpty) {
-        final promotedIds = promoted.map((item) => item.work.id).toSet();
+        final promotedIds = promoted.map((item) => item.work.workKey).toSet();
         final remaining = ranked
-            .where((item) => !promotedIds.contains(item.work.id))
+            .where((item) => !promotedIds.contains(item.work.workKey))
             .toList(growable: false);
         final mixed = <_ScoredWork>[];
         var promotedIndex = 0;
@@ -221,21 +221,25 @@ class AsmrRecommendationEngine {
         _RefreshScoredWork(
           item: item,
           key: scoreRange <= 0
-              ? _seededUnit(refreshSeed, item.work.id)
+              ? _seededUnit(refreshSeed, item.work.workKey)
               : ((item.score - minScore) / scoreRange) * 0.74 +
-                    _seededUnit(refreshSeed, item.work.id) * 0.26,
+                    _seededUnit(refreshSeed, item.work.workKey) * 0.26,
         ),
     ];
     keyed.sort((a, b) {
       final keyOrder = b.key.compareTo(a.key);
       if (keyOrder != 0) return keyOrder;
-      return a.item.work.id.compareTo(b.item.work.id);
+      return a.item.work.workKey.compareTo(b.item.work.workKey);
     });
     return keyed.map((item) => item.item).toList(growable: false);
   }
 
-  double _seededUnit(int seed, int workId) {
-    final random = Random(seed ^ (workId * 0x1fffffff));
+  double _seededUnit(int seed, String workKey) {
+    var hash = 2166136261;
+    for (final unit in workKey.codeUnits) {
+      hash = ((hash ^ unit) * 16777619) & 0xffffffff;
+    }
+    final random = Random(seed ^ hash);
     return random.nextDouble();
   }
 }
@@ -249,7 +253,7 @@ class AsmrRecommendationRankRequest {
     required this.historyWorks,
     required this.refreshSeed,
     required this.limit,
-    this.explorationWorkIds = const <int>{},
+    this.explorationWorkIds = const <String>{},
     this.tagWeights,
   });
 
@@ -259,7 +263,7 @@ class AsmrRecommendationRankRequest {
   final List<AsmrWork> historyWorks;
   final int refreshSeed;
   final int? limit;
-  final Set<int> explorationWorkIds;
+  final Set<String> explorationWorkIds;
   final Map<String, double>? tagWeights;
 }
 
@@ -281,14 +285,14 @@ class _RecommendationProfile {
     required this.tagWeights,
     required this.circleWeights,
     required this.voiceActorWeights,
-    required this.seenWorkIds,
+    required this.seenWorkKeys,
     required this.seenRjCodes,
   });
 
   final Map<String, double> tagWeights;
   final Map<String, double> circleWeights;
   final Map<String, double> voiceActorWeights;
-  final Set<int> seenWorkIds;
+  final Set<String> seenWorkKeys;
   final Set<String> seenRjCodes;
 
   bool get hasTasteSignals =>
@@ -297,8 +301,13 @@ class _RecommendationProfile {
       voiceActorWeights.isNotEmpty;
 
   bool hasSeen(AsmrWork work) {
-    return seenWorkIds.contains(work.id) ||
-        seenRjCodes.contains(_normalizeTerm(work.rjCode));
+    return seenWorkKeys.contains(work.workKey) ||
+        work.resources.any(
+          (resource) => seenWorkKeys.contains(
+            'source:${resource.source.name}:${resource.id}',
+          ),
+        ) ||
+        seenRjCodes.contains(_normalizeTerm(work.workCode));
   }
 
   static _RecommendationProfile build({
@@ -337,13 +346,16 @@ class _RecommendationProfileBuilder {
   final Map<String, double> tagWeights = <String, double>{};
   final Map<String, double> circleWeights = <String, double>{};
   final Map<String, double> voiceActorWeights = <String, double>{};
-  final Set<int> seenWorkIds = <int>{};
+  final Set<String> seenWorkKeys = <String>{};
   final Set<String> seenRjCodes = <String>{};
 
   void addWork(AsmrWork work, double weight, {required bool seen}) {
     if (seen) {
-      seenWorkIds.add(work.id);
-      final rj = _normalizeTerm(work.rjCode);
+      seenWorkKeys.add(work.workKey);
+      for (final resource in work.resources) {
+        seenWorkKeys.add('source:${resource.source.name}:${resource.id}');
+      }
+      final rj = _normalizeTerm(work.workCode);
       if (rj.isNotEmpty) seenRjCodes.add(rj);
     }
     _addAll(tagWeights, work.tags, weight);
@@ -357,12 +369,33 @@ class _RecommendationProfileBuilder {
     _addSeenTrack(track);
     final metadata = track.remoteMetadata;
     if (metadata == null) return;
-    _addWorkMetadata(metadata, weight);
+    _addWorkMetadata(
+      metadata,
+      weight,
+      source: track.remoteMetadataKind == 'jp-asmr'
+          ? AsmrCatalogSource.japaneseAsmr
+          : AsmrCatalogSource.asmrOne,
+    );
   }
 
-  void _addWorkMetadata(Map<String, Object?> metadata, double weight) {
-    final id = (metadata['id'] as num?)?.toInt();
-    if (id != null) seenWorkIds.add(id);
+  void _addWorkMetadata(
+    Map<String, Object?> metadata,
+    double weight, {
+    required AsmrCatalogSource source,
+  }) {
+    final workKey = metadata['workKey'] as String?;
+    if (workKey != null) seenWorkKeys.add(workKey);
+    final resources = metadata['resources'];
+    if (resources is List && resources.isNotEmpty) {
+      for (final raw in resources.whereType<Map<String, dynamic>>()) {
+        final resource = AsmrWorkResource.fromJson(raw);
+        seenWorkKeys.add('source:${resource.source.name}:${resource.id}');
+      }
+    } else if (metadata['id'] is num) {
+      seenWorkKeys.add(
+        'source:${source.name}:${(metadata['id'] as num).toInt()}',
+      );
+    }
     _add(circleWeights, metadata['circleName']?.toString(), weight);
     _addAll(tagWeights, _stringList(metadata['tags']), weight);
     _addAll(voiceActorWeights, _stringList(metadata['voiceActors']), weight);
@@ -388,7 +421,7 @@ class _RecommendationProfileBuilder {
       tagWeights: Map<String, double>.unmodifiable(tagWeights),
       circleWeights: Map<String, double>.unmodifiable(circleWeights),
       voiceActorWeights: Map<String, double>.unmodifiable(voiceActorWeights),
-      seenWorkIds: Set<int>.unmodifiable(seenWorkIds),
+      seenWorkKeys: Set<String>.unmodifiable(seenWorkKeys),
       seenRjCodes: Set<String>.unmodifiable(seenRjCodes),
     );
   }

@@ -33,7 +33,10 @@ internal fun StoredNativePlaybackSession.restoredQueue(cacheDirectory: File? = n
             title = queueItem.title,
             subtitle = queueItem.subtitle,
             artUri = queueItem.artUri,
-            usageDescriptor = queueItem.usageDescriptor
+            usageDescriptor = queueItem.usageDescriptor,
+            clipStartMs = queueItem.clipStartMs,
+            clipEndMs = queueItem.clipEndMs,
+            httpHeaders = queueItem.httpHeaders
         ).withPlaybackCandidateUris(queueItem.candidateUris.map { candidate ->
             restoredPlaybackUri(queueItem.path, candidate, cacheDirectory)
         })

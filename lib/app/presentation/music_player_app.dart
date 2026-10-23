@@ -52,6 +52,7 @@ Widget createAudioPlayerApp({
     :asmrLibraryController,
     :asmrPlaybackCoordinator,
     :asmrApiService,
+    :japaneseAsmrApiService,
     :initializePresentation,
     :initializeRuntimeData,
     :initializeSecondaryData,
@@ -93,6 +94,7 @@ Widget createAudioPlayerApp({
         ref.onDispose(() {
           asmrLibraryController.dispose();
           asmrApiService.close();
+          japaneseAsmrApiService.close();
         });
         return asmrLibraryController;
       }),

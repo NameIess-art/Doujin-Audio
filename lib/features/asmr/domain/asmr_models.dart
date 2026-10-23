@@ -6,6 +6,50 @@ import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
 
+enum AsmrCatalogSource { asmrOne, japaneseAsmr }
+
+String normalizeAsmrWorkCode(String value) {
+  final code = value.trim().toUpperCase();
+  final match = RegExp(r'^(RJ|UND|UN)[-_ ]?(\d+)$').firstMatch(code);
+  if (match != null) {
+    final digits = match[1] == 'RJ' ? match[2]!.padLeft(6, '0') : match[2]!;
+    return '${match[1]}$digits';
+  }
+  final dmm = RegExp(r'^D_(\d+)$').firstMatch(code);
+  return dmm == null ? '' : 'UND${dmm[1]}';
+}
+
+@immutable
+class AsmrWorkResource {
+  const AsmrWorkResource({
+    required this.source,
+    required this.id,
+    required this.code,
+    required this.pageUrl,
+  });
+  final AsmrCatalogSource source;
+  final int id;
+  final String code;
+  final String pageUrl;
+
+  Map<String, Object?> toJson() => {
+    'source': source.name,
+    'id': id,
+    'code': code,
+    'pageUrl': pageUrl,
+  };
+  factory AsmrWorkResource.fromJson(Map<String, dynamic> json) =>
+      AsmrWorkResource(
+        source: AsmrCatalogSource.values.firstWhere(
+          (source) => source.name == json['source'],
+          orElse: () => AsmrCatalogSource.asmrOne,
+        ),
+        id: (json['id'] as num?)?.toInt() ?? 0,
+        code: json['code'] as String? ?? '',
+        pageUrl: json['pageUrl'] as String? ?? '',
+      );
+}
+
 enum AsmrCategoryType {
   collected,
   recommendation,
@@ -243,11 +287,24 @@ class AsmrWork {
     required List<String> voiceActors,
     required List<String> tags,
     List<int> tagIds = const [],
+    List<AsmrWorkResource>? resources,
     this.hasSubtitle = false,
     this.isFavorite = false,
   }) : voiceActors = immutableList(voiceActors),
        tags = immutableList(tags),
-       tagIds = immutableList(tagIds);
+       tagIds = immutableList(tagIds),
+       resources = immutableList(
+         resources == null || resources.isEmpty
+             ? [
+                 AsmrWorkResource(
+                   source: AsmrCatalogSource.asmrOne,
+                   id: id,
+                   code: sourceId,
+                   pageUrl: sourceUrl,
+                 ),
+               ]
+             : resources,
+       );
 
   final int id;
   final String title;
@@ -270,7 +327,62 @@ class AsmrWork {
   final bool hasSubtitle;
   final bool isFavorite;
 
-  String get rjCode => sourceId.trim();
+  final List<AsmrWorkResource> resources;
+  AsmrWorkResource? resourceFor(AsmrCatalogSource source) =>
+      resources.where((resource) => resource.source == source).firstOrNull;
+  AsmrWorkResource get preferredResource =>
+      resourceFor(AsmrCatalogSource.asmrOne) ?? resources.first;
+  String get workCode {
+    for (final code in [
+      sourceId,
+      ...resources.map((resource) => resource.code),
+    ]) {
+      final normalized = normalizeAsmrWorkCode(code);
+      if (normalized.isNotEmpty) return normalized;
+    }
+    return '';
+  }
+
+  String get workKey => workCode.isNotEmpty
+      ? 'code:$workCode'
+      : 'source:${preferredResource.source.name}:${preferredResource.id}';
+  String get rjCode => workCode.startsWith('RJ') ? workCode : '';
+
+  AsmrWork mergeResources(Iterable<AsmrWorkResource> additional) {
+    final merged = <AsmrWorkResource>[...resources];
+    var changed = false;
+    for (final resource in additional) {
+      final index = merged.indexWhere(
+        (item) => item.source == resource.source && item.id == resource.id,
+      );
+      if (index < 0) {
+        merged.add(resource);
+        changed = true;
+      } else if (merged[index].code != resource.code ||
+          merged[index].pageUrl != resource.pageUrl) {
+        merged[index] = resource;
+        changed = true;
+      }
+    }
+    if (!changed) return this;
+    merged.sort((a, b) => a.source.index.compareTo(b.source.index));
+    return copyWith(resources: merged);
+  }
+
+  AsmrWork mergedWith(AsmrWork other) {
+    if (workKey != other.workKey) {
+      throw ArgumentError('Only identical works can be merged.');
+    }
+    final preferred = resourceFor(AsmrCatalogSource.asmrOne) != null
+        ? this
+        : other;
+    final merged = preferred.mergeResources([...resources, ...other.resources]);
+    final favorite = isFavorite || other.isFavorite;
+    return merged.isFavorite == favorite
+        ? merged
+        : merged.copyWith(isFavorite: favorite);
+  }
+
   String get preferredCoverUrl {
     for (final url in <String>[mainCoverUrl, coverUrl, thumbnailUrl]) {
       final trimmed = url.trim();
@@ -279,9 +391,14 @@ class AsmrWork {
     return '';
   }
 
-  AsmrWork copyWith({bool? isFavorite}) {
+  AsmrWork copyWith({bool? isFavorite, List<AsmrWorkResource>? resources}) {
     return AsmrWork(
-      id: id,
+      id:
+          (resources ?? this.resources)
+              .where((resource) => resource.source == AsmrCatalogSource.asmrOne)
+              .firstOrNull
+              ?.id ??
+          id,
       title: title,
       circleName: circleName,
       sourceId: sourceId,
@@ -301,6 +418,7 @@ class AsmrWork {
       tagIds: tagIds,
       hasSubtitle: hasSubtitle,
       isFavorite: isFavorite ?? this.isFavorite,
+      resources: resources ?? this.resources,
     );
   }
 
@@ -325,6 +443,10 @@ class AsmrWork {
     'tagIds': tagIds,
     'hasSubtitle': hasSubtitle,
     'isFavorite': isFavorite,
+    'workKey': workKey,
+    'resources': resources
+        .map((resource) => resource.toJson())
+        .toList(growable: false),
   };
 
   factory AsmrWork.fromJson(
@@ -413,6 +535,10 @@ class AsmrWork {
           json['has_subtitle'] as bool? ??
           false,
       isFavorite: json['isFavorite'] as bool? ?? false,
+      resources: (json['resources'] as List?)
+          ?.whereType<Map<String, dynamic>>()
+          .map(AsmrWorkResource.fromJson)
+          .toList(),
     );
   }
 
@@ -473,6 +599,7 @@ class AsmrTrackFile {
     required this.workTitle,
     required this.sourceId,
     required this.relativePath,
+    this.workKey,
   }) : children = immutableList(children);
 
   final String hash;
@@ -488,6 +615,7 @@ class AsmrTrackFile {
   final String workTitle;
   final String sourceId;
   final String relativePath;
+  final String? workKey;
 
   bool get isFolder => type == 'folder';
   bool get isAudio =>
@@ -542,6 +670,7 @@ class AsmrTrackFile {
     workTitle: workTitle,
     sourceId: sourceId,
     relativePath: relativePath,
+    workKey: workKey,
   );
 
   MusicTrack toMusicTrack({
@@ -573,13 +702,17 @@ class AsmrTrackFile {
     return MusicTrack(
       path: playbackUrl,
       displayName: displayTitle,
-      groupKey: 'asmr-work-$workId',
+      groupKey: 'asmr-work-${workKey ?? metadata['workKey'] ?? workId}',
       groupTitle: groupTitleOverride ?? workTitle,
       groupSubtitle: sourceId,
       isSingle: false,
       isVideo: isVideo,
       remoteCoverUrl: remoteCoverUrl,
-      remoteMetadataKind: remoteMetadataKind,
+      remoteMetadataKind:
+          remoteMetadataKind ??
+          (workKey?.startsWith('source:japaneseAsmr:') == true
+              ? 'jp-asmr'
+              : null),
       remoteMetadata: metadata,
       duration: duration,
       fileSizeBytes: size,
@@ -614,6 +747,7 @@ class AsmrTrackFile {
       workTitle: (json['workTitle'] as String?) ?? '',
       sourceId: (work?['source_id'] as String?) ?? '',
       relativePath: nextPath,
+      workKey: json['workKey'] as String?,
     );
   }
 }

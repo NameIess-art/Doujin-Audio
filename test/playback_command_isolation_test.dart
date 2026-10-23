@@ -145,6 +145,43 @@ void main() {
   }
 
   test(
+    'chapter queue preparation keeps identity separate from transport',
+    () async {
+      const stream = 'https://v.weeab0o.xyz/chapters.m3u8';
+      catalog.tracks
+        ..clear()
+        ..addAll([
+          for (final start in [1000, 3000])
+            MusicTrack(
+              path: '$stream#eara-chapter=$start,${start + 2000}',
+              displayName: 'Chapter $start',
+              groupKey: 'work',
+              groupTitle: 'Work',
+              groupSubtitle: '',
+              isSingle: false,
+              remoteMetadataKind: MusicTrack.remoteMetadataKindJapaneseAsmr,
+            ),
+        ]);
+      final session = register('chapters');
+      expect(
+        await commands.prepareSession(
+          session,
+          nextPath: session.currentTrackPath,
+        ),
+        true,
+      );
+      final queue = native.lastPreparedQueue!;
+      expect(queue.map((item) => item['uri']), [stream, stream]);
+      expect(queue.map((item) => item['path']).toSet(), hasLength(2));
+      expect(queue.map((item) => item['clipStartMs']), [1000, 3000]);
+      expect(queue.map((item) => item['clipEndMs']), [3000, 5000]);
+      expect(queue.first['httpHeaders'], {
+        'Referer': 'https://japaneseasmr.com/',
+      });
+    },
+  );
+
+  test(
     'blocked session preparation does not delay another session play and pause',
     () async {
       final first = register('a');
@@ -734,6 +771,7 @@ class _Native extends NativePlaybackRepository {
   final deferredPrepared = <String>[];
   final removed = <String>[];
   int? lastPreparedQueueIndex;
+  List<Map<String, Object?>>? lastPreparedQueue;
   double? lastPreparedVolume;
   final played = <String>[];
   final paused = <String>[];
@@ -783,6 +821,7 @@ class _Native extends NativePlaybackRepository {
     prepared.add(sessionId);
     if (deferPlayerCreation) deferredPrepared.add(sessionId);
     lastPreparedQueueIndex = queueStartIndex;
+    lastPreparedQueue = queue;
     lastPreparedVolume = volume;
     _paths[sessionId] = path ?? uri.toString();
     startPositions.add(startPosition);

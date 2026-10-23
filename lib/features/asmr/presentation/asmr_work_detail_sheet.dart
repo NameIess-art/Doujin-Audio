@@ -11,7 +11,7 @@ Future<void> showAsmrWorkDetailSheet(
   bool returnToMain = false,
 }) => WorkDetailNavigation.openFrom(
   context,
-  ('asmr', work.id),
+  ('asmr', work.workKey),
   (routeContext) => buildAppPageRoute<void>(
     context: routeContext,
     settings: const RouteSettings(name: workDetailRouteName),

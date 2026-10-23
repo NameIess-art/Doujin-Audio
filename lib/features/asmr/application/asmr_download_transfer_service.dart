@@ -13,6 +13,7 @@ import 'asmr_download_cleanup.dart';
 import 'asmr_download_planner.dart';
 import 'asmr_download_task_store.dart';
 import 'asmr_download_io.dart';
+import 'asmr_download_media_transfer.dart';
 
 class AsmrDownloadTransferService {
   AsmrDownloadTransferService({
@@ -22,19 +23,151 @@ class AsmrDownloadTransferService {
     required this.isDisposed,
     required this.isPaused,
     required this.throwIfCancelled,
+    AsmrHlsAudioTransfer? hlsAudioTransfer,
   }) : _store = store,
        _outputs = outputs,
+       _hlsAudioTransfer = hlsAudioTransfer ?? AsmrHlsAudioTransfer(),
        _automaticFileRetryDelay = automaticFileRetryDelay;
   final AsmrDownloadTaskStore _store;
   final AsmrDownloadOutputStore _outputs;
+  final AsmrHlsAudioTransfer _hlsAudioTransfer;
   final Duration _automaticFileRetryDelay;
   final bool Function() isDisposed;
-  final bool Function(int) isPaused;
-  final void Function(int) throwIfCancelled;
+  final bool Function(String) isPaused;
+  final void Function(String) throwIfCancelled;
   static const _planner = AsmrDownloadPlanner();
   Future<DownloadWriteResult> downloadItem(
     PlannedDownloadFile item, {
-    required int workId,
+    required String workId,
+    required AsmrDownloadTaskSnapshot task,
+    required String workRootPath,
+    required AsmrDownloadConflictPolicy conflictPolicy,
+    required HttpClient client,
+  }) async {
+    final reference = item.mediaReference;
+    if (reference?.isHls == true &&
+        (reference!.downloadUrl == null ||
+            _store[workId]?.actualOutputPaths.containsKey(item.relativePath) ==
+                true)) {
+      return _downloadHlsItem(
+        item,
+        workId: workId,
+        task: task,
+        conflictPolicy: conflictPolicy,
+      );
+    }
+    try {
+      return await _downloadItem(
+        item,
+        workId: workId,
+        task: task,
+        workRootPath: workRootPath,
+        conflictPolicy: conflictPolicy,
+        client: client,
+      );
+    } on AsmrOriginalUnavailable {
+      if (reference?.isHls != true) rethrow;
+      return _downloadHlsItem(
+        item,
+        workId: workId,
+        task: task,
+        conflictPolicy: conflictPolicy,
+      );
+    }
+  }
+
+  Future<DownloadWriteResult> _downloadHlsItem(
+    PlannedDownloadFile item, {
+    required String workId,
+    required AsmrDownloadTaskSnapshot task,
+    required AsmrDownloadConflictPolicy conflictPolicy,
+  }) async {
+    throwIfCancelled(workId);
+    final relativePath = _planner.hlsOutputPath(item.relativePath);
+    final targetPath = _planner.joinFolderPath(task.workRootPath, relativePath);
+    final current = _store[workId]!;
+    _store[workId] = current.copyWith(
+      actualOutputPaths: {
+        ...current.actualOutputPaths,
+        item.relativePath: relativePath,
+      },
+    );
+    _store.notifyTaskChanged(changedWorkIds: {workId});
+    await _store.flushPersistence();
+    final exists = await _outputs.outputPathExists(targetPath);
+    if (exists && conflictPolicy == AsmrDownloadConflictPolicy.skip) {
+      return const DownloadWriteResult.skipped(bytesDownloaded: 0);
+    }
+    final staging = PathMatcher.isContentUri(task.workRootPath)
+        ? await _outputs.persistentStagingFile(task.workRootPath, relativePath)
+        : File('$targetPath.doujin.part');
+    final lease = AppCacheService.protectPaths([staging.path]);
+    _outputs.createdOutputPaths[workId]?.add(staging.path);
+    try {
+      for (var attempt = 0; ; attempt++) {
+        throwIfCancelled(workId);
+        try {
+          await _hlsAudioTransfer.save(
+            reference: item.mediaReference!,
+            output: staging,
+            isCancelled: () {
+              try {
+                throwIfCancelled(workId);
+                return false;
+              } on DownloadCancelled {
+                return true;
+              }
+            },
+          );
+          break;
+        } on DownloadCancelled {
+          rethrow;
+        } catch (error, stackTrace) {
+          throwIfCancelled(workId);
+          if (attempt >= current.automaticFileRetryCount) {
+            AppLogService.error(
+              'asmr_download_hls_failed path=${item.relativePath}',
+              error: error,
+              stackTrace: stackTrace,
+            );
+            return const DownloadWriteResult.failure(bytesDownloaded: 0);
+          }
+          _setFileRetryAttempt(workId, item.relativePath, attempt + 1);
+          await Future<void>.delayed(_automaticFileRetryDelay);
+        }
+      }
+      throwIfCancelled(workId);
+      final length = await staging.length();
+      if (PathMatcher.isContentUri(task.workRootPath)) {
+        if (!await _outputs.gateway.copyFileToFolder(
+          sourcePath: staging.path,
+          folder: task.workRootPath,
+          relativePath: relativePath,
+          overwrite: conflictPolicy == AsmrDownloadConflictPolicy.overwrite,
+        )) {
+          return const DownloadWriteResult.failure(bytesDownloaded: 0);
+        }
+      } else {
+        await File(targetPath).parent.create(recursive: true);
+        if (!await commitLocalDownloadedFile(
+          staging: staging,
+          target: File(targetPath),
+        )) {
+          return const DownloadWriteResult.failure(bytesDownloaded: 0);
+        }
+      }
+      if (!exists) _outputs.createdOutputPaths[workId]?.add(targetPath);
+      return DownloadWriteResult.success(bytesDownloaded: length);
+    } finally {
+      _setFileRetryAttempt(workId, item.relativePath, null);
+      lease.release();
+      if (await staging.exists()) await staging.delete();
+    }
+  }
+
+  Future<DownloadWriteResult> _downloadItem(
+    PlannedDownloadFile item, {
+    required String workId,
     required AsmrDownloadTaskSnapshot task,
     required String workRootPath,
     required AsmrDownloadConflictPolicy conflictPolicy,
@@ -235,7 +368,7 @@ class AsmrDownloadTransferService {
 
   Future<DownloadWriteResult> _downloadCoverItem(
     PlannedDownloadFile item, {
-    required int workId,
+    required String workId,
     required AsmrDownloadTaskSnapshot task,
     required AsmrDownloadConflictPolicy conflictPolicy,
     required HttpClient client,
@@ -350,7 +483,7 @@ class AsmrDownloadTransferService {
 
   Future<_TemporaryDownloadResult?> _downloadToTemporaryFile(
     PlannedDownloadFile item, {
-    required int workId,
+    required String workId,
     required HttpClient client,
     required File stagingFile,
   }) async {
@@ -372,6 +505,18 @@ class AsmrDownloadTransferService {
           allowResume: true,
         );
         if (result.bytesDownloaded case final bytesDownloaded?) {
+          if (item.mediaReference?.isHls == true) {
+            try {
+              await validateAsmrAudioFile(tempFile);
+            } on FormatException catch (error, stackTrace) {
+              AppLogService.error(
+                'asmr_download_invalid_original path=${item.relativePath}',
+                error: error,
+                stackTrace: stackTrace,
+              );
+              return null;
+            }
+          }
           await tempFile.setLastModified(DateTime.now());
           leaseTransferred = true;
           return _TemporaryDownloadResult(
@@ -429,7 +574,7 @@ class AsmrDownloadTransferService {
 
   Future<_TemporaryDownloadAttempt> _downloadToTemporaryFileAttempt(
     PlannedDownloadFile item, {
-    required int workId,
+    required String workId,
     required HttpClient client,
     required File stagingFile,
     required bool allowResume,
@@ -459,7 +604,13 @@ class AsmrDownloadTransferService {
       const requestTimeout = Duration(seconds: 15);
       const downloadIdleTimeout = Duration(seconds: 30);
       throwIfCancelled(workId);
-      final uri = Uri.parse(item.url);
+      final originalUrl = item.mediaReference?.isHls == true
+          ? item.mediaReference!.downloadUrl!
+          : item.url;
+      final resolvedUrl = item.mediaReference?.isHls == true
+          ? await resolveAsmrOriginalUrl(client, originalUrl)
+          : originalUrl;
+      final uri = Uri.parse(resolvedUrl);
       final request = await client.getUrl(uri).timeout(requestTimeout);
       openedRequest = request;
       request.headers.set(
@@ -509,6 +660,10 @@ class AsmrDownloadTransferService {
           await discardResponse();
         } catch (_) {
           // The status code is sufficient to classify this attempt.
+        }
+        if (item.mediaReference?.isHls == true &&
+            (response.statusCode == 404 || response.statusCode == 410)) {
+          throw const AsmrOriginalUnavailable();
         }
         final error = HttpException(
           'Download failed with HTTP ${response.statusCode}.',
@@ -643,6 +798,8 @@ class AsmrDownloadTransferService {
         received,
         mimeType: response.headers.contentType?.mimeType,
       );
+    } on AsmrOriginalUnavailable {
+      rethrow;
     } on DownloadCancelled {
       rethrow;
     } catch (error, stackTrace) {
@@ -661,7 +818,7 @@ class AsmrDownloadTransferService {
   }
 
   Future<void> _resetStaging(
-    int workId,
+    String workId,
     PlannedDownloadFile item,
     File staging,
   ) async {
@@ -677,7 +834,7 @@ class AsmrDownloadTransferService {
     }
   }
 
-  void _setFileEntityTag(int workId, String relativePath, String? tag) {
+  void _setFileEntityTag(String workId, String relativePath, String? tag) {
     final task = _store[workId];
     if (task == null) return;
     final tags = Map<String, String>.from(task.fileEntityTags);
@@ -704,7 +861,7 @@ class AsmrDownloadTransferService {
         error is HttpException;
   }
 
-  void _setFileRetryAttempt(int workId, String relativePath, int? attempt) {
+  void _setFileRetryAttempt(String workId, String relativePath, int? attempt) {
     if (isDisposed()) return;
     final task = _store[workId];
     if (task == null) return;

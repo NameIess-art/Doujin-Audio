@@ -8,6 +8,9 @@ import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.TrackGroup
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.LoadControl
 import androidx.media3.exoplayer.analytics.PlayerId
@@ -26,6 +29,54 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class NativePlayerFactoryTest {
+    @Test
+    fun `item headers follow every HLS request without leaking into the next item`() {
+        val requests = mutableListOf<DataSpec>()
+        val delegate = DataSource.Factory {
+            object : DataSource {
+                override fun addTransferListener(listener: TransferListener) = Unit
+                override fun open(dataSpec: DataSpec): Long { requests.add(dataSpec); return 0L }
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int = -1
+                override fun getUri(): android.net.Uri? = null
+                override fun close() = Unit
+            }
+        }
+        val queue = com.doujin.audio.player.session.NativePlaybackQueue(listOf(
+            com.doujin.audio.player.session.NativeMediaItemDescriptor("chapter", "https://example.com/a.m3u8", "A", null, null,
+                httpHeaders = mapOf("Referer" to "https://japaneseasmr.com/")),
+            com.doujin.audio.player.session.NativeMediaItemDescriptor("ordinary", "https://other.test/a.wav", "B", null, null)))
+        for (uri in listOf("https://example.com/a.m3u8", "https://cdn.test/segment.ts", "https://cdn.test/key")) {
+            nativePlaybackMediaDataSourceFactory(delegate, queue.mediaItems[0]).createDataSource()
+                .open(DataSpec.Builder().setUri(uri).build())
+        }
+        nativePlaybackMediaDataSourceFactory(delegate, queue.mediaItems[1]).createDataSource()
+            .open(DataSpec.Builder().setUri("https://other.test/a.wav").build())
+        requests.take(3).forEach { assertEquals("https://japaneseasmr.com/", it.httpRequestHeaders["Referer"]) }
+        assertTrue(requests.last().httpRequestHeaders.isEmpty())
+    }
+
+    @Test
+    fun `Japanese stream headers are scoped to exact media hosts`() {
+        assertEquals("https://japaneseasmr.com/", nativePlaybackRequestHeadersForHost("v.weeab0o.xyz")["Referer"])
+        assertTrue(nativePlaybackRequestHeadersForHost("v.weeab0o.xyz.evil.test").isEmpty())
+        assertTrue(nativePlaybackRequestHeadersForHost("example.com").isEmpty())
+    }
+
+    @Test
+    fun `native HLS chapters use separate media ids and bounded clipping configurations`() {
+        val queue = com.doujin.audio.player.session.NativePlaybackQueue(listOf(
+            com.doujin.audio.player.session.NativeMediaItemDescriptor("chapter-a", "https://v.weeab0o.xyz/a.m3u8", "A", null, null,
+                clipStartMs = 10_000L, clipEndMs = 20_000L),
+            com.doujin.audio.player.session.NativeMediaItemDescriptor("chapter-b", "https://v.weeab0o.xyz/a.m3u8", "B", null, null,
+                clipStartMs = 20_000L, clipEndMs = 40_000L)))
+        val items = queue.mediaItems
+        assertEquals("chapter-a", items[0].mediaId)
+        assertEquals("chapter-b", items[1].mediaId)
+        assertEquals(10_000L, items[0].clippingConfiguration.startPositionMs)
+        assertEquals(40_000L, items[1].clippingConfiguration.endPositionMs)
+        assertEquals("application/x-mpegURL", items[0].localConfiguration!!.mimeType)
+    }
+
     @Test
     fun `network queues keep the network wake mode for background streaming`() {
         assertEquals(

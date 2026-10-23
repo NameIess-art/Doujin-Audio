@@ -210,7 +210,9 @@ void main() {
         favoriteWorks: const <AsmrWork>[],
         historyWorks: const <AsmrWork>[],
         refreshSeed: 2,
-        explorationWorkIds: {for (var id = 41; id <= 60; id++) id},
+        explorationWorkIds: {
+          for (var id = 41; id <= 60; id++) work(id: id, title: '').workKey,
+        },
       );
 
       expect(
@@ -235,7 +237,9 @@ void main() {
             favoriteWorks: [work(id: 20, title: 'Seen')],
             historyWorks: const <AsmrWork>[],
             refreshSeed: 2,
-            explorationWorkIds: explorationWorkIds,
+            explorationWorkIds: explorationWorkIds
+                .map((id) => work(id: id, title: '').workKey)
+                .toSet(),
             limit: 10,
           )
           .map((item) => item.id)
@@ -288,7 +292,9 @@ void main() {
       historyWorks: const <AsmrWork>[],
       refreshSeed: 7,
       limit: 40,
-      explorationWorkIds: {for (var id = 1; id <= 60; id++) id},
+      explorationWorkIds: {
+        for (var id = 1; id <= 60; id++) work(id: id, title: '').workKey,
+      },
     );
     final asynchronous = await engine.rankAsync(
       candidates: candidates,
@@ -297,7 +303,9 @@ void main() {
       historyWorks: const <AsmrWork>[],
       refreshSeed: 7,
       limit: 40,
-      explorationWorkIds: {for (var id = 1; id <= 60; id++) id},
+      explorationWorkIds: {
+        for (var id = 1; id <= 60; id++) work(id: id, title: '').workKey,
+      },
     );
 
     expect(

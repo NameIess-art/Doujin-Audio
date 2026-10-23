@@ -69,6 +69,134 @@ void main() {
   }
 
   test(
+    'chapter playback uses bounded media, relative seek and restored position',
+    () async {
+      const stream = 'https://v.weeab0o.xyz/RJ1.m3u8';
+      final queue = [
+        for (var i = 0; i < 2; i++)
+          <String, Object?>{
+            'uri': stream,
+            'path':
+                '$stream#eara-chapter=${10000 + i * 20000},${30000 + i * 20000}',
+            'title': 'chapter $i',
+            'clipStartMs': 10000 + i * 20000,
+            'clipEndMs': 30000 + i * 20000,
+          },
+      ];
+      final prepared = await bridge.prepareSession(
+        sessionId: 'chapters',
+        uri: Uri.parse(stream),
+        title: 'chapter 0',
+        queue: queue,
+        autoPlay: true,
+        startPosition: const Duration(seconds: 4),
+      );
+      expect(prepared.isOk, true, reason: prepared.errorOrNull);
+      final player = players.single;
+      expect(player.state.playlist.medias.map((media) => media.start), [
+        const Duration(seconds: 10),
+        const Duration(seconds: 30),
+      ]);
+      expect(player.state.playlist.medias.map((media) => media.end), [
+        const Duration(seconds: 30),
+        const Duration(seconds: 50),
+      ]);
+      player.loaded();
+      await Future<void>.delayed(Duration.zero);
+      expect(player.seeks.last, const Duration(seconds: 14));
+      await bridge.seek('chapters', const Duration(seconds: 7));
+      expect(player.seeks.last, const Duration(seconds: 17));
+      var snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(snapshot.position, const Duration(seconds: 7));
+      expect(snapshot.duration, const Duration(seconds: 20));
+      await bridge.seek('chapters', const Duration(minutes: 1));
+      expect(player.seeks.last, const Duration(seconds: 30));
+      player.completeBeforePlayingEvent();
+      await Future<void>.delayed(Duration.zero);
+      snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(snapshot.playWhenReady, true);
+      expect(snapshot.processingState, isNot('completed'));
+      expect(player.disposed, false);
+      player.advance(1);
+      await Future<void>.delayed(Duration.zero);
+      snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(snapshot.queueIndex, 1);
+      expect(snapshot.position, Duration.zero);
+      await bridge.seek('chapters', const Duration(seconds: 2));
+      expect(player.seeks.last, const Duration(seconds: 32));
+      expect(
+        (await bridge.updateQueue(
+          'chapters',
+          queue: [
+            queue[1],
+            {
+              'uri': stream,
+              'path': '$stream#eara-chapter=50000,70000',
+              'title': 'chapter 2',
+              'clipStartMs': 50000,
+              'clipEndMs': 70000,
+            },
+          ],
+          queueRevision: 1,
+        )).isOk,
+        true,
+      );
+      expect(player.opens, 1);
+      expect(player.state.playlist.medias.map((media) => media.start), [
+        const Duration(seconds: 30),
+        const Duration(seconds: 50),
+      ]);
+      expect(player.state.playlist.medias.map((media) => media.end), [
+        const Duration(seconds: 50),
+        const Duration(seconds: 70),
+      ]);
+      snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(snapshot.position, const Duration(seconds: 2));
+      expect(snapshot.queueIndex, 0);
+    },
+  );
+
+  test(
+    'chapter retries keep clipping and headers on the candidate stream',
+    () async {
+      const stream = 'https://example.com/chapters.m3u8';
+      const mirror = '$stream?mirror=2';
+      final result = await bridge.prepareSession(
+        sessionId: 'chapter',
+        uri: Uri.parse(stream),
+        title: 'Chapter',
+        autoPlay: true,
+        queue: [
+          {
+            'uri': stream,
+            'path': '$stream#eara-chapter=10000,20000',
+            'title': 'Chapter',
+            'clipStartMs': 10000,
+            'clipEndMs': 20000,
+            'candidateUris': [stream, mirror],
+            'httpHeaders': {'Referer': 'https://japaneseasmr.com/'},
+          },
+        ],
+      );
+      expect(result.isOk, true);
+      final player = players.single;
+      player.loaded();
+      await bridge.seek('chapter', const Duration(seconds: 2));
+      player.emitError('connection reset');
+      await Future<void>.delayed(const Duration(milliseconds: 550));
+      await bridge.snapshot();
+      final media = player.state.playlist.medias.single;
+      expect(media.uri, mirror);
+      expect(media.start, const Duration(seconds: 10));
+      expect(media.end, const Duration(seconds: 20));
+      expect(media.httpHeaders, {'Referer': 'https://japaneseasmr.com/'});
+      player.loaded();
+      await Future<void>.delayed(Duration.zero);
+      expect(player.seeks.last, const Duration(seconds: 12));
+    },
+  );
+
+  test(
     'usage excludes buffering and pause, ignores seeks and speed, and unions sessions',
     () async {
       await prepare('RJ123456-a');

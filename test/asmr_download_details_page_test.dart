@@ -10,6 +10,7 @@ import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dar
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_details_page.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_download_summary_card.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -20,6 +21,76 @@ void main() {
   final interaction = UiInteractionCoordinator.instance;
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
+
+  testWidgets(
+    'download details shows the actual M4A output while retaining folder labels',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      await language.setLanguage(AppLanguage.en);
+      await tester.pumpWidget(
+        _downloadDetailsApp(
+          language,
+          _downloadTree(1).copyWith(
+            actualOutputPaths: const {
+              'Folder/File000.mp3': 'Folder/File000.m4a',
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Folder'), findsOneWidget);
+      expect(find.text('File000.m4a'), findsOneWidget);
+      expect(find.text('File000.mp3'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('Japanese ASMR download summary explains M4A fallback', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final language = AppLanguageProvider();
+    addTearDown(language.dispose);
+    await language.setLanguage(AppLanguage.en);
+    final ordinaryWork = _downloadTask().work;
+    for (final japanese in [false, true]) {
+      final work = japanese
+          ? ordinaryWork.mergeResources(const [
+              AsmrWorkResource(
+                source: AsmrCatalogSource.japaneseAsmr,
+                id: 42,
+                code: 'RJ123456',
+                pageUrl: 'https://japaneseasmr.com/42',
+              ),
+            ])
+          : ordinaryWork;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: AsmrDownloadSummaryCard(
+                work: work,
+                selectedLeafCount: 1,
+                selectedTotalSizeBytes: 0,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('asmr_download_hls_notice')),
+        japanese ? findsOneWidget : findsNothing,
+      );
+      if (japanese) expect(find.textContaining('M4A'), findsOneWidget);
+    }
+    expect(tester.takeException(), isNull);
+  });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
@@ -35,7 +106,9 @@ void main() {
             overrides: [
               coreRuntimeReadyProvider.overrideWithValue(true),
               appLanguageProviderInstanceProvider.overrideWithValue(language),
-              asmrDownloadTaskProvider(1).overrideWithValue(_downloadTree(500)),
+              asmrDownloadTaskProvider(
+                'code:RJ123456',
+              ).overrideWithValue(_downloadTree(500)),
             ],
             child: MaterialApp(
               navigatorKey: navigator,
@@ -48,7 +121,7 @@ void main() {
           navigator.currentState!.push(
             buildAppPageRoute<void>(
               context: navigator.currentContext!,
-              child: const AsmrDownloadDetailsPage(workId: 1),
+              child: const AsmrDownloadDetailsPage(workId: 'code:RJ123456'),
             ),
           ),
         );
@@ -104,9 +177,13 @@ void main() {
           appLanguageProviderInstanceProvider.overrideWithValue(
             languageProvider,
           ),
-          asmrDownloadTaskProvider(404).overrideWithValue(null),
+          asmrDownloadTaskProvider(
+            'source:asmrOne:404',
+          ).overrideWithValue(null),
         ],
-        child: const MaterialApp(home: AsmrDownloadDetailsPage(workId: 404)),
+        child: const MaterialApp(
+          home: AsmrDownloadDetailsPage(workId: 'source:asmrOne:404'),
+        ),
       ),
     );
     await tester.pump();
@@ -558,7 +635,7 @@ void main() {
     final totalsBefore = tester.widget<Text>(totalsFinder);
 
     manager.debugRecordDownloadChunkForTesting(
-      1,
+      'code:RJ123456',
       'Folder/File000.mp3',
       128,
       256,
@@ -585,7 +662,7 @@ void main() {
     );
     expect(tester.widget<Text>(totalsFinder).data, isNot(totalsBefore.data));
 
-    manager.debugRemoveTaskForTesting(1);
+    manager.debugRemoveTaskForTesting('code:RJ123456');
     await tester.pump();
     await tester.pump();
     expect(find.text('Download not found'), findsOneWidget);
@@ -648,7 +725,7 @@ Widget _downloadDetailsApp(
     overrides: [
       coreRuntimeReadyProvider.overrideWithValue(coreReady),
       appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
-      asmrDownloadTaskProvider(1).overrideWithValue(task),
+      asmrDownloadTaskProvider('code:RJ123456').overrideWithValue(task),
       if (manager != null)
         asmrDownloadManagerProvider.overrideWithValue(manager),
     ],
@@ -659,7 +736,7 @@ Widget _downloadDetailsApp(
         ).copyWith(textScaler: TextScaler.linear(textScale)),
         child: child!,
       ),
-      home: const AsmrDownloadDetailsPage(workId: 1),
+      home: const AsmrDownloadDetailsPage(workId: 'code:RJ123456'),
     ),
   );
 }
@@ -673,7 +750,9 @@ Widget _downloadStreamApp(
     appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
     asmrDownloadManagerProvider.overrideWithValue(manager),
   ],
-  child: const MaterialApp(home: AsmrDownloadDetailsPage(workId: 1)),
+  child: const MaterialApp(
+    home: AsmrDownloadDetailsPage(workId: 'code:RJ123456'),
+  ),
 );
 
 AsmrTrackFile _downloadNode(
@@ -783,7 +862,7 @@ final class _RecordingDownloadManager extends AsmrDownloadManager {
   final List<String> retriedPaths = <String>[];
 
   @override
-  Future<bool> retryFailedFile(int workId, String relativePath) async {
+  Future<bool> retryFailedFile(String workId, String relativePath) async {
     retriedPaths.add(relativePath);
     return true;
   }

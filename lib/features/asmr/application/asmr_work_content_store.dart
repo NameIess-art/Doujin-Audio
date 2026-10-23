@@ -8,7 +8,7 @@ import 'asmr_library_view_state.dart';
 import 'asmr_request_cancellation.dart';
 
 typedef AsmrWorkRequestKey = ({
-  int workId,
+  String workKey,
   int contentEpoch,
   int authEpoch,
   int runtimeCacheEpoch,
@@ -21,13 +21,14 @@ final class AsmrWorkContentStore {
 
   static const int _trackCacheLimit = 32;
   final VoidCallback _onChanged;
-  final LinkedHashMap<int, List<AsmrTrackFile>> _trackCache = LinkedHashMap();
-  final LinkedHashMap<int, List<AsmrTrackFile>> _visibleTrackCache =
+  final LinkedHashMap<String, List<AsmrTrackFile>> _trackCache =
       LinkedHashMap();
-  final Map<int, ({AsmrWork work, List<MusicTrack> tracks})>
+  final LinkedHashMap<String, List<AsmrTrackFile>> _visibleTrackCache =
+      LinkedHashMap();
+  final Map<String, ({AsmrWork work, List<MusicTrack> tracks})>
   _playableTrackCache = {};
-  final Set<int> _loadingTrackWorkIds = <int>{};
-  final Map<int, Object> _trackTreeErrors = <int, Object>{};
+  final Set<String> _loadingTrackWorkIds = <String>{};
+  final Map<String, Object> _trackTreeErrors = <String, Object>{};
   final Map<
     AsmrWorkRequestKey,
     ({
@@ -36,11 +37,11 @@ final class AsmrWorkContentStore {
     })
   >
   _trackTreeTasks = {};
-  final Map<int, int> _trackRevisions = <int, int>{};
+  final Map<String, int> _trackRevisions = <String, int>{};
 
-  bool isLoading(int workId) => _loadingTrackWorkIds.contains(workId);
+  bool isLoading(String workKey) => _loadingTrackWorkIds.contains(workKey);
   List<MusicTrack>? cachedPlayableTracks(AsmrWork work) {
-    final cached = _playableTrackCache[work.id];
+    final cached = _playableTrackCache[work.workKey];
     return cached != null && identical(cached.work, work)
         ? cached.tracks
         : null;
@@ -48,7 +49,7 @@ final class AsmrWorkContentStore {
 
   List<MusicTrack> storePlayableTracks(AsmrWork work, List<MusicTrack> tracks) {
     final frozen = List<MusicTrack>.unmodifiable(tracks);
-    _playableTrackCache[work.id] = (work: work, tracks: frozen);
+    _playableTrackCache[work.workKey] = (work: work, tracks: frozen);
     return frozen;
   }
 
@@ -66,21 +67,21 @@ final class AsmrWorkContentStore {
     }
   }
 
-  void clearTrackTreeError(int workId) => _trackTreeErrors.remove(workId);
-  void setTrackTreeError(int workId, Object error) =>
-      _trackTreeErrors[workId] = error;
+  void clearTrackTreeError(String workKey) => _trackTreeErrors.remove(workKey);
+  void setTrackTreeError(String workKey, Object error) =>
+      _trackTreeErrors[workKey] = error;
 
-  AsmrTrackTreeViewState trackTreeViewState(int workId) {
-    final tree = cachedTrackTree(workId);
+  AsmrTrackTreeViewState trackTreeViewState(String workKey) {
+    final tree = cachedTrackTree(workKey);
     return AsmrTrackTreeViewState(
-      workId: workId,
+      workKey: workKey,
       tree: tree,
-      visibleTree: tree == null ? null : _visibleTrackTreeFor(workId, tree),
-      isLoading: _loadingTrackWorkIds.contains(workId),
-      isRefreshing: _loadingTrackWorkIds.contains(workId) && tree != null,
-      isStale: _loadingTrackWorkIds.contains(workId) && tree != null,
-      operationError: _trackTreeErrors[workId],
-      revision: _trackRevisions[workId] ?? 0,
+      visibleTree: tree == null ? null : _visibleTrackTreeFor(workKey, tree),
+      isLoading: _loadingTrackWorkIds.contains(workKey),
+      isRefreshing: _loadingTrackWorkIds.contains(workKey) && tree != null,
+      isStale: _loadingTrackWorkIds.contains(workKey) && tree != null,
+      operationError: _trackTreeErrors[workKey],
+      revision: _trackRevisions[workKey] ?? 0,
     );
   }
 
@@ -90,12 +91,12 @@ final class AsmrWorkContentStore {
   ) {
     final existing = _trackTreeTasks[key];
     if (existing != null) return existing.task;
-    _trackTreeErrors.remove(key.workId);
+    _trackTreeErrors.remove(key.workKey);
     if (!_trackTreeTasks.keys.any(
-          (candidate) => candidate.workId == key.workId,
+          (candidate) => candidate.workKey == key.workKey,
         ) &&
-        _loadingTrackWorkIds.add(key.workId)) {
-      bumpTrackRevision(key.workId);
+        _loadingTrackWorkIds.add(key.workKey)) {
+      bumpTrackRevision(key.workKey);
       _onChanged();
     }
     final cancellationToken = AsmrRequestCancellationToken();
@@ -105,11 +106,11 @@ final class AsmrWorkContentStore {
         _trackTreeTasks.remove(key);
       }
       if (!_trackTreeTasks.keys.any(
-        (candidate) => candidate.workId == key.workId,
+        (candidate) => candidate.workKey == key.workKey,
       )) {
-        _loadingTrackWorkIds.remove(key.workId);
+        _loadingTrackWorkIds.remove(key.workKey);
         _trimTrackCache();
-        bumpTrackRevision(key.workId);
+        bumpTrackRevision(key.workKey);
         _onChanged();
       }
     });
@@ -117,28 +118,28 @@ final class AsmrWorkContentStore {
     return task;
   }
 
-  void bumpTrackRevision(int workId) {
-    _trackRevisions[workId] = (_trackRevisions[workId] ?? 0) + 1;
+  void bumpTrackRevision(String workKey) {
+    _trackRevisions[workKey] = (_trackRevisions[workKey] ?? 0) + 1;
   }
 
   void bumpAllTrackRevisions() {
-    for (final workId in _trackRevisions.keys.toList(growable: false)) {
-      bumpTrackRevision(workId);
+    for (final workKey in _trackRevisions.keys.toList(growable: false)) {
+      bumpTrackRevision(workKey);
     }
   }
 
-  List<AsmrTrackFile>? cachedTrackTree(int workId) {
-    final cached = _trackCache.remove(workId);
-    if (cached != null) _trackCache[workId] = cached;
+  List<AsmrTrackFile>? cachedTrackTree(String workKey) {
+    final cached = _trackCache.remove(workKey);
+    if (cached != null) _trackCache[workKey] = cached;
     return cached;
   }
 
-  List<AsmrTrackFile> storeTrackTree(int workId, List<AsmrTrackFile> tree) {
+  List<AsmrTrackFile> storeTrackTree(String workKey, List<AsmrTrackFile> tree) {
     final sortedTree = immutableList(tree);
-    _trackCache.remove(workId);
-    _trackCache[workId] = sortedTree;
-    _visibleTrackCache.remove(workId);
-    _playableTrackCache.remove(workId);
+    _trackCache.remove(workKey);
+    _trackCache[workKey] = sortedTree;
+    _visibleTrackCache.remove(workKey);
+    _playableTrackCache.remove(workKey);
     _trimTrackCache();
     return sortedTree;
   }
@@ -146,10 +147,10 @@ final class AsmrWorkContentStore {
   void _trimTrackCache() {
     while (_trackCache.length > _trackCacheLimit) {
       final evictedWorkId = _trackCache.keys.firstWhere(
-        (workId) => !_loadingTrackWorkIds.contains(workId),
-        orElse: () => -1,
+        (workKey) => !_loadingTrackWorkIds.contains(workKey),
+        orElse: () => '',
       );
-      if (evictedWorkId < 0) return;
+      if (evictedWorkId.isEmpty) return;
       _trackCache.remove(evictedWorkId);
       _visibleTrackCache.remove(evictedWorkId);
       _playableTrackCache.remove(evictedWorkId);
@@ -157,12 +158,12 @@ final class AsmrWorkContentStore {
   }
 
   List<AsmrTrackFile> _visibleTrackTreeFor(
-    int workId,
+    String workKey,
     List<AsmrTrackFile> tree,
   ) {
-    final cached = _visibleTrackCache.remove(workId);
+    final cached = _visibleTrackCache.remove(workKey);
     if (cached != null) {
-      _visibleTrackCache[workId] = cached;
+      _visibleTrackCache[workKey] = cached;
       return cached;
     }
     List<AsmrTrackFile> filter(List<AsmrTrackFile> nodes) {
@@ -179,7 +180,7 @@ final class AsmrWorkContentStore {
     }
 
     final visible = immutableList(filter(tree));
-    _visibleTrackCache[workId] = visible;
+    _visibleTrackCache[workKey] = visible;
     while (_visibleTrackCache.length > _trackCacheLimit) {
       _visibleTrackCache.remove(_visibleTrackCache.keys.first);
     }

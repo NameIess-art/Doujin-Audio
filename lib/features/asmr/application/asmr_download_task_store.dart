@@ -41,28 +41,28 @@ final class AsmrDownloadTaskStore {
   final Future<void> Function(String? payload)? _persistenceWriter;
   final void Function(AsmrDownloadStoreOperation operation)? _operationObserver;
 
-  final Map<int, AsmrDownloadTaskSnapshot> _tasks = {};
-  final Map<int, AsmrDownloadTaskSnapshot> _publishedTasks = {};
-  final Map<int, int> _liveDownloadedBytes = {};
-  final Map<int, Map<String, int>> _liveFileDownloadedBytes = {};
-  final Map<int, String> _persistedContentUriByWorkId = {};
+  final Map<String, AsmrDownloadTaskSnapshot> _tasks = {};
+  final Map<String, AsmrDownloadTaskSnapshot> _publishedTasks = {};
+  final Map<String, int> _liveDownloadedBytes = {};
+  final Map<String, Map<String, int>> _liveFileDownloadedBytes = {};
+  final Map<String, String> _persistedContentUriByWorkId = {};
   final Map<String, int> _persistedContentUriRefCounts = {};
-  final Set<int> _pendingProgressWorkIds = {};
+  final Set<String> _pendingProgressWorkIds = {};
 
   final StreamController<int> _persistedUriReferenceRevisionController =
       StreamController<int>.broadcast(sync: true);
-  final StreamController<List<int>> _taskIdsController =
-      StreamController<List<int>>.broadcast(sync: true);
-  final StreamController<({int workId, AsmrDownloadTaskSnapshot? task})>
+  final StreamController<List<String>> _taskIdsController =
+      StreamController<List<String>>.broadcast(sync: true);
+  final StreamController<({String workId, AsmrDownloadTaskSnapshot? task})>
   _taskChangesController =
       StreamController<
-        ({int workId, AsmrDownloadTaskSnapshot? task})
+        ({String workId, AsmrDownloadTaskSnapshot? task})
       >.broadcast(sync: true);
   final StreamController<AsmrDownloadButtonViewState>
   _buttonViewStateController =
       StreamController<AsmrDownloadButtonViewState>.broadcast(sync: true);
 
-  List<int> _taskIdsSnapshot = const [];
+  List<String> _taskIdsSnapshot = const [];
   Set<String> _persistedContentUris = const {};
   AsmrDownloadButtonViewState _publishedButtonViewState =
       const AsmrDownloadButtonViewState(visible: false, progress: null);
@@ -81,8 +81,8 @@ final class AsmrDownloadTaskStore {
 
   List<AsmrDownloadTaskSnapshot> get tasks =>
       List<AsmrDownloadTaskSnapshot>.unmodifiable(_tasks.values);
-  List<int> get taskIds => _taskIdsSnapshot;
-  Iterable<MapEntry<int, AsmrDownloadTaskSnapshot>> get entries =>
+  List<String> get taskIds => _taskIdsSnapshot;
+  Iterable<MapEntry<String, AsmrDownloadTaskSnapshot>> get entries =>
       _tasks.entries;
   Iterable<AsmrDownloadTaskSnapshot> get values => _tasks.values;
   bool get isShutdown => _shutdown;
@@ -92,14 +92,14 @@ final class AsmrDownloadTaskStore {
     _persistenceReady = true;
   }
 
-  AsmrDownloadTaskSnapshot? operator [](int workId) => _tasks[workId];
+  AsmrDownloadTaskSnapshot? operator [](String workId) => _tasks[workId];
 
-  void operator []=(int workId, AsmrDownloadTaskSnapshot task) {
+  void operator []=(String workId, AsmrDownloadTaskSnapshot task) {
     if (_shutdown) return;
     _tasks[workId] = task;
   }
 
-  AsmrDownloadTaskSnapshot? remove(int workId) {
+  AsmrDownloadTaskSnapshot? remove(String workId) {
     if (_shutdown) return null;
     _liveDownloadedBytes.remove(workId);
     _liveFileDownloadedBytes.remove(workId);
@@ -111,17 +111,18 @@ final class AsmrDownloadTaskStore {
       _persistedUriReferenceRevisionController.stream;
   Set<String> get persistedContentUris => _persistedContentUris;
 
-  Stream<List<int>> get taskIdsStream => Stream<List<int>>.multi((events) {
-    events.addSync(taskIds);
-    final subscription = _taskIdsController.stream.listen(
-      events.addSync,
-      onError: events.addErrorSync,
-      onDone: events.closeSync,
-    );
-    events.onCancel = subscription.cancel;
-  }, isBroadcast: true);
+  Stream<List<String>> get taskIdsStream =>
+      Stream<List<String>>.multi((events) {
+        events.addSync(taskIds);
+        final subscription = _taskIdsController.stream.listen(
+          events.addSync,
+          onError: events.addErrorSync,
+          onDone: events.closeSync,
+        );
+        events.onCancel = subscription.cancel;
+      }, isBroadcast: true);
 
-  Stream<AsmrDownloadTaskSnapshot?> taskStream(int workId) =>
+  Stream<AsmrDownloadTaskSnapshot?> taskStream(String workId) =>
       Stream<AsmrDownloadTaskSnapshot?>.multi((events) {
         events.addSync(this[workId]);
         final subscription = _taskChangesController.stream
@@ -159,7 +160,7 @@ final class AsmrDownloadTaskStore {
   void notifyTaskChanged({
     bool progressOnly = false,
     bool forcePersistedUriReferenceRevision = false,
-    Set<int>? changedWorkIds,
+    Set<String>? changedWorkIds,
   }) {
     if (_shutdown) return;
     _deferredProgressNotifyTimer?.cancel();
@@ -168,7 +169,7 @@ final class AsmrDownloadTaskStore {
     final publishedLiveWorkIds = _publishLiveProgress(changedWorkIds);
     final changedIds = changedWorkIds == null
         ? _allChangedTaskIds()
-        : <int>{...changedWorkIds, ...publishedLiveWorkIds};
+        : <String>{...changedWorkIds, ...publishedLiveWorkIds};
     _syncPersistedUriReferences(
       changedIds,
       forceRevision: forcePersistedUriReferenceRevision,
@@ -189,7 +190,7 @@ final class AsmrDownloadTaskStore {
     }
   }
 
-  void notifyProgressChanged(int workId) {
+  void notifyProgressChanged(String workId) {
     if (_shutdown) return;
     _pendingProgressWorkIds.add(workId);
     final now = DateTime.now();
@@ -210,13 +211,13 @@ final class AsmrDownloadTaskStore {
     _deferredProgressNotifyTimer?.cancel();
     _deferredProgressNotifyTimer = null;
     if (_pendingProgressWorkIds.isEmpty) return;
-    final changedWorkIds = Set<int>.of(_pendingProgressWorkIds);
+    final changedWorkIds = Set<String>.of(_pendingProgressWorkIds);
     _pendingProgressWorkIds.clear();
     notifyTaskChanged(progressOnly: true, changedWorkIds: changedWorkIds);
   }
 
   void recordDownloadChunk(
-    int workId,
+    String workId,
     String relativePath,
     int chunkLength,
     int fileDownloadedBytes,
@@ -245,7 +246,7 @@ final class AsmrDownloadTaskStore {
   }
 
   void reconcileLiveFileProgress(
-    int workId,
+    String workId,
     String relativePath,
     int actualBytes,
   ) {
@@ -266,9 +267,9 @@ final class AsmrDownloadTaskStore {
     notifyProgressChanged(workId);
   }
 
-  int? liveDownloadedBytes(int workId) => _liveDownloadedBytes[workId];
+  int? liveDownloadedBytes(String workId) => _liveDownloadedBytes[workId];
 
-  void setLiveDownloadedBytes(int workId, int value) {
+  void setLiveDownloadedBytes(String workId, int value) {
     final task = this[workId];
     final maxBytes = task != null && task.totalBytes > 0
         ? task.totalBytes
@@ -279,23 +280,23 @@ final class AsmrDownloadTaskStore {
   }
 
   Map<String, int> liveFileDownloadedBytes(
-    int workId, {
+    String workId, {
     Map<String, int> fallback = const {},
   }) => _liveFileDownloadedBytes.putIfAbsent(
     workId,
     () => Map<String, int>.from(fallback),
   );
 
-  void setLiveFileDownloadedBytes(int workId, Map<String, int> value) {
+  void setLiveFileDownloadedBytes(String workId, Map<String, int> value) {
     _liveFileDownloadedBytes[workId] = value;
   }
 
-  void removeLiveProgress(int workId) {
+  void removeLiveProgress(String workId) {
     _liveDownloadedBytes.remove(workId);
     _liveFileDownloadedBytes.remove(workId);
   }
 
-  List<int> retainOnlyLatestCompletedTask(int workId) {
+  List<String> retainOnlyLatestCompletedTask(String workId) {
     final obsoleteTaskIds = _tasks.entries
         .where(
           (entry) =>
@@ -332,10 +333,10 @@ final class AsmrDownloadTaskStore {
     await _persistenceTail;
   }
 
-  Future<void> shutdown({Iterable<int> pauseWorkIds = const []}) =>
+  Future<void> shutdown({Iterable<String> pauseWorkIds = const []}) =>
       _shutdownFuture ??= _shutdownOnce(pauseWorkIds);
 
-  Future<void> _shutdownOnce(Iterable<int> pauseWorkIds) async {
+  Future<void> _shutdownOnce(Iterable<String> pauseWorkIds) async {
     if (_shutdown) return _persistenceTail;
     _cancelPersistenceTimers();
     _deferredProgressNotifyTimer?.cancel();
@@ -368,7 +369,7 @@ final class AsmrDownloadTaskStore {
   }
 
   void _syncPersistedUriReferences(
-    Set<int> workIds, {
+    Set<String> workIds, {
     required bool forceRevision,
   }) {
     var membershipChanged = false;
@@ -412,15 +413,15 @@ final class AsmrDownloadTaskStore {
     );
   }
 
-  Set<int> _allChangedTaskIds() {
-    final taskIds = <int>{..._publishedTasks.keys, ..._tasks.keys};
+  Set<String> _allChangedTaskIds() {
+    final taskIds = <String>{..._publishedTasks.keys, ..._tasks.keys};
     taskIds.removeWhere(
       (workId) => identical(_publishedTasks[workId], _tasks[workId]),
     );
     return taskIds;
   }
 
-  void _publishChangedTasks(Set<int> workIds) {
+  void _publishChangedTasks(Set<String> workIds) {
     for (final workId in workIds) {
       final previous = _publishedTasks[workId];
       final next = this[workId];
@@ -464,11 +465,11 @@ final class AsmrDownloadTaskStore {
         .map((entry) => entry.key)
         .toList(growable: false);
     if (listEquals(taskIds, _taskIdsSnapshot)) return;
-    _taskIdsSnapshot = List<int>.unmodifiable(taskIds);
+    _taskIdsSnapshot = List<String>.unmodifiable(taskIds);
   }
 
-  Set<int> _publishLiveProgress([Set<int>? workIds]) {
-    final changedWorkIds = <int>{};
+  Set<String> _publishLiveProgress([Set<String>? workIds]) {
+    final changedWorkIds = <String>{};
     for (final workId in workIds ?? _liveDownloadedBytes.keys.toSet()) {
       _operationObserver?.call(AsmrDownloadStoreOperation.liveProgressVisit);
       final downloadedBytes = _liveDownloadedBytes[workId];

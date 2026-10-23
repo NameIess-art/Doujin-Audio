@@ -688,8 +688,8 @@ class _FailingAsmrPreferencesStore extends AsmrPreferencesStore {
   @override
   Future<void> saveHistoryState({
     required AsmrWork work,
-    required List<int> historyWorkIds,
-    required AsmrSyncOperation operation,
+    required List<String> historyWorkKeys,
+    AsmrSyncOperation? operation,
   }) {
     throw const FileSystemException('forced account state failure');
   }

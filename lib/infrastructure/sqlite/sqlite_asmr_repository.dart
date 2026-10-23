@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../core/media/music_track.dart';
 import '../../core/persistence/app_database.dart';
 import '../../core/persistence/persistence_records.dart';
@@ -44,12 +46,12 @@ class SqliteAsmrRepository implements AsmrPersistenceRepository {
   @override
   Future<void> saveHistoryState({
     required AsmrWork work,
-    required List<int> historyWorkIds,
-    required AsmrSyncOperation operation,
+    required List<String> historyWorkKeys,
+    AsmrSyncOperation? operation,
   }) => _database.saveAsmrHistoryState(
     _workToRecord(work),
-    historyWorkIds,
-    _operationToRecord(operation),
+    historyWorkKeys,
+    operation == null ? null : _operationToRecord(operation),
   );
   @override
   Future<void> saveFavoriteState({
@@ -90,6 +92,10 @@ class SqliteAsmrRepository implements AsmrPersistenceRepository {
 
 AsmrWorkRecord _workToRecord(AsmrWork work) => AsmrWorkRecord(
   id: work.id,
+  workKey: work.workKey,
+  resourcesJson: jsonEncode(
+    work.resources.map((resource) => resource.toJson()).toList(),
+  ),
   title: work.title,
   circleName: work.circleName,
   sourceId: work.sourceId,
@@ -112,6 +118,15 @@ AsmrWorkRecord _workToRecord(AsmrWork work) => AsmrWorkRecord(
 
 AsmrWork _workFromRecord(AsmrWorkRecord record) => AsmrWork(
   id: record.id,
+  resources: record.resourcesJson == null
+      ? null
+      : (jsonDecode(record.resourcesJson!) as List)
+            .map(
+              (value) => AsmrWorkResource.fromJson(
+                Map<String, dynamic>.from(value as Map),
+              ),
+            )
+            .toList(),
   title: record.title,
   circleName: record.circleName,
   sourceId: record.sourceId,

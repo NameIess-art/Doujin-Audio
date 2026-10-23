@@ -433,7 +433,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                                     icon: Icon(
                                                       entry.value.icon,
                                                       key: ValueKey<String>(
-                                                        'main_destination_${entry.value.labelKey}',
+                                                        'main_destination_${entry.value.navigationKey}',
                                                       ),
                                                       color:
                                                           cs.onSurfaceVariant,
@@ -474,7 +474,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                                 destinations[activeIndex]
                                                     .selectedIcon,
                                                 key: ValueKey<String>(
-                                                  'main_destination_${destinations[activeIndex].labelKey}',
+                                                  'main_destination_${destinations[activeIndex].navigationKey}',
                                                 ),
                                                 color: cs.primary,
                                                 size: 22,

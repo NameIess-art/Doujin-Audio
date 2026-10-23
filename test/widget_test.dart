@@ -1,3 +1,6 @@
+import 'package:doujin_audio/app/application/browse_page_state_store.dart';
+import 'package:doujin_audio/app/presentation/my_settings_page.dart';
+import 'package:doujin_audio/app/presentation/my_page.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
@@ -107,6 +110,150 @@ void main() {
   });
 
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'merged destination updates without replacing pages on $platform',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = platform;
+        _setLogicalTestViewSize(
+          tester,
+          platform == TargetPlatform.windows
+              ? const Size(1280, 800)
+              : const Size(390, 820),
+        );
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final harness = await _pumpAppShell(
+          tester,
+          includePlaybackSession: false,
+        );
+        await _tapSettingsDestination(tester);
+        await _pumpMainScreenAnimations(tester);
+        final stackFinder = find.byKey(const ValueKey('main_page_stack'));
+        final stackState = tester.state(stackFinder);
+        final stack = tester.widget<AppFadeThroughIndexedStack>(stackFinder);
+        expect(stack.itemCount, 4);
+        expect(stack.index, 3);
+        final merged = find.byType(MySettingsPage, skipOffstage: false);
+        final mergedState = tester.state(merged);
+        expect(find.byKey(const ValueKey('switch-to-my')), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('switch-to-my')));
+        await _pumpMainScreenAnimations(tester);
+        await pumpUntilUiIdle(tester);
+        final myState = tester.state(find.byType(MyPage, skipOffstage: false));
+        expect(tester.state(stackFinder), same(stackState));
+        expect(tester.state(merged), same(mergedState));
+        expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 3);
+        if (platform == TargetPlatform.windows) {
+          final rail = tester.widget<NavigationRail>(
+            find.byType(NavigationRail),
+          );
+          expect(
+            (rail.destinations.last.label as Text).data,
+            harness.language.tr('nav_my'),
+          );
+          expect(
+            tester
+                .widget<Icon>(
+                  find.byKey(const ValueKey('main_destination_nav_settings')),
+                )
+                .icon,
+            Icons.person_rounded,
+          );
+          rail.onDestinationSelected!(2);
+        } else {
+          final destination = find.byKey(
+            const ValueKey('main_destination_nav_settings'),
+          );
+          expect(
+            tester.widget<Semantics>(destination).properties.label,
+            harness.language.tr('nav_my'),
+          );
+          expect(
+            find.descendant(
+              of: destination,
+              matching: find.byIcon(Icons.person_rounded),
+            ),
+            findsOneWidget,
+          );
+          await tester.tap(
+            find.byKey(const ValueKey('main_destination_ink_nav_sessions')),
+          );
+        }
+        await _pumpMainScreenAnimations(tester);
+        if (platform == TargetPlatform.windows) {
+          final rail = tester.widget<NavigationRail>(
+            find.byType(NavigationRail),
+          );
+          expect(
+            (rail.destinations.last.label as Text).data,
+            harness.language.tr('nav_my'),
+          );
+        } else {
+          expect(
+            tester
+                .widget<Semantics>(
+                  find.byKey(const ValueKey('main_destination_nav_settings')),
+                )
+                .properties
+                .label,
+            harness.language.tr('nav_my'),
+          );
+        }
+        await _tapSettingsDestination(tester);
+        await _pumpMainScreenAnimations(tester);
+        expect(tester.state(find.byType(MyPage)), same(myState));
+        expect(
+          find.byKey(const ValueKey('switch-to-settings')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await _pumpMainScreenAnimations(tester);
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+  }
+
+  for (final legacyDestination in <String?>[null, 'my', 'settings']) {
+    for (final mode in MySettingsPageMode.values) {
+      testWidgets('merged startup restores $mode from $legacyDestination', (
+        tester,
+      ) async {
+        final browse = BrowsePageStateStore();
+        if (legacyDestination != null) {
+          browse.update('main', {'destination': legacyDestination});
+        }
+        await _pumpAppShell(
+          tester,
+          includePlaybackSession: false,
+          configureSettings: (settings) {
+            settings.startupPage = StartupPage.my;
+            settings.mySettingsPageMode = mode;
+          },
+          additionalOverrides: [
+            browsePageStateStoreProvider.overrideWithValue(browse),
+          ],
+        );
+        final stack = tester.widget<AppFadeThroughIndexedStack>(
+          find.byKey(const ValueKey('main_page_stack')),
+        );
+        expect(stack.itemCount, 4);
+        expect(stack.index, 3);
+        expect(
+          find.byKey(
+            ValueKey(
+              mode == MySettingsPageMode.my
+                  ? 'switch-to-settings'
+                  : 'switch-to-my',
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
 
   testWidgets(
     'cached pages update language without losing state',

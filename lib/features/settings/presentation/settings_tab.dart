@@ -54,12 +54,10 @@ part 'settings_tab_update_section.dart';
 part 'settings_tab_widgets.dart';
 
 class SettingsTab extends ConsumerStatefulWidget {
-  const SettingsTab({
-    super.key,
-    this.tabIndex = 3,
-  });
+  const SettingsTab({super.key, this.tabIndex = 3, this.onSwitchPage});
 
   final int tabIndex;
+  final VoidCallback? onSwitchPage;
 
   @override
   ConsumerState<SettingsTab> createState() => _SettingsTabState();
@@ -82,6 +80,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
 
   @override
   int get tabIndex => widget.tabIndex;
+  @override
+  bool get handlesScrollToTop =>
+      TickerMode.getValuesNotifier(context).value.enabled;
 
   @override
   ScrollController get mainScrollController => _scrollController;
@@ -234,6 +235,14 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                 key: headerKey,
                 icon: Icons.settings_rounded,
                 topCapsuleTitle: i18n.tr('settings'),
+                topCapsuleTrailing: widget.onSwitchPage == null
+                    ? null
+                    : IconButton(
+                        key: const ValueKey('switch-to-my'),
+                        tooltip: i18n.tr('switch_to_my'),
+                        onPressed: widget.onSwitchPage,
+                        icon: const Icon(Icons.person_rounded),
+                      ),
               ),
             ),
           ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../features/settings/application/settings_state.dart';
 
-enum MainDestinationType { library, asmrOne, playlist, my, settings }
+enum MainDestinationType { library, asmrOne, playlist, settings }
 
 class MainDestination {
   const MainDestination({
@@ -14,11 +15,15 @@ class MainDestination {
   final IconData icon;
   final IconData selectedIcon;
   final String labelKey;
+
+  String get navigationKey =>
+      type == MainDestinationType.settings ? 'nav_settings' : labelKey;
 }
 
 List<MainDestination> resolveMainDestinations({
   required bool showLocalLibrary,
   required bool showAsmrOne,
+  MySettingsPageMode mySettingsPageMode = MySettingsPageMode.settings,
 }) {
   return [
     if (showAsmrOne)
@@ -41,17 +46,17 @@ List<MainDestination> resolveMainDestinations({
       selectedIcon: Icons.featured_play_list_rounded,
       labelKey: 'nav_sessions',
     ),
-    const MainDestination(
-      type: MainDestinationType.my,
-      icon: Icons.person_outline_rounded,
-      selectedIcon: Icons.person_rounded,
-      labelKey: 'nav_my',
-    ),
-    const MainDestination(
+    MainDestination(
       type: MainDestinationType.settings,
-      icon: Icons.settings_outlined,
-      selectedIcon: Icons.settings_rounded,
-      labelKey: 'nav_settings',
+      icon: mySettingsPageMode == MySettingsPageMode.my
+          ? Icons.person_outline_rounded
+          : Icons.settings_outlined,
+      selectedIcon: mySettingsPageMode == MySettingsPageMode.my
+          ? Icons.person_rounded
+          : Icons.settings_rounded,
+      labelKey: mySettingsPageMode == MySettingsPageMode.my
+          ? 'nav_my'
+          : 'nav_settings',
     ),
   ];
 }

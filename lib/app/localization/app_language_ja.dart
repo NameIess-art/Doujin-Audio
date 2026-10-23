@@ -25,7 +25,9 @@ const Map<String, String> appLanguageJa = {
   'my_retry': '再試行',
   'my_edit': '編集',
   'my_done': '完了',
-  'startup_page_my': 'マイページ',
+  'startup_page_my': 'マイページ／設定',
+  'switch_to_my': 'マイページに切り替え',
+  'switch_to_settings': '設定に切り替え',
 
   'open_containing_folder': '保存先フォルダーを開く',
   'keyboard_shortcuts_title': 'ショートカット',

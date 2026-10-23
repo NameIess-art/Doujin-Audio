@@ -33,19 +33,35 @@ void main() {
   });
 
   test(
-    'My is permanent between playlist and settings in all visibility combinations',
+    'merged My and settings is permanent after playlist in all visibility combinations',
     () {
       for (final local in [false, true]) {
         for (final remote in [false, true]) {
-          final destinations = resolveMainDestinations(
-            showLocalLibrary: local,
-            showAsmrOne: remote,
-          ).map((e) => e.type).toList();
-          expect(destinations.sublist(destinations.length - 3), [
-            MainDestinationType.playlist,
-            MainDestinationType.my,
-            MainDestinationType.settings,
-          ]);
+          for (final mode in MySettingsPageMode.values) {
+            final destinations = resolveMainDestinations(
+              showLocalLibrary: local,
+              showAsmrOne: remote,
+              mySettingsPageMode: mode,
+            );
+            expect(destinations.length, 2 + (local ? 1 : 0) + (remote ? 1 : 0));
+            expect(
+              destinations
+                  .map((e) => e.type)
+                  .toList()
+                  .sublist(destinations.length - 2),
+              [MainDestinationType.playlist, MainDestinationType.settings],
+            );
+            expect(
+              destinations.last.labelKey,
+              mode == MySettingsPageMode.my ? 'nav_my' : 'nav_settings',
+            );
+            expect(
+              destinations.last.selectedIcon,
+              mode == MySettingsPageMode.my
+                  ? Icons.person_rounded
+                  : Icons.settings_rounded,
+            );
+          }
         }
       }
     },

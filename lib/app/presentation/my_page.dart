@@ -33,8 +33,9 @@ import 'main_tab_state_mixin.dart';
 import 'my_tag_management_page.dart';
 
 class MyPage extends ConsumerStatefulWidget {
-  const MyPage({super.key, required this.tabIndex});
+  const MyPage({super.key, required this.tabIndex, this.onSwitchPage});
   final int tabIndex;
+  final VoidCallback? onSwitchPage;
 
   @override
   ConsumerState<MyPage> createState() => _MyPageState();
@@ -49,6 +50,9 @@ class _MyPageState extends ConsumerState<MyPage>
       'my_activity_refresh_${identityHashCode(this)}';
   @override
   int get tabIndex => widget.tabIndex;
+  @override
+  bool get handlesScrollToTop =>
+      TickerMode.getValuesNotifier(context).value.enabled;
   @override
   ScrollController get mainScrollController => _scroll;
 
@@ -502,6 +506,14 @@ class _MyPageState extends ConsumerState<MyPage>
                 key: headerKey,
                 icon: Icons.person_rounded,
                 topCapsuleTitle: i18n.tr('nav_my'),
+                topCapsuleTrailing: widget.onSwitchPage == null
+                    ? null
+                    : IconButton(
+                        key: const ValueKey('switch-to-settings'),
+                        tooltip: i18n.tr('switch_to_settings'),
+                        onPressed: widget.onSwitchPage,
+                        icon: const Icon(Icons.settings_rounded),
+                      ),
               ),
             ),
           ],

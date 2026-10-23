@@ -15,6 +15,8 @@ enum StartupPage { asmrOne, library, playlist, my }
 
 enum ListeningChartStyle { bar, heatmap }
 
+enum MySettingsPageMode { settings, my }
+
 enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
 
 enum AudioFocusStrategy { standard, mixWithOthers }
@@ -56,6 +58,7 @@ class SettingsState {
     this.showAsmrOne = true,
     this.workNameDisplay = WorkNameDisplay.workTitle,
     this.listeningChartStyle = ListeningChartStyle.bar,
+    this.mySettingsPageMode = MySettingsPageMode.settings,
     this.startupPage = StartupPage.library,
     this.coverImageResolution = CoverImageResolution.balanced,
     this.preferEmbeddedCover = false,
@@ -101,6 +104,7 @@ class SettingsState {
   final bool showAsmrOne;
   final WorkNameDisplay workNameDisplay;
   final ListeningChartStyle listeningChartStyle;
+  final MySettingsPageMode mySettingsPageMode;
   final StartupPage startupPage;
   final CoverImageResolution coverImageResolution;
   final bool preferEmbeddedCover;
@@ -142,6 +146,7 @@ class SettingsState {
         other.showAsmrOne == showAsmrOne &&
         other.workNameDisplay == workNameDisplay &&
         other.listeningChartStyle == listeningChartStyle &&
+        other.mySettingsPageMode == mySettingsPageMode &&
         other.startupPage == startupPage &&
         other.coverImageResolution == coverImageResolution &&
         other.preferEmbeddedCover == preferEmbeddedCover &&
@@ -187,6 +192,7 @@ class SettingsState {
     showAsmrOne,
     workNameDisplay,
     listeningChartStyle,
+    mySettingsPageMode,
     startupPage,
     coverImageResolution,
     preferEmbeddedCover,

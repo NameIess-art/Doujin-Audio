@@ -241,7 +241,13 @@ void main() {
     );
     final categoryHeader = find.byType(TopPageHeader);
     final categoryHeaderWidget = tester.widget<TopPageHeader>(categoryHeader);
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(
+      find.descendant(
+        of: categoryHeader,
+        matching: find.byType(BackdropFilter),
+      ),
+      findsWidgets,
+    );
     expect(categoryHeaderWidget.padding, AppPageHeaderMetrics.padding);
     expect(
       categoryHeaderWidget.bottomSpacing,

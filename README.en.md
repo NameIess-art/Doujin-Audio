@@ -99,7 +99,7 @@ Work information is stored in `doujin-audio.json` inside the folder, including t
 
 ### My: listening statistics, history, and interest tags
 
-My sits between Playlists and Settings on Android and Windows, and can also be selected as the startup page.
+The Android bottom menu and Windows sidebar share a single My / Settings entry after Playlists, showing Settings by default on first use. Use the button at the top right of the header to switch between My and Settings. The app remembers your choice and updates the navigation label and icon accordingly. Selecting My / Settings as the startup page also restores the remembered page.
 
 - **Listening time**: View actual listening time across local and ASMR.ONE works by day, week, month, quarter, or year. Simultaneous sessions count once; pauses and buffering do not count, and playback speed does not multiply elapsed time. Older history is not used to invent past listening totals.
 - **Bar chart and heatmap**: Switch styles on the right of the date row; the last choice is remembered. The heatmap fills the available area with five rows of larger cells, with the latest period at the bottom right. Color intensity follows the theme and increases with listening time.

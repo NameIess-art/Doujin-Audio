@@ -1743,9 +1743,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Accessibility can change while the outgoing page still owns input.
-    // Stop the ticker and release that page in the same frame.
-    if (MediaQuery.disableAnimationsOf(context) &&
+    // Hidden stacks have muted tickers. Finish immediately so a restore or
+    // enclosing navigation cannot leave the global navigation lock held.
+    if ((!TickerMode.valuesOf(context).enabled ||
+            MediaQuery.disableAnimationsOf(context)) &&
         (_isAnimating || _pendingIndex != null)) {
       _switchImmediately(_safeIndex(widget.indexListenable.value));
     }
@@ -1808,6 +1809,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     }
     UiInteractionCoordinator.instance.beginNavigation(_transitionInteraction);
     if (widget.duration == Duration.zero ||
+        !TickerMode.getValuesNotifier(context).value.enabled ||
         MediaQuery.disableAnimationsOf(context)) {
       _switchImmediately(nextIndex);
       return;
@@ -2058,17 +2060,23 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           incoming,
           preparing,
           outgoing || incoming || preparing ? _transitionDirection : 0,
+          parentMotion?.configuration,
         ),
-        contentBuilder: (context, content) => SlideTransition(
-          position: position,
-          child: AppPageFadeTransition(
-            opacity: opacity,
-            child: ColoredBox(
-              color: Theme.of(context).colorScheme.surface,
-              child: RepaintBoundary(child: content),
+        contentBuilder: (context, content) {
+          final animated = SlideTransition(
+            position: position,
+            child: AppPageFadeTransition(
+              opacity: opacity,
+              child: ColoredBox(
+                color: Theme.of(context).colorScheme.surface,
+                child: RepaintBoundary(child: content),
+              ),
             ),
-          ),
-        ),
+          );
+          // A nested retained stack owns its own switch, while its body still
+          // participates when an enclosing navigation stack changes pages.
+          return parentMotion?.contentBuilder(context, animated) ?? animated;
+        },
         headerBuilder: (context, header) {
           final faded = FadeTransition(opacity: opacity, child: header);
           return parentMotion?.headerBuilder(context, faded) ?? faded;

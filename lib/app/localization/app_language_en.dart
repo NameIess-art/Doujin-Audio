@@ -25,7 +25,9 @@ const Map<String, String> appLanguageEn = {
   'my_retry': 'Retry',
   'my_edit': 'Edit',
   'my_done': 'Done',
-  'startup_page_my': 'My',
+  'startup_page_my': 'My / Settings',
+  'switch_to_my': 'Switch to My',
+  'switch_to_settings': 'Switch to Settings',
 
   'open_containing_folder': 'Show in folder',
   'keyboard_shortcuts_title': 'Keyboard shortcuts',

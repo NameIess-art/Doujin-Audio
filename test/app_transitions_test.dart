@@ -2858,6 +2858,136 @@ void main() {
     expect(tester.getRect(find.byKey(const ValueKey('second-body'))).left, 0);
   });
 
+  testWidgets(
+    'nested separated regions retain enclosing tab motion',
+    (tester) async {
+      final outer = ValueNotifier(0);
+      final inner = ValueNotifier(0);
+      addTearDown(outer.dispose);
+      addTearDown(inner.dispose);
+      var nestedBuilds = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppFadeThroughIndexedStack.lazy(
+            indexListenable: outer,
+            separateHeader: true,
+            itemCount: 2,
+            itemBuilder: (_, page) => page == 1
+                ? regions('outside')
+                : AppFadeThroughIndexedStack.lazy(
+                    indexListenable: inner,
+                    separateHeader: true,
+                    itemCount: 2,
+                    itemBuilder: (_, page) {
+                      nestedBuilds++;
+                      return regions('nested-$page');
+                    },
+                  ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final body = find.byKey(const ValueKey('nested-0-body'));
+      final header = find.byKey(const ValueKey('nested-0-header'));
+      final headerRect = tester.getRect(header);
+      for (final destination in [1, 0]) {
+        outer.value = destination;
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(_effectiveOpacity(tester, body), inExclusiveRange(0, 1));
+        expect(
+          _effectiveOpacity(tester, header),
+          closeTo(_effectiveOpacity(tester, body), 0.001),
+        );
+        expect(tester.getRect(body).left.abs(), greaterThan(1));
+        expect(tester.getRect(header), headerRect);
+        await tester.pumpAndSettle();
+      }
+      expect(nestedBuilds, 1);
+      inner.value = 1;
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final nextBody = find.byKey(const ValueKey('nested-1-body'));
+      expect(_effectiveOpacity(tester, nextBody), inExclusiveRange(0, 1));
+      expect(tester.getRect(nextBody).left, greaterThan(1));
+      await tester.pumpAndSettle();
+      expect(nestedBuilds, 2);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  for (final hideDuringTransition in [false, true]) {
+    testWidgets(
+      'muted tab changes release navigation, active=$hideDuringTransition',
+      (tester) async {
+        final index = ValueNotifier(0);
+        final active = ValueNotifier(hideDuringTransition);
+        addTearDown(index.dispose);
+        addTearDown(active.dispose);
+        final completed = <int>[];
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ValueListenableBuilder<bool>(
+              valueListenable: active,
+              builder: (_, enabled, child) =>
+                  TickerMode(enabled: enabled, child: child!),
+              child: AppFadeThroughIndexedStack.lazy(
+                indexListenable: index,
+                itemCount: 3,
+                separateHeader: true,
+                onTransitionCompleted: completed.add,
+                itemBuilder: (_, page) => regions('muted-$page'),
+              ),
+            ),
+          ),
+        );
+        index.value = 1;
+        await tester.pump();
+        if (hideDuringTransition) {
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 80));
+          expect(
+            UiInteractionCoordinator.instance.navigationAllowed.value,
+            isFalse,
+          );
+          active.value = false;
+          await tester.pump();
+        }
+        expect(completed, [1]);
+        expect(
+          UiInteractionCoordinator.instance.navigationAllowed.value,
+          isTrue,
+        );
+        expect(find.byKey(const ValueKey('muted-1-body')), findsOneWidget);
+        index.value = 2;
+        await tester.pump();
+        expect(completed, [1, 2]);
+        expect(
+          UiInteractionCoordinator.instance.navigationAllowed.value,
+          isTrue,
+        );
+        active.value = true;
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('muted-2-body')), findsOneWidget);
+        expect(
+          UiInteractionCoordinator.instance.isVisualUpdateDeferred,
+          isFalse,
+        );
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets('zero duration switches immediately without motion transitions', (
     tester,
   ) async {

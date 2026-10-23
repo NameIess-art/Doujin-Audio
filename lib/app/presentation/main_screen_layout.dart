@@ -193,18 +193,22 @@ extension _MainScreenLayout on _MainScreenState {
     required VoidCallback onCurrentTap,
   }) {
     final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
-    final (:showLocal, :showAsmr) = ref.watch(
+    final (:showLocal, :showAsmr, :mode) = ref.watch(
       settingsStateProvider.select(
         (s) => (
           showLocal:
               s.value?.showLocalLibrary ?? fallbackSettings.showLocalLibrary,
           showAsmr: s.value?.showAsmrOne ?? fallbackSettings.showAsmrOne,
+          mode:
+              s.value?.mySettingsPageMode ??
+              fallbackSettings.mySettingsPageMode,
         ),
       ),
     );
     final destinations = resolveMainDestinations(
       showLocalLibrary: showLocal,
       showAsmrOne: showAsmr,
+      mySettingsPageMode: mode,
     );
 
     return ValueListenableBuilder<int>(
@@ -267,7 +271,7 @@ extension _MainScreenLayout on _MainScreenState {
             bottom: 6,
             child: AnimatedContainer(
               key: ValueKey<String>(
-                'main_destination_indicator_${item.labelKey}',
+                'main_destination_indicator_${item.navigationKey}',
               ),
               duration: MediaQuery.disableAnimationsOf(context)
                   ? Duration.zero
@@ -314,7 +318,7 @@ extension _MainScreenLayout on _MainScreenState {
           child: ExcludeSemantics(
             excluding: isPlaybackExpanded && !selected,
             child: Semantics(
-              key: ValueKey<String>('main_destination_${item.labelKey}'),
+              key: ValueKey<String>('main_destination_${item.navigationKey}'),
               button: true,
               selected: selected,
               label: label,
@@ -322,7 +326,7 @@ extension _MainScreenLayout on _MainScreenState {
                 type: MaterialType.transparency,
                 child: _BottomDestinationInkResponse(
                   inkKey: ValueKey<String>(
-                    'main_destination_ink_${item.labelKey}',
+                    'main_destination_ink_${item.navigationKey}',
                   ),
                   onTap: isPlaybackExpanded && selected
                       ? onCurrentTap
@@ -498,12 +502,15 @@ extension _MainScreenLayout on _MainScreenState {
     required bool isMenuCollapsed,
   }) {
     final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
-    final (:showLocal, :showAsmr) = ref.watch(
+    final (:showLocal, :showAsmr, :mode) = ref.watch(
       settingsStateProvider.select(
         (s) => (
           showLocal:
               s.value?.showLocalLibrary ?? fallbackSettings.showLocalLibrary,
           showAsmr: s.value?.showAsmrOne ?? fallbackSettings.showAsmrOne,
+          mode:
+              s.value?.mySettingsPageMode ??
+              fallbackSettings.mySettingsPageMode,
         ),
       ),
     );
@@ -513,6 +520,7 @@ extension _MainScreenLayout on _MainScreenState {
       destinations: resolveMainDestinations(
         showLocalLibrary: showLocal,
         showAsmrOne: showAsmr,
+        mySettingsPageMode: mode,
       ),
       isMenuCollapsed: isMenuCollapsed,
       activePageIndex: _activePageIndex,

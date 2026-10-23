@@ -24,7 +24,6 @@ import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../theme/app_styles.dart';
 import '../../features/player/presentation/playlist_tab.dart';
-import '../../features/settings/presentation/settings_tab.dart';
 import '../../features/settings/presentation/app_update_flow.dart';
 import '../../features/player/presentation/timer_tab.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
@@ -40,7 +39,7 @@ import '../../features/player/presentation/bedtime_canvas_page.dart';
 
 import 'mobile_dock_capsule_content.dart';
 import 'main_destination.dart';
-import 'my_page.dart';
+import 'my_settings_page.dart';
 import 'desktop_main_navigation.dart';
 import 'app_dock_panel.dart';
 import 'work_detail_navigation.dart';
@@ -353,13 +352,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
                     ? MainDestinationType.library
                     : MainDestinationType.playlist),
         StartupPage.playlist => MainDestinationType.playlist,
-        StartupPage.my => MainDestinationType.my,
+        StartupPage.my => MainDestinationType.settings,
       };
       final savedDestination = ref
           .read(browsePageStateStoreProvider)
           .stateFor('main')['destination'];
       final restoredIndex = destinations.indexWhere(
-        (d) => d.type.name == savedDestination,
+        (d) =>
+            d.type.name ==
+            (savedDestination == 'my' ? 'settings' : savedDestination),
       );
       final startupIndex = restoredIndex >= 0
           ? restoredIndex
@@ -804,8 +805,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
           activeTabIndexListenable: _activePageIndex,
         ),
       ),
-      MainDestinationType.my => MyPage(tabIndex: index),
-      MainDestinationType.settings => SettingsTab(tabIndex: index),
+      MainDestinationType.settings => MySettingsPage(tabIndex: index),
     };
   }
 

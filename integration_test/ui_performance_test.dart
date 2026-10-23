@@ -1802,8 +1802,7 @@ Future<_TransitionSamples> _measurePageTransitions(
     final index = switch (destination) {
       MainDestinationType.asmrOne => 0,
       MainDestinationType.playlist => 2,
-      MainDestinationType.my => 3,
-    MainDestinationType.settings => 4,
+      MainDestinationType.settings => 3,
       MainDestinationType.library => 1,
     };
     final rail = find.byType(NavigationRail);
@@ -1813,8 +1812,7 @@ Future<_TransitionSamples> _measurePageTransitions(
       final key = switch (destination) {
         MainDestinationType.asmrOne => 'show_asmr_one',
         MainDestinationType.playlist => 'nav_sessions',
-        MainDestinationType.my => 'nav_my',
-      MainDestinationType.settings => 'nav_settings',
+        MainDestinationType.settings => 'nav_settings',
         MainDestinationType.library => 'music_library',
       };
       final ink = find.byKey(ValueKey<String>('main_destination_ink_$key'));
@@ -2529,8 +2527,7 @@ Future<void> _switchMainPage(
     MainDestinationType.asmrOne => 0,
     MainDestinationType.library => 1,
     MainDestinationType.playlist => 2,
-    MainDestinationType.my => 3,
-    MainDestinationType.settings => 4,
+    MainDestinationType.settings => 3,
   };
   final stack = find.byKey(const ValueKey<String>('main_page_stack'));
   for (var attempt = 0; attempt < 100 && stack.evaluate().isEmpty; attempt++) {
@@ -2556,7 +2553,6 @@ Future<void> _switchMainPage(
       MainDestinationType.asmrOne => 'show_asmr_one',
       MainDestinationType.library => 'music_library',
       MainDestinationType.playlist => 'nav_sessions',
-      MainDestinationType.my => 'nav_my',
       MainDestinationType.settings => 'nav_settings',
     };
     await tester.tap(

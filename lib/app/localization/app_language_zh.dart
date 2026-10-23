@@ -25,7 +25,9 @@ const Map<String, String> appLanguageZh = {
   'my_retry': '重试',
   'my_edit': '编辑',
   'my_done': '完成',
-  'startup_page_my': '我的',
+  'startup_page_my': '我的／设置',
+  'switch_to_my': '切换到我的',
+  'switch_to_settings': '切换到设置',
 
   'open_containing_folder': '打开所在文件夹',
   'keyboard_shortcuts_title': '键盘快捷键',

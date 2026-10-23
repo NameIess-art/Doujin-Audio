@@ -385,6 +385,96 @@ void main() {
     expect(find.text('128 B / 1.0 KB'), findsNWidgets(2));
   });
 
+  testWidgets(
+    'only the retrying file shows retries and restores bytes when downloading resumes',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final language = AppLanguageProvider();
+      final manager = _RecordingDownloadManager();
+      addTearDown(language.dispose);
+      addTearDown(manager.dispose);
+      await language.setLanguage(AppLanguage.en);
+      final retrying = _downloadTree(
+        2,
+      ).copyWith(fileRetryAttempts: const {'Folder/File000.mp3': 2});
+      manager.debugSetCurrentTaskForTesting(retrying);
+      await tester.pumpWidget(_downloadStreamApp(language, manager));
+      await tester.pumpAndSettle();
+
+      Finder fileText(String path, String text) => find.descendant(
+        of: find.byKey(ValueKey<String>('asmr_download_node_row_$path')),
+        matching: find.text(text),
+      );
+      expect(fileText('Folder/File000.mp3', 'Retrying (2/7)'), findsOneWidget);
+      expect(fileText('Folder/File001.mp3', '256 B / 1.0 KB'), findsOneWidget);
+      expect(find.textContaining('Retrying'), findsOneWidget);
+
+      final resumed = retrying.copyWith(
+        fileRetryAttempts: const {},
+        downloadedBytes: 768,
+        fileDownloadedBytes: const {
+          'Folder/File000.mp3': 512,
+          'Folder/File001.mp3': 256,
+        },
+      );
+      manager.debugSetCurrentTaskForTesting(resumed);
+      await tester.pump();
+      await tester.pump();
+      expect(find.textContaining('Retrying'), findsNothing);
+      expect(fileText('Folder/File000.mp3', '512 B / 1.0 KB'), findsOneWidget);
+
+      manager.debugSetCurrentTaskForTesting(
+        resumed.copyWith(
+          completedFiles: 1,
+          completedFilePaths: const {'Folder/File000.mp3'},
+          downloadedBytes: 1280,
+          fileDownloadedBytes: const {
+            'Folder/File000.mp3': 1024,
+            'Folder/File001.mp3': 256,
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.textContaining('Retrying'), findsNothing);
+      expect(fileText('Folder/File000.mp3', '1.0 KB / 1.0 KB'), findsOneWidget);
+      expect(fileText('Folder/File001.mp3', '256 B / 1.0 KB'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'paused failed and completed tasks show bytes instead of stale retry status',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      await language.setLanguage(AppLanguage.en);
+      final task = _downloadTask(fileRetryAttempts: const {'Track.mp3': 1});
+      for (final status in [
+        AsmrDownloadTaskStatus.paused,
+        AsmrDownloadTaskStatus.failed,
+        AsmrDownloadTaskStatus.completed,
+      ]) {
+        await tester.pumpWidget(
+          _downloadDetailsApp(language, task.copyWith(status: status)),
+        );
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Retrying'), findsNothing);
+        expect(find.text('128 B / 1.0 KB'), findsNWidgets(2));
+      }
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final textScale in [1.0, 2.0]) {
     testWidgets(
       'file rows keep one title line and one progress line at scale $textScale',

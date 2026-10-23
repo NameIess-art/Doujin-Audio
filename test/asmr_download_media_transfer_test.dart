@@ -492,6 +492,7 @@ void main() {
         fileProgressFractions: const {'other.flac': 0.25},
       );
       env.hls.transferring = (progress, bytes) async {
+        expect(env.store[key]!.fileRetryAttempts, isEmpty);
         expect(
           env.store.liveFileDownloadedBytes(key)['Folder/01.flac'] ?? 0,
           0,
@@ -540,6 +541,82 @@ void main() {
       }
     },
   );
+
+  for (final hls in [false, true]) {
+    test('retry intervals increase for ${hls ? 'HLS' : 'HTTP'}', () async {
+      final env = await _Environment.create(retries: 3);
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final elapsed = Stopwatch()..start();
+      final attempts = <Duration>[];
+      server.listen((request) async {
+        attempts.add(elapsed.elapsed);
+        if (attempts.length <= 3) {
+          request.response.statusCode = HttpStatus.serviceUnavailable;
+        } else {
+          request.response.add(_audio);
+        }
+        await request.response.close();
+      });
+      env.hls.transferring = (progress, bytes) async {
+        attempts.add(elapsed.elapsed);
+        expect(env.store[env.work.workKey]!.fileRetryAttempts, isEmpty);
+        if (attempts.length <= 3) throw const HttpException('unavailable');
+      };
+      try {
+        final result = await env.download(
+          PlaybackMediaReference(
+            streamUrl: hls
+                ? 'https://media.test/audio.m3u8'
+                : 'http://${server.address.host}:${server.port}/audio.mp3',
+          ),
+          retryDelay: const Duration(milliseconds: 120),
+        );
+
+        expect(result.saved, isTrue);
+        expect(attempts, hasLength(4));
+        for (var attempt = 1; attempt < attempts.length; attempt++) {
+          expect(
+            attempts[attempt] - attempts[attempt - 1],
+            greaterThanOrEqualTo(Duration(milliseconds: 120 * attempt)),
+            reason: 'retry $attempt must wait for its increasing backoff',
+          );
+        }
+        expect(env.store[env.work.workKey]!.fileRetryAttempts, isEmpty);
+      } finally {
+        await server.close(force: true);
+        await env.dispose();
+      }
+    });
+  }
+
+  test('long retry backoff is interrupted and clears retry state', () async {
+    final env = await _Environment.create(retries: 1);
+    env.hls.failure = const HttpException('unavailable');
+    var cancelled = false;
+    final waiting = env.store
+        .taskStream(env.work.workKey)
+        .firstWhere((task) => task?.fileRetryAttempts['Folder/01.flac'] == 1);
+    final transfer = env.download(
+      const PlaybackMediaReference(streamUrl: 'https://media.test/audio.m3u8'),
+      retryDelay: const Duration(seconds: 5),
+      throwIfCancelled: (_) {
+        if (cancelled) throw const DownloadCancelled();
+      },
+    );
+    final result = expectLater(transfer, throwsA(isA<DownloadCancelled>()));
+    try {
+      await waiting.timeout(const Duration(seconds: 2));
+      cancelled = true;
+      await result.timeout(const Duration(seconds: 1));
+
+      expect(env.hls.calls, 1);
+      expect(env.store[env.work.workKey]!.fileRetryAttempts, isEmpty);
+    } finally {
+      cancelled = true;
+      await result;
+      await env.dispose();
+    }
+  });
 
   test(
     'HLS cancellation propagates and removes the temporary output',
@@ -785,6 +862,8 @@ class _Environment {
   Future<DownloadWriteResult> download(
     PlaybackMediaReference reference, {
     HttpClient? client,
+    Duration retryDelay = Duration.zero,
+    void Function(String)? throwIfCancelled,
     AsmrDownloadConflictPolicy conflictPolicy =
         AsmrDownloadConflictPolicy.overwrite,
   }) async {
@@ -814,10 +893,10 @@ class _Environment {
       final service = AsmrDownloadTransferService(
         store: store,
         outputs: outputs,
-        automaticFileRetryDelay: Duration.zero,
+        automaticFileRetryDelay: retryDelay,
         isDisposed: () => false,
         isPaused: (_) => false,
-        throwIfCancelled: (_) {},
+        throwIfCancelled: throwIfCancelled ?? (_) {},
         hlsAudioTransfer: hls,
       );
       return await service.downloadItem(

@@ -849,6 +849,7 @@ final class LibraryMetadataCoordinator {
       metadata.rjCode.trim().isEmpty ||
       metadata.workTitle.trim().isEmpty ||
       metadata.circleName.trim().isEmpty ||
+      (metadata.coverUrl?.trim().isEmpty ?? true) ||
       metadata.voiceActors.isEmpty ||
       metadata.tags.isEmpty ||
       metadata.releaseDate == null ||

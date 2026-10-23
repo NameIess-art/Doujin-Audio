@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -15,11 +16,78 @@ import 'package:doujin_audio/features/asmr/application/asmr_download_transfer_se
 import 'package:doujin_audio/features/asmr/application/asmr_download_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_task_store.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_cleanup.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets(
+    'Japanese ASMR actual task saves a decodable cover',
+    (tester) async {
+      final api = JapaneseAsmrApiService();
+      final root = await Directory.systemTemp.createTemp('jp_cover_task_');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final manager = AsmrDownloadManager(
+        persistTasks: false,
+        stagingDirectoryProvider: () async => root,
+        automaticFileRetryDelay: Duration.zero,
+      );
+      server.listen((request) async {
+        request.response.add([0xff, 0xfb, 0x90, 0x64]);
+        await request.response.close();
+      });
+      try {
+        final page = await api.searchWorks(keyword: 'RJ01741555', pageSize: 1);
+        final work = page.works.single;
+        debugPrint('Actual cover URL: ${work.preferredCoverUrl}');
+        await manager.startDownload(
+          work: work,
+          selectedRoots: [
+            AsmrTrackFile.fromJson({
+              'type': 'audio',
+              'title': 'audio.mp3',
+              'mediaDownloadUrl': 'http://127.0.0.1:${server.port}/audio.mp3',
+              'size': 4,
+            }),
+          ],
+          destinationRoot: root.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveCover: true,
+          saveMetadata: false,
+          automaticFileRetryCount: 1,
+        );
+        final task = await manager
+            .taskStream(work.workKey)
+            .firstWhere(
+              (task) =>
+                  task?.status == AsmrDownloadTaskStatus.completed ||
+                  task?.status == AsmrDownloadTaskStatus.failed,
+            )
+            .timeout(const Duration(seconds: 60));
+        debugPrint(
+          'Cover task status=${task?.status} failed=${task?.failedFilePaths} error=${task?.error} output=${task?.coverOutputPath}',
+        );
+        expect(task?.status, AsmrDownloadTaskStatus.completed);
+        expect(task?.coverOutputPath, isNotNull);
+        final bytes = await File(task!.coverOutputPath!).readAsBytes();
+        final codec = await ui.instantiateImageCodec(bytes);
+        final frame = await codec.getNextFrame();
+        expect(frame.image.width, greaterThan(0));
+        debugPrint(
+          'Actual cover saved: ${bytes.length} bytes, ${frame.image.width}x${frame.image.height}',
+        );
+        frame.image.dispose();
+        codec.dispose();
+      } finally {
+        await manager.shutdown();
+        api.close();
+        await server.close(force: true);
+        await root.delete(recursive: true);
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
   testWidgets(
     'Android HLS reports bytes and fractions during transfer',
     (tester) async {

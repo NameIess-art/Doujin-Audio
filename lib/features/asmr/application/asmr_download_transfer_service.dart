@@ -172,8 +172,7 @@ class AsmrDownloadTransferService {
             );
             return const DownloadWriteResult.failure(bytesDownloaded: 0);
           }
-          _setFileRetryAttempt(workId, item.relativePath, attempt + 1);
-          await Future<void>.delayed(_automaticFileRetryDelay);
+          await _waitForFileRetry(workId, item.relativePath, attempt + 1);
         }
       }
       throwIfCancelled(workId);
@@ -551,9 +550,6 @@ class AsmrDownloadTransferService {
     try {
       for (var attempt = 0; ; attempt++) {
         throwIfCancelled(workId);
-        if (attempt > 0) {
-          _setFileRetryAttempt(workId, item.relativePath, null);
-        }
         final result = await _downloadToTemporaryFileAttempt(
           item,
           workId: workId,
@@ -610,14 +606,13 @@ class AsmrDownloadTransferService {
         }
 
         final retryAttempt = attempt + 1;
-        _setFileRetryAttempt(workId, item.relativePath, retryAttempt);
         AppLogService.warning(
           'asmr_download_transfer_retry path=${item.relativePath} '
           'attempt=$retryAttempt/$maxRetries',
           error: result.error,
           stackTrace: result.stackTrace,
         );
-        await Future<void>.delayed(_automaticFileRetryDelay);
+        await _waitForFileRetry(workId, item.relativePath, retryAttempt);
       }
     } on DownloadCancelled {
       rethrow;
@@ -931,6 +926,32 @@ class AsmrDownloadTransferService {
         error is SocketException ||
         error is HandshakeException ||
         error is HttpException;
+  }
+
+  Future<void> _waitForFileRetry(
+    String workId,
+    String relativePath,
+    int attempt,
+  ) async {
+    _setFileRetryAttempt(workId, relativePath, attempt);
+    try {
+      final delay = _automaticFileRetryDelay * attempt;
+      final elapsed = Stopwatch()..start();
+      // Longer backoffs must not hold up pause, cancel or shutdown.
+      const cancellationCheckInterval = Duration(milliseconds: 100);
+      while (elapsed.elapsed < delay) {
+        throwIfCancelled(workId);
+        final remaining = delay - elapsed.elapsed;
+        await Future<void>.delayed(
+          remaining < cancellationCheckInterval
+              ? remaining
+              : cancellationCheckInterval,
+        );
+      }
+      throwIfCancelled(workId);
+    } finally {
+      _setFileRetryAttempt(workId, relativePath, null);
+    }
   }
 
   void _setFileRetryAttempt(String workId, String relativePath, int? attempt) {

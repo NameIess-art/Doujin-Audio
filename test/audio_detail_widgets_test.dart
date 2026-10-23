@@ -1423,6 +1423,74 @@ void main() {
   );
 
   testWidgets(
+    'metadata editor without artwork scrolls back without recreating a cover',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 500));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final covers = _DetailCoverCacheService(candidates: const []);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: covers,
+      );
+      addTearDown(fixture.dispose);
+      const target = AudioDetailTarget(
+        targetType: AudioDetailTargetType.libraryRootFolder,
+        targetPath: '/library/WithoutCover',
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          DlsiteMetadataReviewPage.edit(
+            detail: AudioDetail.empty(target).copyWith(
+              workTitle: 'Without artwork',
+              duration: const Duration(minutes: 1),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await pumpUntilUiIdle(tester);
+      await tester.pumpAndSettle();
+      expect(covers.candidateQueries, 1);
+      final cover = find.byType(FolderCoverSelector, skipOffstage: false);
+      final coverState = tester.state(cover);
+      final list = find.byType(ListView);
+      final scroll = tester.state<ScrollableState>(
+        find.descendant(of: list, matching: find.byType(Scrollable)).first,
+      );
+      expect(scroll.position.maxScrollExtent, greaterThan(300));
+      scroll.position.jumpTo(scroll.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(cover, findsOneWidget);
+      expect(tester.state(cover), same(coverState));
+      for (
+        var attempt = 0;
+        attempt < 10 && scroll.position.pixels > 0;
+        attempt++
+      ) {
+        await tester.dragFrom(
+          tester.getTopLeft(list) + const Offset(8, 400),
+          const Offset(0, 350),
+        );
+        await tester.pumpAndSettle();
+        await pumpUntilUiIdle(tester);
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('audio_detail_cover_placeholder')),
+          findsNothing,
+        );
+      }
+      expect(scroll.position.pixels, 0);
+      expect(covers.candidateQueries, 1);
+      expect(find.byType(CoverFallbackArtwork), findsNothing);
+      expect(tester.takeException(), isNull);
+      await _drainAudioDetailFixture(tester, fixture);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'metadata editor shows compact cover navigation and cover state below image',
     (WidgetTester tester) async {
       tester.view.devicePixelRatio = 1;

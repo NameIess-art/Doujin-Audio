@@ -317,10 +317,7 @@ ProductionAppRuntime createProductionAppRuntime({
   final appUpdateService = AppUpdateService();
   final asmrApiService = AsmrApiService();
   final japaneseAsmrApiService = JapaneseAsmrApiService();
-  final asmrMetadataService = AsmrMetadataService(
-    apiService: asmrApiService,
-    japaneseApiService: japaneseAsmrApiService,
-  );
+  final asmrMetadataService = AsmrMetadataService(apiService: asmrApiService);
   final libraryFacade = LibraryFacade.create(
     databaseRepository: libraryRepository,
     jsonDocumentStore: jsonDocumentStore,

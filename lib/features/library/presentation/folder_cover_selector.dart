@@ -35,7 +35,8 @@ class FolderCoverSelector extends ConsumerStatefulWidget {
       _FolderCoverSelectorState();
 }
 
-class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
+class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
+    with AutomaticKeepAliveClientMixin {
   static const int _loopPageSeed = 100000;
 
   PageController? _pageController;
@@ -46,6 +47,11 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
   int _currentIndex = 0;
   int? _targetVirtualPage;
   String get _loadCommitKey => 'folder_cover_${identityHashCode(this)}_load';
+
+  // Recreating a missing cover while scrolling inserts a temporary placeholder
+  // and changes the form's scroll extent before discovery removes it again.
+  @override
+  bool get wantKeepAlive => true;
 
   static int _pageForIndex(int index, int length) {
     if (length <= 1) return index;
@@ -362,6 +368,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,

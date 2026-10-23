@@ -3,19 +3,14 @@ import '../domain/asmr_models.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import 'asmr_api_service.dart';
-import 'japanese_asmr_api_service.dart';
 import '../../library/application/dlsite_metadata_service.dart';
 import '../../library/application/library_metadata_source.dart';
 
 class AsmrMetadataService implements LibraryMetadataSource {
-  AsmrMetadataService({
-    AsmrApiService? apiService,
-    JapaneseAsmrApiService? japaneseApiService,
-  }) : _apiService = apiService ?? AsmrApiService(),
-       _japaneseApiService = japaneseApiService;
+  AsmrMetadataService({AsmrApiService? apiService})
+    : _apiService = apiService ?? AsmrApiService();
 
   final AsmrApiService _apiService;
-  final JapaneseAsmrApiService? _japaneseApiService;
 
   @override
   Future<DlsiteMetadata> fetchByRjCode(
@@ -91,42 +86,14 @@ class AsmrMetadataService implements LibraryMetadataSource {
   }
 
   Future<List<AsmrWork>> _search(String query, AppLanguage language) async {
-    final works = <String, AsmrWork>{};
-    Object? firstError;
-    var succeeded = false;
-    try {
-      final page = await _apiService.searchWorks(
-        keyword: query,
-        order: 'release',
-        sort: 'desc',
-        pageSize: 20,
-        language: _asmrLanguage(language),
-      );
-      succeeded = true;
-      for (final work in page.works) {
-        works[work.workKey] = work;
-      }
-    } catch (error) {
-      firstError = error;
-    }
-    final japanese = _japaneseApiService;
-    if (japanese != null) {
-      try {
-        final page = await japanese.searchWorks(keyword: query, pageSize: 20);
-        succeeded = true;
-        for (final work in page.works) {
-          works.update(
-            work.workKey,
-            (old) => old.mergedWith(work),
-            ifAbsent: () => work,
-          );
-        }
-      } catch (error) {
-        firstError ??= error;
-      }
-    }
-    if (!succeeded && firstError != null) throw firstError;
-    return works.values.toList(growable: false);
+    final page = await _apiService.searchWorks(
+      keyword: query,
+      order: 'release',
+      sort: 'desc',
+      pageSize: 20,
+      language: _asmrLanguage(language),
+    );
+    return page.works;
   }
 
   DlsiteMetadata _metadataFromWork(AsmrWork work) {

@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 import '../../../core/app_language.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
+import '../../../core/logging/app_log_service.dart';
 import 'library_metadata_source.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_matcher.dart';
@@ -485,6 +486,18 @@ DlsiteMetadata? decodeDlsiteProductHtml(
       )?.replaceFirst(RegExp(r'\s*\[[^\]]+\]\s*\|\s*DLsite.*$'), '') ??
       _htmlAttribute(html, 'data-product-name');
   if (title == null || title.isEmpty) return null;
+  final regionRestricted =
+      RegExp(
+        r'''class=["'][^"']*\berror_box_work\b''',
+        caseSensitive: false,
+      ).hasMatch(html) &&
+      RegExp(
+        r'国家[・·/／、]区域|國家[・·/／、]地區|country\s*(?:/|or|and)?\s*region|国(?:または|や|・|/)?地域|お住まいの地域',
+        caseSensitive: false,
+      ).hasMatch(_htmlText(html) ?? '');
+  if (regionRestricted) {
+    AppLogService.warning('dlsite_metadata_region_restricted rj=$rjCode');
+  }
 
   final circleName =
       _htmlAttribute(html, 'data-maker-name') ??
@@ -544,6 +557,7 @@ DlsiteMetadata? decodeDlsiteProductHtml(
     releaseDate: releaseDate,
     rating: rating != null && rating > 0 && rating <= 5 ? rating : null,
     coverUrl: coverUrl,
+    dlsiteRegionRestricted: regionRestricted,
   );
 }
 

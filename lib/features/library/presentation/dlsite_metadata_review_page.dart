@@ -700,6 +700,20 @@ class _DlsiteMetadataReviewPageState
                             bottomInset,
                           ),
                           children: [
+                            if (!widget.editing &&
+                                _metadata?.dlsiteRegionRestricted == true) ...[
+                              Text(
+                                i18n.tr('dlsite_region_restricted'),
+                                key: const ValueKey('dlsite_region_restricted'),
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
+                                    ),
+                              ),
+                              const SizedBox(height: 12),
+                            ],
                             if (widget.editing &&
                                 editingDetail.target.isLibraryRootFolder) ...[
                               FolderCoverSelector(

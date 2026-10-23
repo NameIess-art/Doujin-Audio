@@ -279,6 +279,33 @@ void main() {
         });
 
         test(
+          'regional restriction remains visible after fallback merges',
+          () async {
+            dlsite.metadata = DlsiteMetadata(
+              rjCode: 'RJ123456',
+              workTitle: fallback.workTitle,
+              circleName: fallback.circleName,
+              voiceActors: const [],
+              tags: const [],
+              dlsiteRegionRestricted: true,
+            );
+            api.error = StateError('ASMR.ONE unavailable');
+
+            final result = await lookup();
+
+            expect(result.dlsiteRegionRestricted, isTrue);
+            expect(result.workTitle, fallback.workTitle);
+            expect(result.voiceActors, ['Voice']);
+            expect(result.releaseDate, japanese!.works.single.releaseDate);
+            expect(
+              result.copyWith(workTitle: 'Edited').dlsiteRegionRestricted,
+              isTrue,
+            );
+            expectCalls(japaneseRequested: true);
+          },
+        );
+
+        test(
           'each source fills gaps without replacing earlier values',
           () async {
             api.works = [

@@ -13,6 +13,7 @@ class DlsiteMetadata {
     this.salesCount,
     this.rating,
     this.coverUrl,
+    this.dlsiteRegionRestricted = false,
   }) : voiceActors = immutableList(voiceActors),
        tags = immutableList(tags);
 
@@ -58,6 +59,8 @@ class DlsiteMetadata {
   final int? salesCount;
   final double? rating;
   final String? coverUrl;
+  // Acquisition status is shown during review and is not saved as work data.
+  final bool dlsiteRegionRestricted;
 
   DlsiteMetadata fillMissingFrom(DlsiteMetadata fallback) {
     return copyWith(
@@ -73,6 +76,8 @@ class DlsiteMetadata {
       coverUrl: coverUrl?.trim().isNotEmpty == true
           ? coverUrl
           : fallback.coverUrl,
+      dlsiteRegionRestricted:
+          dlsiteRegionRestricted || fallback.dlsiteRegionRestricted,
     );
   }
 
@@ -87,6 +92,7 @@ class DlsiteMetadata {
     Object? salesCount = _copyUnset,
     Object? rating = _copyUnset,
     String? coverUrl,
+    bool? dlsiteRegionRestricted,
   }) {
     return DlsiteMetadata(
       rjCode: rjCode ?? this.rjCode,
@@ -103,6 +109,8 @@ class DlsiteMetadata {
           : salesCount as int?,
       rating: rating == _copyUnset ? this.rating : rating as double?,
       coverUrl: coverUrl ?? this.coverUrl,
+      dlsiteRegionRestricted:
+          dlsiteRegionRestricted ?? this.dlsiteRegionRestricted,
     );
   }
 }

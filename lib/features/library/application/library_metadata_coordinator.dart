@@ -633,18 +633,25 @@ final class LibraryMetadataCoordinator {
   Future<List<DlsiteMetadata>> _lookupPreferredMetadata(
     Future<List<DlsiteMetadata>> Function(LibraryMetadataSource) lookup,
   ) async {
-    final sources = <LibraryMetadataSource>[
-      _metadataService,
-      ?_asmrMetadataService,
-      ?_japaneseMetadataService,
+    final sources = <({String name, LibraryMetadataSource source})>[
+      (name: 'DLsite', source: _metadataService),
+      if (_asmrMetadataService case final source?)
+        (name: 'ASMR.ONE', source: source),
+      if (_japaneseMetadataService case final source?)
+        (name: 'Japanese ASMR', source: source),
     ];
     var primary = <DlsiteMetadata>[];
     ({Object error, StackTrace stackTrace})? lastFailure;
-    for (final source in sources) {
+    for (final entry in sources) {
       List<DlsiteMetadata> fallback;
       try {
-        fallback = await lookup(source);
+        fallback = await lookup(entry.source);
       } catch (error, stackTrace) {
+        AppLogService.warning(
+          'metadata_lookup_failed source=${entry.name}',
+          error: error,
+          stackTrace: stackTrace,
+        );
         lastFailure = (error: error, stackTrace: stackTrace);
         continue;
       }

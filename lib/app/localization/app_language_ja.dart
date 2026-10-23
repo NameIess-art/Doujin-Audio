@@ -405,6 +405,7 @@ const Map<String, String> appLanguageJa = {
   'audio_detail_rename_conflict': '同名の項目があります。別の名前にしてください。',
   'audio_detail_value_removed': '「{value}」を削除しました',
   'dlsite_review_title': '作品情報を確認',
+  'dlsite_region_restricted': '現在の接続地域では DLsite の情報が制限されています。不足項目は ASMR.ONE または Japanese ASMR の情報の場合があります。接続先を切り替えて再取得できます。',
   'dlsite_save_cover': 'カバーをフォルダに保存',
   'dlsite_fetch_failed': '作品情報の取得失敗。RJ番号・フォルダ名・ファイル名・作品名や接続を確認してください。',
   'dlsite_cover_save_failed': '情報保存済み。カバーの保存は失敗しました。',

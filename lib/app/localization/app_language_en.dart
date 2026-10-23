@@ -436,6 +436,7 @@ const Map<String, String> appLanguageEn = {
       'A file or folder has this name. Choose another.',
   'audio_detail_value_removed': 'Removed "{value}"',
   'dlsite_review_title': 'Review metadata',
+  'dlsite_region_restricted': 'DLsite limits data in this network region. Missing fields may come from ASMR.ONE or Japanese ASMR. Switch networks and fetch again.',
   'dlsite_save_cover': 'Save cover to folder',
   'dlsite_fetch_failed':
       'Could not fetch metadata. Check the RJ number, folder/file name, work title, or connection, then retry.',

@@ -402,6 +402,7 @@ const Map<String, String> appLanguageZh = {
   'audio_detail_rename_conflict': '该名称已被文件或文件夹使用，请选择其他名称。',
   'audio_detail_value_removed': '已移除「{value}」',
   'dlsite_review_title': '确认作品数据',
+  'dlsite_region_restricted': 'DLsite 因当前网络地区限制未返回完整资料，缺失字段可能来自 ASMR.ONE 或 Japanese ASMR。可切换网络后重新获取。',
   'dlsite_save_cover': '保存封面到文件夹',
   'dlsite_fetch_failed': '获取作品数据失败，请检查RJ号、文件夹/文件名称、作品标题或网络后重试。',
   'dlsite_cover_save_failed': '信息已保存，但封面保存失败。',

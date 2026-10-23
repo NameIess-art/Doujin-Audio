@@ -13,6 +13,7 @@ void main() {
     'partial',
     'JSON blocked',
     'page blocked',
+    'region restricted',
   ]) {
     test('DLsite request preserves fields when $scenario', () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -21,7 +22,9 @@ void main() {
       server.listen((request) async {
         requests.add(request.uri.path);
         if (request.uri.path.endsWith('product.json')) {
-          if (scenario == 'JSON blocked') {
+          if (scenario == 'region restricted') {
+            request.response.write('[]');
+          } else if (scenario == 'JSON blocked') {
             request.response.statusCode = HttpStatus.forbidden;
           } else {
             request.response.write(
@@ -45,6 +48,14 @@ void main() {
               }),
             );
           }
+        } else if (scenario == 'region restricted') {
+          request.response.write('''
+            <meta property="og:title" content="Page title [Page Circle] | DLsite">
+            <template data-maker-name="Page Circle"></template>
+            <div class="error_box error_box_work">
+              <p class="title_text">您所在的国家・区域无法购买此作品。</p>
+            </div>
+            ''');
         } else if (scenario == 'page blocked') {
           request.response.statusCode = HttpStatus.forbidden;
         } else {
@@ -67,6 +78,14 @@ void main() {
         ).fetchByRjCode('RJ01726046', language: AppLanguage.zh);
 
         expect(metadata.rjCode, 'RJ01726046');
+        if (scenario == 'region restricted') {
+          expect(metadata.workTitle, 'Page title');
+          expect(metadata.dlsiteRegionRestricted, isTrue);
+          expect(metadata.voiceActors, isEmpty);
+          expect(metadata.releaseDate, isNull);
+          return;
+        }
+        expect(metadata.dlsiteRegionRestricted, isFalse);
         expect(
           metadata.workTitle,
           scenario == 'JSON blocked' ? 'Page title' : 'JSON title',

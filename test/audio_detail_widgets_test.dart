@@ -768,6 +768,53 @@ void main() {
     }),
   );
 
+  testWidgets(
+    'metadata review explains DLsite regional fallback only when restricted',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await fixture.languageProvider.setLanguage(AppLanguage.zh);
+      final metadata = DlsiteMetadata(
+        rjCode: 'RJ01726046',
+        workTitle: 'Work title',
+        circleName: 'Circle',
+        voiceActors: const ['Umeki Chiharu', 'Tsubame Yuzuki'],
+        tags: const ['Healing'],
+        dlsiteRegionRestricted: true,
+      );
+      for (final restricted in [true, false]) {
+        await tester.pumpWidget(
+          fixture.build(
+            DlsiteMetadataReviewPage(
+              key: ValueKey(restricted),
+              detail: AudioDetail.empty(
+                const AudioDetailTarget(
+                  targetType: AudioDetailTargetType.singleAudioFile,
+                  targetPath: '/library/work.mp3',
+                ),
+              ),
+              initialCandidates: [
+                metadata.copyWith(dlsiteRegionRestricted: restricted),
+              ],
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('dlsite_region_restricted')),
+          restricted ? findsOneWidget : findsNothing,
+        );
+        expect(find.text('Umeki Chiharu，Tsubame Yuzuki'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+      await _drainAudioDetailFixture(tester, fixture);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('metadata review skeleton matches the cover and field layout', (
     tester,
   ) async {

@@ -97,10 +97,19 @@ Work information is stored in `doujin-audio.json` inside the folder, including t
 - Android Doze and manufacturer background restrictions can still affect long listening sessions. Review battery optimization and background permissions under Permissions and background. WakeLocks cannot bypass system restrictions.
 - Windows restores pending timer tasks through the current user's Task Scheduler. Waking from sleep depends on hardware and power policy. **Waking from shutdown and playback while signed out are not supported.**
 
+### My: listening statistics, history, and interest tags
+
+My sits between Playlists and Settings on Android and Windows, and can also be selected as the startup page.
+
+- **Listening time**: View actual listening time across local and ASMR.ONE works by day, week, month, quarter, or year. Simultaneous sessions count once; pauses and buffering do not count, and playback speed does not multiply elapsed time. Older history is not used to invent past listening totals.
+- **Bar chart and heatmap**: Switch styles on the right of the date row; the last choice is remembered. The heatmap fills the available area with five rows of larger cells, with the latest period at the bottom right. Color intensity follows the theme and increases with listening time.
+- **Dates and exact durations**: Click the date to enter a selection and scroll horizontally through past periods. Select a bar or cell to see its date range and exact duration. Windows also supports hover details, mouse dragging, wheel scrolling, and trackpad scrolling.
+- **Listening history**: Local and online works appear in a single horizontal row, ordered by most recent playback. Covers show two lines of title text; local titles follow the local-name display setting. Click to open details, preferring an available local copy; unavailable sources show a message.
+- **Interest tags**: View the 20 highest-weight tags, add or remove tags manually, and undo removals. Listening continues to update interests. Removing a tag lowers its weight; later listening may bring it back into the list.
+- **Uninterested tags**: Search the tag catalog to select or deselect exclusions that hide matching works across ASMR.ONE lists. Existing favorites, history, downloads, and active playback are retained, including history in My. The catalog combines online and local tags and caches them for offline search; before the full directory has loaded, offline use shows known tags with an incomplete-catalog notice.
+
 ### Personalization and data maintenance
 
-- My shows listening-time bars by day, week, month, quarter or year, a horizontal cover history, and your top 20 interest tags. Listening time uses actual elapsed playback time without counting simultaneous sessions twice.
-- Add or remove interests and search the online tag directory together with local tags. Excluded tags hide matching works across ASMR.ONE lists. The full directory needs an initial network fetch; cached tags remain available offline.
 - Choose light, dark, or system theme, a theme color, separate ASMR.ONE colors, the startup page, transition speed, reduced motion, and cover decoding quality. The interface supports Simplified Chinese, English, and Japanese.
 - On Android, configure behavior after headphone disconnection, temporary audio-focus loss, or calls, and choose exclusive audio focus or mixing with other applications.
 - `.dabackup` stores the library, settings, playback history and sessions, timeline markers, and ASMR.ONE credentials. Restores are validated before replacing data at the next cold start, with rollback on failure. **Restores are supported only on the same platform.**

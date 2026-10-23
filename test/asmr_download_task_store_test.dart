@@ -58,6 +58,7 @@ void main() {
         downloadedBytes: 512,
         fileDownloadedBytes: const {'track.mp3': 512},
         fileRetryAttempts: const {'track.mp3': 2},
+        fileProgressFractions: const {'track.mp3': 0.5},
         fileEntityTags: const {'track.mp3': '"entity-a"'},
         manuallyRetryingFilePaths: const {'track.mp3'},
       );
@@ -81,6 +82,7 @@ void main() {
         'track.mp3',
       );
       expect(restored.tasks.single.task.fileRetryAttempts, isEmpty);
+      expect(restored.tasks.single.task.fileProgressFractions, isEmpty);
       expect(restored.tasks.single.task.fileEntityTags, {
         'track.mp3': '"entity-a"',
       });

@@ -194,7 +194,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
         (shrinkOffset).clamp(0.0, coverMaxHeight - coverMinHeight);
 
     return Material(
-      type: MaterialType.transparency,
+      color: surfaceColor,
       child: Stack(
         fit: StackFit.expand,
         children: [

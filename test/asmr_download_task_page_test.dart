@@ -27,6 +27,149 @@ void main() {
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
 
+  for (final scenario in ['success', 'retry', 'covered']) {
+    testWidgets(
+      'empty downloads return after recovery: $scenario',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final language = AppLanguageProvider();
+        await language.setLanguage(AppLanguage.en);
+        final restored = Completer<String?>();
+        var reads = 0;
+        final manager = AsmrDownloadManager(
+          persistenceReader: () =>
+              ++reads == 1 ? restored.future : Future<String?>.value(),
+          persistenceWriter: (_) async {},
+        );
+        final removals = UndoableRemovalService();
+        addTearDown(language.dispose);
+        addTearDown(manager.dispose);
+        addTearDown(removals.dispose);
+        final navigator = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              coreRuntimeReadyProvider.overrideWithValue(true),
+              appLanguageProviderInstanceProvider.overrideWithValue(language),
+              asmrDownloadManagerProvider.overrideWithValue(manager),
+              undoableRemovalServiceProvider.overrideWithValue(removals),
+            ],
+            child: MaterialApp(
+              navigatorKey: navigator,
+              home: const Scaffold(body: Text('Previous page')),
+            ),
+          ),
+        );
+        unawaited(
+          navigator.currentState!.push(
+            MaterialPageRoute<void>(
+              builder: (_) => const AsmrDownloadTaskPage(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(AsmrDownloadTaskPage), findsOneWidget);
+        if (scenario == 'covered') {
+          unawaited(
+            navigator.currentState!.push(
+              MaterialPageRoute<void>(
+                builder: (_) => const Scaffold(body: Text('Covering page')),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+        }
+        if (scenario == 'retry') {
+          restored.completeError(StateError('restore failed'));
+          await tester.pumpAndSettle();
+          expect(find.byType(OperationStatusBanner), findsOneWidget);
+          await tester.tap(find.byTooltip('Retry'));
+        } else {
+          restored.complete();
+        }
+        await tester.pumpAndSettle();
+        if (scenario == 'covered') {
+          expect(find.text('Covering page'), findsOneWidget);
+          expect(
+            find.byType(AsmrDownloadTaskPage, skipOffstage: false),
+            findsOneWidget,
+          );
+          navigator.currentState!.pop();
+        }
+        await tester.pumpAndSettle();
+        expect(reads, scenario == 'retry' ? 2 : 1);
+        expect(find.byType(AsmrDownloadTaskPage), findsNothing);
+        expect(find.text('Previous page'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  testWidgets(
+    'removing last visible download returns and keeps undo',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final language = AppLanguageProvider();
+      await language.setLanguage(AppLanguage.en);
+      final manager = AsmrDownloadManager(persistTasks: false)
+        ..debugSetCurrentTaskForTesting(_failedTask());
+      final removals = UndoableRemovalService();
+      addTearDown(language.dispose);
+      addTearDown(manager.dispose);
+      addTearDown(removals.dispose);
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            coreRuntimeReadyProvider.overrideWithValue(true),
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            asmrDownloadManagerProvider.overrideWithValue(manager),
+            undoableRemovalServiceProvider.overrideWithValue(removals),
+          ],
+          child: MaterialApp(
+            navigatorKey: navigator,
+            home: const Scaffold(body: Text('Previous page')),
+          ),
+        ),
+      );
+      unawaited(
+        navigator.currentState!.push(
+          buildAppPageRoute<void>(
+            context: navigator.currentContext!,
+            child: const AsmrDownloadTaskPage(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(AsmrDownloadTaskCard), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('asmr_download_remove_task_code:RJ123456')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('asmr_download_remove_entry_option')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(AsmrDownloadTaskPage), findsNothing);
+      expect(find.text('Previous page'), findsOneWidget);
+      expect(manager.getTask('code:RJ123456'), isNotNull);
+      await tester.tap(find.textContaining('Undo'));
+      await tester.pumpAndSettle();
+      expect(removals.state.hiddenKeys, isEmpty);
+      expect(manager.getTask('code:RJ123456'), isNotNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('task recovery directly shows actual data without skeleton', (
     tester,
   ) async {

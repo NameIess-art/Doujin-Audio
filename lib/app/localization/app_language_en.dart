@@ -1,5 +1,6 @@
 const Map<String, String> appLanguageEn = {
   'online_audio_library': 'Online Audio Library',
+  'asmr_download_size_unknown': 'Size unknown',
   'online_library_partial_failure':
       'Some sources are unavailable. Available works are shown. Please retry.',
   'asmr_download_hls_notice':

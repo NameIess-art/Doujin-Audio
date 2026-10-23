@@ -13,6 +13,7 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart'
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_selection_tree.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -24,6 +25,38 @@ void main() {
   tearDown(interaction.resetForTest);
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'Japanese download omits the site folder in rows and submitted paths on $platform',
+      (tester) async {
+        final manager = await _openReadyDownload(tester, japanese: true);
+        expect(find.text('japaneseasmr.com'), findsNothing);
+        expect(find.textContaining('0 B'), findsNothing);
+        final i18n = ProviderScope.containerOf(
+          tester.element(find.byType(AsmrDownloadPage)),
+        ).read(appLanguageProviderInstanceProvider);
+        expect(find.text(i18n.tr('asmr_download_size_unknown')), findsWidgets);
+        final list = tester.widget<AsmrDownloadSelectionList>(
+          find.byType(AsmrDownloadSelectionList),
+        );
+        expect(
+          list.selection.rootNodes.single.children.single.track.relativePath,
+          'Track.mp3',
+        );
+        await tester.tap(_downloadStartButton());
+        await tester.pump();
+        manager.destinationCheck.complete(true);
+        await tester.pumpAndSettle();
+        expect(
+          manager.selectedRoots!.single.children.single.relativePath,
+          'Track.mp3',
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        interaction.resetForTest();
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     testWidgets(
       'ready download keeps rows across route motion and updates live inputs on $platform',
       (tester) async {
@@ -309,7 +342,10 @@ Finder _downloadStartProgress() => find.descendant(
   matching: find.byType(CircularProgressIndicator),
 );
 
-Future<_StartDownloadManager> _openReadyDownload(WidgetTester tester) async {
+Future<_StartDownloadManager> _openReadyDownload(
+  WidgetTester tester, {
+  bool japanese = false,
+}) async {
   final fixture = AppRuntimeWidgetTestFixture(
     configureSettingsRepository: (settings) =>
         settings.asmrDownloadDestinationRoot = 'destination',
@@ -319,8 +355,15 @@ Future<_StartDownloadManager> _openReadyDownload(WidgetTester tester) async {
   addTearDown(fixture.dispose);
   addTearDown(controller.dispose);
   addTearDown(manager.dispose);
-  final work = AsmrWork.fromJson(const {'id': 1, 'title': 'Download work'});
-  controller.tree.complete([
+  final work = AsmrWork.fromJson({
+    'id': 1,
+    'title': 'Download work',
+    if (japanese)
+      'resources': [
+        {'source': 'japaneseAsmr', 'id': 1, 'code': '', 'pageUrl': ''},
+      ],
+  });
+  final tracks = [
     AsmrTrackFile(
       hash: 'track',
       title: 'Track.mp3',
@@ -329,14 +372,24 @@ Future<_StartDownloadManager> _openReadyDownload(WidgetTester tester) async {
       downloadUrl: 'https://example.invalid/Track.mp3',
       lowQualityUrl: null,
       duration: Duration.zero,
-      size: 1024,
+      size: japanese ? 0 : 1024,
       children: const [],
       workId: work.id,
       workTitle: work.title,
       sourceId: work.sourceId,
-      relativePath: 'Track.mp3',
+      relativePath: japanese ? 'japaneseasmr.com/Track.mp3' : 'Track.mp3',
     ),
-  ]);
+  ];
+  controller.tree.complete(
+    japanese
+        ? [
+            AsmrTrackFile.fromJson(const {
+              'type': 'folder',
+              'title': 'japaneseasmr.com',
+            }).withChildren(tracks),
+          ]
+        : tracks,
+  );
   await tester.pumpWidget(
     fixture.build(
       Builder(
@@ -383,6 +436,7 @@ class _StartDownloadManager extends AsmrDownloadManager {
   int destinationChecks = 0;
   int pickerCalls = 0;
   int starts = 0;
+  List<AsmrTrackFile>? selectedRoots;
 
   @override
   Future<void> initialize() async {}
@@ -414,6 +468,7 @@ class _StartDownloadManager extends AsmrDownloadManager {
     String? customWorkFolderName,
   }) async {
     starts++;
+    this.selectedRoots = selectedRoots;
     if (failStart) throw StateError('start failed');
   }
 }

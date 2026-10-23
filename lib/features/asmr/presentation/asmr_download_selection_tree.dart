@@ -254,7 +254,9 @@ class AsmrDownloadNodeTile extends ConsumerWidget {
         children: [
           Flexible(
             child: Text(
-              formatAsmrDownloadSize(node.totalSizeBytes),
+              node.hasUnknownSize
+                  ? i18n.tr('asmr_download_size_unknown')
+                  : formatAsmrDownloadSize(node.totalSizeBytes),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(

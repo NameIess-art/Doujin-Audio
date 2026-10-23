@@ -2,45 +2,98 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_audio/return_code.dart';
+import 'package:ffmpeg_kit_flutter_new_full/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_full/return_code.dart';
 
 import '../../../core/media/playback_media_reference.dart';
 import '../../../core/platform/windows_media_tools.dart';
 import 'asmr_download_internal_models.dart';
 
-/// Only a confirmed missing original permits choosing the HLS representation.
+const japaneseAsmrDownloadUserAgent =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+/// The original cannot be transferred; this does not imply it is missing.
 class AsmrOriginalUnavailable implements Exception {
   const AsmrOriginalUnavailable();
 }
 
 Future<String> resolveAsmrOriginalUrl(HttpClient client, String url) async {
   final uri = Uri.parse(url);
-  if (uri.host != 'buzzheavier.com' && uri.host != 'www.buzzheavier.com') {
-    return url;
-  }
-  final endpoint = uri.path.endsWith('/download')
-      ? uri
-      : uri.replace(
-          path: '${uri.path.replaceAll(RegExp(r"/+$"), "")}/download',
-        );
-  final request = await client
-      .getUrl(endpoint)
-      .timeout(const Duration(seconds: 15));
-  request.headers.set('User-Agent', 'Doujin Audio downloader');
-  request.headers.set('HX-Request', 'true');
-  request.headers.set('Referer', url);
-  final response = await request.close().timeout(const Duration(seconds: 15));
-  try {
-    if (response.statusCode == 404 || response.statusCode == 410) {
+  bool isBuzzheavier(Uri value) =>
+      value.host == 'buzzheavier.com' ||
+      value.host.endsWith('.buzzheavier.com');
+  if (!isBuzzheavier(uri)) return url;
+
+  Future<HttpClientResponse> open(
+    Uri target, {
+    bool endpoint = false,
+    String? referer,
+  }) async {
+    final request = await client
+        .getUrl(target)
+        .timeout(const Duration(seconds: 15));
+    request.headers.set('User-Agent', japaneseAsmrDownloadUserAgent);
+    if (endpoint) request.headers.set('HX-Request', 'true');
+    request.headers.set('Referer', referer ?? url);
+    final response = await request.close().timeout(const Duration(seconds: 15));
+    if (response.statusCode == HttpStatus.forbidden ||
+        response.statusCode == HttpStatus.notFound ||
+        response.statusCode == HttpStatus.gone) {
+      await response.listen(null).cancel();
       throw const AsmrOriginalUnavailable();
     }
-    if (response.statusCode != 200) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      await response.listen(null).cancel();
       throw HttpException(
         'Original link resolution failed: HTTP ${response.statusCode}',
-        uri: endpoint,
+        uri: target,
       );
     }
+    return response;
+  }
+
+  var endpoint = uri;
+  var pageUrl = uri;
+  if (!uri.path.endsWith('/download')) {
+    final page = await open(uri);
+    for (final redirect in page.redirects) {
+      pageUrl = pageUrl.resolveUri(redirect.location);
+    }
+    final type = page.headers.contentType?.mimeType ?? '';
+    if (type.startsWith('audio/') ||
+        type == 'application/octet-stream' ||
+        type == 'application/mp4') {
+      await page.listen(null).cancel();
+      return pageUrl.toString();
+    }
+    final body = await page
+        .timeout(const Duration(seconds: 15))
+        .transform(utf8.decoder)
+        .join();
+    if (!isBuzzheavier(pageUrl)) {
+      throw const FormatException('Original link did not return audio.');
+    }
+    final attribute = RegExp(
+      r'''\bhx-get\s*=\s*["']([^"']+)["']''',
+      caseSensitive: false,
+    ).firstMatch(body)?.group(1)?.replaceAll('&amp;', '&');
+    final parsed = attribute == null ? null : pageUrl.resolve(attribute);
+    endpoint =
+        parsed != null &&
+            isBuzzheavier(parsed) &&
+            const ['http', 'https'].contains(parsed.scheme)
+        ? parsed
+        : pageUrl.replace(
+            path: '${pageUrl.path.replaceAll(RegExp(r"/+$"), "")}/download',
+          );
+  }
+  final response = await open(
+    endpoint,
+    endpoint: true,
+    referer: pageUrl.toString(),
+  );
+  try {
     final redirect = response.headers.value('HX-Redirect');
     final target = redirect == null ? null : endpoint.resolve(redirect);
     if (target == null || !const ['http', 'https'].contains(target.scheme)) {
@@ -96,12 +149,17 @@ class AsmrHlsAudioTransfer {
     required File output,
     required bool Function() isCancelled,
     void Function(double fraction)? onProgress,
+    void Function(int bytes)? onBytes,
   }) async {
     if (!reference.isHls) throw ArgumentError('HLS stream required.');
     if (isCancelled()) throw const DownloadCancelled();
     await output.parent.create(recursive: true);
     try {
-      await _run(_arguments(reference, output.path), isCancelled, (timeMs) {
+      await _run(_arguments(reference, output.path), isCancelled, (
+        timeMs,
+        bytes,
+      ) {
+        if (bytes >= 0) onBytes?.call(bytes);
         final duration = reference.durationMs;
         if (duration != null && duration > 0) {
           onProgress?.call((timeMs / duration).clamp(0, 1));
@@ -126,8 +184,9 @@ class AsmrHlsAudioTransfer {
           '-',
         ],
         isCancelled,
-        (_) {},
+        (_, _) {},
       );
+      onBytes?.call(await output.length());
       onProgress?.call(1);
     } catch (_) {
       if (await output.exists()) await output.delete();
@@ -146,7 +205,7 @@ class AsmrHlsAudioTransfer {
     '-rw_timeout',
     '30000000',
     '-user_agent',
-    'Doujin Audio downloader',
+    japaneseAsmrDownloadUserAgent,
     if (reference.httpHeaders.isNotEmpty) ...[
       '-headers',
       reference.httpHeaders.entries
@@ -170,6 +229,8 @@ class AsmrHlsAudioTransfer {
     'copy',
     '-movflags',
     '+faststart',
+    '-flush_packets',
+    '1',
     '-progress',
     'pipe:1',
     '-f',
@@ -180,7 +241,7 @@ class AsmrHlsAudioTransfer {
   Future<void> _run(
     List<String> arguments,
     bool Function() cancelled,
-    void Function(int) progress,
+    void Function(int timeMs, int bytes) progress,
   ) async {
     if (cancelled()) throw const DownloadCancelled();
     if (Platform.isWindows || _startProcess != null) {
@@ -190,13 +251,19 @@ class AsmrHlsAudioTransfer {
       final errors = process.stderr
           .transform(const Utf8Decoder(allowMalformed: true))
           .join();
+      var timeMs = 0;
+      var bytes = -1;
       final output = process.stdout
           .transform(utf8.decoder)
           .transform(const LineSplitter())
           .forEach((line) {
             if (line.startsWith('out_time_us=')) {
               final value = int.tryParse(line.substring(12));
-              if (value != null) progress(value ~/ 1000);
+              if (value != null) timeMs = value ~/ 1000;
+            } else if (line.startsWith('total_size=')) {
+              bytes = int.tryParse(line.substring(11)) ?? -1;
+            } else if (line.startsWith('progress=')) {
+              progress(timeMs, bytes);
             }
           });
       final timer = Timer.periodic(const Duration(milliseconds: 150), (_) {
@@ -222,7 +289,8 @@ class AsmrHlsAudioTransfer {
           }
         },
         null,
-        (statistics) => progress(statistics.getTime().round()),
+        (statistics) =>
+            progress(statistics.getTime().round(), statistics.getSize()),
       );
       final timer = Timer.periodic(const Duration(milliseconds: 150), (_) {
         if (cancelled()) unawaited(FFmpegKit.cancel(session.getSessionId()));
@@ -231,7 +299,10 @@ class AsmrHlsAudioTransfer {
         final code = await completion.future;
         if (cancelled()) throw const DownloadCancelled();
         if (code != 0) {
-          throw const FileSystemException('HLS audio processing failed.');
+          throw FileSystemException(
+            'HLS audio processing failed.\n'
+            '${await session.getAllLogsAsString() ?? ""}',
+          );
         }
       } finally {
         timer.cancel();

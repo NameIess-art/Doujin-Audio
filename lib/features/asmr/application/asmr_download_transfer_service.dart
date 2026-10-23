@@ -67,13 +67,14 @@ class AsmrDownloadTransferService {
       );
     } on AsmrOriginalUnavailable {
       if (reference?.isHls != true) rethrow;
-      return _downloadHlsItem(
-        item,
-        workId: workId,
-        task: task,
-        conflictPolicy: conflictPolicy,
-      );
     }
+    throwIfCancelled(workId);
+    return _downloadHlsItem(
+      item,
+      workId: workId,
+      task: task,
+      conflictPolicy: conflictPolicy,
+    );
   }
 
   Future<DownloadWriteResult> _downloadHlsItem(
@@ -96,8 +97,21 @@ class AsmrDownloadTransferService {
     await _store.flushPersistence();
     final exists = await _outputs.outputPathExists(targetPath);
     if (exists && conflictPolicy == AsmrDownloadConflictPolicy.skip) {
-      return const DownloadWriteResult.skipped(bytesDownloaded: 0);
+      return DownloadWriteResult.skipped(
+        bytesDownloaded:
+            current.fileTotalBytes[item.relativePath] ??
+            current.fileDownloadedBytes[item.relativePath] ??
+            item.size,
+      );
     }
+    final starting = _store[workId]!;
+    _store[workId] = starting.copyWith(
+      totalBytes:
+          starting.totalBytes -
+          (starting.fileTotalBytes[item.relativePath] ?? item.size),
+      fileTotalBytes: {...starting.fileTotalBytes, item.relativePath: 0},
+    );
+    _store.notifyProgressChanged(workId);
     final staging = PathMatcher.isContentUri(task.workRootPath)
         ? await _outputs.persistentStagingFile(task.workRootPath, relativePath)
         : File('$targetPath.doujin.part');
@@ -106,10 +120,35 @@ class AsmrDownloadTransferService {
     try {
       for (var attempt = 0; ; attempt++) {
         throwIfCancelled(workId);
+        _store.reconcileLiveFileProgress(workId, item.relativePath, 0);
+        final restarting = _store[workId]!;
+        _store[workId] = restarting.copyWith(
+          fileProgressFractions: {
+            ...restarting.fileProgressFractions,
+            item.relativePath: 0,
+          },
+        );
+        _store.notifyProgressChanged(workId);
         try {
           await _hlsAudioTransfer.save(
             reference: item.mediaReference!,
             output: staging,
+            onBytes: (bytes) => _store.reconcileLiveFileProgress(
+              workId,
+              item.relativePath,
+              bytes,
+            ),
+            onProgress: (fraction) {
+              final latest = _store[workId];
+              if (latest == null) return;
+              _store[workId] = latest.copyWith(
+                fileProgressFractions: {
+                  ...latest.fileProgressFractions,
+                  item.relativePath: fraction,
+                },
+              );
+              _store.notifyProgressChanged(workId);
+            },
             isCancelled: () {
               try {
                 throwIfCancelled(workId);
@@ -119,6 +158,7 @@ class AsmrDownloadTransferService {
               }
             },
           );
+          _store.flushPendingProgressNotifications();
           break;
         } on DownloadCancelled {
           rethrow;
@@ -157,8 +197,25 @@ class AsmrDownloadTransferService {
         }
       }
       if (!exists) _outputs.createdOutputPaths[workId]?.add(targetPath);
+      final finished = _store[workId]!;
+      final previousSize =
+          finished.fileTotalBytes[item.relativePath] ?? item.size;
+      _store[workId] = finished.copyWith(
+        totalBytes: finished.totalBytes - previousSize + length,
+        fileTotalBytes: {...finished.fileTotalBytes, item.relativePath: length},
+      );
       return DownloadWriteResult.success(bytesDownloaded: length);
     } finally {
+      // Failed/paused HLS output is discarded and cannot contribute saved bytes.
+      if (_store[workId]?.fileTotalBytes[item.relativePath] == 0) {
+        _store.reconcileLiveFileProgress(workId, item.relativePath, 0);
+        final latest = _store[workId]!;
+        _store[workId] = latest.copyWith(
+          fileProgressFractions: {...latest.fileProgressFractions}
+            ..remove(item.relativePath),
+        );
+        _store.notifyProgressChanged(workId);
+      }
       _setFileRetryAttempt(workId, item.relativePath, null);
       lease.release();
       if (await staging.exists()) await staging.delete();
@@ -514,7 +571,7 @@ class AsmrDownloadTransferService {
                 error: error,
                 stackTrace: stackTrace,
               );
-              return null;
+              throw const AsmrOriginalUnavailable();
             }
           }
           await tempFile.setLastModified(DateTime.now());
@@ -537,6 +594,17 @@ class AsmrDownloadTransferService {
               error: error,
               stackTrace: result.stackTrace,
             );
+          }
+          final error = result.error;
+          if (item.mediaReference?.isHls == true &&
+              (error is SocketException ||
+                  error is HandshakeException ||
+                  error is TimeoutException ||
+                  error is HttpException ||
+                  error is FormatException)) {
+            // Exhausted network retries do not imply the file is missing.
+            // The HLS URL is an independent representation of this chapter.
+            throw const AsmrOriginalUnavailable();
           }
           return null;
         }
@@ -615,7 +683,9 @@ class AsmrDownloadTransferService {
       openedRequest = request;
       request.headers.set(
         HttpHeaders.userAgentHeader,
-        'Doujin Audio downloader',
+        item.mediaReference?.isHls == true
+            ? japaneseAsmrDownloadUserAgent
+            : 'Doujin Audio downloader',
       );
       request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
       for (final header in asmrMediaRequestHeadersForUrl(item.url).entries) {
@@ -662,7 +732,9 @@ class AsmrDownloadTransferService {
           // The status code is sufficient to classify this attempt.
         }
         if (item.mediaReference?.isHls == true &&
-            (response.statusCode == 404 || response.statusCode == 410)) {
+            (response.statusCode == HttpStatus.forbidden ||
+                response.statusCode == HttpStatus.notFound ||
+                response.statusCode == HttpStatus.gone)) {
           throw const AsmrOriginalUnavailable();
         }
         final error = HttpException(

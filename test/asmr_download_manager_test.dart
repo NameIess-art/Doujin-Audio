@@ -21,6 +21,83 @@ import 'package:path/path.dart' as path;
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  for (final selectSingleFile in [false, true]) {
+    test('Japanese download writes no site folder with '
+        '${selectSingleFile ? "single file" : "whole folder"} selection', () async {
+      final root = await Directory.systemTemp.createTemp('jp_flat_download_');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        request.response.contentLength = 3;
+        request.response.add([1, 2, 3]);
+        await request.response.close();
+      });
+      final manager = AsmrDownloadManager(
+        persistTasks: false,
+        stagingDirectoryProvider: () async => root,
+      );
+      try {
+        final work = AsmrWork.fromJson(const {
+          'id': 42,
+          'title': 'Japanese work',
+          'resources': [
+            {'source': 'japaneseAsmr', 'id': 42, 'code': '', 'pageUrl': ''},
+          ],
+        });
+        final tree = AsmrTrackFile.fromJson({
+          'type': 'folder',
+          'title': 'japaneseasmr.com',
+          'children': [
+            {
+              'type': 'folder',
+              'title': 'Disc 1',
+              'children': [
+                {
+                  'type': 'audio',
+                  'title': '01.mp3',
+                  'size': 3,
+                  'mediaDownloadUrl': 'http://127.0.0.1:${server.port}/01.mp3',
+                },
+              ],
+            },
+          ],
+        });
+        await manager.startDownload(
+          work: work,
+          selectedRoots: [
+            selectSingleFile ? tree.children.single.children.single : tree,
+          ],
+          destinationRoot: root.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+          saveCover: false,
+          customWorkFolderName: '作品 空格',
+        );
+        await _waitForTaskStatus(
+          manager,
+          42,
+          AsmrDownloadTaskStatus.completed,
+          workKey: work.workKey,
+        );
+        final task = manager.getTask(work.workKey)!;
+        expect(task.completedFilePaths, {'Disc 1/01.mp3'});
+        expect(
+          await File(path.join(task.workRootPath, 'Disc 1', '01.mp3'))
+              .readAsBytes(),
+          [1, 2, 3],
+        );
+        expect(
+          await Directory(path.join(task.workRootPath, 'japaneseasmr.com'))
+              .exists(),
+          isFalse,
+        );
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        await root.delete(recursive: true);
+      }
+    });
+  }
+
   test(
     'Windows downloads legal local names while retaining remote paths',
     () async {
@@ -872,6 +949,14 @@ void main() {
     );
     expect(
       asmrMediaRequestHeadersForUrl('https://example.com/track.mp3'),
+      isEmpty,
+    );
+    expect(
+      asmrMediaRequestHeadersForUrl('https://pic.weeabo0.xyz/RJ123456_img_main.jpg'),
+      {'Referer': 'https://japaneseasmr.com/'},
+    );
+    expect(
+      asmrMediaRequestHeadersForUrl('https://pic.weeabo0.xyz.example.com/cover.jpg'),
       isEmpty,
     );
   });

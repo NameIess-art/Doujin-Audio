@@ -3,7 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  ffmpeg_kit_flutter_new_audio
+  ffmpeg_kit_flutter_new_full
   flutter_secure_storage_windows
   media_kit_libs_windows_video
   media_kit_video

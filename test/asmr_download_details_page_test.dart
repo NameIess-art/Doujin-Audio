@@ -47,6 +47,54 @@ void main() {
     },
   );
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'HLS details update unknown-size bytes and chapter progress on $platform',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final language = AppLanguageProvider();
+        final manager = _RecordingDownloadManager();
+        addTearDown(language.dispose);
+        addTearDown(manager.dispose);
+        await language.setLanguage(AppLanguage.en);
+        final initial = _downloadTask().copyWith(
+          totalBytes: 0,
+          downloadedBytes: 0,
+          fileTotalBytes: const {'Track.mp3': 0},
+          fileDownloadedBytes: const {'Track.mp3': 0},
+          fileProgressFractions: const {'Track.mp3': 0},
+        );
+        manager.debugSetCurrentTaskForTesting(initial);
+        await tester.pumpWidget(_downloadStreamApp(language, manager));
+        await tester.pumpAndSettle();
+        manager.debugSetCurrentTaskForTesting(
+          initial.copyWith(
+            downloadedBytes: 2048,
+            fileDownloadedBytes: const {'Track.mp3': 2048},
+            fileProgressFractions: const {'Track.mp3': 0.4},
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(
+          tester
+              .widget<LinearProgressIndicator>(
+                find.byType(LinearProgressIndicator),
+              )
+              .value,
+          0.4,
+        );
+        expect(find.textContaining('2.0 KB /'), findsNWidgets(2));
+        expect(
+          find.textContaining(language.tr('asmr_download_size_unknown')),
+          findsNWidgets(2),
+        );
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
   testWidgets('Japanese ASMR download summary explains M4A fallback', (
     tester,
   ) async {

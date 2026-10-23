@@ -1,5 +1,6 @@
 const Map<String, String> appLanguageJa = {
   'online_audio_library': 'オンライン音声ライブラリ',
+  'asmr_download_size_unknown': 'サイズ不明',
   'online_library_partial_failure': '一部の配信元に接続できません。利用可能な作品を表示しています。再試行してください。',
   'asmr_download_hls_notice':
       'Japanese ASMR の元ファイルが利用できない場合、チャプター音声を M4A で保存します。',

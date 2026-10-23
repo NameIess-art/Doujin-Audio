@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../../../core/media/playback_media_reference.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'asmr_api_service.dart';
 
@@ -12,11 +13,12 @@ String? strongDownloadEntityTag(Object? value) {
 }
 
 Map<String, String> asmrMediaRequestHeadersForUrl(String url) {
-  return AsmrApiService.isOfficialMediaUrl(url)
-      ? const <String, String>{
-          HttpHeaders.acceptLanguageHeader: _asmrMediaAcceptLanguage,
-        }
-      : const <String, String>{};
+  final uri = Uri.tryParse(url);
+  return <String, String>{
+    if (AsmrApiService.isOfficialMediaUrl(url))
+      HttpHeaders.acceptLanguageHeader: _asmrMediaAcceptLanguage,
+    if (uri != null) ...PlaybackMediaReference.requestHeadersForUri(uri),
+  };
 }
 
 bool isValidDownloadContentRange(

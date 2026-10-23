@@ -396,6 +396,51 @@ void main() {
     );
   }
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'online audio disables subtitle selection on $platform',
+      (tester) async {
+        final language = AppLanguageProvider();
+        addTearDown(language.dispose);
+        final service = _SubtitleSelectionService([
+          (sourcePath: 'original.srt', name: 'original.srt'),
+          (sourcePath: 'translation.srt', name: 'translation.srt'),
+        ]);
+        addTearDown(service.dispose);
+        for (final trackPath in [
+          'https://example.com/audio.mp3',
+          'http://example.com/audio.mp3',
+        ]) {
+          await pumpSelectionMenu(
+            tester,
+            service,
+            language,
+            trackPath: trackPath,
+          );
+          final tile = find.byKey(const ValueKey('subtitle_select_tile'));
+          await tester.ensureVisible(tile);
+          final widget = tester.widget<ListTile>(tile);
+          final disabledColor = Theme.of(
+            tester.element(tile),
+          ).colorScheme.onSurface.withValues(alpha: 0.38);
+          expect(widget.enabled, isFalse);
+          expect(widget.onTap, isNull);
+          expect((widget.title! as Text).style!.color, disabledColor);
+          expect((widget.leading! as Icon).color, disabledColor);
+          await tester.tap(tile);
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('subtitle_file_selection')),
+            findsNothing,
+          );
+          expect(service.selected, isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
   testWidgets('subtitle selection is only enabled when work has multiple subtitles', (
     tester,
   ) async {

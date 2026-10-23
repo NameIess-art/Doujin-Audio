@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../domain/asmr_models.dart';
 import '../application/asmr_download_models.dart';
+import '../application/asmr_download_planner.dart';
 import '../application/asmr_download_selection.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
@@ -186,7 +187,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
           lowQualityUrl: null,
           duration: Duration.zero,
           size: 0,
-          children: result.tree,
+          children: const AsmrDownloadPlanner().prepareDownloadTree(
+            currentWork,
+            result.tree,
+          ),
           workId: currentWork.id,
           workKey: currentWork.workKey,
           workTitle: currentWork.title,
@@ -636,6 +640,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                         initialRjCode: widget.initialRjCode,
                         selectedLeafCount: selectedLeafCount,
                         selectedTotalSizeBytes: selectedTotalSizeBytes,
+                        selectedHasUnknownSize:
+                            selection?.selectedHasUnknownSize() ?? false,
 
                         customWorkFolderName: widget.customWorkFolderName,
                       ),

@@ -45,6 +45,7 @@ void main() {
                 'cvs': ['Voice'],
                 'tags': ['sleep'],
                 'pageUrl': 'https://japaneseasmr.com/42/',
+                'mainCoverUrl': 'https://pic.weeabo0.xyz/UN42_img_main.jpg',
                 'publishedAt': '2026-10-20T08:00:00+08:00',
               },
             ],
@@ -63,6 +64,10 @@ void main() {
       expect(work.rjCode, isEmpty);
       expect(work.voiceActors, ['Voice']);
       expect(work.createDate, isNotNull);
+      expect(
+        work.preferredCoverUrl,
+        'https://pic.weeabo0.xyz/UN42_img_main.jpg',
+      );
       expect(work.preferredResource.source, AsmrCatalogSource.japaneseAsmr);
       expect(result.hasMore, isFalse);
     },

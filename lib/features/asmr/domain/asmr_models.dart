@@ -656,7 +656,10 @@ class AsmrTrackFile {
   String get displayTitle =>
       isAudio ? path.basenameWithoutExtension(title) : title;
 
-  AsmrTrackFile withChildren(List<AsmrTrackFile> children) => AsmrTrackFile(
+  AsmrTrackFile withChildren(
+    List<AsmrTrackFile> children, {
+    String? relativePath,
+  }) => AsmrTrackFile(
     hash: hash,
     title: title,
     type: type,
@@ -669,7 +672,7 @@ class AsmrTrackFile {
     workId: workId,
     workTitle: workTitle,
     sourceId: sourceId,
-    relativePath: relativePath,
+    relativePath: relativePath ?? this.relativePath,
     workKey: workKey,
   );
 

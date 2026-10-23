@@ -16,6 +16,7 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
     this.initialRjCode,
     required this.selectedLeafCount,
     required this.selectedTotalSizeBytes,
+    this.selectedHasUnknownSize = false,
     this.customWorkFolderName,
   });
 
@@ -23,6 +24,7 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
   final String? initialRjCode;
   final int selectedLeafCount;
   final int selectedTotalSizeBytes;
+  final bool selectedHasUnknownSize;
   final String? customWorkFolderName;
 
   @override
@@ -123,7 +125,9 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
                 child: Text(
                   i18n.tr('asmr_download_summary_selected', {
                     'count': selectedLeafCount,
-                    'size': formatAsmrDownloadSize(selectedTotalSizeBytes),
+                    'size': selectedHasUnknownSize
+                        ? i18n.tr('asmr_download_size_unknown')
+                        : formatAsmrDownloadSize(selectedTotalSizeBytes),
                   }),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: cs.onSurfaceVariant,

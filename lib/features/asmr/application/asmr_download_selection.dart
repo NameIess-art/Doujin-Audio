@@ -57,6 +57,13 @@ class AsmrDownloadSelectionModel {
     }
   }
 
+  bool selectedHasUnknownSize() {
+    bool visit(AsmrDownloadSelectionNode node) => node.selected
+        ? node.hasUnknownSize
+        : node.indeterminate && node.children.any(visit);
+    return rootNodes.any(visit);
+  }
+
   void clearAll() {
     for (final node in rootNodes) {
       _setSubtree(node, false);
@@ -178,6 +185,9 @@ class AsmrDownloadSelectionNode {
   late final int totalSizeBytes = track.isFolder
       ? children.fold<int>(0, (bytes, child) => bytes + child.totalSizeBytes)
       : track.size;
+  late final bool hasUnknownSize = track.isFolder
+      ? children.any((child) => child.hasUnknownSize)
+      : track.size <= 0;
   AsmrDownloadSelectionNode? parent;
   bool selected;
   bool indeterminate;

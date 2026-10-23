@@ -44,6 +44,25 @@ void main() {
     );
   }
 
+  test('unknown sizes follow selected files and partial folder selection', () {
+    final model = AsmrDownloadSelectionModel([
+      folder('Disc', 'Disc', children: [
+        file('Known', 'Disc/known.mp3'),
+        file('Unknown', 'Disc/unknown.m4a', size: 0),
+      ]),
+    ]);
+    expect(model.rootNodes.single.hasUnknownSize, isTrue);
+    expect(model.selectedHasUnknownSize(), isFalse);
+    model.selectAll();
+    expect(model.selectedHasUnknownSize(), isTrue);
+    expect(model.selectedTotalSizeBytes(), 1024);
+    model.togglePath('Disc/unknown.m4a', false);
+    expect(model.selectedHasUnknownSize(), isFalse);
+    expect(model.selectedLeafCount(), 1);
+    model.clearAll();
+    expect(model.selectedHasUnknownSize(), isFalse);
+  });
+
   test(
     'selecting a folder cascades to descendants and prunes selected roots',
     () {

@@ -661,6 +661,7 @@ class _HlsCacheTransfer extends AsmrHlsAudioTransfer {
     required File output,
     required bool Function() isCancelled,
     void Function(double fraction)? onProgress,
+    void Function(int bytes)? onBytes,
   }) async {
     references.add(reference);
     await output.writeAsBytes(_hlsAudio);

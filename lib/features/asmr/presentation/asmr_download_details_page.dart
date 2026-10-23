@@ -297,7 +297,10 @@ class _AsmrDownloadDetailsPageState
                                 ),
                           ),
                           const SizedBox(height: 8),
-                          _AsmrDownloadDetailsTotals(workId: widget.workId),
+                          _AsmrDownloadDetailsTotals(
+                            workId: widget.workId,
+                            i18n: i18n,
+                          ),
                         ],
                       ),
                     ),
@@ -313,9 +316,10 @@ class _AsmrDownloadDetailsPageState
 }
 
 class _AsmrDownloadDetailsTotals extends ConsumerWidget {
-  const _AsmrDownloadDetailsTotals({required this.workId});
+  const _AsmrDownloadDetailsTotals({required this.workId, required this.i18n});
 
   final String workId;
+  final AppLanguageProvider i18n;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -324,10 +328,12 @@ class _AsmrDownloadDetailsTotals extends ConsumerWidget {
         (task) => (
           total: task?.totalBytes ?? 0,
           downloaded: task?.downloadedBytes ?? 0,
+          unknown: task?.hasUnknownFileSizes ?? false,
         ),
       ),
     );
-    final downloaded = totals.total > 0 && totals.downloaded > totals.total
+    final downloaded =
+        !totals.unknown && totals.total > 0 && totals.downloaded > totals.total
         ? totals.total
         : totals.downloaded;
     final cs = Theme.of(context).colorScheme;
@@ -337,7 +343,7 @@ class _AsmrDownloadDetailsTotals extends ConsumerWidget {
         const SizedBox(width: 6),
         Expanded(
           child: Text(
-            '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadSize(totals.total)}',
+            '${formatAsmrDownloadSize(downloaded)} / ${totals.unknown ? i18n.tr('asmr_download_size_unknown') : formatAsmrDownloadSize(totals.total)}',
             key: const ValueKey<String>('asmr_download_total_bytes'),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: cs.onSurfaceVariant,
@@ -384,6 +390,9 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
               node.title,
           total: total,
           downloaded: downloaded,
+          fraction: completed
+              ? 1.0
+              : task?.fileProgressFractions[node.relativePath],
           retryAttempt: task?.isActive == true && !completed
               ? task?.fileRetryAttempts[node.relativePath]
               : null,
@@ -407,10 +416,9 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
         onRetryFile != null && state.canRetry && !isManualRetrying;
     final cs = Theme.of(context).colorScheme;
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    double progress = 0.0;
-    if (total > 0) {
-      progress = (downloaded / total).clamp(0.0, 1.0);
-    }
+    final progress =
+        state.fraction ??
+        (total > 0 ? (downloaded / total).clamp(0.0, 1.0) : 0.0);
 
     return FileTreeRow(
       title: state.outputName,
@@ -443,7 +451,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
             flex: 2,
             child: Text(
               retryAttempt == null
-                  ? '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadSize(total)}'
+                  ? '${formatAsmrDownloadSize(downloaded)} / ${total <= 0 ? i18n.tr('asmr_download_size_unknown') : formatAsmrDownloadSize(total)}'
                   : i18n.tr('asmr_download_status_retrying', {
                       'attempt': retryAttempt,
                       'max': state.retryMaximum,

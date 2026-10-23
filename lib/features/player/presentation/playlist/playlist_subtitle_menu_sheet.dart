@@ -849,6 +849,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             !(generationBusy && generationJob?.trackPath == trackPath);
         final selectionEnabled =
             trackPath.isNotEmpty &&
+            !PathMatcher.isRemoteUri(trackPath) &&
             !_importing &&
             !_subtitleBusy &&
             !generationBusy &&
@@ -1179,6 +1180,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                             i18n.tr('subtitle_select'),
                             style: theme.textTheme.bodyLarge?.copyWith(
                               fontWeight: FontWeight.w600,
+                              color: selectionEnabled
+                                  ? null
+                                  : cs.onSurface.withValues(alpha: 0.38),
                             ),
                           ),
                           trailing: const Icon(

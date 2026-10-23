@@ -144,7 +144,7 @@ class _AsmrDownloadTaskCardState extends State<AsmrDownloadTaskCard> {
                       ),
                     ),
                     Text(
-                      '${formatAsmrDownloadSize(task.downloadedBytes)} / ${formatAsmrDownloadSize(task.totalBytes)}',
+                      '${formatAsmrDownloadSize(task.downloadedBytes)} / ${task.hasUnknownFileSizes ? i18n.tr('asmr_download_size_unknown') : formatAsmrDownloadSize(task.totalBytes)}',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: cs.onSurfaceVariant,
                         fontWeight: FontWeight.w600,

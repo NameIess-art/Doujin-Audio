@@ -418,6 +418,7 @@ class AsmrDownloadManager {
     final normalizedRetryCount = normalizeAsmrDownloadRetryCount(
       automaticFileRetryCount,
     );
+    selectedRoots = _planner.prepareDownloadTree(work, selectedRoots);
 
     await initialize();
     if (_disposed || _shutdownFuture != null) return;

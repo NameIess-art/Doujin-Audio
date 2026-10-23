@@ -30,7 +30,8 @@ dependencies:
   sqflite: ^2.4.2
   flutter_riverpod: ^3.3.2
   audio_session: ^0.2.4
-  ffmpeg_kit_flutter_new_audio: ^2.5.2
+  # HLS downloads require TLS; full also retains the existing audio codecs.
+  ffmpeg_kit_flutter_new_full: 2.5.2
   crispasr:
     git:
       url: https://github.com/CrispStrobe/CrispASR.git

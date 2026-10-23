@@ -68,6 +68,9 @@ final class AsmrDownloadTaskStore {
       const AsmrDownloadButtonViewState(visible: false, progress: null);
   int _aggregateTotalBytes = 0;
   int _aggregateDownloadedBytes = 0;
+  int _aggregateUnknownSizeTasks = 0;
+  int _aggregateTotalFiles = 0;
+  double _aggregateProgressUnits = 0;
   int _persistedUriReferenceRevision = 0;
   Future<void> _persistenceTail = Future<void>.value();
   Future<void>? _shutdownFuture;
@@ -151,9 +154,16 @@ final class AsmrDownloadTaskStore {
     if (_taskIdsSnapshot.isEmpty) {
       return const AsmrDownloadButtonViewState(visible: false, progress: null);
     }
-    final progress = _aggregateTotalBytes > 0
-        ? (_aggregateDownloadedBytes / _aggregateTotalBytes).clamp(0.0, 1.0)
-        : null;
+    final double? progress;
+    if (_aggregateUnknownSizeTasks > 0) {
+      progress = _aggregateTotalFiles > 0
+          ? (_aggregateProgressUnits / _aggregateTotalFiles).clamp(0.0, 1.0)
+          : null;
+    } else {
+      progress = _aggregateTotalBytes > 0
+          ? (_aggregateDownloadedBytes / _aggregateTotalBytes).clamp(0.0, 1.0)
+          : null;
+    }
     return AsmrDownloadButtonViewState(visible: true, progress: progress);
   }
 
@@ -225,7 +235,9 @@ final class AsmrDownloadTaskStore {
     if (_shutdown) return;
     final task = this[workId];
     if (task == null || chunkLength <= 0) return;
-    final maxBytes = task.totalBytes > 0 ? task.totalBytes : null;
+    final maxBytes = task.totalBytes > 0 && !task.hasUnknownFileSizes
+        ? task.totalBytes
+        : null;
     _liveDownloadedBytes.update(
       workId,
       (value) {
@@ -271,7 +283,8 @@ final class AsmrDownloadTaskStore {
 
   void setLiveDownloadedBytes(String workId, int value) {
     final task = this[workId];
-    final maxBytes = task != null && task.totalBytes > 0
+    final maxBytes =
+        task != null && task.totalBytes > 0 && !task.hasUnknownFileSizes
         ? task.totalBytes
         : null;
     _liveDownloadedBytes[workId] = maxBytes != null && value > maxBytes
@@ -445,12 +458,18 @@ final class AsmrDownloadTaskStore {
     if (!_contributesToAggregate(task)) return;
     _aggregateTotalBytes -= task!.totalBytes;
     _aggregateDownloadedBytes -= task.downloadedBytes;
+    if (task.hasUnknownFileSizes) _aggregateUnknownSizeTasks--;
+    _aggregateTotalFiles -= task.totalFiles;
+    _aggregateProgressUnits -= (task.progress ?? 0) * task.totalFiles;
   }
 
   void _addAggregate(AsmrDownloadTaskSnapshot? task) {
     if (!_contributesToAggregate(task)) return;
     _aggregateTotalBytes += task!.totalBytes;
     _aggregateDownloadedBytes += task.downloadedBytes;
+    if (task.hasUnknownFileSizes) _aggregateUnknownSizeTasks++;
+    _aggregateTotalFiles += task.totalFiles;
+    _aggregateProgressUnits += (task.progress ?? 0) * task.totalFiles;
   }
 
   bool _contributesToAggregate(AsmrDownloadTaskSnapshot? task) =>
@@ -479,7 +498,9 @@ final class AsmrDownloadTaskStore {
         _liveFileDownloadedBytes[workId] ?? task.fileDownloadedBytes,
       );
       final effectiveDownloadedBytes =
-          task.totalBytes > 0 && downloadedBytes > task.totalBytes
+          task.totalBytes > 0 &&
+              !task.hasUnknownFileSizes &&
+              downloadedBytes > task.totalBytes
           ? task.totalBytes
           : downloadedBytes;
       if (task.downloadedBytes == effectiveDownloadedBytes &&

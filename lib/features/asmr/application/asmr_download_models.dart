@@ -39,6 +39,7 @@ class AsmrDownloadTaskSnapshot {
     this.error,
     Map<String, int> fileDownloadedBytes = const {},
     Map<String, int> fileTotalBytes = const {},
+    Map<String, double> fileProgressFractions = const {},
     Map<String, int> fileRetryAttempts = const {},
     Map<String, String> fileEntityTags = const {},
     Map<String, String> actualOutputPaths = const {},
@@ -49,6 +50,7 @@ class AsmrDownloadTaskSnapshot {
   }) : requestedWorkFolderName = requestedWorkFolderName ?? workFolderName,
        fileDownloadedBytes = immutableMap(fileDownloadedBytes),
        fileTotalBytes = immutableMap(fileTotalBytes),
+       fileProgressFractions = immutableMap(fileProgressFractions),
        fileRetryAttempts = immutableMap(fileRetryAttempts),
        fileEntityTags = immutableMap(fileEntityTags),
        actualOutputPaths = immutableMap(actualOutputPaths),
@@ -79,6 +81,8 @@ class AsmrDownloadTaskSnapshot {
   final String? error;
   final Map<String, int> fileDownloadedBytes;
   final Map<String, int> fileTotalBytes;
+  // HLS chapters restart after interruption, so these fractions are not persisted.
+  final Map<String, double> fileProgressFractions;
   final Map<String, int> fileRetryAttempts;
   final Map<String, String> fileEntityTags;
   final Map<String, String> actualOutputPaths;
@@ -108,12 +112,22 @@ class AsmrDownloadTaskSnapshot {
       status == AsmrDownloadTaskStatus.preparing ||
       status == AsmrDownloadTaskStatus.downloading;
 
+  bool get hasUnknownFileSizes =>
+      fileTotalBytes.values.any((size) => size <= 0);
+
   double? get progress {
-    if (totalBytes > 0) {
+    if (totalFiles > 0 && fileProgressFractions.isNotEmpty) {
+      final activeProgress = fileProgressFractions.entries
+          .where((entry) => !completedFilePaths.contains(entry.key))
+          .fold<double>(0, (sum, entry) => sum + entry.value);
+      return ((completedFiles + skippedFiles + activeProgress) / totalFiles)
+          .clamp(0.0, 1.0);
+    }
+    if (totalBytes > 0 && !hasUnknownFileSizes) {
       return (downloadedBytes / totalBytes).clamp(0.0, 1.0);
     }
     if (totalFiles > 0) {
-      return (completedFiles / totalFiles).clamp(0.0, 1.0);
+      return ((completedFiles + skippedFiles) / totalFiles).clamp(0.0, 1.0);
     }
     return null;
   }
@@ -134,6 +148,7 @@ class AsmrDownloadTaskSnapshot {
     String? error,
     Map<String, int>? fileDownloadedBytes,
     Map<String, int>? fileTotalBytes,
+    Map<String, double>? fileProgressFractions,
     Map<String, int>? fileRetryAttempts,
     Map<String, String>? fileEntityTags,
     Map<String, String>? actualOutputPaths,
@@ -165,6 +180,8 @@ class AsmrDownloadTaskSnapshot {
       error: error ?? this.error,
       fileDownloadedBytes: fileDownloadedBytes ?? this.fileDownloadedBytes,
       fileTotalBytes: fileTotalBytes ?? this.fileTotalBytes,
+      fileProgressFractions:
+          fileProgressFractions ?? this.fileProgressFractions,
       fileRetryAttempts: fileRetryAttempts ?? this.fileRetryAttempts,
       fileEntityTags: fileEntityTags ?? this.fileEntityTags,
       actualOutputPaths: actualOutputPaths ?? this.actualOutputPaths,

@@ -11,6 +11,29 @@ import 'asmr_api_service.dart';
 
 class AsmrDownloadPlanner {
   const AsmrDownloadPlanner();
+
+  List<AsmrTrackFile> prepareDownloadTree(
+    AsmrWork work,
+    List<AsmrTrackFile> roots,
+  ) {
+    if (work.resourceFor(AsmrCatalogSource.japaneseAsmr) == null) return roots;
+    const siteFolder = 'japaneseasmr.com';
+    const prefix = '$siteFolder/';
+    List<AsmrTrackFile> prepare(List<AsmrTrackFile> nodes) => [
+      for (final node in nodes)
+        if (node.isFolder && node.relativePath == siteFolder)
+          ...prepare(node.children)
+        else
+          node.withChildren(
+            prepare(node.children),
+            relativePath: node.relativePath.startsWith(prefix)
+                ? node.relativePath.substring(prefix.length)
+                : node.relativePath,
+          ),
+    ];
+    return prepare(roots);
+  }
+
   List<PlannedDownloadFile> collectPlannedFiles(List<AsmrTrackFile> roots) {
     final result = <PlannedDownloadFile>[];
     for (final root in roots) {

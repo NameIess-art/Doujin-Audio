@@ -30,6 +30,7 @@ class AsmrDownloadTaskPage extends ConsumerStatefulWidget {
 
 class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
   Future<void>? _initialization;
+  bool _exitScheduled = false;
 
   @override
   void initState() {
@@ -44,9 +45,32 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
     _initialization?.ignore();
   }
 
+  void _exitWhenEmpty() {
+    if (_exitScheduled || !Navigator.of(context).canPop()) return;
+    _exitScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _exitScheduled = false;
+      if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
+      final manager = ref.read(asmrDownloadManagerProvider);
+      if (manager != null && !manager.persistedUriReferencesReady) return;
+      final taskIds =
+          ref.read(asmrDownloadTaskIdsProvider).value ??
+          manager?.taskIds ??
+          const <String>[];
+      final removals = ref.read(undoableRemovalStateProvider);
+      if (taskIds.any(
+        (id) => !removals.isHidden(_asmrDownloadTaskRemovalKey(id)),
+      )) {
+        return;
+      }
+      unawaited(Navigator.of(context).maybePop());
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
+    final isCurrent = ModalRoute.isCurrentOf(context) ?? true;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
     final listPadding = EdgeInsets.fromLTRB(
@@ -104,6 +128,9 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
                                 ),
                               )
                               .toList(growable: false);
+                      if (taskIds.isEmpty && !recovering && !failed && isCurrent) {
+                        _exitWhenEmpty();
+                      }
                       return taskIds.isEmpty
                           ? Center(
                               child: Text(

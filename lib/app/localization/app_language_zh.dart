@@ -1,5 +1,6 @@
 const Map<String, String> appLanguageZh = {
   'online_audio_library': '在线音频库',
+  'asmr_download_size_unknown': '大小未知',
   'online_library_partial_failure': '部分来源暂时无法连接，已显示可用作品。请重试。',
   'asmr_download_hls_notice': 'Japanese ASMR 原文件不可用时，将保存为 M4A 章节音频。',
   'nav_my': '我的',

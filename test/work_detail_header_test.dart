@@ -1,4 +1,5 @@
 import 'package:doujin_audio/core/widgets/page_translation_scope.dart';
+import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_header.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,101 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  for (final brightness in Brightness.values) {
+    testWidgets(
+      'missing cover hides scrolled content in $brightness',
+      (tester) async {
+        final scroll = ScrollController();
+        addTearDown(scroll.dispose);
+        final capture = GlobalKey();
+        late StateSetter updateBody;
+        var bodyColor = Colors.red;
+        final theme = ThemeData(brightness: brightness);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: theme,
+            home: RepaintBoundary(
+              key: capture,
+              child: Scaffold(
+                body: CustomScrollView(
+                  controller: scroll,
+                  slivers: [
+                    SliverPersistentHeader(
+                      pinned: true,
+                      delegate: WorkDetailHeaderDelegate(
+                        topSafeArea: 24,
+                        coverMaxHeight: 240,
+                        coverMinHeight: 120,
+                        rjBarHeight: 44,
+                        title: 'Title',
+                        rjCode: 'RJ123456',
+                        circleName: 'Circle',
+                        coverWidget: const CoverFallbackArtwork(),
+                        accentColor: theme.colorScheme.primary,
+                        surfaceColor: theme.colorScheme.surface,
+                        onCopyMetadata: (_) {},
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: StatefulBuilder(
+                        builder: (context, setState) {
+                          updateBody = setState;
+                          return SizedBox(
+                            height: 1600,
+                            child: ColoredBox(color: bodyColor),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        scroll.jumpTo(300);
+        await tester.pumpAndSettle();
+        final cover = tester.getRect(
+          find.byKey(const ValueKey('work_detail_cover_bounds')),
+        );
+        Future<List<int>> sample(Offset point) async {
+          return (await tester.runAsync(() async {
+            final boundary = tester.renderObject<RenderRepaintBoundary>(
+              find.byKey(capture),
+            );
+            final image = await boundary.toImage();
+            final bytes = (await image.toByteData())!;
+            final offset = (point.dy.floor() * image.width + point.dx.floor()) * 4;
+            final pixel = bytes.buffer
+                .asUint8List(bytes.offsetInBytes + offset, 4)
+                .toList();
+            image.dispose();
+            return pixel;
+          }))!;
+        }
+        final point = cover.topLeft + const Offset(8, 50);
+        final before = await sample(point);
+        final bodyPoint = Offset(8, cover.bottom + 100);
+        final beforeBody = await sample(bodyPoint);
+        updateBody(() => bodyColor = Colors.green);
+        await tester.pump();
+        expect(await sample(bodyPoint), isNot(beforeBody));
+        expect(
+          await sample(point),
+          before,
+          reason: 'The fallback cover must obscure content painted underneath.',
+        );
+        expect(find.byType(CoverFallbackArtwork), findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   test(
     'header invalidates cached content for geometry and callback changes',
     () {

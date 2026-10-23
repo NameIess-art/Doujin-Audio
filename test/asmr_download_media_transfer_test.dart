@@ -21,16 +21,146 @@ import 'package:path/path.dart' as path;
 const _audio = [0, 0, 0, 24, 102, 116, 121, 112, 77, 52, 65, 32];
 
 void main() {
-  for (final status in [200, 404, 410, 500]) {
+  for (final saf in [false, true]) {
+    test(
+      'Japanese cover sends its Referer and saves the image (SAF=$saf)',
+      () async {
+        final gateway = saf ? _SafGateway() : null;
+        final env = await _Environment.create(gateway: gateway);
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final transport = HttpClient();
+        const image = <int>[0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4];
+        server.listen((request) async {
+          if (request.headers.value(HttpHeaders.refererHeader) !=
+              'https://japaneseasmr.com/') {
+            request.response.statusCode = HttpStatus.forbidden;
+          } else {
+            expect(
+              request.headers.value(HttpHeaders.authorizationHeader),
+              isNull,
+            );
+            request.response.headers.contentType = ContentType('image', 'jpeg');
+            request.response.add(image);
+          }
+          await request.response.close();
+        });
+        try {
+          final service = AsmrDownloadTransferService(
+            store: env.store,
+            outputs: env.outputs,
+            automaticFileRetryDelay: Duration.zero,
+            isDisposed: () => false,
+            isPaused: (_) => false,
+            throwIfCancelled: (_) {},
+          );
+          final result = await service.downloadItem(
+            const PlannedDownloadFile.cover(
+              url: 'https://pic.weeabo0.xyz/RJ123456_img_main.jpg',
+              relativePath: 'cover/cover.cover',
+              coverFileStem: 'cover',
+              maxBytes: 5 * 1024 * 1024,
+            ),
+            workId: env.work.workKey,
+            task: env.task,
+            workRootPath: env.task.workRootPath,
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+            client: _RedirectClient(transport, server.port),
+          );
+          expect(result.saved, isTrue);
+          if (gateway != null) {
+            expect(gateway.relativePath, 'cover/cover.jpg');
+            expect(gateway.bytes, image);
+          } else {
+            expect(
+              await File(
+                path.join(env.task.workRootPath, 'cover', 'cover.jpg'),
+              ).readAsBytes(),
+              image,
+            );
+          }
+          expect(
+            env.store[env.work.workKey]!.coverOutputPath,
+            endsWith('cover.jpg'),
+          );
+        } finally {
+          transport.close(force: true);
+          await server.close(force: true);
+          await env.dispose();
+        }
+      },
+    );
+  }
+
+  test(
+    'download tree removes only the Japanese source wrapper and keeps media',
+    () {
+      const planner = AsmrDownloadPlanner();
+      final work = AsmrWork.fromJson(const {
+        'id': 42,
+        'resources': [
+          {'source': 'japaneseAsmr', 'id': 42, 'code': '', 'pageUrl': ''},
+        ],
+      });
+      final root = AsmrTrackFile.fromJson(const {
+        'type': 'folder',
+        'title': 'japaneseasmr.com',
+        'children': [
+          {
+            'type': 'folder',
+            'title': 'Disc 1',
+            'children': [
+              {
+                'type': 'audio',
+                'title': '01.m4a',
+                'hash': 'chapter-one',
+                'mediaStreamUrl':
+                    'https://media.test/a.m3u8#eara-chapter=0,1000',
+                'mediaDownloadUrl': 'https://media.test/01.m4a',
+              },
+            ],
+          },
+        ],
+      });
+      final original = root.children.single.children.single;
+      final tree = planner.prepareDownloadTree(work, [root]);
+      final file = tree.single.children.single;
+      expect(tree.single.relativePath, 'Disc 1');
+      expect(file.relativePath, 'Disc 1/01.m4a');
+      expect(file.hash, original.hash);
+      expect(file.streamUrl, original.streamUrl);
+      expect(file.downloadUrl, original.downloadUrl);
+      expect(original.relativePath, 'japaneseasmr.com/Disc 1/01.m4a');
+      expect(
+        planner.prepareDownloadTree(work, [original]).single.relativePath,
+        'Disc 1/01.m4a',
+      );
+      expect(
+        planner.prepareDownloadTree(work, tree).single.relativePath,
+        'Disc 1',
+      );
+      final one = AsmrWork.fromJson(const {'id': 42});
+      final oneRoots = [root];
+      expect(planner.prepareDownloadTree(one, oneRoots), same(oneRoots));
+    },
+  );
+
+  for (final status in [200, 403, 404, 410, 500]) {
     test(
       'original resolver classifies HTTP $status without guessing',
       () async {
         final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
         final forwarding = HttpClient();
         server.listen((request) async {
+          expect(request.headers.value('Authorization'), isNull);
+          if (request.uri.path == '/abc') {
+            expect(request.headers.value('HX-Request'), isNull);
+            request.response.statusCode = status;
+            request.response.write('<button hx-get="/abc/download"></button>');
+            await request.response.close();
+            return;
+          }
           expect(request.uri.path, '/abc/download');
           expect(request.headers.value('HX-Request'), 'true');
-          expect(request.headers.value('Authorization'), isNull);
           request.response.statusCode = status;
           if (status == 200) {
             request.response.headers.set(
@@ -66,6 +196,61 @@ void main() {
     );
   }
 
+  for (final direct in [true, false]) {
+    test(
+      'Buzzheavier subdomain resolves ${direct ? "audio" : "page endpoint"}',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final transport = HttpClient();
+        final paths = <String>[];
+        server.listen((request) async {
+          paths.add(request.uri.path);
+          expect(
+            request.headers.value('User-Agent'),
+            japaneseAsmrDownloadUserAgent,
+          );
+          if (request.uri.path == '/d/file') {
+            if (direct) {
+              request.response.headers.contentType = ContentType(
+                'audio',
+                'mp4',
+              );
+              request.response.add(_audio);
+            } else {
+              request.response.write(
+                '<button hx-get="/resolve/file?a=1&amp;b=2">Download</button>',
+              );
+            }
+          } else {
+            expect(request.uri.queryParameters, {'a': '1', 'b': '2'});
+            expect(request.headers.value('HX-Request'), 'true');
+            request.response.headers.set(
+              'HX-Redirect',
+              'https://cdn.test/audio.m4a',
+            );
+          }
+          await request.response.close();
+        });
+        try {
+          final url = await resolveAsmrOriginalUrl(
+            _RedirectClient(transport, server.port),
+            'https://ts.buzzheavier.com/d/file',
+          );
+          expect(
+            url,
+            direct
+                ? 'https://ts.buzzheavier.com/d/file'
+                : 'https://cdn.test/audio.m4a',
+          );
+          expect(paths, direct ? ['/d/file'] : ['/d/file', '/resolve/file']);
+        } finally {
+          transport.close(force: true);
+          await server.close(force: true);
+        }
+      },
+    );
+  }
+
   test('resolver timeout is not evidence of a missing original', () async {
     await expectLater(
       resolveAsmrOriginalUrl(_TimeoutClient(), 'https://buzzheavier.com/abc'),
@@ -73,10 +258,10 @@ void main() {
     );
   });
 
-  for (final status in [200, 404, 410, 500]) {
+  for (final status in [200, 403, 404, 410, 500]) {
     for (final html in status == 200 ? [false, true] : [false]) {
       test(
-        'original transfer $status HTML=$html only falls back on missing',
+        'original transfer $status HTML=$html keeps usable originals or tries HLS',
         () async {
           final env = await _Environment.create();
           final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -98,15 +283,20 @@ void main() {
           );
           try {
             final result = await env.download(reference);
-            final missing = status == 404 || status == 410;
-            expect(env.hls.calls, missing ? 1 : 0);
-            expect(result.saved, missing || (status == 200 && !html));
+            final unavailable = status != 200 || html;
+            expect(env.hls.calls, unavailable ? 1 : 0);
+            expect(result.saved, unavailable || (status == 200 && !html));
             expect(
               env.store[env.work.workKey]!.actualOutputPaths,
-              missing ? {'Folder/01.flac': 'Folder/01.m4a'} : isEmpty,
+              unavailable ? {'Folder/01.flac': 'Folder/01.m4a'} : isEmpty,
             );
             if (result.saved) {
-              final relative = missing ? 'Folder/01.m4a' : 'Folder/01.flac';
+              if (unavailable) {
+                final task = env.store[env.work.workKey]!;
+                expect(task.totalBytes, _audio.length);
+                expect(task.fileTotalBytes['Folder/01.flac'], _audio.length);
+              }
+              final relative = unavailable ? 'Folder/01.m4a' : 'Folder/01.flac';
               expect(
                 await File(
                   path.join(env.task.workRootPath, relative),
@@ -153,6 +343,177 @@ void main() {
           ),
         );
         expect(env.hls.calls, 2);
+      } finally {
+        await env.dispose();
+      }
+    },
+  );
+
+  for (final error in [
+    const SocketException('offline'),
+    const HandshakeException('TLS failed'),
+    TimeoutException('original timed out'),
+  ]) {
+    test(
+      'original ${error.runtimeType} retries before HLS selection',
+      () async {
+        final env = await _Environment.create(retries: 1);
+        final client = _FailingClient(error);
+        try {
+          final result = await env.download(
+            const PlaybackMediaReference(
+              streamUrl: 'https://media.test/audio.m3u8',
+              downloadUrl: 'https://original.test/audio.flac',
+            ),
+            client: client,
+          );
+          expect(result.saved, isTrue);
+          expect(client.calls, 2);
+          expect(env.hls.calls, 1);
+        } finally {
+          await env.dispose();
+        }
+      },
+    );
+  }
+
+  test('local I/O errors and cancellation never switch to HLS', () async {
+    final env = await _Environment.create();
+    const reference = PlaybackMediaReference(
+      streamUrl: 'https://media.test/audio.m3u8',
+      downloadUrl: 'https://original.test/audio.flac',
+    );
+    try {
+      final result = await env.download(
+        reference,
+        client: _FailingClient(const FileSystemException('disk unavailable')),
+      );
+      expect(result.saved, isFalse);
+      expect(env.hls.calls, 0);
+      await expectLater(
+        env.download(
+          reference,
+          client: _FailingClient(const DownloadCancelled()),
+        ),
+        throwsA(isA<DownloadCancelled>()),
+      );
+      expect(env.hls.calls, 0);
+    } finally {
+      await env.dispose();
+    }
+  });
+
+  test('HLS publishes bytes and chapter progress before completion', () async {
+    final env = await _Environment.create();
+    final key = env.work.workKey;
+    env.store[key] = env.task.copyWith(
+      totalFiles: 3,
+      totalBytes: 4,
+      downloadedBytes: 4,
+      completedFiles: 1,
+      completedFilePaths: const {'metadata.json'},
+      fileTotalBytes: const {'metadata.json': 4, 'other.flac': 0},
+      fileDownloadedBytes: const {'metadata.json': 4},
+      fileProgressFractions: const {'other.flac': 0.25},
+    );
+    final updates = <AsmrDownloadTaskSnapshot>[];
+    final subscription = env.store.taskStream(key).listen((task) {
+      if (task != null) updates.add(task);
+    });
+    env.hls.transferring = (progress, bytes) async {
+      bytes!(12);
+      progress!(0.5);
+      env.store.flushPendingProgressNotifications();
+      await Future<void>.delayed(Duration.zero);
+      final live = updates.last;
+      expect(live.status, AsmrDownloadTaskStatus.downloading);
+      expect(live.fileDownloadedBytes['Folder/01.flac'], 12);
+      expect(
+        live.downloadedBytes,
+        16,
+        reason: 'Known sibling size is not a cap.',
+      );
+      expect(live.totalBytes, 4);
+      expect(live.hasUnknownFileSizes, isTrue);
+      expect(live.progress, closeTo(1.75 / 3, 0.0001));
+      expect(env.store.buttonViewState.progress, live.progress);
+      expect(live.completedFilePaths, isNot(contains('Folder/01.flac')));
+    };
+    try {
+      expect(
+        (await env.download(
+          const PlaybackMediaReference(
+            streamUrl: 'https://media.test/audio.m3u8',
+            endMs: 2000,
+          ),
+        )).saved,
+        isTrue,
+      );
+      expect(env.store[key]!.fileTotalBytes['Folder/01.flac'], _audio.length);
+    } finally {
+      await subscription.cancel();
+      await env.dispose();
+    }
+  });
+
+  test('resuming skips a saved HLS chapter without losing its size', () async {
+    final env = await _Environment.create();
+    const reference = PlaybackMediaReference(
+      streamUrl: 'https://media.test/audio.m3u8',
+    );
+    try {
+      final saved = await env.download(reference);
+      final skipped = await env.download(
+        reference,
+        conflictPolicy: AsmrDownloadConflictPolicy.skip,
+      );
+      expect(skipped.skipped, isTrue);
+      expect(skipped.bytesDownloaded, saved.bytesDownloaded);
+      expect(env.hls.calls, 1);
+      expect(
+        env.store[env.work.workKey]!.fileTotalBytes['Folder/01.flac'],
+        _audio.length,
+      );
+      expect(env.store[env.work.workKey]!.hasUnknownFileSizes, isFalse);
+    } finally {
+      await env.dispose();
+    }
+  });
+
+  test(
+    'HLS retry discards partial progress without resetting siblings',
+    () async {
+      final env = await _Environment.create(retries: 1);
+      final key = env.work.workKey;
+      env.store[key] = env.task.copyWith(
+        downloadedBytes: 8,
+        fileDownloadedBytes: const {'other.flac': 8},
+        fileTotalBytes: const {'other.flac': 0},
+        fileProgressFractions: const {'other.flac': 0.25},
+      );
+      env.hls.transferring = (progress, bytes) async {
+        expect(
+          env.store.liveFileDownloadedBytes(key)['Folder/01.flac'] ?? 0,
+          0,
+        );
+        expect(env.store[key]!.fileProgressFractions['Folder/01.flac'], 0);
+        expect(env.store[key]!.fileProgressFractions['other.flac'], 0.25);
+        bytes!(12);
+        progress!(0.5);
+        if (env.hls.calls == 1) throw const HttpException('interrupted');
+      };
+      try {
+        expect(
+          (await env.download(
+            const PlaybackMediaReference(
+              streamUrl: 'https://media.test/audio.m3u8',
+              endMs: 2000,
+            ),
+          )).saved,
+          isTrue,
+        );
+        expect(env.hls.calls, 2);
+        expect(env.store.liveDownloadedBytes(key), 20);
       } finally {
         await env.dispose();
       }
@@ -238,10 +599,14 @@ void main() {
         startProcess: (arguments) async {
           commands.add(arguments);
           if (commands.length == 1) await output.writeAsBytes(_audio);
-          return _Process(0, progress: 'out_time_us=1000000\n');
+          return _Process(
+            0,
+            progress: 'total_size=12\nout_time_us=1000000\nprogress=continue\n',
+          );
         },
       );
       final progress = <double>[];
+      final sizes = <int>[];
       try {
         await transfer.save(
           reference: const PlaybackMediaReference(
@@ -253,6 +618,7 @@ void main() {
           output: output,
           isCancelled: () => false,
           onProgress: progress.add,
+          onBytes: sizes.add,
         );
         final command = commands.first;
         expect(command[command.indexOf('-ss') + 1], '1.500');
@@ -266,6 +632,7 @@ void main() {
         expect(commands, hasLength(2));
         expect(progress, contains(0.5));
         expect(progress.last, 1);
+        expect(sizes, [12, _audio.length]);
       } finally {
         await root.delete(recursive: true);
       }
@@ -415,8 +782,13 @@ class _Environment {
     return _Environment(root, store, outputs, work, task, _HlsTransfer());
   }
 
-  Future<DownloadWriteResult> download(PlaybackMediaReference reference) async {
-    final client = HttpClient();
+  Future<DownloadWriteResult> download(
+    PlaybackMediaReference reference, {
+    HttpClient? client,
+    AsmrDownloadConflictPolicy conflictPolicy =
+        AsmrDownloadConflictPolicy.overwrite,
+  }) async {
+    final transport = client ?? HttpClient();
     try {
       final current = store[work.workKey]!.copyWith(
         selectedRoots: [
@@ -458,11 +830,11 @@ class _Environment {
         workId: work.workKey,
         task: current,
         workRootPath: task.workRootPath,
-        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
-        client: client,
+        conflictPolicy: conflictPolicy,
+        client: transport,
       );
     } finally {
-      client.close(force: true);
+      if (client == null) transport.close(force: true);
     }
   }
 
@@ -475,16 +847,20 @@ class _Environment {
 class _HlsTransfer extends AsmrHlsAudioTransfer {
   int calls = 0;
   Object? failure;
+  Future<void> Function(void Function(double)?, void Function(int)?)?
+  transferring;
   @override
   Future<void> save({
     required PlaybackMediaReference reference,
     required File output,
     required bool Function() isCancelled,
     void Function(double fraction)? onProgress,
+    void Function(int bytes)? onBytes,
   }) async {
     calls++;
     await output.parent.create(recursive: true);
     await output.writeAsBytes(_audio);
+    await transferring?.call(onProgress, onBytes);
     if (failure != null) throw failure!;
   }
 }
@@ -493,6 +869,12 @@ class _SafGateway extends FileCachePlatformGateway {
   String? relativePath;
   String? folder;
   List<int>? bytes;
+  @override
+  Future<String?> ensureFolderPath({
+    required String folder,
+    required String relativePath,
+    required bool overwrite,
+  }) async => relativePath;
   @override
   Future<bool> documentPathExists(String path) async => false;
   @override
@@ -514,8 +896,9 @@ class _RedirectClient implements HttpClient {
   final HttpClient client;
   final int port;
   @override
-  Future<HttpClientRequest> getUrl(Uri uri) =>
-      client.getUrl(Uri.parse('http://127.0.0.1:$port${uri.path}'));
+  Future<HttpClientRequest> getUrl(Uri uri) => client.getUrl(
+    Uri.parse('http://127.0.0.1:$port${uri.path}?${uri.query}'),
+  );
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -524,6 +907,20 @@ class _TimeoutClient implements HttpClient {
   @override
   Future<HttpClientRequest> getUrl(Uri uri) async =>
       throw TimeoutException('offline');
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FailingClient implements HttpClient {
+  _FailingClient(this.error);
+  final Object error;
+  int calls = 0;
+  @override
+  Future<HttpClientRequest> getUrl(Uri uri) async {
+    calls++;
+    throw error;
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

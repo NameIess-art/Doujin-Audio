@@ -134,7 +134,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
   static const double _itemExtent = 48;
   double _heatmapExtent = 0;
   int _heatmapColumnCount = 0;
-  static const int _heatmapRows = 5;
+  static const int _heatmapRows = 7;
   final ScrollController _scrollController = ScrollController();
   ListeningInterval _interval = ListeningInterval.day;
   DateTime? _selected;

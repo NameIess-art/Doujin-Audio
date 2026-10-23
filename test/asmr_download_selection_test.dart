@@ -149,6 +149,56 @@ void main() {
   );
 
   test(
+    'selected leaf counts reuse subtree totals across rebuilds and selection changes',
+    () {
+      var folderReads = 0;
+      final root = _CountingTrackFile(
+        'Root',
+        folder: true,
+        onFolderRead: () => folderReads++,
+        children: [
+          for (var i = 0; i < 2000; i++)
+            _CountingTrackFile(
+              'Root/$i.mp3',
+              onFolderRead: () => folderReads++,
+            ),
+          _CountingTrackFile(
+            'Root/Empty',
+            folder: true,
+            onFolderRead: () => folderReads++,
+          ),
+        ],
+      );
+      final model = AsmrDownloadSelectionModel([root])..selectAll();
+
+      expect(model.selectedLeafCount(), 2000);
+      final initialReads = folderReads;
+      expect(initialReads, greaterThanOrEqualTo(2001));
+      expect(model.selectedLeafCount(), 2000);
+      expect(folderReads, initialReads);
+
+      model.togglePath('Root/0.mp3', false);
+      expect(model.stateForPath('Root'), isNull);
+      expect(model.selectedLeafCount(), 1999);
+      expect(folderReads, initialReads);
+      model.togglePath('Root/0.mp3', null);
+      expect(model.stateForPath('Root'), isTrue);
+      expect(model.selectedLeafCount(), 2000);
+      expect(folderReads, initialReads);
+
+      model.clearAll();
+      expect(model.selectedLeafCount(), 0);
+      model.togglePath('Root/Empty', true);
+      expect(model.selectedLeafCount(), 0);
+      model.togglePath('Root/0.mp3', true);
+      expect(model.selectedLeafCount(), 1);
+      model.selectAll();
+      expect(model.selectedLeafCount(), 2000);
+      expect(folderReads, initialReads);
+    },
+  );
+
+  test(
     'selecting a leaf selects its direct parent and keeps higher ancestors indeterminate',
     () {
       final tree = <AsmrTrackFile>[
@@ -181,4 +231,34 @@ void main() {
       );
     },
   );
+}
+
+class _CountingTrackFile extends AsmrTrackFile {
+  _CountingTrackFile(
+    String path, {
+    bool folder = false,
+    super.children = const [],
+    required this.onFolderRead,
+  }) : super(
+         hash: path,
+         title: path,
+         type: folder ? 'folder' : 'audio',
+         streamUrl: null,
+         downloadUrl: null,
+         lowQualityUrl: null,
+         duration: Duration.zero,
+         size: 0,
+         workId: 1,
+         workTitle: 'Work',
+         sourceId: 'RJ000000',
+         relativePath: path,
+       );
+
+  final void Function() onFolderRead;
+
+  @override
+  bool get isFolder {
+    onFolderRead();
+    return super.isFolder;
+  }
 }

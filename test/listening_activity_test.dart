@@ -149,6 +149,150 @@ void main() {
   );
 
   test(
+    'unchanged polling retains its snapshot and explicit refresh observes deletions',
+    () async {
+      final counted = _CountingRepository(repository);
+      var pending = <PlaybackUsageBatch>[];
+      final service = ListeningActivityService(
+        repository: counted,
+        readUsage: () async => pending,
+        acknowledgeUsage: (_) async {
+          pending = [];
+        },
+        resolveTrack: (_) => _track(),
+        recordInterests: ({required batchId, required contributions}) async {},
+      );
+      addTearDown(service.dispose);
+      final snapshots = <ListeningActivityView>[];
+      final subscription = service.states.listen(snapshots.add);
+      addTearDown(subscription.cancel);
+      await service.refresh(forceReload: false);
+      final initial = await service.states.first;
+      await service.refresh(forceReload: false);
+      await service.refresh(forceReload: false);
+      await Future<void>.delayed(Duration.zero);
+      expect(counted.dayReads, 1);
+      expect(counted.historyReads, 1);
+      expect(snapshots, hasLength(1));
+      expect(snapshots.single, same(initial));
+
+      pending = [_batch('new', 5000)];
+      await service.refresh(forceReload: false);
+      expect(
+        (await service.states.first).days.single.duration.inMilliseconds,
+        5000,
+      );
+      expect(counted.dayReads, 2);
+      expect(counted.historyReads, 2);
+      // A repeated durable batch still needs acknowledgement but not a reload.
+      pending = [_batch('new', 5000)];
+      await service.refresh(forceReload: false);
+      expect(pending, isEmpty);
+      expect(counted.dayReads, 2);
+      await db.delete('listening_days');
+      await db.delete('listening_history');
+      await service.refresh();
+      expect((await service.states.first).days, isEmpty);
+      expect((await service.states.first).history, isEmpty);
+      expect(counted.dayReads, 3);
+    },
+  );
+
+  test(
+    'idle polling refreshes the chart date window once after local midnight',
+    () async {
+      final counted = _CountingRepository(repository);
+      var now = DateTime(2026, 10, 23, 23, 59);
+      final service = ListeningActivityService(
+        repository: counted,
+        readUsage: () async => [],
+        acknowledgeUsage: (_) async {},
+        resolveTrack: (_) => null,
+        recordInterests: ({required batchId, required contributions}) async {},
+        now: () => now,
+      );
+      addTearDown(service.dispose);
+      await service.refresh(forceReload: false);
+      final previous = await service.states.first;
+      now = DateTime(2026, 10, 24);
+      await service.refresh(forceReload: false);
+      final current = await service.states.first;
+      expect(current, isNot(same(previous)));
+      expect(counted.dayReads, 2);
+      await service.refresh(forceReload: false);
+      expect(await service.states.first, same(current));
+      expect(counted.dayReads, 2);
+    },
+  );
+
+  test(
+    'failed reload retries after the imported batch has been acknowledged',
+    () async {
+      final counted = _CountingRepository(repository);
+      var pending = <PlaybackUsageBatch>[];
+      final service = ListeningActivityService(
+        repository: counted,
+        readUsage: () async => pending,
+        acknowledgeUsage: (_) async {
+          pending = [];
+        },
+        resolveTrack: (_) => _track(),
+        recordInterests: ({required batchId, required contributions}) async {},
+      );
+      addTearDown(service.dispose);
+      final subscription = service.states.listen(
+        (_) {},
+        onError: (Object _) {},
+      );
+      addTearDown(subscription.cancel);
+      await service.refresh(forceReload: false);
+      pending = [_batch('reload-retry', 5000)];
+      counted.failHistoryRead = true;
+      await expectLater(service.refresh(forceReload: false), throwsStateError);
+      expect(pending, isEmpty);
+      counted.failHistoryRead = false;
+      await service.refresh(forceReload: false);
+      expect(
+        (await service.states.first).days.single.duration.inMilliseconds,
+        5000,
+      );
+      expect(counted.historyReads, 3);
+      await service.refresh(forceReload: false);
+      expect(counted.historyReads, 3);
+    },
+  );
+
+  test(
+    'seed and paging reload even after an unchanged polling snapshot',
+    () async {
+      final counted = _CountingRepository(repository);
+      final service = ListeningActivityService(
+        repository: counted,
+        readUsage: () async => [],
+        acknowledgeUsage: (_) async {},
+        resolveTrack: (_) => null,
+        recordInterests: ({required batchId, required contributions}) async {},
+      );
+      addTearDown(service.dispose);
+      await service.refresh(forceReload: false);
+      await service.seedHistory([
+        for (var i = 0; i < 41; i++)
+          ListeningHistoryEntry(workKey: 'seed:$i', track: _track()),
+      ]);
+      final first = await service.states.first;
+      expect(first.history, hasLength(40));
+      expect(first.hasMoreHistory, isTrue);
+      await service.loadMoreHistory();
+      final expanded = await service.states.first;
+      expect(expanded.history, hasLength(41));
+      expect(expanded.hasMoreHistory, isFalse);
+      await service.refresh(forceReload: false);
+      expect(await service.states.first, same(expanded));
+      expect(counted.historyReads, 3);
+    },
+  );
+
+  test(
     'real version 13 backup without listening tables validates and migrates',
     () async {
       final directory = await Directory.systemTemp.createTemp(
@@ -166,6 +310,43 @@ void main() {
       ]) {
         await old.execute('DROP TABLE $table');
       }
+      // v15 changed ASMR identity columns. Restore the actual v13 layout,
+      // rather than only relabelling a current schema as an older backup.
+      for (final table in [
+        'asmr_works',
+        'asmr_work_lists',
+        'asmr_work_tags',
+        'asmr_work_voice_actors',
+      ]) {
+        var sql =
+            (await old.rawQuery(
+                  'SELECT sql FROM sqlite_master WHERE name = ?',
+                  [table],
+                )).single['sql']!
+                as String;
+        if (table == 'asmr_works') {
+          sql = sql
+              .replaceFirst('work_key TEXT PRIMARY KEY,', '')
+              .replaceFirst('resources_json TEXT,', '')
+              .replaceFirst('id INTEGER NOT NULL,', 'id INTEGER PRIMARY KEY,');
+        } else {
+          sql = sql.replaceFirst(
+            'work_id TEXT NOT NULL',
+            'work_id INTEGER NOT NULL',
+          );
+        }
+        await old.execute('DROP TABLE $table');
+        await old.execute(sql);
+      }
+      await old.insert('asmr_works', {
+        'id': 7,
+        'title': 'Retained work',
+        'source_id': 'RJ000007',
+      });
+      await old.insert('asmr_work_lists', {
+        'list_type': 'favorites',
+        'work_id': 7,
+      });
       await old.execute('PRAGMA user_version = 13');
       await old.close();
       expect(
@@ -178,9 +359,17 @@ void main() {
           (await migrated.rawQuery(
             'PRAGMA user_version',
           )).single['user_version'],
-          14,
+          AppDatabase.schemaVersion,
         );
         expect(await migrated.query('listening_history'), isEmpty);
+        expect(
+          (await migrated.query('asmr_works')).single['title'],
+          'Retained work',
+        );
+        expect(
+          (await migrated.query('asmr_work_lists')).single['work_id'],
+          'code:RJ000007',
+        );
       } finally {
         await migrated.close();
       }
@@ -285,6 +474,7 @@ void main() {
     'failed interest import retries batch without duplicating duration or early acknowledgement',
     () async {
       var failInterests = true;
+      var hasUsage = false;
       var interestAttempts = 0;
       final acknowledged = <String>[];
       const batch = PlaybackUsageBatch(
@@ -306,7 +496,7 @@ void main() {
       );
       final service = ListeningActivityService(
         repository: repository,
-        readUsage: () async => acknowledged.isEmpty ? [batch] : [],
+        readUsage: () async => hasUsage && acknowledged.isEmpty ? [batch] : [],
         acknowledgeUsage: (ids) async => acknowledged.addAll(ids),
         resolveTrack: (_) => _track(),
         recordInterests: ({required batchId, required contributions}) async {
@@ -316,14 +506,20 @@ void main() {
         },
       );
       addTearDown(service.dispose);
-      await expectLater(service.refresh(), throwsStateError);
+      await service.refresh(forceReload: false);
+      hasUsage = true;
+      await expectLater(service.refresh(forceReload: false), throwsStateError);
       expect(acknowledged, isEmpty);
       failInterests = false;
-      await service.refresh();
+      await service.refresh(forceReload: false);
       expect(interestAttempts, 2);
       expect(acknowledged, [batch.id]);
       expect(
         (await repository.loadDays()).single.duration,
+        const Duration(minutes: 1),
+      );
+      expect(
+        (await service.states.first).days.single.duration,
         const Duration(minutes: 1),
       );
     },
@@ -333,6 +529,7 @@ void main() {
     'acknowledgement failure retries metadata and imports without double counting',
     () async {
       var failAck = true;
+      var hasUsage = false;
       const batch = PlaybackUsageBatch(
         id: 'windows:epoch:1',
         days: [
@@ -352,7 +549,7 @@ void main() {
       );
       final service = ListeningActivityService(
         repository: repository,
-        readUsage: () async => [batch],
+        readUsage: () async => hasUsage ? [batch] : [],
         acknowledgeUsage: (_) async {
           if (failAck) throw StateError('ack failed');
         },
@@ -360,11 +557,17 @@ void main() {
         recordInterests: ({required batchId, required contributions}) async {},
       );
       addTearDown(service.dispose);
-      await expectLater(service.refresh(), throwsStateError);
+      await service.refresh(forceReload: false);
+      hasUsage = true;
+      await expectLater(service.refresh(forceReload: false), throwsStateError);
       failAck = false;
-      await service.refresh();
+      await service.refresh(forceReload: false);
       expect(
         (await repository.loadDays()).single.duration.inMilliseconds,
+        5000,
+      );
+      expect(
+        (await service.states.first).days.single.duration.inMilliseconds,
         5000,
       );
     },
@@ -380,6 +583,61 @@ MusicTrack _track() => MusicTrack(
   isSingle: false,
   tags: ['ASMR'],
 );
+
+PlaybackUsageBatch _batch(String id, int milliseconds) => PlaybackUsageBatch(
+  id: id,
+  days: [
+    PlaybackUsageDay(
+      date: '2026-10-23',
+      totalMs: milliseconds,
+      works: [
+        PlaybackUsageWork(
+          key: 'work',
+          milliseconds: milliseconds,
+          lastPlayedAtMs: 1000,
+          path: '/work/1.mp3',
+        ),
+      ],
+    ),
+  ],
+);
+
+final class _CountingRepository implements ListeningActivityRepository {
+  _CountingRepository(this.delegate);
+  final ListeningActivityRepository delegate;
+  int dayReads = 0;
+  int historyReads = 0;
+  bool failHistoryRead = false;
+
+  @override
+  Future<bool> importBatch(
+    String batchId,
+    List<ListeningDayContribution> days,
+  ) => delegate.importBatch(batchId, days);
+
+  @override
+  Future<List<ListeningDay>> loadDays() {
+    dayReads++;
+    return delegate.loadDays();
+  }
+
+  @override
+  Future<List<ListeningHistoryEntry>> loadHistory({
+    int offset = 0,
+    int limit = 40,
+  }) async {
+    historyReads++;
+    if (failHistoryRead) throw StateError('history read failed');
+    return delegate.loadHistory(offset: offset, limit: limit);
+  }
+
+  @override
+  Future<MusicTrack?> findTrack(String workKey) => delegate.findTrack(workKey);
+
+  @override
+  Future<void> seedHistory(List<ListeningHistoryEntry> entries) =>
+      delegate.seedHistory(entries);
+}
 
 ListeningDayContribution _day(int milliseconds) => ListeningDayContribution(
   date: '2026-10-23',

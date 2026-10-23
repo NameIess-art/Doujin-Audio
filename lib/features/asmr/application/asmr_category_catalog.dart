@@ -36,6 +36,7 @@ final class _CategoryState {
   bool isLoadingMore = false;
   int page = 1;
   int? totalCount;
+  bool hasCombinedTotalCount = false;
   bool hasMore = false;
   bool needsLoadMoreRetry = false;
   bool preferencesStale = false;
@@ -197,6 +198,7 @@ final class AsmrCategoryCatalog {
       totalCount: isRemote(category)
           ? state.totalCount ?? works.length
           : works.length,
+      hasCombinedTotalCount: state.hasCombinedTotalCount,
       activeQuery: state.query ?? normalizeSearchQuery(searchQuery),
       lastError: state.error,
       operationError: state.error,
@@ -491,6 +493,7 @@ final class AsmrCategoryCatalog {
   ) async {
     if (key.category == AsmrCategoryType.recommendation) {
       AsmrPartialCatalogException? partialError;
+      int? sourceTotalCount;
       final ranked = await _remoteCatalogService.loadRecommendations(
         searchQuery: key.query,
         language: context.language,
@@ -500,6 +503,7 @@ final class AsmrCategoryCatalog {
         refreshSeed: serial,
         cancellationToken: cancellationToken,
         onPartialError: (error) => partialError = error,
+        onSourceTotalCount: (count) => sourceTotalCount = count,
       );
       return AsmrMergedWorkPage(
         works: ranked,
@@ -507,6 +511,7 @@ final class AsmrCategoryCatalog {
         pageSize: ranked.length,
         hasMore: false,
         partialError: partialError,
+        sourceTotalCount: sourceTotalCount,
       );
     }
     return _remoteCatalogService.loadPage(
@@ -743,7 +748,11 @@ final class AsmrCategoryCatalog {
   ) {
     state.query = query;
     state.page = result.currentPage;
-    state.totalCount = result is AsmrMergedWorkPage ? null : result.totalCount;
+    state.totalCount = result is AsmrMergedWorkPage
+        ? result.sourceTotalCount
+        : result.totalCount;
+    state.hasCombinedTotalCount =
+        result is AsmrMergedWorkPage && result.sourceTotalCount != null;
     state.hasMore =
         result.hasMore &&
         (result is AsmrMergedWorkPage ||

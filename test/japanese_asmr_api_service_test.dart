@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_category_catalog.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_remote_catalog_service.dart';
 import 'package:doujin_audio/features/asmr/application/japanese_asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
@@ -149,6 +150,8 @@ void main() {
       final second = await _page(catalog, 2, cursor);
       expect(first.works, hasLength(40));
       expect(second.works, hasLength(40));
+      expect(first.totalCount, 80);
+      expect(second.totalCount, 80);
       expect(first.works.first.id, second.works.first.id);
       expect(first.works.first.workKey, isNot(second.works.first.workKey));
       expect(jp.calls, [1]);
@@ -167,6 +170,7 @@ void main() {
       });
       final page = await _page(_catalog(one, jp), 1, AsmrCatalogCursor());
       expect(page.works, hasLength(1));
+      expect(page.totalCount, 2);
       expect(page.works.single.resources, hasLength(2));
       expect(
         page.works.single.preferredResource.source,
@@ -190,10 +194,54 @@ void main() {
       expect(first.works, hasLength(1));
       expect(first.partialError?.sources, [AsmrCatalogSource.japaneseAsmr]);
       expect(first.hasMore, isTrue);
+      expect(first.sourceTotalCount, isNull);
       jp.failure = false;
       final second = await _page(catalog, 2, cursor);
       expect(second.works.single.workCode, 'RJ000002');
+      expect((second as AsmrMergedWorkPage).sourceTotalCount, 2);
       expect(jp.calls, [1, 1]);
+    },
+  );
+
+  test(
+    'category publishes source totals without extending deduplicated paging',
+    () async {
+      final service = _catalog(
+        _OneApi({
+          1: [for (var i = 1; i <= 40; i++) _work(i)],
+        }),
+        _JapaneseApi({
+          1: [for (var i = 1; i <= 40; i++) _work(i, japanese: true)],
+        }),
+      );
+      const context = (
+        authEpoch: 0,
+        token: null,
+        contentEpoch: 0,
+        language: AsmrContentLanguage.zh,
+        scope: 'combined-totals',
+      );
+      final catalog = AsmrCategoryCatalog(
+        remoteCatalogService: service,
+        onChanged: () {},
+        isContextCurrent: (_) => true,
+        currentContext: () => context,
+        localWorks: (_) => const [],
+        favoriteIds: () => const {},
+      );
+      for (final category in [
+        AsmrCategoryType.collected,
+        AsmrCategoryType.release,
+        AsmrCategoryType.recommendation,
+      ]) {
+        await catalog.refresh(category, searchQuery: '', context: context);
+        final state = catalog.viewState(category);
+        expect(state.totalCount, 80, reason: category.name);
+        expect(state.hasCombinedTotalCount, isTrue);
+        expect(state.works, hasLength(40));
+        expect(state.hasMore, isFalse);
+        expect(catalog.totalCount(category), 80);
+      }
     },
   );
 

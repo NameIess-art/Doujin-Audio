@@ -148,7 +148,7 @@ void main() {
 
   for (final width in [280.0, 720.0]) {
     testWidgets(
-      'heatmap fills five rows and anchors latest at bottom right at width $width',
+      'heatmap fills seven rows and anchors latest at bottom right at width $width',
       (tester) async {
         await pumpChart(
           tester,
@@ -171,7 +171,7 @@ void main() {
           );
           final last = tester.getRect(find.byKey(ValueKey(latest.start)));
           expect(last.width, greaterThan(18));
-          expect(last.width, last.height);
+          expect(last.width, closeTo(last.height, 0.001));
           expect(last.right, closeTo(bounds.right, 0.1));
           expect(last.bottom, closeTo(bounds.bottom, 0.1));
           final cells = find.descendant(
@@ -185,7 +185,7 @@ void main() {
                   .toSet()
                   .toList()
                 ..sort();
-          expect(rows, hasLength(5));
+          expect(rows, hasLength(7));
           expect(rows.first, closeTo(bounds.top, 0.1));
           final starts =
               cells
@@ -232,7 +232,10 @@ void main() {
           final date = DateTime(today.year, today.month, today.day - i);
           expect(
             tester.getTopLeft(find.byKey(ValueKey(date))),
-            origin + Offset(-extent * (i ~/ 5), -(size + 3) * (i % 5)),
+            within<Offset>(
+              from: origin + Offset(-extent * (i ~/ 7), -(size + 3) * (i % 7)),
+              distance: 0.001,
+            ),
           );
         }
         final column = find
@@ -240,7 +243,7 @@ void main() {
             .first;
         expect(
           find.descendant(of: column, matching: find.byType(InkWell)),
-          findsNWidgets(5),
+          findsNWidgets(7),
         );
         final older = DateTime(first.year, first.month, first.day - 1);
         await tester.tap(find.byKey(ValueKey(older)));
@@ -348,7 +351,7 @@ void main() {
       );
       final latest = tester.getRect(find.byKey(ValueKey(today)));
       expect(latest.bottomRight, bounds.bottomRight);
-      expect(latest.width, greaterThan(30));
+      expect(latest.width, closeTo((bounds.height - 3 * 6) / 7, 0.001));
       expect(tester.takeException(), isNull);
     },
   );

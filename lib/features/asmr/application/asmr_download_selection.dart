@@ -112,7 +112,7 @@ class AsmrDownloadSelectionModel {
 
   int _countSelectedLeaves(AsmrDownloadSelectionNode node) {
     if (node.selected) {
-      return node.track.isFolder ? _countAllLeaves(node) : 1;
+      return node.totalLeafCount;
     }
     if (!node.indeterminate) {
       return 0;
@@ -120,17 +120,6 @@ class AsmrDownloadSelectionModel {
     var count = 0;
     for (final child in node.children) {
       count += _countSelectedLeaves(child);
-    }
-    return count;
-  }
-
-  int _countAllLeaves(AsmrDownloadSelectionNode node) {
-    if (node.children.isEmpty) {
-      return node.track.isFolder ? 0 : 1;
-    }
-    var count = 0;
-    for (final child in node.children) {
-      count += _countAllLeaves(child);
     }
     return count;
   }
@@ -183,6 +172,9 @@ class AsmrDownloadSelectionNode {
   final AsmrTrackFile track;
   final List<AsmrDownloadSelectionNode> _children;
   late final List<AsmrDownloadSelectionNode> children;
+  late final int totalLeafCount = track.isFolder
+      ? children.fold<int>(0, (count, child) => count + child.totalLeafCount)
+      : 1;
   late final int totalSizeBytes = track.isFolder
       ? children.fold<int>(0, (bytes, child) => bytes + child.totalSizeBytes)
       : track.size;

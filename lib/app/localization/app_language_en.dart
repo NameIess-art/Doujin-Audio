@@ -96,6 +96,8 @@ const Map<String, String> appLanguageEn = {
   'pinned_to_top': 'Pinned',
   'settings': 'Settings',
   'asmr_header_stats': '{count} works',
+  'asmr_header_stats_combined': '{count} works',
+  'asmr_header_stats_loaded': '{count} works loaded',
   'library_header_stats': '{works} works  {sessions} sessions',
   'playlist_header_stats': '{sessions} sessions  {playing} playing',
   'import_audio': 'Add audio',

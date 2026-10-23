@@ -89,6 +89,8 @@ const Map<String, String> appLanguageJa = {
   'pinned_to_top': '固定中',
   'settings': '設定',
   'asmr_header_stats': '{count}作品',
+  'asmr_header_stats_combined': '{count}作品',
+  'asmr_header_stats_loaded': '{count}作品を読み込み済み',
   'library_header_stats': '{works} 作品  {sessions} セッション',
   'playlist_header_stats': '{sessions} セッション  {playing} 再生中',
   'import_audio': '音声を追加',

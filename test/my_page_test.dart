@@ -583,9 +583,8 @@ void main() {
           tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
           isFalse,
         );
-        await tester.tap(
-          find.textContaining(fixture.languageProvider.tr('undo')),
-        );
+        expect(controller.state.weights['local:sleep'], 200);
+        await tester.tap(find.byType(CheckboxListTile));
         await tester.pumpAndSettle();
         expect(
           tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,

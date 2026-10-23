@@ -1310,6 +1310,72 @@ void registerAsmrControllerStateTests({
     expect(work.tags, <String>['English tag']);
   });
 
+  test('ASMR mapping serializes shared work metadata once', () {
+    final work = _IsolateReportingWork();
+    final tracks = flattenAsmrPlayableTracks(work, [
+      for (var i = 0; i < 2000; i++) _trackFile('track$i.mp3', 'track$i.mp3'),
+    ]);
+    expect(work.serializations, 1);
+    expect(tracks, hasLength(2000));
+    expect(tracks.first.remoteMetadata?['trackRelativePath'], 'track0.mp3');
+    expect(tracks.last.remoteMetadata?['trackRelativePath'], 'track1999.mp3');
+    expect(
+      () => tracks.first.remoteMetadata!['title'] = 'changed',
+      throwsUnsupportedError,
+    );
+    expect(tracks.last.remoteMetadata?['title'], work.title);
+  });
+
+  test(
+    'ASMR cold playable mapping runs off the caller isolate and shares concurrent results',
+    () async {
+      await resetPrefs();
+      final work = _IsolateReportingWork();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: _FakeAsmrApiService(
+          trackTree: [
+            _trackFile('track1.mp3', 'track1.mp3'),
+            _trackFile('track2.mp3', 'track2.mp3'),
+          ],
+        ),
+        persistenceRepository: persistenceRepository(),
+      );
+      final results = await Future.wait([
+        controller.loadPlayableTracks(work),
+        controller.loadPlayableTracks(work),
+      ]);
+      expect(results.first, same(results.last));
+      expect(results.first, hasLength(2));
+      expect(
+        results.first.first.remoteMetadata?['mappingIsolate'],
+        isNot(Isolate.current.debugName),
+      );
+      expect(work.serializations, 0);
+      expect(await controller.loadPlayableTracks(work), same(results.first));
+      await controller.ensureTrackTree(work, forceRefresh: true);
+      expect(
+        await controller.loadPlayableTracks(work),
+        isNot(same(results.first)),
+      );
+    },
+  );
+
+  test('ASMR playable loading rejects a disposed owner', () async {
+    await resetPrefs();
+    final controller = createTestAsmrController(
+      preferencesStore: preferences,
+      apiService: _FakeAsmrApiService(),
+      persistenceRepository: persistenceRepository(),
+    );
+    await controller.initializeForVisiblePage();
+    controller.dispose();
+    await expectLater(
+      controller.loadPlayableTracks(_work(id: 1, title: 'Work')),
+      throwsStateError,
+    );
+  });
+
   test('ASMR single-track playback keeps the complete work tree', () async {
     await resetPrefs();
     final first = _trackFile(

@@ -13,10 +13,12 @@ class AsmrCatalogCursor {
     for (final source in AsmrCatalogSource.values) source: [],
   };
   Map<String, AsmrWork> _emitted = {};
+  Map<AsmrCatalogSource, int> _totals = {};
 
   AsmrCatalogCursor _copy() => AsmrCatalogCursor()
     .._pages = Map.of(_pages)
     .._more = Map.of(_more)
+    .._totals = Map.of(_totals)
     .._pending = {
       for (final entry in _pending.entries) entry.key: List.of(entry.value),
     }
@@ -25,6 +27,7 @@ class AsmrCatalogCursor {
   void _commit(AsmrCatalogCursor next) {
     _pages = next._pages;
     _more = next._more;
+    _totals = next._totals;
     _pending = next._pending;
     _emitted = next._emitted;
   }
@@ -42,13 +45,16 @@ class AsmrMergedWorkPage extends AsmrWorkPage {
     required super.currentPage,
     required super.pageSize,
     required bool hasMore,
+    this.sourceTotalCount,
     this.partialError,
     List<AsmrWork> resourceUpdates = const [],
   }) : _hasMore = hasMore,
        resourceUpdates = List.unmodifiable(resourceUpdates),
-       super(totalCount: works.length);
+       super(totalCount: sourceTotalCount ?? works.length);
 
   final bool _hasMore;
+  // Source totals include overlapping works; pagination uses source cursors.
+  final int? sourceTotalCount;
   final AsmrPartialCatalogException? partialError;
   final List<AsmrWork> resourceUpdates;
   @override
@@ -114,6 +120,7 @@ extension on AsmrRemoteCatalogService {
             successfulSources++;
             next._pages[source] = sourcePage + 1;
             next._more[source] = loaded.hasMore;
+            next._totals[source] = loaded.totalCount;
             for (final work in loaded.works) {
               final previous = next._emitted[work.workKey];
               if (previous != null) {
@@ -186,6 +193,9 @@ extension on AsmrRemoteCatalogService {
       currentPage: page,
       pageSize: pageSize,
       hasMore: hasMore,
+      sourceTotalCount: next._totals.length == AsmrCatalogSource.values.length
+          ? next._totals.values.fold<int>(0, (sum, count) => sum + count)
+          : null,
       resourceUpdates: updates.values.toList(growable: false),
       partialError: failures.isEmpty
           ? null

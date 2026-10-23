@@ -27,6 +27,11 @@ final class AsmrWorkContentStore {
       LinkedHashMap();
   final Map<String, ({AsmrWork work, List<MusicTrack> tracks})>
   _playableTrackCache = {};
+  final Map<
+    (AsmrWorkRequestKey, AsmrWork, List<AsmrTrackFile>),
+    Future<List<MusicTrack>>
+  >
+  _playableTrackTasks = {};
   final Set<String> _loadingTrackWorkIds = <String>{};
   final Map<String, Object> _trackTreeErrors = <String, Object>{};
   final Map<
@@ -53,11 +58,31 @@ final class AsmrWorkContentStore {
     return frozen;
   }
 
+  Future<List<MusicTrack>> requestPlayableTracks(
+    AsmrWorkRequestKey key,
+    AsmrWork work,
+    List<AsmrTrackFile> tree,
+    Future<List<MusicTrack>> Function() load,
+  ) {
+    final request = (key, work, tree);
+    final existing = _playableTrackTasks[request];
+    if (existing != null) return existing;
+    late final Future<List<MusicTrack>> task;
+    task = load().whenComplete(() {
+      if (identical(_playableTrackTasks[request], task)) {
+        _playableTrackTasks.remove(request);
+      }
+    });
+    _playableTrackTasks[request] = task;
+    return task;
+  }
+
   void clearCaches({bool clearErrors = false}) {
     cancelRequests();
     _trackCache.clear();
     _visibleTrackCache.clear();
     _playableTrackCache.clear();
+    _playableTrackTasks.clear();
     if (clearErrors) _trackTreeErrors.clear();
   }
 

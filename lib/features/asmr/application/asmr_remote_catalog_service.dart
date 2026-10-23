@@ -138,6 +138,7 @@ class AsmrRemoteCatalogService {
     required int refreshSeed,
     AsmrRequestCancellationToken? cancellationToken,
     void Function(AsmrPartialCatalogException?)? onPartialError,
+    void Function(int?)? onSourceTotalCount,
   }) async {
     cancellationToken?.throwIfCancelled();
     final localTracksFuture = _loadLocalTracks();
@@ -158,9 +159,14 @@ class AsmrRemoteCatalogService {
     final firstPageIds = <String>{};
     final explorationIds = <String>{};
     Object? firstError;
+    int? sourceTotalCount;
     for (final result in results) {
       firstError ??= result.error;
       for (var index = 0; index < result.pages.length; index++) {
+        final page = result.pages[index];
+        if (index == 0 && page is AsmrMergedWorkPage) {
+          sourceTotalCount ??= page.sourceTotalCount;
+        }
         for (final work in result.pages[index].works) {
           candidates.update(
             work.workKey,
@@ -172,6 +178,7 @@ class AsmrRemoteCatalogService {
       }
     }
     if (candidates.isEmpty && firstError != null) throw firstError;
+    onSourceTotalCount?.call(sourceTotalCount);
     final failedSources = <AsmrCatalogSource>{
       for (final result in results)
         for (final page in result.pages.whereType<AsmrMergedWorkPage>())

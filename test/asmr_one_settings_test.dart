@@ -2,6 +2,7 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +17,7 @@ import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_account_sync_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_auth_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_work_content_mapping.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_category_catalog.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -833,6 +835,38 @@ final class _CloseCountingAsmrApiService extends AsmrApiService {
   void close({bool force = true}) {
     if (!isClosed) closeCount++;
     super.close(force: force);
+  }
+}
+
+class _IsolateReportingWork extends AsmrWork {
+  _IsolateReportingWork()
+    : super(
+        id: 1,
+        title: 'Work',
+        circleName: 'Circle',
+        sourceId: 'RJ000001',
+        sourceType: 'DLsite',
+        sourceUrl: '',
+        coverUrl: '',
+        thumbnailUrl: '',
+        mainCoverUrl: '',
+        releaseDate: null,
+        createDate: null,
+        duration: Duration.zero,
+        dlCount: 0,
+        reviewCount: 0,
+        rating: 0,
+        voiceActors: ['Actor'],
+        tags: ['ASMR'],
+      );
+
+  final _serializations = [0];
+  int get serializations => _serializations.single;
+
+  @override
+  Map<String, Object?> toJson() {
+    _serializations[0]++;
+    return {...super.toJson(), 'mappingIsolate': Isolate.current.debugName};
   }
 }
 

@@ -64,6 +64,7 @@ class _LibrarySearchAllResultsState
     extends ConsumerState<LibrarySearchAllResults> {
   static const _searchCommitKey = 'library_search_page';
 
+  final _searchIndex = LibrarySearchIndex();
   FilteredLibraryTreeResult? _visibleSearchResult;
   String _visibleSearchQuery = '';
   int? _visibleSearchRevision;
@@ -236,6 +237,12 @@ class _LibrarySearchAllResultsState
 
     _pendingSearchKey = requestKey;
     final searchFuture = () async {
+      final cached = _searchIndex.cachedResult(
+        query: query,
+        structureRevision: structureRevision,
+        detailRevision: categoryRevision,
+      );
+      if (cached != null) return cached;
       final effectiveCategorySnapshot =
           categorySnapshot ??
           await libraryFacade.audioLibraryCategorySnapshot();
@@ -248,9 +255,18 @@ class _LibrarySearchAllResultsState
         structureRevision: structureRevision,
         categorySnapshot: effectiveCategorySnapshot,
       );
-      return libraryTreeTrackCount(tree) > 200
+      final result = libraryTreeTrackCount(tree) > 200
           ? await compute(buildFilteredLibraryTreeSnapshot, request)
           : buildFilteredLibraryTreeSnapshot(request);
+      if (isCurrentRequest()) {
+        _searchIndex.storeResult(
+          query: query,
+          structureRevision: structureRevision,
+          detailRevision: categoryRevision,
+          result: result,
+        );
+      }
+      return result;
     }();
     unawaited(
       searchFuture.then<void>(

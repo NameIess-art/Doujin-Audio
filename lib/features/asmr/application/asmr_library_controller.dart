@@ -25,6 +25,10 @@ export 'asmr_work_content_mapping.dart' show collectAsmrWorkTextFiles;
 
 typedef _AsmrSyncRequestKey = ({int authEpoch, String token});
 
+List<MusicTrack> _buildPlayableTracks(
+  ({AsmrWork work, List<AsmrTrackFile> tree}) input,
+) => flattenAsmrPlayableTracks(input.work, input.tree);
+
 AsmrTagPreferences _deriveTagInterests(
   ({
     AsmrTagPreferences state,
@@ -928,13 +932,44 @@ class AsmrLibraryController extends ChangeNotifier
   @override
   Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async {
     await initializeForVisiblePage();
+    final key = _workRequestKey(work.workKey);
+    if (_disposed) throw StateError('asmr_content_invalidated');
     final tree = await ensureTrackTree(work);
+    if (_disposed || key.runtimeCacheEpoch != _runtimeCacheEpoch) {
+      throw StateError('asmr_content_invalidated');
+    }
+    if (!_isWorkRequestCurrent(key) ||
+        !identical(tree, _workContent.cachedTrackTree(work.workKey))) {
+      return loadPlayableTracks(work);
+    }
     final cached = _workContent.cachedPlayableTracks(work);
     if (cached != null) return cached;
-    return _workContent.storePlayableTracks(
+    return _workContent.requestPlayableTracks(
+      key,
       work,
-      flattenAsmrPlayableTracks(work, tree),
+      tree,
+      () => _loadPlayableTracksOnce(work, tree, key),
     );
+  }
+
+  Future<List<MusicTrack>> _loadPlayableTracksOnce(
+    AsmrWork work,
+    List<AsmrTrackFile> tree,
+    AsmrWorkRequestKey key,
+  ) async {
+    final tracks = await compute(_buildPlayableTracks, (
+      work: work,
+      tree: tree,
+    ), debugLabel: 'asmr_playable_tracks');
+    if (_disposed || key.runtimeCacheEpoch != _runtimeCacheEpoch) {
+      throw StateError('asmr_content_invalidated');
+    }
+    // Conversion can outlive an account/language change or a tree refresh.
+    if (!_isWorkRequestCurrent(key) ||
+        !identical(tree, _workContent.cachedTrackTree(work.workKey))) {
+      return loadPlayableTracks(work);
+    }
+    return _workContent.storePlayableTracks(work, tracks);
   }
 
   Future<List<WorkTextFile>> findWorkTextFiles(

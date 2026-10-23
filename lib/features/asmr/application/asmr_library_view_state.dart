@@ -51,6 +51,7 @@ class AsmrCategoryViewState {
     required this.hasMore,
     required this.needsLoadMoreRetry,
     required this.totalCount,
+    this.hasCombinedTotalCount = false,
     required this.activeQuery,
     required this.lastError,
     required this.operationError,
@@ -67,6 +68,7 @@ class AsmrCategoryViewState {
   final bool hasMore;
   final bool needsLoadMoreRetry;
   final int totalCount;
+  final bool hasCombinedTotalCount;
   final String activeQuery;
   final Object? lastError;
   final Object? operationError;
@@ -85,6 +87,7 @@ class AsmrCategoryViewState {
         hasMore == other.hasMore &&
         needsLoadMoreRetry == other.needsLoadMoreRetry &&
         totalCount == other.totalCount &&
+        hasCombinedTotalCount == other.hasCombinedTotalCount &&
         activeQuery == other.activeQuery &&
         lastError == other.lastError &&
         operationError == other.operationError &&
@@ -103,6 +106,7 @@ class AsmrCategoryViewState {
     hasMore,
     needsLoadMoreRetry,
     totalCount,
+    hasCombinedTotalCount,
     activeQuery,
     lastError,
     operationError,

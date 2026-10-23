@@ -20,22 +20,27 @@ final class ListeningActivityService {
     required Future<void> Function(List<String>) acknowledgeUsage,
     required MusicTrack? Function(String) resolveTrack,
     required ListeningInterestRecorder recordInterests,
+    DateTime Function()? now,
   }) : _repository = repository,
        _readUsage = readUsage,
        _acknowledgeUsage = acknowledgeUsage,
        _resolveTrack = resolveTrack,
-       _recordInterests = recordInterests;
+       _recordInterests = recordInterests,
+       _now = now ?? DateTime.now;
 
   final ListeningActivityRepository _repository;
   final Future<List<PlaybackUsageBatch>> Function() _readUsage;
   final Future<void> Function(List<String>) _acknowledgeUsage;
   final MusicTrack? Function(String) _resolveTrack;
   final ListeningInterestRecorder _recordInterests;
+  final DateTime Function() _now;
   final _changes = StreamController<ListeningActivityView>.broadcast();
   ListeningActivityView? _view;
   Future<void> _tail = Future.value();
   Timer? _timer;
   bool _disposed = false;
+  bool _needsReload = true;
+  DateTime? _loadedDay;
   int _historyLimit = 40;
 
   Stream<ListeningActivityView> get states => Stream.multi((events) {
@@ -76,7 +81,10 @@ final class ListeningActivityService {
     if (_disposed) return;
     _timer ??= Timer.periodic(const Duration(seconds: 30), (_) {
       unawaited(
-        refresh().catchError((Object error, StackTrace stack) {
+        refresh(forceReload: false).catchError((
+          Object error,
+          StackTrace stack,
+        ) {
           AppLogService.error(
             'listening_activity_import_failed',
             error: error,
@@ -87,7 +95,11 @@ final class ListeningActivityService {
     });
   }
 
-  Future<void> refresh() => _serialize(() async {
+  Future<void> refresh({bool forceReload = true}) => _serialize(() async {
+    // Explicit refreshes also observe changes outside the usage importer.
+    // Polling retains the snapshot until a successful import changes its data.
+    // The chart's date window must also advance when an idle page crosses midnight.
+    if (forceReload || _loadedDay != _today()) _needsReload = true;
     final batches = await _readUsage();
     for (final batch in batches) {
       final days = <ListeningDayContribution>[];
@@ -123,22 +135,24 @@ final class ListeningActivityService {
           ),
         );
       }
-      await _repository.importBatch(batch.id, days);
+      if (await _repository.importBatch(batch.id, days)) _needsReload = true;
       // Retry the complete batch if either the preference write or native ack
       // failed. Both database and interest imports are independently idempotent.
       await _recordInterests(batchId: batch.id, contributions: interests);
       await _acknowledgeUsage([batch.id]);
     }
-    await _reload();
+    if (_needsReload) await _reload();
   });
 
   Future<void> loadMoreHistory() => _serialize(() async {
     _historyLimit += 40;
+    _needsReload = true;
     await _reload();
   });
 
   Future<void> seedHistory(List<ListeningHistoryEntry> entries) =>
       _serialize(() async {
+        _needsReload = true;
         await _repository.seedHistory(entries);
         await _reload();
       });
@@ -152,7 +166,14 @@ final class ListeningActivityService {
       hasMoreHistory: history.length > _historyLimit,
     );
     _view = view;
+    _loadedDay = _today();
+    _needsReload = false;
     _changes.add(view);
+  }
+
+  DateTime _today() {
+    final now = _now();
+    return DateTime(now.year, now.month, now.day);
   }
 
   Future<MusicTrack> _resolveUsageTrack(PlaybackUsageWork work) async {

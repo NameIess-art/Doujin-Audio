@@ -1023,7 +1023,14 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                   final totalWorks = (categoryState?.totalCount ?? 0) > 0
                       ? categoryState!.totalCount
                       : (categoryState?.works.length ?? 0);
-                  final asmrStatsText = i18n.tr('asmr_header_stats', {
+                  var statsKey = 'asmr_header_stats';
+                  if (categoryState?.hasCombinedTotalCount == true) {
+                    statsKey = 'asmr_header_stats_combined';
+                  } else if (categoryState?.lastError
+                      is AsmrPartialCatalogException) {
+                    statsKey = 'asmr_header_stats_loaded';
+                  }
+                  final asmrStatsText = i18n.tr(statsKey, {
                     'count': totalWorks.toString(),
                   });
                   final selectedWorks = _isSelectionMode

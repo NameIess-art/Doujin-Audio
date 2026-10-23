@@ -16,6 +16,7 @@ List<MusicTrack> flattenAsmrPlayableTracks(
   bool Function(AsmrTrackFile node)? includeAudioNode,
 }) {
   final result = <MusicTrack>[];
+  final workMetadata = work.toJson();
   final subtitleByStem = <String, AsmrTrackFile>{};
   final subtitlesByBaseName = <String, List<AsmrTrackFile>>{};
 
@@ -34,7 +35,7 @@ List<MusicTrack> flattenAsmrPlayableTracks(
   }
 
   Map<String, Object?> remoteMetadataForTrack(AsmrTrackFile node) {
-    final metadata = Map<String, Object?>.from(work.toJson());
+    final metadata = Map<String, Object?>.from(workMetadata);
     final reference = PlaybackMediaReference.parse(node.streamUrl ?? '');
     if (reference.isHls || reference.isChapter) {
       metadata['mediaReference'] = reference.toJson();

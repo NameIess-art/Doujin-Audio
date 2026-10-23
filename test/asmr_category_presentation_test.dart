@@ -63,7 +63,8 @@ void main() {
           ],
         });
         final controller = _PresentationController(createTestAsmrServices())
-          ..publishedWorks = [one, japanese];
+          ..publishedWorks = [one, japanese]
+          ..combinedTotalCount = 123456;
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(controller.dispose);
         addTearDown(fixture.dispose);
@@ -81,6 +82,12 @@ void main() {
         );
         await pumpUntilFound(tester, japaneseCard);
         await tester.pumpAndSettle();
+        expect(
+          tester.widget<TopPageHeader>(find.byType(TopPageHeader)).topCapsuleData,
+          fixture.languageProvider.tr('asmr_header_stats_combined', {
+            'count': '123456',
+          }),
+        );
         final oneElement = tester.element(oneCard);
         final japaneseElement = tester.element(japaneseCard);
         controller
@@ -118,6 +125,10 @@ void main() {
         );
         await pumpUntilFound(tester, notice);
         await tester.pumpAndSettle();
+        expect(
+          tester.widget<TopPageHeader>(find.byType(TopPageHeader)).topCapsuleData,
+          fixture.languageProvider.tr('asmr_header_stats_loaded', {'count': '1'}),
+        );
         expect(find.text('Published work'), findsOneWidget);
         expect(
           find.text(fixture.languageProvider.tr('online_audio_library')),
@@ -1796,6 +1807,7 @@ class _PresentationController extends AsmrLibraryController {
   bool hasMore = false;
   bool needsRetry = false;
   int workCount = 1;
+  int? combinedTotalCount;
   List<AsmrWork>? publishedWorks;
   int loadMoreCount = 0;
   int refreshCount = 0;
@@ -1884,7 +1896,8 @@ class _PresentationController extends AsmrLibraryController {
       hasAttemptedLoad: cacheValid,
       hasMore: hasMore,
       needsLoadMoreRetry: needsRetry,
-      totalCount: publishedWorks?.length ?? workCount,
+      totalCount: combinedTotalCount ?? publishedWorks?.length ?? workCount,
+      hasCombinedTotalCount: combinedTotalCount != null,
       activeQuery: searchQuery,
       lastError: catalogError,
       operationError: catalogError,

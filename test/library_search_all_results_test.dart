@@ -10,6 +10,7 @@ import 'package:doujin_audio/features/library/presentation/library_search_all_re
 import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_empty_scan.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
+import 'package:doujin_audio/features/library/presentation/library_view_models.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 import 'support/runtime_test_models.dart';
@@ -37,6 +38,71 @@ void main() {
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
+  test('search result cache invalidates structure and detail revisions', () {
+    final index = LibrarySearchIndex();
+    final result = FilteredLibraryTreeResult(tree: const [], matchCount: 0);
+    index.storeResult(
+      query: 'Ocean',
+      structureRevision: 1,
+      detailRevision: 2,
+      result: result,
+    );
+    expect(
+      index.cachedResult(
+        query: 'Ocean',
+        structureRevision: 1,
+        detailRevision: 2,
+      ),
+      same(result),
+    );
+    expect(
+      index.cachedResult(
+        query: 'Ocean',
+        structureRevision: 1,
+        detailRevision: 3,
+      ),
+      isNull,
+    );
+    index.storeResult(
+      query: 'Ocean',
+      structureRevision: 1,
+      detailRevision: 3,
+      result: result,
+    );
+    expect(
+      index.cachedResult(
+        query: 'Ocean',
+        structureRevision: 2,
+        detailRevision: 3,
+      ),
+      isNull,
+    );
+  });
+
+  test('search result cache retains only twelve recently used queries', () {
+    final index = LibrarySearchIndex();
+    final result = FilteredLibraryTreeResult(tree: const [], matchCount: 0);
+    void store(int query) => index.storeResult(
+      query: '$query',
+      structureRevision: 1,
+      detailRevision: 1,
+      result: result,
+    );
+    FilteredLibraryTreeResult? cached(int query) => index.cachedResult(
+      query: '$query',
+      structureRevision: 1,
+      detailRevision: 1,
+    );
+    for (var i = 0; i < 12; i++) {
+      store(i);
+    }
+    expect(cached(0), same(result));
+    store(12);
+    expect(cached(1), isNull);
+    expect(cached(0), same(result));
+    expect(cached(12), same(result));
+  });
+
   Widget results({
     required AppRuntimeWidgetTestFixture fixture,
     required ScrollController scrollController,
@@ -63,6 +129,82 @@ void main() {
         onTreeChanged: onTreeChanged,
       ),
     ),
+  );
+
+  testWidgets(
+    'returning to a prior search reuses its result until the library changes',
+    (tester) async {
+      final tracks = [
+        for (final name in ['Ocean', 'Rain'])
+          testMusicTrack(
+            name: '$name audio',
+            path: '/library/$name.mp3',
+            groupKey: '/library/$name.mp3',
+            groupTitle: '$name audio',
+            isSingle: true,
+          ),
+      ];
+      final fixture = AppRuntimeWidgetTestFixture(
+        libraryTreeSnapshotBuilder: (payload) async => LibraryTreeSnapshot(
+          tree: payload.tracks.map(TrackNode.new).toList(),
+          leafFolderCount: 0,
+        ),
+      );
+      addTearDown(fixture.dispose);
+      fixture.library.addTracks(tracks, persist: false);
+      await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
+      await tester.runAsync(
+        fixture.library.coverArtworkCacheService.initialize,
+      );
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      final query = ValueNotifier((query: 'Ocean', revision: 0));
+      addTearDown(query.dispose);
+      List<LibraryNode> published = const [];
+      await tester.pumpWidget(
+        fixture.build(
+          ValueListenableBuilder<({String query, int revision})>(
+            valueListenable: query,
+            builder: (_, value, _) => results(
+              fixture: fixture,
+              scrollController: controller,
+              query: value.query,
+              queryRevision: value.revision,
+              onTreeChanged: (tree) => published = tree,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final firstResult = published;
+      expect(firstResult.single.path, tracks.first.path);
+      query.value = (query: 'Rain', revision: 1);
+      await tester.pumpAndSettle();
+      expect(published.single.path, tracks.last.path);
+      query.value = (query: 'Ocean', revision: 2);
+      await tester.pumpAndSettle();
+      expect(published, same(firstResult));
+
+      fixture.library.addTracks([
+        testMusicTrack(
+          name: 'Ocean added',
+          path: '/library/added.mp3',
+          groupKey: '/library/added.mp3',
+          groupTitle: 'Ocean added',
+          isSingle: true,
+        ),
+      ], persist: false);
+      await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
+      query.value = (query: 'Ocean', revision: 3);
+      await tester.pumpAndSettle();
+      expect(published, isNot(same(firstResult)));
+      expect(published, hasLength(2));
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(

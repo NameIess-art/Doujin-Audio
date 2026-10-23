@@ -198,6 +198,7 @@ AudioLibraryCategorySnapshot? currentLibraryCategorySnapshot({
 
 class LibrarySearchIndex {
   int? _cachedRevision;
+  int? _cachedDetailRevision;
   final LinkedHashMap<String, FilteredLibraryTreeResult> _cache =
       LinkedHashMap<String, FilteredLibraryTreeResult>();
 
@@ -209,26 +210,60 @@ class LibrarySearchIndex {
     required int structureRevision,
     AudioLibraryCategorySnapshot? categorySnapshot,
   }) {
-    final searchTerms = normalizedSearchTerms(query);
     final detailRevision = categorySnapshot?.detailRevision ?? 0;
-    final normalizedQuery = '$detailRevision|${jsonEncode(searchTerms)}';
-    if (_cachedRevision != structureRevision) {
-      _cache.clear();
-      _cachedRevision = structureRevision;
-    }
+    final cached = cachedResult(
+      query: query,
+      structureRevision: structureRevision,
+      detailRevision: detailRevision,
+    );
+    if (cached != null) return cached;
+    final result = _buildFilteredTree(
+      tree,
+      normalizedSearchTerms(query),
+      categorySnapshot,
+    );
+    storeResult(
+      query: query,
+      structureRevision: structureRevision,
+      detailRevision: detailRevision,
+      result: result,
+    );
+    return result;
+  }
 
-    final cached = _cache.remove(normalizedQuery);
-    if (cached != null) {
-      _cache[normalizedQuery] = cached;
-      return cached;
-    }
+  FilteredLibraryTreeResult? cachedResult({
+    required String query,
+    required int structureRevision,
+    required int detailRevision,
+  }) {
+    final key = _cacheKey(query, structureRevision, detailRevision);
+    final cached = _cache.remove(key);
+    if (cached != null) _cache[key] = cached;
+    return cached;
+  }
 
-    final result = _buildFilteredTree(tree, searchTerms, categorySnapshot);
-    _cache[normalizedQuery] = result;
+  void storeResult({
+    required String query,
+    required int structureRevision,
+    required int detailRevision,
+    required FilteredLibraryTreeResult result,
+  }) {
+    final key = _cacheKey(query, structureRevision, detailRevision);
+    _cache.remove(key);
+    _cache[key] = result;
     if (_cache.length > _maxEntries) {
       _cache.remove(_cache.keys.first);
     }
-    return result;
+  }
+
+  String _cacheKey(String query, int structureRevision, int detailRevision) {
+    if (_cachedRevision != structureRevision ||
+        _cachedDetailRevision != detailRevision) {
+      _cache.clear();
+      _cachedRevision = structureRevision;
+      _cachedDetailRevision = detailRevision;
+    }
+    return jsonEncode(normalizedSearchTerms(query));
   }
 
   FilteredLibraryTreeResult _buildFilteredTree(

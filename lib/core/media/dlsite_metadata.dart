@@ -59,6 +59,23 @@ class DlsiteMetadata {
   final double? rating;
   final String? coverUrl;
 
+  DlsiteMetadata fillMissingFrom(DlsiteMetadata fallback) {
+    return copyWith(
+      rjCode: rjCode.trim().isEmpty ? fallback.rjCode : rjCode,
+      workTitle: workTitle.trim().isEmpty ? fallback.workTitle : workTitle,
+      circleName: circleName.trim().isEmpty ? fallback.circleName : circleName,
+      voiceActors: voiceActors.isEmpty ? fallback.voiceActors : voiceActors,
+      tags: tags.isEmpty ? fallback.tags : tags,
+      releaseDate: releaseDate ?? fallback.releaseDate,
+      duration: duration ?? fallback.duration,
+      salesCount: salesCount ?? fallback.salesCount,
+      rating: rating ?? fallback.rating,
+      coverUrl: coverUrl?.trim().isNotEmpty == true
+          ? coverUrl
+          : fallback.coverUrl,
+    );
+  }
+
   DlsiteMetadata copyWith({
     String? rjCode,
     String? workTitle,

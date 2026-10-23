@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 import '../../../core/app_language.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
+import 'library_metadata_source.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_matcher.dart';
 
@@ -30,7 +31,7 @@ class DlsiteMetadataException implements Exception {
   String toString() => message;
 }
 
-class DlsiteMetadataService {
+class DlsiteMetadataService implements LibraryMetadataSource {
   DlsiteMetadataService({
     HttpClient? httpClient,
     FileCachePlatformGateway? fileCacheGateway,
@@ -61,6 +62,7 @@ class DlsiteMetadataService {
   final FileCachePlatformGateway _fileCacheGateway;
   final Duration _requestTimeout;
 
+  @override
   Future<DlsiteMetadata> fetchByRjCode(
     String rjCode, {
     AppLanguage language = AppLanguage.ja,
@@ -84,7 +86,34 @@ class DlsiteMetadataService {
           final uri = Uri.https('www.dlsite.com', '/$site/api/=/product.json', {
             'workno': normalized,
           });
-          return await _fetchProductMetadata(uri, language: candidateLanguage);
+          final metadata = await _fetchProductMetadata(
+            uri,
+            language: candidateLanguage,
+          );
+          if (metadata.circleName.trim().isEmpty ||
+              metadata.voiceActors.isEmpty ||
+              metadata.tags.isEmpty ||
+              metadata.releaseDate == null ||
+              metadata.coverUrl == null ||
+              metadata.rating == null) {
+            try {
+              final html = await _get(
+                Uri.https(
+                  'www.dlsite.com',
+                  '/$site/work/=/product_id/$normalized.html',
+                ),
+                language: candidateLanguage,
+              );
+              final page = decodeDlsiteProductHtml(
+                html,
+                fallbackRjCode: normalized,
+              );
+              if (page != null) return metadata.fillMissingFrom(page);
+            } on DlsiteMetadataException {
+              // A blocked product page must not discard usable JSON metadata.
+            }
+          }
+          return metadata;
         } on DlsiteMetadataException catch (error) {
           lastError = error;
           if (error.isNetworkFailure) rethrow;
@@ -123,6 +152,7 @@ class DlsiteMetadataService {
     );
   }
 
+  @override
   Future<List<DlsiteMetadata>> searchByTitleCandidates(
     Iterable<String> titles, {
     int limit = 10,
@@ -471,13 +501,48 @@ DlsiteMetadata? decodeDlsiteProductHtml(
         'og:title',
       )?.replaceFirst(RegExp(r'^.*\[([^\]]+)\]\s*\|\s*DLsite.*$'), r'$1');
   final coverUrl = _normalizeDlsiteUrl(_htmlMetaContent(html, 'og:image'));
+  final rows = <String, String>{};
+  for (final row in RegExp(
+    r'<tr\b[^>]*>\s*<th\b[^>]*>(.*?)</th>\s*<td\b[^>]*>(.*?)</td>',
+    caseSensitive: false,
+    dotAll: true,
+  ).allMatches(html)) {
+    final label = _htmlText(row.group(1)!);
+    if (label != null) rows[label.toLowerCase()] = row.group(2)!;
+  }
+  String? cell(List<String> labels) {
+    for (final label in labels) {
+      final value = rows[label];
+      if (value != null) return value;
+    }
+    return null;
+  }
+
+  final releaseCell = cell(['販売日', '发售日', '發售日', 'release date']);
+  final dateParts =
+      RegExp(
+        r'/year/(\d{4})/mon/(\d{1,2})/day/(\d{1,2})',
+      ).firstMatch(releaseCell ?? '') ??
+      RegExp(
+        r'(\d{4})[年/-](\d{1,2})[月/-](\d{1,2})',
+      ).firstMatch(_htmlText(releaseCell ?? '') ?? '');
+  final releaseDate = dateParts == null
+      ? null
+      : DateTime.tryParse(
+          '${dateParts.group(1)}-${dateParts.group(2)!.padLeft(2, '0')}-${dateParts.group(3)!.padLeft(2, '0')}',
+        );
+  final rating = double.tryParse(_htmlMetaContent(html, 'ratingValue') ?? '');
 
   return DlsiteMetadata(
     rjCode: rjCode,
     workTitle: title,
     circleName: circleName ?? '',
-    voiceActors: const <String>[],
-    tags: const <String>[],
+    voiceActors: _htmlLinkedNames(
+      cell(['声優', '声优', '聲優', 'voice actor', 'voice actors']),
+    ),
+    tags: _htmlLinkedNames(cell(['ジャンル', '分类', '分類', 'genre', 'genres'])),
+    releaseDate: releaseDate,
+    rating: rating != null && rating > 0 && rating <= 5 ? rating : null,
     coverUrl: coverUrl,
   );
 }
@@ -486,7 +551,7 @@ String? _htmlMetaContent(String html, String property) {
   return _htmlCapture(
     html,
     RegExp(
-      '<meta[^>]+(?:property|name)=["\\\']${RegExp.escape(property)}["\\\']'
+      '<meta[^>]+(?:property|name|itemprop)=["\\\']${RegExp.escape(property)}["\\\']'
       '[^>]+content=["\\\']([^"\\\']*)["\\\']',
       caseSensitive: false,
       dotAll: true,
@@ -510,6 +575,17 @@ String? _htmlAttribute(String html, String attributeName) {
 String? _htmlCapture(String html, RegExp pattern, {bool decodeTags = true}) {
   final raw = pattern.firstMatch(html)?.group(1);
   if (raw == null) return null;
+  return _htmlText(raw, decodeTags: decodeTags);
+}
+
+List<String> _htmlLinkedNames(String? html) => AudioDetail.normalizeList(
+  RegExp(r'<a\b[^>]*>(.*?)</a>', caseSensitive: false, dotAll: true)
+      .allMatches(html ?? '')
+      .map((match) => _htmlText(match.group(1)!))
+      .whereType<String>(),
+);
+
+String? _htmlText(String raw, {bool decodeTags = true}) {
   final withoutTags = decodeTags
       ? raw.replaceAll(RegExp(r'<[^>]+>'), ' ')
       : raw;

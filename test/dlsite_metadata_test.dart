@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,98 @@ import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
 
 void main() {
+  for (final scenario in [
+    'complete',
+    'partial',
+    'JSON blocked',
+    'page blocked',
+  ]) {
+    test('DLsite request preserves fields when $scenario', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final transport = HttpClient();
+      final requests = <String>[];
+      server.listen((request) async {
+        requests.add(request.uri.path);
+        if (request.uri.path.endsWith('product.json')) {
+          if (scenario == 'JSON blocked') {
+            request.response.statusCode = HttpStatus.forbidden;
+          } else {
+            request.response.write(
+              jsonEncode({
+                'workno': 'RJ01726046',
+                'work_name': 'JSON title',
+                'maker_name': 'JSON Circle',
+                'genres': [
+                  {'name': 'JSON tag'},
+                ],
+                'image_main': {'url': '//img.dlsite.jp/cover.jpg'},
+                if (scenario == 'complete') ...{
+                  'regist_date': '2026-10-03 00:00:00',
+                  'creaters': {
+                    'voice_by': [
+                      {'name': 'JSON Voice'},
+                    ],
+                  },
+                  'rate_average_star': 50,
+                },
+              }),
+            );
+          }
+        } else if (scenario == 'page blocked') {
+          request.response.statusCode = HttpStatus.forbidden;
+        } else {
+          request.response.write('''
+            <h1 id="work_name">Page title</h1>
+            <span class="maker_name"><a>Page Circle</a></span>
+            <table>
+              <tr><th>販売日</th><td>2026年10月03日</td></tr>
+              <tr><th>声優</th><td><a>梅木ちはる</a> / <a>柚木つばめ</a></td></tr>
+              <tr><th>ジャンル</th><td><a>Page tag</a></td></tr>
+            </table>
+            <meta itemprop="ratingValue" content="4.85">
+            ''');
+        }
+        await request.response.close();
+      });
+      try {
+        final metadata = await DlsiteMetadataService(
+          httpClient: _LocalDlsiteHttpClient(transport, server.port),
+        ).fetchByRjCode('RJ01726046', language: AppLanguage.zh);
+
+        expect(metadata.rjCode, 'RJ01726046');
+        expect(
+          metadata.workTitle,
+          scenario == 'JSON blocked' ? 'Page title' : 'JSON title',
+        );
+        expect(
+          metadata.circleName,
+          scenario == 'JSON blocked' ? 'Page Circle' : 'JSON Circle',
+        );
+        expect(metadata.tags, [
+          scenario == 'JSON blocked' ? 'Page tag' : 'JSON tag',
+        ]);
+        if (scenario == 'page blocked') {
+          expect(metadata.voiceActors, isEmpty);
+          expect(metadata.releaseDate, isNull);
+        } else {
+          expect(
+            metadata.voiceActors,
+            scenario == 'complete' ? ['JSON Voice'] : ['梅木ちはる', '柚木つばめ'],
+          );
+          expect(metadata.releaseDate, DateTime(2026, 10, 3));
+          expect(metadata.rating, scenario == 'complete' ? 5 : 4.85);
+        }
+        expect(
+          requests.where((uri) => uri.endsWith('.html')).length,
+          scenario == 'complete' ? 0 : 1,
+        );
+      } finally {
+        transport.close(force: true);
+        await server.close(force: true);
+      }
+    });
+  }
+
   test('maps selected DLsite metadata language to locale headers', () {
     expect(dlsiteLocaleForLanguage(AppLanguage.zh), 'zh-cn');
     expect(dlsiteLocaleForLanguage(AppLanguage.ja), 'ja-jp');
@@ -180,6 +273,37 @@ void main() {
     expect(metadata?.coverUrl, 'https://img.dlsite.jp/path/fallback.jpg');
   });
 
+  for (final labels in [
+    ['販売日', '声優', 'ジャンル'],
+    ['发售日', '声优', '分类'],
+    ['Release date', 'Voice Actor', 'Genre'],
+  ]) {
+    test('RJ01726046 HTML retains metadata with ${labels[0]} labels', () {
+      final metadata = decodeDlsiteProductHtml('''
+        <h1 id="work_name">Work RJ01726046</h1>
+        <span class="maker_name"><a>テグラユウキ</a></span>
+        <meta itemprop="ratingValue" content="4.85">
+        <table id="work_outline">
+          <tr><th>${labels[0]}</th><td><a href="/maniax/new/=/year/2026/mon/10/day/03/">2026年10月03日</a></td></tr>
+          <tr><th>${labels[1]}</th><td>
+            <a href="/creator/23407">梅木ちはる</a> /
+            <a href="/creator/17426">柚木つばめ</a>
+          </td></tr>
+          <tr><th>${labels[2]}</th><td><div class="main_genre">
+            <a href="/genre/056">癒し</a>
+            <a href="/genre/004">ラブラブ/あまあま</a>
+          </div></td></tr>
+        </table>
+        ''', fallbackRjCode: 'RJ01726046');
+
+      expect(metadata?.voiceActors, ['梅木ちはる', '柚木つばめ']);
+      expect(metadata?.releaseDate, DateTime(2026, 10, 3));
+      expect(metadata?.tags, ['癒し', 'ラブラブ/あまあま']);
+      expect(metadata?.circleName, 'テグラユウキ');
+      expect(metadata?.rating, 4.85);
+    });
+  }
+
   test('extracts unique RJ product ids from DLsite search html', () {
     final ids = extractDlsiteProductIdsFromSearchHtml('''
       <a href="/maniax/work/=/product_id/RJ01014447.html">A</a>
@@ -308,6 +432,24 @@ class _HangingHttpClient implements HttpClient {
     getUrlCalls += 1;
     return Completer<HttpClientRequest>().future;
   }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _LocalDlsiteHttpClient implements HttpClient {
+  _LocalDlsiteHttpClient(this.client, this.port);
+  final HttpClient client;
+  final int port;
+
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) => client.getUrl(
+    url.replace(
+      scheme: 'http',
+      host: InternetAddress.loopbackIPv4.address,
+      port: port,
+    ),
+  );
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

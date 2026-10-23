@@ -46,6 +46,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     required this.detailCacheService,
     required this.metadataService,
     required this.asmrMetadataService,
+    this.japaneseMetadataService,
     required LibraryService service,
     required this.snapshotCacheService,
     LibraryEntryEditorService? entryEditorService,
@@ -62,6 +63,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     AudioDetailCacheService? detailCacheService,
     DlsiteMetadataService? metadataService,
     LibraryMetadataSource? asmrMetadataService,
+    LibraryMetadataSource? japaneseMetadataService,
     LibraryService? service,
     LibrarySnapshotCacheService? snapshotCacheService,
     LibraryEntryEditorService? entryEditorService,
@@ -92,6 +94,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       detailCacheService: resolvedDetailCache,
       metadataService: metadataService ?? DlsiteMetadataService(),
       asmrMetadataService: asmrMetadataService,
+      japaneseMetadataService: japaneseMetadataService,
       service: resolvedService,
       snapshotCacheService:
           snapshotCacheService ??
@@ -108,6 +111,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   final AudioDetailCacheService detailCacheService;
   final DlsiteMetadataService metadataService;
   final LibraryMetadataSource? asmrMetadataService;
+  final LibraryMetadataSource? japaneseMetadataService;
   final LibraryService _service;
   final LibrarySnapshotCacheService snapshotCacheService;
   final LibraryEntryEditorService entryEditorService;
@@ -131,6 +135,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
         detailCacheService: detailCacheService,
         metadataService: metadataService,
         asmrMetadataService: asmrMetadataService,
+        japaneseMetadataService: japaneseMetadataService,
         service: _service,
         snapshotCacheService: snapshotCacheService,
         coverArtwork: () => coverArtworkCacheService,

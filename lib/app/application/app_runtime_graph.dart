@@ -323,6 +323,9 @@ ProductionAppRuntime createProductionAppRuntime({
     jsonDocumentStore: jsonDocumentStore,
     service: libraryService,
     asmrMetadataService: asmrMetadataService,
+    japaneseMetadataService: AsmrMetadataService.japanese(
+      apiService: japaneseAsmrApiService,
+    ),
   );
   final playbackFacade = PlaybackFacade.create(
     databaseRepository: playbackRepository,

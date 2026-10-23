@@ -28,6 +28,7 @@ final class LibraryMetadataCoordinator {
     required AudioDetailCacheService detailCacheService,
     required DlsiteMetadataService metadataService,
     required LibraryMetadataSource? asmrMetadataService,
+    LibraryMetadataSource? japaneseMetadataService,
     required LibraryService service,
     required LibrarySnapshotCacheService snapshotCacheService,
     required CoverArtworkCacheService Function() coverArtwork,
@@ -37,6 +38,7 @@ final class LibraryMetadataCoordinator {
        _detailCacheService = detailCacheService,
        _metadataService = metadataService,
        _asmrMetadataService = asmrMetadataService,
+       _japaneseMetadataService = japaneseMetadataService,
        _service = service,
        _snapshotCacheService = snapshotCacheService,
        _coverArtwork = coverArtwork,
@@ -50,6 +52,7 @@ final class LibraryMetadataCoordinator {
   final AudioDetailCacheService _detailCacheService;
   final DlsiteMetadataService _metadataService;
   final LibraryMetadataSource? _asmrMetadataService;
+  final LibraryMetadataSource? _japaneseMetadataService;
   final LibraryService _service;
   final LibrarySnapshotCacheService _snapshotCacheService;
   final CoverArtworkCacheService Function() _coverArtwork;
@@ -616,79 +619,63 @@ final class LibraryMetadataCoordinator {
   Future<DlsiteMetadata> fetchPreferredMetadata(
     String rjCode, {
     required AppLanguage language,
-  }) async {
-    final asmrMetadataService = _asmrMetadataService;
-    if (asmrMetadataService == null) {
-      return _metadataService.fetchByRjCode(rjCode, language: language);
-    }
-    DlsiteMetadata primary;
-    try {
-      primary = await asmrMetadataService.fetchByRjCode(
-        rjCode,
-        language: language,
-      );
-    } catch (_) {
-      return _metadataService.fetchByRjCode(rjCode, language: language);
-    }
-    if (!_hasMissingValue(primary)) return primary;
-    try {
-      return _mergeMetadata(
-        primary,
-        await _metadataService.fetchByRjCode(rjCode, language: language),
-      );
-    } catch (_) {
-      return primary;
-    }
-  }
+  }) async => (await _lookupPreferredMetadata(
+    (source) async => [await source.fetchByRjCode(rjCode, language: language)],
+  )).single;
 
   Future<List<DlsiteMetadata>> searchPreferredMetadata(
     Iterable<String> titles, {
     required AppLanguage language,
-  }) async {
-    final asmrMetadataService = _asmrMetadataService;
-    if (asmrMetadataService == null) {
-      return _metadataService.searchByTitleCandidates(
-        titles,
-        language: language,
-      );
-    }
-    List<DlsiteMetadata> primary;
-    try {
-      primary = await asmrMetadataService.searchByTitleCandidates(
-        titles,
-        language: language,
-      );
-    } catch (_) {
-      return _metadataService.searchByTitleCandidates(
-        titles,
-        language: language,
-      );
-    }
-    if (primary.every((metadata) => !_hasMissingValue(metadata))) {
-      return primary;
-    }
-    try {
-      final fallback = await _metadataService.searchByTitleCandidates(
-        titles,
-        language: language,
-      );
-      final byKey = <String, DlsiteMetadata>{};
-      for (final metadata in fallback) {
-        final key = _mergeKey(metadata);
-        if (key.isNotEmpty) byKey.putIfAbsent(key, () => metadata);
+  }) => _lookupPreferredMetadata(
+    (source) => source.searchByTitleCandidates(titles, language: language),
+  );
+
+  Future<List<DlsiteMetadata>> _lookupPreferredMetadata(
+    Future<List<DlsiteMetadata>> Function(LibraryMetadataSource) lookup,
+  ) async {
+    final sources = <LibraryMetadataSource>[
+      _metadataService,
+      ?_asmrMetadataService,
+      ?_japaneseMetadataService,
+    ];
+    var primary = <DlsiteMetadata>[];
+    ({Object error, StackTrace stackTrace})? lastFailure;
+    for (final source in sources) {
+      List<DlsiteMetadata> fallback;
+      try {
+        fallback = await lookup(source);
+      } catch (error, stackTrace) {
+        lastFailure = (error: error, stackTrace: stackTrace);
+        continue;
       }
-      final singleFallback = primary.length == 1 && fallback.length == 1
-          ? fallback.single
-          : null;
-      return primary
-          .map((metadata) {
-            final match = byKey[_mergeKey(metadata)] ?? singleFallback;
-            return match == null ? metadata : _mergeMetadata(metadata, match);
-          })
-          .toList(growable: false);
-    } catch (_) {
-      return primary;
+      if (primary.isEmpty) {
+        primary = fallback;
+      } else {
+        final byKey = <String, DlsiteMetadata>{};
+        for (final metadata in fallback) {
+          final key = _mergeKey(metadata);
+          if (key.isNotEmpty) byKey.putIfAbsent(key, () => metadata);
+        }
+        primary = primary
+            .map((metadata) {
+              final match = byKey[_mergeKey(metadata)];
+              return match == null ? metadata : metadata.fillMissingFrom(match);
+            })
+            .toList(growable: false);
+      }
+      if (primary.isNotEmpty &&
+          primary.every((metadata) => !_hasMissingValue(metadata))) {
+        return primary;
+      }
     }
+    if (primary.isNotEmpty) return primary;
+    if (lastFailure case final failure?) {
+      Error.throwWithStackTrace(failure.error, failure.stackTrace);
+    }
+    throw const DlsiteMetadataException(
+      'No work metadata found',
+      kind: DlsiteMetadataFailureKind.notFound,
+    );
   }
 
   AudioDetail? resolvedDetail(AudioDetailTarget target) =>
@@ -862,29 +849,5 @@ final class LibraryMetadataCoordinator {
     if (rjCode.isNotEmpty) return 'rj:$rjCode';
     final title = metadata.workTitle.trim().toLowerCase();
     return title.isEmpty ? '' : 'title:$title';
-  }
-
-  static DlsiteMetadata _mergeMetadata(
-    DlsiteMetadata primary,
-    DlsiteMetadata fallback,
-  ) {
-    String stringValue(String value, String fallbackValue) =>
-        value.trim().isNotEmpty ? value : fallbackValue;
-    String? nullableValue(String? value, String? fallbackValue) =>
-        value != null && value.trim().isNotEmpty ? value : fallbackValue;
-    return primary.copyWith(
-      rjCode: stringValue(primary.rjCode, fallback.rjCode),
-      workTitle: stringValue(primary.workTitle, fallback.workTitle),
-      circleName: stringValue(primary.circleName, fallback.circleName),
-      voiceActors: primary.voiceActors.isNotEmpty
-          ? primary.voiceActors
-          : fallback.voiceActors,
-      tags: primary.tags.isNotEmpty ? primary.tags : fallback.tags,
-      releaseDate: primary.releaseDate ?? fallback.releaseDate,
-      duration: primary.duration ?? fallback.duration,
-      salesCount: primary.salesCount ?? fallback.salesCount,
-      rating: primary.rating ?? fallback.rating,
-      coverUrl: nullableValue(primary.coverUrl, fallback.coverUrl),
-    );
   }
 }

@@ -3,14 +3,21 @@ import '../domain/asmr_models.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import 'asmr_api_service.dart';
+import 'japanese_asmr_api_service.dart';
 import '../../library/application/dlsite_metadata_service.dart';
 import '../../library/application/library_metadata_source.dart';
 
 class AsmrMetadataService implements LibraryMetadataSource {
   AsmrMetadataService({AsmrApiService? apiService})
-    : _apiService = apiService ?? AsmrApiService();
+    : _apiService = apiService ?? AsmrApiService(),
+      _japaneseApiService = null;
 
-  final AsmrApiService _apiService;
+  AsmrMetadataService.japanese({required JapaneseAsmrApiService apiService})
+    : _apiService = null,
+      _japaneseApiService = apiService;
+
+  final AsmrApiService? _apiService;
+  final JapaneseAsmrApiService? _japaneseApiService;
 
   @override
   Future<DlsiteMetadata> fetchByRjCode(
@@ -19,14 +26,20 @@ class AsmrMetadataService implements LibraryMetadataSource {
   }) async {
     final normalizedRjCode = AudioDetail.findRjCodeInText(rjCode);
     if (normalizedRjCode == null) {
-      throw const DlsiteMetadataException('Invalid RJ code');
+      throw const DlsiteMetadataException(
+        'Invalid RJ code',
+        kind: DlsiteMetadataFailureKind.invalidQuery,
+      );
     }
     final works = await _search(normalizedRjCode, language);
     final exact = works.where(
       (work) => work.rjCode.toUpperCase() == normalizedRjCode,
     );
     if (exact.isEmpty) {
-      throw const DlsiteMetadataException('No online library metadata found');
+      throw const DlsiteMetadataException(
+        'No online library metadata found',
+        kind: DlsiteMetadataFailureKind.notFound,
+      );
     }
     return _metadataFromWork(exact.first);
   }
@@ -80,13 +93,20 @@ class AsmrMetadataService implements LibraryMetadataSource {
     final results = resultsByRjCode.values.toList(growable: false)
       ..sort((a, b) => b.score.compareTo(a.score));
     if (results.isEmpty) {
-      throw const DlsiteMetadataException('No online library metadata found');
+      throw const DlsiteMetadataException(
+        'No online library metadata found',
+        kind: DlsiteMetadataFailureKind.notFound,
+      );
     }
     return results.map((item) => item.metadata).toList(growable: false);
   }
 
   Future<List<AsmrWork>> _search(String query, AppLanguage language) async {
-    final page = await _apiService.searchWorks(
+    final japanese = _japaneseApiService;
+    if (japanese != null) {
+      return (await japanese.searchWorks(keyword: query, pageSize: 20)).works;
+    }
+    final page = await _apiService!.searchWorks(
       keyword: query,
       order: 'release',
       sort: 'desc',

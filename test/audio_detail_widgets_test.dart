@@ -1603,7 +1603,7 @@ void main() {
   );
 
   test(
-    'preferred title metadata fills missing ASMR fields from DLsite',
+    'preferred title metadata preserves DLsite values before ASMR.ONE',
     () async {
       final fixture = AppRuntimeWidgetTestFixture(
         dlsiteMetadataService: _FakeDlsiteMetadataService(),
@@ -1618,8 +1618,9 @@ void main() {
             language: AppLanguage.zh,
           )).single;
 
-      expect(metadata.workTitle, 'ASMR fetched title');
+      expect(metadata.workTitle, 'Fetched title');
       expect(metadata.circleName, 'Circle');
+      expect(metadata.voiceActors, ['Voice']);
       expect(metadata.releaseDate, DateTime(2024, 5, 6));
       expect(
         metadata.duration,
@@ -1958,6 +1959,103 @@ void main() {
     );
     await _drainAudioDetailFixture(tester, fixture);
   });
+
+  for (final fetchMetadata in [false, true]) {
+    testWidgets(
+      'audio detail sheet displays ${fetchMetadata ? 'confirmed fetched' : 'saved'} voice date and rating after reopening',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture(
+          dlsiteMetadataService: _FakeDlsiteMetadataService(),
+        );
+        addTearDown(fixture.dispose);
+        const target = AudioDetailTarget(
+          targetType: AudioDetailTargetType.singleAudioFile,
+          targetPath: '/library/metadata-display.mp3',
+        );
+        final initial = AudioDetail.empty(target);
+        await tester.runAsync(
+          () => fixture.library.saveAudioDetail(
+            fetchMetadata
+                ? initial
+                : initial.copyWith(
+                    rjCode: 'RJ123456',
+                    workTitle: 'Fetched title',
+                    voiceActors: const ['Voice'],
+                    releaseDate: DateTime(2024, 5, 6),
+                    duration: const Duration(hours: 1, minutes: 2, seconds: 3),
+                    rating: 4.5,
+                  ),
+          ),
+        );
+        await tester.pumpWidget(fixture.build(const Text('Metadata host')));
+        await tester.pumpAndSettle();
+        final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+
+        if (fetchMetadata) {
+          unawaited(
+            navigator.push<DlsiteMetadataReviewResult>(
+              MaterialPageRoute(
+                builder: (_) => DlsiteMetadataReviewPage(
+                  detail: initial,
+                  rjCode: 'RJ123456',
+                  initialSaveCover: false,
+                ),
+              ),
+            ),
+          );
+          final confirm = find.byKey(const ValueKey('dlsite_review_confirm'));
+          await pumpUntilFound(tester, find.text('Fetched title'));
+          await tester.pumpAndSettle();
+          await tester.tap(confirm);
+          await pumpUntilNotFound(
+            tester,
+            find.byType(DlsiteMetadataReviewPage),
+          );
+          await tester.pumpAndSettle();
+        }
+
+        for (var opening = 0; opening < 2; opening++) {
+          final loaded = await tester.runAsync(
+            () => AudioDetailRepository(
+              databaseRepository: fixture.persistenceRepository,
+            ).load(target),
+          );
+          expect(loaded!.detail.voiceActors, ['Voice']);
+          expect(loaded.detail.releaseDate, DateTime(2024, 5, 6));
+          expect(loaded.detail.rating, 4.5);
+          unawaited(
+            navigator.push<void>(
+              MaterialPageRoute(
+                builder: (_) => const AudioDetailSheet(target: target),
+              ),
+            ),
+          );
+          await pumpUntilFound(tester, find.text('Voice'));
+          await tester.pumpAndSettle();
+          expect(find.text('2024-05-06'), findsOneWidget);
+          expect(find.text('4.5'), findsOneWidget);
+          expect(
+            find.text(fixture.languageProvider.tr('audio_detail_sales_count')),
+            findsNothing,
+          );
+          await tester.ensureVisible(find.text('2024-05-06'));
+          await tester.pumpAndSettle();
+          expect(find.text('2024-05-06').hitTestable(), findsOneWidget);
+          await tester.ensureVisible(find.text('4.5'));
+          await tester.pumpAndSettle();
+          expect(find.text('4.5').hitTestable(), findsOneWidget);
+          navigator.pop();
+          await tester.pumpAndSettle();
+        }
+        expect(tester.takeException(), isNull);
+        await _drainAudioDetailFixture(tester, fixture);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   for (final closeDuringEntrance in [false, true]) {
     testWidgets(

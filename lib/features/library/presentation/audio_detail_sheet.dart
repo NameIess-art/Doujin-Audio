@@ -762,7 +762,11 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    ...[_AudioDetailField.duration].map(
+                    ...[
+                      _AudioDetailField.releaseDate,
+                      _AudioDetailField.duration,
+                      _AudioDetailField.rating,
+                    ].map(
                       (field) => _AudioDetailRow(
                         label: field.label(i18n, detail),
                         values: field.readValues(

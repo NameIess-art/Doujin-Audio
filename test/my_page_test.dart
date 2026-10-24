@@ -782,6 +782,29 @@ void main() {
         final chip = find.byKey(const ValueKey('my-interest-local:tag 24'));
         expect(chips.first.backgroundColor, isNull);
         expect(chips.first.labelStyle, isNull);
+        expect(
+          chips.first.padding,
+          const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        );
+        expect(
+          chips.first.labelPadding,
+          const EdgeInsets.symmetric(horizontal: 4),
+        );
+        expect(
+          chips.first.materialTapTargetSize,
+          MaterialTapTargetSize.shrinkWrap,
+        );
+        expect(
+          chips.first.side,
+          BorderSide(
+            color: Theme.of(tester.element(chip)).colorScheme.outlineVariant,
+          ),
+        );
+        final wrap = tester.widget<Wrap>(
+          find.ancestor(of: chip, matching: find.byType(Wrap)).first,
+        );
+        expect(wrap.spacing, 8);
+        expect(wrap.runSpacing, 8);
         String? copied;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -871,6 +894,17 @@ void main() {
         final chip = tester.widget<InputChip>(first);
         expect(chip.backgroundColor, isNull);
         expect(chip.labelStyle, isNull);
+        expect(
+          chip.padding,
+          const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        );
+        expect(chip.labelPadding, const EdgeInsets.symmetric(horizontal: 4));
+        expect(chip.materialTapTargetSize, MaterialTapTargetSize.shrinkWrap);
+        final wrap = tester.widget<Wrap>(
+          find.ancestor(of: first, matching: find.byType(Wrap)).first,
+        );
+        expect(wrap.spacing, 8);
+        expect(wrap.runSpacing, 8);
         String? copied;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(SystemChannels.platform, (call) async {

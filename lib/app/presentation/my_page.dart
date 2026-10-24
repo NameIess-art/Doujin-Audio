@@ -272,7 +272,7 @@ class _MyPageState extends ConsumerState<MyPage>
                       ),
                     Wrap(
                       spacing: 8,
-                      runSpacing: 2,
+                      runSpacing: 8,
                       children: [
                         for (final interest in interests.take(
                           voiceActors ? 10 : 20,
@@ -281,8 +281,27 @@ class _MyPageState extends ConsumerState<MyPage>
                             key: ValueKey(
                               'my-${voiceActors ? 'voice-' : ''}interest-${interest.tag.key}',
                             ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 8,
+                            ),
+                            labelPadding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                            ),
                             visualDensity: VisualDensity.compact,
-                            label: Text(interest.tag.name),
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            showCheckmark: false,
+                            side: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
+                            ),
+                            label: Text(
+                              interest.tag.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                             onPressed: () async {
                               final name = interest.tag.name;
                               await Clipboard.setData(
@@ -413,7 +432,7 @@ class _MyPageState extends ConsumerState<MyPage>
         children: [
           Wrap(
             spacing: 8,
-            runSpacing: 2,
+            runSpacing: 8,
             children: List.generate(
               voiceActors ? 10 : 20,
               (index) => SizedBox(

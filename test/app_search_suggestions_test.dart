@@ -32,7 +32,7 @@ void main() {
       final expandButtons = find.byTooltip('Expand');
       expect(expandButtons, findsNWidgets(2));
       expect(find.byIcon(Icons.expand_more_rounded), findsNWidgets(2));
-      expect(tester.getSize(expandButtons.first), const Size(24, 24));
+      expect(tester.getSize(expandButtons.first), const Size(32, 32));
       expect(tester.getTopRight(expandButtons.first).dx, 320 - 16);
       final firstChip = tester.widget<InputChip>(find.byType(InputChip).first);
       expect(

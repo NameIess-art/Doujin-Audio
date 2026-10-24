@@ -849,7 +849,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       buildAppPageRoute<void>(
         context: context,
         child: _AsmrSearchPage(initialCategory: _selectedCategory),
-        slide: false,
         separateHeader: true,
       ),
     );

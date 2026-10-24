@@ -49,7 +49,7 @@ class AppSearchSuggestionSection extends StatefulWidget {
 class _AppSearchSuggestionSectionState
     extends State<AppSearchSuggestionSection> {
   static const _gap = 8.0;
-  static const _rowGap = 4.0;
+  static const _rowGap = 8.0;
   static const _chipPadding = EdgeInsets.symmetric(horizontal: 4, vertical: 8);
   static const _labelPadding = EdgeInsets.symmetric(horizontal: 4);
   bool _expanded = false;
@@ -166,7 +166,7 @@ class _AppSearchSuggestionSectionState
     final locale = Localizations.maybeLocaleOf(context);
     Widget? content;
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       sliver: SliverLayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.crossAxisExtent;
@@ -179,9 +179,9 @@ class _AppSearchSuggestionSectionState
             slivers: [
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 24),
+                    constraints: const BoxConstraints(minHeight: 32),
                     child: Row(
                       children: [
                         Expanded(
@@ -191,6 +191,7 @@ class _AppSearchSuggestionSectionState
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.titleSmall?.copyWith(
                               fontSize: 16,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
@@ -201,7 +202,7 @@ class _AppSearchSuggestionSectionState
                             widget.items.isEmpty ? null : widget.onClear,
                             accent,
                           ),
-                          if (canExpand) const SizedBox(width: 8),
+                          if (canExpand) const SizedBox(width: 4),
                         ],
                         if (canExpand)
                           _headerButton(
@@ -295,7 +296,8 @@ class _AppSearchSuggestionSectionState
     VoidCallback? onPressed,
     Color accent,
   ) => SizedBox.square(
-    dimension: 24,
+    // Keep the header compact while giving touch a usable target.
+    dimension: 32,
     child: IconButton(
       onPressed: onPressed,
       tooltip: tooltip,
@@ -303,12 +305,12 @@ class _AppSearchSuggestionSectionState
       visualDensity: VisualDensity.compact,
       style: IconButton.styleFrom(
         foregroundColor: accent,
-        minimumSize: const Size.square(24),
-        maximumSize: const Size.square(24),
+        minimumSize: const Size.square(32),
+        maximumSize: const Size.square(32),
         padding: EdgeInsets.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
-      icon: Icon(icon, size: 18),
+      icon: Icon(icon, size: 20),
     ),
   );
 

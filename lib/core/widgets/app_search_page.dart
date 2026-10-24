@@ -63,7 +63,7 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
   static double controlsTopInset(
     BuildContext context, {
     bool hasCategories = true,
-  }) => MediaQuery.paddingOf(context).top + (hasCategories ? 92 : 48);
+  }) => MediaQuery.paddingOf(context).top + (hasCategories ? 100 : 56);
 
   @override
   State<AppSearchPageScaffold<T>> createState() =>
@@ -72,7 +72,6 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
 
 class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
-  final BackdropKey _controlsBackdropKey = BackdropKey();
   final _interaction = UiInteractionCoordinator.instance;
   FlutterView? _view;
   double? _keyboardInset;
@@ -220,6 +219,10 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
     final accent = widget.accentColor ?? cs.primary;
+    final confirmEnabled = widget.onConfirm != null;
+    final confirmForeground = confirmEnabled
+        ? cs.onPrimary
+        : cs.onSurface.withValues(alpha: 0.38);
     final hasResults = widget.resultsBody != null;
     final resultsBody = widget.resultsBody ?? _retainedResultsBody;
     final showSuggestions = !hasResults || _resultsController.value < 1.0;
@@ -238,6 +241,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
           return false;
         },
         child: AppPageContentTransition(
+          backgroundColor: cs.surface,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -287,7 +291,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
       ),
     );
     final content = Scaffold(
-      backgroundColor: cs.surface,
+      backgroundColor: Colors.transparent,
       resizeToAvoidBottomInset: false,
       body: Stack(
         key: const ValueKey<String>('app_search_stack'),
@@ -346,7 +350,11 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                     radius: 23,
                     padding: EdgeInsets.zero,
                     child: Material(
-                      color: accent,
+                      // An empty draft cannot be submitted; show that instead
+                      // of an accent button that silently ignores taps.
+                      color: confirmEnabled
+                          ? accent
+                          : cs.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(23),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(23),
@@ -357,15 +365,15 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
-                                Icons.check_rounded,
+                                Icons.search_rounded,
                                 size: 18,
-                                color: cs.onPrimary,
+                                color: confirmForeground,
                               ),
                               const SizedBox(width: 6),
                               Text(
                                 widget.confirmLabel,
                                 style: TextStyle(
-                                  color: cs.onPrimary,
+                                  color: confirmForeground,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -399,201 +407,200 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                         16,
                         0,
                       ),
-                      child: BackdropGroup(
-                        backdropKey: _controlsBackdropKey,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: SizedBox(
-                                    key: const ValueKey<String>(
-                                      'app_search_field_shell',
-                                    ),
-                                    height: 38,
-                                    child: _SearchFloatingCapsule(
-                                      radius: 19,
-                                      child: TextSelectionTheme(
-                                        data: TextSelectionThemeData(
-                                          cursorColor: accent,
-                                          selectionColor: accent.withValues(
-                                            alpha: 0.24,
-                                          ),
-                                          selectionHandleColor: accent,
-                                        ),
-                                        child: TextField(
-                                          key: const ValueKey<String>(
-                                            'app_search_field',
-                                          ),
-                                          controller: widget.controller,
-                                          focusNode: widget.focusNode,
-                                          cursorColor: accent,
-                                          textInputAction:
-                                              TextInputAction.search,
-                                          textAlignVertical:
-                                              TextAlignVertical.center,
-                                          onChanged: widget.onChanged,
-                                          onSubmitted: widget.onSubmitted,
-                                          style: theme.textTheme.bodyMedium
-                                              ?.copyWith(fontSize: 14),
-                                          decoration: InputDecoration(
-                                            filled: false,
-                                            fillColor: Colors.transparent,
-                                            prefixIcon: Icon(
-                                              Icons.search_rounded,
-                                              color: cs.onSurfaceVariant,
-                                              size: 20,
-                                            ),
-                                            prefixIconConstraints:
-                                                const BoxConstraints.tightFor(
-                                                  width: 38,
-                                                  height: 38,
-                                                ),
-                                            hintText: widget.hintText,
-                                            hintStyle: theme
-                                                .textTheme
-                                                .bodyMedium
-                                                ?.copyWith(
-                                                  color: cs.onSurfaceVariant,
-                                                  fontSize: 14,
-                                                ),
-                                            border: InputBorder.none,
-                                            enabledBorder: InputBorder.none,
-                                            focusedBorder: InputBorder.none,
-                                            isDense: true,
-                                            contentPadding:
-                                                const EdgeInsets.only(
-                                                  right: 10,
-                                                ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
+                      // The mask paints in a separate header layer. Keep these
+                      // samples independent so they respect the controls' fade.
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SizedBox(
+                                  key: const ValueKey<String>(
+                                    'app_search_field_shell',
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                SizedBox.square(
-                                  dimension: 38,
+                                  height: 38,
                                   child: _SearchFloatingCapsule(
                                     radius: 19,
-                                    child: IconButton(
-                                      key: const ValueKey<String>(
-                                        'app_search_close',
+                                    child: TextSelectionTheme(
+                                      data: TextSelectionThemeData(
+                                        cursorColor: accent,
+                                        selectionColor: accent.withValues(
+                                          alpha: 0.24,
+                                        ),
+                                        selectionHandleColor: accent,
                                       ),
-                                      onPressed: widget.onCloseOrClear,
-                                      icon: const Icon(
-                                        Icons.close_rounded,
-                                        size: 20,
-                                      ),
-                                      color: cs.onSurfaceVariant,
-                                      padding: EdgeInsets.zero,
-                                      visualDensity: VisualDensity.compact,
-                                      style: IconButton.styleFrom(
-                                        minimumSize: const Size(38, 38),
-                                        maximumSize: const Size(38, 38),
-                                        padding: EdgeInsets.zero,
-                                        tapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
+                                      child: TextField(
+                                        key: const ValueKey<String>(
+                                          'app_search_field',
+                                        ),
+                                        controller: widget.controller,
+                                        focusNode: widget.focusNode,
+                                        cursorColor: accent,
+                                        textInputAction:
+                                            TextInputAction.search,
+                                        textAlignVertical:
+                                            TextAlignVertical.center,
+                                        onChanged: widget.onChanged,
+                                        onSubmitted: widget.onSubmitted,
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(fontSize: 14),
+                                        decoration: InputDecoration(
+                                          filled: false,
+                                          fillColor: Colors.transparent,
+                                          prefixIcon: Icon(
+                                            Icons.search_rounded,
+                                            color: cs.onSurfaceVariant,
+                                            size: 20,
+                                          ),
+                                          prefixIconConstraints:
+                                              const BoxConstraints.tightFor(
+                                                width: 38,
+                                                height: 38,
+                                              ),
+                                          hintText: widget.hintText,
+                                          hintStyle: theme
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.copyWith(
+                                                color: cs.onSurfaceVariant,
+                                                fontSize: 14,
+                                              ),
+                                          border: InputBorder.none,
+                                          enabledBorder: InputBorder.none,
+                                          focusedBorder: InputBorder.none,
+                                          isDense: true,
+                                          contentPadding:
+                                              const EdgeInsets.only(
+                                                right: 10,
+                                              ),
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
-                            if (widget.categories.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              SizedBox(
-                                key: const ValueKey<String>(
-                                  'app_search_category_shell',
-                                ),
-                                height: 38,
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox.square(
+                                dimension: 38,
                                 child: _SearchFloatingCapsule(
                                   radius: 19,
-                                  child: WindowsHorizontalWheelScroll(
-                                    builder: (scrollController) => ListView.separated(
-                                      key: const ValueKey<String>(
-                                        'app_search_categories',
-                                      ),
-                                      controller: scrollController,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                        vertical: 3,
-                                      ),
-                                      scrollDirection: Axis.horizontal,
-                                      physics: const ClampingScrollPhysics(),
-                                      itemCount: widget.categories.length,
-                                      separatorBuilder: (_, _) =>
-                                          const SizedBox(width: 2),
-                                      itemBuilder: (context, index) {
-                                        final category =
-                                            widget.categories[index];
-                                        final selected =
-                                            category.value ==
-                                            widget.selectedCategory;
-                                        return Semantics(
-                                          button: true,
-                                          selected: selected,
-                                          child: InkWell(
-                                            key: ValueKey<String>(
-                                              'app_search_category_${category.value}',
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              15,
-                                            ),
-                                            onTap:
-                                                widget.onCategorySelected ==
-                                                    null
-                                                ? null
-                                                : () =>
-                                                      widget
-                                                          .onCategorySelected!(
-                                                        category.value,
-                                                      ),
-                                            child: AnimatedContainer(
-                                              duration: tokens.motionFast,
-                                              alignment: Alignment.center,
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: selected
-                                                    ? accent.withValues(
-                                                        alpha: 0.19,
-                                                      )
-                                                    : Colors.transparent,
-                                                borderRadius:
-                                                    BorderRadius.circular(15),
-                                              ),
-                                              child: Text(
-                                                category.label,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: theme
-                                                    .textTheme
-                                                    .labelMedium
-                                                    ?.copyWith(
-                                                      color: selected
-                                                          ? accent
-                                                          : cs.onSurfaceVariant,
-                                                      fontWeight: selected
-                                                          ? FontWeight.w700
-                                                          : FontWeight.w600,
-                                                      fontSize: 12.5,
-                                                    ),
-                                              ),
-                                            ),
-                                          ),
-                                        );
-                                      },
+                                  child: IconButton(
+                                    key: const ValueKey<String>(
+                                      'app_search_close',
+                                    ),
+                                    onPressed: widget.onCloseOrClear,
+                                    icon: const Icon(
+                                      Icons.close_rounded,
+                                      size: 20,
+                                    ),
+                                    color: cs.onSurfaceVariant,
+                                    padding: EdgeInsets.zero,
+                                    visualDensity: VisualDensity.compact,
+                                    style: IconButton.styleFrom(
+                                      minimumSize: const Size(38, 38),
+                                      maximumSize: const Size(38, 38),
+                                      padding: EdgeInsets.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
                                     ),
                                   ),
                                 ),
                               ),
                             ],
+                          ),
+                          if (widget.categories.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            SizedBox(
+                              key: const ValueKey<String>(
+                                'app_search_category_shell',
+                              ),
+                              height: 38,
+                              child: _SearchFloatingCapsule(
+                                radius: 19,
+                                child: WindowsHorizontalWheelScroll(
+                                  builder: (scrollController) => ListView.separated(
+                                    key: const ValueKey<String>(
+                                      'app_search_categories',
+                                    ),
+                                    controller: scrollController,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 3,
+                                    ),
+                                    scrollDirection: Axis.horizontal,
+                                    physics: const ClampingScrollPhysics(),
+                                    itemCount: widget.categories.length,
+                                    separatorBuilder: (_, _) =>
+                                        const SizedBox(width: 2),
+                                    itemBuilder: (context, index) {
+                                      final category =
+                                          widget.categories[index];
+                                      final selected =
+                                          category.value ==
+                                          widget.selectedCategory;
+                                      return Semantics(
+                                        button: true,
+                                        selected: selected,
+                                        child: InkWell(
+                                          key: ValueKey<String>(
+                                            'app_search_category_${category.value}',
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            15,
+                                          ),
+                                          onTap:
+                                              widget.onCategorySelected ==
+                                                  null
+                                              ? null
+                                              : () =>
+                                                    widget
+                                                        .onCategorySelected!(
+                                                      category.value,
+                                                    ),
+                                          child: AnimatedContainer(
+                                            duration: tokens.motionFast,
+                                            alignment: Alignment.center,
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                ),
+                                            decoration: BoxDecoration(
+                                              color: selected
+                                                  ? accent.withValues(
+                                                      alpha: 0.19,
+                                                    )
+                                                  : Colors.transparent,
+                                              borderRadius:
+                                                  BorderRadius.circular(15),
+                                            ),
+                                            child: Text(
+                                              category.label,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: theme
+                                                  .textTheme
+                                                  .labelMedium
+                                                  ?.copyWith(
+                                                    color: selected
+                                                        ? accent
+                                                        : cs.onSurfaceVariant,
+                                                    fontWeight: selected
+                                                        ? FontWeight.w700
+                                                        : FontWeight.w600,
+                                                    fontSize: 12.5,
+                                                  ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
                           ],
-                        ),
+                        ],
                       ),
                     ),
             ),

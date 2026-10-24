@@ -356,7 +356,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                         slivers: [
                           section(
                             'library_search_history',
-                            i18n.tr('search_library_history'),
+                            i18n.tr('search_history'),
                             history,
                             i18n.tr('search_history_empty'),
                             onClear: () => unawaited(

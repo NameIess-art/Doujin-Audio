@@ -1,6 +1,5 @@
 const Map<String, String> appLanguageJa = {
   'search_history': '検索履歴',
-  'search_library_history': '履歴',
   'search_history_empty': '検索履歴はありません',
   'search_history_cleared': '検索履歴を消去しました',
   'search_hot_voice_actors': '人気の声優',

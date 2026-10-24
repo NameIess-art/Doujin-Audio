@@ -175,7 +175,7 @@ void main() {
 
   for (final hasCategories in [false, true]) {
     testWidgets(
-      'lifted search header paints its full 300 ms entrance and exit fade (categories: $hasCategories)',
+      'search slides in and out while its header fades for 300 ms (categories: $hasCategories)',
       (tester) async {
         final controller = TextEditingController();
         final focusNode = FocusNode();
@@ -183,6 +183,7 @@ void main() {
         addTearDown(focusNode.dispose);
         final navigator = GlobalKey<NavigatorState>();
         final surface = GlobalKey();
+        const lowerPageColor = Color(0xff0000ff);
         Future<Color> headerPixel(Offset point) async =>
             (await tester.runAsync(() async {
               final boundary = tester.renderObject<RenderRepaintBoundary>(
@@ -215,13 +216,12 @@ void main() {
                     ),
               ),
               builder: (_, child) => AppPageTransitionHost(child: child!),
-              home: const Scaffold(backgroundColor: Colors.black),
+              home: const Scaffold(backgroundColor: lowerPageColor),
             ),
           ),
         );
         final route = buildAppPageRoute<void>(
           context: navigator.currentContext!,
-          slide: false,
           separateHeader: true,
           child: AppSearchPageScaffold<int>(
             controller: controller,
@@ -235,7 +235,7 @@ void main() {
             onChanged: (_) {},
             onSubmitted: (_) {},
             onCloseOrClear: () => navigator.currentState!.pop(),
-            body: const SizedBox.expand(),
+            body: const SizedBox.expand(key: ValueKey('sliding_search_body')),
           ),
         );
         expect(route.transitionDuration, const Duration(milliseconds: 300));
@@ -246,6 +246,15 @@ void main() {
         unawaited(navigator.currentState!.push(route));
         await tester.pump();
         await tester.pump();
+        final body = find.byKey(const ValueKey('sliding_search_body'));
+        final width = tester.getSize(find.byType(Scaffold).last).width;
+        final header = find.byKey(const ValueKey('app_search_field_shell'));
+        final headerRect = tester.getRect(header);
+        const leftBodyPoint = Offset(8, 250);
+        final rightBodyPoint = Offset(width - 8, 250);
+        expect(tester.getTopLeft(body).dx, width);
+        expect(await headerPixel(leftBodyPoint), lowerPageColor);
+        expect(await headerPixel(rightBodyPoint), lowerPageColor);
         final points = [
           for (final key in [
             'app_search_field_shell',
@@ -256,12 +265,19 @@ void main() {
                 const Offset(12, 0),
         ];
         for (final point in points) {
-          expect(await headerPixel(point), Colors.black);
+          expect(await headerPixel(point), lowerPageColor);
         }
         await tester.pump(const Duration(milliseconds: 150));
         expect(route.animation!.value, closeTo(0.5, 0.001));
+        expect(tester.getTopLeft(body).dx, inExclusiveRange(0, width));
+        expect(tester.getRect(header), headerRect);
+        expect(await headerPixel(leftBodyPoint), lowerPageColor);
+        expect(await headerPixel(rightBodyPoint), Colors.black);
         final entering = [for (final point in points) await headerPixel(point)];
         await tester.pump(const Duration(milliseconds: 150));
+        expect(tester.getTopLeft(body).dx, 0);
+        expect(await headerPixel(leftBodyPoint), Colors.black);
+        expect(await headerPixel(rightBodyPoint), Colors.black);
         final settled = [for (final point in points) await headerPixel(point)];
         for (var i = 0; i < points.length; i++) {
           expect(settled[i].r, greaterThan(0.2));
@@ -273,6 +289,10 @@ void main() {
         navigator.currentState!.pop();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 150));
+        expect(tester.getTopLeft(body).dx, inExclusiveRange(0, width));
+        expect(tester.getRect(header), headerRect);
+        expect(await headerPixel(leftBodyPoint), lowerPageColor);
+        expect(await headerPixel(rightBodyPoint), Colors.black);
         for (var i = 0; i < points.length; i++) {
           expect(
             (await headerPixel(points[i])).r,
@@ -280,8 +300,11 @@ void main() {
           );
         }
         await tester.pumpAndSettle();
+        expect(body, findsNothing);
+        expect(await headerPixel(leftBodyPoint), lowerPageColor);
+        expect(await headerPixel(rightBodyPoint), lowerPageColor);
         for (final point in points) {
-          expect(await headerPixel(point), Colors.black);
+          expect(await headerPixel(point), lowerPageColor);
         }
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -293,7 +316,7 @@ void main() {
     );
   }
 
-  testWidgets('fading search requests focus once after entrance completes', (
+  testWidgets('sliding search requests focus once after entrance completes', (
     tester,
   ) async {
     final controller = TextEditingController();
@@ -314,7 +337,7 @@ void main() {
     var selectedCategory = 0;
     final route = buildAppPageRoute<void>(
       context: routeContext,
-      slide: false,
+      separateHeader: true,
       child: StatefulBuilder(
         builder: (context, setState) => AppSearchPageScaffold<int>(
           controller: controller,
@@ -730,7 +753,7 @@ void main() {
       );
       final fadeMask = tester.widget<AppEdgeFadeMask>(fadeMaskFinder);
       expect(fadeMask.direction, AppEdgeFadeDirection.towardTop);
-      expect(tester.getSize(fadeMaskFinder).height, 128);
+      expect(tester.getSize(fadeMaskFinder).height, 136);
       final fadeDecoration = tester.widget<DecoratedBox>(
         find.descendant(
           of: fadeMaskFinder,
@@ -811,7 +834,7 @@ void main() {
     },
   );
 
-  testWidgets('search blurs only its three control capsules', (
+  testWidgets('search fades its three glass capsules with independent samples', (
     tester,
   ) async {
     final controller = TextEditingController();
@@ -850,9 +873,7 @@ void main() {
     final filters = tester.renderObjectList<RenderBackdropFilter>(
       find.byType(BackdropFilter),
     ).toList();
-    expect(filters.first.backdropKey, isNotNull);
-    expect(filters.every((filter) =>
-        identical(filter.backdropKey, filters.first.backdropKey)), isTrue);
+    expect(filters.map((filter) => filter.backdropKey), everyElement(isNull));
     final surfaces = find.byType(AppGlassSurface).evaluate().map(
       (element) => tester.getRect(find.byWidget(element.widget)),
     ).toList();
@@ -868,7 +889,10 @@ void main() {
       ),
       findsNothing,
     );
-  });
+  }, variant: const TargetPlatformVariant({
+    TargetPlatform.android,
+    TargetPlatform.windows,
+  }));
 
   testWidgets(
     'search body layer adjusts for keyboard insets allowing results to scroll above keyboard',

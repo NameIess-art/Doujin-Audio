@@ -146,7 +146,7 @@ void main() {
             );
         expect(scaffold.categories, isEmpty);
         expect(scaffold.onConfirm, isNull);
-        expect(find.text('历史'), findsOneWidget);
+        expect(find.text('搜索历史'), findsOneWidget);
         expect(find.text('声优'), findsOneWidget);
         expect(find.text('标签'), findsOneWidget);
         await tester.tap(

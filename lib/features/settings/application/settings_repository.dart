@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/network/network_route_settings.dart';
-import '../../asmr/domain/asmr_models.dart';
 import '../../asmr/domain/asmr_media_sources.dart';
 
 import '../../../core/state/audio_state_slice.dart';
@@ -37,7 +36,6 @@ class SettingsRepository {
   final Future<void> Function(String?) _writeProxyPassword;
   NetworkRouteSettings networkRouteSettings = const NetworkRouteSettings();
   String asmrApiDomain = asmrApiDomains.first;
-  AsmrCatalogSource preferredAsmrSource = AsmrCatalogSource.asmrOne;
 
   static const _playbackSettingsKey = 'playback_settings_v1';
   bool autoCheckUpdates = false;
@@ -102,10 +100,6 @@ class SettingsRepository {
       if (asmrApiDomains.contains(playback['asmrApiDomain'])) {
         asmrApiDomain = playback['asmrApiDomain'] as String;
       }
-      preferredAsmrSource = AsmrCatalogSource.values.firstWhere(
-        (source) => source.name == playback['preferredAsmrSource'],
-        orElse: () => AsmrCatalogSource.asmrOne,
-      );
       startupPage = StartupPage.values.firstWhere(
         (value) => value.name == playback['startupPage'],
         orElse: () => StartupPage.library,
@@ -248,7 +242,6 @@ class SettingsRepository {
       <String, Object?>{
         'networkRouteSettings': networkRouteSettings.toJson(),
         'asmrApiDomain': asmrApiDomain,
-        'preferredAsmrSource': preferredAsmrSource.name,
         'startupPage': startupPage.name,
         'autoCheckUpdates': autoCheckUpdates,
         'recordPlaybackProgress': recordPlaybackProgress,
@@ -364,11 +357,6 @@ class SettingsRepository {
       update: () => asmrApiDomain = domain,
     );
   }
-
-  Future<void> setPreferredAsmrSource(AsmrCatalogSource source) => _setValue(
-    unchanged: () => preferredAsmrSource == source,
-    update: () => preferredAsmrSource = source,
-  );
 
   Future<void> setAsmrDownloadDestinationRoot(String? destinationRoot) =>
       _change(() async {
@@ -717,7 +705,6 @@ class SettingsRepository {
   void _restore(SettingsState snapshot) {
     networkRouteSettings = snapshot.networkRouteSettings;
     asmrApiDomain = snapshot.asmrApiDomain;
-    preferredAsmrSource = snapshot.preferredAsmrSource;
     autoCheckUpdates = snapshot.autoCheckUpdates;
     dlsiteMetadataLanguage = snapshot.dlsiteMetadataLanguage;
     librarySortCriterion = snapshot.librarySortCriterion;
@@ -762,7 +749,6 @@ class SettingsRepository {
   void _resetValues() {
     networkRouteSettings = const NetworkRouteSettings();
     asmrApiDomain = asmrApiDomains.first;
-    preferredAsmrSource = AsmrCatalogSource.asmrOne;
     autoCheckUpdates = false;
     dlsiteMetadataLanguage = ContentLanguagePreference.followPage;
     librarySortCriterion = LibrarySortCriterion.name;
@@ -826,7 +812,6 @@ class SettingsRepository {
     return SettingsState(
       networkRouteSettings: networkRouteSettings,
       asmrApiDomain: asmrApiDomain,
-      preferredAsmrSource: preferredAsmrSource,
       autoCheckUpdates: autoCheckUpdates,
       dlsiteMetadataLanguage: dlsiteMetadataLanguage,
       librarySortCriterion: librarySortCriterion,

@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:doujin_audio/core/network/network_route_settings.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_media_sources.dart';
-import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/settings/application/network_service_probe.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +28,21 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await AppPreferences.init();
   });
+
+  test(
+    'obsolete source priority is ignored and removed when settings save',
+    () async {
+      await AppPreferences.writeJson('playback_settings_v1', {
+        'preferredAsmrSource': 'japaneseAsmr',
+      });
+      final settings = SettingsRepository();
+      addTearDown(settings.dispose);
+      await settings.loadPersistedState(enforceCacheLimit: false);
+      await settings.setAsmrApiDomain(asmrApiDomains[1]);
+      final snapshot = await AppPreferences.snapshot();
+      expect(jsonEncode(snapshot), isNot(contains('preferredAsmrSource')));
+    },
+  );
 
   test(
     'applying the same saved route retries a failed native synchronization',
@@ -111,7 +125,6 @@ void main() {
       );
       expect(secret, 'secret-value');
       await settings.setAsmrApiDomain(asmrApiDomains[1]);
-      await settings.setPreferredAsmrSource(AsmrCatalogSource.japaneseAsmr);
 
       final restarted = SettingsRepository(
         readProxyPassword: () async => secret,
@@ -122,7 +135,6 @@ void main() {
       await restarted.loadPersistedState(enforceCacheLimit: false);
       expect(restarted.networkRouteSettings, settings.networkRouteSettings);
       expect(restarted.asmrApiDomain, asmrApiDomains[1]);
-      expect(restarted.preferredAsmrSource, AsmrCatalogSource.japaneseAsmr);
       expect(applied.last.$2, 'secret-value');
     },
   );

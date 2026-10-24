@@ -146,6 +146,89 @@ void main() {
   final heatmapSwitch = find.byKey(const ValueKey('listening-style-heatmap'));
   final barSwitch = find.byKey(const ValueKey('listening-style-bar'));
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final reducedMotion in [false, true]) {
+      testWidgets(
+        'chart styles crossfade for 300 ms on $platform, reduced motion $reducedMotion',
+        (tester) async {
+          final days = _CountingDays([
+            ListeningDay(date: today, duration: const Duration(minutes: 12)),
+          ]);
+          await pumpChart(
+            tester,
+            platform: platform,
+            reducedMotion: reducedMotion,
+            days: days,
+          );
+          final area = find.byKey(const ValueKey('listening-chart-bars'));
+          final height = tester.getSize(area).height;
+          final duration = find.text(
+            listeningDurationText(i18n, const Duration(minutes: 12)),
+          );
+          final fades = find.descendant(
+            of: area,
+            matching: find.byType(FadeTransition),
+          );
+          days.reads = 0;
+          await tester.tap(heatmapSwitch);
+          await tester.pump();
+          if (reducedMotion) {
+            await tester.pump();
+            expect(
+              find.byKey(const ValueKey('listening-chart-bar')),
+              findsNothing,
+            );
+            expect(tester.widget<FadeTransition>(fades).opacity.value, 1);
+          } else {
+            expect(
+              find.byKey(const ValueKey('listening-chart-bar')),
+              findsOneWidget,
+            );
+            expect(fades, findsNWidgets(2));
+            await tester.pump(const Duration(milliseconds: 150));
+            for (final fade in tester.widgetList<FadeTransition>(fades)) {
+              expect(fade.opacity.value, inExclusiveRange(0.45, 0.55));
+            }
+            expect(tester.getSize(area).height, height);
+            expect(duration, findsOneWidget);
+            await tester.pump(const Duration(milliseconds: 149));
+            expect(fades, findsNWidgets(2));
+            await tester.pump(const Duration(milliseconds: 1));
+            final opacityValues =
+                tester
+                    .widgetList<FadeTransition>(fades)
+                    .map((fade) => fade.opacity.value)
+                    .toList()
+                  ..sort();
+            expect(opacityValues.first, closeTo(0, 0.001));
+            expect(opacityValues.last, closeTo(1, 0.001));
+            await tester.pump(const Duration(milliseconds: 16));
+            expect(
+              find.byKey(const ValueKey('listening-chart-bar')),
+              findsNothing,
+            );
+          }
+          expect(
+            find.byKey(const ValueKey('listening-chart-heatmap')),
+            findsOneWidget,
+          );
+          // Reverse twice before the outgoing chart has been removed.
+          await tester.tap(barSwitch);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 75));
+          await tester.tap(heatmapSwitch);
+          await tester.pumpAndSettle();
+          expect(find.byType(ListView), findsOneWidget);
+          expect(controller(tester).positions, hasLength(1));
+          expect(days.reads, 0);
+          expect(tester.getSize(area).height, height);
+          expect(duration, findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
   for (final width in [280.0, 720.0]) {
     testWidgets(
       'heatmap fills seven rows and anchors latest at bottom right at width $width',

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/app_runtime_providers.dart';
@@ -80,12 +81,16 @@ class _MyPageState extends ConsumerState<MyPage>
     super.dispose();
   }
 
-  void _openTags(bool excluded) => Navigator.of(context).push<void>(
-    buildAppPageRoute<void>(
-      context: context,
-      child: MyTagManagementPage(excluded: excluded),
-    ),
-  );
+  void _openTags(bool excluded, {bool voiceActors = false}) =>
+      Navigator.of(context).push<void>(
+        buildAppPageRoute<void>(
+          context: context,
+          child: MyTagManagementPage(
+            excluded: excluded,
+            voiceActors: voiceActors,
+          ),
+        ),
+      );
 
   Future<void> _setChartStyle(ListeningChartStyle style) async {
     try {
@@ -235,6 +240,106 @@ class _MyPageState extends ConsumerState<MyPage>
       );
     }
 
+    Widget interestSection({bool voiceActors = false}) => section(
+      i18n.tr(voiceActors ? 'my_voice_interests' : 'my_interests'),
+      controller == null
+          ? Text(
+              i18n.tr(
+                voiceActors ? 'my_no_voice_interests' : 'my_no_interests',
+              ),
+            )
+          : Consumer(
+              builder: (context, ref, _) {
+                final interests =
+                    ref
+                        .watch(
+                          voiceActors
+                              ? asmrVoiceActorInterestsProvider
+                              : asmrTagInterestsProvider,
+                        )
+                        .value ??
+                    const [];
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (interests.isEmpty)
+                      Text(
+                        i18n.tr(
+                          voiceActors
+                              ? 'my_no_voice_interests'
+                              : 'my_no_interests',
+                        ),
+                      ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 2,
+                      children: [
+                        for (final interest in interests.take(
+                          voiceActors ? 10 : 20,
+                        ))
+                          InputChip(
+                            key: ValueKey(
+                              'my-${voiceActors ? 'voice-' : ''}interest-${interest.tag.key}',
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.primaryContainer,
+                            labelStyle: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onPrimaryContainer,
+                            ),
+                            label: Text(interest.tag.name),
+                            onPressed: () async {
+                              final name = interest.tag.name;
+                              await Clipboard.setData(
+                                ClipboardData(text: name),
+                              );
+                              if (!context.mounted) return;
+                              showAppSnackBar(
+                                context,
+                                i18n.tr('copied_to_clipboard', {'value': name}),
+                                icon: Icons.content_copy_rounded,
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              _openTags(false, voiceActors: voiceActors),
+                          icon: const Icon(Icons.add_rounded),
+                          label: Text(
+                            i18n.tr(
+                              voiceActors
+                                  ? 'my_add_voice_interest'
+                                  : 'my_add_interest',
+                            ),
+                          ),
+                        ),
+                        if (!voiceActors)
+                          OutlinedButton.icon(
+                            onPressed: () => _openTags(true),
+                            icon: const Icon(Icons.block_rounded),
+                            label: Text(i18n.tr('my_excluded_tags')),
+                          ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+      titleNote: i18n.tr(
+        voiceActors ? 'my_voice_interest_limit' : 'my_interest_limit',
+      ),
+    );
+
     Widget pageList(
       List<Widget> children, {
       ScrollController? controller,
@@ -304,6 +409,51 @@ class _MyPageState extends ConsumerState<MyPage>
         ),
       ),
     );
+    Widget interestSkeleton({bool voiceActors = false}) => section(
+      i18n.tr(voiceActors ? 'my_voice_interests' : 'my_interests'),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 2,
+            children: List.generate(
+              voiceActors ? 10 : 20,
+              (index) => SizedBox(
+                height: 40,
+                child: Center(
+                  widthFactor: 1,
+                  child: ShimmerContainer(
+                    width: 48.0 + (index % 3) * 24,
+                    height: 28,
+                    borderRadius: 8,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              const ShimmerContainer(width: 160, height: 40, borderRadius: 20),
+              if (!voiceActors)
+                const ShimmerContainer(
+                  width: 192,
+                  height: 40,
+                  borderRadius: 20,
+                ),
+            ],
+          ),
+        ],
+      ),
+      skeleton: true,
+      titleNote: i18n.tr(
+        voiceActors ? 'my_voice_interest_limit' : 'my_interest_limit',
+      ),
+    );
+
     final skeleton = Builder(
       builder: (context) => IgnorePointer(
         child: ExcludeSemantics(
@@ -321,51 +471,8 @@ class _MyPageState extends ConsumerState<MyPage>
                 coverSkeleton('my-skeleton-daily'),
                 skeleton: true,
               ),
-              section(
-                i18n.tr('my_interests'),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 2,
-                      children: List.generate(
-                        20,
-                        (index) => SizedBox(
-                          height: 40,
-                          child: Center(
-                            widthFactor: 1,
-                            child: ShimmerContainer(
-                              width: 48.0 + (index % 3) * 24,
-                              height: 28,
-                              borderRadius: 8,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        ShimmerContainer(
-                          width: 160,
-                          height: 40,
-                          borderRadius: 20,
-                        ),
-                        ShimmerContainer(
-                          width: 192,
-                          height: 40,
-                          borderRadius: 20,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                skeleton: true,
-                titleNote: i18n.tr('my_interest_limit'),
-              ),
+              interestSkeleton(),
+              interestSkeleton(voiceActors: true),
             ], scrollable: false),
           ),
         ),
@@ -409,59 +516,8 @@ class _MyPageState extends ConsumerState<MyPage>
                     i18n.tr('my_daily_recommendations'),
                     const _DailyRecommendations(),
                   ),
-                  section(
-                    i18n.tr('my_interests'),
-                    controller == null
-                        ? Text(i18n.tr('my_no_interests'))
-                        : Consumer(
-                            builder: (context, ref, _) {
-                              final interests =
-                                  ref.watch(asmrTagInterestsProvider).value ??
-                                  const [];
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (interests.isEmpty)
-                                    Text(i18n.tr('my_no_interests')),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 2,
-                                    children: [
-                                      for (final interest in interests.take(20))
-                                        InputChip(
-                                          key: ValueKey(
-                                            'my-interest-${interest.tag.key}',
-                                          ),
-                                          visualDensity: VisualDensity.compact,
-                                          label: Text(interest.tag.name),
-                                        ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 4,
-                                    children: [
-                                      OutlinedButton.icon(
-                                        onPressed: () => _openTags(false),
-                                        icon: const Icon(Icons.add_rounded),
-                                        label: Text(i18n.tr('my_add_interest')),
-                                      ),
-                                      OutlinedButton.icon(
-                                        onPressed: () => _openTags(true),
-                                        icon: const Icon(Icons.block_rounded),
-                                        label: Text(
-                                          i18n.tr('my_excluded_tags'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                    titleNote: i18n.tr('my_interest_limit'),
-                  ),
+                  interestSection(),
+                  interestSection(voiceActors: true),
                 ], controller: _scroll),
               ),
             ),

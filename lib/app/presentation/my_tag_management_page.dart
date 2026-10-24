@@ -15,8 +15,13 @@ import '../../features/asmr/presentation/asmr_providers.dart';
 
 /// Both preference editors share the same searchable catalog and state owner.
 class MyTagManagementPage extends ConsumerStatefulWidget {
-  const MyTagManagementPage({super.key, required this.excluded});
+  const MyTagManagementPage({
+    super.key,
+    required this.excluded,
+    this.voiceActors = false,
+  }) : assert(!voiceActors || !excluded);
   final bool excluded;
+  final bool voiceActors;
 
   @override
   ConsumerState<MyTagManagementPage> createState() =>
@@ -31,7 +36,12 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
   @override
   void initState() {
     super.initState();
-    unawaited(ref.read(asmrLibraryControllerProvider)?.ensureTagCatalog());
+    final controller = ref.read(asmrLibraryControllerProvider);
+    unawaited(
+      widget.voiceActors
+          ? controller?.ensureVoiceActorCatalog()
+          : controller?.ensureTagCatalog(),
+    );
   }
 
   @override
@@ -45,10 +55,14 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     if (controller == null || _saving) return;
     setState(() => _saving = true);
     try {
-      await controller.applyTagSelections(
-        excluded: widget.excluded,
-        changes: _changes,
-      );
+      if (widget.voiceActors) {
+        await controller.applyVoiceActorSelections(changes: _changes);
+      } else {
+        await controller.applyTagSelections(
+          excluded: widget.excluded,
+          changes: _changes,
+        );
+      }
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
       if (mounted) showAppSnackBar(context, error.toString());
@@ -74,28 +88,56 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
         searchPadding.vertical +
         AppPageHeaderMetrics.firstContentSpacing;
     final content = controller == null
-        ? Center(child: Text(i18n.tr('my_catalog_incomplete')))
+        ? Center(
+            child: Text(
+              i18n.tr(
+                widget.voiceActors
+                    ? 'my_voice_catalog_incomplete'
+                    : 'my_catalog_incomplete',
+              ),
+            ),
+          )
         : ListenableBuilder(
             listenable: controller,
             builder: (context, _) {
               final listened = {
-                for (final interest in controller.listenedTagInterests)
+                for (final interest
+                    in widget.voiceActors
+                        ? controller.listenedVoiceActorInterests
+                        : controller.listenedTagInterests)
                   interest.tag.key: interest.weight,
               };
               final selected = widget.excluded
                   ? controller.excludedTagKeys
-                  : {...controller.manualInterestTagKeys, ...listened.keys};
+                  : {
+                      ...(widget.voiceActors
+                          ? controller.manualInterestVoiceActorKeys
+                          : controller.manualInterestTagKeys),
+                      ...listened.keys,
+                    };
               final query = _search.text.trim().toLowerCase();
-              final tags = controller.allTags
-                  .where(
-                    (tag) =>
-                        query.isEmpty ||
-                        [
-                          tag.name,
-                          ...tag.aliases,
-                        ].any((name) => name.toLowerCase().contains(query)),
-                  )
-                  .toList();
+              final loading = widget.voiceActors
+                  ? controller.isLoadingVoiceActorCatalog
+                  : controller.isLoadingTagCatalog;
+              final complete = widget.voiceActors
+                  ? controller.voiceActorCatalogComplete
+                  : controller.tagCatalogComplete;
+              final error = widget.voiceActors
+                  ? controller.voiceActorCatalogError
+                  : controller.tagCatalogError;
+              final tags =
+                  (widget.voiceActors
+                          ? controller.allVoiceActors
+                          : controller.allTags)
+                      .where(
+                        (tag) =>
+                            query.isEmpty ||
+                            [
+                              tag.name,
+                              ...tag.aliases,
+                            ].any((name) => name.toLowerCase().contains(query)),
+                      )
+                      .toList();
               tags.sort((a, b) {
                 if (!widget.excluded) {
                   final weight = (listened[b.key] ?? 0).compareTo(
@@ -111,9 +153,9 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
               return CustomScrollView(
                 slivers: [
                   SliverToBoxAdapter(child: SizedBox(height: headerTopInset)),
-                  if (controller.isLoadingTagCatalog)
+                  if (loading)
                     const SliverToBoxAdapter(child: LinearProgressIndicator()),
-                  if (!controller.tagCatalogComplete)
+                  if (!complete)
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -122,16 +164,22 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                             Expanded(
                               child: Text(
                                 i18n.tr(
-                                  controller.tagCatalogError == null
-                                      ? 'my_catalog_incomplete'
-                                      : 'my_catalog_error',
+                                  error == null
+                                      ? (widget.voiceActors
+                                            ? 'my_voice_catalog_incomplete'
+                                            : 'my_catalog_incomplete')
+                                      : (widget.voiceActors
+                                            ? 'my_voice_catalog_error'
+                                            : 'my_catalog_error'),
                                 ),
                               ),
                             ),
                             TextButton(
-                              onPressed: controller.isLoadingTagCatalog
+                              onPressed: loading
                                   ? null
-                                  : () => controller.ensureTagCatalog(),
+                                  : () => widget.voiceActors
+                                        ? controller.ensureVoiceActorCatalog()
+                                        : controller.ensureTagCatalog(),
                               child: Text(i18n.tr('my_retry')),
                             ),
                           ],
@@ -154,7 +202,13 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                           title: Text(tag.name),
                           subtitle:
                               !widget.excluded && listened.containsKey(tag.key)
-                              ? Text(i18n.tr('my_listened_tag'))
+                              ? Text(
+                                  i18n.tr(
+                                    widget.voiceActors
+                                        ? 'my_listened_voice_actor'
+                                        : 'my_listened_tag',
+                                  ),
+                                )
                               : null,
                           value:
                               (!widget.excluded &&
@@ -251,9 +305,15 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                   right: 0,
                   child: TopPageHeader(
                     title: i18n.tr(
-                      widget.excluded ? 'my_excluded_tags' : 'my_add_interest',
+                      widget.voiceActors
+                          ? 'my_add_voice_interest'
+                          : (widget.excluded
+                                ? 'my_excluded_tags'
+                                : 'my_add_interest'),
                     ),
-                    icon: widget.excluded
+                    icon: widget.voiceActors
+                        ? Icons.record_voice_over_rounded
+                        : widget.excluded
                         ? Icons.block_rounded
                         : Icons.sell_outlined,
                     leading: const BackButton(),
@@ -270,7 +330,11 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                             fontSize: 14,
                           ),
                           decoration: InputDecoration(
-                            hintText: i18n.tr('my_search_tags'),
+                            hintText: i18n.tr(
+                              widget.voiceActors
+                                  ? 'my_voice_search'
+                                  : 'my_search_tags',
+                            ),
                             hintStyle: theme.textTheme.bodyMedium?.copyWith(
                               color: cs.onSurfaceVariant,
                               fontSize: 14,

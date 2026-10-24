@@ -35,6 +35,8 @@ class AsmrTagInterest {
 
 /// Persisted taste signals and directory share stable keys across content languages.
 class AsmrTagPreferences {
+  AsmrTagPreferences({this.limit = 20}) : assert(limit > 0);
+  final int limit;
   final Map<String, AsmrTag> tags = {};
   final Map<String, double> learned = {};
   final Set<String> manualInterests = {};
@@ -60,7 +62,7 @@ class AsmrTagPreferences {
         .where(
           (old) =>
               old.key != tag.key &&
-              old.onlineId == null &&
+              old.key.startsWith('local:') &&
               old.aliases.any(
                 (alias) => tag.aliases.any(
                   (value) => normalizeAsmrTag(value) == normalizeAsmrTag(alias),
@@ -93,12 +95,12 @@ class AsmrTagPreferences {
       final order = b.weight.compareTo(a.weight);
       return order == 0 ? a.tag.name.compareTo(b.tag.name) : order;
     });
-    return values.take(20).toList(growable: false);
+    return values.take(limit).toList(growable: false);
   }
 
   List<AsmrTagInterest> get interests {
     final values = [...listenedInterests];
-    if (values.length == 20) return values;
+    if (values.length == limit) return values;
     final listenedKeys = values.map((e) => e.tag.key).toSet();
     final fallback =
         manualInterests
@@ -110,7 +112,7 @@ class AsmrTagPreferences {
           ..sort((a, b) => a.name.compareTo(b.name));
     values.addAll(
       fallback
-          .take(20 - values.length)
+          .take(limit - values.length)
           .map((tag) => AsmrTagInterest(tag: tag, weight: 0)),
     );
     return values;
@@ -191,9 +193,12 @@ class AsmrTagPreferences {
     'excluded': excluded.toList(),
     'sequences': consumedSequences,
     'complete': catalogComplete,
+    'limit': limit,
   };
   factory AsmrTagPreferences.fromJson(Map<String, dynamic> json) {
-    final state = AsmrTagPreferences();
+    final state = AsmrTagPreferences(
+      limit: (json['limit'] as num?)?.toInt() ?? 20,
+    );
     for (final raw in json['tags'] as List? ?? []) {
       final tag = AsmrTag.fromJson(Map<String, dynamic>.from(raw as Map));
       state.tags[tag.key] = tag;
@@ -227,5 +232,4 @@ class AsmrTagPreferences {
     state.catalogComplete = json['complete'] == true;
     return state;
   }
-  AsmrTagPreferences();
 }

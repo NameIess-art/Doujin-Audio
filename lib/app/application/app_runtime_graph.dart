@@ -374,6 +374,15 @@ ProductionAppRuntime createProductionAppRuntime({
     readUsage: nativePlaybackRepository.readUsage,
     acknowledgeUsage: nativePlaybackRepository.acknowledgeUsage,
     resolveTrack: (path) => runtimeGraph.audioPaths.trackByPath(path),
+    resolveLocalVoiceActors: (track) async {
+      final target = libraryFacade.audioDetailTargetForTrack(track);
+      final cached =
+          libraryFacade.resolvedAudioDetail(target) ??
+          libraryFacade.categorySnapshot?.detailFor(target);
+      final detail =
+          cached ?? (await libraryFacade.loadAudioDetail(target)).detail;
+      return detail.voiceActors;
+    },
     recordInterests: ({required batchId, required contributions}) async {
       await asmrLibraryController.initialize(
         defaultLanguage: AsmrContentLanguage.fromAppLanguage(
@@ -385,13 +394,16 @@ ProductionAppRuntime createProductionAppRuntime({
         contributions: contributions,
       );
     },
+    recordVoiceActorInterests: ({required batchId, required contributions}) =>
+        asmrLibraryController.recordVoiceActorListeningBatch(
+          batchId: batchId,
+          contributions: contributions,
+        ),
   );
   runtimeGraph = createAppRuntimeGraph(
     asmrNetworkBinding: AsmrNetworkRuntimeBinding(
       settings: settingsRepository,
       api: asmrApiService,
-      catalog: asmrRemoteCatalog,
-      library: asmrLibraryController,
     ),
     listeningActivity: listeningActivity,
     library: libraryFacade,

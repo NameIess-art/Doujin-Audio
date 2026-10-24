@@ -6,41 +6,151 @@ import 'package:doujin_audio/features/asmr/application/asmr_recommendation_engin
 void main() {
   const engine = AsmrRecommendationEngine();
 
-  test('daily discovery deduplicates, keeps quality and defaults to twenty', () {
-    final better = work(id: 1, title: 'Better duplicate', rating: 5);
-    final ranked = engine.rankDaily(
-      candidates: [
-        work(id: 1, title: 'Duplicate'),
-        better,
-        for (var id = 2; id <= 30; id++) work(id: id, title: 'Work $id'),
-      ],
+  test(
+    'manual and listened voice interests affect both recommendation styles',
+    () async {
+      final candidates = [
+        for (var i = 0; i < 50; i++)
+          work(
+            id: i + 1,
+            title: 'Voice $i',
+            voiceActors: [i < 20 ? 'Favorite' : 'Other $i'],
+          ),
+      ];
+      final daily = engine.rankDaily(
+        candidates: candidates,
+        daySeed: 20261024,
+        voiceActorWeights: {' favorite ': 1},
+      );
+      expect(
+        daily.where((w) => w.voiceActors.contains('Favorite')),
+        hasLength(12),
+      );
+      final ranked = await engine.rankAsync(
+        candidates: candidates,
+        localTracks: [],
+        favoriteWorks: [],
+        historyWorks: [],
+        voiceActorWeights: {'favorite': 1},
+      );
+      expect(ranked.first.voiceActors, ['Favorite']);
+      final other = engine.rank(
+        candidates: candidates,
+        localTracks: [],
+        favoriteWorks: [],
+        historyWorks: [],
+        voiceActorWeights: {'other 49': 1},
+      );
+      expect(other.first.voiceActors, ['Other 49']);
+    },
+  );
+
+  test('daily discovery balances interest matches with broad exploration', () {
+    final candidates = [
+      for (var id = 0; id < 100; id++)
+        work(
+          id: id + 1,
+          title: 'Work $id',
+          tags: [id < 40 ? 'SLEEP' : 'Explore $id'],
+        ),
+    ];
+    final ranking = engine.rankDaily(
+      candidates: candidates,
       daySeed: 20261024,
+      tagWeights: {' sleep ': 5},
     );
-    expect(ranked, hasLength(20));
-    expect(ranked.map((item) => item.workKey).toSet(), hasLength(20));
-    final reserve = engine.rankDaily(
-      candidates: [
-        for (var id = 1; id <= 100; id++) work(id: id, title: 'Work $id'),
-      ],
-      daySeed: 20261024,
-      limit: 80,
-    );
-    expect(reserve, hasLength(80));
-    expect(reserve.map((item) => item.workKey).toSet(), hasLength(80));
-    final duplicateOnly = engine.rankDaily(
-      candidates: [
-        work(id: 1, title: 'Duplicate'),
-        better,
-      ],
-      daySeed: 1,
-    );
-    expect(duplicateOnly.single, same(better));
+    expect(ranking, hasLength(20));
+    expect(ranking.where((w) => w.tags.contains('SLEEP')), hasLength(12));
+    expect(ranking.where((w) => !w.tags.contains('SLEEP')), hasLength(8));
     expect(
-      engine.rankDaily(candidates: [better], daySeed: 1, limit: 0),
-      isEmpty,
+      engine
+          .rankDaily(
+            candidates: candidates.reversed.toList(),
+            daySeed: 20261024,
+            tagWeights: {' sleep ': 5},
+          )
+          .map((w) => w.workKey),
+      ranking.map((w) => w.workKey),
     );
-    expect(engine.rankDaily(candidates: [], daySeed: 1), isEmpty);
+    final otherInterest = engine.rankDaily(
+      candidates: candidates,
+      daySeed: 20261024,
+      tagWeights: {'Explore 50': 1},
+    );
+    expect(otherInterest.first.tags, ['Explore 50']);
   });
+
+  test(
+    'daily discovery fills twenty when an interest or exploration pool is small',
+    () {
+      final candidates = [
+        for (var id = 0; id < 40; id++)
+          work(
+            id: id + 1,
+            title: 'Work $id',
+            tags: [id < 4 ? 'Sleep' : 'Other'],
+          ),
+      ];
+      final ranked = engine.rankDaily(
+        candidates: candidates,
+        daySeed: 5,
+        tagWeights: {'Sleep': 1},
+      );
+      expect(ranked, hasLength(20));
+      expect(ranked.where((w) => w.tags.contains('Sleep')), hasLength(4));
+      final allMatches = engine.rankDaily(
+        candidates: candidates,
+        daySeed: 5,
+        tagWeights: {'Sleep': 1, 'Other': 1},
+      );
+      expect(allMatches, hasLength(20));
+      final noMatches = engine.rankDaily(
+        candidates: candidates,
+        daySeed: 5,
+        tagWeights: {'Missing': 1},
+      );
+      expect(noMatches, hasLength(20));
+    },
+  );
+
+  test(
+    'daily discovery deduplicates, keeps quality and defaults to twenty',
+    () {
+      final better = work(id: 1, title: 'Better duplicate', rating: 5);
+      final ranked = engine.rankDaily(
+        candidates: [
+          work(id: 1, title: 'Duplicate'),
+          better,
+          for (var id = 2; id <= 30; id++) work(id: id, title: 'Work $id'),
+        ],
+        daySeed: 20261024,
+      );
+      expect(ranked, hasLength(20));
+      expect(ranked.map((item) => item.workKey).toSet(), hasLength(20));
+      final reserve = engine.rankDaily(
+        candidates: [
+          for (var id = 1; id <= 100; id++) work(id: id, title: 'Work $id'),
+        ],
+        daySeed: 20261024,
+        limit: 80,
+      );
+      expect(reserve, hasLength(80));
+      expect(reserve.map((item) => item.workKey).toSet(), hasLength(80));
+      final duplicateOnly = engine.rankDaily(
+        candidates: [
+          work(id: 1, title: 'Duplicate'),
+          better,
+        ],
+        daySeed: 1,
+      );
+      expect(duplicateOnly.single, same(better));
+      expect(
+        engine.rankDaily(candidates: [better], daySeed: 1, limit: 0),
+        isEmpty,
+      );
+      expect(engine.rankDaily(candidates: [], daySeed: 1), isEmpty);
+    },
+  );
 
   test('daily discovery is stable regardless of candidate ordering', () {
     final candidates = [

@@ -1,7 +1,9 @@
 part of 'settings_tab.dart';
 
 class _NetworkSettingsControls extends ConsumerStatefulWidget {
-  const _NetworkSettingsControls();
+  const _NetworkSettingsControls({required this.buildSections});
+
+  final Widget Function(List<Widget>) buildSections;
   @override
   ConsumerState<_NetworkSettingsControls> createState() =>
       _NetworkSettingsControlsState();
@@ -164,242 +166,201 @@ class _NetworkSettingsControlsState
     final currentProxy = route.proxyMode == AppProxyMode.system
         ? modeLabel(route.proxyMode)
         : '${modeLabel(route.proxyMode)} · ${route.proxyHost}:${route.proxyPort}';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _SettingsSectionCard(
-          title: i18n.tr('network_site_tests'),
-          children: [
-            _probeRow(
-              i18n,
-              'dlsite',
-              'DLsite',
-              Uri.parse('https://www.dlsite.com/'),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: UnifiedDropdownButton<String>(
-                      value: state.asmrApiDomain,
-                      key: ValueKey(state.asmrApiDomain),
-                      isExpanded: true,
-                      items: [
-                        for (final domain in asmrApiDomains)
-                          DropdownMenuItem(
-                            value: domain,
-                            child: Text(
-                              Uri.parse(domain).host,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+    return widget.buildSections([
+      _SettingsSectionCard(
+        title: i18n.tr('network_site_tests'),
+        children: [
+          _probeRow(
+            i18n,
+            'dlsite',
+            'DLsite',
+            Uri.parse('https://www.dlsite.com/'),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: UnifiedDropdownButton<String>(
+                    value: state.asmrApiDomain,
+                    key: ValueKey(state.asmrApiDomain),
+                    isExpanded: true,
+                    items: [
+                      for (final domain in asmrApiDomains)
+                        DropdownMenuItem(
+                          value: domain,
+                          child: Text(
+                            Uri.parse(domain).host,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                      ],
-                      onChanged: _saving
-                          ? null
-                          : (value) {
-                              if (value != null) {
-                                unawaited(
-                                  _save(
-                                    () => _settings.setAsmrApiDomain(value),
-                                  ),
-                                );
-                              }
-                            },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _probeAction(
-                    i18n,
-                    'asmr',
-                    Uri.parse(
-                      '${state.asmrApiDomain}/api/works?page=1&pageSize=1',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _probeRow(
-              i18n,
-              'japanese',
-              'Japanese ASMR',
-              Uri.parse('https://earaasmr.com/'),
-            ),
-          ],
-        ),
-        _SettingsSectionCard(
-          title: i18n.tr('network_source_priority'),
-          children: [
-            inset(
-              UnifiedDropdownButton<AsmrCatalogSource>(
-                value: state.preferredAsmrSource,
-                key: ValueKey(state.preferredAsmrSource),
-                isExpanded: true,
-                items: [
-                  for (final source in AsmrCatalogSource.values)
-                    DropdownMenuItem(
-                      value: source,
-                      child: Text(
-                        i18n.tr(
-                          source == AsmrCatalogSource.asmrOne
-                              ? 'network_asmr_first'
-                              : 'network_japanese_first',
-                        ),
-                      ),
-                    ),
-                ],
-                onChanged: _saving
-                    ? null
-                    : (value) {
-                        if (value != null) {
-                          unawaited(
-                            _save(
-                              () => _settings.setPreferredAsmrSource(value),
-                            ),
-                          );
-                        }
-                      },
-              ),
-            ),
-          ],
-        ),
-        _SettingsSectionCard(
-          title: i18n.tr('network_proxy'),
-          children: [
-            inset(
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final mode in AppProxyMode.values)
-                        ChoiceChip(
-                          label: Text(modeLabel(mode)),
-                          selected: _mode == mode,
-                          onSelected: _saving
-                              ? null
-                              : (_) async {
-                                  if (mode == AppProxyMode.system) {
-                                    final saved = await _save(
-                                      () => _settings.setNetworkRouteSettings(
-                                        route.copyWith(proxyMode: mode),
-                                      ),
-                                    );
-                                    if (saved && mounted) {
-                                      setState(() => _mode = mode);
-                                    }
-                                  } else {
-                                    setState(() {
-                                      _mode = mode;
-                                      _validateProxy = false;
-                                    });
-                                  }
-                                },
                         ),
                     ],
+                    onChanged: _saving
+                        ? null
+                        : (value) {
+                            if (value != null) {
+                              unawaited(
+                                _save(() => _settings.setAsmrApiDomain(value)),
+                              );
+                            }
+                          },
                   ),
-                  if (_mode != AppProxyMode.system) ...[
-                    const SizedBox(height: 16),
+                ),
+                const SizedBox(width: 8),
+                _probeAction(
+                  i18n,
+                  'asmr',
+                  Uri.parse(
+                    '${state.asmrApiDomain}/api/works?page=1&pageSize=1',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _probeRow(
+            i18n,
+            'japanese',
+            'Japanese ASMR',
+            Uri.parse('https://earaasmr.com/'),
+          ),
+        ],
+      ),
+      _SettingsSectionCard(
+        title: i18n.tr('network_proxy'),
+        children: [
+          inset(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final mode in AppProxyMode.values)
+                      ChoiceChip(
+                        label: Text(modeLabel(mode)),
+                        selected: _mode == mode,
+                        onSelected: _saving
+                            ? null
+                            : (_) async {
+                                if (mode == AppProxyMode.system) {
+                                  final saved = await _save(
+                                    () => _settings.setNetworkRouteSettings(
+                                      route.copyWith(proxyMode: mode),
+                                    ),
+                                  );
+                                  if (saved && mounted) {
+                                    setState(() => _mode = mode);
+                                  }
+                                } else {
+                                  setState(() {
+                                    _mode = mode;
+                                    _validateProxy = false;
+                                  });
+                                }
+                              },
+                      ),
+                  ],
+                ),
+                if (_mode != AppProxyMode.system) ...[
+                  const SizedBox(height: 16),
+                  field(
+                    _host,
+                    'network_proxy_host',
+                    invalid: _validateProxy && hostInvalid,
+                  ),
+                  const SizedBox(height: 12),
+                  field(
+                    _port,
+                    'network_proxy_port',
+                    numeric: true,
+                    invalid: _validateProxy && portInvalid,
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(i18n.tr('network_proxy_authentication')),
+                    value: _authentication,
+                    onChanged: _saving
+                        ? null
+                        : (value) => setState(() => _authentication = value),
+                  ),
+                  if (_authentication) ...[
                     field(
-                      _host,
-                      'network_proxy_host',
-                      invalid: _validateProxy && hostInvalid,
+                      _username,
+                      'network_proxy_username',
+                      invalid: _validateProxy && usernameInvalid,
                     ),
                     const SizedBox(height: 12),
                     field(
-                      _port,
-                      'network_proxy_port',
-                      numeric: true,
-                      invalid: _validateProxy && portInvalid,
+                      _password,
+                      'network_proxy_password',
+                      secret: true,
+                      hint: route.proxyPasswordConfigured
+                          ? i18n.tr('network_password_keep')
+                          : null,
+                      invalid:
+                          _validateProxy &&
+                          credentialsInvalid &&
+                          passwordInvalid,
                     ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(i18n.tr('network_proxy_authentication')),
-                      value: _authentication,
-                      onChanged: _saving
-                          ? null
-                          : (value) => setState(() => _authentication = value),
-                    ),
-                    if (_authentication) ...[
-                      field(
-                        _username,
-                        'network_proxy_username',
-                        invalid: _validateProxy && usernameInvalid,
-                      ),
-                      const SizedBox(height: 12),
-                      field(
-                        _password,
-                        'network_proxy_password',
-                        secret: true,
-                        hint: route.proxyPasswordConfigured
-                            ? i18n.tr('network_password_keep')
-                            : null,
-                        invalid:
-                            _validateProxy &&
-                            credentialsInvalid &&
-                            passwordInvalid,
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    FilledButton(
-                      onPressed: _saving ? null : _applyProxy,
-                      child: Text(i18n.tr('network_apply_proxy')),
-                    ),
+                    const SizedBox(height: 12),
                   ],
-                  const SizedBox(height: 12),
-                  Text(
-                    '${i18n.tr('network_current_proxy')}: $currentProxy',
-                    style: TextStyle(color: cs.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    i18n.tr('network_new_connections'),
-                    style: TextStyle(color: cs.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        _SettingsSectionCard(
-          title: i18n.tr('network_dns'),
-          children: [
-            inset(
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  field(
-                    _dns,
-                    'network_dns_ip',
-                    invalid: _validateDns && dnsInvalid,
-                  ),
-                  const SizedBox(height: 12),
                   FilledButton(
-                    onPressed: _saving ? null : _applyDns,
-                    child: Text(i18n.tr('network_apply_dns')),
-                  ),
-                  TextButton(
-                    onPressed: _saving ? null : () => _applyDns(reset: true),
-                    child: Text(i18n.tr('network_reset_dns')),
-                  ),
-                  Text(
-                    '${i18n.tr('network_current_dns')}: ${route.customDnsServer.isEmpty ? i18n.tr('network_system_dns') : route.customDnsServer}',
-                    style: TextStyle(color: cs.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    i18n.tr('network_dns_proxy_note'),
-                    style: TextStyle(color: cs.onSurfaceVariant),
+                    onPressed: _saving ? null : _applyProxy,
+                    child: Text(i18n.tr('network_apply_proxy')),
                   ),
                 ],
-              ),
+                const SizedBox(height: 12),
+                Text(
+                  '${i18n.tr('network_current_proxy')}: $currentProxy',
+                  style: TextStyle(color: cs.onSurfaceVariant),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  i18n.tr('network_new_connections'),
+                  style: TextStyle(color: cs.onSurfaceVariant),
+                ),
+              ],
             ),
-          ],
-        ),
-      ],
-    );
+          ),
+        ],
+      ),
+      _SettingsSectionCard(
+        title: i18n.tr('network_dns'),
+        children: [
+          inset(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                field(
+                  _dns,
+                  'network_dns_ip',
+                  invalid: _validateDns && dnsInvalid,
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: _saving ? null : _applyDns,
+                  child: Text(i18n.tr('network_apply_dns')),
+                ),
+                TextButton(
+                  onPressed: _saving ? null : () => _applyDns(reset: true),
+                  child: Text(i18n.tr('network_reset_dns')),
+                ),
+                Text(
+                  '${i18n.tr('network_current_dns')}: ${route.customDnsServer.isEmpty ? i18n.tr('network_system_dns') : route.customDnsServer}',
+                  style: TextStyle(color: cs.onSurfaceVariant),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  i18n.tr('network_dns_proxy_note'),
+                  style: TextStyle(color: cs.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ]);
   }
 
   Widget _probeRow(

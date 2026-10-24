@@ -2,6 +2,34 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_tag_interest.dart';
 
 void main() {
+  test('voice tastes share ranking with ten slots and independent cursors', () {
+    final voices = AsmrTagPreferences(limit: 10);
+    final tags = AsmrTagPreferences();
+    for (var i = 0; i < 15; i++) {
+      voices.setInterested(voices.resolve('Voice $i'), true);
+    }
+    expect(voices.interests, hasLength(10));
+    expect(voices.manualInterests, hasLength(15));
+    expect(voices.listenedInterests, isEmpty);
+    const batch = (
+      tags: ['Voice 14', 'Voice 13'],
+      duration: Duration(minutes: 20),
+    );
+    expect(voices.recordListeningBatch('epoch:1', [batch]), isTrue);
+    expect(voices.recordListeningBatch('epoch:1', [batch]), isFalse);
+    expect(tags.recordListeningBatch('epoch:1', [batch]), isTrue);
+    expect(voices.interests.take(2).map((e) => e.weight), [10, 10]);
+    final restored = AsmrTagPreferences.fromJson(voices.toJson());
+    expect(restored.limit, 10);
+    expect(
+      restored.interests.map((e) => e.tag.key),
+      voices.interests.map((e) => e.tag.key),
+    );
+    restored.mergeTag(AsmrTag(key: 'online:uuid', name: 'Voice 14'));
+    expect(restored.learned['online:uuid'], 10);
+    expect(restored.manualInterests, contains('online:uuid'));
+    expect(restored.learned, isNot(contains('local:voice 14')));
+  });
   test(
     'recommendations use automatic top twenty plus unlimited manual additions',
     () {

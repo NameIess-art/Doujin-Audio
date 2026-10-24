@@ -20,12 +20,16 @@ final class ListeningActivityService {
     required Future<void> Function(List<String>) acknowledgeUsage,
     required MusicTrack? Function(String) resolveTrack,
     required ListeningInterestRecorder recordInterests,
+    ListeningInterestRecorder? recordVoiceActorInterests,
+    Future<List<String>> Function(MusicTrack)? resolveLocalVoiceActors,
     DateTime Function()? now,
   }) : _repository = repository,
        _readUsage = readUsage,
        _acknowledgeUsage = acknowledgeUsage,
        _resolveTrack = resolveTrack,
        _recordInterests = recordInterests,
+       _recordVoiceActorInterests = recordVoiceActorInterests,
+       _resolveLocalVoiceActors = resolveLocalVoiceActors,
        _now = now ?? DateTime.now;
 
   final ListeningActivityRepository _repository;
@@ -33,6 +37,8 @@ final class ListeningActivityService {
   final Future<void> Function(List<String>) _acknowledgeUsage;
   final MusicTrack? Function(String) _resolveTrack;
   final ListeningInterestRecorder _recordInterests;
+  final ListeningInterestRecorder? _recordVoiceActorInterests;
+  final Future<List<String>> Function(MusicTrack)? _resolveLocalVoiceActors;
   final DateTime Function() _now;
   final _changes = StreamController<ListeningActivityView>.broadcast();
   ListeningActivityView? _view;
@@ -104,6 +110,7 @@ final class ListeningActivityService {
     for (final batch in batches) {
       final days = <ListeningDayContribution>[];
       final interests = <({List<String> tags, Duration duration})>[];
+      final voiceInterests = <({List<String> tags, Duration duration})>[];
       for (final day in batch.days) {
         final works = <ListeningWorkContribution>[];
         for (final work in day.works) {
@@ -126,6 +133,18 @@ final class ListeningActivityService {
               duration: Duration(milliseconds: work.milliseconds),
             ));
           }
+          final voiceActors = <String>{
+            ..._metadataTags(track.remoteMetadata?['voiceActors']),
+            ..._metadataTags(track.remoteMetadata?['vas']),
+            if (!track.isRemoteAsmr && _resolveLocalVoiceActors != null)
+              ...await _resolveLocalVoiceActors(track),
+          }.toList();
+          if (voiceActors.isNotEmpty) {
+            voiceInterests.add((
+              tags: voiceActors,
+              duration: Duration(milliseconds: work.milliseconds),
+            ));
+          }
         }
         days.add(
           ListeningDayContribution(
@@ -139,6 +158,10 @@ final class ListeningActivityService {
       // Retry the complete batch if either the preference write or native ack
       // failed. Both database and interest imports are independently idempotent.
       await _recordInterests(batchId: batch.id, contributions: interests);
+      await _recordVoiceActorInterests?.call(
+        batchId: batch.id,
+        contributions: voiceInterests,
+      );
       await _acknowledgeUsage([batch.id]);
     }
     if (_needsReload) await _reload();

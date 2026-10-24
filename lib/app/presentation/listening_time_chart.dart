@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../features/player/domain/listening_activity.dart';
 import '../../features/settings/application/settings_state.dart';
+import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/drag_only_scrollbar.dart';
 import '../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../core/widgets/shimmer_loading.dart';
@@ -135,7 +136,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
   double _heatmapExtent = 0;
   int _heatmapColumnCount = 0;
   static const int _heatmapRows = 7;
-  final ScrollController _scrollController = ScrollController();
+  ScrollController? _scrollController;
   ListeningInterval _interval = ListeningInterval.day;
   DateTime? _selected;
   List<ListeningDay>? _aggregatedDays;
@@ -176,15 +177,10 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
     if (oldWidget.style != widget.style) _revealSelection();
   }
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
   void _revealSelection() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
+      final controller = _scrollController;
+      if (!mounted || controller == null || !controller.hasClients) return;
       final periods = _currentPeriods();
       final selectedIndex = periods.indexWhere(
         (period) => _containsSelection(period),
@@ -197,14 +193,14 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       final reversedIndex = heatmap
           ? periodsAfterSelection ~/ _heatmapRows
           : periodsAfterSelection;
-      final position = _scrollController.position;
+      final position = controller.position;
       final offset =
           (reversedIndex * extent - (position.viewportDimension - extent) / 2)
               .clamp(position.minScrollExtent, position.maxScrollExtent);
       if (MediaQuery.disableAnimationsOf(context)) {
-        _scrollController.jumpTo(offset);
+        controller.jumpTo(offset);
       } else {
-        _scrollController.animateTo(
+        controller.animateTo(
           offset,
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOut,
@@ -244,6 +240,8 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
   @override
   Widget build(BuildContext context) {
     final i18n = widget.i18n;
+    final chartStyle = widget.style;
+    final heatmap = chartStyle == ListeningChartStyle.heatmap;
     final periods = _currentPeriods();
     final selected = _selected == null
         ? periods.last
@@ -460,103 +458,129 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
         SizedBox(
           key: const ValueKey('listening-chart-bars'),
           height: 146 + labelHeight.ceilToDouble(),
-          child: WindowsHorizontalWheelScroll(
-            controller: _scrollController,
-            builder: (controller) => ScrollConfiguration(
-              behavior: ScrollConfiguration.of(context).copyWith(
-                dragDevices: PointerDeviceKind.values.toSet(),
-                scrollbars: false,
-              ),
-              child: LayoutBuilder(
-                builder: (_, constraints) {
-                  final heatmap = widget.style == ListeningChartStyle.heatmap;
-                  final cellSize = math.min(
-                    constraints.maxWidth,
-                    (constraints.maxHeight - 3 * (_heatmapRows - 1)) /
-                        _heatmapRows,
-                  );
-                  if (heatmap) {
-                    final visibleColumns = math.max(
-                      1,
-                      ((constraints.maxWidth + 3) / (cellSize + 3)).floor(),
-                    );
-                    _heatmapExtent = constraints.maxWidth / visibleColumns;
-                    _heatmapColumnCount = math.max(
-                      visibleColumns,
-                      (periods.length + _heatmapRows - 1) ~/ _heatmapRows,
-                    );
-                  }
-                  final list = ListView.builder(
-                    key: ValueKey('listening-chart-${widget.style.name}'),
-                    controller: controller,
-                    reverse: true,
-                    scrollDirection: Axis.horizontal,
-                    itemExtent: heatmap ? _heatmapExtent : _itemExtent,
-                    itemCount: heatmap ? _heatmapColumnCount : periods.length,
-                    itemBuilder: (context, index) {
-                      if (heatmap) return heatmapColumn(index, cellSize);
-                      final period = periods[periods.length - index - 1];
-                      final active = selected.start == period.start;
-                      final color = Theme.of(context).colorScheme;
-                      return selectablePeriod(
-                        period,
-                        Column(
-                          children: [
-                            SizedBox(
-                              height: 138,
-                              child: Align(
-                                alignment: Alignment.bottomCenter,
-                                child: widget._skeleton
-                                    ? ShimmerContainer(
-                                        width: 18,
-                                        height: 28.0 + (index % 4) * 30,
-                                        borderRadius: 5,
-                                      )
-                                    : Container(
-                                        width: 18,
-                                        height: math.max(
-                                          2,
-                                          132 *
-                                              period.duration.inMilliseconds /
-                                              _maximum,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: active
-                                              ? color.primary
-                                              : color.primaryContainer,
-                                          borderRadius:
-                                              const BorderRadius.vertical(
-                                                top: Radius.circular(5),
-                                              ),
-                                        ),
-                                      ),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            placeholderFor(
-                              Text(
-                                label(period),
-                                maxLines: 1,
-                                style: labelStyle,
-                              ),
-                              width: 30,
-                              height: 12,
-                              alignment: Alignment.center,
-                            ),
-                          ],
-                        ),
+          child: AnimatedSwitcher(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : kAppFadeDuration,
+            switchInCurve: kAppFadeCurve,
+            switchOutCurve: kAppFadeCurve,
+            layoutBuilder: (current, previous) => Stack(
+              fit: StackFit.expand,
+              children: [
+                for (final child in previous)
+                  ExcludeFocus(
+                    child: ExcludeSemantics(child: IgnorePointer(child: child)),
+                  ),
+                ?current,
+              ],
+            ),
+            child: WindowsHorizontalWheelScroll(
+              key: ValueKey(chartStyle),
+              // Each fading chart owns its scroll position, including rapid
+              // reversals while an older instance is still fading out.
+              builder: (controller) {
+                _scrollController = controller;
+                return ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(
+                    dragDevices: PointerDeviceKind.values.toSet(),
+                    scrollbars: false,
+                  ),
+                  child: LayoutBuilder(
+                    builder: (_, constraints) {
+                      final cellSize = math.min(
+                        constraints.maxWidth,
+                        (constraints.maxHeight - 3 * (_heatmapRows - 1)) /
+                            _heatmapRows,
                       );
+                      if (heatmap) {
+                        final visibleColumns = math.max(
+                          1,
+                          ((constraints.maxWidth + 3) / (cellSize + 3)).floor(),
+                        );
+                        _heatmapExtent = constraints.maxWidth / visibleColumns;
+                        _heatmapColumnCount = math.max(
+                          visibleColumns,
+                          (periods.length + _heatmapRows - 1) ~/ _heatmapRows,
+                        );
+                      }
+                      final list = ListView.builder(
+                        key: ValueKey('listening-chart-${chartStyle.name}'),
+                        controller: controller,
+                        reverse: true,
+                        scrollDirection: Axis.horizontal,
+                        itemExtent: heatmap ? _heatmapExtent : _itemExtent,
+                        itemCount: heatmap
+                            ? _heatmapColumnCount
+                            : periods.length,
+                        itemBuilder: (context, index) {
+                          if (heatmap) return heatmapColumn(index, cellSize);
+                          final period = periods[periods.length - index - 1];
+                          final active = selected.start == period.start;
+                          final color = Theme.of(context).colorScheme;
+                          return selectablePeriod(
+                            period,
+                            Column(
+                              children: [
+                                SizedBox(
+                                  height: 138,
+                                  child: Align(
+                                    alignment: Alignment.bottomCenter,
+                                    child: widget._skeleton
+                                        ? ShimmerContainer(
+                                            width: 18,
+                                            height: 28.0 + (index % 4) * 30,
+                                            borderRadius: 5,
+                                          )
+                                        : Container(
+                                            width: 18,
+                                            height: math.max(
+                                              2,
+                                              132 *
+                                                  period
+                                                      .duration
+                                                      .inMilliseconds /
+                                                  _maximum,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: active
+                                                  ? color.primary
+                                                  : color.primaryContainer,
+                                              borderRadius:
+                                                  const BorderRadius.vertical(
+                                                    top: Radius.circular(5),
+                                                  ),
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                placeholderFor(
+                                  Text(
+                                    label(period),
+                                    maxLines: 1,
+                                    style: labelStyle,
+                                  ),
+                                  width: 30,
+                                  height: 12,
+                                  alignment: Alignment.center,
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      );
+                      return Theme.of(context).platform ==
+                              TargetPlatform.windows
+                          ? DragOnlyScrollbar(
+                              controller: controller,
+                              padding: EdgeInsets.zero,
+                              child: list,
+                            )
+                          : list;
                     },
-                  );
-                  return Theme.of(context).platform == TargetPlatform.windows
-                      ? DragOnlyScrollbar(
-                          controller: controller,
-                          padding: EdgeInsets.zero,
-                          child: list,
-                        )
-                      : list;
-                },
-              ),
+                  ),
+                );
+              },
             ),
           ),
         ),

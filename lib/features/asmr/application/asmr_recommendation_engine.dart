@@ -9,11 +9,13 @@ import '../../../core/media/music_track.dart';
 class AsmrRecommendationEngine {
   const AsmrRecommendationEngine();
 
-  /// Broad daily discovery, independent of listening or manual preferences.
+  /// Daily interest matches with room for discovery across tags and creators.
   List<AsmrWork> rankDaily({
     required List<AsmrWork> candidates,
     required int daySeed,
     Set<String> previousWorkKeys = const <String>{},
+    Map<String, double> tagWeights = const {},
+    Map<String, double> voiceActorWeights = const {},
     int limit = 20,
   }) {
     if (limit <= 0 || candidates.isEmpty) return const <AsmrWork>[];
@@ -24,8 +26,23 @@ class AsmrRecommendationEngine {
         unique[work.workKey] = work;
       }
     }
+    final preferences = <String>{
+      for (final entry in tagWeights.entries)
+        if (entry.value > 0) _normalizeTerm(entry.key),
+    };
+    final voicePreferences = <String>{
+      for (final entry in voiceActorWeights.entries)
+        if (entry.value > 0) _normalizeTerm(entry.key),
+    };
     final remaining =
-        <({AsmrWork work, double base, Map<String, double> terms})>[];
+        <
+          ({
+            AsmrWork work,
+            double base,
+            Map<String, double> terms,
+            bool matchesInterest,
+          })
+        >[];
     for (final work in unique.values) {
       final terms = <String, double>{};
       void addTerms(String kind, Iterable<String> values, double weight) {
@@ -48,6 +65,11 @@ class AsmrRecommendationEngine {
             _qualityScore(work) * 0.35 -
             (previousWorkKeys.contains(work.workKey) ? 3 : 0),
         terms: terms,
+        matchesInterest:
+            work.tags.any((tag) => preferences.contains(_normalizeTerm(tag))) ||
+            work.voiceActors.any(
+              (name) => voicePreferences.contains(_normalizeTerm(name)),
+            ),
       ));
     }
     final result = <AsmrWork>[];
@@ -55,8 +77,19 @@ class AsmrRecommendationEngine {
     while (remaining.isNotEmpty && result.length < limit) {
       var best = 0;
       var bestScore = double.negativeInfinity;
+      // Three interest slots followed by two discovery slots in each group of
+      // five. If either pool runs out, use the other rather than leave gaps.
+      final preferInterest = result.length % 5 < 3;
+      final usePreferredPool =
+          (preferences.isNotEmpty || voicePreferences.isNotEmpty) &&
+          remaining.any(
+            (candidate) => candidate.matchesInterest == preferInterest,
+          );
       for (var index = 0; index < remaining.length; index++) {
         final candidate = remaining[index];
+        if (usePreferredPool && candidate.matchesInterest != preferInterest) {
+          continue;
+        }
         var score = candidate.base;
         for (final term in candidate.terms.entries) {
           score += term.value / (1 + (coverage[term.key] ?? 0));
@@ -87,6 +120,7 @@ class AsmrRecommendationEngine {
     int? limit,
     Set<String> explorationWorkIds = const <String>{},
     Map<String, double>? tagWeights,
+    Map<String, double>? voiceActorWeights,
   }) {
     final request = AsmrRecommendationRankRequest(
       candidates: candidates,
@@ -97,6 +131,7 @@ class AsmrRecommendationEngine {
       limit: limit,
       explorationWorkIds: explorationWorkIds,
       tagWeights: tagWeights,
+      voiceActorWeights: voiceActorWeights,
     );
     return compute(rankAsmrRecommendations, request);
   }
@@ -110,12 +145,14 @@ class AsmrRecommendationEngine {
     int? limit,
     Set<String> explorationWorkIds = const <String>{},
     Map<String, double>? tagWeights,
+    Map<String, double>? voiceActorWeights,
   }) {
     final profile = _RecommendationProfile.build(
       localTracks: localTracks,
       favoriteWorks: favoriteWorks,
       historyWorks: historyWorks,
       tagWeights: tagWeights,
+      voiceActorWeights: voiceActorWeights,
     );
     final stats = _CandidateStats.build(candidates);
     final scored = <_ScoredWork>[
@@ -314,6 +351,7 @@ class AsmrRecommendationRankRequest {
     required this.limit,
     this.explorationWorkIds = const <String>{},
     this.tagWeights,
+    this.voiceActorWeights,
   });
 
   final List<AsmrWork> candidates;
@@ -324,6 +362,7 @@ class AsmrRecommendationRankRequest {
   final int? limit;
   final Set<String> explorationWorkIds;
   final Map<String, double>? tagWeights;
+  final Map<String, double>? voiceActorWeights;
 }
 
 List<AsmrWork> rankAsmrRecommendations(AsmrRecommendationRankRequest request) {
@@ -336,6 +375,7 @@ List<AsmrWork> rankAsmrRecommendations(AsmrRecommendationRankRequest request) {
     limit: request.limit,
     explorationWorkIds: request.explorationWorkIds,
     tagWeights: request.tagWeights,
+    voiceActorWeights: request.voiceActorWeights,
   );
 }
 
@@ -374,6 +414,7 @@ class _RecommendationProfile {
     required List<AsmrWork> favoriteWorks,
     required List<AsmrWork> historyWorks,
     Map<String, double>? tagWeights,
+    Map<String, double>? voiceActorWeights,
   }) {
     final builder = _RecommendationProfileBuilder();
     final favoriteWeight = favoriteWorks.isEmpty
@@ -396,6 +437,9 @@ class _RecommendationProfile {
       builder.tagWeights
         ..clear()
         ..addAll(tagWeights);
+    }
+    if (voiceActorWeights != null) {
+      builder.voiceActorWeights.addAll(voiceActorWeights);
     }
     return builder.build();
   }

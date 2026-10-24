@@ -2,7 +2,6 @@ import 'subtitle_window_settings_sheet.dart';
 import 'dart:convert';
 import '../application/network_service_probe.dart';
 import '../../../core/network/network_route_settings.dart';
-import '../../asmr/domain/asmr_models.dart';
 import '../../asmr/domain/asmr_media_sources.dart';
 import 'asmr_download_folder_name_settings_sheet.dart';
 import '../../asmr/presentation/asmr_providers.dart';
@@ -559,9 +558,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
         topInset: contentTopInset,
         child: Stack(
           children: [
-            AppPageContentTransition(
-              child: Consumer(builder: _buildContent),
-            ),
+            AppPageContentTransition(child: Consumer(builder: _buildContent)),
             Positioned(
               top: 0,
               left: 0,
@@ -594,7 +591,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
     return ValueListenableBuilder<AppUpdateInfo?>(
       valueListenable: widget.updateInfoListenable,
       builder: (context, updateInfo, _) {
-        final sections = _withStickySectionTitles(switch (widget.category) {
+        final normalSections = switch (widget.category) {
           _SettingsCategory.common => _buildSettingsGeneralSection(
             context: context,
             i18n: i18n,
@@ -624,7 +621,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
             onChooseAsmrDownloadDestination:
                 widget.onChooseAsmrDownloadDestination,
           ),
-          _SettingsCategory.network => const [_NetworkSettingsControls()],
+          _SettingsCategory.network => null,
           _SettingsCategory.dataStorage => _buildSettingsDataSection(
             i18n: i18n,
             settingsController: settingsController,
@@ -640,58 +637,70 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
             onCheckForUpdates: widget.onCheckForUpdates,
           ),
           _SettingsCategory.about => const <Widget>[],
-        });
+        };
 
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned.fill(
-              child: ListView(
-                controller: _scrollController,
-                padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 24),
-                children: [
-                  _SettingsTileTheme(child: Column(children: sections)),
-                ],
+        Widget buildSections(List<Widget> rawSections) {
+          final sections = _withStickySectionTitles(rawSections);
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fill(
+                child: ListView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 24),
+                  children: [
+                    _SettingsTileTheme(child: Column(children: sections)),
+                  ],
+                ),
               ),
-            ),
-            if (_pinnedSectionIndex != null &&
-                _pinnedSectionIndex! < _stickySections.length)
-              Positioned(
-                top: pinnedTop,
-                left: 16,
-                right: 16,
-                child: IgnorePointer(
-                  child: ExcludeSemantics(
-                    child: _SettingsSectionTitlePill(
-                      key: const ValueKey<String>(
-                        'settings_sticky_section_pill',
+              if (_pinnedSectionIndex != null &&
+                  _pinnedSectionIndex! < _stickySections.length)
+                Positioned(
+                  top: pinnedTop,
+                  left: 16,
+                  right: 16,
+                  child: IgnorePointer(
+                    child: ExcludeSemantics(
+                      child: _SettingsSectionTitlePill(
+                        key: const ValueKey<String>(
+                          'settings_sticky_section_pill',
+                        ),
+                        title: _stickySections[_pinnedSectionIndex!].title,
                       ),
-                      title: _stickySections[_pinnedSectionIndex!].title,
                     ),
                   ),
                 ),
-              ),
-            if (_overlappingNextSectionIndex != null &&
-                _overlappingNextSectionIndex! < _stickySections.length)
-              ValueListenableBuilder<double?>(
-                valueListenable: _overlappingNextSectionTop,
-                builder: (context, top, child) => top == null
-                    ? const SizedBox.shrink()
-                    : Positioned(top: top, left: 16, right: 16, child: child!),
-                child: IgnorePointer(
-                  child: ExcludeSemantics(
-                    child: _SettingsSectionTitlePill(
-                      key: const ValueKey<String>(
-                        'settings_overlapping_section_pill',
+              if (_overlappingNextSectionIndex != null &&
+                  _overlappingNextSectionIndex! < _stickySections.length)
+                ValueListenableBuilder<double?>(
+                  valueListenable: _overlappingNextSectionTop,
+                  builder: (context, top, child) => top == null
+                      ? const SizedBox.shrink()
+                      : Positioned(
+                          top: top,
+                          left: 16,
+                          right: 16,
+                          child: child!,
+                        ),
+                  child: IgnorePointer(
+                    child: ExcludeSemantics(
+                      child: _SettingsSectionTitlePill(
+                        key: const ValueKey<String>(
+                          'settings_overlapping_section_pill',
+                        ),
+                        title: _stickySections[_overlappingNextSectionIndex!]
+                            .title,
                       ),
-                      title:
-                          _stickySections[_overlappingNextSectionIndex!].title,
                     ),
                   ),
                 ),
-              ),
-          ],
-        );
+            ],
+          );
+        }
+
+        return normalSections == null
+            ? _NetworkSettingsControls(buildSections: buildSections)
+            : buildSections(normalSections);
       },
     );
   }

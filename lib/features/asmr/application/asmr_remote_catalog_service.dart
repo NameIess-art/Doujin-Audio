@@ -13,13 +13,17 @@ import '../domain/asmr_persistence_repository.dart';
 
 part 'asmr_catalog_merge.dart';
 
-List<AsmrWork> _rankDailyDiscovery((List<AsmrWork>, int, Set<String>) input) =>
-    const AsmrRecommendationEngine().rankDaily(
-      candidates: input.$1,
-      daySeed: input.$2,
-      previousWorkKeys: input.$3,
-      limit: 80,
-    );
+List<AsmrWork> _rankDailyDiscovery(
+  (List<AsmrWork>, int, Set<String>, Map<String, double>, Map<String, double>)
+  input,
+) => const AsmrRecommendationEngine().rankDaily(
+  candidates: input.$1,
+  daySeed: input.$2,
+  previousWorkKeys: input.$3,
+  tagWeights: input.$4,
+  voiceActorWeights: input.$5,
+  limit: 80,
+);
 
 class AsmrRemoteCatalogService {
   AsmrRemoteCatalogService({
@@ -60,13 +64,13 @@ class AsmrRemoteCatalogService {
   final AsmrPersistenceRepository _persistenceRepository;
   final AsmrRecommendationEngine _recommendationEngine;
 
-  AsmrCatalogSource Function() preferredSource = () =>
-      AsmrCatalogSource.asmrOne;
-
   bool Function(AsmrWork) isWorkAllowed = (_) => true;
   Map<String, double>? Function() tagWeights = () => null;
+  Map<String, double>? Function() voiceActorWeights = () => null;
   Future<void> Function(List<MusicTrack>)? prepareTagInterests;
   Future<List<AsmrTag>> loadTagCatalog() => _apiService.fetchTagCatalog();
+  Future<List<AsmrTag>> loadVoiceActorCatalog() =>
+      _apiService.fetchVoiceActorCatalog();
   Future<List<MusicTrack>> loadLocalTracksForInterests() =>
       _persistenceRepository.loadTracksForRecommendations();
 
@@ -109,6 +113,8 @@ class AsmrRemoteCatalogService {
       candidates.values.where(isWorkAllowed).toList(growable: false),
       daySeed,
       previousWorkKeys,
+      tagWeights() ?? const <String, double>{},
+      voiceActorWeights() ?? const <String, double>{},
     ));
     cancellationToken?.throwIfCancelled();
     return ranking;
@@ -273,6 +279,7 @@ class AsmrRemoteCatalogService {
         refreshSeed: refreshSeed,
         explorationWorkIds: promotedIds,
         tagWeights: tagWeights(),
+        voiceActorWeights: voiceActorWeights(),
       ),
       details: <String, Object?>{
         'candidates': candidateList.length,
@@ -291,12 +298,10 @@ class AsmrRemoteCatalogService {
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
     Object? firstError;
-    final preferred = preferredSource();
-    final sources = <AsmrCatalogSource>[
-      preferred,
-      ...AsmrCatalogSource.values.where((source) => source != preferred),
-    ];
-    for (final source in sources) {
+    for (final source in const [
+      AsmrCatalogSource.asmrOne,
+      AsmrCatalogSource.japaneseAsmr,
+    ]) {
       cancellationToken?.throwIfCancelled();
       try {
         List<AsmrTrackFile> tree;

@@ -8,6 +8,44 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 
 void main() {
   test(
+    'complete voice directory retains UUIDs and multilingual names',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        expect(request.uri.path, '/api/vas/');
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode([
+            {
+              'id': 'c75838bb-1c4d-5850-8a93-b9a56593d511',
+              'name': '声優',
+              'i18n': {
+                'en-us': {'name': 'Voice Actor'},
+              },
+              'count': 1,
+            },
+          ]),
+        );
+        await request.response.close();
+      });
+      final service = AsmrApiService(
+        baseUri: Uri.parse('http://${server.address.address}:${server.port}'),
+      );
+      try {
+        final voices = await service.fetchVoiceActorCatalog();
+        expect(
+          voices.single.key,
+          'online:c75838bb-1c4d-5850-8a93-b9a56593d511',
+        );
+        expect(voices.single.aliases, containsAll(['声優', 'Voice Actor']));
+      } finally {
+        service.close();
+        await subscription.cancel();
+        await server.close(force: true);
+      }
+    },
+  );
+  test(
     'complete tag directory keeps stable ids and all language aliases',
     () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

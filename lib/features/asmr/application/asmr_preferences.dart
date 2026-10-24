@@ -10,6 +10,8 @@ class AsmrPreferencesStore {
     : _repository = repository;
 
   static const String _tagPreferencesKey = 'asmr_tag_preferences_v1';
+  static const String _voiceActorPreferencesKey =
+      'asmr_voice_actor_preferences_v1';
   static const String _lastSyncAtKey = 'asmr_last_sync_at_v1';
   static const String _syncOutboxSeededKey = 'asmr_sync_outbox_seeded_v2';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
@@ -21,6 +23,7 @@ class AsmrPreferencesStore {
     for (final key in [
       _contentLanguageKey,
       _tagPreferencesKey,
+      _voiceActorPreferencesKey,
       _lastSyncAtKey,
       _syncOutboxSeededKey,
       for (final language in AsmrContentLanguage.values)
@@ -40,9 +43,21 @@ class AsmrPreferencesStore {
   Future<void> saveTagPreferences(AsmrTagPreferences value) =>
       _repository.saveSetting(_tagPreferencesKey, jsonEncode(value.toJson()));
 
-  Future<({String date, List<AsmrWork> works})?> loadDailyRecommendations(
-    AsmrContentLanguage language,
-  ) async {
+  Future<AsmrTagPreferences> loadVoiceActorPreferences() async {
+    final raw = await _repository.loadSetting(_voiceActorPreferencesKey);
+    return raw == null
+        ? AsmrTagPreferences(limit: 10)
+        : AsmrTagPreferences.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+  }
+
+  Future<void> saveVoiceActorPreferences(AsmrTagPreferences value) =>
+      _repository.saveSetting(
+        _voiceActorPreferencesKey,
+        jsonEncode(value.toJson()),
+      );
+
+  Future<({String date, List<AsmrWork> works, int version})?>
+  loadDailyRecommendations(AsmrContentLanguage language) async {
     final raw = await _repository.loadSetting(
       'asmr_daily_discovery_v1_${language.name}',
     );
@@ -50,6 +65,7 @@ class AsmrPreferencesStore {
     final value = jsonDecode(raw) as Map<String, dynamic>;
     return (
       date: value['date'] as String,
+      version: (value['version'] as num?)?.toInt() ?? 1,
       works: (value['works'] as List)
           .map(
             (work) => AsmrWork.fromJson(
@@ -69,6 +85,7 @@ class AsmrPreferencesStore {
     'asmr_daily_discovery_v1_${language.name}',
     jsonEncode({
       'date': date,
+      'version': 2,
       'works': works.map((work) => work.toJson()).toList(),
     }),
   );

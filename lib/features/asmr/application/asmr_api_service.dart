@@ -89,15 +89,26 @@ class AsmrApiService {
   static const Duration _requestTimeout = Duration(seconds: 15);
 
   /// The public tag directory is an unpaginated array; reject partial envelopes.
-  Future<List<AsmrTag>> fetchTagCatalog() async {
-    final response = await _send(method: 'GET', path: '/api/tags/');
+  Future<List<AsmrTag>> fetchTagCatalog() =>
+      _fetchInterestCatalog('/api/tags/');
+
+  /// The public voice actor directory uses UUIDs and is also an unpaginated array.
+  Future<List<AsmrTag>> fetchVoiceActorCatalog() =>
+      _fetchInterestCatalog('/api/vas/');
+
+  Future<List<AsmrTag>> _fetchInterestCatalog(String path) async {
+    final response = await _send(method: 'GET', path: path);
     if (response is! List || response.isEmpty) {
-      throw const FormatException('Expected complete ASMR tag array');
+      throw const FormatException('Expected complete ASMR interest directory');
     }
     return response
         .map((raw) {
           final json = Map<String, dynamic>.from(raw as Map);
-          final id = (json['id'] as num).toInt();
+          final rawId = json['id'];
+          if (rawId is! num && (rawId is! String || rawId.trim().isEmpty)) {
+            throw const FormatException('Directory entry is missing an ID');
+          }
+          final id = rawId is num ? rawId.toInt() : rawId;
           final aliases = <String>{};
           void collect(Object? value) {
             if (value is String && value.trim().isNotEmpty) {
@@ -126,7 +137,7 @@ class AsmrApiService {
           }
           return AsmrTag(
             key: 'online:$id',
-            onlineId: id,
+            onlineId: id is int ? id : null,
             name: json['name'] as String? ?? aliases.first,
             aliases: aliases,
           );

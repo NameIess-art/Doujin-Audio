@@ -20,6 +20,7 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -631,6 +632,35 @@ void main() {
         expect((chips.first.label as Text).data, 'Tag 24');
         expect((chips.last.label as Text).data, 'Tag 5');
         expect(chips.every((chip) => chip.onDeleted == null), isTrue);
+        final chip = find.byKey(const ValueKey('my-interest-local:tag 24'));
+        final scheme = Theme.of(tester.element(chip)).colorScheme;
+        expect(chips.first.backgroundColor, scheme.primaryContainer);
+        expect(chips.first.labelStyle?.color, scheme.onPrimaryContainer);
+        String? copied;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+              if (call.method == 'Clipboard.setData') {
+                copied = (call.arguments as Map)['text'] as String;
+              }
+              return null;
+            });
+        addTearDown(
+          () => TestDefaultBinaryMessengerBinding
+              .instance
+              .defaultBinaryMessenger
+              .setMockMethodCallHandler(SystemChannels.platform, null),
+        );
+        await tester.tap(chip);
+        await tester.pump();
+        expect(copied, 'Tag 24');
+        expect(
+          find.text(
+            fixture.languageProvider.tr('copied_to_clipboard', {
+              'value': 'Tag 24',
+            }),
+          ),
+          findsOneWidget,
+        );
         final header = find.byKey(
           ValueKey(
             'my-section-header-${fixture.languageProvider.tr('my_interests')}',
@@ -641,6 +671,145 @@ void main() {
           findsNothing,
         );
         expect(controller.interestTags, hasLength(20));
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+    testWidgets(
+      'voice interests show ten highlighted names and copy on $platform',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final controller = _InterestController(createTestAsmrServices());
+        for (var index = 0; index < 14; index++) {
+          final key = controller.voices.resolve('Voice $index');
+          controller.voices.learned[key] = index.toDouble();
+        }
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        tester.view.physicalSize = const Size(960, 1400);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          fixture.build(
+            Theme(
+              data: ThemeData(platform: platform),
+              child: const MyPage(tabIndex: 3),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+              listeningActivityProvider.overrideWith(
+                (ref) => Stream.value(const ListeningActivityView()),
+              ),
+            ],
+          ),
+        );
+        await pumpAndSettleWithAsync(tester);
+        await tester.ensureVisible(
+          find.text(fixture.languageProvider.tr('my_voice_interests')),
+        );
+        final chips = find.byWidgetPredicate(
+          (widget) =>
+              widget is InputChip &&
+              (widget.key as ValueKey?)?.value.toString().startsWith(
+                    'my-voice-interest-',
+                  ) ==
+                  true,
+        );
+        expect(chips, findsNWidgets(10));
+        final first = find.byKey(
+          const ValueKey('my-voice-interest-local:voice 13'),
+        );
+        final chip = tester.widget<InputChip>(first);
+        expect(
+          chip.backgroundColor,
+          Theme.of(tester.element(first)).colorScheme.primaryContainer,
+        );
+        String? copied;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+              if (call.method == 'Clipboard.setData') {
+                copied = (call.arguments as Map)['text'] as String;
+              }
+              return null;
+            });
+        addTearDown(
+          () => TestDefaultBinaryMessengerBinding
+              .instance
+              .defaultBinaryMessenger
+              .setMockMethodCallHandler(SystemChannels.platform, null),
+        );
+        await tester.tap(first);
+        await tester.pump();
+        expect(copied, 'Voice 13');
+        expect(
+          find.text(fixture.languageProvider.tr('my_voice_interest_limit')),
+          findsOneWidget,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+    testWidgets(
+      'voice catalog keeps automatic names and saves only on confirmation on $platform',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final controller = _InterestController(createTestAsmrServices());
+        final automatic = controller.voices.resolve('Frequent Voice');
+        controller.voices.learned[automatic] = 60;
+        for (var index = 0; index < 25; index++) {
+          controller.voices.resolve('Other Voice $index');
+        }
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            Theme(
+              data: ThemeData(platform: platform),
+              child: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const MyTagManagementPage(
+                        excluded: false,
+                        voiceActors: true,
+                      ),
+                    ),
+                  ),
+                  child: const Text('Open voices'),
+                ),
+              ),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.tap(find.text('Open voices'));
+        await tester.pumpAndSettle();
+        final locked = tester.widget<CheckboxListTile>(
+          find.byKey(ValueKey(automatic)),
+        );
+        expect(locked.value, isTrue);
+        expect(locked.onChanged, isNull);
+        expect(
+          find.text(fixture.languageProvider.tr('my_listened_voice_actor')),
+          findsOneWidget,
+        );
+        await tester.enterText(find.byType(TextField), 'Other Voice 24');
+        await tester.pump();
+        await tester.tap(find.byType(CheckboxListTile));
+        await tester.pumpAndSettle();
+        expect(controller.voiceSaves, 0);
+        expect(controller.manualInterestVoiceActorKeys, isEmpty);
+        await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+        await tester.pumpAndSettle();
+        expect(controller.voiceSaves, 1);
+        expect(controller.manualInterestVoiceActorKeys, {
+          'local:other voice 24',
+        });
+        expect(find.byType(MyTagManagementPage), findsNothing);
+        expect(controller.state.manualInterests, {'local:sleep'});
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
       },
@@ -947,6 +1116,33 @@ class _InterestController extends AsmrLibraryController {
       ) {
     state.setInterested(state.resolve('Sleep'), true);
   }
+  final voices = AsmrTagPreferences();
+  int voiceSaves = 0;
+  @override
+  List<AsmrTagInterest> get voiceActorInterests =>
+      voices.interests.take(10).toList();
+  @override
+  List<AsmrTagInterest> get listenedVoiceActorInterests =>
+      voices.listenedInterests.take(10).toList();
+  @override
+  Set<String> get manualInterestVoiceActorKeys => voices.manualInterests;
+  @override
+  List<AsmrTag> get allVoiceActors => voices.tags.values.toList();
+  @override
+  bool get voiceActorCatalogComplete => true;
+  @override
+  Future<void> ensureVoiceActorCatalog({bool force = false}) async {}
+  @override
+  Future<void> applyVoiceActorSelections({
+    required Map<String, bool> changes,
+  }) async {
+    voiceSaves++;
+    for (final change in changes.entries) {
+      voices.setInterested(change.key, change.value);
+    }
+    notifyListeners();
+  }
+
   final state = AsmrTagPreferences();
   @override
   Future<void> ensureDailyRecommendations({DateTime? now}) async {}

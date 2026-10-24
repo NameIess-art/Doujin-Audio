@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/player/application/listening_activity_service.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_tag_interest.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/features/player/domain/listening_activity.dart';
@@ -49,6 +50,10 @@ void main() {
             {'id': 7, 'name': 'ASMR'},
           ],
           'circle': {'id': 8, 'name': 'Circle'},
+          'vas': [
+            {'id': 'voice-one', 'name': 'Voice One'},
+            {'id': 'voice-two', 'name': 'Voice Two'},
+          ],
         },
       );
       final batch = PlaybackUsageBatch(
@@ -98,6 +103,11 @@ void main() {
           expect(contributions.single.tags, ['ASMR']);
           expect(contributions.single.duration, const Duration(minutes: 1));
         },
+        recordVoiceActorInterests:
+            ({required batchId, required contributions}) async {
+              expect(contributions.single.tags, ['Voice One', 'Voice Two']);
+              expect(contributions.single.duration, const Duration(minutes: 1));
+            },
       );
       addTearDown(service.dispose);
       await service.refresh();
@@ -107,6 +117,65 @@ void main() {
       expect(view.history.single.track.remoteMetadata, remote.remoteMetadata);
       expect(view.history.single.track.groupTitle, 'Remote work');
       expect(acknowledged, [batch.id, batch.id]);
+    },
+  );
+
+  test(
+    'voice interests import tagless local metadata before acknowledgement and retry independently',
+    () async {
+      final voicePreferences = AsmrTagPreferences(limit: 10);
+      final tags = AsmrTagPreferences();
+      var failVoices = true;
+      var hasUsage = true;
+      final acknowledged = <String>[];
+      final batch = _batch('voices:1', 60000);
+      final local = _track().copyWith(
+        tags: const [],
+        remoteMetadata: {
+          'voiceActors': ['Voice One'],
+          'vas': [
+            {'name': 'Voice One'},
+          ],
+        },
+      );
+      final service = ListeningActivityService(
+        repository: repository,
+        readUsage: () async => hasUsage ? [batch] : [],
+        acknowledgeUsage: (ids) async {
+          acknowledged.addAll(ids);
+          hasUsage = false;
+        },
+        resolveTrack: (_) => local,
+        resolveLocalVoiceActors: (track) async {
+          expect(track.path, local.path);
+          return ['Voice One', 'Voice Two'];
+        },
+        recordInterests: ({required batchId, required contributions}) async {
+          tags.recordListeningBatch(batchId, contributions);
+        },
+        recordVoiceActorInterests:
+            ({required batchId, required contributions}) async {
+              if (failVoices) throw StateError('voice preference save failed');
+              voicePreferences.recordListeningBatch(batchId, contributions);
+            },
+      );
+      addTearDown(service.dispose);
+      await expectLater(service.refresh(), throwsStateError);
+      expect(acknowledged, isEmpty);
+      expect(voicePreferences.learned, isEmpty);
+      failVoices = false;
+      await service.refresh();
+      expect(acknowledged, [batch.id]);
+      expect(voicePreferences.interests.map((e) => e.tag.name), [
+        'Voice One',
+        'Voice Two',
+      ]);
+      expect(voicePreferences.learned.values, everyElement(0.5));
+      expect(
+        (await repository.loadDays()).single.duration,
+        const Duration(minutes: 1),
+      );
+      expect(tags.interests, isEmpty);
     },
   );
 

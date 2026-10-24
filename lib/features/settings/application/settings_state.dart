@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/app_language.dart';
 import '../../../core/network/network_route_settings.dart';
-import '../../asmr/domain/asmr_models.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/cover_image_resolution.dart';
 import '../../asmr/domain/asmr_download.dart';
@@ -42,7 +41,6 @@ class SettingsState {
   SettingsState({
     this.networkRouteSettings = const NetworkRouteSettings(),
     this.asmrApiDomain = 'https://api.asmr-300.com',
-    this.preferredAsmrSource = AsmrCatalogSource.asmrOne,
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = ContentLanguagePreference.followPage,
     this.librarySortCriterion = LibrarySortCriterion.name,
@@ -91,7 +89,6 @@ class SettingsState {
 
   final NetworkRouteSettings networkRouteSettings;
   final String asmrApiDomain;
-  final AsmrCatalogSource preferredAsmrSource;
   final bool autoCheckUpdates;
   final ContentLanguagePreference dlsiteMetadataLanguage;
   final LibrarySortCriterion librarySortCriterion;
@@ -136,7 +133,6 @@ class SettingsState {
     return other is SettingsState &&
         other.networkRouteSettings == networkRouteSettings &&
         other.asmrApiDomain == asmrApiDomain &&
-        other.preferredAsmrSource == preferredAsmrSource &&
         other.autoCheckUpdates == autoCheckUpdates &&
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
         other.librarySortCriterion == librarySortCriterion &&
@@ -185,7 +181,6 @@ class SettingsState {
   int get hashCode => Object.hashAll(<Object?>[
     networkRouteSettings,
     asmrApiDomain,
-    preferredAsmrSource,
     autoCheckUpdates,
     dlsiteMetadataLanguage,
     librarySortCriterion,

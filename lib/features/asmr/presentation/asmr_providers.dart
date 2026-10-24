@@ -41,6 +41,29 @@ final asmrTagInterestsProvider =
       );
     });
 
+final asmrVoiceActorInterestsProvider =
+    StreamProvider.autoDispose<List<AsmrTagInterest>>((ref) {
+      final controller = ref.watch(asmrLibraryControllerProvider);
+      if (controller == null) return Stream.value(const []);
+      unawaited(
+        controller.ensureTagInterests().catchError((
+          Object error,
+          StackTrace stack,
+        ) {
+          AppLogService.warning(
+            'asmr_voice_interests_load_failed',
+            error: error,
+            stackTrace: stack,
+          );
+        }),
+      );
+      return interactionDeferredListenableStream(
+        source: controller,
+        read: () => controller.voiceActorInterests,
+        structural: true,
+      );
+    });
+
 final asmrWorkFinderProvider =
     Provider<
       Future<AsmrWork?> Function(String, {required AppLanguage language})

@@ -1,9 +1,4 @@
 import 'dart:io';
-import 'dart:async';
-import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
-import 'package:doujin_audio/features/asmr/application/asmr_account_sync_service.dart';
-import 'package:doujin_audio/features/asmr/application/asmr_auth_service.dart';
-import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 
 import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_remote_catalog_service.dart';
@@ -19,7 +14,10 @@ class _UnusedPersistence implements AsmrPersistenceRepository {
 
 class _One extends AsmrApiService {
   int calls = 0;
-  Future<void> Function()? beforeTree;
+  Object? error;
+  Object? mediaError;
+  bool empty = false;
+
   @override
   Future<List<AsmrTrackFile>> fetchTrackTree(
     int id, {
@@ -27,7 +25,8 @@ class _One extends AsmrApiService {
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
     calls++;
-    await beforeTree?.call();
+    if (error != null) throw error!;
+    if (empty) return [];
     return [
       AsmrTrackFile.fromJson(const {
         'type': 'audio',
@@ -41,12 +40,15 @@ class _One extends AsmrApiService {
   Future<void> verifyMediaStream(
     String url, {
     AsmrRequestCancellationToken? cancellationToken,
-  }) async {}
+  }) async {
+    if (mediaError != null) throw mediaError!;
+  }
 }
 
 class _Japanese extends JapaneseAsmrApiService {
   Object? error;
   int calls = 0;
+
   @override
   Future<List<AsmrTrackFile>> fetchTrackTree(
     AsmrWork work, {
@@ -87,7 +89,7 @@ void main() {
     japanese.close();
   });
 
-  test('ONE remains the default directory source', () async {
+  test('ONE always supplies an available directory first', () async {
     final tree = await catalog.loadTrackTree(work, token: null);
     expect(tree.single.title, 'one.m4a');
     expect(one.calls, 1);
@@ -95,87 +97,53 @@ void main() {
   });
 
   test(
-    'Japanese priority changes directory source and preserves work identity',
+    'ONE directory failure falls back to Japanese and preserves identity',
     () async {
-      catalog.preferredSource = () => AsmrCatalogSource.japaneseAsmr;
+      one.error = const HttpException('Unavailable');
       final key = work.workKey;
       final tree = await catalog.loadTrackTree(work, token: null);
       expect(tree.single.title, 'japanese.m4a');
+      expect(one.calls, 1);
       expect(japanese.calls, 1);
-      expect(one.calls, 0);
       expect(work.workKey, key);
     },
   );
 
-  test('Japanese directory failure falls back to ONE', () async {
-    catalog.preferredSource = () => AsmrCatalogSource.japaneseAsmr;
-    japanese.error = const HttpException('Unavailable');
+  test('an empty ONE directory falls back to Japanese', () async {
+    one.empty = true;
     final tree = await catalog.loadTrackTree(work, token: null);
-    expect(tree.single.title, 'one.m4a');
-    expect(japanese.calls, 1);
+    expect(tree.single.title, 'japanese.m4a');
     expect(one.calls, 1);
+    expect(japanese.calls, 1);
   });
 
-  AsmrLibraryController controller() {
-    final preferences = AsmrPreferencesStore(repository: _UnusedPersistence());
-    final controller = AsmrLibraryController(
-      preferencesStore: preferences,
-      remoteCatalogService: catalog,
-      accountSyncService: AsmrAccountSyncService(
-        apiService: one,
-        authService: AsmrAuthService(apiService: one),
-        preferencesStore: preferences,
-      ),
-    );
-    addTearDown(controller.dispose);
-    return controller;
-  }
+  test('unavailable ONE media falls back to Japanese', () async {
+    one.mediaError = const HttpException('Media unavailable');
+    final tree = await catalog.loadTrackTree(work, token: null);
+    expect(tree.single.title, 'japanese.m4a');
+    expect(one.calls, 1);
+    expect(japanese.calls, 1);
+  });
 
-  test(
-    'source invalidation drops cached trees and reloads the selected source',
-    () async {
-      final library = controller();
-      final first = await library.ensureTrackTree(work);
-      expect(first.single.title, 'one.m4a');
-      expect(await library.ensureTrackTree(work), same(first));
-      catalog.preferredSource = () => AsmrCatalogSource.japaneseAsmr;
-      library.invalidateResourceSource();
-      final second = await library.ensureTrackTree(work);
-      expect(second.single.title, 'japanese.m4a');
-      expect(one.calls, 1);
-      expect(japanese.calls, 1);
-    },
-  );
-
-  test(
-    'source invalidation retries a pending tree without publishing stale data',
-    () async {
-      final entered = Completer<void>();
-      final release = Completer<void>();
-      one.beforeTree = () async {
-        entered.complete();
-        await release.future;
-      };
-      final library = controller();
-      final pending = library.ensureTrackTree(work);
-      await entered.future;
-      catalog.preferredSource = () => AsmrCatalogSource.japaneseAsmr;
-      library.invalidateResourceSource();
-      final tree = await pending;
-      expect(tree.single.title, 'japanese.m4a');
-      release.complete();
-      await Future<void>.delayed(Duration.zero);
-      expect(library.trackTreeFor(work.workKey)!.single.title, 'japanese.m4a');
-    },
-  );
-
-  test('cancelled preferred source never retries another source', () async {
-    catalog.preferredSource = () => AsmrCatalogSource.japaneseAsmr;
-    japanese.error = const AsmrRequestCancelled();
+  test('cancelled ONE request never starts the fallback source', () async {
+    one.error = const AsmrRequestCancelled();
     await expectLater(
       catalog.loadTrackTree(work, token: null),
       throwsA(isA<AsmrRequestCancelled>()),
     );
-    expect(one.calls, 0);
+    expect(one.calls, 1);
+    expect(japanese.calls, 0);
+  });
+
+  test('failure of both sources preserves the initial ONE error', () async {
+    const error = HttpException('ONE unavailable');
+    one.error = error;
+    japanese.error = const HttpException('Japanese unavailable');
+    await expectLater(
+      catalog.loadTrackTree(work, token: null),
+      throwsA(same(error)),
+    );
+    expect(one.calls, 1);
+    expect(japanese.calls, 1);
   });
 }

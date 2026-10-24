@@ -9,6 +9,186 @@ void registerAsmrControllerStateTests({
   setUp(() => preferences = preferencesStore());
 
   test(
+    'voice interests persist ten listening ranks and unlimited manual choices independently',
+    () async {
+      await resetPrefs();
+      final repository = _InterestTracksRepository(
+        () async => [
+          _track(groupTitle: 'Known voices', tags: ['sleep']).copyWith(
+            remoteMetadata: {
+              'voiceActors': [for (var i = 0; i < 15; i++) 'Voice $i'],
+            },
+          ),
+        ],
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: repository,
+        apiService: _FakeAsmrApiService(),
+      );
+      await controller.ensureTagInterests();
+      expect(controller.allVoiceActors, hasLength(15));
+      expect(controller.voiceActorInterests, isEmpty);
+      await expectLater(
+        controller.applyVoiceActorSelections(
+          changes: {'local:voice 0': true, 'missing': true},
+        ),
+        throwsArgumentError,
+      );
+      expect(controller.manualInterestVoiceActorKeys, isEmpty);
+      await controller.applyVoiceActorSelections(
+        changes: {for (var i = 0; i < 15; i++) 'local:voice $i': true},
+      );
+      expect(controller.manualInterestVoiceActorKeys, hasLength(15));
+      expect(controller.voiceActorInterests, hasLength(10));
+      final contributions = [
+        for (var i = 0; i < 15; i++)
+          (tags: ['Voice $i'], duration: Duration(minutes: i + 1)),
+      ];
+      await controller.recordVoiceActorListeningBatch(
+        batchId: 'voice:1',
+        contributions: contributions,
+      );
+      await controller.recordVoiceActorListeningBatch(
+        batchId: 'voice:1',
+        contributions: contributions,
+      );
+      await controller.recordTagListeningBatch(
+        batchId: 'voice:1',
+        contributions: [
+          (tags: ['sleep'], duration: const Duration(minutes: 5)),
+        ],
+      );
+      expect(controller.listenedVoiceActorInterests, hasLength(10));
+      expect(controller.voiceActorInterests.first.tag.name, 'Voice 14');
+      expect(controller.voiceActorInterests.first.weight, 15);
+      expect(controller.interestTags.single.weight, 5);
+      await controller.reloadPersistedState();
+      expect(controller.voiceActorInterests.first.weight, 15);
+      expect(controller.manualInterestVoiceActorKeys, hasLength(15));
+      expect((await preferences.loadVoiceActorPreferences()).limit, 10);
+    },
+  );
+
+  test(
+    'voice catalog retains cached choices on failure and discards stale restore requests',
+    () async {
+      await resetPrefs();
+      final api = _VoiceCatalogApi();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      await controller.ensureVoiceActorCatalog();
+      expect(controller.voiceActorCatalogComplete, isFalse);
+      expect(controller.voiceActorCatalogError, isStateError);
+      api.fail = false;
+      await controller.ensureVoiceActorCatalog(force: true);
+      expect(controller.voiceActorCatalogComplete, isTrue);
+      await controller.applyVoiceActorSelections(
+        changes: {'online:voice-id': true},
+      );
+      final pending = Completer<List<AsmrTag>>();
+      api.pending = pending;
+      final stale = controller.ensureVoiceActorCatalog(force: true);
+      await api.started.future;
+      await controller.reloadPersistedState();
+      pending.complete([AsmrTag(key: 'online:stale', name: 'Stale')]);
+      await stale;
+      expect(
+        controller.allVoiceActors.map((e) => e.key),
+        isNot(contains('online:stale')),
+      );
+      expect(
+        controller.manualInterestVoiceActorKeys,
+        contains('online:voice-id'),
+      );
+      expect(
+        (await preferences.loadVoiceActorPreferences()).tags,
+        isNot(contains('online:stale')),
+      );
+    },
+  );
+
+  test(
+    'daily discovery upgrades old cache with listening and manual interests and restores it',
+    () async {
+      await resetPrefs();
+      final repository = persistenceRepository();
+      final state = AsmrTagPreferences();
+      state.learned[state.resolve('listened')] = 60;
+      state.setInterested(state.resolve('manual'), true);
+      await preferences.saveTagPreferences(state);
+      await preferences.saveDailyRecommendations(
+        language: AsmrContentLanguage.zh,
+        date: '2026-10-24',
+        works: [_work(id: 9000, title: 'Old daily pick')],
+      );
+      const cacheKey = 'asmr_daily_discovery_v1_zh';
+      final oldCache = (await repository.loadSetting(
+        cacheKey,
+      ))!.replaceFirst('"version":2,', '');
+      await repository.saveSetting(cacheKey, oldCache);
+      final api = _FakeAsmrApiService(
+        recommendationWorks: List.generate(
+          100,
+          (i) => _work(
+            id: 5000 + i,
+            title: 'Daily $i',
+            tags: [
+              if (i < 20)
+                'listened'
+              else if (i < 40)
+                'manual'
+              else
+                'Explore $i',
+            ],
+          ),
+        ),
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: repository,
+        apiService: api,
+      );
+      addTearDown(controller.dispose);
+      final day = DateTime(2026, 10, 24);
+      await controller.ensureDailyRecommendations(now: day);
+      final picks = controller.dailyRecommendations;
+      expect(picks, hasLength(20));
+      expect(
+        picks.where(
+          (w) => w.tags.contains('listened') || w.tags.contains('manual'),
+        ),
+        hasLength(12),
+      );
+      expect(picks.any((w) => w.tags.contains('listened')), isTrue);
+      expect(picks.any((w) => w.tags.contains('manual')), isTrue);
+      expect(
+        (await preferences.loadDailyRecommendations(
+          AsmrContentLanguage.zh,
+        ))!.version,
+        2,
+      );
+      final requests = api.fetchWorkRequests.length;
+      expect(requests, greaterThan(0));
+      final restored = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: repository,
+        apiService: api,
+      );
+      addTearDown(restored.dispose);
+      await restored.ensureDailyRecommendations(now: day);
+      expect(
+        restored.dailyRecommendations.map((w) => w.workKey),
+        picks.map((w) => w.workKey),
+      );
+      expect(api.fetchWorkRequests.length, requests);
+    },
+  );
+
+  test(
     'daily discovery failed save is retryable and language/day races cannot overwrite cache',
     () async {
       await resetPrefs();
@@ -526,6 +706,46 @@ void registerAsmrControllerStateTests({
         100,
       );
       await controller.setTagInterested('local:second', true);
+      expect(
+        controller.worksFor(AsmrCategoryType.recommendation).first.id,
+        101,
+      );
+    },
+  );
+
+  test(
+    'voice selections refresh an already loaded recommendation page',
+    () async {
+      await resetPrefs();
+      final voices = AsmrTagPreferences(limit: 10);
+      voices.resolve('First voice');
+      voices.resolve('Second voice');
+      await preferences.saveVoiceActorPreferences(voices);
+      final api = _FakeAsmrApiService(
+        recommendationWorks: [
+          AsmrWork.fromJson({
+            ..._work(id: 100, title: 'First').toJson(),
+            'voiceActors': const ['First voice'],
+          }),
+          AsmrWork.fromJson({
+            ..._work(id: 101, title: 'Second').toJson(),
+            'voiceActors': const ['Second voice'],
+          }),
+        ],
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      await controller.ensureCategoryLoaded(AsmrCategoryType.recommendation);
+      expect(
+        controller.worksFor(AsmrCategoryType.recommendation).first.id,
+        100,
+      );
+      await controller.applyVoiceActorSelections(
+        changes: {'local:second voice': true},
+      );
       expect(
         controller.worksFor(AsmrCategoryType.recommendation).first.id,
         101,
@@ -3003,5 +3223,21 @@ class _InterestTracksRepository extends TestPersistenceRepository {
   Future<List<MusicTrack>> loadTracksForRecommendations() {
     reads++;
     return readTracks();
+  }
+}
+
+class _VoiceCatalogApi extends _FakeAsmrApiService {
+  bool fail = true;
+  Completer<List<AsmrTag>>? pending;
+  final started = Completer<void>();
+
+  @override
+  Future<List<AsmrTag>> fetchVoiceActorCatalog() async {
+    if (fail) throw StateError('offline');
+    if (pending != null) {
+      started.complete();
+      return pending!.future;
+    }
+    return [AsmrTag(key: 'online:voice-id', name: 'Known voice')];
   }
 }

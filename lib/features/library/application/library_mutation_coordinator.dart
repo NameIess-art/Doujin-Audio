@@ -539,7 +539,7 @@ final class LibraryMutationCoordinator {
           (entry) =>
               entry.isTrack &&
               entry.isActive &&
-              PathMatcher.isWithinOrEqual(entry.path, folderPath) &&
+              _service.isLibraryEntryWithin(entry, entry.path, folderPath) &&
               !_service.isLibraryPathExcluded(libraryPath, entry.path),
         )
         .map((entry) => entry.toTrack())

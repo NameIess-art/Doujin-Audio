@@ -27,8 +27,8 @@ internal class FileCacheOperations(context: Context) {
 
     fun listChildFolders(folder: String): List<String> = documentStorage.listChildFolders(folder)
 
-    fun renameDocumentTarget(path: String, name: String): HashMap<String, String> =
-        documentStorage.renameDocumentTarget(path, name)
+    fun renameDocumentTarget(path: String, name: String, preserveExtension: Boolean = false): HashMap<String, String> =
+        documentStorage.renameDocumentTarget(path, name, preserveExtension)
 
     fun reconcilePersistedUriPermissions(retainedUris: Set<String>): Map<String, Any> =
         PersistedUriPermissionOperations.reconcile(

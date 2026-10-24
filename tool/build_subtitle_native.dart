@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
 // Build the pinned CrispASR C ABI used by Japanese script alignment and chat.
 // Outputs live in ignored build directories; no generated binary is committed.
 const _sourceUrl = 'https://github.com/CrispStrobe/CrispASR.git';
@@ -185,7 +187,29 @@ Future<void> _copyLicenses(String source, String destination) async {
   }
 }
 
-bool _hasOutputs(String directory, List<String> libraries) {
+const _buildIdentityFile = 'build-identity.json';
+
+String subtitleNativeBuildIdentity({
+  required List<int> scriptBytes,
+  required String platform,
+  required String abi,
+  required String toolchain,
+}) => jsonEncode({
+  'recipe': sha256.convert(scriptBytes).toString(),
+  'platform': platform,
+  'abi': abi,
+  'toolchain': toolchain,
+});
+
+bool hasSubtitleNativeOutputs(
+  String directory,
+  List<String> libraries,
+  String identity,
+) {
+  final marker = File('$directory/$_buildIdentityFile');
+  if (!marker.existsSync() || marker.readAsStringSync() != identity) {
+    return false;
+  }
   for (final name in libraries) {
     final file = File('$directory/$name');
     if (!file.existsSync() || file.lengthSync() == 0) {
@@ -195,12 +219,26 @@ bool _hasOutputs(String directory, List<String> libraries) {
   return true;
 }
 
+Future<void> _invalidateBuild(String output, String build) async {
+  final marker = File('$output/$_buildIdentityFile');
+  if (await marker.exists()) await marker.delete();
+  // A changed toolchain or configuration must not inherit CMake's old cache.
+  final directory = Directory(build);
+  if (await directory.exists()) await directory.delete(recursive: true);
+}
+
+Future<void> _recordBuild(String output, String identity) async {
+  await File('$output/$_buildIdentityFile').writeAsString(identity);
+}
+
 Future<void> main(List<String> args) async {
   final platform = _option(args, '--platform');
   final output = Directory(_option(args, '--output')).absolute.path;
   final root = File.fromUri(Platform.script).parent.parent.absolute.path;
   final source = '$root/.dart_tool/subtitle_sources/crispasr';
   await _prepareSource(source);
+  final recipe = await File.fromUri(Platform.script).readAsBytes();
+  final cmakeVersion = await _capture('cmake', ['--version']);
 
   const common = [
     '-DBUILD_SHARED_LIBS=ON',
@@ -223,8 +261,42 @@ Future<void> main(List<String> args) async {
       'ggml-base.dll',
       'ggml-cpu.dll',
     ];
-    if (!_hasOutputs(output, libraries)) {
+    final vswhere =
+        '${Platform.environment['ProgramFiles(x86)']}/Microsoft Visual Studio/Installer/vswhere.exe';
+    final visualStudio = await _capture(vswhere, [
+      '-latest',
+      '-products',
+      '*',
+      '-requires',
+      'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+      '-property',
+      'installationVersion',
+    ]);
+    if (visualStudio.isEmpty) {
+      throw StateError('Visual Studio C++ toolchain not found');
+    }
+    final installation = await _capture(vswhere, [
+      '-latest',
+      '-products',
+      '*',
+      '-requires',
+      'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+      '-property',
+      'installationPath',
+    ]);
+    final compiler = await File(
+      '$installation/VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt',
+    ).readAsString();
+    final identity = subtitleNativeBuildIdentity(
+      scriptBytes: recipe,
+      platform: platform,
+      abi: 'x64',
+      toolchain:
+          '$cmakeVersion\n$visualStudio\n$compiler\n${Platform.environment['CMAKE_GENERATOR'] ?? ''}',
+    );
+    if (!hasSubtitleNativeOutputs(output, libraries, identity)) {
       final build = '$source/build-msvc';
+      await _invalidateBuild(output, build);
       await _run('cmake', [
         '-S',
         source,
@@ -246,6 +318,7 @@ Future<void> main(List<String> args) async {
         '8',
       ]);
       await _copyLibraries(build, output, libraries);
+      await _recordBuild(output, identity);
     } else {
       stdout.writeln(
         '$output already contains all required libraries; skipping build.',
@@ -263,11 +336,9 @@ Future<void> main(List<String> args) async {
     final host = Platform.isWindows ? 'windows-x86_64' : 'linux-x86_64';
     final llvm = '$ndk/toolchains/llvm/prebuilt/$host';
     final strip = '$llvm/bin/llvm-strip${Platform.isWindows ? '.exe' : ''}';
-    final clangVersion = Directory('$llvm/lib/clang')
-        .listSync()
-        .whereType<Directory>()
-        .single
-        .path;
+    final clangVersion = Directory(
+      '$llvm/lib/clang',
+    ).listSync().whereType<Directory>().single.path;
     const requiredLibs = [
       'libcrispasr.so',
       'libggml.so',
@@ -275,14 +346,24 @@ Future<void> main(List<String> args) async {
       'libggml-cpu.so',
       'libomp.so',
     ];
+    final toolchainIdentity =
+        '${await File('$ndk/source.properties').readAsString()}\n'
+        '$cmakeVersion\n${await _capture(ninja, ['--version'])}';
     for (final abi in ['arm64-v8a', 'x86_64']) {
-      if (_hasOutputs('$output/$abi', requiredLibs)) {
+      final identity = subtitleNativeBuildIdentity(
+        scriptBytes: recipe,
+        platform: platform,
+        abi: abi,
+        toolchain: toolchainIdentity,
+      );
+      if (hasSubtitleNativeOutputs('$output/$abi', requiredLibs, identity)) {
         stdout.writeln(
           '$output/$abi already contains all required libraries; skipping build.',
         );
         continue;
       }
       final build = '$source/build-android/$abi';
+      await _invalidateBuild('$output/$abi', build);
       await _run('cmake', [
         '-S',
         source,
@@ -313,11 +394,13 @@ Future<void> main(List<String> args) async {
         'libggml-cpu.so',
       ]);
       final ompArch = abi == 'arm64-v8a' ? 'aarch64' : 'x86_64';
-      await File('$clangVersion/lib/linux/$ompArch/libomp.so')
-          .copy('$output/$abi/libomp.so');
+      await File(
+        '$clangVersion/lib/linux/$ompArch/libomp.so',
+      ).copy('$output/$abi/libomp.so');
       for (final name in requiredLibs) {
         await _run(strip, ['--strip-unneeded', '$output/$abi/$name']);
       }
+      await _recordBuild('$output/$abi', identity);
     }
     await _copyLicenses(source, assetsOutput);
     final notice = File('$ndk/NOTICE.toolchain');

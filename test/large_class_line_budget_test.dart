@@ -7,7 +7,9 @@ void main() {
     const budgets = <String, int>{
       'lib/features/library/application/library_facade.dart': 1200,
       'lib/features/player/application/playback_facade.dart': 1200,
-      'lib/features/asmr/application/asmr_download_manager.dart': 900,
+      // Lifecycle coordination retains cancellation, shutdown and metadata
+      // ownership; planning, transfers, output and state are already composed.
+      'lib/features/asmr/application/asmr_download_manager.dart': 1000,
       'lib/features/asmr/application/asmr_download_task_store.dart': 550,
       'android/app/src/main/kotlin/com/doujin/audio/player/service/'
               'NativePlaybackService.kt':

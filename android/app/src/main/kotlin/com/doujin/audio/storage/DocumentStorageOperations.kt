@@ -97,17 +97,27 @@ internal class DocumentStorageOperations(
         }
     }
 
-    fun renameDocumentTarget(targetPath: String, newName: String): HashMap<String, String> =
+    fun renameDocumentTarget(targetPath: String, newName: String, preserveExtension: Boolean = false): HashMap<String, String> =
         PersistedUriPermissionOperations.withPermissionLock {
-            renameDocumentTargetLocked(targetPath, newName)
+            renameDocumentTargetLocked(targetPath, newName, preserveExtension)
         }
 
     private fun renameDocumentTargetLocked(
         targetPath: String,
-        newName: String
+        requestedName: String,
+        preserveExtension: Boolean
     ): HashMap<String, String> {
         val target = paths.resolveDocumentRenameTarget(targetPath)
             ?: throw IllegalArgumentException("Cannot resolve rename target.")
+        val document = DocumentFile.fromSingleUri(context, target.uri)
+            ?: throw IllegalStateException("Cannot read rename target.")
+        val previousName = document.name
+        val newName = if (preserveExtension && !document.isDirectory) {
+            val originalName = previousName
+                ?: throw IllegalStateException("Cannot read rename target display name.")
+            preserveDocumentExtension(originalName, requestedName)
+        } else requestedName
+        if (newName == previousName) return hashMapOf("path" to targetPath)
 
         // For tree-root targets the SAF provider may refuse to rename the
         // directory because the app only holds a grant on that root itself,
@@ -122,7 +132,6 @@ internal class DocumentStorageOperations(
             // File rename not available 閳?fall through to SAF rename.
         }
 
-        val previousName = DocumentFile.fromSingleUri(context, target.uri)?.name
         val renamedUri = DocumentsContract.renameDocument(contentResolver, target.uri, newName)
             ?: throw IllegalStateException("Provider did not return renamed document uri.")
         var renamedPermissionUri: Uri? = renamedUri
@@ -472,6 +481,12 @@ internal class DocumentStorageOperations(
             delete = { it.delete() }
         )
     }
+}
+
+internal fun preserveDocumentExtension(displayName: String, requestedStem: String): String {
+    val dot = displayName.lastIndexOf('.')
+    val extension = if (dot > 0) displayName.substring(dot) else ""
+    return requestedStem + extension
 }
 
 internal fun copyImportedDocumentToFile(outFile: File, openInput: () -> InputStream) {

@@ -125,6 +125,9 @@ class PlaybackSession {
   SessionLoopMode nonSingleLoopMode;
   double volume;
   int volumeCommandGeneration = 0;
+  Future<void>? volumeCommandCompletion;
+  double? confirmedVolume;
+  bool confirmedVolumeNeedsReload = false;
   double? pendingVolume;
   bool channelSwapEnabled = false;
   bool _isLoading = false;
@@ -145,6 +148,8 @@ class PlaybackSession {
   Duration bufferedPosition = Duration.zero;
   double speed = 1.0;
   int speedCommandGeneration = 0;
+  Future<void>? speedCommandCompletion;
+  double? confirmedSpeed;
   // Ignore older snapshots until native reports the requested speed.
   double? pendingSpeed;
   AudioEffectsState audioEffects = AudioEffectsState.flat;
@@ -410,12 +415,18 @@ class PlaybackSession {
     if (pendingVolume == null && (volume - snapshot.volume).abs() >= 0.001) {
       volume = snapshot.volume;
     }
+    if (pendingVolume == null && volumeCommandCompletion == null) {
+      confirmedVolume = snapshot.volume;
+    }
     if (pendingSpeed != null &&
         (pendingSpeed! - snapshot.speed).abs() < 0.001) {
       pendingSpeed = null;
     }
     if (pendingSpeed == null && (speed - snapshot.speed).abs() >= 0.001) {
       speed = snapshot.speed;
+    }
+    if (pendingSpeed == null && speedCommandCompletion == null) {
+      confirmedSpeed = snapshot.speed;
     }
     if (!hasPendingAudioEffectsSync && snapshot.hasAudioEffectsPayload) {
       audioEffects = snapshot.audioEffects;

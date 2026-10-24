@@ -14,6 +14,35 @@ class FileCacheSubtitleWriteTest {
     @get:Rule val temporary = TemporaryFolder()
 
     @Test
+    fun `opaque audio IDs use the scanned nested parent for subtitle access`() {
+        val group = "content://provider/tree/root::CD1"
+        val folders = mapOf(group to listOf("123", "subtitle456"))
+        val parent = trackDocumentFolder(group, { key -> folders[key] },
+            { error("Opaque IDs must not be interpreted as paths") }, { "123" in it })
+        assertEquals(listOf("123", "subtitle456"), parent)
+    }
+
+    @Test
+    fun `unresolved or unrelated scanned subtitle parents fail without falling back`() {
+        for (group in listOf("content://provider/tree/root::missing", "content://other/tree/root")) {
+            assertThrows(IOException::class.java) {
+                trackDocumentFolder<List<String>>(group, { key ->
+                    if (key.contains("other")) listOf("unrelated") else null
+                }, { error("An explicit parent cannot fall back to an inferred directory") }, { "123" in it })
+            }
+        }
+    }
+
+    @Test
+    fun `legacy tracks without scanned parents retain verified parent inference`() {
+        assertEquals("legacy-parent", trackDocumentFolder(null, { error("No group") },
+            { "legacy-parent" }, { it == "legacy-parent" }))
+        assertThrows(IOException::class.java) {
+            trackDocumentFolder(null, { error("No group") }, { "wrong-parent" }, { false })
+        }
+    }
+
+    @Test
     fun `path mode writes exact original URI and bytes without requiring track`() {
         val path = "content://documents/tree/root/document/root%2Ftrack.en.srt"
         val bytes = "edited".toByteArray()

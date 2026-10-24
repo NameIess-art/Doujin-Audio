@@ -3,6 +3,43 @@ import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree_projection.dart';
 
 void main() {
+  test('opaque SAF tracks retain confirmed scan and persisted parents', () {
+    const root = 'content://provider/tree/root';
+    const projection = LibraryEditTreeProjection(root);
+    const nested = '$root/document/123';
+    const direct = '$root/document/456';
+    const foreign = 'content://provider/tree/other/document/789';
+    final tree = projection.buildEditTree(
+      [nested, direct, foreign],
+      [],
+      [],
+      trackParentPaths: {
+        nested: '$root::Work/Disc',
+        direct: root,
+        foreign: '$root::Work',
+      },
+    );
+    final work = tree.first as LibraryEditFolderTreeNode;
+    final disc = work.children.single as LibraryEditFolderTreeNode;
+    expect(work.folderPath, '$root::Work');
+    expect(disc.folderPath, '$root::Work/Disc');
+    expect(disc.children.single.pathValue, nested);
+    expect(tree.last.pathValue, direct);
+    expect(tree, hasLength(2));
+    expect(projection.includedTrackCounts(tree, (uri) => uri != nested), {
+      '$root::Work': 0,
+      '$root::Work/Disc': 0,
+    });
+    final restored = projection.buildEditTree([], [], [work]);
+    expect(
+      ((restored.single as LibraryEditFolderTreeNode).children.single
+              as LibraryEditFolderTreeNode)
+          .children
+          .single
+          .pathValue,
+      nested,
+    );
+  });
   test(
     'restored folders merge without duplicate tracks or out-of-root files',
     () {

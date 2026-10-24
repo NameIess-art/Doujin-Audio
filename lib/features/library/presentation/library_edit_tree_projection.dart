@@ -69,8 +69,9 @@ class LibraryEditTreeProjection {
   List<LibraryEditTreeNode> buildEditTree(
     List<String> trackPaths,
     List<String> persistentFolderPaths,
-    List<LibraryEditFolderTreeNode> restoringFolderSnapshots,
-  ) {
+    List<LibraryEditFolderTreeNode> restoringFolderSnapshots, {
+    Map<String, String> trackParentPaths = const <String, String>{},
+  }) {
     final rootPath = PathMatcher.normalize(libraryPath);
     final folderByPath = <String, LibraryEditFolderTreeNode>{};
     final roots = <LibraryEditTreeNode>[];
@@ -101,14 +102,29 @@ class LibraryEditTreeProjection {
       return folder;
     }
 
-    void addTrackNode(String trackPath) {
+    void addTrackNode(String trackPath, {String? snapshotParent}) {
       final normalizedTrackPath = PathMatcher.normalize(trackPath);
-      if (!PathMatcher.isWithinOrEqual(normalizedTrackPath, libraryPath) ||
+      if (PathMatcher.isContentUri(rootPath) &&
+          PathMatcher.contentPathSegmentAfter(normalizedTrackPath, 'tree') !=
+              null &&
+          !PathMatcher.hasSameContentTree(normalizedTrackPath, rootPath)) {
+        return;
+      }
+      final confirmedParent =
+          trackParentPaths[normalizedTrackPath] ?? snapshotParent;
+      final hasConfirmedParent =
+          confirmedParent != null &&
+          PathMatcher.hasSameContentTree(normalizedTrackPath, rootPath) &&
+          PathMatcher.isWithinOrEqual(confirmedParent, rootPath);
+      if ((!PathMatcher.isWithinOrEqual(normalizedTrackPath, libraryPath) &&
+              !hasConfirmedParent) ||
           !insertedTrackPaths.add(normalizedTrackPath)) {
         return;
       }
       final trackNode = LibraryEditTrackTreeNode(normalizedTrackPath);
-      final folderPath = folderPathForTrack(normalizedTrackPath);
+      final folderPath = hasConfirmedParent
+          ? confirmedParent
+          : folderPathForTrack(normalizedTrackPath);
       final folder = folderPath == null ? null : ensureFolder(folderPath);
       if (folder == null) {
         roots.add(trackNode);
@@ -124,7 +140,7 @@ class LibraryEditTreeProjection {
         if (child is LibraryEditFolderTreeNode) {
           mergeFolderSnapshot(child);
         } else if (child is LibraryEditTrackTreeNode) {
-          addTrackNode(child.trackPath);
+          addTrackNode(child.trackPath, snapshotParent: snapshot.folderPath);
         }
       }
     }

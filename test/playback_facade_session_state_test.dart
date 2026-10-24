@@ -389,12 +389,15 @@ void main() {
       native.volumeGate = firstResponse;
       final firstChange = playback.setSessionVolume(session.id, 0.7);
       native.volumeGate = null;
-      await playback.setSessionVolume(session.id, 0.8);
+      final secondChange = playback.setSessionVolume(session.id, 0.8);
+      expect(session.volume, 0.8);
+      expect(native.volumeUpdates, [(0.7, true)]);
 
       firstResponse.complete(
         const NativeFailure<NativePlaybackSnapshot>('older request failed'),
       );
       expect(await firstChange, isFalse);
+      expect(await secondChange, isTrue);
       expect(native.volumeUpdates, <(double, bool)>[(0.7, true), (0.8, true)]);
       expect(session.volume, 0.8);
       expect(session.pendingVolume, 0.8);
@@ -425,9 +428,14 @@ void main() {
       native.volumeGate = oldCommitResponse;
       final oldCommit = playback.setSessionVolume(session.id, 0.7);
       native.volumeGate = null;
-      await playback.setSessionVolume(session.id, 0.8, persist: false);
+      final preview = playback.setSessionVolume(
+        session.id,
+        0.8,
+        persist: false,
+      );
       oldCommitResponse.complete(const NativeSuccess<NativePlaybackSnapshot>());
       expect(await oldCommit, isTrue);
+      expect(await preview, isTrue);
       // A matching snapshot clears the pending value, so the final command
       // depends on retaining the newer preview's deferred source reload.
       playback.applyNativeSnapshot(
@@ -501,6 +509,165 @@ void main() {
     playback.applyNativeSnapshot(snapshot(0.6), hasLibraryTrack: (_) => false);
     expect(session.volume, 0.6);
   });
+
+  for (final firstSucceeds in [false, true]) {
+    for (final secondSucceeds in [false, true]) {
+      for (final setting in ['volume', 'speed']) {
+        test('overlapping $setting commands restore confirmed state '
+            '($firstSucceeds, $secondSucceeds)', () async {
+          final library = _createLibraryFacade();
+          final native = _RecordingNativePlaybackRepository();
+          final playback = PlaybackFacade.create(
+            databaseRepository:
+                library.databaseRepository as PlaybackPersistenceRepository,
+            nativeRepository: native,
+          )..configurePersistence(enabled: false);
+          final session = _session('overlap-$setting')
+            ..loadedPath = '/tracks/overlap.mp3';
+          playback.registerSession(session);
+          addTearDown(() async {
+            await playback.dispose();
+            await library.dispose();
+          });
+          final gate = Completer<NativeResult<NativePlaybackSnapshot>>();
+          final volume = setting == 'volume';
+          if (volume) {
+            native.volumeGate = gate;
+          } else {
+            native.speedGate = gate;
+          }
+          final first = volume
+              ? playback.setSessionVolume(session.id, 0.6, persist: false)
+              : playback.setSessionSpeed(session.id, 1.5, persist: false);
+          native.volumeGate = null;
+          native.speedGate = null;
+          native.failVolume = !secondSucceeds;
+          native.failSpeed = !secondSucceeds;
+          final second = volume
+              ? playback.setSessionVolume(session.id, 0.3)
+              : playback.setSessionSpeed(session.id, 2);
+          expect(volume ? session.volume : session.speed, volume ? 0.3 : 2);
+          expect(
+            volume ? native.volumeUpdates.length : native.speedUpdates.length,
+            1,
+          );
+          gate.complete(
+            firstSucceeds
+                ? const NativeSuccess<NativePlaybackSnapshot>()
+                : const NativeFailure<NativePlaybackSnapshot>('first failed'),
+          );
+          await first;
+          await second;
+          final expected = secondSucceeds
+              ? (volume ? 0.3 : 2.0)
+              : firstSucceeds
+              ? (volume ? 0.6 : 1.5)
+              : 1.0;
+          expect(volume ? session.volume : session.speed, expected);
+          if (!secondSucceeds) {
+            expect(
+              volume ? session.pendingVolume : session.pendingSpeed,
+              isNull,
+            );
+          }
+          // A failed final commit must retain the successful preview's reload.
+          if (volume && firstSucceeds && !secondSucceeds) {
+            native.failVolume = false;
+            await playback.setSessionVolume(session.id, expected);
+            expect(native.volumeUpdates.last, (0.6, true));
+            expect(native.volumeUpdates.length, 3);
+          }
+        });
+      }
+    }
+  }
+
+  for (final volume in [true, false]) {
+    test(
+      'queued ${volume ? 'volume' : 'speed'} skips a removed session',
+      () async {
+        final library = _createLibraryFacade();
+        final native = _RecordingNativePlaybackRepository();
+        final playback = PlaybackFacade.create(
+          databaseRepository:
+              library.databaseRepository as PlaybackPersistenceRepository,
+          nativeRepository: native,
+        )..configurePersistence(enabled: false);
+        final session = _session('removed-setting')
+          ..loadedPath = '/tracks/removed-setting.mp3';
+        playback.registerSession(session);
+        addTearDown(() async {
+          await playback.dispose();
+          await library.dispose();
+        });
+        final gate = Completer<NativeResult<NativePlaybackSnapshot>>();
+        if (volume) {
+          native.volumeGate = gate;
+        } else {
+          native.speedGate = gate;
+        }
+        final first = volume
+            ? playback.setSessionVolume(session.id, 0.6)
+            : playback.setSessionSpeed(session.id, 1.5);
+        final second = volume
+            ? playback.setSessionVolume(session.id, 0.3)
+            : playback.setSessionSpeed(session.id, 2);
+        await playback.removeSession(session.id);
+        gate.complete(const NativeSuccess<NativePlaybackSnapshot>());
+        await first;
+        await second;
+        expect(
+          volume ? native.volumeUpdates.length : native.speedUpdates.length,
+          1,
+        );
+        expect(playback.sessionById(session.id), isNull);
+      },
+    );
+
+    test(
+      'failed ${volume ? 'volume' : 'speed'} uses the latest native baseline',
+      () async {
+        final library = _createLibraryFacade();
+        final native = _RecordingNativePlaybackRepository()
+          ..failVolume = true
+          ..failSpeed = true;
+        final playback = PlaybackFacade.create(
+          databaseRepository:
+              library.databaseRepository as PlaybackPersistenceRepository,
+          nativeRepository: native,
+        )..configurePersistence(enabled: false);
+        final session = _session('snapshot-setting')
+          ..loadedPath = '/tracks/snapshot-setting.mp3';
+        playback.registerSession(session);
+        addTearDown(() async {
+          await playback.dispose();
+          await library.dispose();
+        });
+        playback.applyNativeSnapshot(
+          NativePlaybackSnapshot(
+            sessionId: session.id,
+            path: session.currentTrackPath,
+            playing: false,
+            playWhenReady: false,
+            processingState: 'ready',
+            position: Duration.zero,
+            bufferedPosition: Duration.zero,
+            volume: 0.8,
+            speed: 1.25,
+            boostGain: 1,
+            channelSwapEnabled: false,
+          ),
+          hasLibraryTrack: (_) => false,
+        );
+        if (volume) {
+          expect(await playback.setSessionVolume(session.id, 0.3), isFalse);
+        } else {
+          await playback.setSessionSpeed(session.id, 2);
+        }
+        expect(volume ? session.volume : session.speed, volume ? 0.8 : 1.25);
+      },
+    );
+  }
 
   test('batch removal commits only native successes', () async {
     final library = _createLibraryFacade();
@@ -612,12 +779,15 @@ void main() {
       native.speedGate = firstResponse;
       final firstChange = playback.setSessionSpeed(session.id, 1.25);
       native.speedGate = null;
-      await playback.setSessionSpeed(session.id, 1.5);
+      final secondChange = playback.setSessionSpeed(session.id, 1.5);
+      expect(session.speed, 1.5);
+      expect(native.speedUpdates, [1.25]);
 
       firstResponse.complete(
         const NativeFailure<NativePlaybackSnapshot>('older request failed'),
       );
       await firstChange;
+      await secondChange;
 
       expect(native.speedUpdates, <double>[1.25, 1.5]);
       expect(session.speed, 1.5);

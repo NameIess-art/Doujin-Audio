@@ -9,6 +9,45 @@ import 'package:doujin_audio/core/media/path_matcher.dart';
 void main() {
   const organizer = LibraryOrganizer();
 
+  test('opaque SAF tracks use scan parents and reject other grants', () {
+    const root = 'content://provider/tree/root';
+    MusicTrack scanned(String uri, String group) => MusicTrack(
+      path: uri,
+      displayName: 'Voice',
+      groupKey: group,
+      groupTitle: 'Disc',
+      groupSubtitle: group,
+      isSingle: false,
+    );
+    final entries = organizer.buildLibraryEntries(
+      root,
+      [
+        scanned('$root/document/123', '$root::Work/Disc'),
+        scanned('$root/document/456', root),
+        scanned('content://other/tree/root/document/123', '$root::Work'),
+        scanned('content://provider/tree/other/document/123', '$root::Work'),
+        scanned(
+          'content://provider/tree/other/document/root%2Fvoice.mp3',
+          '$root::Work',
+        ),
+        scanned('$root/document/789', 'content://provider/tree/other::Work'),
+      ],
+      exclusionMatcher: LibraryExclusionMatcher(
+        libraryPath: root,
+        excludedFolderPaths: ['$root::Work'],
+      ),
+    );
+    final tracks = entries.where((entry) => entry.isTrack).toList();
+    expect(tracks.map((entry) => entry.path), [
+      '$root/document/123',
+      '$root/document/456',
+    ]);
+    expect(tracks.first.parentPath, '$root::Work/Disc');
+    expect(tracks.first.isExcluded, isTrue);
+    expect(tracks.last.parentPath, isNull);
+    expect(tracks.last.isActive, isTrue);
+  });
+
   MusicTrack track(
     String path, {
     String? groupKey,

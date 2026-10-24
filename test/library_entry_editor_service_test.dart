@@ -14,22 +14,22 @@ class _ScanDocumentGateway extends Fake implements FileCachePlatformGateway {
 
   @override
   Future<NativeScanResult> scanFolder(String folderPath) async => result;
-
-  @override
-  Future<List<dynamic>?> scanFolderPayload(String folderPath) async => [];
 }
 
 class _RenameDocumentGateway extends Fake implements FileCachePlatformGateway {
   String? renamedPath;
   String? renamedName;
+  bool? preserveExtension;
 
   @override
   Future<Map<String, Object?>?> renameDocument({
     required String path,
     required String name,
+    bool preserveExtension = false,
   }) async {
     renamedPath = path;
     renamedName = name;
+    this.preserveExtension = preserveExtension;
     return <String, Object?>{'path': '$path::renamed/$name'};
   }
 }
@@ -106,6 +106,13 @@ void main() {
           isAndroid: () => true,
         ).loadDiskSnapshot('content://provider/tree/root');
         expect(snapshot.authoritative, isFalse);
+        expect(
+          await LibraryEntryEditorService(
+            fileCacheGateway: _ScanDocumentGateway(result),
+            isAndroid: () => true,
+          ).loadRestorableTracks('content://provider/tree/root'),
+          isEmpty,
+        );
       },
     );
   }
@@ -133,6 +140,51 @@ void main() {
     ).loadDiskSnapshot('content://provider/tree/root');
     expect(snapshot.authoritative, isTrue);
     expect(snapshot.audioFilePaths, [mediaPath]);
+    expect(snapshot.trackParentPaths, {
+      mediaPath: 'content://provider/tree/root',
+    });
+  });
+
+  test('restores scanned opaque SAF media and rejects another tree', () async {
+    const root = 'content://provider/tree/root';
+    const media = '$root/document/123';
+    final scannedAt = DateTime(2026, 10, 24);
+    final result = NativeScanResult.success(
+      [
+        ScannedTrack(
+          path: media,
+          displayName: 'Track title',
+          groupKey: '$root::CD1',
+          groupTitle: 'CD1',
+          groupSubtitle: 'root/CD1',
+          isSingle: false,
+          isVideo: true,
+          fileSizeBytes: 123,
+          scannedAt: scannedAt,
+        ),
+        const ScannedTrack(
+          path: 'content://provider/tree/other/document/456',
+          groupKey: '$root::CD1',
+          groupTitle: 'CD1',
+          groupSubtitle: '',
+          isSingle: false,
+          isVideo: false,
+        ),
+      ],
+      {media},
+      completenessKnown: true,
+    );
+    final tracks = await LibraryEntryEditorService(
+      fileCacheGateway: _ScanDocumentGateway(result),
+      isAndroid: () => true,
+    ).loadRestorableTracks('$root::CD1');
+    expect(tracks, hasLength(1));
+    expect(tracks.single.path, media);
+    expect(tracks.single.displayName, 'Track title');
+    expect(tracks.single.groupKey, '$root::CD1');
+    expect(tracks.single.isVideo, isTrue);
+    expect(tracks.single.fileSizeBytes, 123);
+    expect(tracks.single.scannedAt, scannedAt);
   });
 
   test('folder rename rejects an existing empty destination folder', () async {
@@ -296,9 +348,26 @@ void main() {
     ).renameEntry(source, 'Front Cover', isDirectory: false);
 
     expect(gateway.renamedPath, source);
-    expect(gateway.renamedName, 'Front Cover.jpg');
-    expect(renamed, '$source::renamed/Front Cover.jpg');
+    expect(gateway.renamedName, 'Front Cover');
+    expect(gateway.preserveExtension, isTrue);
+    expect(renamed, '$source::renamed/Front Cover');
   });
+
+  for (final isDirectory in [false, true]) {
+    test(
+      'opaque SAF rename requests extension preservation only for files ($isDirectory)',
+      () async {
+        const source = 'content://provider/tree/root/document/123';
+        final gateway = _RenameDocumentGateway();
+        await LibraryEntryEditorService(
+          fileCacheGateway: gateway,
+          isAndroid: () => true,
+        ).renameEntry(source, 'New.Title', isDirectory: isDirectory);
+        expect(gateway.renamedName, 'New.Title');
+        expect(gateway.preserveExtension, !isDirectory);
+      },
+    );
+  }
 
   test('builds restorable tracks from supported local files', () async {
     final root = await Directory.systemTemp.createTemp('library_restore_');

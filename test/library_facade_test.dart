@@ -29,6 +29,8 @@ import 'package:doujin_audio/features/player/application/playback_notification_s
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -51,6 +53,31 @@ void main() {
 
   tearDown(() async {
     await fixture.dispose(currentGraph: runtimeGraph);
+  });
+
+  test('opaque SAF rescan prunes only tracks from the confirmed root', () {
+    const root = 'content://provider/tree/root';
+    const other = 'content://provider/tree/other';
+    MusicTrack track(String grant, String id) => MusicTrack(
+      path: '$grant/document/$id',
+      displayName: id,
+      groupKey: '$grant::Work',
+      groupTitle: 'Work',
+      groupSubtitle: 'Work',
+      isSingle: false,
+    );
+    runtimeGraph.library.addTracks([
+      track(root, 'kept'),
+      track(root, 'deleted'),
+      track(other, 'outside'),
+    ], persist: false);
+    runtimeGraph.library.removeTracksDeletedFromFolder(root, {
+      '$root/document/kept',
+    });
+    expect(runtimeGraph.library.library.map((track) => track.path), [
+      '$root/document/kept',
+      '$other/document/outside',
+    ]);
   });
 
   test(
@@ -3849,53 +3876,42 @@ void main() {
     );
 
     test('restoring an excluded content folder repopulates its tracks', () async {
-      const libraryRoot =
-          'content://com.android.externalstorage.documents/tree/primary%3AASMR';
+      const libraryRoot = 'content://provider/tree/root';
       const restoredFolder = '$libraryRoot::WorkA';
-      const trackPath =
-          'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2FWorkA%2F01.mp4';
-
-      runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
-      runtimeGraph.library.setLibraryFolderExcluded(
-        libraryRoot,
-        restoredFolder,
-        true,
-      );
-
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(fileCacheChannel, (call) async {
-            if (call.method != FileCacheMethod.scanFolder) {
-              return null;
-            }
-            final arguments = call.arguments as Map<Object?, Object?>;
-            if (arguments['folder'] != restoredFolder) {
-              return <String, Object?>{'ok': true, 'value': const <Object?>[]};
-            }
-            return <String, Object?>{
-              'ok': true,
-              'value': <Object?>[
-                <Object?, Object?>{
-                  'path': trackPath,
-                  'groupKey': restoredFolder,
-                  'groupTitle': 'WorkA',
-                  'groupSubtitle': 'WorkA',
-                  'title': '01',
-                  'isVideo': true,
-                },
+      const trackPath = '$libraryRoot/document/123';
+      final library = LibraryFacade.create(
+        databaseRepository: runtimeGraph.library.databaseRepository,
+        entryEditorService: LibraryEntryEditorService(
+          fileCacheGateway: _RestorableDocumentGateway(
+            NativeScanResult.success(
+              [
+                const ScannedTrack(
+                  path: trackPath,
+                  displayName: '01',
+                  groupKey: restoredFolder,
+                  groupTitle: 'WorkA',
+                  groupSubtitle: 'WorkA',
+                  isSingle: false,
+                  isVideo: true,
+                ),
               ],
-            };
-          });
-
-      runtimeGraph.library.setLibraryFolderExcluded(
-        libraryRoot,
-        restoredFolder,
-        false,
+              {trackPath},
+              completenessKnown: true,
+            ),
+          ),
+          isAndroid: () => true,
+        ),
       );
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      addTearDown(library.dispose);
+      library.addWatchedLibrary(libraryRoot, notify: false);
+      library.setLibraryFolderExcluded(libraryRoot, restoredFolder, true);
+      library.setLibraryFolderExcluded(libraryRoot, restoredFolder, false);
+      await pumpEventQueue();
 
-      final restoredTrack = runtimeGraph.library.trackByPath(trackPath);
+      final restoredTrack = library.trackByPath(trackPath);
       expect(restoredTrack, isNotNull);
       expect(restoredTrack!.groupKey, restoredFolder);
+      expect(restoredTrack.displayName, '01');
       expect(restoredTrack.isVideo, isTrue);
     });
 
@@ -4294,4 +4310,11 @@ class _BlockingDeletionTestPersistenceRepository
       _libraryEntryDeletionCompleted.complete();
     }
   }
+}
+
+class _RestorableDocumentGateway extends Fake implements FileCachePlatformGateway {
+  _RestorableDocumentGateway(this.result);
+  final NativeScanResult result;
+  @override
+  Future<NativeScanResult> scanFolder(String folderPath) async => result;
 }

@@ -2859,7 +2859,7 @@ void main() {
         id: 9999,
         title: 'ASMR Remote Work Title',
         circleName: 'Remote Circle',
-        sourceId: 'RJ9999',
+        sourceId: 'RJ009999',
         sourceType: 'asmr',
         sourceUrl: '',
         coverUrl: '',
@@ -2884,7 +2884,7 @@ void main() {
 
       // Title & pinned row
       expect(find.text('ASMR Remote Work Title'), findsOneWidget);
-      expect(find.text('RJ9999'), findsOneWidget);
+      expect(find.text('RJ009999'), findsOneWidget);
       expect(find.text('Remote Circle'), findsOneWidget);
       expect(
         find.text(fixture.languageProvider.tr('asmr_has_subtitle')),
@@ -2912,7 +2912,7 @@ void main() {
       );
       expect(
         tester.getRect(statusIndicator).center.dy,
-        tester.getRect(find.text('RJ9999')).center.dy,
+        tester.getRect(find.text('RJ009999')).center.dy,
       );
       expect(
         tester.getRect(statusIndicator).center.dy,
@@ -2945,7 +2945,7 @@ void main() {
         everyElement(0.5),
       );
       expect(find.text('|'), findsOneWidget);
-      expect(tester.widget<Text>(find.text('RJ9999')).style?.fontSize, 13);
+      expect(tester.widget<Text>(find.text('RJ009999')).style?.fontSize, 13);
       expect(
         tester.widget<Text>(find.text('Remote Circle')).style?.fontSize,
         13,
@@ -2988,7 +2988,7 @@ void main() {
         id: 8888,
         title: 'Nav Work',
         circleName: 'Nav Circle',
-        sourceId: 'RJ8888',
+        sourceId: 'RJ008888',
         sourceType: 'asmr',
         sourceUrl: '',
         coverUrl: '',
@@ -3061,7 +3061,7 @@ void main() {
       );
       expect(
         tester.getRect(noSubtitleStatus).center.dy,
-        tester.getRect(find.text('RJ8888')).center.dy,
+        tester.getRect(find.text('RJ008888')).center.dy,
       );
 
       expect(

@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as path;
 
+import 'library_organizer.dart';
+
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
@@ -24,12 +26,15 @@ class LibraryEntryDiskSnapshot {
     required List<String> audioFilePaths,
     required Set<String> scannedFolderPaths,
     required this.authoritative,
+    Map<String, String> trackParentPaths = const <String, String>{},
   }) : audioFilePaths = immutableList(audioFilePaths),
-       scannedFolderPaths = immutableSet(scannedFolderPaths);
+       scannedFolderPaths = immutableSet(scannedFolderPaths),
+       trackParentPaths = immutableMap(trackParentPaths);
 
   final List<String> audioFilePaths;
   final Set<String> scannedFolderPaths;
   final bool authoritative;
+  final Map<String, String> trackParentPaths;
 
   Set<String> get audioFilePathSet => immutableSet(audioFilePaths);
 }
@@ -68,17 +73,10 @@ class LibraryEntryEditorService {
   }) async {
     final oldPath = PathMatcher.normalize(entryPath);
     if (PathMatcher.isContentUri(oldPath)) {
-      final name = isDirectory
-          ? safeName
-          : '$safeName${_contentFileExtension(oldPath)}';
-      final currentName = PathMatcher.lastContentPathSegment(oldPath);
-      if (currentName != null &&
-          PathMatcher.safeDecodeComponent(currentName) == name) {
-        return oldPath;
-      }
       final renamed = await _fileCacheGateway.renameDocument(
         path: oldPath,
-        name: name,
+        name: safeName,
+        preserveExtension: !isDirectory,
       );
       final renamedPath = renamed?['path'] as String?;
       return renamedPath == null || renamedPath.isEmpty ? null : renamedPath;
@@ -144,56 +142,39 @@ class LibraryEntryEditorService {
     String folderPath,
   ) async {
     try {
-      final data = await _fileCacheGateway.scanFolderPayload(folderPath);
-      if (data == null) return const <MusicTrack>[];
+      final result = await _fileCacheGateway.scanFolder(folderPath);
+      if (!result.isComplete) return const <MusicTrack>[];
       final tracks = <MusicTrack>[];
-      for (final item in data) {
-        if (item is! Map) continue;
-        final map = item.cast<Object?, Object?>();
-        final rawPath = map['path']?.toString().trim();
-        if (rawPath == null ||
-            rawPath.isEmpty ||
-            !isSupportedMediaFile(rawPath)) {
-          continue;
-        }
-        final mediaPath = PathMatcher.isContentUri(rawPath)
-            ? rawPath
-            : path.normalize(rawPath);
-        final nativeGroupKey = map['groupKey']?.toString().trim();
-        final nativeGroupTitle = map['groupTitle']?.toString().trim();
-        final nativeGroupSubtitle = map['groupSubtitle']?.toString().trim();
-        final groupKey = (nativeGroupKey?.isNotEmpty ?? false)
-            ? nativeGroupKey!
-            : path.dirname(mediaPath);
-        final groupTitle = (nativeGroupTitle?.isNotEmpty ?? false)
-            ? nativeGroupTitle!
-            : PathDisplay.folderName(groupKey);
-        final groupSubtitle = (nativeGroupSubtitle?.isNotEmpty ?? false)
-            ? nativeGroupSubtitle!
-            : groupKey;
-        final displayName = map['title']?.toString().trim();
-        final scannedAtMs = map['scannedAtMs'] as num?;
-        final modifiedAtMs = map['modifiedAtMs'] as num?;
-        tracks.add(
-          MusicTrack(
-            path: mediaPath,
-            displayName: displayName?.isEmpty ?? true
-                ? PathDisplay.fileName(mediaPath, withoutExtension: true)
-                : displayName!,
-            groupKey: groupKey,
-            groupTitle: groupTitle,
-            groupSubtitle: groupSubtitle,
-            isSingle: false,
-            isVideo: map['isVideo'] as bool? ?? isVideoMediaFile(mediaPath),
-            scannedAt: scannedAtMs == null
-                ? DateTime.now()
-                : DateTime.fromMillisecondsSinceEpoch(scannedAtMs.toInt()),
-            fileSizeBytes: (map['fileSizeBytes'] as num?)?.toInt(),
-            modifiedAt: modifiedAtMs == null
-                ? null
-                : DateTime.fromMillisecondsSinceEpoch(modifiedAtMs.toInt()),
-          ),
+      for (final scanned in result.tracks) {
+        final rawPath = scanned.path.trim();
+        if (rawPath.isEmpty) continue;
+        final mediaPath = PathMatcher.normalize(rawPath);
+        final groupKey = scanned.groupKey.trim().isNotEmpty
+            ? scanned.groupKey
+            : folderPath;
+        final track = MusicTrack(
+          path: mediaPath,
+          displayName: scanned.displayName?.isNotEmpty == true
+              ? scanned.displayName!
+              : PathDisplay.fileName(mediaPath, withoutExtension: true),
+          groupKey: groupKey,
+          groupTitle: scanned.groupTitle.isNotEmpty
+              ? scanned.groupTitle
+              : PathDisplay.folderName(groupKey),
+          groupSubtitle: scanned.groupSubtitle.isNotEmpty
+              ? scanned.groupSubtitle
+              : groupKey,
+          isSingle: false,
+          isVideo: scanned.isVideo,
+          scannedAt: scanned.scannedAt ?? DateTime.now(),
+          fileSizeBytes: scanned.fileSizeBytes,
+          modifiedAt: scanned.modifiedAt,
         );
+        // The native scanner already filtered supported media by display name
+        // and MIME type. A document ID is not a filename or format hint.
+        if (const LibraryOrganizer().trackBelongsToLibrary(folderPath, track)) {
+          tracks.add(track);
+        }
       }
       return tracks;
     } catch (error, stackTrace) {
@@ -204,14 +185,6 @@ class LibraryEntryEditorService {
       );
       return const <MusicTrack>[];
     }
-  }
-
-  String _contentFileExtension(String targetPath) {
-    final segment = PathMatcher.lastContentPathSegment(targetPath);
-    final decoded = segment == null
-        ? targetPath
-        : PathMatcher.safeDecodeComponent(segment).replaceAll('\\', '/');
-    return path.extension(decoded);
   }
 
   Future<LibraryEntryDiskSnapshot> _loadFileSystemSnapshot(
@@ -287,17 +260,37 @@ class LibraryEntryEditorService {
       }
       final audioFiles = <String>{};
       final folderPaths = <String>{};
+      final trackParents = <String, String>{};
       for (final track in result.tracks) {
         final scannedPath = track.path.trim();
         if (scannedPath.isEmpty) continue;
-        audioFiles.add(PathMatcher.normalize(scannedPath));
+        final media = MusicTrack(
+          path: track.path,
+          displayName: track.displayName ?? '',
+          groupKey: track.groupKey,
+          groupTitle: track.groupTitle,
+          groupSubtitle: track.groupSubtitle,
+          isSingle: track.isSingle,
+        );
+        const organizer = LibraryOrganizer();
+        if (!organizer.trackBelongsToLibrary(libraryPath, media)) continue;
+        final normalizedPath = PathMatcher.normalize(scannedPath);
+        audioFiles.add(normalizedPath);
+        trackParents[normalizedPath] =
+            organizer.folderPathForLibraryTrack(libraryPath, media) ??
+            PathMatcher.normalize(libraryPath);
         final groupKey = track.groupKey.trim();
         if (groupKey.isNotEmpty &&
             !PathMatcher.equalsNormalized(groupKey, libraryPath)) {
           folderPaths.add(PathMatcher.normalize(groupKey));
         }
       }
-      return _snapshot(audioFiles, folderPaths, authoritative: true);
+      return _snapshot(
+        audioFiles,
+        folderPaths,
+        authoritative: true,
+        trackParentPaths: trackParents,
+      );
     } catch (error, stackTrace) {
       AppLogService.warning(
         'library_entry_native_scan_failed',
@@ -316,6 +309,7 @@ class LibraryEntryEditorService {
     Set<String> audioFiles,
     Set<String> folderPaths, {
     required bool authoritative,
+    Map<String, String> trackParentPaths = const <String, String>{},
   }) {
     final sortedAudioFiles = audioFiles.toList(growable: false)
       ..sort(
@@ -328,6 +322,7 @@ class LibraryEntryEditorService {
       audioFilePaths: sortedAudioFiles,
       scannedFolderPaths: Set<String>.unmodifiable(folderPaths),
       authoritative: authoritative,
+      trackParentPaths: trackParentPaths,
     );
   }
 }

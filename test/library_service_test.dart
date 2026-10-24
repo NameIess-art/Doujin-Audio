@@ -5,6 +5,40 @@ import 'package:doujin_audio/features/library/domain/library_entry.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
+  test(
+    'opaque SAF entries support folder exclusion, restoration and deletion',
+    () {
+      const root = 'content://provider/tree/root';
+      const folder = '$root::Work';
+      const uri = '$root/document/123';
+      final service = LibraryService();
+      addTearDown(service.dispose);
+      final track = MusicTrack(
+        path: uri,
+        displayName: 'Voice',
+        groupKey: '$folder/Disc',
+        groupTitle: 'Disc',
+        groupSubtitle: 'Disc',
+        isSingle: false,
+      );
+      service.replaceLibraryEntries(service.buildLibraryEntries(root, [track]));
+      service.setLibraryFolderExcluded(root, folder, true);
+      expect(service.libraryEntryForPath(root, uri)!.isExcluded, isTrue);
+      expect(service.isLibraryPathExcluded(root, uri), isTrue);
+      expect(service.isLibraryPathInheritedExcluded(root, uri), isTrue);
+      service.setLibraryFolderExcluded(root, folder, false);
+      expect(service.libraryEntryForPath(root, uri)!.isActive, isTrue);
+      expect(service.isLibraryPathExcluded(root, uri), isFalse);
+      service.setLibraryTrackExcluded(root, uri, true);
+      service.setLibraryFolderExcluded(root, folder, true);
+      service.setLibraryFolderExcluded(root, folder, false);
+      expect(service.isLibraryTrackExplicitlyExcluded(root, uri), isFalse);
+      expect(
+        service.removeLibraryEntriesMissingFromFolderScan(root, root, {}),
+        contains(uri),
+      );
+    },
+  );
   for (final state in LibraryEntryState.values) {
     test('single track rename retains its entry state ($state)', () async {
       final service = LibraryService();

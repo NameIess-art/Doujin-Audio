@@ -30,6 +30,7 @@ import 'package:doujin_audio/features/player/application/native_playback_bridge.
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/library/presentation/library_card_artwork.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/app_search_suggestions.dart';
 import 'package:doujin_audio/core/widgets/animated_reorder.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree_projection.dart';
@@ -55,7 +56,6 @@ import 'package:doujin_audio/features/library/application/library_organizer.dart
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
-import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -411,7 +411,7 @@ void main() {
     );
 
     testWidgets(
-      'library search opens cached results without a placeholder frame on $platform',
+      'confirmed library search keeps prepared result rows stable after loading on $platform',
       (tester) async {
         SharedPreferences.setMockInitialValues({});
         final fixture = AppRuntimeWidgetTestFixture();
@@ -457,9 +457,18 @@ void main() {
         await tester.pump();
         expect(find.byType(TextField), findsOneWidget);
         expect(find.byType(LibraryLoadingSkeleton), findsNothing);
+        expect(find.byKey(const ValueKey('library_search_suggestions')),
+          findsOneWidget,
+        );
+        expect(find.byType(LibrarySearchAllResults), findsNothing);
+        await tester.enterText(find.byType(TextField), 'Instant');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pump();
         expect(find.byType(LibrarySearchAllResults), findsOneWidget);
         expect(detailSubscriptions, 1);
         final row = find.byKey(const ValueKey('search_/instant-search.mp3'));
+        await pumpUntilFound(tester, row);
+        await pumpUntilNotFound(tester, find.byType(LibraryLoadingSkeleton));
         expect(row, findsOneWidget);
         final entryElement = tester.element(row);
         for (final duration in [
@@ -471,7 +480,10 @@ void main() {
           await tester.pump(duration);
           expect(find.byType(LibraryLoadingSkeleton), findsNothing);
           expect(tester.element(row), same(entryElement));
-          expect(find.text('Instant search result'), findsOneWidget);
+          expect(
+            find.text('Instant search result', findRichText: true),
+            findsOneWidget,
+          );
         }
         await finishLibraryTest(tester, fixture);
       },
@@ -2834,23 +2846,37 @@ void main() {
         tester,
         find.byKey(const ValueKey<String>('app_search_field')),
       );
-      await tester.pumpAndSettle();
+      await pumpAndSettleWithAsync(tester);
     }
 
     await openSearch();
     final field = find.byKey(const ValueKey<String>('app_search_field'));
     await tester.enterText(field, 'Search');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump(const Duration(milliseconds: 250));
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
     final list = find.byKey(
       const ValueKey<String>('library_search_results_all'),
     );
     tester.widget<ListView>(list).controller!.jumpTo(500);
     await tester.pump();
     Navigator.of(tester.element(field)).pop();
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
     await openSearch();
     expect(tester.widget<TextField>(field).controller!.text, isEmpty);
+    expect(list, findsNothing);
+    expect(
+      tester
+          .widget<CustomScrollView>(
+            find.byKey(const ValueKey('library_search_suggestions')),
+          )
+          .controller!
+          .offset,
+      0,
+    );
+    await tester.enterText(field, 'Search');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await pumpUntilFound(tester, list);
     expect(tester.widget<ListView>(list).controller!.offset, 0);
     expect(tester.takeException(), isNull);
   });
@@ -2889,11 +2915,12 @@ void main() {
         tester,
         find.byKey(const ValueKey<String>('app_search_field')),
       );
-      await tester.pumpAndSettle();
+      await pumpAndSettleWithAsync(tester);
       await tester.enterText(
         find.byKey(const ValueKey<String>('app_search_field')),
         'Search track',
       );
+      await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pump(const Duration(milliseconds: 250));
       await pumpUntilFound(
         tester,
@@ -2973,11 +3000,17 @@ void main() {
       tester,
       find.byKey(const ValueKey<String>('app_search_field')),
     );
+    await pumpAndSettleWithAsync(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('app_search_field')),
+      'Recovered',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
     await pumpUntilFound(
       tester,
       find.byKey(const ValueKey<String>('library_search_error')),
     );
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
 
     shouldFail = false;
     await tester.tap(find.text(fixture.languageProvider.tr('retry')));
@@ -2989,6 +3022,7 @@ void main() {
       find.byKey(const ValueKey<String>('app_search_field')),
       'Recovered',
     );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump(const Duration(milliseconds: 250));
     await pumpUntilFound(
       tester,
@@ -3033,11 +3067,17 @@ void main() {
       tester,
       find.byKey(const ValueKey<String>('app_search_field')),
     );
+    await pumpAndSettleWithAsync(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('app_search_field')),
+      'Selectable',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
     await pumpUntilFound(
       tester,
       find.text('search-selection', findRichText: true),
     );
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
 
     final searchFolder = find.byKey(
       const ValueKey<String>('search_/library/search-selection'),
@@ -3047,7 +3087,7 @@ void main() {
       matching: find.text('search-selection', findRichText: true),
     );
     await tester.longPress(searchFolderTitle);
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
     expect(
       find.byKey(
         const ValueKey<String>('library_search_batch_selection_header'),
@@ -3070,7 +3110,7 @@ void main() {
     );
 
     await tester.tap(batchPinButton);
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
     expect(
       find.byKey(
         const ValueKey<String>('library_search_batch_selection_header'),
@@ -3083,7 +3123,7 @@ void main() {
     );
 
     await tester.longPress(searchFolderTitle);
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
     expect(
       find.byKey(
         const ValueKey<String>('library_search_batch_selection_header'),
@@ -3100,7 +3140,7 @@ void main() {
     );
 
     await tester.tap(batchUnpinButton);
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
     expect(
       find.byKey(
         const ValueKey<String>('library_search_batch_selection_header'),
@@ -3302,34 +3342,12 @@ void main() {
     },
   );
 
-  testWidgets('switching library categories preserves the element selector', (
-    WidgetTester tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final runtimeGraph = fixture.runtimeGraph;
-    final libraryService = fixture.libraryService;
-    final languageProvider = fixture.languageProvider;
-    const workPath = '/library/category-work';
-    const tagsPreferenceKey = 'library_category_terms_expanded_tags';
-    const voiceActorsPreferenceKey =
-        'library_category_terms_expanded_voiceActors';
-
-    addTearDown(() async {
-      await AppPreferences.remove(tagsPreferenceKey);
-      await AppPreferences.remove(voiceActorsPreferenceKey);
-    });
-    await AppPreferences.setBool(tagsPreferenceKey, false);
-    await AppPreferences.setBool(voiceActorsPreferenceKey, true);
-
-    runtimeGraph.library.addTracks(
-      [
-        testMusicTrack(
-          name: 'Categorized work',
-          path: '$workPath/track.mp3',
-          groupKey: workPath,
-          groupTitle: 'Categorized work',
-        ),
+  testWidgets(
+    'search suggestion sections retain independent expansion and selection',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      fixture.library.addTracks([
         for (var i = 0; i < 20; i++)
           testMusicTrack(
             name: 'Categorized audio $i',
@@ -3338,160 +3356,93 @@ void main() {
             groupTitle: 'Imported files',
             isSingle: true,
           ),
-      ],
-      persist: false,
-    );
-    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
-    await tester.runAsync(() async {
-      await runtimeGraph.library.saveAudioDetail(
-        AudioDetail.empty(
-          AudioDetailTarget.libraryRootFolder(workPath),
-        ).copyWith(
-          tags: const <String>['sleep'],
-          voiceActors: const <String>['Voice Actor'],
+      ], persist: false);
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+      await tester.runAsync(() async {
+        for (var i = 0; i < 20; i++) {
+          await fixture.library.saveAudioDetail(
+            AudioDetail.empty(
+              AudioDetailTarget.singleAudioFile('/imports/category_$i.mp3'),
+            ).copyWith(
+              tags: ['Long tag number $i'],
+              voiceActors: ['Voice Actor $i'],
+            ),
+          );
+        }
+        await fixture.library.audioLibraryCategorySnapshot();
+      });
+      await tester.pumpWidget(fixture.build(const LibrarySearchPage()));
+      await pumpAndSettleWithAsync(tester);
+      final tags = find.byKey(const ValueKey('library_search_tags'));
+      final voices = find.byKey(const ValueKey('library_search_voices'));
+      final field = find.byKey(const ValueKey('app_search_field'));
+      Finder sectionText(Finder section, String text) => find.descendant(
+        of: section,
+        matching:
+            text == fixture.languageProvider.tr('expand') ||
+                text == fixture.languageProvider.tr('collapse')
+            ? find.byTooltip(text)
+            : find.text(text),
+      );
+      final expandLabel = fixture.languageProvider.tr('expand');
+      final collapseLabel = fixture.languageProvider.tr('collapse');
+      final suggestions = find.byKey(
+        const ValueKey('library_search_suggestions'),
+      );
+      await tester.scrollUntilVisible(
+        sectionText(tags, expandLabel),
+        200,
+        scrollable: find.descendant(
+          of: suggestions,
+          matching: find.byType(Scrollable),
         ),
       );
-      for (var i = 0; i < 20; i++) {
-        await runtimeGraph.library.saveAudioDetail(
-          AudioDetail.empty(
-            AudioDetailTarget.singleAudioFile('/imports/category_$i.mp3'),
-          ).copyWith(tags: const ['sleep'], workTitle: 'Categorized audio $i'),
-        );
-      }
-    });
+      expect(
+        tester.widget<AppSearchSuggestionSection>(tags).items,
+        hasLength(20),
+      );
+      final tagsState = tester.state(tags);
+      await tester.tap(sectionText(tags, expandLabel));
+      await pumpAndSettleWithAsync(tester);
+      expect(sectionText(tags, collapseLabel), findsOneWidget);
+      expect(sectionText(voices, collapseLabel), findsNothing);
 
-    await tester.pumpWidget(fixture.build(const LibraryTab()));
-    await tester.pump();
-    await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
-    await tester.pump();
+      await Scrollable.ensureVisible(
+        tester.element(sectionText(voices, 'Voice Actor 0')),
+        alignment: 0.5,
+      );
+      await tester.tap(sectionText(voices, 'Voice Actor 0'));
+      await pumpAndSettleWithAsync(tester);
+      expect(tester.widget<TextField>(field).controller!.text, 'Voice Actor 0');
+      expect(tester.state(tags), same(tagsState));
+      expect(sectionText(tags, collapseLabel), findsOneWidget);
+      expect(find.byType(LibrarySearchAllResults), findsNothing);
 
-    expect(find.byType(TextField), findsNothing);
-    await tester.tap(
-      find.byKey(const ValueKey<String>('library_search_button')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 16));
-    await tester.pump(const Duration(milliseconds: 350));
-    await tester.pump(const Duration(milliseconds: 200));
-    final tagsLabel = languageProvider.tr('library_category_tags');
-    final voiceActorsLabel = languageProvider.tr(
-      'library_category_voice_actors',
-    );
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>(
-          'app_search_category_AudioLibraryCategoryType.tags',
-        ),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 350));
-    await pumpUntilFound(
-      tester,
-      find.byKey(const ValueKey<String>('library_category_results')),
-    );
-    await tester.pump(const Duration(milliseconds: 350));
-    expect(
-      find.byKey(const ValueKey<String>('library_category_results')),
-      findsOneWidget,
-    );
-    expect(
-      tester
-          .widget<ListView>(
-            find.byKey(const ValueKey<String>('library_category_results')),
-          )
-          .physics,
-      isA<ClampingScrollPhysics>(),
-    );
-
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('app_search_field')),
-      'Categorized',
-    );
-    await tester.pump(const Duration(milliseconds: 250));
-    await pumpUntilFound(tester, find.text('展开'));
-
-    expect(find.text('展开'), findsOneWidget);
-    final expandButton = find.ancestor(
-      of: find.text('展开'),
-      matching: find.byType(ActionChip),
-    );
-    await tester.ensureVisible(expandButton);
-    await tester.pump(const Duration(milliseconds: 500));
-    tester.widget<ActionChip>(expandButton).onPressed!();
-    await tester.pump(const Duration(milliseconds: 350));
-    expect(find.text('收起'), findsOneWidget);
-    final tagsSelector = find.byType(LibraryCategoryTermBox).evaluate().single;
-    final outgoingScroll = tester
-        .widget<ListView>(
-          find.byKey(const ValueKey<String>('library_category_results')),
-        )
-        .controller!;
-    expect(outgoingScroll.position.maxScrollExtent, greaterThan(80));
-    const savedOffset = 40.0;
-    outgoingScroll.jumpTo(savedOffset);
-    unawaited(
-      outgoingScroll.animateTo(
-        savedOffset + 10,
-        duration: const Duration(seconds: 1),
-        curve: Curves.linear,
-      ),
-    );
-    expect(outgoingScroll.position.isScrollingNotifier.value, isTrue);
-    final outgoingOffset = outgoingScroll.offset;
-
-    tester.widget<InkWell>(
-      find.byKey(const ValueKey<String>(
-        'app_search_category_AudioLibraryCategoryType.voiceActors',
-      )),
-    ).onTap!();
-    expect(outgoingScroll.position.isScrollingNotifier.value, isFalse);
-    expect(outgoingScroll.offset, outgoingOffset);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
-    await tester.pump(const Duration(milliseconds: 350));
-    await pumpUntilFound(tester, find.text('展开'));
-    expect(find.text('展开'), findsOneWidget);
-    expect(find.text('收起'), findsNothing);
-    expect(
-      find
-          .byType(LibraryCategoryTermBox, skipOffstage: false)
-          .evaluate()
-          .firstWhere(
-            (element) =>
-                (element.widget as LibraryCategoryTermBox).categoryType ==
-                AudioLibraryCategoryType.tags,
-          ),
-      same(tagsSelector),
-    );
-
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>(
-          'app_search_category_AudioLibraryCategoryType.tags',
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
-    expect(find.text('收起'), findsOneWidget);
-    expect(find.text('展开'), findsNothing);
-    expect(
-      find.byType(LibraryCategoryTermBox).evaluate().single,
-      same(tagsSelector),
-    );
-    expect(find.descendant(
-      of: find.byKey(const ValueKey<String>(
-        'app_search_category_AudioLibraryCategoryType.tags',
-      )),
-      matching: find.text(tagsLabel),
-    ), findsOneWidget);
-    expect(find.descendant(
-      of: find.byKey(const ValueKey<String>(
-        'app_search_category_AudioLibraryCategoryType.voiceActors',
-      )),
-      matching: find.text(voiceActorsLabel),
-    ), findsOneWidget);
-  });
+      await tester.enterText(field, 'Categorized');
+      await pumpAndSettleWithAsync(tester);
+      expect(tester.state(tags), same(tagsState));
+      expect(sectionText(tags, collapseLabel), findsOneWidget);
+      expect(sectionText(voices, expandLabel), findsOneWidget);
+      await Scrollable.ensureVisible(
+        tester.element(sectionText(voices, expandLabel)),
+        alignment: 0.5,
+      );
+      await tester.tap(sectionText(voices, expandLabel));
+      await pumpAndSettleWithAsync(tester);
+      expect(sectionText(voices, collapseLabel), findsOneWidget);
+      expect(sectionText(tags, collapseLabel), findsOneWidget);
+      await Scrollable.ensureVisible(
+        tester.element(sectionText(tags, collapseLabel)),
+        alignment: 0.5,
+      );
+      await tester.tap(sectionText(tags, collapseLabel));
+      await pumpAndSettleWithAsync(tester);
+      expect(sectionText(tags, expandLabel), findsOneWidget);
+      expect(sectionText(voices, collapseLabel), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await finishLibraryTest(tester, fixture);
+    },
+  );
 
   testWidgets('category removal uses recoverable library audio semantics', (
     WidgetTester tester,
@@ -3532,25 +3483,18 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 16));
     await tester.pump(const Duration(milliseconds: 350));
-    await pumpUntilFound(
-      tester,
-      find.byKey(const ValueKey<String>('library_search_results_all')),
+    await tester.enterText(
+      find.byKey(const ValueKey('app_search_field')),
+      'removable',
     );
-    await tester.tap(
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    final entryCard =
       find.byKey(
         const ValueKey<String>(
-          'app_search_category_AudioLibraryCategoryType.tags',
-        ),
-      ),
-    );
-    await pumpUntilFound(
-      tester,
-      find.byKey(const ValueKey<String>('library_category_results')),
-    );
-    final entryCard = find.byKey(const ValueKey<String>('category_$trackPath'));
+          'search_$trackPath'));
     await pumpUntilFound(tester, entryCard);
     await tester.ensureVisible(entryCard);
-    await tester.pumpAndSettle();
+    await pumpAndSettleWithAsync(tester);
     final swipeCard = find.descendant(
       of: entryCard,
       matching: find.byType(SwipeRevealCard),
@@ -3620,7 +3564,7 @@ void main() {
       fixture.library.syncPresentationState(isInitialized: true);
       await pumpUntilFound(tester, find.byType(LibraryTreeList));
       await pumpUntilFound(tester, find.text('Restored library track'));
-      await tester.pumpAndSettle();
+      await pumpAndSettleWithAsync(tester);
       expect(sorts, 1);
       expect(find.byType(LibraryLoadingSkeleton), findsNothing);
       expect(find.text('Restored library track'), findsWidgets);
@@ -3632,26 +3576,25 @@ void main() {
     }),
   );
 
-  testWidgets('library search filters asynchronously and clears to content', (
-    WidgetTester tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final runtimeGraph = fixture.runtimeGraph;
-    final persistenceRepository = fixture.persistenceRepository;
-    final nativePlaybackRepository = fixture.nativePlaybackRepository;
-    const playbackCommandRunner =
-        AppRuntimeWidgetTestFixture.playbackCommandRunner;
-    final libraryService = fixture.libraryService;
-    final playbackService = fixture.playbackService;
-    final timerService = fixture.timerService;
-    final notificationCoordinatorService =
-        fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settings;
-    final languageProvider = fixture.languageProvider;
+  testWidgets(
+    'library search confirms queries and clears back to suggestions',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      final persistenceRepository = fixture.persistenceRepository;
+      final nativePlaybackRepository = fixture.nativePlaybackRepository;
+      const playbackCommandRunner =
+          AppRuntimeWidgetTestFixture.playbackCommandRunner;
+      final libraryService = fixture.libraryService;
+      final playbackService = fixture.playbackService;
+      final timerService = fixture.timerService;
+      final notificationCoordinatorService =
+          fixture.notificationCoordinatorService;
+      final settingsRepository = fixture.settings;
+      final languageProvider = fixture.languageProvider;
 
-    runtimeGraph.library.addTracks(
-      [
+      runtimeGraph.library.addTracks([
         testMusicTrack(
           name: 'Soft Rain',
           path: '/library/rain/soft_rain.mp3',
@@ -3678,171 +3621,183 @@ void main() {
           groupKey: '/library/folder',
           groupTitle: 'Folder Work',
         ),
-      ],
-      persist: false,
-    );
-    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+      ], persist: false);
+      libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
-    await tester.pumpWidget(
-      buildAppRuntimeTestApp(
-        runtimeGraph: runtimeGraph,
-        persistenceRepository: persistenceRepository,
-        nativePlaybackRepository: nativePlaybackRepository,
-        playbackCommandRunner: playbackCommandRunner,
-        libraryService: libraryService,
-        playbackService: playbackService,
-        timerService: timerService,
-        notificationCoordinatorService: notificationCoordinatorService,
-        settingsRepository: settingsRepository,
-        languageProvider: languageProvider,
-        child: const LibraryTab(),
-      ),
-    );
-    await tester.pump();
-    expect(runtimeGraph.library.snapshotCacheService.treeSnapshotRevision, -1);
-    expect(find.byType(TextField), findsNothing);
-    expect(
-      find.byKey(const ValueKey<String>('library_search_button')),
-      findsOneWidget,
-    );
-
-    final scanGeneration = runtimeGraph.library.tryBeginScan(source: 'Music');
-    runtimeGraph.library.setScanProgress(
-      generation: scanGeneration,
-      stage: FolderScanStage.enumerating,
-      processed: 120,
-      total: 500,
-      foundCount: 120,
-    );
-    await tester.pump(const Duration(milliseconds: 180));
-    expect(
-      find.byKey(const ValueKey('library_scan_progress_card')),
-      findsOneWidget,
-    );
-    final progress = tester.widget<LinearProgressIndicator>(
-      find.descendant(
-        of: find.byKey(const ValueKey('library_scan_progress_card')),
-        matching: find.byType(LinearProgressIndicator),
-      ),
-    );
-    expect(progress.value, closeTo(0.24, 0.001));
-    expect(
-      find.text(
-        languageProvider.tr('scan_processed_total', {
-          'processed': 120,
-          'total': 500,
-        }),
-      ),
-      findsOneWidget,
-    );
-    runtimeGraph.library.finishScan(scanGeneration);
-    await tester.pump();
-
-    await tester.tap(
-      find.byKey(const ValueKey<String>('library_search_button')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 16));
-    await tester.pump(const Duration(milliseconds: 350));
-    await tester.pump(const Duration(milliseconds: 200));
-    final searchField = find.byKey(const ValueKey<String>('app_search_field'));
-    expect(searchField, findsOneWidget);
-    final searchControls = find.byKey(
-      const ValueKey<String>('app_search_controls_overlay'),
-    );
-    expect(
-      find.descendant(
-        of: searchControls,
-        matching: find.byType(BackdropFilter),
-      ),
-      findsNothing,
-    );
-    expect(
-      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
-      isTrue,
-    );
-    await pumpUntilFound(
-      tester,
-      find.byKey(const ValueKey<String>('library_search_results_all')),
-    );
-    expect(
-      tester
-          .widget<ListView>(
-            find.byKey(const ValueKey<String>('library_search_results_all')),
-          )
-          .physics,
-      isA<ClampingScrollPhysics>(),
-    );
-    final searchContentTransition = find.descendant(
-      of: find.byKey(const ValueKey<String>('app_search_body_layer')),
-      matching: find.byType(PlaceholderContentTransition),
-    );
-    expect(searchContentTransition, findsOneWidget);
-    final searchResultTiles = find.descendant(
-      of: find.byKey(const ValueKey<String>('library_search_results_all')),
-      matching: find.byType(ListTile),
-    );
-    expect(searchResultTiles, findsOneWidget);
-    final searchHeroMode = tester.widget<HeroMode>(
-      find.byKey(const ValueKey<String>('library_search_hero_mode')),
-    );
-    expect(searchHeroMode.enabled, isFalse);
-    expect(
-      tester.getTopLeft(searchResultTiles).dy,
-      greaterThanOrEqualTo(
-        tester
-            .getBottomLeft(
-              find.byKey(const ValueKey<String>('app_search_category_shell')),
-            )
-            .dy,
-      ),
-    );
-    expect(
-      find.byKey(const ValueKey<String>('recent_search_list')),
-      findsNothing,
-    );
-
-    await tester.enterText(searchField, 'ocean');
-    await tester.pump(const Duration(milliseconds: 250));
-    await pumpUntilFound(tester, find.text('Ocean Waves', findRichText: true));
-    final transition = tester.widget<PlaceholderContentTransition>(
-      searchContentTransition,
-    );
-    expect(
-      find.descendant(
-        of: searchContentTransition,
-        matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is FadeTransition &&
-              (identical(widget.child, transition.placeholder) ||
-                  identical(widget.child, transition.content)),
+      await tester.pumpWidget(
+        buildAppRuntimeTestApp(
+          runtimeGraph: runtimeGraph,
+          persistenceRepository: persistenceRepository,
+          nativePlaybackRepository: nativePlaybackRepository,
+          playbackCommandRunner: playbackCommandRunner,
+          libraryService: libraryService,
+          playbackService: playbackService,
+          timerService: timerService,
+          notificationCoordinatorService: notificationCoordinatorService,
+          settingsRepository: settingsRepository,
+          languageProvider: languageProvider,
+          child: const LibraryTab(),
         ),
-      ),
-      findsNWidgets(2),
-    );
-    await tester.pump(const Duration(milliseconds: 350));
-    await pumpUntilNotFound(tester, find.text('Soft Rain', findRichText: true));
+      );
+      await tester.pump();
+      expect(
+        runtimeGraph.library.snapshotCacheService.treeSnapshotRevision,
+        -1,
+      );
+      expect(find.byType(TextField), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('library_search_button')),
+        findsOneWidget,
+      );
 
-    expect(find.text('Soft Rain', findRichText: true), findsNothing);
-    expect(find.text('Ocean Waves', findRichText: true), findsOneWidget);
-    expect(
-      runtimeGraph.library.snapshotCacheService.treeSnapshotRevision,
-      libraryService.structureRevision,
-    );
+      final scanGeneration = runtimeGraph.library.tryBeginScan(source: 'Music');
+      runtimeGraph.library.setScanProgress(
+        generation: scanGeneration,
+        stage: FolderScanStage.enumerating,
+        processed: 120,
+        total: 500,
+        foundCount: 120,
+      );
+      await tester.pump(const Duration(milliseconds: 180));
+      expect(
+        find.byKey(const ValueKey('library_scan_progress_card')),
+        findsOneWidget,
+      );
+      final progress = tester.widget<LinearProgressIndicator>(
+        find.descendant(
+          of: find.byKey(const ValueKey('library_scan_progress_card')),
+          matching: find.byType(LinearProgressIndicator),
+        ),
+      );
+      expect(progress.value, closeTo(0.24, 0.001));
+      expect(
+        find.text(
+          languageProvider.tr('scan_processed_total', {
+            'processed': 120,
+            'total': 500,
+          }),
+        ),
+        findsOneWidget,
+      );
+      runtimeGraph.library.finishScan(scanGeneration);
+      await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey<String>('app_search_close')));
-    await tester.pump();
-    await pumpUntilFound(
-      tester,
-      find.byKey(const ValueKey<String>('library_search_results_all')),
-    );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('library_search_button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump(const Duration(milliseconds: 200));
+      final searchField = find.byKey(
+        const ValueKey<String>('app_search_field'),
+      );
+      expect(searchField, findsOneWidget);
+      final searchControls = find.byKey(
+        const ValueKey<String>('app_search_controls_overlay'),
+      );
+      expect(
+        find.descendant(
+          of: searchControls,
+          matching: find.byType(BackdropFilter),
+        ),
+        findsNWidgets(2),
+      );
+      expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+      expect(
+        find.byKey(const ValueKey('library_search_suggestions')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('library_search_results_all')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('app_search_body_layer')),
+          matching: find.byType(BackdropFilter),
+        ),
+        findsNothing,
+      );
+      for (final filter
+          in find
+              .descendant(
+                of: searchControls,
+                matching: find.byType(BackdropFilter),
+              )
+              .evaluate()) {
+        final finder = find.byWidget(filter.widget);
+        expect(tester.getSize(finder).height, lessThan(100));
+        expect(
+          find.ancestor(of: finder, matching: find.byType(ClipRRect)),
+          findsWidgets,
+        );
+      }
+      await tester.enterText(searchField, 'ocean');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pump(const Duration(milliseconds: 250));
+      await pumpUntilFound(
+        tester,
+        find.text('Ocean Waves', findRichText: true),
+      );
+      expect(
+        tester
+            .widget<HeroMode>(
+              find.byKey(const ValueKey('library_search_hero_mode')),
+            )
+            .enabled,
+        isFalse,
+      );
+      expect(
+        tester
+            .widget<ListView>(
+              find.byKey(const ValueKey('library_search_results_all')),
+            )
+            .physics,
+        isA<ClampingScrollPhysics>(),
+      );
+      await tester.pump(const Duration(milliseconds: 350));
+      await pumpUntilNotFound(
+        tester,
+        find.text('Soft Rain', findRichText: true),
+      );
 
-    await pumpUntilFound(tester, find.text('Soft Rain', findRichText: true));
-    expect(find.text('Ocean Waves', findRichText: true), findsOneWidget);
-    expect(tester.widget<TextField>(searchField).controller!.text, isEmpty);
+      expect(find.text('Soft Rain', findRichText: true), findsNothing);
+      expect(find.text('Ocean Waves', findRichText: true), findsOneWidget);
+      expect(
+        runtimeGraph.library.snapshotCacheService.treeSnapshotRevision,
+        libraryService.structureRevision,
+      );
 
-    await finishLibraryTest(tester, fixture);
-  });
+      await tester.tap(find.byKey(const ValueKey<String>('app_search_close')));
+      await tester.pump();
+      await pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey('library_search_suggestions')),
+      );
+      await pumpUntilNotFound(
+        tester,
+        find.byKey(const ValueKey('library_search_results_all')),
+      );
+      expect(
+        find.byKey(const ValueKey('library_search_results_all')),
+
+        findsNothing,
+      );
+
+      expect(find.text('Ocean Waves', findRichText: true), findsNothing);
+      expect(find.text('Soft Rain', findRichText: true), findsNothing);
+      expect(tester.widget<TextField>(searchField).controller!.text, isEmpty);
+
+      await finishLibraryTest(tester, fixture);
+    },
+  );
 
   testWidgets('expanding a library folder keeps its resolved cover visible', (
     WidgetTester tester,
@@ -3957,6 +3912,7 @@ void main() {
         find.byKey(const ValueKey<String>('app_search_field')),
         'forest',
       );
+      await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pump(const Duration(milliseconds: 260));
       await pumpUntilFound(
         tester,
@@ -5369,7 +5325,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
       await pumpUntilFound(
         tester,
-        find.byKey(const ValueKey<String>('library_search_results_all')),
+        find.byKey(const ValueKey<String>('library_search_suggestions')),
       );
       expect(find.text('Ocean Chapter', findRichText: true), findsNothing);
 
@@ -5377,6 +5333,7 @@ void main() {
         find.byKey(const ValueKey<String>('app_search_field')),
         'ocean',
       );
+      await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pump(const Duration(milliseconds: 250));
       await pumpUntilFound(
         tester,
@@ -5402,18 +5359,17 @@ void main() {
     },
   );
 
-  testWidgets('library category page requires every text and element term', (
-    WidgetTester tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final runtimeGraph = fixture.runtimeGraph;
-    final libraryService = fixture.libraryService;
-    const healingPath = '/library/healing-work';
-    const whisperPath = '/library/whisper-work';
+  testWidgets(
+    'library search combines suggested elements and typed terms with AND',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      final libraryService = fixture.libraryService;
+      const healingPath = '/library/healing-work';
+      const whisperPath = '/library/whisper-work';
 
-    runtimeGraph.library.addTracks(
-      [
+      runtimeGraph.library.addTracks([
         testMusicTrack(
           name: 'Healing track',
           path: '$healingPath/track.mp3',
@@ -5426,92 +5382,83 @@ void main() {
           groupKey: whisperPath,
           groupTitle: 'Whisper work',
         ),
-      ],
-      persist: false,
-    );
-    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
-    await tester.runAsync(() async {
-      await runtimeGraph.library.saveAudioDetail(
-        AudioDetail.empty(
-          AudioDetailTarget.libraryRootFolder(healingPath),
-        ).copyWith(tags: const <String>['healing', 'whisper']),
+      ], persist: false);
+      libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+      await tester.runAsync(() async {
+        await runtimeGraph.library.saveAudioDetail(
+          AudioDetail.empty(
+            AudioDetailTarget.libraryRootFolder(healingPath),
+          ).copyWith(tags: const <String>['healing', 'whisper']),
+        );
+        await runtimeGraph.library.saveAudioDetail(
+          AudioDetail.empty(
+            AudioDetailTarget.libraryRootFolder(whisperPath),
+          ).copyWith(tags: const <String>['whisper']),
+        );
+      });
+
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('library_search_button')),
       );
-      await runtimeGraph.library.saveAudioDetail(
-        AudioDetail.empty(
-          AudioDetailTarget.libraryRootFolder(whisperPath),
-        ).copyWith(tags: const <String>['whisper']),
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 350));
+      await pumpAndSettleWithAsync(tester);
+      final field = find.byKey(const ValueKey('app_search_field'));
+      final tags = find.byKey(const ValueKey('library_search_tags'));
+      Future<void> toggleTag(String text) async {
+        final chip = find.descendant(of: tags, matching: find.text(text));
+        await tester.ensureVisible(chip);
+        await tester.tap(chip);
+        await pumpAndSettleWithAsync(tester);
+      }
+
+      await toggleTag('healing');
+      await toggleTag('whisper');
+      expect(find.byType(LibrarySearchAllResults), findsNothing);
+      expect(
+        tester.widget<TextField>(field).controller!.text,
+        contains('healing'),
       );
-    });
+      expect(
+        tester.widget<TextField>(field).controller!.text,
+        contains('whisper'),
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await pumpUntilFound(
+        tester,
+        find.text('healing-work', findRichText: true),
+      );
+      expect(find.text('whisper-work', findRichText: true), findsNothing);
 
-    await tester.pumpWidget(fixture.build(const LibraryTab()));
-    await tester.pump();
-    await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
-    await tester.pump();
+      // Add a text term to the two metadata terms before confirmation.
+      await tester.enterText(field, 'healing,whisper,work');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await pumpUntilFound(
+        tester,
+        find.text('healing-work', findRichText: true),
+      );
+      expect(find.text('whisper-work', findRichText: true), findsNothing);
+      await tester.enterText(field, 'healing,whisper,ocean');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await pumpUntilFound(
+        tester,
+        find.text(fixture.languageProvider.tr('no_search_results')),
+      );
+      expect(find.text('healing-work', findRichText: true), findsNothing);
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('library_search_button')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 16));
-    await tester.pump(const Duration(milliseconds: 350));
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>(
-          'app_search_category_AudioLibraryCategoryType.tags',
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
-    await pumpUntilFound(
-      tester,
-      find.byKey(const ValueKey<String>('library_category_results')),
-    );
-    await tester.pump(const Duration(milliseconds: 350));
-    expect(find.text('healing-work', findRichText: true), findsOneWidget);
-    expect(find.text('whisper-work', findRichText: true), findsOneWidget);
-
-    // Element search with two keywords keeps only the entry carrying both tags.
-    await tester.enterText(
-      find.byKey(
-        const ValueKey<String>('library_category_term_search_field_tags'),
-      ),
-      'healing whisper',
-    );
-    await tester.pump(const Duration(milliseconds: 350));
-    await pumpUntilNotFound(
-      tester,
-      find.text('whisper-work', findRichText: true),
-    );
-    expect(find.text('healing-work', findRichText: true), findsOneWidget);
-    expect(find.text('whisper-work', findRichText: true), findsNothing);
-
-    // The text query applies on top of the element filter, not instead of it.
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('app_search_field')),
-      'healing',
-    );
-    await tester.pump(const Duration(milliseconds: 350));
-    expect(find.text('healing-work', findRichText: true), findsOneWidget);
-
-    // Multi-term text queries require every term to match.
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('app_search_field')),
-      'healing,ocean',
-    );
-    await tester.pump(const Duration(milliseconds: 350));
-    await pumpUntilNotFound(
-      tester,
-      find.text('healing-work', findRichText: true),
-    );
-    expect(find.text('healing-work', findRichText: true), findsNothing);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 30)),
-    );
-    await tester.pump();
-  });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pump();
+    },
+  );
 
   testWidgets(
     'child folder tile height in library tree is exactly 44 and uses rounded border',

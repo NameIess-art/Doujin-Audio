@@ -159,6 +159,9 @@ val buildSubtitleNative by tasks.registering(Exec::class) {
         "--ninja", if (ninja.isFile) ninja.absolutePath else "ninja",
     )
     inputs.file(script)
+    inputs.file(file("$ndk/source.properties"))
+    inputs.property("ndkVersion", android.ndkVersion)
+    if (ninja.isFile) inputs.file(ninja)
     outputs.dir(subtitleJniLibs)
     outputs.dir(subtitleLicenses)
 }

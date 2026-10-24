@@ -148,6 +148,8 @@ if(NOT EXISTS "${DART_RUNTIME_EXECUTABLE}")
   message(FATAL_ERROR "Flutter Dart runtime not found beside ${DART_EXECUTABLE}")
 endif()
 set(SUBTITLE_NATIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.dart_tool/subtitle_native/windows")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/../tool/build_subtitle_native.dart")
 execute_process(
   COMMAND "${DART_RUNTIME_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../tool/build_subtitle_native.dart"
     --platform windows --output "${SUBTITLE_NATIVE_DIR}"

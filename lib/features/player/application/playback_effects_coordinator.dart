@@ -8,53 +8,25 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
     bool notify = true,
   }) async {
     final session = _service.sessions[sessionId];
-    if (session == null ||
-        session.isDisposed ||
-        !identical(_service.sessions[session.id], session)) {
-      return false;
-    }
+    if (session == null || !isRegisteredSession(session)) return false;
     final nextVolume = volume.clamp(0.0, PlaybackFacade.maxSessionVolume);
-    final generation = ++session.volumeCommandGeneration;
+    final changed = (session.volume - nextVolume).abs() >= 0.001;
     final hasDeferredReload = _deferredVolumeReloadSessionIds.contains(
       session.id,
     );
-    if ((session.volume - nextVolume).abs() < 0.001) {
-      if ((session.pendingVolume != null || (persist && hasDeferredReload)) &&
-          (session.loadedPath != null || session.effectivePlaying)) {
-        session.pendingVolume = nextVolume;
-        final response = await nativeRepository.setVolume(
-          session.id,
-          nextVolume,
-          reloadSource: persist,
-        );
-        if (!isRegisteredSession(session) ||
-            session.volumeCommandGeneration != generation) {
-          return response.isOk;
-        }
-        if (response.isFailure) {
-          session.pendingVolume = null;
-          _logNativeCommandFailure(
-            'setSessionVolume',
-            response,
-            sessionId: session.id,
-          );
-          return false;
-        }
-        final confirmedVolume = response.valueOrNull?.volume ?? nextVolume;
-        session.pendingVolume = confirmedVolume;
-        if ((session.volume - confirmedVolume).abs() >= 0.001) {
-          session.volume = confirmedVolume;
-          if (notify) _notifySessionStateChanged(session);
-        }
-      }
-      if (persist) {
-        _deferredVolumeReloadSessionIds.remove(session.id);
-        await flushSessionStatePersistence(sessionId: session.id);
-      }
+    if (!changed &&
+        session.pendingVolume == null &&
+        session.volumeCommandCompletion == null &&
+        !(persist && hasDeferredReload)) {
+      if (persist) await flushSessionStatePersistence(sessionId: session.id);
       return true;
     }
-    final previousVolume = session.volume;
-    final previouslyDeferred = hasDeferredReload;
+    if (session.confirmedVolume == null) {
+      session.confirmedVolume = session.volume;
+      session.confirmedVolumeNeedsReload = hasDeferredReload;
+    }
+    final generation = ++session.volumeCommandGeneration;
+    final previousCommand = session.volumeCommandCompletion;
     session.volume = nextVolume;
     session.pendingVolume = nextVolume;
     if (persist) {
@@ -62,34 +34,55 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
     } else {
       _deferredVolumeReloadSessionIds.add(session.id);
     }
-    if (notify) {
-      _notifySessionStateChanged(session);
-    }
-    if (session.loadedPath == null && !session.effectivePlaying) {
+    if (changed && notify) _notifySessionStateChanged(session);
+    if (previousCommand == null &&
+        session.loadedPath == null &&
+        !session.effectivePlaying) {
       session.pendingVolume = null;
+      session.confirmedVolume = nextVolume;
+      session.confirmedVolumeNeedsReload = !persist;
       if (persist) await flushSessionStatePersistence(sessionId: session.id);
       return true;
     }
-    final response = await nativeRepository.setVolume(
-      session.id,
-      nextVolume,
-      reloadSource: persist,
-    );
+    // Keep optimistic input immediate, but order native writes so a later
+    // failure can roll back to the last acknowledged command, not another drag.
+    Future<NativeResult<NativePlaybackSnapshot>> send() async {
+      if (previousCommand != null) await previousCommand;
+      if (!isRegisteredSession(session)) {
+        return const NativeFailure('Session removed');
+      }
+      final response = await nativeRepository.setVolume(
+        session.id,
+        nextVolume,
+        reloadSource: persist,
+      );
+      if (isRegisteredSession(session) && response.isOk) {
+        session.confirmedVolume = response.valueOrNull?.volume ?? nextVolume;
+        session.confirmedVolumeNeedsReload = !persist;
+      }
+      return response;
+    }
+
+    final command = send();
+    final completion = command.then<void>((_) {});
+    session.volumeCommandCompletion = completion;
+    final response = await command;
+    if (identical(session.volumeCommandCompletion, completion)) {
+      session.volumeCommandCompletion = null;
+    }
     if (!isRegisteredSession(session) ||
         session.volumeCommandGeneration != generation) {
       return response.isOk;
     }
     if (response.isFailure) {
-      session.volume = previousVolume;
+      session.volume = session.confirmedVolume!;
       session.pendingVolume = null;
-      if (previouslyDeferred) {
+      if (session.confirmedVolumeNeedsReload) {
         _deferredVolumeReloadSessionIds.add(session.id);
       } else {
         _deferredVolumeReloadSessionIds.remove(session.id);
       }
-      if (notify) {
-        _notifySessionStateChanged(session);
-      }
+      if (notify) _notifySessionStateChanged(session);
       _logNativeCommandFailure(
         'setSessionVolume',
         response,
@@ -97,7 +90,7 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
       );
       return false;
     }
-    final confirmedVolume = response.valueOrNull?.volume ?? nextVolume;
+    final confirmedVolume = session.confirmedVolume!;
     session.pendingVolume = confirmedVolume;
     if ((session.volume - confirmedVolume).abs() >= 0.001) {
       session.volume = confirmedVolume;
@@ -114,39 +107,60 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
     bool notify = true,
   }) async {
     final session = _service.sessions[sessionId];
-    if (session == null ||
-        session.isDisposed ||
-        !identical(_service.sessions[session.id], session)) {
-      return;
-    }
+    if (session == null || !isRegisteredSession(session)) return;
     final nextSpeed = nearestPlaybackSpeed(speed);
-    if ((session.speed - nextSpeed).abs() < 0.001) {
+    final changed = (session.speed - nextSpeed).abs() >= 0.001;
+    if (!changed && session.speedCommandCompletion == null) {
       if (persist) await flushSessionStatePersistence(sessionId: session.id);
       return;
     }
-    final previous = session.speed;
+    session.confirmedSpeed ??= session.speed;
     final generation = ++session.speedCommandGeneration;
+    final previousCommand = session.speedCommandCompletion;
     session.speed = nextSpeed;
     session.pendingSpeed = nextSpeed;
-    if (notify) _notifySessionSettingsChanged(session);
-    if (session.loadedPath == null && !session.effectivePlaying) {
+    if (changed && notify) _notifySessionSettingsChanged(session);
+    if (previousCommand == null &&
+        session.loadedPath == null &&
+        !session.effectivePlaying) {
       session.pendingSpeed = null;
+      session.confirmedSpeed = nextSpeed;
       if (persist) await flushSessionStatePersistence(sessionId: session.id);
       return;
     }
-    final response = await nativeRepository.setSpeed(session.id, nextSpeed);
-    if (!isRegisteredSession(session)) return;
-    if (generation != session.speedCommandGeneration) return;
+    Future<NativeResult<NativePlaybackSnapshot>> send() async {
+      if (previousCommand != null) await previousCommand;
+      if (!isRegisteredSession(session)) {
+        return const NativeFailure('Session removed');
+      }
+      final response = await nativeRepository.setSpeed(session.id, nextSpeed);
+      if (isRegisteredSession(session) && response.isOk) {
+        session.confirmedSpeed = response.valueOrNull?.speed ?? nextSpeed;
+      }
+      return response;
+    }
+
+    final command = send();
+    final completion = command.then<void>((_) {});
+    session.speedCommandCompletion = completion;
+    final response = await command;
+    if (identical(session.speedCommandCompletion, completion)) {
+      session.speedCommandCompletion = null;
+    }
+    if (!isRegisteredSession(session) ||
+        generation != session.speedCommandGeneration) {
+      return;
+    }
     if (response.isFailure) {
       session.pendingSpeed = null;
-      session.speed = previous;
+      session.speed = session.confirmedSpeed!;
       AppLogService.warning(
         'PlaybackFacade.setSessionSpeed error: ${response.errorOrNull}',
       );
       if (notify) _notifySessionSettingsChanged(session);
       return;
     }
-    final confirmedSpeed = response.valueOrNull?.speed ?? nextSpeed;
+    final confirmedSpeed = session.confirmedSpeed!;
     session.pendingSpeed = confirmedSpeed;
     if ((session.speed - confirmedSpeed).abs() >= 0.001) {
       session.speed = confirmedSpeed;

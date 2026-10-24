@@ -241,7 +241,7 @@ void main() {
         tester.element(find.byType(SettingsTab, skipOffstage: false)),
         tester.element(dock),
         tester.element(carousel),
-        tester.element(find.byType(AppFadeThroughIndexedStack)),
+        tester.element(find.byKey(const ValueKey('main_page_stack'))),
       };
       final rebuiltElements = <Element>{};
       final previous = debugOnRebuildDirtyWidget;

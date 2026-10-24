@@ -187,13 +187,14 @@ internal class FileCacheMethodHandler(
             FileCacheMethods.RENAME_DOCUMENT -> {
                 val targetPath = arguments.requiredString("path")
                 val name = arguments.requiredString("name")
+                val preserveExtension = arguments.optionalBoolean("preserveExtension", false)
                 runAsync(
                     result = result,
                     errorCode = { e ->
                         if (e is SecurityException) "rename_permission_denied" else "rename_failed"
                     }
                 ) {
-                    operations.renameDocumentTarget(targetPath, name)
+                    operations.renameDocumentTarget(targetPath, name, preserveExtension)
                 }
             }
             FileCacheMethods.READ_JSON_DOCUMENT -> {

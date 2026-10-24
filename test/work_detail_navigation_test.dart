@@ -36,10 +36,18 @@ final _main = find.byKey(const ValueKey('main_content_region'));
 final _pane = find.byKey(const ValueKey('work_detail_pane'));
 final _input = find.byKey(const ValueKey('detail_input'));
 
-Future<void> _settle(WidgetTester tester) async {
-  await tester.pumpAndSettle();
+Future<void> _settle(WidgetTester tester, {bool withAsync = false}) async {
+  if (withAsync) {
+    await pumpAndSettleWithAsync(tester);
+  } else {
+    await tester.pumpAndSettle();
+  }
   await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-  await tester.pumpAndSettle();
+  if (withAsync) {
+    await pumpAndSettleWithAsync(tester);
+  } else {
+    await tester.pumpAndSettle();
+  }
 }
 
 Future<void> _finishRouteAnimation(WidgetTester tester) async {
@@ -79,7 +87,41 @@ Future<WorkDetailNavigation> _pumpApp(
   fixture.settings.syncSlice(isInitialized: true);
   fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
   final downloads = withDownloadTasks
-      ? AsmrDownloadManager(persistTasks: false)
+      ? (AsmrDownloadManager(persistTasks: false)
+          ..debugSetCurrentTaskForTesting(
+            AsmrDownloadTaskSnapshot(
+              work: AsmrWork(
+                id: 1,
+                title: 'Navigation fixture',
+                circleName: 'Circle',
+                sourceId: 'RJ123456',
+                sourceType: 'asmr',
+                sourceUrl: '',
+                coverUrl: '',
+                thumbnailUrl: '',
+                mainCoverUrl: '',
+                releaseDate: null,
+                createDate: null,
+                duration: Duration.zero,
+                dlCount: 0,
+                reviewCount: 0,
+                rating: 0,
+                voiceActors: const [],
+                tags: const [],
+              ),
+              destinationRoot: '/navigation-downloads',
+              workFolderName: 'Navigation fixture',
+              conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+              status: AsmrDownloadTaskStatus.failed,
+              totalFiles: 1,
+              completedFiles: 0,
+              skippedFiles: 0,
+              failedFiles: 1,
+              totalBytes: 1024,
+              downloadedBytes: 0,
+              startedAt: DateTime(2026),
+            ),
+          ))
       : null;
   if (downloads != null) addTearDown(downloads.dispose);
   if (libraryWorkCount > 0) {
@@ -417,7 +459,7 @@ void main() {
     (tester) async {
       final navigation = await _pumpApp(tester, size: const Size(390, 820));
       await tester.tap(find.byKey(const ValueKey('library_search_button')));
-      await _settle(tester);
+      await _settle(tester, withAsync: true);
       final field = find.byKey(const ValueKey('app_search_field'));
       await tester.enterText(field, 'retained query');
       await _settle(tester);
@@ -498,14 +540,10 @@ void main() {
           image.dispose();
           return result;
         });
-        // The page slides and fades together; uncovered pixels must still
-        // show the main page, while the moving page blends over its paint.
-        final blended = Color.alphaBlend(
-          Colors.blue.withAlpha((opacity * 255).round()),
-          Colors.red,
-        );
+        // The opaque body slides over the main page; only uncovered pixels
+        // continue to show the main page during entry and exit.
         expect(colors!.$1, Color(Colors.red.toARGB32()));
-        expect(colors.$2, Color(blended.toARGB32()));
+        expect(colors.$2, Color(Colors.blue.toARGB32()));
       }
 
       unawaited(navigation.open('slide', (_) => route));
@@ -750,7 +788,7 @@ void main() {
       (tester) async {
         final navigation = await _pumpApp(tester, withNavigationLock: true);
         await tester.tap(find.byKey(const ValueKey('library_search_button')));
-        await _settle(tester);
+        await _settle(tester, withAsync: true);
         final search = find.byKey(const ValueKey('app_search_close'));
         expect(search, findsOneWidget);
         final searchContext = tester.element(search);

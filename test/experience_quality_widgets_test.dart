@@ -178,11 +178,30 @@ void main() {
     });
   }
 
-  testWidgets('top header stays opaque while scrolling', (tester) async {
+  testWidgets('top header keeps its glass bounded while scrolling', (
+    tester,
+  ) async {
     await tester.pumpWidget(_buildScrollableHeader());
     await tester.pump();
 
-    expect(find.byType(BackdropFilter), findsNothing);
+    void expectBoundedGlass() {
+      expect(find.byType(BackdropFilter), findsOneWidget);
+      final filter = find.byType(BackdropFilter);
+      expect(tester.getSize(filter).height, lessThan(100));
+      expect(
+        find.ancestor(of: filter, matching: find.byType(ClipRRect)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('header_scroll_list')),
+          matching: find.byType(BackdropFilter),
+        ),
+        findsNothing,
+      );
+    }
+
+    expectBoundedGlass();
 
     await tester.drag(
       find.byKey(const ValueKey('header_scroll_list')),
@@ -190,14 +209,28 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 170));
 
-    expect(find.byType(BackdropFilter), findsNothing);
+    expectBoundedGlass();
   });
 
-  testWidgets('secondary page app bar has no backdrop blur', (tester) async {
+  testWidgets('secondary page app bar confines backdrop blur to its bar', (
+    tester,
+  ) async {
     await tester.pumpWidget(_buildPageAppBar());
     await tester.pump();
 
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(BackdropFilter), findsOneWidget);
+    expect(
+      tester.getSize(find.byType(BackdropFilter)).height,
+      tester.getSize(find.byType(AppBar)).height,
+    );
+    expect(tester.getSize(find.byType(BackdropFilter)).height, lessThan(100));
+    expect(
+      find.ancestor(
+        of: find.byType(BackdropFilter),
+        matching: find.byType(ClipRRect),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('placeholder content fades over the shared 300ms duration', (

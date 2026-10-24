@@ -77,8 +77,6 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
   WINDOWPLACEMENT saved{sizeof(WINDOWPLACEMENT)};
   DWORD bytes = sizeof(saved);
   if (RegGetValueW(HKEY_CURRENT_USER,kSettingsKey,L"WindowPlacement",RRF_RT_REG_BINARY,nullptr,&saved,&bytes) == ERROR_SUCCESS && bytes == sizeof(saved)) {
-    MONITORINFO monitor{sizeof(MONITORINFO)};
-    GetMonitorInfo(MonitorFromRect(&saved.rcNormalPosition,MONITOR_DEFAULTTONEAREST),&monitor);
     const auto dpi = GetDpiForWindow(window_);
     DWORD saved_dpi = dpi, dpi_bytes = sizeof(saved_dpi);
     RegGetValueW(HKEY_CURRENT_USER,kSettingsKey,L"WindowDpi",RRF_RT_REG_DWORD,nullptr,&saved_dpi,&dpi_bytes);
@@ -87,10 +85,15 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
     AdjustWindowRectExForDpi(&minimum,WS_OVERLAPPEDWINDOW,FALSE,0,dpi);
     const auto width = std::max<LONG>(minimum.right-minimum.left,MulDiv(saved.rcNormalPosition.right-saved.rcNormalPosition.left,dpi,saved_dpi));
     const auto height = std::max<LONG>(minimum.bottom-minimum.top,MulDiv(saved.rcNormalPosition.bottom-saved.rcNormalPosition.top,dpi,saved_dpi));
-    const auto x = std::clamp<LONG>(saved.rcNormalPosition.left,monitor.rcWork.left,std::max(monitor.rcWork.left,monitor.rcWork.right-width));
-    const auto y = std::clamp<LONG>(saved.rcNormalPosition.top,monitor.rcWork.top,std::max(monitor.rcWork.top,monitor.rcWork.bottom-height));
-    SetWindowPos(window_,nullptr,x,y,width,height,SWP_NOZORDER | SWP_NOACTIVATE);
     if (saved.showCmd == SW_SHOWMAXIMIZED) initial_show_command_ = SW_SHOWMAXIMIZED;
+    saved.rcNormalPosition.right = saved.rcNormalPosition.left + width;
+    saved.rcNormalPosition.bottom = saved.rcNormalPosition.top + height;
+    saved.length = sizeof(saved);
+    saved.flags = 0;
+    // Get/SetWindowPlacement use workspace coordinates and handle changed monitors.
+    // Keep startup hidden until Flutter's first frame is ready.
+    saved.showCmd = SW_HIDE;
+    SetWindowPlacement(window_,&saved);
   }
   subtitles_ = std::make_unique<SubtitleWindow>(GetModuleHandle(nullptr));
   media_ = std::make_unique<MediaControls>(window);

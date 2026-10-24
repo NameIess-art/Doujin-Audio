@@ -8,6 +8,7 @@ import 'package:doujin_audio/features/library/application/library_scan_data_sour
 import 'package:doujin_audio/features/library/application/library_scan_importer.dart';
 import 'package:doujin_audio/features/library/application/library_scan_models.dart';
 import 'package:doujin_audio/features/library/application/library_state_models.dart';
+import 'package:doujin_audio/features/library/application/library_scanner_isolate.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _labels = LibraryScanLabels(
@@ -28,6 +29,34 @@ ScannedTrack _track(int index) => ScannedTrack(
 );
 
 void main() {
+  test('opaque SAF scan refresh keeps folder exclusions', () {
+    const root = 'content://provider/tree/root';
+    final result = processScannedTracksInIsolate(
+      ScanMergeIsolatePayload(
+        scannedTracks: [
+          const ScannedTrack(
+            path: '$root/document/123',
+            groupKey: '$root::Work/Disc',
+            groupTitle: 'Disc',
+            groupSubtitle: '',
+            isSingle: false,
+            isVideo: false,
+          ),
+        ],
+        library: [],
+        libraryRoot: root,
+        promoteRootTracksToSingles: false,
+        i18nImportedFiles: 'Imported',
+        i18nManuallySelectedFiles: 'Selected',
+        exclusionMatcher: LibraryExclusionMatcher(
+          libraryPath: root,
+          excludedFolderPaths: ['$root::Work'],
+        ),
+      ),
+    );
+    expect(result.entryBatch.single.path, '$root/document/123');
+    expect(result.trackBatch, isEmpty);
+  });
   test('large import bounds entry writes and yields to cancellation', () async {
     final catalog = _Catalog();
     catalog.onTracksAdded = () => Timer.run(() => catalog.isScanning = false);

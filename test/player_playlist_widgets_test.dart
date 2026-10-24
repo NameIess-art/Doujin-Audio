@@ -605,9 +605,15 @@ void main() {
           preloadSubtitle: cachedSubtitle,
           onSubtitleLoad: () => subtitleLoads++,
           navigatorObservers: [observer],
+          // Isolate detail discovery from playlist artwork resumed after pop.
+          detailBuilder: (_) => const SizedBox.shrink(
+            key: ValueKey('detail_discovery_host'),
+          ),
         );
         expect(subtitleLoads, cachedSubtitle ? 1 : 0);
-        final navigator = Navigator.of(tester.element(find.byType(PlaylistTab)));
+        final navigator = Navigator.of(
+          tester.element(find.byKey(const ValueKey('detail_discovery_host'))),
+        );
         final route = buildSessionDetailRoute(sessionId: fixture.session.id);
         unawaited(navigator.push(route));
         await tester.pump();

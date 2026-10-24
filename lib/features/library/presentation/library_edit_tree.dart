@@ -45,6 +45,7 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
   final TextEditingController _searchController = TextEditingController();
   List<String> _diskAudioFilePaths = const <String>[];
   Set<String> _diskAudioFilePathSet = const <String>{};
+  Map<String, String> _diskTrackParentPaths = const <String, String>{};
   Set<String> _diskLiveFolderPaths = const <String>{};
   bool _diskSnapshotLoaded = false;
   bool _initialLoadPending = true;
@@ -159,6 +160,7 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
     setState(() {
       _diskAudioFilePaths = snapshot.audioFilePaths;
       _diskAudioFilePathSet = audioFilePaths;
+      _diskTrackParentPaths = snapshot.trackParentPaths;
       _diskLiveFolderPaths = liveFolderPaths;
       _diskSnapshotRevision++;
       _diskSnapshotLoaded = true;
@@ -276,6 +278,13 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
         editTrackPaths,
         persistentFolderPaths,
         folderStructureSnapshots,
+        trackParentPaths: {
+          for (final entry in persistedEntries)
+            if (entry.isTrack)
+              PathMatcher.normalize(entry.path):
+                  entry.parentPath ?? widget.libraryPath,
+          ..._diskTrackParentPaths,
+        },
       );
     }
     final filteredCacheKey = Object.hash(baseCacheKey, _searchQuery);
@@ -551,7 +560,10 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
   }
 
   bool _trackBelongsToLibrary(String trackPath) {
-    return PathMatcher.isWithinOrEqual(trackPath, widget.libraryPath);
+    return _diskTrackParentPaths.containsKey(
+          PathMatcher.normalize(trackPath),
+        ) ||
+        PathMatcher.isWithinOrEqual(trackPath, widget.libraryPath);
   }
 
   void rememberFolderStructureSnapshot(

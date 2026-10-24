@@ -468,6 +468,30 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        final mask = find.byKey(const ValueKey('app_search_top_fade_mask'));
+        final maskRect = tester.getRect(mask);
+        final decoration =
+            tester
+                    .widget<DecoratedBox>(
+                      find.descendant(
+                        of: mask,
+                        matching: find.byType(DecoratedBox),
+                      ),
+                    )
+                    .decoration
+                as BoxDecoration;
+        final gradient = decoration.gradient! as LinearGradient;
+        final position = (50 - maskRect.top) / maskRect.height;
+        final stops = gradient.stops!;
+        final segment = stops
+            .indexWhere((stop) => stop >= position)
+            .clamp(1, stops.length - 1);
+        final maskColor = Color.lerp(
+          gradient.colors[segment - 1],
+          gradient.colors[segment],
+          (position - stops[segment - 1]) /
+              (stops[segment] - stops[segment - 1]),
+        )!;
         final detail = buildAppPageRoute<void>(
           context: navigator.currentContext!,
           separateHeader: true,
@@ -482,11 +506,15 @@ void main() {
           const Offset(790, 140),
         ]);
         final incoming = kAppFadeCurve.transform(detail.animation!.value);
+        final maskedBody = Color.alphaBlend(
+          maskColor.withValues(alpha: maskColor.a * (1 - incoming)),
+          sampled.last,
+        );
         final expected = Color.alphaBlend(
           _newHeader.withValues(alpha: incoming),
           Color.alphaBlend(
             _oldHeader.withValues(alpha: 1 - incoming),
-            sampled.last,
+            maskedBody,
           ),
         );
         expect(sampled.first.r, closeTo(expected.r, 0.02));

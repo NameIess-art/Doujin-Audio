@@ -11,6 +11,23 @@ abstract final class PathMatcher {
 
   static bool isContentUri(String value) => value.startsWith('content://');
 
+  /// Confirms the grant encoded in a document URI, not its parent directory.
+  static bool hasSameContentTree(String document, String root) {
+    if (!isContentUri(document) ||
+        !isContentUri(root) ||
+        _contentAuthority(document) != _contentAuthority(root)) {
+      return false;
+    }
+    final documentTree = contentPathSegmentAfter(
+      document.split('::').first,
+      'tree',
+    );
+    final rootTree = contentPathSegmentAfter(root.split('::').first, 'tree');
+    return documentTree != null &&
+        rootTree != null &&
+        safeDecodeComponent(documentTree) == safeDecodeComponent(rootTree);
+  }
+
   static bool isRemoteUri(String value) {
     final uri = Uri.tryParse(value);
     if (uri == null) return false;

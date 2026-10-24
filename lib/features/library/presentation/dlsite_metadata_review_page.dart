@@ -234,7 +234,10 @@ class _DlsiteMetadataReviewPageState
       salesCount: detail.salesCount,
       rating: detail.rating,
     );
-    _folderNameController.text = PathDisplay.fileName(detail.target.targetPath);
+    _folderNameController.text = PathDisplay.fileName(
+      detail.target.targetPath,
+      withoutExtension: !detail.target.isLibraryRootFolder,
+    );
     _populateFields(metadata);
     _metadata = metadata;
     _editingDetail = detail;
@@ -484,7 +487,11 @@ class _DlsiteMetadataReviewPageState
       if (folderName.isEmpty) {
         throw const FormatException('Folder name cannot be empty.');
       }
-      if (folderName != PathDisplay.fileName(detail.target.targetPath)) {
+      if (folderName !=
+          PathDisplay.fileName(
+            detail.target.targetPath,
+            withoutExtension: !detail.target.isLibraryRootFolder,
+          )) {
         final renameResult = await paths.renameAudioDetailTargetToName(
           detail,
           folderName,

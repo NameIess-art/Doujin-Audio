@@ -119,6 +119,18 @@ internal fun subtitleDestinationName(audioName: String, extension: String): Stri
     return audioName.substringBeforeLast('.', audioName) + extension.lowercase(Locale.US)
 }
 
+internal fun <T> trackDocumentFolder(
+    groupKey: String?, resolveGroup: (String) -> T?, inferParent: () -> T,
+    containsTrack: (T) -> Boolean
+): T {
+    // Scanning records the parent separately: document IDs are opaque and need not encode it.
+    val parent = if (!groupKey.isNullOrBlank() && groupKey.startsWith("content://")) {
+        resolveGroup(groupKey) ?: throw IOException("Cannot resolve audio parent directory")
+    } else inferParent()
+    if (!containsTrack(parent)) throw IOException("Cannot locate audio parent directory")
+    return parent
+}
+
 internal fun saveLocalTrackSubtitle(
     trackPath: String, extension: String, bytes: ByteArray, sourcePath: String?, overwrite: Boolean,
     deleteSource: (String) -> Boolean = { File(it).delete() },
@@ -171,19 +183,16 @@ internal class SubtitleOperations(private val context: Context, private val stor
     }
 
     private fun documentTrackFolder(trackPath: String, groupKey: String?): Pair<Uri, String> {
-        val rootString = when {
-            !groupKey.isNullOrBlank() && groupKey.startsWith("content://") -> groupKey.substringBefore("::")
-            else -> trackPath.substringBefore("/document/", trackPath)
-        }
-        val rootUri = Uri.parse(rootString)
         val trackUri = storage.resolveDocumentUri(trackPath) ?: throw IOException("Cannot resolve audio document")
         val trackId = DocumentsContract.getDocumentId(trackUri)
-        val parentId = trackId.substringBeforeLast('/', DocumentsContract.getTreeDocumentId(rootUri))
-        val parent = DocumentsContract.buildDocumentUriUsingTree(rootUri, parentId)
-        // Verify the inferred parent; opaque IDs outside the root cannot be guessed safely.
-        if (listReadableDirectoryDocuments(context, parent).none { DocumentsContract.getDocumentId(it.uri) == trackId }) {
-            throw IOException("Cannot locate audio parent directory")
-        }
+        val parent = trackDocumentFolder(groupKey, storage::resolveDocumentUri, {
+            val rootUri = Uri.parse(trackPath.substringBefore("/document/", trackPath))
+            val parentId = trackId.substringBeforeLast('/', DocumentsContract.getTreeDocumentId(rootUri))
+            DocumentsContract.buildDocumentUriUsingTree(rootUri, parentId)
+        }, { folder ->
+            folder.authority == trackUri.authority &&
+                listReadableDirectoryDocuments(context, folder).any { DocumentsContract.getDocumentId(it.uri) == trackId }
+        })
         val projection = arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
         val name = context.contentResolver.query(trackUri, projection, null, null, null)?.use {
             if (!it.moveToFirst()) null else it.getString(it.getColumnIndexOrThrow(projection[0]))

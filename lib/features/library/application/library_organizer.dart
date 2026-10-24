@@ -67,7 +67,7 @@ class LibraryOrganizer {
       ensureFolder(folderPath);
     }
     for (final track in tracks) {
-      if (!PathMatcher.isWithinOrEqual(track.path, normalizedLibraryPath)) {
+      if (!trackBelongsToLibrary(normalizedLibraryPath, track)) {
         continue;
       }
       final parentPath = folderPathForLibraryTrack(
@@ -80,13 +80,31 @@ class LibraryOrganizer {
           libraryPath: normalizedLibraryPath,
           track: track,
           parentPath: parentPath,
-          state: matcher.isExcluded(track.path)
+          state:
+              matcher.isExcluded(track.path) ||
+                  (parentPath != null &&
+                      entriesByKey['${LibraryEntryKind.folder.dbValue}:$parentPath']
+                              ?.isExcluded ==
+                          true)
               ? LibraryEntryState.excluded
               : LibraryEntryState.active,
         ),
       );
     }
     return entriesByKey.values.toList(growable: false);
+  }
+
+  bool trackBelongsToLibrary(String libraryPath, MusicTrack track) {
+    if (PathMatcher.isContentUri(libraryPath) &&
+        PathMatcher.isContentUri(track.path) &&
+        PathMatcher.contentPathSegmentAfter(track.path, 'tree') != null &&
+        !PathMatcher.hasSameContentTree(track.path, libraryPath)) {
+      return false;
+    }
+    if (PathMatcher.isWithinOrEqual(track.path, libraryPath)) return true;
+    return !track.isSingle &&
+        PathMatcher.hasSameContentTree(track.path, libraryPath) &&
+        PathMatcher.isWithinOrEqual(track.groupKey, libraryPath);
   }
 
   String? folderPathForLibraryTrack(String libraryPath, MusicTrack track) {

@@ -216,8 +216,11 @@ class LibraryService {
     final folders = excludedLibraryFolders[normalizedLibraryPath];
     if (folders == null) return false;
     return folders.any(
-      (folderPath) =>
-          PathMatcher.isWithinOrEqualNormalized(normalizedPath, folderPath),
+      (folderPath) => isLibraryEntryWithin(
+        libraryEntryForPath(normalizedLibraryPath, normalizedPath),
+        normalizedPath,
+        folderPath,
+      ),
     );
   }
 
@@ -229,7 +232,11 @@ class LibraryService {
     return folders.any(
       (folderPath) =>
           normalizedPath != folderPath &&
-          PathMatcher.isWithinOrEqualNormalized(normalizedPath, folderPath),
+          isLibraryEntryWithin(
+            libraryEntryForPath(normalizedLibraryPath, normalizedPath),
+            normalizedPath,
+            folderPath,
+          ),
     );
   }
 
@@ -272,7 +279,8 @@ class LibraryService {
     }
     if (!excluded) {
       excludedLibraryTracks[normalizedLibraryPath]?.removeWhere(
-        (trackPath) => PathMatcher.isWithinOrEqualNormalized(
+        (trackPath) => isLibraryEntryWithin(
+          libraryEntryForPath(normalizedLibraryPath, trackPath),
           trackPath,
           normalizedFolderPath,
         ),
@@ -682,10 +690,7 @@ class LibraryService {
 
     final removedPaths = <String>[];
     entries.removeWhere((entryPath, entry) {
-      if (!PathMatcher.isWithinOrEqualNormalized(
-        entry.path,
-        normalizedFolderPath,
-      )) {
+      if (!isLibraryEntryWithin(entry, entry.path, normalizedFolderPath)) {
         return false;
       }
       final retained = entry.isFolder
@@ -750,10 +755,7 @@ class LibraryService {
     if (entries == null) return const <String>[];
     final changedPaths = <String>[];
     for (final entry in entries.values) {
-      if (!PathMatcher.isWithinOrEqualNormalized(
-        entry.path,
-        normalizedRootPath,
-      )) {
+      if (!isLibraryEntryWithin(entry, entry.path, normalizedRootPath)) {
         continue;
       }
       if (entry.state == state) continue;
@@ -767,6 +769,23 @@ class LibraryService {
       markStructureChanged();
     }
     return changedPaths;
+  }
+
+  bool isLibraryEntryWithin(
+    LibraryEntry? entry,
+    String entryPath,
+    String rootPath,
+  ) {
+    if (PathMatcher.isWithinOrEqual(entryPath, rootPath)) return true;
+    if (entry == null ||
+        !entry.isTrack ||
+        !PathMatcher.hasSameContentTree(entry.path, entry.libraryPath)) {
+      return false;
+    }
+    return PathMatcher.isWithinOrEqual(
+      entry.parentPath ?? entry.libraryPath,
+      rootPath,
+    );
   }
 
   bool setLibraryEntryState(

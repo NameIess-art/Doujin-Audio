@@ -222,9 +222,9 @@ final class LibraryCatalogWriteCoordinator {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     final scannedPathIndex = PathMembershipIndex(scannedPaths);
     removeTracksMatching((track) {
-      if (!PathMatcher.isWithinOrEqualNormalized(
-        track.path,
+      if (!LibraryService.organizer.trackBelongsToLibrary(
         normalizedFolder,
+        track,
       )) {
         return false;
       }

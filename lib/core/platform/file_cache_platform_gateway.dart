@@ -224,22 +224,18 @@ class FileCachePlatformGateway {
     return result.valueOrNull;
   }
 
-  Future<List<dynamic>?> scanFolderPayload(String folderPath) async {
-    final result = await _client.invoke<List<dynamic>?>(
-      FileCacheMethod.scanFolder,
-      arguments: <String, Object?>{'folder': folderPath},
-      decode: (value) => value as List<dynamic>?,
-    );
-    return result.valueOrNull;
-  }
-
   Future<Map<String, Object?>?> renameDocument({
     required String path,
     required String name,
+    bool preserveExtension = false,
   }) async {
     final result = await _client.invoke<Map<String, Object?>?>(
       FileCacheMethod.renameDocument,
-      arguments: <String, Object?>{'path': path, 'name': name},
+      arguments: <String, Object?>{
+        'path': path,
+        'name': name,
+        'preserveExtension': preserveExtension,
+      },
       decode: (value) =>
           value == null ? null : Map<String, Object?>.from(value as Map),
     );

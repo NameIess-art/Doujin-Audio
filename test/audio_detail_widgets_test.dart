@@ -1326,7 +1326,7 @@ void main() {
     await tester.tap(confirm);
     await tester.pump();
     expect(completion?.isConfirmed, isTrue);
-    expect(completion?.metadata?.workTitle, 'ASMR fetched title');
+    expect(completion?.metadata?.workTitle, 'Fetched title');
     expect(
       tester
               .getRect(
@@ -1353,7 +1353,7 @@ void main() {
         .map((field) => field.controller?.text)
         .whereType<String>()
         .toSet();
-    expect(visibleTextFieldValues, contains('ASMR fetched title'));
+    expect(visibleTextFieldValues, contains('Fetched title'));
     expect(visibleTextFieldValues, contains('Circle'));
     expect(visibleTextFieldValues, contains('2024-05-06'));
     expect(visibleTextFieldValues, contains('01:02:03'));

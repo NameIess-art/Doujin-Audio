@@ -227,6 +227,7 @@ class LibraryEntryEditorService {
     }
 
     final audioFiles = <String>{};
+    final folderPaths = <String>{};
     final pendingDirectories = Queue<Directory>()..add(directory);
     var processedEntities = 0;
     var scanFailed = false;
@@ -240,6 +241,7 @@ class LibraryEntryEditorService {
           }
           final normalizedPath = PathMatcher.normalize(entity.path);
           if (entity is Directory) {
+            folderPaths.add(normalizedPath);
             pendingDirectories.add(entity);
           } else if (entity is File && isSupportedMediaFile(normalizedPath)) {
             audioFiles.add(normalizedPath);
@@ -261,7 +263,7 @@ class LibraryEntryEditorService {
         );
       }
     }
-    return _snapshot(audioFiles, const <String>{}, authoritative: !scanFailed);
+    return _snapshot(audioFiles, folderPaths, authoritative: !scanFailed);
   }
 
   Future<LibraryEntryDiskSnapshot> _loadNativeSnapshot(

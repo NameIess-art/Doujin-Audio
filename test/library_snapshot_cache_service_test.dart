@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as path;
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/dlsite_metadata.dart';
@@ -506,6 +508,115 @@ void main() {
       expect(coverNotifications, 2);
     },
   );
+
+  test('metadata covers remain separate for sibling works', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'metadata_sibling_covers_',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final transport = _RealHttpOverrides().createHttpClient(null);
+    final subscription = server.listen((request) async {
+      request.response.add(request.uri.path == '/first.jpg' ? [1, 2] : [3, 4]);
+      await request.response.close();
+    });
+    addTearDown(() async {
+      transport.close(force: true);
+      await subscription.cancel();
+      await server.close(force: true);
+      await root.delete(recursive: true);
+    });
+    final library = LibraryService();
+    addTearDown(library.dispose);
+    final detailCache = AudioDetailCacheService(
+      repository: _FakeAudioDetailRepository(),
+    );
+    final covers = _BatchCoverArtwork();
+    final coordinator = LibraryMetadataCoordinator(
+      databaseRepository: TestPersistenceRepository(),
+      detailCacheService: detailCache,
+      metadataService: DlsiteMetadataService(httpClient: transport),
+      asmrMetadataService: null,
+      service: library,
+      snapshotCacheService: LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: detailCache,
+      ),
+      coverArtwork: () => covers,
+      syncState: () {},
+      notifyCoverChanged: () {},
+    );
+    addTearDown(coordinator.dispose);
+
+    for (final name in ['first', 'second']) {
+      final work = path.join(root.path, name);
+      final result = await coordinator.applyMetadata(
+        AudioDetail.empty(AudioDetailTarget.libraryRootFolder(work)),
+        DlsiteMetadata(
+          rjCode: 'RJ123456',
+          workTitle: name,
+          circleName: 'Circle',
+          voiceActors: const [],
+          tags: const [],
+          coverUrl: 'http://${server.address.address}:${server.port}/$name.jpg',
+        ),
+        saveCover: true,
+        language: AppLanguage.zh,
+      );
+      expect(result.coverError, isNull);
+      expect(result.coverPath, path.join(work, 'cover', 'cover.jpg'));
+      expect(covers.selections[work], result.coverPath);
+    }
+
+    final firstCover = covers.selections[path.join(root.path, 'first')]!;
+    final secondCover = covers.selections[path.join(root.path, 'second')]!;
+    expect(firstCover, isNot(secondCover));
+    expect(await File(firstCover).readAsBytes(), [1, 2]);
+    expect(await File(secondCover).readAsBytes(), [3, 4]);
+  });
+
+  test('metadata cover save keeps a SAF folder URI intact', () async {
+    const folder = 'content://documents/tree/primary%3AWorks::Work A';
+    final library = LibraryService();
+    addTearDown(library.dispose);
+    final metadata = _BatchMetadataService();
+    final cache = AudioDetailCacheService(
+      repository: _FakeAudioDetailRepository(),
+    );
+    final covers = _BatchCoverArtwork();
+    final coordinator = LibraryMetadataCoordinator(
+      databaseRepository: TestPersistenceRepository(),
+      detailCacheService: cache,
+      metadataService: metadata,
+      asmrMetadataService: null,
+      service: library,
+      snapshotCacheService: LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: cache,
+      ),
+      coverArtwork: () => covers,
+      syncState: () {},
+      notifyCoverChanged: () {},
+    );
+    addTearDown(coordinator.dispose);
+
+    final result = await coordinator.applyMetadata(
+      AudioDetail.empty(AudioDetailTarget.libraryRootFolder(folder)),
+      DlsiteMetadata(
+        rjCode: 'RJ123456',
+        workTitle: 'Work',
+        circleName: 'Circle',
+        voiceActors: const [],
+        tags: const [],
+        coverUrl: 'https://example.com/cover.jpg',
+      ),
+      saveCover: true,
+      language: AppLanguage.zh,
+    );
+
+    expect(result.coverError, isNull);
+    expect(metadata.coverFolders, [folder]);
+    expect(covers.selections[folder], result.coverPath);
+  });
 
   test(
     'category snapshot reads SQLite details in one batch and commits once',
@@ -1254,6 +1365,7 @@ void main() {
 
 class _BatchCoverArtwork implements CoverArtworkCacheService {
   int savedCount = 0;
+  final selections = <String, String>{};
 
   @override
   Future<String?> setFolderCoverSelection(
@@ -1263,6 +1375,7 @@ class _BatchCoverArtwork implements CoverArtworkCacheService {
     String? sourcePath,
   }) async {
     savedCount++;
+    selections[folderPath] = coverPath;
     return coverPath;
   }
 
@@ -1270,7 +1383,11 @@ class _BatchCoverArtwork implements CoverArtworkCacheService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _RealHttpOverrides extends HttpOverrides {}
+
 class _BatchMetadataService implements DlsiteMetadataService {
+  final coverFolders = <String>[];
+
   @override
   Future<CoverImageReference> downloadCover({
     required String coverUrl,
@@ -1278,10 +1395,13 @@ class _BatchMetadataService implements DlsiteMetadataService {
     required String rjCode,
     String? fileName,
     AppLanguage language = AppLanguage.ja,
-  }) async => const CoverImageReference(
-    displayPath: '/covers/cover.jpg',
-    sourcePath: '/covers/cover.jpg',
-  );
+  }) async {
+    coverFolders.add(folderPath);
+    return const CoverImageReference(
+      displayPath: '/covers/cover.jpg',
+      sourcePath: '/covers/cover.jpg',
+    );
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

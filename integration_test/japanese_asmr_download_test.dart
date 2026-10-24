@@ -13,7 +13,6 @@ import 'package:doujin_audio/features/asmr/application/japanese_asmr_api_service
 import 'package:doujin_audio/features/asmr/application/asmr_download_internal_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_media_transfer.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_transfer_service.dart';
-import 'package:doujin_audio/features/asmr/application/asmr_download_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_task_store.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_cleanup.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
@@ -53,7 +52,6 @@ void main() {
           ],
           destinationRoot: root.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
-          saveCover: true,
           saveMetadata: false,
           automaticFileRetryCount: 1,
         );

@@ -376,6 +376,59 @@ void registerAsmrAccountSyncTests({
     },
   );
 
+  for (final progress in <String?>[
+    'listened',
+    'replay',
+    'postponed',
+    'marked',
+    null,
+  ]) {
+    test('unfavoriting history preserves remote progress $progress', () async {
+      await resetPrefs();
+      final work = _work(id: 182, title: 'Previously played favorite');
+      final api = _FakeAsmrApiService(
+        remoteReviewRecords: [
+          if (progress != null)
+            AsmrReviewRecord(
+              work: work,
+              progress: progress,
+              updatedAt: DateTime(2026, 5),
+            ),
+        ],
+      );
+      addTearDown(api.close);
+      final service = AsmrAccountSyncService(
+        authService: AsmrAuthService(
+          apiService: api,
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+        apiService: api,
+        preferencesStore: preferences,
+      );
+      await service.initialize();
+      await service.toggleFavorite(work);
+      await service.recordHistory(work);
+      await service.toggleFavorite(work);
+      await service.login('alice', 'password');
+
+      final result = await service.synchronize(
+        language: AsmrContentLanguage.en,
+        cancellationToken: AsmrRequestCancellationToken(),
+      );
+
+      expect(result.succeeded, isTrue);
+      expect(result.snapshot.pendingOperations, isEmpty);
+      expect(result.snapshot.favoriteWorks, isEmpty);
+      expect(api.deletedReviewWorkIds, progress == 'marked' ? [182] : isEmpty);
+      if (progress == 'marked' || progress == null) {
+        expect(api.reviewPuts, contains('182:listening'));
+      } else {
+        expect(api.reviewPuts, isEmpty);
+        expect(result.snapshot.remoteProgressByWorkId[182], progress);
+      }
+    });
+  }
+
   test(
     'ASMR account sync keeps marked favorites from history downgrade',
     () async {

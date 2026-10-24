@@ -354,18 +354,19 @@ class AsmrAccountSyncService {
           case AsmrSyncOperationType.favoriteAdd:
             await _putProgress(operation.workId, 'marked', tokenValue);
           case AsmrSyncOperationType.favoriteRemove:
-            if (_snapshot.remoteProgressByWorkId[operation.workId] ==
-                'marked') {
+            final progress = _snapshot.remoteProgressByWorkId[operation.workId];
+            if (progress == 'marked') {
               await _apiService.deleteReview(
                 workId: operation.workId,
                 token: tokenValue,
               );
             }
-            if (_snapshot.historyWorks.any(
-              (work) =>
-                  work.resourceFor(AsmrCatalogSource.asmrOne)?.id ==
-                  operation.workId,
-            )) {
+            if ((progress == 'marked' || !_isProtected(operation.workId)) &&
+                _snapshot.historyWorks.any(
+                  (work) =>
+                      work.resourceFor(AsmrCatalogSource.asmrOne)?.id ==
+                      operation.workId,
+                )) {
               await _putProgress(operation.workId, 'listening', tokenValue);
             }
           case AsmrSyncOperationType.historyListening:

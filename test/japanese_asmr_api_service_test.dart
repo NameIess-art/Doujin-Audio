@@ -455,30 +455,33 @@ void main() {
     },
   );
 
-  test(
-    'metadata supplements ONE results and keeps its preferred metadata',
-    () async {
-      final oneWork = _work(1);
-      final jpWork = _work(999, japanese: true, code: 'RJ000001');
-      final one = _OneApi({
-        1: [oneWork],
-      });
-      final jp = _JapaneseApi({
-        1: [jpWork, _work(2, japanese: true)],
-      });
-      addTearDown(one.close);
-      addTearDown(jp.close);
-      final service = AsmrMetadataService(
-        apiService: one,
-        japaneseApiService: jp,
-      );
-      final merged = await service.findAsmrWorkByRjCode('RJ000001');
-      expect(merged!.title, oneWork.title);
-      expect(merged.resources, hasLength(2));
-      final onlyJapanese = await service.fetchByRjCode('RJ000002');
-      expect(onlyJapanese.rjCode, 'RJ000002');
-    },
-  );
+  test('metadata services keep ONE and Japanese sources separate', () async {
+    final oneWork = _work(1);
+    final jpWork = _work(999, japanese: true, code: 'RJ000001');
+    final one = _OneApi({
+      1: [oneWork],
+    });
+    final jp = _JapaneseApi({
+      1: [jpWork, _work(2, japanese: true)],
+    });
+    addTearDown(one.close);
+    addTearDown(jp.close);
+    final service = AsmrMetadataService(apiService: one);
+    final japanese = AsmrMetadataService.japanese(apiService: jp);
+    final oneMatch = await service.findAsmrWorkByRjCode('RJ000001');
+    expect(oneMatch!.title, oneWork.title);
+    expect(oneMatch.resources.single.source, AsmrCatalogSource.asmrOne);
+    expect(jp.calls, isEmpty);
+    expect(await service.findAsmrWorkByRjCode('RJ000002'), isNull);
+    final japaneseMatch = await japanese.findAsmrWorkByRjCode('RJ000001');
+    expect(japaneseMatch!.id, jpWork.id);
+    expect(
+      japaneseMatch.resources.single.source,
+      AsmrCatalogSource.japaneseAsmr,
+    );
+    final onlyJapanese = await japanese.fetchByRjCode('RJ000002');
+    expect(onlyJapanese.rjCode, 'RJ000002');
+  });
 }
 
 AsmrRemoteCatalogService _catalog(_OneApi one, _JapaneseApi jp) {

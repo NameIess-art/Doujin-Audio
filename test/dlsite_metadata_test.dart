@@ -218,6 +218,103 @@ void main() {
         '${coverFolder.path}${Platform.pathSeparator}cover.jpg',
       );
       expect(await File(saved.displayPath).readAsBytes(), const <int>[1, 2, 3]);
+      expect(coverFolder.listSync(), hasLength(1));
+    },
+  );
+
+  for (final failure in ['timeout', 'stream too large']) {
+    test('keeps the previous cover after a $failure', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final root = await Directory.systemTemp.createTemp('dlsite_cover_retry_');
+      final destination = File(
+        '${root.path}${Platform.pathSeparator}cover.jpg',
+      );
+      await destination.writeAsBytes([4, 5, 6]);
+      final releaseResponse = Completer<void>();
+      final subscription = server.listen((request) async {
+        request.response.add([1]);
+        await request.response.flush();
+        if (failure == 'timeout') {
+          await releaseResponse.future;
+        } else {
+          request.response.add(List<int>.filled(5 * 1024 * 1024, 2));
+        }
+        await request.response.close();
+      });
+      addTearDown(() async {
+        releaseResponse.complete();
+        await subscription.cancel();
+        await server.close(force: true);
+        await root.delete(recursive: true);
+      });
+
+      await expectLater(
+        DlsiteMetadataService(
+          requestTimeout: const Duration(milliseconds: 200),
+        ).downloadCover(
+          coverUrl: 'http://${server.address.address}:${server.port}/cover.jpg',
+          folderPath: root.path,
+          rjCode: 'RJ01014447',
+          fileName: 'cover.jpg',
+        ),
+        throwsA(
+          isA<DlsiteMetadataException>().having(
+            (error) => error.message,
+            'message',
+            failure == 'timeout'
+                ? 'Cover download timed out'
+                : 'Cover response is too large',
+          ),
+        ),
+      );
+      expect(await destination.readAsBytes(), [4, 5, 6]);
+      expect(root.listSync().map((entry) => entry.path), [destination.path]);
+    });
+  }
+
+  test(
+    'replaces the previous cover only after the response completes',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final root = await Directory.systemTemp.createTemp(
+        'dlsite_cover_replace_',
+      );
+      final destination = File(
+        '${root.path}${Platform.pathSeparator}cover.jpg',
+      );
+      await destination.writeAsBytes([4, 5, 6]);
+      final responseStarted = Completer<void>();
+      final releaseResponse = Completer<void>();
+      final subscription = server.listen((request) async {
+        request.response.add([1]);
+        await request.response.flush();
+        responseStarted.complete();
+        await releaseResponse.future;
+        request.response.add([2, 3]);
+        await request.response.close();
+      });
+      addTearDown(() async {
+        if (!releaseResponse.isCompleted) releaseResponse.complete();
+        await subscription.cancel();
+        await server.close(force: true);
+        await root.delete(recursive: true);
+      });
+
+      final pending = DlsiteMetadataService().downloadCover(
+        coverUrl: 'http://${server.address.address}:${server.port}/cover.jpg',
+        folderPath: root.path,
+        rjCode: 'RJ01014447',
+        fileName: 'cover.jpg',
+      );
+      await responseStarted.future;
+      expect(await destination.readAsBytes(), [4, 5, 6]);
+      releaseResponse.complete();
+      final saved = await pending;
+
+      expect(saved.displayPath, destination.path);
+      expect(saved.sourcePath, destination.path);
+      expect(await destination.readAsBytes(), [1, 2, 3]);
+      expect(root.listSync().map((entry) => entry.path), [destination.path]);
     },
   );
 

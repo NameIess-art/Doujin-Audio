@@ -312,19 +312,26 @@ class DlsiteMetadataService implements LibraryMetadataSource {
 
     final destination = File(path.join(folderPath, resolvedFileName));
     await destination.parent.create(recursive: true);
-    final sink = destination.openWrite();
+    // Keep the previous cover readable until the whole response is saved. A
+    // sibling temporary directory also isolates simultaneous cover downloads.
+    final temporary = await destination.parent.createTemp('.dlsite_cover_');
+    final partial = File(path.join(temporary.path, resolvedFileName));
     var received = 0;
-    var completed = false;
     try {
-      await for (final chunk in response.timeout(_requestTimeout)) {
-        received += chunk.length;
-        if (received > _maxCoverBytes) {
-          throw const DlsiteMetadataException('Cover response is too large');
+      final sink = partial.openWrite();
+      try {
+        await for (final chunk in response.timeout(_requestTimeout)) {
+          received += chunk.length;
+          if (received > _maxCoverBytes) {
+            throw const DlsiteMetadataException('Cover response is too large');
+          }
+          sink.add(chunk);
         }
-        sink.add(chunk);
+        await sink.flush();
+      } finally {
+        await sink.close();
       }
-      await sink.flush();
-      completed = true;
+      await partial.rename(destination.path);
       return CoverImageReference(
         displayPath: destination.path,
         sourcePath: destination.path,
@@ -335,10 +342,7 @@ class DlsiteMetadataService implements LibraryMetadataSource {
         isNetworkFailure: true,
       );
     } finally {
-      await sink.close();
-      if (!completed && await destination.exists()) {
-        await destination.delete();
-      }
+      await temporary.delete(recursive: true);
     }
   }
 

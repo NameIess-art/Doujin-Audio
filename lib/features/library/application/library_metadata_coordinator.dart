@@ -829,7 +829,7 @@ final class LibraryMetadataCoordinator {
 
   String _metadataCoverFolder(String targetPath) {
     if (PathMatcher.isContentUri(targetPath)) return targetPath;
-    return path.normalize(path.join(targetPath, '..', 'cover'));
+    return path.normalize(path.join(targetPath, 'cover'));
   }
 
   bool _isCurrent(int epoch) => !_disposed && epoch == _epoch;

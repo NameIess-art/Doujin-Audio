@@ -1,11 +1,17 @@
+import 'dart:io';
+
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
+import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree_projection.dart';
+import 'package:doujin_audio/features/library/presentation/library_edit_tree.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree_tiles.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as path;
 
 import 'support/app_runtime_test_fixture.dart';
 
@@ -19,8 +25,61 @@ class _CountingLibraryService extends LibraryService {
   }
 }
 
+class _LoadedSnapshotEditorService extends LibraryEntryEditorService {
+  _LoadedSnapshotEditorService(this.snapshot);
+
+  final LibraryEntryDiskSnapshot snapshot;
+
+  @override
+  Future<LibraryEntryDiskSnapshot> loadDiskSnapshot(String libraryPath) async =>
+      snapshot;
+}
+
 void main() {
   AppRuntimeTestFixture.initialize();
+
+  testWidgets('opening editor preserves excluded empty folders', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final library = LibraryFacade.create(
+      databaseRepository: fixture.persistenceRepository,
+    )..configurePersistence(enabled: false);
+    addTearDown(library.dispose);
+    late Directory root;
+    late Directory empty;
+    final snapshot = await tester.runAsync(() async {
+      root = await Directory.systemTemp.createTemp('library_edit_empty_');
+      empty = await Directory(path.join(root.path, 'Excluded')).create();
+      return LibraryEntryEditorService(
+        isAndroid: () => false,
+      ).loadDiskSnapshot(root.path);
+    });
+    addTearDown(() => root.delete(recursive: true));
+    library.setLibraryFolderExcluded(root.path, empty.path, true);
+
+    await tester.pumpWidget(
+      fixture.build(
+        Scaffold(
+          body: LibraryEditTree(
+            libraryPath: root.path,
+            headerBuilder: (_, search) => search,
+            entryEditorService: _LoadedSnapshotEditorService(snapshot!),
+          ),
+        ),
+        overrides: [libraryFacadeProvider.overrideWithValue(library)],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(library.excludedFoldersForLibrary(root.path), [
+      PathMatcher.normalize(empty.path),
+    ]);
+    expect(find.text('Excluded'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets(
     'folder counts survive row rebuilds and refresh on input changes',

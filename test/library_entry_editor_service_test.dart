@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:path/path.dart' as path;
@@ -31,6 +32,19 @@ class _RenameDocumentGateway extends Fake implements FileCachePlatformGateway {
     renamedName = name;
     return <String, Object?>{'path': '$path::renamed/$name'};
   }
+}
+
+class _UnreadableDirectory extends Fake implements Directory {
+  @override
+  Future<bool> exists() async => true;
+
+  @override
+  Stream<FileSystemEntity> list({
+    bool recursive = false,
+    bool followLinks = true,
+  }) => Stream<FileSystemEntity>.error(
+    const FileSystemException('Access denied'),
+  );
 }
 
 void main() {
@@ -169,6 +183,44 @@ void main() {
 
     expect(snapshot.authoritative, isFalse);
     expect(snapshot.audioFilePaths, isEmpty);
+    expect(snapshot.scannedFolderPaths, isEmpty);
+  });
+
+  test('local snapshot retains empty and nested folders', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'library_empty_folders_',
+    );
+    addTearDown(() => root.delete(recursive: true));
+    final empty = await Directory(path.join(root.path, 'Empty')).create();
+    final nested = await Directory(
+      path.join(root.path, 'Work', 'Disc'),
+    ).create(recursive: true);
+    await File(path.join(nested.path, 'notes.txt')).writeAsString('not audio');
+
+    final snapshot = await LibraryEntryEditorService(
+      isAndroid: () => false,
+    ).loadDiskSnapshot(root.path);
+
+    expect(snapshot.authoritative, isTrue);
+    expect(snapshot.audioFilePaths, isEmpty);
+    expect(snapshot.scannedFolderPaths, {
+      PathMatcher.normalize(empty.path),
+      PathMatcher.normalize(path.dirname(nested.path)),
+      PathMatcher.normalize(nested.path),
+    });
+  });
+
+  test('failed local scan cannot authorize removing library entries', () async {
+    final snapshot = await IOOverrides.runZoned(
+      () => LibraryEntryEditorService(
+        isAndroid: () => false,
+      ).loadDiskSnapshot('unreadable-library'),
+      createDirectory: (_) => _UnreadableDirectory(),
+    );
+
+    expect(snapshot.authoritative, isFalse);
+    expect(snapshot.audioFilePaths, isEmpty);
+    expect(snapshot.scannedFolderPaths, isEmpty);
   });
 
   test('content uri outside Android is not authoritative', () async {

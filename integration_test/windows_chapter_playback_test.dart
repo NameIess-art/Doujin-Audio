@@ -101,7 +101,7 @@ void registerWindowsChapterPlaybackTest() {
             matches(state),
             true,
             reason:
-                '${state.processingState} ${state.error} ${state.queueIndex} ${state.position}',
+                '${state.processingState} ${state.error} ${state.queueIndex} ${state.position}; segments=$segmentRequests; missingHeaders=$badHeaders',
           );
           return state;
         }

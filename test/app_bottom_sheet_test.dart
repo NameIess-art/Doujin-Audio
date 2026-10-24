@@ -6,7 +6,123 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('whole sheet fades in and out over 300 ms', (tester) async {
+  testWidgets(
+    'sheet fades in but slides out without fading',
+    (tester) async {
+      late BuildContext pageContext;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                pageContext = context;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+      unawaited(
+        AppBottomSheet.show<void>(
+          context: pageContext,
+          builder: (_) =>
+              const SizedBox(height: 120, child: Text('Sheet content')),
+        ),
+      );
+      double opacity() => tester
+          .widget<Opacity>(
+            find
+                .ancestor(
+                  of: find.byType(BottomSheet),
+                  matching: find.byType(Opacity),
+                )
+                .first,
+          )
+          .opacity;
+      await tester.pump();
+      expect(opacity(), 0);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(opacity(), inExclusiveRange(0, 1));
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(opacity(), 1);
+      final settledTop = tester.getTopLeft(find.byType(BottomSheet)).dy;
+      Navigator.of(pageContext).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(opacity(), 1);
+      expect(
+        tester.getTopLeft(find.byType(BottomSheet)).dy,
+        greaterThan(settledTop),
+      );
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(opacity(), 1);
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsNothing);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'dragging a sheet down keeps it opaque through dismissal',
+    (tester) async {
+      late BuildContext pageContext;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                pageContext = context;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+      unawaited(
+        AppBottomSheet.show<void>(
+          context: pageContext,
+          builder: (_) =>
+              const SizedBox(height: 200, child: Text('Drag content')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final sheet = find.byType(BottomSheet);
+      double opacity() => tester
+          .widget<Opacity>(
+            find.ancestor(of: sheet, matching: find.byType(Opacity)).first,
+          )
+          .opacity;
+      final settledTop = tester.getTopLeft(sheet).dy;
+      final gesture = await tester.startGesture(tester.getCenter(sheet));
+      await gesture.moveBy(const Offset(0, 20));
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, 40));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.getTopLeft(sheet).dy, greaterThan(settledTop));
+      expect(opacity(), 1);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(sheet, findsOneWidget);
+      expect(opacity(), 1);
+      expect(tester.getTopLeft(sheet).dy, closeTo(settledTop, 0.01));
+      await tester.drag(sheet, const Offset(0, 180));
+      await tester.pump();
+      expect(opacity(), 1);
+      await tester.pumpAndSettle();
+      expect(sheet, findsNothing);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets('closing during entrance holds the reached sheet opacity', (
+    tester,
+  ) async {
     late BuildContext pageContext;
     await tester.pumpWidget(
       MaterialApp(
@@ -24,34 +140,26 @@ void main() {
       AppBottomSheet.show<void>(
         context: pageContext,
         builder: (_) =>
-            const SizedBox(height: 120, child: Text('Sheet content')),
+            const SizedBox(height: 200, child: Text('Early close content')),
       ),
     );
+    final sheet = find.byType(BottomSheet);
     double opacity() => tester
-        .widget<FadeTransition>(
-          find
-              .ancestor(
-                of: find.byType(BottomSheet),
-                matching: find.byType(FadeTransition),
-              )
-              .first,
+        .widget<Opacity>(
+          find.ancestor(of: sheet, matching: find.byType(Opacity)).first,
         )
-        .opacity
-        .value;
+        .opacity;
     await tester.pump();
-    expect(opacity(), 0);
     await tester.pump(const Duration(milliseconds: 150));
-    expect(opacity(), inExclusiveRange(0, 1));
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(opacity(), 1);
+    final reachedOpacity = opacity();
+    expect(reachedOpacity, inExclusiveRange(0, 1));
     Navigator.of(pageContext).pop();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(opacity(), inExclusiveRange(0, 1));
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(opacity(), closeTo(0, 0.001));
+    expect(opacity(), reachedOpacity);
+    await tester.pump(const Duration(milliseconds: 75));
+    expect(opacity(), reachedOpacity);
     await tester.pumpAndSettle();
-    expect(find.byType(BottomSheet), findsNothing);
+    expect(sheet, findsNothing);
   });
 
   testWidgets('sheet header wraps large text beside its icon and action', (

@@ -1,5 +1,3 @@
-import 'dart:math';
-
 String normalizeAsmrTag(String value) => value.trim().toLowerCase();
 
 class AsmrTag {
@@ -38,12 +36,10 @@ class AsmrTagInterest {
 /// Persisted taste signals and directory share stable keys across content languages.
 class AsmrTagPreferences {
   final Map<String, AsmrTag> tags = {};
-  final Map<String, double> weights = {};
   final Map<String, double> learned = {};
-  final Map<String, double> hiddenUntil = {};
+  final Set<String> manualInterests = {};
   final Set<String> excluded = {};
   final Map<String, int> consumedSequences = {};
-  bool seeded = false;
   bool catalogComplete = false;
 
   String resolve(String name) {
@@ -76,19 +72,8 @@ class AsmrTagPreferences {
     final aliases = {...tag.aliases, ...?tags[tag.key]?.aliases};
     for (final key in keys) {
       aliases.addAll(tags.remove(key)!.aliases);
-      weights[tag.key] = (weights[tag.key] ?? 0) + (weights.remove(key) ?? 0);
-      final previousLearned = learned[tag.key] ?? 0;
-      final mergedLearned = learned.remove(key) ?? 0;
-      final threshold = hiddenUntil.remove(key);
-      final existingThreshold = hiddenUntil[tag.key];
-      learned[tag.key] = previousLearned + mergedLearned;
-      if (threshold != null || existingThreshold != null) {
-        final remaining = max(
-          (threshold ?? mergedLearned) - mergedLearned,
-          (existingThreshold ?? previousLearned) - previousLearned,
-        );
-        hiddenUntil[tag.key] = learned[tag.key]! + remaining;
-      }
+      learned[tag.key] = (learned[tag.key] ?? 0) + (learned.remove(key) ?? 0);
+      if (manualInterests.remove(key)) manualInterests.add(tag.key);
       if (excluded.remove(key)) excluded.add(tag.key);
     }
     tags[tag.key] = AsmrTag(
@@ -99,36 +84,44 @@ class AsmrTagPreferences {
     );
   }
 
-  List<AsmrTagInterest> get interests {
-    final values = weights.entries
-        .where(
-          (e) =>
-              e.value > 0 &&
-              !hiddenUntil.containsKey(e.key) &&
-              tags.containsKey(e.key),
-        )
+  List<AsmrTagInterest> get listenedInterests {
+    final values = learned.entries
+        .where((e) => e.value > 0 && tags.containsKey(e.key))
         .map((e) => AsmrTagInterest(tag: tags[e.key]!, weight: e.value))
         .toList();
     values.sort((a, b) {
-      final listening = (learned[b.tag.key] ?? 0).compareTo(
-        learned[a.tag.key] ?? 0,
-      );
-      if (listening != 0) return listening;
       final order = b.weight.compareTo(a.weight);
       return order == 0 ? a.tag.name.compareTo(b.tag.name) : order;
     });
+    return values.take(20).toList(growable: false);
+  }
+
+  List<AsmrTagInterest> get interests {
+    final values = [...listenedInterests];
+    if (values.length == 20) return values;
+    final listenedKeys = values.map((e) => e.tag.key).toSet();
+    final fallback =
+        manualInterests
+            .where(
+              (key) => !listenedKeys.contains(key) && tags.containsKey(key),
+            )
+            .map((key) => tags[key]!)
+            .toList()
+          ..sort((a, b) => a.name.compareTo(b.name));
+    values.addAll(
+      fallback
+          .take(20 - values.length)
+          .map((tag) => AsmrTagInterest(tag: tag, weight: 0)),
+    );
     return values;
   }
 
   void setInterested(String key, bool value) {
     if (!tags.containsKey(key)) throw ArgumentError.value(key, 'key');
     if (value) {
-      weights[key] = max(weights[key] ?? 0, 1);
-      hiddenUntil.remove(key);
+      manualInterests.add(key);
     } else {
-      final reduction = (weights[key] ?? 0) * .1;
-      weights[key] = (weights[key] ?? 0) - reduction;
-      hiddenUntil[key] = (learned[key] ?? 0) + max(10, reduction);
+      manualInterests.remove(key);
     }
   }
 
@@ -154,11 +147,7 @@ class AsmrTagPreferences {
           Duration.millisecondsPerMinute /
           keys.length;
       for (final key in keys) {
-        weights[key] = (weights[key] ?? 0) + minutes;
         learned[key] = (learned[key] ?? 0) + minutes;
-        if (hiddenUntil[key] != null && learned[key]! >= hiddenUntil[key]!) {
-          hiddenUntil.remove(key);
-        }
       }
     }
     consumedSequences[epoch] = sequence;
@@ -183,9 +172,13 @@ class AsmrTagPreferences {
 
   Map<String, double> get recommendationWeights {
     final result = <String, double>{};
-    for (final entry in weights.entries) {
-      for (final alias in tags[entry.key]?.aliases ?? <String>[]) {
-        result[normalizeAsmrTag(alias)] = entry.value;
+    final keys = {
+      ...manualInterests,
+      ...listenedInterests.map((e) => e.tag.key),
+    };
+    for (final key in keys) {
+      for (final alias in tags[key]?.aliases ?? <String>[]) {
+        result[normalizeAsmrTag(alias)] = 1;
       }
     }
     return result;
@@ -193,12 +186,10 @@ class AsmrTagPreferences {
 
   Map<String, Object?> toJson() => {
     'tags': tags.values.map((e) => e.toJson()).toList(),
-    'weights': weights,
     'learned': learned,
-    'hiddenUntil': hiddenUntil,
+    'manualInterests': manualInterests.toList(),
     'excluded': excluded.toList(),
     'sequences': consumedSequences,
-    'seeded': seeded,
     'complete': catalogComplete,
   };
   factory AsmrTagPreferences.fromJson(Map<String, dynamic> json) {
@@ -207,16 +198,24 @@ class AsmrTagPreferences {
       final tag = AsmrTag.fromJson(Map<String, dynamic>.from(raw as Map));
       state.tags[tag.key] = tag;
     }
-    for (final pair in [
-      (state.weights, 'weights'),
-      (state.learned, 'learned'),
-      (state.hiddenUntil, 'hiddenUntil'),
-    ]) {
-      final values = json[pair.$2] as Map? ?? {};
-      pair.$1.addAll(
-        values.map(
-          (key, value) => MapEntry(key.toString(), (value as num).toDouble()),
-        ),
+    state.learned.addAll(
+      (json['learned'] as Map? ?? {}).map(
+        (key, value) => MapEntry(key.toString(), (value as num).toDouble()),
+      ),
+    );
+    if (json.containsKey('manualInterests')) {
+      state.manualInterests.addAll(
+        (json['manualInterests'] as List).cast<String>(),
+      );
+    } else {
+      // Older versions mixed listening and manual selections in weights. Keep
+      // their checked tags as preferences, without inventing listening minutes.
+      final hidden = json['hiddenUntil'] as Map? ?? {};
+      final weights = json['weights'] as Map? ?? {};
+      state.manualInterests.addAll(
+        weights.entries
+            .where((e) => (e.value as num) > 0 && !hidden.containsKey(e.key))
+            .map((e) => e.key.toString()),
       );
     }
     state.excluded.addAll((json['excluded'] as List? ?? []).cast<String>());
@@ -225,7 +224,6 @@ class AsmrTagPreferences {
         (key, value) => MapEntry(key.toString(), (value as num).toInt()),
       ),
     );
-    state.seeded = json['seeded'] == true;
     state.catalogComplete = json['complete'] == true;
     return state;
   }

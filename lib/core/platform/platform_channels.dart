@@ -4,6 +4,15 @@
 /// Keep them in sync with the Kotlin side (MainActivity.kt and NativePlaybackBridge.kt).
 library;
 
+abstract final class NetworkChannel {
+  static const String name = 'doujin_audio/network';
+}
+
+abstract final class NetworkMethod {
+  static const String resolveSystemProxy = 'resolveSystemProxy';
+  static const String applyNetworkRoute = 'applyNetworkRoute';
+}
+
 // ---------------------------------------------------------------------------
 // Channel names
 // ---------------------------------------------------------------------------

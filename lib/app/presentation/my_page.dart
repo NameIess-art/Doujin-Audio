@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,6 +12,7 @@ import '../../core/media/music_track.dart';
 import '../../core/media/path_display.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
+import '../../core/ui/interaction_deferred_stream.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/async_cover_image.dart';
@@ -283,6 +285,25 @@ class _MyPageState extends ConsumerState<MyPage>
               );
       },
     );
+    Widget coverSkeleton(String key) => SizedBox(
+      key: ValueKey(key),
+      height: _HistoryWorkCard.coverHeight + 14,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 12,
+          children: List.generate(
+            8,
+            (_) => const ShimmerContainer(
+              width: _HistoryWorkCard.coverWidth,
+              height: _HistoryWorkCard.coverHeight,
+              borderRadius: 12,
+            ),
+          ),
+        ),
+      ),
+    );
     final skeleton = Builder(
       builder: (context) => IgnorePointer(
         child: ExcludeSemantics(
@@ -292,25 +313,12 @@ class _MyPageState extends ConsumerState<MyPage>
               listeningChart(null),
               section(
                 i18n.tr('my_history'),
-                SizedBox(
-                  key: const ValueKey('my-skeleton-history'),
-                  height: _HistoryWorkCard.coverHeight + 14,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      spacing: 12,
-                      children: List.generate(
-                        8,
-                        (_) => const ShimmerContainer(
-                          width: _HistoryWorkCard.coverWidth,
-                          height: _HistoryWorkCard.coverHeight,
-                          borderRadius: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                coverSkeleton('my-skeleton-history'),
+                skeleton: true,
+              ),
+              section(
+                i18n.tr('my_daily_recommendations'),
+                coverSkeleton('my-skeleton-daily'),
                 skeleton: true,
               ),
               section(
@@ -398,6 +406,10 @@ class _MyPageState extends ConsumerState<MyPage>
                     ),
                   ),
                   section(
+                    i18n.tr('my_daily_recommendations'),
+                    const _DailyRecommendations(),
+                  ),
+                  section(
                     i18n.tr('my_interests'),
                     controller == null
                         ? Text(i18n.tr('my_no_interests'))
@@ -480,6 +492,206 @@ class _MyPageState extends ConsumerState<MyPage>
           ],
         ),
       ),
+    );
+  }
+}
+
+final _dailyRecommendationsProvider = StreamProvider.autoDispose((ref) {
+  final controller = ref.watch(asmrLibraryControllerProvider);
+  if (controller == null) {
+    return Stream.value((
+      works: <AsmrWork>[],
+      loading: false,
+      error: null,
+      date: null,
+      language: null,
+    ));
+  }
+  return interactionDeferredListenableStream(
+    source: controller,
+    structural: true,
+    read: () => (
+      works: controller.dailyRecommendations,
+      loading: controller.isLoadingDailyRecommendations,
+      error: controller.dailyRecommendationsError,
+      date: controller.dailyRecommendationsDate,
+      language: controller.contentLanguage,
+    ),
+  );
+});
+
+class _DailyRecommendations extends ConsumerStatefulWidget {
+  const _DailyRecommendations();
+
+  @override
+  ConsumerState<_DailyRecommendations> createState() =>
+      _DailyRecommendationsState();
+}
+
+class _DailyRecommendationsState extends ConsumerState<_DailyRecommendations>
+    with WidgetsBindingObserver {
+  final _scroll = ScrollController();
+  late final _commitKey = 'my_daily_${identityHashCode(this)}';
+  ValueListenable<TickerModeData>? _ticker;
+  Timer? _midnight;
+  bool _foreground = true;
+  bool _routeVisible = true;
+
+  bool get _visible =>
+      mounted &&
+      _foreground &&
+      _routeVisible &&
+      (_ticker?.value.enabled ?? true);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final state = WidgetsBinding.instance.lifecycleState;
+    _foreground = state == null || state == AppLifecycleState.resumed;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final ticker = TickerMode.getValuesNotifier(context);
+    if (!identical(ticker, _ticker)) {
+      _ticker?.removeListener(_checkDay);
+      _ticker = ticker;
+      ticker.addListener(_checkDay);
+    }
+    _routeVisible = ModalRoute.isCurrentOf(context) ?? true;
+    _checkDay();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    _checkDay();
+  }
+
+  void _checkDay() {
+    _midnight?.cancel();
+    UiInteractionCoordinator.instance.cancelCommit(_commitKey);
+    if (!_visible) return;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _commitKey,
+      structural: true,
+      canRun: () => _visible,
+      commit: () {
+        unawaited(
+          ref.read(asmrLibraryControllerProvider)?.ensureDailyRecommendations(),
+        );
+      },
+    );
+    final now = DateTime.now();
+    _midnight = Timer(
+      DateTime(now.year, now.month, now.day + 1).difference(now),
+      _checkDay,
+    );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _ticker?.removeListener(_checkDay);
+    _midnight?.cancel();
+    UiInteractionCoordinator.instance.cancelCommit(_commitKey);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    ref.listen(asmrLibraryControllerProvider, (_, _) => _checkDay());
+    ref.listen(appLanguageStateProvider, (_, _) => _checkDay());
+    ref.listen(
+      _dailyRecommendationsProvider.select((state) => state.value?.language),
+      (previous, next) {
+        if (next != null && previous != next) _checkDay();
+      },
+    );
+    final state = ref.watch(_dailyRecommendationsProvider).value;
+    if (state == null || (state.loading && state.works.isEmpty)) {
+      return const SizedBox(
+        key: ValueKey('my-daily-loading'),
+        height: _HistoryWorkCard.coverHeight + 14,
+        child: ShimmerLoader(
+          child: Row(
+            spacing: 12,
+            children: [
+              ShimmerContainer(
+                width: _HistoryWorkCard.coverWidth,
+                height: _HistoryWorkCard.coverHeight,
+                borderRadius: 12,
+              ),
+              Expanded(
+                child: ShimmerContainer(
+                  height: _HistoryWorkCard.coverHeight,
+                  borderRadius: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final now = DateTime.now();
+    final today =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final stale = state.date != null && state.date != today;
+    return Column(
+      key: const ValueKey('my-daily-recommendations'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (state.works.isNotEmpty)
+          SizedBox(
+            height: _HistoryWorkCard.coverHeight + 14,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: ClipRRect(
+                key: const ValueKey('my-daily-viewport'),
+                borderRadius: BorderRadius.circular(12),
+                child: WindowsHorizontalWheelScroll(
+                  controller: _scroll,
+                  builder: (controller) => ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(
+                      context,
+                    ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+                    child: ListView.separated(
+                      controller: controller,
+                      scrollDirection: Axis.horizontal,
+                      itemCount: state.works.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 12),
+                      itemBuilder: (context, index) =>
+                          _DailyWorkCard(work: state.works[index]),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          )
+        else if (state.error == null)
+          Text(i18n.tr('my_daily_empty')),
+        if (stale)
+          Text(
+            i18n.tr('my_daily_stale'),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        if (state.error != null)
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            children: [
+              Text(i18n.tr('my_daily_error')),
+              TextButton(
+                onPressed: _checkDay,
+                child: Text(i18n.tr('my_retry')),
+              ),
+            ],
+          ),
+      ],
     );
   }
 }
@@ -628,42 +840,98 @@ class _HistoryWorkCard extends ConsumerWidget {
     final title =
         ref.watch(_historyWorkTitleProvider(entry.track)).value ??
         ref.read(appLanguageProviderInstanceProvider).tr('my_untitled_work');
+    return _WorkCoverCard(
+      cardKey: 'my-history-card-${entry.workKey}',
+      titleKey: 'my-history-title-${entry.workKey}',
+      title: title,
+      onOpen: () => onOpen(entry.track),
+      cover: AsyncLocalCoverImage(
+        requestKey: entry.workKey,
+        future: ref
+            .read(libraryCoverUiControllerProvider)
+            .deferredTrackCover(entry.track, context: context),
+        initialPath: library.resolvedCoverPathForTrack(entry.track),
+        fit: BoxFit.cover,
+        deferLoadDuringInteraction: true,
+        cacheWidth: 320,
+      ),
+    );
+  }
+}
+
+class _DailyWorkCard extends ConsumerWidget {
+  const _DailyWorkCard({required this.work});
+  final AsmrWork work;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final library = ref.read(libraryFacadeProvider);
+    final url = work.preferredCoverUrl;
+    final coverUi = ref.read(libraryCoverUiControllerProvider);
+    return _WorkCoverCard(
+      cardKey: 'my-daily-card-${work.workKey}',
+      titleKey: 'my-daily-title-${work.workKey}',
+      title: work.title,
+      onOpen: () => showAsmrWorkDetailSheet(context, work),
+      cover: AsyncRemoteCoverImage(
+        url: url,
+        future: coverUi.deferredRemoteCover(url, context: context),
+        initialPath: library.resolvedCoverPathForRemoteCover(url),
+        retryFutureBuilder: () =>
+            coverUi.deferredRemoteCover(url, context: context),
+        onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
+        retryDelay: const Duration(seconds: 5),
+        maxRetryAttempts: 2,
+        fit: BoxFit.cover,
+        deferLoadDuringInteraction: true,
+        cacheWidth: 320,
+        fallbackBuilder: (_) => const CoverFallbackArtwork(),
+      ),
+    );
+  }
+}
+
+class _WorkCoverCard extends StatelessWidget {
+  const _WorkCoverCard({
+    required this.cardKey,
+    required this.titleKey,
+    required this.title,
+    required this.cover,
+    required this.onOpen,
+  });
+  final String cardKey;
+  final String titleKey;
+  final String title;
+  final Widget cover;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
     return Tooltip(
       message: title,
       child: Semantics(
         label: title,
         button: true,
         child: SizedBox(
-          width: coverWidth,
+          width: _HistoryWorkCard.coverWidth,
           child: ClipRRect(
-            key: ValueKey('my-history-card-${entry.workKey}'),
+            key: ValueKey(cardKey),
             borderRadius: BorderRadius.circular(12),
             child: Material(
               child: InkWell(
-                onTap: () => onOpen(entry.track),
+                onTap: onOpen,
                 child: ExcludeSemantics(
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      AsyncLocalCoverImage(
-                        requestKey: entry.workKey,
-                        future: ref
-                            .read(libraryCoverUiControllerProvider)
-                            .deferredTrackCover(entry.track, context: context),
-                        initialPath: library.resolvedCoverPathForTrack(
-                          entry.track,
-                        ),
-                        fit: BoxFit.cover,
-                        deferLoadDuringInteraction: true,
-                        cacheWidth: 320,
-                      ),
+                      cover,
                       Positioned(
                         bottom: 8,
                         left: 8,
                         right: 8,
                         child: Text(
                           title,
-                          key: ValueKey('my-history-title-${entry.workKey}'),
+                          key: ValueKey(titleKey),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(

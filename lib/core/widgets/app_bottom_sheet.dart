@@ -137,6 +137,7 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
   });
 
   final bool halfWidth;
+  double _visibleOpacity = 0;
 
   @override
   Curve get barrierCurve => kAppFadeCurve;
@@ -151,9 +152,16 @@ class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
     final constrainedPage = halfWidth
         ? FractionallySizedBox(widthFactor: 0.5, child: page)
         : page;
-    return FadeTransition(
-      opacity: animation.drive(CurveTween(curve: kAppFadeCurve)),
+    return AnimatedBuilder(
+      animation: animation,
       child: constrainedPage,
+      builder: (context, child) {
+        // Keep the opening fade, but hold its reached opacity during dragging
+        // and dismissal, including a close that interrupts the entrance.
+        final openingOpacity = kAppFadeCurve.transform(animation.value);
+        if (openingOpacity > _visibleOpacity) _visibleOpacity = openingOpacity;
+        return Opacity(opacity: _visibleOpacity, child: child);
+      },
     );
   }
 }

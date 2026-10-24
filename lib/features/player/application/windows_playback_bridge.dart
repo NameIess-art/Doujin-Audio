@@ -13,6 +13,7 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/media_file_support.dart';
 import '../../../core/media/playback_media_reference.dart';
+import '../../../core/network/app_network.dart';
 import '../domain/audio_effects.dart';
 import '../domain/playback_usage.dart';
 import 'playback_usage_ledger.dart';
@@ -516,6 +517,18 @@ class WindowsPlaybackBridge
         : null;
     try {
       final platform = player.platform;
+      if (platform is NativePlayer) {
+        await AppNetwork.instance.ensureStarted();
+        final proxy = 'http_proxy=${AppNetwork.instance.proxyUrl}';
+        // Current libmpv uses curl for the initial request; FFmpeg opens HLS
+        // child streams. Configure both backends, including HTTPS CONNECT.
+        await platform.setProperty('http-proxy', AppNetwork.instance.proxyUrl);
+        for (final option in ['stream-lavf-o', 'demuxer-lavf-o']) {
+          // Reading this map as text loses escaping in values such as the
+          // protocol whitelist. Update its key without rewriting other values.
+          await platform.command(['change-list', option, 'append', proxy]);
+        }
+      }
       if (platform is NativePlayer && session.videoController == null) {
         final items = session.stopAfterCurrentTrack
             ? [session.queue[session.index]]

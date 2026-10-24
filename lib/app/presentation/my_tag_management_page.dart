@@ -78,13 +78,13 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
         : ListenableBuilder(
             listenable: controller,
             builder: (context, _) {
-              final interests = {
-                for (final interest in controller.interestTags)
+              final listened = {
+                for (final interest in controller.listenedTagInterests)
                   interest.tag.key: interest.weight,
               };
               final selected = widget.excluded
                   ? controller.excludedTagKeys
-                  : interests.keys.toSet();
+                  : {...controller.manualInterestTagKeys, ...listened.keys};
               final query = _search.text.trim().toLowerCase();
               final tags = controller.allTags
                   .where(
@@ -98,10 +98,13 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                   .toList();
               tags.sort((a, b) {
                 if (!widget.excluded) {
-                  final weight = (interests[b.key] ?? 0).compareTo(
-                    interests[a.key] ?? 0,
+                  final weight = (listened[b.key] ?? 0).compareTo(
+                    listened[a.key] ?? 0,
                   );
                   if (weight != 0) return weight;
+                  final selection = (selected.contains(b.key) ? 1 : 0)
+                      .compareTo(selected.contains(a.key) ? 1 : 0);
+                  if (selection != 0) return selection;
                 }
                 return a.name.compareTo(b.name);
               });
@@ -149,9 +152,18 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                         return CheckboxListTile(
                           key: ValueKey(tag.key),
                           title: Text(tag.name),
+                          subtitle:
+                              !widget.excluded && listened.containsKey(tag.key)
+                              ? Text(i18n.tr('my_listened_tag'))
+                              : null,
                           value:
-                              _changes[tag.key] ?? selected.contains(tag.key),
-                          onChanged: _saving
+                              (!widget.excluded &&
+                                  listened.containsKey(tag.key)) ||
+                              (_changes[tag.key] ?? selected.contains(tag.key)),
+                          onChanged:
+                              _saving ||
+                                  (!widget.excluded &&
+                                      listened.containsKey(tag.key))
                               ? null
                               : (value) => setState(() {
                                   if (value == selected.contains(tag.key)) {

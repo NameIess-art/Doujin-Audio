@@ -1,4 +1,9 @@
 import 'subtitle_window_settings_sheet.dart';
+import 'dart:convert';
+import '../application/network_service_probe.dart';
+import '../../../core/network/network_route_settings.dart';
+import '../../asmr/domain/asmr_models.dart';
+import '../../asmr/domain/asmr_media_sources.dart';
 import 'asmr_download_folder_name_settings_sheet.dart';
 import '../../asmr/presentation/asmr_providers.dart';
 import 'settings_providers.dart';
@@ -45,6 +50,7 @@ import 'about_page.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
 
 part 'settings_tab_actions.dart';
+part 'settings_tab_network_section.dart';
 part 'settings_tab_general_section.dart';
 part 'settings_tab_appearance_section.dart';
 part 'settings_tab_playback_section.dart';
@@ -297,6 +303,7 @@ enum _SettingsCategory {
     'section_asmr_download_subtitle',
     Icons.download_rounded,
   ),
+  network('section_network', 'section_network_subtitle', Icons.public_rounded),
   dataStorage(
     'section_data_storage',
     'section_data_storage_subtitle',
@@ -617,6 +624,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
             onChooseAsmrDownloadDestination:
                 widget.onChooseAsmrDownloadDestination,
           ),
+          _SettingsCategory.network => const [_NetworkSettingsControls()],
           _SettingsCategory.dataStorage => _buildSettingsDataSection(
             i18n: i18n,
             settingsController: settingsController,

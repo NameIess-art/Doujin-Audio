@@ -1,6 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../../core/network/network_route_settings.dart';
+import '../../asmr/domain/asmr_models.dart';
+import '../../asmr/domain/asmr_media_sources.dart';
 
 import '../../../core/state/audio_state_slice.dart';
 import '../../../core/app_language.dart';
@@ -13,6 +18,27 @@ import '../../../core/persistence/app_preferences.dart';
 import 'settings_state.dart';
 
 class SettingsRepository {
+  SettingsRepository({
+    this.onNetworkRouteChanged,
+    Future<String?> Function()? readProxyPassword,
+    Future<void> Function(String?)? writeProxyPassword,
+  }) : _readProxyPassword = readProxyPassword ?? _readSecureProxyPassword,
+       _writeProxyPassword = writeProxyPassword ?? _writeSecureProxyPassword;
+
+  static const proxyPasswordKey = 'network_proxy_password_v1';
+  static Future<String?> _readSecureProxyPassword() =>
+      const FlutterSecureStorage().read(key: proxyPasswordKey);
+  static Future<void> _writeSecureProxyPassword(String? value) => value == null
+      ? const FlutterSecureStorage().delete(key: proxyPasswordKey)
+      : const FlutterSecureStorage().write(key: proxyPasswordKey, value: value);
+  final Future<void> Function(NetworkRouteSettings, String?)?
+  onNetworkRouteChanged;
+  final Future<String?> Function() _readProxyPassword;
+  final Future<void> Function(String?) _writeProxyPassword;
+  NetworkRouteSettings networkRouteSettings = const NetworkRouteSettings();
+  String asmrApiDomain = asmrApiDomains.first;
+  AsmrCatalogSource preferredAsmrSource = AsmrCatalogSource.asmrOne;
+
   static const _playbackSettingsKey = 'playback_settings_v1';
   bool autoCheckUpdates = false;
   ContentLanguagePreference dlsiteMetadataLanguage =
@@ -70,6 +96,16 @@ class SettingsRepository {
       ),
     );
     if (playback != null) {
+      networkRouteSettings = NetworkRouteSettings.fromJson(
+        playback['networkRouteSettings'],
+      );
+      if (asmrApiDomains.contains(playback['asmrApiDomain'])) {
+        asmrApiDomain = playback['asmrApiDomain'] as String;
+      }
+      preferredAsmrSource = AsmrCatalogSource.values.firstWhere(
+        (source) => source.name == playback['preferredAsmrSource'],
+        orElse: () => AsmrCatalogSource.asmrOne,
+      );
       startupPage = StartupPage.values.firstWhere(
         (value) => value.name == playback['startupPage'],
         orElse: () => StartupPage.library,
@@ -196,11 +232,13 @@ class SettingsRepository {
       maxCacheBytes,
       enforceImmediately: enforceCacheLimit,
     );
+    await _applyNetworkRoute();
     syncSlice(isInitialized: true);
   }
 
   Future<void> resetPersistedState() async {
     _resetValues();
+    await _applyNetworkRoute();
     syncSlice();
   }
 
@@ -208,6 +246,9 @@ class SettingsRepository {
     final saved = await AppPreferences.writeJson(
       _playbackSettingsKey,
       <String, Object?>{
+        'networkRouteSettings': networkRouteSettings.toJson(),
+        'asmrApiDomain': asmrApiDomain,
+        'preferredAsmrSource': preferredAsmrSource.name,
         'startupPage': startupPage.name,
         'autoCheckUpdates': autoCheckUpdates,
         'recordPlaybackProgress': recordPlaybackProgress,
@@ -253,6 +294,81 @@ class SettingsRepository {
     );
     if (!saved) throw StateError('settings_write_failed');
   }
+
+  Future<void> _applyNetworkRoute() async {
+    final secret = networkRouteSettings.proxyPasswordConfigured
+        ? await _readProxyPassword()
+        : null;
+    networkRouteSettings = networkRouteSettings.copyWith(
+      proxyPasswordConfigured: secret?.isNotEmpty == true,
+    );
+    await onNetworkRouteChanged?.call(networkRouteSettings, secret);
+  }
+
+  Future<void> setNetworkRouteSettings(
+    NetworkRouteSettings value, {
+    String? password,
+  }) {
+    String? previousPassword;
+    var secretChanged = false;
+    final hasNewPassword = password != null && password.isNotEmpty;
+    return _change(
+      () async {
+        previousPassword =
+            value.proxyPasswordConfigured ||
+                networkRouteSettings.proxyPasswordConfigured ||
+                hasNewPassword
+            ? await _readProxyPassword()
+            : null;
+        final committed = value.copyWith(
+          proxyHost:
+              NetworkRouteSettings.normalizeHost(value.proxyHost) ??
+              value.proxyHost.trim(),
+          proxyUsername: value.proxyUsername.trim(),
+          customDnsServer:
+              NetworkRouteSettings.normalizeDns(value.customDnsServer) ??
+              value.customDnsServer.trim(),
+          proxyPasswordConfigured:
+              hasNewPassword || previousPassword?.isNotEmpty == true,
+        );
+        committed.validate();
+        if (committed.proxyMode == AppProxyMode.socks5 &&
+            committed.proxyAuthenticationEnabled &&
+            utf8.encode(hasNewPassword ? password : previousPassword!).length >
+                255) {
+          throw const FormatException(
+            'SOCKS5 password exceeds 255 UTF-8 bytes',
+          );
+        }
+        if (hasNewPassword) {
+          await _writeProxyPassword(password);
+          secretChanged = true;
+        }
+        networkRouteSettings = committed;
+      },
+      // An explicit apply also retries a previous native synchronization error.
+      forceSave: true,
+      onFailure: () async {
+        if (secretChanged) await _writeProxyPassword(previousPassword);
+      },
+      afterSave: (_) => _applyNetworkRoute(),
+    );
+  }
+
+  Future<void> setAsmrApiDomain(String domain) {
+    if (!asmrApiDomains.contains(domain)) {
+      throw ArgumentError.value(domain, 'domain');
+    }
+    return _setValue(
+      unchanged: () => asmrApiDomain == domain,
+      update: () => asmrApiDomain = domain,
+    );
+  }
+
+  Future<void> setPreferredAsmrSource(AsmrCatalogSource source) => _setValue(
+    unchanged: () => preferredAsmrSource == source,
+    update: () => preferredAsmrSource = source,
+  );
 
   Future<void> setAsmrDownloadDestinationRoot(String? destinationRoot) =>
       _change(() async {
@@ -566,18 +682,22 @@ class SettingsRepository {
   Future<void> _change(
     Future<void> Function() update, {
     Future<void> Function(SettingsState)? afterSave,
+    Future<void> Function()? onFailure,
+    bool forceSave = false,
   }) {
     final operation = _writeTail.then((_) async {
       final snapshot = _snapshot(isInitialized: slice.state.isInitialized);
       try {
         try {
           await update();
-          if (_snapshot(isInitialized: snapshot.isInitialized) == snapshot) {
+          if (!forceSave &&
+              _snapshot(isInitialized: snapshot.isInitialized) == snapshot) {
             return;
           }
           await persist();
         } catch (_) {
           _restore(snapshot);
+          await onFailure?.call();
           rethrow;
         }
         // Side effects run after the commit while the queue is still held.
@@ -595,6 +715,9 @@ class SettingsRepository {
   }
 
   void _restore(SettingsState snapshot) {
+    networkRouteSettings = snapshot.networkRouteSettings;
+    asmrApiDomain = snapshot.asmrApiDomain;
+    preferredAsmrSource = snapshot.preferredAsmrSource;
     autoCheckUpdates = snapshot.autoCheckUpdates;
     dlsiteMetadataLanguage = snapshot.dlsiteMetadataLanguage;
     librarySortCriterion = snapshot.librarySortCriterion;
@@ -637,6 +760,9 @@ class SettingsRepository {
   }
 
   void _resetValues() {
+    networkRouteSettings = const NetworkRouteSettings();
+    asmrApiDomain = asmrApiDomains.first;
+    preferredAsmrSource = AsmrCatalogSource.asmrOne;
     autoCheckUpdates = false;
     dlsiteMetadataLanguage = ContentLanguagePreference.followPage;
     librarySortCriterion = LibrarySortCriterion.name;
@@ -698,6 +824,9 @@ class SettingsRepository {
   SettingsState _snapshot({required bool isInitialized}) {
     final previous = slice.state;
     return SettingsState(
+      networkRouteSettings: networkRouteSettings,
+      asmrApiDomain: asmrApiDomain,
+      preferredAsmrSource: preferredAsmrSource,
       autoCheckUpdates: autoCheckUpdates,
       dlsiteMetadataLanguage: dlsiteMetadataLanguage,
       librarySortCriterion: librarySortCriterion,

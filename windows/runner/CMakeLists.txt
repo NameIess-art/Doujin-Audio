@@ -15,6 +15,7 @@ add_executable(${BINARY_NAME} WIN32
   "desktop/media_controls.cpp"
   "desktop/subtitle_window.cpp"
   "desktop/scheduled_tasks.cpp"
+  "desktop/network_proxy.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
   "runner.exe.manifest"
@@ -41,6 +42,7 @@ target_compile_options(${BINARY_NAME} PRIVATE /utf-8)
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE windowsapp shell32 taskschd comsuppw advapi32)
+target_link_libraries(${BINARY_NAME} PRIVATE winhttp shlwapi)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.

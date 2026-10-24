@@ -186,7 +186,7 @@ void main() {
     expect(controller.interestTags, isEmpty);
     await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
     await tester.pumpAndSettle();
-    expect(controller.interestTags, hasLength(25));
+    expect(controller.manualInterestTagKeys, hasLength(25));
     await tester.tap(find.text('Open tags'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'Tag 24');
@@ -197,11 +197,68 @@ void main() {
     );
     await tester.tap(find.byType(CheckboxListTile));
     await tester.pump();
-    expect(controller.interestTags, hasLength(25));
+    expect(controller.manualInterestTagKeys, hasLength(25));
     await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
     await tester.pumpAndSettle();
-    expect(controller.interestTags, hasLength(24));
+    expect(controller.manualInterestTagKeys, hasLength(24));
   });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'automatic listening tags and manual recommendation choices are separate on $platform',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final controller = _TagController(createTestAsmrServices());
+        for (var i = 0; i < 21; i++) {
+          controller._state.learned[controller._state.resolve(
+                'Tag ${i.toString().padLeft(2, '0')}',
+              )] =
+              i + 1.0;
+        }
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        final before = controller.interestTags.map((e) => e.tag.key).toList();
+        await tester.pumpWidget(
+          fixture.build(
+            Theme(
+              data: ThemeData(platform: platform),
+              child: const MyTagManagementPage(excluded: false),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'Tag 20');
+        await tester.pump();
+        final automatic = tester.widget<CheckboxListTile>(
+          find.byType(CheckboxListTile),
+        );
+        expect(automatic.value, isTrue);
+        expect(automatic.onChanged, isNull);
+        expect(
+          find.text(fixture.languageProvider.tr('my_listened_tag')),
+          findsOneWidget,
+        );
+        expect(controller.manualInterestTagKeys, isEmpty);
+        await tester.enterText(find.byType(TextField), 'Tag 00');
+        await tester.pump();
+        expect(
+          tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+          isFalse,
+        );
+        await tester.tap(find.byType(CheckboxListTile));
+        await tester.pump();
+        expect(controller.manualInterestTagKeys, isEmpty);
+        await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+        await tester.pumpAndSettle();
+        expect(controller.manualInterestTagKeys, {'local:tag 00'});
+        expect(controller.interestTags.map((e) => e.tag.key), before);
+        expect(controller._state.recommendationWeights, contains('tag 00'));
+      },
+    );
+  }
 
   for (final excluded in [false, true]) {
     testWidgets(
@@ -301,6 +358,10 @@ class _TagController extends AsmrLibraryController {
   int saveCalls = 0;
   @override
   List<AsmrTagInterest> get interestTags => _state.interests;
+  @override
+  List<AsmrTagInterest> get listenedTagInterests => _state.listenedInterests;
+  @override
+  Set<String> get manualInterestTagKeys => _state.manualInterests;
   @override
   List<AsmrTag> get allTags => _state.tags.values.toList();
   @override

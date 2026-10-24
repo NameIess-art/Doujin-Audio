@@ -35,6 +35,21 @@ void main() {
         final storage = await FileCachePlatformGateway.instance
             .readStorageUsage();
         expect(storage, isNotNull);
+        const network = MethodChannel('doujin_audio/network');
+        for (final url in [null, '', 'file:///C:/audio.wav', 'https:///']) {
+          final invalid = await network.invokeMapMethod<String, Object?>(
+            'resolveSystemProxy',
+            {'url': url},
+          );
+          expect(invalid?['ok'], isFalse);
+          expect(invalid?['errorCode'], 'invalid_argument');
+        }
+        final systemProxy = await network.invokeMapMethod<String, Object?>(
+          'resolveSystemProxy',
+          {'url': 'https://example.com/'},
+        );
+        expect(systemProxy?['ok'], isTrue);
+        expect(systemProxy?['value'], isA<String>());
         sqfliteFfiInit();
         final database = await databaseFactoryFfi.openDatabase(
           inMemoryDatabasePath,
@@ -332,7 +347,10 @@ void main() {
           );
           final player = bridge.playerForSession('one');
           final nativePlayer = player!.platform! as NativePlayer;
-          expect(double.parse(await nativePlayer.getProperty('volume-max')), 300);
+          expect(
+            double.parse(await nativePlayer.getProperty('volume-max')),
+            300,
+          );
           expect(
             await nativePlayer.getProperty('audio-pitch-correction'),
             'yes',
@@ -346,7 +364,10 @@ void main() {
             true,
           );
           expect(await nativePlayer.getProperty('af'), contains('equalizer'));
-          expect(double.parse(await nativePlayer.getProperty('volume-max')), 300);
+          expect(
+            double.parse(await nativePlayer.getProperty('volume-max')),
+            300,
+          );
           expect(
             await nativePlayer.getProperty('audio-pitch-correction'),
             'yes',

@@ -4136,17 +4136,30 @@ void main() {
       TopPageHeader,
       languageProvider.tr('batch_metadata'),
     );
-    final enteringLeft = tester.getRect(batchHeader).left;
-    expect(enteringLeft, greaterThan(0));
-    await tester.pumpAndSettle();
-    final settledLeft = tester.getRect(batchHeader).left;
-    expect(settledLeft, lessThan(enteringLeft));
-    await tester.tap(
-      find.descendant(of: batchHeader, matching: find.byType(BackButton)),
+    final batchBackButton = find.descendant(
+      of: batchHeader,
+      matching: find.byType(BackButton),
     );
+    final headerRect = tester.getRect(batchBackButton);
+    final headerFade = find.ancestor(
+      of: batchBackButton,
+      matching: find.byWidgetPredicate((widget) => widget is FadeTransition),
+    ).first;
+    expect(
+      tester.widget<FadeTransition>(headerFade).opacity.value,
+      inExclusiveRange(0, 1),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getRect(batchBackButton), headerRect);
+    expect(tester.widget<FadeTransition>(headerFade).opacity.value, 1);
+    await tester.tap(batchBackButton);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 225));
-    expect(tester.getRect(batchHeader).left, greaterThan(settledLeft));
+    expect(tester.getRect(batchBackButton), headerRect);
+    expect(
+      tester.widget<FadeTransition>(headerFade).opacity.value,
+      inExclusiveRange(0, 1),
+    );
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 100));
     expect(batchHeader, findsNothing);

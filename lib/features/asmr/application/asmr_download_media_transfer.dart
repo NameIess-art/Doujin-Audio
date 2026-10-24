@@ -6,6 +6,7 @@ import 'package:ffmpeg_kit_flutter_new_full/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_full/return_code.dart';
 
 import '../../../core/media/playback_media_reference.dart';
+import '../../../core/network/app_network.dart';
 import '../../../core/platform/windows_media_tools.dart';
 import 'asmr_download_internal_models.dart';
 
@@ -154,6 +155,7 @@ class AsmrHlsAudioTransfer {
     if (!reference.isHls) throw ArgumentError('HLS stream required.');
     if (isCancelled()) throw const DownloadCancelled();
     await output.parent.create(recursive: true);
+    await AppNetwork.instance.ensureStarted();
     try {
       await _run(_arguments(reference, output.path), isCancelled, (
         timeMs,
@@ -204,6 +206,8 @@ class AsmrHlsAudioTransfer {
     'error',
     '-rw_timeout',
     '30000000',
+    '-http_proxy',
+    AppNetwork.instance.proxyUrl,
     '-user_agent',
     japaneseAsmrDownloadUserAgent,
     if (reference.httpHeaders.isNotEmpty) ...[

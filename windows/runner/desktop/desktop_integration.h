@@ -11,6 +11,7 @@
 class SubtitleWindow;
 class MediaControls;
 class ScheduledTasks;
+class NetworkProxy;
 
 class DesktopIntegration {
  public:
@@ -53,4 +54,5 @@ class DesktopIntegration {
   std::unique_ptr<SubtitleWindow> subtitles_;
   std::unique_ptr<MediaControls> media_;
   std::unique_ptr<ScheduledTasks> scheduled_tasks_;
+  std::unique_ptr<NetworkProxy> network_proxy_;
 };

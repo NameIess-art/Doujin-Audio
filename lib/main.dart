@@ -14,6 +14,7 @@ import 'app/presentation/app_orientation_controller.dart';
 import 'app/presentation/music_player_app.dart';
 import 'app/theme/theme_provider.dart';
 import 'core/logging/app_log_service.dart';
+import 'core/network/app_network.dart';
 import 'core/persistence/app_preferences.dart';
 import 'core/platform/app_lifecycle_platform_service.dart';
 import 'features/data_support/application/data_backup_service.dart';
@@ -59,6 +60,7 @@ Future<void> main() async {
       Future<void> initialize() async {
         await initializePlatformRuntime();
         await AppPreferences.init();
+        await AppNetwork.instance.install();
         startupRestoreOutcome = await _initializeAudioPlayerApp();
         await themeProvider.reloadPersistedState();
         unawaited(

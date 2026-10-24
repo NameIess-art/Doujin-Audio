@@ -57,6 +57,8 @@ import 'runtime_binding.dart';
 import 'browse_page_state_store.dart';
 import 'timer_runtime_binding.dart';
 import 'asmr_download_runtime_binding.dart';
+import 'asmr_network_runtime_binding.dart';
+import '../../core/network/app_network.dart';
 
 typedef ProductionAppRuntime = ({
   AppRuntimeGraph runtimeGraph,
@@ -104,6 +106,7 @@ AppRuntimeGraph createAppRuntimeGraph({
   FileCachePlatformGateway? fileCacheGateway,
   bool persistenceEnabled = true,
   ListeningActivityService? listeningActivity,
+  RuntimeBinding? asmrNetworkBinding,
 }) {
   if (asmrDownloads != null && libraryScanLabels == null) {
     throw ArgumentError('ASMR downloads require libraryScanLabels.');
@@ -180,6 +183,7 @@ AppRuntimeGraph createAppRuntimeGraph({
   library.configurePersistence(enabled: persistenceEnabled);
   playback.configurePersistence(enabled: persistenceEnabled);
   final bindings = <RuntimeBinding>[
+    ?asmrNetworkBinding,
     LibraryRuntimeBinding.attach(
       library: library,
       playback: playback,
@@ -308,7 +312,9 @@ ProductionAppRuntime createProductionAppRuntime({
   final playbackService = PlaybackSessionService();
   final timerService = TimerService();
   final notificationCoordinatorService = NotificationCoordinatorService();
-  final settingsRepository = SettingsRepository();
+  final settingsRepository = SettingsRepository(
+    onNetworkRouteChanged: AppNetwork.instance.configure,
+  );
   final jsonDocumentStore = DefaultJsonDocumentStore();
   final appLanguageProvider = AppLanguageProvider();
   final appUpdateService = AppUpdateService();
@@ -344,13 +350,14 @@ ProductionAppRuntime createProductionAppRuntime({
     stateService: notificationCoordinatorService,
   );
   final asmrPreferences = AsmrPreferencesStore(repository: asmrRepository);
+  final asmrRemoteCatalog = AsmrRemoteCatalogService(
+    apiService: asmrApiService,
+    japaneseApiService: japaneseAsmrApiService,
+    persistenceRepository: asmrRepository,
+  );
   final asmrLibraryController = AsmrLibraryController(
     preferencesStore: asmrPreferences,
-    remoteCatalogService: AsmrRemoteCatalogService(
-      apiService: asmrApiService,
-      japaneseApiService: japaneseAsmrApiService,
-      persistenceRepository: asmrRepository,
-    ),
+    remoteCatalogService: asmrRemoteCatalog,
     accountSyncService: AsmrAccountSyncService(
       authService: AsmrAuthService(apiService: asmrApiService),
       apiService: asmrApiService,
@@ -380,6 +387,12 @@ ProductionAppRuntime createProductionAppRuntime({
     },
   );
   runtimeGraph = createAppRuntimeGraph(
+    asmrNetworkBinding: AsmrNetworkRuntimeBinding(
+      settings: settingsRepository,
+      api: asmrApiService,
+      catalog: asmrRemoteCatalog,
+      library: asmrLibraryController,
+    ),
     listeningActivity: listeningActivity,
     library: libraryFacade,
     playback: playbackFacade,

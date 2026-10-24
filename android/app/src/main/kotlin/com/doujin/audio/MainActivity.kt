@@ -40,6 +40,7 @@ open class MainActivity : FlutterFragmentActivity() {
     private var nativePlaybackEventChannel: EventChannel? = null
     private var nativePlaybackBridge: NativePlaybackBridge? = null
     private var fileCacheMethodChannel: MethodChannel? = null
+    private var networkMethodChannel: MethodChannel? = null
     private var fileCacheMethodHandler: FileCacheMethodHandler? = null
     private var fileCacheTaskExecutor: FileCacheTaskExecutor? = null
     private var fileExportCoordinator: FileExportCoordinator? = null
@@ -233,6 +234,11 @@ open class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
+        networkMethodChannel?.setMethodCallHandler(null)
+        networkMethodChannel = MethodChannel(
+            messenger, PlatformChannelNames.NETWORK, StandardMethodCodec.INSTANCE,
+            messenger.makeBackgroundTaskQueue(),
+        ).also { it.setMethodCallHandler(NetworkMethodHandler(applicationContext)) }
         appLifecycleMethodChannel?.setMethodCallHandler(null)
         appLifecycleMethodChannel = MethodChannel(
             messenger,
@@ -330,12 +336,16 @@ open class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        networkMethodChannel?.setMethodCallHandler(null)
+        networkMethodChannel = null
         disposeNativePlaybackBridge()
         disposeVideoDisplayChannel()
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
     override fun onDestroy() {
+        networkMethodChannel?.setMethodCallHandler(null)
+        networkMethodChannel = null
         disposeNativePlaybackBridge()
         disposeVideoDisplayChannel()
         appLifecycleMethodChannel?.setMethodCallHandler(null)

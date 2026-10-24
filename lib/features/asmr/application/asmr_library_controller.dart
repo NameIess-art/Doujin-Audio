@@ -1,5 +1,4 @@
 import '../domain/asmr_tag_interest.dart';
-import 'asmr_recommendation_engine.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 
@@ -48,18 +47,6 @@ AsmrTagPreferences _deriveTagInterests(
       if (tag.trim().isNotEmpty) state.resolve(tag);
     }
   }
-  if (!state.seeded) {
-    final seed = const AsmrRecommendationEngine().initialTagWeights(
-      localTracks: input.tracks,
-      favoriteWorks: input.favorites,
-      historyWorks: input.history,
-    );
-    for (final entry in seed.entries) {
-      final key = state.resolve(entry.key);
-      state.weights[key] = (state.weights[key] ?? 0) + entry.value;
-    }
-    state.seeded = true;
-  }
   return state;
 }
 
@@ -74,7 +61,7 @@ class AsmrLibraryController extends ChangeNotifier
        _accountSyncService = accountSyncService {
     _remoteCatalogService.isWorkAllowed = _isWorkAllowed;
     _remoteCatalogService.tagWeights = () =>
-        _tagPreferences.seeded ? _tagPreferences.recommendationWeights : null;
+        _tagPreferences.recommendationWeights;
     _remoteCatalogService.prepareTagInterests = (tracks) =>
         ensureTagInterests(localTracks: tracks);
   }
@@ -107,6 +94,10 @@ class AsmrLibraryController extends ChangeNotifier
   Future<void>? _tagCatalogTask;
   Object? _tagCatalogError;
   List<AsmrTagInterest> get interestTags => _tagPreferences.interests;
+  List<AsmrTagInterest> get listenedTagInterests =>
+      _tagPreferences.listenedInterests;
+  Set<String> get manualInterestTagKeys =>
+      Set.unmodifiable(_tagPreferences.manualInterests);
   List<AsmrTag> get allTags {
     final tags = _tagPreferences.tags.values.toList();
     tags.sort((a, b) => a.name.compareTo(b.name));
@@ -117,6 +108,122 @@ class AsmrLibraryController extends ChangeNotifier
   bool get tagCatalogComplete => _tagPreferences.catalogComplete;
   bool get isLoadingTagCatalog => _tagCatalogTask != null;
   Object? get tagCatalogError => _tagCatalogError;
+  List<AsmrWork> _dailyRecommendations = const [];
+  String? _dailyRecommendationsDate;
+  AsmrContentLanguage? _dailyRecommendationsLanguage;
+  Future<void>? _dailyRecommendationsTask;
+  String? _dailyRequestedDate;
+  AsmrRequestCancellationToken? _dailyRecommendationsCancellation;
+  Object? _dailyRecommendationsError;
+  List<AsmrWork> get dailyRecommendations => _dailyRecommendations
+      .where(_isWorkAllowed)
+      .take(20)
+      .toList(growable: false);
+  String? get dailyRecommendationsDate => _dailyRecommendationsDate;
+  bool get isLoadingDailyRecommendations => _dailyRecommendationsTask != null;
+  Object? get dailyRecommendationsError => _dailyRecommendationsError;
+
+  Future<void> ensureDailyRecommendations({DateTime? now}) {
+    if (_disposed) return Future.value();
+    final local = now ?? DateTime.now();
+    final date =
+        '${local.year.toString().padLeft(4, '0')}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+    final pending = _dailyRecommendationsTask;
+    if (pending != null) {
+      if (_dailyRequestedDate == date) return pending;
+      _dailyRecommendationsCancellation?.cancel();
+    }
+    _dailyRequestedDate = date;
+    final epoch = _runtimeCacheEpoch;
+    final cancellation = AsmrRequestCancellationToken();
+    _dailyRecommendationsCancellation = cancellation;
+    late final Future<void> task;
+    task = (() async {
+      try {
+        await initializeForVisiblePage();
+        cancellation.throwIfCancelled();
+        final language = _contentLanguage;
+        if (_dailyRecommendationsLanguage == language &&
+            _dailyRecommendationsDate == date) {
+          return;
+        }
+        final cached = await _preferencesStore.loadDailyRecommendations(
+          language,
+        );
+        cancellation.throwIfCancelled();
+        if (_disposed ||
+            epoch != _runtimeCacheEpoch ||
+            language != _contentLanguage) {
+          return;
+        }
+        _dailyRecommendationsLanguage = language;
+        _dailyRecommendations = cached?.works ?? const [];
+        _dailyRecommendationsDate = cached?.date;
+        _dailyRecommendationsError = null;
+        notifyListeners();
+        if (cached?.date == date) return;
+        final works = await _remoteCatalogService.loadDailyRecommendations(
+          language: language,
+          daySeed: local.year * 10000 + local.month * 100 + local.day,
+          previousWorkKeys: _dailyRecommendations
+              .take(20)
+              .map((work) => work.workKey)
+              .toSet(),
+          cancellationToken: cancellation,
+        );
+        cancellation.throwIfCancelled();
+        await _runStateMutation(() async {
+          cancellation.throwIfCancelled();
+          if (_disposed ||
+              epoch != _runtimeCacheEpoch ||
+              language != _contentLanguage) {
+            return;
+          }
+          await _preferencesStore.saveDailyRecommendations(
+            language: language,
+            date: date,
+            works: works,
+          );
+          if (_disposed ||
+              cancellation.isCancelled ||
+              epoch != _runtimeCacheEpoch ||
+              language != _contentLanguage) {
+            return;
+          }
+          _dailyRecommendations = List.unmodifiable(works);
+          _dailyRecommendationsDate = date;
+        });
+      } on AsmrRequestCancelled {
+        // A restore or language change owns the new cache boundary.
+      } catch (error) {
+        if (!_disposed &&
+            !cancellation.isCancelled &&
+            epoch == _runtimeCacheEpoch) {
+          _dailyRecommendationsError = error;
+        }
+      } finally {
+        if (identical(_dailyRecommendationsTask, task)) {
+          _dailyRecommendationsTask = null;
+          _dailyRecommendationsCancellation = null;
+        }
+        if (!_disposed) notifyListeners();
+      }
+    })();
+    _dailyRecommendationsTask = task;
+    _dailyRecommendationsError = null;
+    notifyListeners();
+    return task;
+  }
+
+  void _invalidateDailyRecommendations() {
+    _dailyRecommendationsCancellation?.cancel();
+    _dailyRecommendationsTask = null;
+    _dailyRecommendations = const [];
+    _dailyRecommendationsDate = null;
+    _dailyRecommendationsLanguage = null;
+    _dailyRecommendationsError = null;
+  }
+
   bool _isWorkAllowed(AsmrWork work) =>
       !_tagPreferences.excludes(names: work.tags, ids: work.tagIds);
 
@@ -291,6 +398,7 @@ class AsmrLibraryController extends ChangeNotifier
   int _authEpoch = 0;
   int _contentEpoch = 0;
   int _runtimeCacheEpoch = 0;
+  int _resourceSourceEpoch = 0;
   bool _disposed = false;
   String get browseCacheScope =>
       '${_authSession?.userName.trim() ?? ''}:${_contentLanguage.name}';
@@ -301,9 +409,18 @@ class AsmrLibraryController extends ChangeNotifier
       _catalog.setSearchQuery(query, category);
 
   void clearRuntimeCaches() {
+    _invalidateDailyRecommendations();
     _runtimeCacheEpoch++;
     _contentEpoch++;
     _catalog.clearWorks();
+    _workContent.clearCaches(clearErrors: true);
+    _workContent.bumpAllTrackRevisions();
+    notifyListeners();
+  }
+
+  /// Refresh future resource selection without touching catalog pages or sessions.
+  void invalidateResourceSource() {
+    _resourceSourceEpoch++;
     _workContent.clearCaches(clearErrors: true);
     _workContent.bumpAllTrackRevisions();
     notifyListeners();
@@ -326,14 +443,14 @@ class AsmrLibraryController extends ChangeNotifier
 
   AsmrWorkRequestKey _workRequestKey(String workKey) => (
     workKey: workKey,
-    contentEpoch: _contentEpoch,
+    contentEpoch: _contentEpoch + _resourceSourceEpoch,
     authEpoch: _authEpoch,
     runtimeCacheEpoch: _runtimeCacheEpoch,
   );
 
   bool _isWorkRequestCurrent(AsmrWorkRequestKey key) =>
       !_disposed &&
-      key.contentEpoch == _contentEpoch &&
+      key.contentEpoch == _contentEpoch + _resourceSourceEpoch &&
       key.authEpoch == _authEpoch &&
       key.runtimeCacheEpoch == _runtimeCacheEpoch;
 
@@ -580,6 +697,7 @@ class AsmrLibraryController extends ChangeNotifier
 
   @override
   Future<void> reloadPersistedState() async {
+    _invalidateDailyRecommendations();
     _initialized = false;
     _tagInterestsReady = false;
     _tagInterestsTask = null;
@@ -826,6 +944,7 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   void _applyContentLanguage(AsmrContentLanguage language) {
+    _invalidateDailyRecommendations();
     _contentLanguage = language;
     _contentEpoch++;
     _catalog.invalidateForContentChange();
@@ -1169,6 +1288,7 @@ class AsmrLibraryController extends ChangeNotifier
   @override
   void dispose() {
     if (_disposed) return;
+    _dailyRecommendationsCancellation?.cancel();
     _disposed = true;
     _activeSyncCancellationToken?.cancel();
     _activeSyncCancellationToken = null;

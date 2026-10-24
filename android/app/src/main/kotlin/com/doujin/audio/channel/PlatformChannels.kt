@@ -6,6 +6,7 @@ internal object PlatformChannelNames {
     const val FILE_CACHE_SCAN_EVENTS = "doujin_audio/file_cache/scan_events"
     const val NATIVE_PLAYBACK = "doujin_audio/native_playback"
     const val NATIVE_PLAYBACK_EVENTS = "doujin_audio/native_playback/events"
+    const val NETWORK = "doujin_audio/network"
     const val POWER = "doujin_audio/power"
     const val SUBTITLE_OVERLAY = "doujin_audio/subtitle_overlay"
     const val UPDATE = "doujin_audio/update"

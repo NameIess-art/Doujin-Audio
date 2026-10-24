@@ -2,6 +2,7 @@
 #include "media_controls.h"
 #include "subtitle_window.h"
 #include "scheduled_tasks.h"
+#include "network_proxy.h"
 #include "../resource.h"
 #include <flutter/standard_method_codec.h>
 #include <flutter/method_result_functions.h>
@@ -94,6 +95,7 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
   subtitles_ = std::make_unique<SubtitleWindow>(GetModuleHandle(nullptr));
   media_ = std::make_unique<MediaControls>(window);
   scheduled_tasks_ = std::make_unique<ScheduledTasks>(window);
+  network_proxy_ = std::make_unique<NetworkProxy>(window, messenger);
   desktop_ = std::make_unique<Channel>(messenger,"doujin_audio/windows_desktop",&flutter::StandardMethodCodec::GetInstance());
   desktop_->SetMethodCallHandler([this](const auto& call, auto result) {
     try {
@@ -432,6 +434,7 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
   if (message == WM_DWMCOLORIZATIONCOLORCHANGED) { UpdateTheme(); return 0; }
   if (message == WM_SETTINGCHANGE && theme_mode_ == "system") UpdateTheme();
   if (message == ScheduledTasks::kReply) { scheduled_tasks_->Reply(); return 0; }
+  if (message == NetworkProxy::kReply) { network_proxy_->Reply(); return 0; }
   if (message == kFolderOpenReply) { ReplyFolderOpens(); return 0; }
   if (auto action = media_->HandleMessage(message, wp)) {
     if (*action == "showWindow") Show();

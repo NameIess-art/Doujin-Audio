@@ -9,7 +9,242 @@ void registerAsmrControllerStateTests({
   setUp(() => preferences = preferencesStore());
 
   test(
-    'interest provider initializes and publishes first local interests',
+    'daily discovery failed save is retryable and language/day races cannot overwrite cache',
+    () async {
+      await resetPrefs();
+      final repository = persistenceRepository();
+      final store = _DailyFailingPreferencesStore(repository: repository);
+      var gate = Completer<void>()..complete();
+      var started = Completer<void>();
+      final api = _FakeAsmrApiService(
+        recommendationWorks: List.generate(
+          60,
+          (i) => _work(id: 4000 + i, title: 'Daily $i'),
+        ),
+        beforeFetchWorkResponse: (_) {
+          if (!started.isCompleted) started.complete();
+          return gate.future;
+        },
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: store,
+        persistenceRepository: repository,
+        apiService: api,
+      );
+      final day = DateTime(2026, 10, 24);
+      await controller.ensureDailyRecommendations(now: day);
+      expect(controller.dailyRecommendationsError, isNotNull);
+      expect(controller.dailyRecommendationsDate, isNull);
+      expect(
+        await store.loadDailyRecommendations(AsmrContentLanguage.zh),
+        isNull,
+      );
+      store.failDailySave = false;
+      await controller.ensureDailyRecommendations(now: day);
+      expect(controller.dailyRecommendationsDate, '2026-10-24');
+      gate = Completer<void>();
+      started = Completer<void>();
+      final old = controller.ensureDailyRecommendations(
+        now: DateTime(2026, 10, 25),
+      );
+      await started.future;
+      final rollover = controller.ensureDailyRecommendations(
+        now: DateTime(2026, 10, 26),
+      );
+      await controller.setContentLanguage(AsmrContentLanguage.ja);
+      final japanese = controller.ensureDailyRecommendations(
+        now: DateTime(2026, 10, 26),
+      );
+      gate.complete();
+      await Future.wait([old, rollover, japanese]);
+      expect(controller.dailyRecommendationsDate, '2026-10-26');
+      expect(
+        (await store.loadDailyRecommendations(AsmrContentLanguage.zh))!.date,
+        '2026-10-24',
+      );
+      expect(
+        (await store.loadDailyRecommendations(AsmrContentLanguage.ja))!.date,
+        '2026-10-26',
+      );
+    },
+  );
+
+  test(
+    'daily discovery persists a stable twenty, rolls over, and refills exclusions',
+    () async {
+      await resetPrefs();
+      final state = AsmrTagPreferences();
+      state.resolve('blocked');
+      await preferences.saveTagPreferences(state);
+      final api = _FakeAsmrApiService(
+        recommendationWorks: List.generate(
+          80,
+          (i) => _work(
+            id: 1000 + i,
+            title: 'Daily $i',
+            tags: [i.isEven ? 'blocked' : 'other'],
+          ),
+        ),
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      final day = DateTime(2026, 10, 24);
+      final pending = controller.ensureDailyRecommendations(now: day);
+      expect(controller.ensureDailyRecommendations(now: day), same(pending));
+      await pending;
+      expect(controller.dailyRecommendations, hasLength(20));
+      final first = controller.dailyRecommendations
+          .map((w) => w.workKey)
+          .toList();
+      final requests = api.fetchWorkRequests.length;
+      expect(
+        api.fetchWorkOrders.toSet(),
+        containsAll([
+          'create_date:desc',
+          'dl_count:desc',
+          'rate_average_2dp:desc',
+          'release:desc',
+        ]),
+      );
+      await controller.ensureDailyRecommendations(now: day);
+      expect(api.fetchWorkRequests.length, requests);
+      final restored = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      await restored.ensureDailyRecommendations(now: day);
+      expect(restored.dailyRecommendations.map((w) => w.workKey), first);
+      expect(api.fetchWorkRequests.length, requests);
+      await restored.setTagExcluded('local:blocked', true);
+      expect(restored.dailyRecommendations, hasLength(20));
+      expect(
+        restored.dailyRecommendations.every((w) => !w.tags.contains('blocked')),
+        isTrue,
+      );
+      expect(api.fetchWorkRequests.length, requests);
+      await controller.ensureDailyRecommendations(now: DateTime(2026, 10, 25));
+      expect(controller.dailyRecommendationsDate, '2026-10-25');
+      expect(
+        controller.dailyRecommendations.map((w) => w.workKey),
+        isNot(first),
+      );
+      expect(api.fetchWorkRequests.length, greaterThan(requests));
+    },
+  );
+
+  test(
+    'daily discovery offline keeps last picks and can retry without saving a fresh date',
+    () async {
+      await resetPrefs();
+      final yesterday = List.generate(
+        20,
+        (i) => _work(id: 2000 + i, title: 'Yesterday $i'),
+      );
+      await preferences.saveDailyRecommendations(
+        language: AsmrContentLanguage.zh,
+        date: '2026-10-23',
+        works: yesterday,
+      );
+      final api = _FakeAsmrApiService(
+        failingFetchOrders: {
+          'create_date',
+          'dl_count',
+          'rate_average_2dp',
+          'release',
+        },
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      await controller.ensureDailyRecommendations(now: DateTime(2026, 10, 24));
+      expect(controller.dailyRecommendations, hasLength(20));
+      expect(controller.dailyRecommendationsDate, '2026-10-23');
+      expect(controller.dailyRecommendationsError, isNotNull);
+      expect(controller.isLoadingDailyRecommendations, isFalse);
+      expect(
+        (await preferences.loadDailyRecommendations(
+          AsmrContentLanguage.zh,
+        ))!.date,
+        '2026-10-23',
+      );
+      api.failingFetchOrders.clear();
+      await controller.ensureDailyRecommendations(now: DateTime(2026, 10, 24));
+      expect(controller.dailyRecommendationsDate, '2026-10-24');
+      expect(controller.dailyRecommendationsError, isNull);
+    },
+  );
+
+  test(
+    'daily discovery late requests obey current exclusions and restore boundaries',
+    () async {
+      await resetPrefs();
+      final state = AsmrTagPreferences();
+      state.resolve('blocked');
+      await preferences.saveTagPreferences(state);
+      var gate = Completer<void>();
+      var started = Completer<void>();
+      final api = _FakeAsmrApiService(
+        recommendationWorks: List.generate(
+          60,
+          (i) => _work(
+            id: 3000 + i,
+            title: 'Race $i',
+            tags: [i.isEven ? 'blocked' : 'other'],
+          ),
+        ),
+        beforeFetchWorkResponse: (_) {
+          if (!started.isCompleted) started.complete();
+          return gate.future;
+        },
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      final first = controller.ensureDailyRecommendations(
+        now: DateTime(2026, 10, 24),
+      );
+      await started.future;
+      await controller.setTagExcluded('local:blocked', true);
+      gate.complete();
+      await first;
+      expect(controller.dailyRecommendations, hasLength(20));
+      expect(
+        controller.dailyRecommendations.every(
+          (w) => !w.tags.contains('blocked'),
+        ),
+        isTrue,
+      );
+      gate = Completer<void>();
+      started = Completer<void>();
+      final late = controller.ensureDailyRecommendations(
+        now: DateTime(2026, 10, 25),
+      );
+      await started.future;
+      await controller.reloadPersistedState();
+      gate.complete();
+      await late;
+      expect(controller.dailyRecommendations, isEmpty);
+      expect(
+        (await preferences.loadDailyRecommendations(
+          AsmrContentLanguage.zh,
+        ))!.date,
+        '2026-10-24',
+      );
+      await controller.ensureDailyRecommendations(now: DateTime(2026, 10, 24));
+      expect(controller.dailyRecommendations, hasLength(20));
+    },
+  );
+
+  test(
+    'interest provider loads known tags without inventing listening or selections',
     () async {
       await resetPrefs();
       final repository = _InterestTracksRepository(
@@ -24,7 +259,7 @@ void registerAsmrControllerStateTests({
       );
       final ready = Completer<void>();
       controller.addListener(() {
-        if (controller.interestTags.isNotEmpty && !ready.isCompleted) {
+        if (controller.allTags.isNotEmpty && !ready.isCompleted) {
           ready.complete();
         }
       });
@@ -37,9 +272,7 @@ void registerAsmrControllerStateTests({
       final published = Completer<List<AsmrTagInterest>>();
       container.listen(asmrTagInterestsProvider, (_, next) {
         final interests = next.asData?.value;
-        if (interests != null &&
-            interests.isNotEmpty &&
-            !published.isCompleted) {
+        if (interests != null && !published.isCompleted) {
           published.complete(interests);
         }
       }, fireImmediately: true);
@@ -48,10 +281,9 @@ void registerAsmrControllerStateTests({
       final interests = await published.future.timeout(
         const Duration(seconds: 5),
       );
-      expect(
-        interests.map((interest) => interest.tag.key),
-        contains('local:sleep'),
-      );
+      expect(interests, isEmpty);
+      expect(controller.manualInterestTagKeys, isEmpty);
+      expect(controller.allTags.map((tag) => tag.key), contains('local:sleep'));
       expect(repository.reads, 1);
     },
   );
@@ -84,7 +316,7 @@ void registerAsmrControllerStateTests({
         _track(groupTitle: 'Old', tags: ['old']),
       ]);
       await Future<void>.delayed(Duration.zero);
-      expect((await preferences.loadTagPreferences()).seeded, isFalse);
+      expect((await preferences.loadTagPreferences()).tags, isEmpty);
     },
   );
 
@@ -103,7 +335,7 @@ void registerAsmrControllerStateTests({
       await controller.initializeForVisiblePage();
       await controller.ensureCategoryLoaded(AsmrCategoryType.release);
       expect(repository.reads, 0);
-      expect((await preferences.loadTagPreferences()).seeded, isFalse);
+      expect((await preferences.loadTagPreferences()).tags, isEmpty);
     },
   );
 
@@ -125,16 +357,13 @@ void registerAsmrControllerStateTests({
       );
       await controller.ensureCategoryLoaded(AsmrCategoryType.recommendation);
       expect(repository.reads, 1);
-      expect((await preferences.loadTagPreferences()).seeded, isFalse);
+      expect((await preferences.loadTagPreferences()).tags, isEmpty);
       fail = false;
       await controller.reloadPersistedState();
       await controller.ensureCategoryLoaded(AsmrCategoryType.recommendation);
       expect(repository.reads, 2);
-      expect((await preferences.loadTagPreferences()).seeded, isTrue);
-      expect(
-        controller.interestTags.map((interest) => interest.tag.key),
-        contains('local:sleep'),
-      );
+      expect((await preferences.loadTagPreferences()).tags, isNotEmpty);
+      expect(controller.allTags.map((tag) => tag.key), contains('local:sleep'));
       await controller.ensureTagInterests();
       expect(repository.reads, 2);
     },
@@ -157,17 +386,14 @@ void registerAsmrControllerStateTests({
         apiService: _FakeAsmrApiService(),
       );
       await expectLater(controller.ensureTagInterests(), throwsStateError);
-      expect((await preferences.loadTagPreferences()).seeded, isFalse);
+      expect((await preferences.loadTagPreferences()).tags, isEmpty);
       fail = false;
       await Future.wait([
         controller.ensureTagInterests(),
         controller.ensureTagInterests(),
       ]);
       expect(repository.reads, 2);
-      expect(
-        controller.interestTags.map((interest) => interest.tag.key),
-        contains('local:sleep'),
-      );
+      expect(controller.allTags.map((tag) => tag.key), contains('local:sleep'));
     },
   );
 
@@ -214,7 +440,6 @@ void registerAsmrControllerStateTests({
       await resetPrefs();
       final state = AsmrTagPreferences();
       state.resolve('sleep');
-      state.seeded = true;
       await preferences.saveTagPreferences(state);
       final api = _FakeAsmrApiService(
         recommendationWorks: [
@@ -245,7 +470,6 @@ void registerAsmrControllerStateTests({
       final state = AsmrTagPreferences();
       final first = state.resolve('first');
       final second = state.resolve('second');
-      state.seeded = true;
       await preferences.saveTagPreferences(state);
       final controller = createTestAsmrController(
         preferencesStore: preferences,
@@ -263,7 +487,7 @@ void registerAsmrControllerStateTests({
       expect(controller.interestTags, isEmpty);
       expect(controller.excludedTagKeys, isEmpty);
       final failed = await preferences.loadTagPreferences();
-      expect(failed.weights, isEmpty);
+      expect(failed.manualInterests, isEmpty);
       expect(failed.excluded, isEmpty);
       await controller.applyTagSelections(
         excluded: excluded,
@@ -282,9 +506,8 @@ void registerAsmrControllerStateTests({
     () async {
       await resetPrefs();
       final state = AsmrTagPreferences();
-      state.weights[state.resolve('first')] = .5;
+      state.resolve('first');
       state.resolve('second');
-      state.seeded = true;
       await preferences.saveTagPreferences(state);
       final api = _FakeAsmrApiService(
         recommendationWorks: [
@@ -2749,6 +2972,24 @@ class _BrowseChangingApi extends AsmrApiService {
       currentPage: page,
       pageSize: 2,
       totalCount: total,
+    );
+  }
+}
+
+class _DailyFailingPreferencesStore extends AsmrPreferencesStore {
+  _DailyFailingPreferencesStore({required super.repository});
+  bool failDailySave = true;
+  @override
+  Future<void> saveDailyRecommendations({
+    required AsmrContentLanguage language,
+    required String date,
+    required List<AsmrWork> works,
+  }) {
+    if (failDailySave) throw StateError('save failed');
+    return super.saveDailyRecommendations(
+      language: language,
+      date: date,
+      works: works,
     );
   }
 }

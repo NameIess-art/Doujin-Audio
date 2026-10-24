@@ -9,6 +9,75 @@ import '../../../core/media/music_track.dart';
 class AsmrRecommendationEngine {
   const AsmrRecommendationEngine();
 
+  /// Broad daily discovery, independent of listening or manual preferences.
+  List<AsmrWork> rankDaily({
+    required List<AsmrWork> candidates,
+    required int daySeed,
+    Set<String> previousWorkKeys = const <String>{},
+    int limit = 20,
+  }) {
+    if (limit <= 0 || candidates.isEmpty) return const <AsmrWork>[];
+    final unique = <String, AsmrWork>{};
+    for (final work in candidates) {
+      final existing = unique[work.workKey];
+      if (existing == null || _qualityScore(work) > _qualityScore(existing)) {
+        unique[work.workKey] = work;
+      }
+    }
+    final remaining =
+        <({AsmrWork work, double base, Map<String, double> terms})>[];
+    for (final work in unique.values) {
+      final terms = <String, double>{};
+      void addTerms(String kind, Iterable<String> values, double weight) {
+        final names = values
+            .map(_normalizeTerm)
+            .where((s) => s.isNotEmpty)
+            .toSet();
+        for (final name in names) {
+          terms['$kind:$name'] = weight / names.length;
+        }
+      }
+
+      addTerms('tag', work.tags, 0.8);
+      addTerms('voice', work.voiceActors, 0.4);
+      addTerms('circle', [work.circleName], 0.4);
+      remaining.add((
+        work: work,
+        base:
+            _seededUnit(daySeed, work.workKey) * 0.65 +
+            _qualityScore(work) * 0.35 -
+            (previousWorkKeys.contains(work.workKey) ? 3 : 0),
+        terms: terms,
+      ));
+    }
+    final result = <AsmrWork>[];
+    final coverage = <String, int>{};
+    while (remaining.isNotEmpty && result.length < limit) {
+      var best = 0;
+      var bestScore = double.negativeInfinity;
+      for (var index = 0; index < remaining.length; index++) {
+        final candidate = remaining[index];
+        var score = candidate.base;
+        for (final term in candidate.terms.entries) {
+          score += term.value / (1 + (coverage[term.key] ?? 0));
+        }
+        if (score > bestScore ||
+            (score == bestScore &&
+                candidate.work.workKey.compareTo(remaining[best].work.workKey) <
+                    0)) {
+          best = index;
+          bestScore = score;
+        }
+      }
+      final selected = remaining.removeAt(best);
+      result.add(selected.work);
+      for (final term in selected.terms.keys) {
+        coverage.update(term, (count) => count + 1, ifAbsent: () => 1);
+      }
+    }
+    return result;
+  }
+
   Future<List<AsmrWork>> rankAsync({
     required List<AsmrWork> candidates,
     required List<MusicTrack> localTracks,
@@ -66,16 +135,6 @@ class AsmrRecommendationEngine {
       explorationWorkIds: explorationWorkIds,
     );
   }
-
-  Map<String, double> initialTagWeights({
-    required List<MusicTrack> localTracks,
-    required List<AsmrWork> favoriteWorks,
-    required List<AsmrWork> historyWorks,
-  }) => _RecommendationProfile.build(
-    localTracks: localTracks,
-    favoriteWorks: favoriteWorks,
-    historyWorks: historyWorks,
-  ).tagWeights;
 
   double _score(
     AsmrWork work,

@@ -6,6 +6,114 @@ import 'package:doujin_audio/features/asmr/application/asmr_recommendation_engin
 void main() {
   const engine = AsmrRecommendationEngine();
 
+  test('daily discovery deduplicates, keeps quality and defaults to twenty', () {
+    final better = work(id: 1, title: 'Better duplicate', rating: 5);
+    final ranked = engine.rankDaily(
+      candidates: [
+        work(id: 1, title: 'Duplicate'),
+        better,
+        for (var id = 2; id <= 30; id++) work(id: id, title: 'Work $id'),
+      ],
+      daySeed: 20261024,
+    );
+    expect(ranked, hasLength(20));
+    expect(ranked.map((item) => item.workKey).toSet(), hasLength(20));
+    final reserve = engine.rankDaily(
+      candidates: [
+        for (var id = 1; id <= 100; id++) work(id: id, title: 'Work $id'),
+      ],
+      daySeed: 20261024,
+      limit: 80,
+    );
+    expect(reserve, hasLength(80));
+    expect(reserve.map((item) => item.workKey).toSet(), hasLength(80));
+    final duplicateOnly = engine.rankDaily(
+      candidates: [
+        work(id: 1, title: 'Duplicate'),
+        better,
+      ],
+      daySeed: 1,
+    );
+    expect(duplicateOnly.single, same(better));
+    expect(
+      engine.rankDaily(candidates: [better], daySeed: 1, limit: 0),
+      isEmpty,
+    );
+    expect(engine.rankDaily(candidates: [], daySeed: 1), isEmpty);
+  });
+
+  test('daily discovery is stable regardless of candidate ordering', () {
+    final candidates = [
+      for (var id = 1; id <= 100; id++)
+        work(id: id, title: 'Work $id', tags: ['Tag ${id % 10}']),
+    ];
+    List<String> keys(List<AsmrWork> works, int seed) => engine
+        .rankDaily(candidates: works, daySeed: seed)
+        .map((item) => item.workKey)
+        .toList();
+    expect(
+      keys(candidates, 20261024),
+      keys(candidates.reversed.toList(), 20261024),
+    );
+    expect(
+      keys(candidates, 20261024).toSet(),
+      isNot(keys(candidates, 20261025).toSet()),
+    );
+  });
+
+  test(
+    'daily discovery avoids yesterday and fills when candidates are few',
+    () {
+      final candidates = [
+        for (var id = 1; id <= 30; id++) work(id: id, title: 'Work $id'),
+      ];
+      final previous = candidates.take(10).map((item) => item.workKey).toSet();
+      final ranked = engine.rankDaily(
+        candidates: candidates,
+        daySeed: 20261024,
+        previousWorkKeys: previous,
+      );
+      expect(ranked.every((item) => !previous.contains(item.workKey)), isTrue);
+      final small = engine.rankDaily(
+        candidates: candidates.take(12).toList(),
+        daySeed: 20261024,
+        previousWorkKeys: previous,
+      );
+      expect(small, hasLength(12));
+      expect(
+        small.take(2).every((item) => !previous.contains(item.workKey)),
+        isTrue,
+      );
+    },
+  );
+
+  for (final dimension in ['tag', 'voice', 'circle']) {
+    test(
+      'daily discovery spreads across $dimension instead of one large group',
+      () {
+        final candidates = [
+          for (var id = 1; id <= 45; id++)
+            work(
+              id: id,
+              title: 'Work $id',
+              tags: dimension == 'tag' ? ['Tag ${id <= 40 ? 0 : id}'] : [],
+              voiceActors: dimension == 'voice'
+                  ? ['Voice ${id <= 40 ? 0 : id}']
+                  : [],
+              circleName: dimension == 'circle'
+                  ? 'Circle ${id <= 40 ? 0 : id}'
+                  : '',
+            ),
+        ];
+        final ranked = engine.rankDaily(
+          candidates: candidates,
+          daySeed: 20261024,
+        );
+        expect(ranked.where((item) => item.id > 40), hasLength(5));
+      },
+    );
+  }
+
   test('uses source weights as local library, favorites, then history', () {
     final ranked = engine.rank(
       candidates: <AsmrWork>[

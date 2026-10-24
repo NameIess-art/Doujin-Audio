@@ -698,6 +698,13 @@ void main() {
           onBytes: sizes.add,
         );
         final command = commands.first;
+        final proxy = Uri.parse(command[command.indexOf('-http_proxy') + 1]);
+        expect(proxy.scheme, 'http');
+        expect(proxy.host, InternetAddress.loopbackIPv4.address);
+        expect(proxy.port, greaterThan(0));
+        expect(proxy.userInfo, isEmpty);
+        expect(command.indexOf('-http_proxy'), lessThan(command.indexOf('-i')));
+        expect(commands.last, isNot(contains('-http_proxy')));
         expect(command[command.indexOf('-ss') + 1], '1.500');
         expect(command[command.indexOf('-t') + 1], '2.000');
         expect(

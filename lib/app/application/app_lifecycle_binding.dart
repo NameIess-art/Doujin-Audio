@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../core/network/app_network.dart';
 
 import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/library/application/cover_image_cache_policy.dart';
@@ -201,6 +202,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     await attempt(_timer.dispose);
     await attempt(_notifications.dispose);
     await attempt(_settings.dispose);
+    await attempt(AppNetwork.instance.close);
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStackTrace!);
     }

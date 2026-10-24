@@ -757,11 +757,40 @@ class _CoveringPageTransition extends StatefulWidget {
       _CoveringPageTransitionState();
 }
 
+// Record headers in the preparation frame even at zero opacity, so their first
+// visible fade tick does not introduce the glass and control paint work.
+class _PreparedHeaderFadeTransition extends FadeTransition {
+  const _PreparedHeaderFadeTransition({
+    required super.opacity,
+    required super.child,
+  });
+
+  @override
+  RenderAnimatedOpacity createRenderObject(BuildContext context) =>
+      _RenderPreparedHeaderOpacity(opacity: opacity);
+}
+
+class _RenderPreparedHeaderOpacity extends RenderAnimatedOpacity {
+  _RenderPreparedHeaderOpacity({required super.opacity});
+
+  @override
+  bool get isRepaintBoundary => child != null;
+
+  @override
+  bool paintsChild(RenderObject child) => true;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (child != null) context.paintChild(child!, offset);
+  }
+}
+
 class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
   CurvedAnimation? _motion;
   late final ValueNotifier<Widget> _pageChild;
   final _headerViewport = GlobalKey();
   late Animation<Offset> _position;
+  late Animation<double> _opacity;
   late Listenable _headerAnimation;
   Animation<double>? _routeSecondaryAnimation;
   late bool _interactive;
@@ -796,6 +825,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     _position = _motion!.drive(
       Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero),
     );
+    _opacity = widget.animation.drive(CurveTween(curve: kAppFadeCurve));
     _updateHeaderAnimation();
   }
 
@@ -855,7 +885,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     super.didChangeDependencies();
     // MaterialPageRoute replaces the original secondary animation with a
     // dismissed proxy when it delegates transitions to the incoming route.
-    // Read the route's real animation so its header still moves when covered.
+    // Read the route's real animation so its header still fades when covered.
     final previousSecondary = _secondaryAnimation;
     final secondaryAnimation = ModalRoute.of(context)?.secondaryAnimation;
     _routeSecondaryAnimation = secondaryAnimation;
@@ -910,15 +940,21 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
         animation: _headerAnimation,
         child: RepaintBoundary(child: header),
         builder: (context, header) {
-          final outgoing = Curves.easeOutCubic.transform(
-            _secondaryAnimation.value,
+          final outgoing = kAppFadeCurve.transform(_secondaryAnimation.value);
+          final fadedHeader = _PreparedHeaderFadeTransition(
+            opacity: animatePage
+                ? _opacity
+                : const AlwaysStoppedAnimation<double>(1),
+            child: Opacity(opacity: 1 - outgoing, child: header),
           );
-          final incoming = widget.separateHeader && animatePage && widget.slide
-              ? _position.value.dx
-              : 0.0;
+          if (widget.separateHeader || !animatePage || !widget.slide) {
+            return fadedHeader;
+          }
+          // Unseparated pages slide as a whole; keep their header in place
+          // while its own opacity follows the route instead of the body.
           return Transform.translate(
-            offset: Offset(constraints.maxWidth * (incoming - outgoing), 0),
-            child: header,
+            offset: Offset(-constraints.maxWidth * _position.value.dx, 0),
+            child: fadedHeader,
           );
         },
       ),
@@ -929,14 +965,17 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
     );
     if (!animatePage || widget.separateHeader) return page;
     return widget.slide
-        ? SlideTransition(position: _position, child: RepaintBoundary(child: page))
+        ? SlideTransition(
+            position: _position,
+            child: RepaintBoundary(child: page),
+          )
         : page;
   }
 
   @override
   Widget build(BuildContext context) {
     // Route builders run on every tick. Reuse the region tree and animations;
-    // only its transform render objects need to observe animation values.
+    // only its transform/opacity render objects need animation updates.
     return _transition ??= _buildTransition();
   }
 }
@@ -1617,6 +1656,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _progress;
+  late Animation<double> _headerProgress;
+  late Animation<double> _reverseProgress;
   late final List<Animation<Offset>> _incomingPositions;
   late final List<Animation<Offset>> _outgoingPositions;
   late int _currentIndex;
@@ -1648,6 +1689,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     )..addStatusListener(_handleStatusChanged);
     _controller.value = 1;
     _progress = _controller.drive(CurveTween(curve: Curves.decelerate));
+    _headerProgress = _controller.drive(CurveTween(curve: kAppFadeCurve));
+    _reverseProgress = ReverseAnimation(_headerProgress);
     _incomingPositions = [
       for (final direction in [-1.0, 1.0])
         _progress.drive(Tween(begin: Offset(direction, 0), end: Offset.zero)),
@@ -1794,6 +1837,30 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       // Invert decelerate so its position survives the direction change.
       final progress = Curves.decelerate.transform(_controller.value);
       final nextValue = 1 - math.sqrt(progress);
+      final fadeAnchor = 1 - _headerProgress.value;
+      // Header fade and body slide use different curves. Preserve the visible
+      // header's opacity when its incoming role becomes outgoing.
+      _headerProgress = _controller.drive(
+        nextValue > 0 && nextValue < 1
+            ? TweenSequence<double>([
+                TweenSequenceItem(
+                  tween: Tween(
+                    begin: 0.0,
+                    end: fadeAnchor,
+                  ).chain(CurveTween(curve: kAppFadeCurve)),
+                  weight: nextValue,
+                ),
+                TweenSequenceItem(
+                  tween: Tween(
+                    begin: fadeAnchor,
+                    end: 1.0,
+                  ).chain(CurveTween(curve: kAppFadeCurve)),
+                  weight: 1 - nextValue,
+                ),
+              ])
+            : CurveTween(curve: kAppFadeCurve),
+      );
+      _reverseProgress = ReverseAnimation(_headerProgress);
       setState(() {
         _currentIndex = _targetIndex;
         _targetIndex = nextIndex;
@@ -1814,6 +1881,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       return;
     }
 
+    _headerProgress = _controller.drive(CurveTween(curve: kAppFadeCurve));
+    _reverseProgress = ReverseAnimation(_headerProgress);
     setState(() {
       _targetIndex = nextIndex;
       _transitionDirection = _targetIndex > _currentIndex ? 1 : -1;
@@ -1897,7 +1966,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     required int index,
     required bool outgoing,
     required bool incoming,
-    required double width,
   }) {
     final preparing = index == _pendingIndex;
     final visible =
@@ -1934,6 +2002,13 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         ? const AlwaysStoppedAnimation<double>(0)
         : outgoing || incoming
         ? _controller
+        : const AlwaysStoppedAnimation<double>(1);
+    final opacity = preparing
+        ? const AlwaysStoppedAnimation<double>(0)
+        : outgoing
+        ? _reverseProgress
+        : incoming
+        ? _headerProgress
         : const AlwaysStoppedAnimation<double>(1);
     final directionIndex = _transitionDirection < 0 ? 0 : 1;
     final Animation<Offset> position;
@@ -1972,7 +2047,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           outgoing,
           incoming,
           preparing,
-          width,
+          opacity,
           outgoing || incoming || preparing ? _transitionDirection : 0,
           parentMotion?.configuration,
         ),
@@ -1989,15 +2064,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           return parentMotion?.contentBuilder(context, animated) ?? animated;
         },
         headerBuilder: (context, header) {
-          final animated = AnimatedBuilder(
-            animation: position,
+          final faded = _PreparedHeaderFadeTransition(
+            opacity: opacity,
             child: header,
-            builder: (context, child) => Transform.translate(
-              offset: Offset(width * position.value.dx, 0),
-              child: child,
-            ),
           );
-          return parentMotion?.headerBuilder(context, animated) ?? animated;
+          return parentMotion?.headerBuilder(context, faded) ?? faded;
         },
         child: RepaintBoundary(key: _pageKeys[index], child: page),
       ),
@@ -2021,29 +2092,22 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           _pendingIndex != _currentIndex)
         _pendingIndex!,
     ];
-    Widget buildPages(double width) => Stack(
-      fit: StackFit.expand,
-      children: paintOrder
-          .map(
-            (index) => _animatedPage(
-              index: index,
-              outgoing: _isAnimating && index == _currentIndex,
-              incoming: _isAnimating && index == _targetIndex,
-              width: width,
-            ),
-          )
-          .toList(growable: false),
-    );
     final pages = IgnorePointer(
       ignoring: _isAnimating || _pendingIndex != null,
       child: ClipRect(
         key: _headerViewport,
-        child: widget.separateHeader
-            ? LayoutBuilder(
-                builder: (context, constraints) =>
-                    buildPages(constraints.maxWidth),
+        child: Stack(
+          fit: StackFit.expand,
+          children: paintOrder
+              .map(
+                (index) => _animatedPage(
+                  index: index,
+                  outgoing: _isAnimating && index == _currentIndex,
+                  incoming: _isAnimating && index == _targetIndex,
+                ),
               )
-            : buildPages(0),
+              .toList(growable: false),
+        ),
       ),
     );
     return context

@@ -1,6 +1,7 @@
 import '../domain/asmr_tag_interest.dart';
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import '../domain/asmr_models.dart';
 import '../../../core/media/music_track.dart';
@@ -11,6 +12,14 @@ import 'japanese_asmr_api_service.dart';
 import '../domain/asmr_persistence_repository.dart';
 
 part 'asmr_catalog_merge.dart';
+
+List<AsmrWork> _rankDailyDiscovery((List<AsmrWork>, int, Set<String>) input) =>
+    const AsmrRecommendationEngine().rankDaily(
+      candidates: input.$1,
+      daySeed: input.$2,
+      previousWorkKeys: input.$3,
+      limit: 80,
+    );
 
 class AsmrRemoteCatalogService {
   AsmrRemoteCatalogService({
@@ -51,12 +60,59 @@ class AsmrRemoteCatalogService {
   final AsmrPersistenceRepository _persistenceRepository;
   final AsmrRecommendationEngine _recommendationEngine;
 
+  AsmrCatalogSource Function() preferredSource = () =>
+      AsmrCatalogSource.asmrOne;
+
   bool Function(AsmrWork) isWorkAllowed = (_) => true;
   Map<String, double>? Function() tagWeights = () => null;
   Future<void> Function(List<MusicTrack>)? prepareTagInterests;
   Future<List<AsmrTag>> loadTagCatalog() => _apiService.fetchTagCatalog();
   Future<List<MusicTrack>> loadLocalTracksForInterests() =>
       _persistenceRepository.loadTracksForRecommendations();
+
+  Future<List<AsmrWork>> loadDailyRecommendations({
+    required AsmrContentLanguage language,
+    required int daySeed,
+    required Set<String> previousWorkKeys,
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    final results = await Future.wait(
+      _recommendationSources.map(
+        (category) => _loadRecommendationPagesSafely(
+          category,
+          searchQuery: '',
+          language: language,
+          token: null,
+          refreshSeed: daySeed,
+          cancellationToken: cancellationToken,
+        ),
+      ),
+    );
+    cancellationToken?.throwIfCancelled();
+    final candidates = <String, AsmrWork>{};
+    Object? error;
+    for (final result in results) {
+      error ??= result.error;
+      for (final page in result.pages) {
+        for (final work in page.works) {
+          candidates.update(
+            work.workKey,
+            (old) => old.mergedWith(work),
+            ifAbsent: () => work,
+          );
+        }
+      }
+    }
+    if (candidates.isEmpty && error != null) throw error;
+    // Keep reserves in the daily cache so exclusions can refill the visible 20.
+    final ranking = await compute(_rankDailyDiscovery, (
+      candidates.values.where(isWorkAllowed).toList(growable: false),
+      daySeed,
+      previousWorkKeys,
+    ));
+    cancellationToken?.throwIfCancelled();
+    return ranking;
+  }
 
   Future<AsmrWorkPage> loadPage(
     AsmrCategoryType category, {
@@ -234,35 +290,39 @@ class AsmrRemoteCatalogService {
     required String? token,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
-    final one = work.resourceFor(AsmrCatalogSource.asmrOne);
     Object? firstError;
-    if (one != null) {
+    final preferred = preferredSource();
+    final sources = <AsmrCatalogSource>[
+      preferred,
+      ...AsmrCatalogSource.values.where((source) => source != preferred),
+    ];
+    for (final source in sources) {
+      cancellationToken?.throwIfCancelled();
       try {
-        final tree = await _apiService.fetchTrackTree(
-          one.id,
-          token: token,
-          cancellationToken: cancellationToken,
-        );
-        cancellationToken?.throwIfCancelled();
-        if (tree.any((node) => node.hasBrowsableContent)) {
-          if (_japaneseApiService != null && work.workCode.isNotEmpty) {
+        List<AsmrTrackFile> tree;
+        if (source == AsmrCatalogSource.asmrOne) {
+          final one = work.resourceFor(source);
+          if (one == null) continue;
+          tree = await _apiService.fetchTrackTree(
+            one.id,
+            token: token,
+            cancellationToken: cancellationToken,
+          );
+          cancellationToken?.throwIfCancelled();
+          if (tree.any((node) => node.hasBrowsableContent) &&
+              _japaneseApiService != null &&
+              work.workCode.isNotEmpty) {
             await _verifyOneMedia(tree, cancellationToken);
           }
-          return tree;
+        } else {
+          final japanese = _japaneseApiService;
+          if (japanese == null || work.workCode.isEmpty) continue;
+          tree = await japanese.fetchTrackTree(
+            work,
+            cancellationToken: cancellationToken,
+          );
         }
-      } on AsmrRequestCancelled {
-        rethrow;
-      } catch (error) {
-        firstError = error;
-      }
-    }
-    final japanese = _japaneseApiService;
-    if (japanese != null && work.workCode.isNotEmpty) {
-      try {
-        final tree = await japanese.fetchTrackTree(
-          work,
-          cancellationToken: cancellationToken,
-        );
+        cancellationToken?.throwIfCancelled();
         if (tree.any((node) => node.hasBrowsableContent)) return tree;
       } on AsmrRequestCancelled {
         rethrow;

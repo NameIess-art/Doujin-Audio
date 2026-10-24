@@ -33,6 +33,15 @@ class AsmrApiService {
 
   bool get isClosed => _closed;
 
+  void setPreferredDomain(String domain) {
+    if (!asmrApiDomains.contains(domain)) {
+      throw ArgumentError.value(domain, 'domain');
+    }
+    _candidateDomains.remove(domain);
+    _candidateDomains.insert(0, domain);
+    _currentDomainIndex = 0;
+  }
+
   void close({bool force = true}) {
     if (_closed) return;
     _closed = true;

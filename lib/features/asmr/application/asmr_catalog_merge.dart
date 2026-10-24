@@ -110,7 +110,7 @@ extension on AsmrRemoteCatalogService {
                     page: sourcePage,
                     cancellationToken: cancellationToken,
                     load: () => _japaneseApiService!.searchWorks(
-                      keyword: searchQuery,
+                      keyword: normalizeSearchQuery(searchQuery),
                       page: sourcePage,
                       pageSize: pageSize,
                       cancellationToken: cancellationToken,

@@ -16,7 +16,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     for (final category in kAsmrSelectableCategories)
       category: ScrollController(keepScrollOffset: false),
   };
-  Timer? _debounceTimer;
+  final ScrollController _suggestionsScrollController = ScrollController();
   late final ValueNotifier<int> _activeCategoryIndex;
   String _query = '';
   String _inputQuery = '';
@@ -48,7 +48,9 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
     _languageProvider.addListener(_handleLanguageChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _scheduleRefresh();
+      if (!mounted) return;
+      unawaited(_searchController?.ensureVoiceActorCatalog(force: true));
+      unawaited(_searchController?.ensureTagCatalog(force: true));
     });
   }
 
@@ -63,40 +65,63 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   }
 
   void _onChanged(String value) {
-    final query = normalizeSearchQuery(value);
-    if (_inputQuery == query) return;
-    _debounceTimer?.cancel();
-    _resetScroll();
-    _searchController?.setSearchQuery(query, _category);
     UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
     _refreshPending = false;
+    _searchController?.setSearchQuery('', _category);
+    _resetScroll();
     setState(() {
-      _inputQuery = query;
+      _inputQuery = canonicalSearchQuery(value);
+      _query = '';
       _requestSerial++;
-      _showSearchPlaceholder = query.isNotEmpty;
+      _showSearchPlaceholder = false;
       _clearSelection();
-    });
-    _debounceTimer = Timer(const Duration(milliseconds: 240), () {
-      if (!mounted) return;
-      setState(() => _query = query);
-      _scheduleRefresh(showSearchPlaceholder: query.isNotEmpty);
     });
   }
 
+  void _toggleSuggestion(String value) {
+    final query = toggleSearchQueryTerms(_controller.text, value);
+    _controller.value = TextEditingValue(
+      text: query,
+      selection: TextSelection.collapsed(offset: query.length),
+    );
+    _onChanged(query);
+  }
+
   Future<void> _onSubmitted(String value) async {
-    _debounceTimer?.cancel();
-    final query = normalizeSearchQuery(value);
+    final query = canonicalSearchQuery(value);
+    if (query.isEmpty) return;
+    _controller.value = TextEditingValue(
+      text: query,
+      selection: TextSelection.collapsed(offset: query.length),
+    );
     _inputQuery = query;
     _searchController?.setSearchQuery(query, _category);
-    if (_query != query) {
-      _resetScroll();
-      setState(() {
-        _query = query;
-        _clearSelection();
-      });
-    }
+    _resetScroll();
+    setState(() {
+      _query = query;
+      _clearSelection();
+    });
     FocusManager.instance.primaryFocus?.unfocus();
-    _scheduleRefresh(showSearchPlaceholder: query.isNotEmpty);
+    _scheduleRefresh(showSearchPlaceholder: true);
+    try {
+      await ref
+          .read(settingsRepositoryProvider)
+          .recordSearchQuery(query, online: true);
+    } catch (error, stack) {
+      AppLogService.warning(
+        'asmr_search_history_save_failed',
+        error: error,
+        stackTrace: stack,
+      );
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr('operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+      );
+    }
   }
 
   void _closeOrClear() {
@@ -104,33 +129,21 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       Navigator.of(context).maybePop();
       return;
     }
-    _debounceTimer?.cancel();
     _controller.clear();
-    _searchController?.setSearchQuery('', _category);
-    _resetScroll();
-    setState(() {
-      _query = '';
-      _inputQuery = '';
-      _showSearchPlaceholder = false;
-      _requestSerial += 1;
-      _clearSelection();
-    });
-    _scheduleRefresh();
+    _onChanged('');
   }
 
   void _selectCategory(AsmrCategoryType category) {
     if (_category == category) return;
-    _debounceTimer?.cancel();
-    _searchController?.setSearchQuery(_inputQuery, category);
-    if (_query != _inputQuery) setState(() => _query = _inputQuery);
     final outgoingScroll = _scrollControllers[_category]!;
     if (outgoingScroll.hasClients) outgoingScroll.jumpTo(outgoingScroll.offset);
     if (_isSelectionMode) setState(_clearSelection);
     final targetIndex = kAsmrSelectableCategories.indexOf(category);
-    if (targetIndex >= 0) {
-      _activeCategoryIndex.value = targetIndex;
+    if (targetIndex >= 0) _activeCategoryIndex.value = targetIndex;
+    if (_query.isNotEmpty) {
+      _searchController?.setSearchQuery(_query, category);
+      _scheduleRefresh(showSearchPlaceholder: true);
     }
-    _scheduleRefresh(showSearchPlaceholder: _query.isNotEmpty);
   }
 
   void _clearSelection() {
@@ -196,33 +209,8 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   }
 
   void _scheduleRefresh({bool showSearchPlaceholder = false}) {
-    // A passive language or route refresh must not reactivate the old keyword.
-    if (_debounceTimer?.isActive ?? false) {
-      _refreshPending = true;
-      return;
-    }
+    if (_query.isEmpty) return;
     _requestSerial++;
-    if (_query.isEmpty) {
-      final controller = ref.read(asmrLibraryControllerProvider);
-      final cached = ref
-          .read(
-            asmrCategoryStateProvider((
-              category: _category,
-              searchQuery: '',
-              searchSession: false,
-            )),
-          )
-          .value;
-      if (controller != null &&
-          controller.pageLanguage == _languageProvider.language &&
-          cached != null &&
-          (controller.hasLoadedCategory(_category) ||
-              controller.isLoadingCategory(_category))) {
-        _refreshPending = false;
-        UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
-        return;
-      }
-    }
     _refreshPending = true;
     if (showSearchPlaceholder) {
       final cached = ref
@@ -256,6 +244,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
     _refreshPending = false;
     final query = _query;
+    if (query.isEmpty) return;
     final category = _category;
     final requestSerial = ++_requestSerial;
     final controller = ref.read(asmrLibraryControllerProvider);
@@ -313,11 +302,107 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     }
   }
 
+  Widget _buildSuggestions(
+    AppLanguageProvider i18n,
+    Color accent,
+    double topInset,
+    double bottomInset,
+  ) {
+    final settings =
+        ref.watch(settingsStateProvider).value ??
+        ref.read(settingsRepositoryProvider).slice.state;
+    final controller = ref.watch(asmrLibraryControllerProvider);
+    Widget buildSections() => PageHeaderInset(
+      topInset: topInset,
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        child: DragOnlyScrollbar(
+          controller: _suggestionsScrollController,
+          thumbVisibility: defaultTargetPlatform == TargetPlatform.windows,
+          child: CustomScrollView(
+            key: const ValueKey('asmr_search_suggestions'),
+            controller: _suggestionsScrollController,
+            slivers: [
+              SliverToBoxAdapter(child: SizedBox(height: topInset)),
+              AppSearchSuggestionSection(
+                key: const ValueKey('asmr_search_history'),
+                title: i18n.tr('search_history'),
+                items: settings.asmrSearchHistory,
+                isSelected: (value) =>
+                    searchQueryContainsTerms(_inputQuery, value),
+                onToggle: _toggleSuggestion,
+                emptyText: i18n.tr('search_history_empty'),
+                expandLabel: i18n.tr('expand'),
+                collapseLabel: i18n.tr('collapse'),
+                accentColor: accent,
+              ),
+              AppSearchSuggestionSection(
+                key: const ValueKey('asmr_search_voice_actors'),
+                title: i18n.tr('search_hot_voice_actors'),
+                items:
+                    controller?.searchVoiceActors.map((e) => e.name).toList() ??
+                    const [],
+                isSelected: (value) =>
+                    searchQueryContainsTerms(_inputQuery, value),
+                onToggle: _toggleSuggestion,
+                emptyText: i18n.tr('no_search_results'),
+                expandLabel: i18n.tr('expand'),
+                collapseLabel: i18n.tr('collapse'),
+                accentColor: accent,
+                isLoading: controller?.isLoadingVoiceActorCatalog ?? false,
+                errorText: controller?.voiceActorCatalogError == null
+                    ? null
+                    : localizedAsmrCatalogErrorText(
+                        i18n,
+                        controller!.voiceActorCatalogError,
+                      ),
+                retryLabel: i18n.tr('retry'),
+                onRetry: () =>
+                    unawaited(controller?.ensureVoiceActorCatalog(force: true)),
+              ),
+              AppSearchSuggestionSection(
+                key: const ValueKey('asmr_search_tags'),
+                title: i18n.tr('search_hot_tags'),
+                items:
+                    controller?.searchTags.map((e) => e.name).toList() ??
+                    const [],
+                isSelected: (value) =>
+                    searchQueryContainsTerms(_inputQuery, value),
+                onToggle: _toggleSuggestion,
+                emptyText: i18n.tr('no_search_results'),
+                expandLabel: i18n.tr('expand'),
+                collapseLabel: i18n.tr('collapse'),
+                accentColor: accent,
+                isLoading: controller?.isLoadingTagCatalog ?? false,
+                errorText: controller?.tagCatalogError == null
+                    ? null
+                    : localizedAsmrCatalogErrorText(
+                        i18n,
+                        controller!.tagCatalogError,
+                      ),
+                retryLabel: i18n.tr('retry'),
+                onRetry: () =>
+                    unawaited(controller?.ensureTagCatalog(force: true)),
+              ),
+              SliverToBoxAdapter(child: SizedBox(height: bottomInset)),
+            ],
+          ),
+        ),
+      ),
+    );
+    return controller == null
+        ? buildSections()
+        : ListenableBuilder(
+            listenable: controller,
+            builder: (_, _) => buildSections(),
+          );
+  }
+
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
     _activeCategoryIndex.dispose();
-    _debounceTimer?.cancel();
+    _suggestionsScrollController.dispose();
     _searchController?.endSearchSession();
     _languageProvider.removeListener(_handleLanguageChanged);
     _controller.dispose();
@@ -346,43 +431,47 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
               MediaQuery.paddingOf(context).top +
               AppPageHeaderMetrics.bottomSpacing
         : AppSearchPageScaffold.controlsTopInset(context);
-    final bottomInset = MediaQuery.paddingOf(context).bottom + 16;
-    final body = AppFadeThroughIndexedStack.lazy(
-      key: const ValueKey<String>('asmr_search_category_stack'),
-      indexListenable: _activeCategoryIndex,
-      itemCount: kAsmrSelectableCategories.length,
-      contentRevision: (
-        _query,
-        _showSearchPlaceholder,
-        _isSelectionMode,
-        _selectedWorkIds.join(','),
-        topInset,
-        bottomInset,
-      ),
-      itemBuilder: (context, index) {
-        final category = kAsmrSelectableCategories[index];
-        return _AsmrCategoryList(
-          key: ValueKey<String>('asmr_search_${category.name}'),
-          isActive: () => category == _category,
-          category: category,
-          isLoadPending: _showSearchPlaceholder,
-          scrollController: _scrollControllers[category]!,
-          searchQuery: _query,
-          searchSession: true,
-          topInset: topInset,
-          bottomInset: bottomInset,
-          onRefresh: () => _refresh(force: true),
-          isSelectionMode: _isSelectionMode,
-          selectedWorkIds: _selectedWorkIds,
-          onEnterSelectionMode: _enterSelectionMode,
-          onToggleSelection: _toggleWorkSelection,
-        );
-      },
-    );
+    final bottomInset = MediaQuery.paddingOf(context).bottom + 96;
+    final resultsBody = _query.isEmpty
+        ? null
+        : AppFadeThroughIndexedStack.lazy(
+            key: const ValueKey<String>('asmr_search_category_stack'),
+            indexListenable: _activeCategoryIndex,
+            itemCount: kAsmrSelectableCategories.length,
+            contentRevision: (
+              _query,
+              i18n.language,
+              _showSearchPlaceholder,
+              _isSelectionMode,
+              _selectedWorkIds.join(','),
+              topInset,
+              bottomInset,
+            ),
+            itemBuilder: (context, index) {
+              final category = kAsmrSelectableCategories[index];
+              return _AsmrCategoryList(
+                key: ValueKey<String>('asmr_search_${category.name}'),
+                isActive: () => category == _category,
+                isPageActive: () => _query.isNotEmpty,
+                category: category,
+                isLoadPending: _showSearchPlaceholder,
+                scrollController: _scrollControllers[category]!,
+                searchQuery: _query,
+                searchSession: true,
+                topInset: topInset,
+                bottomInset: bottomInset,
+                onRefresh: () => _refresh(force: true),
+                isSelectionMode: _isSelectionMode,
+                selectedWorkIds: _selectedWorkIds,
+                onEnterSelectionMode: _enterSelectionMode,
+                onToggleSelection: _toggleWorkSelection,
+              );
+            },
+          );
     final page = ValueListenableBuilder<int>(
       valueListenable: _activeCategoryIndex,
-      child: body,
-      builder: (context, _, body) {
+      child: resultsBody,
+      builder: (context, _, resultsBody) {
         final selectedWorks = _isSelectionMode
             ? _selectedWorks()
             : <AsmrWork>[];
@@ -397,6 +486,11 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
           onSubmitted: (value) => unawaited(_onSubmitted(value)),
           onCloseOrClear: _closeOrClear,
           accentColor: accent,
+          showConfirmButton: _query.isEmpty,
+          confirmLabel: i18n.tr('confirm'),
+          onConfirm: _inputQuery.isEmpty
+              ? null
+              : () => unawaited(_onSubmitted(_controller.text)),
           controlsOverlay: _isSelectionMode
               ? Theme(
                   data: asmrThemeData(context),
@@ -417,7 +511,11 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
                   ),
                 )
               : null,
-          body: body!,
+          body: Builder(
+            builder: (_) =>
+                _buildSuggestions(i18n, accent, topInset, bottomInset),
+          ),
+          resultsBody: resultsBody,
         );
       },
     );

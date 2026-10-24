@@ -141,6 +141,27 @@ class AsmrLibraryController extends ChangeNotifier
     return tags;
   }
 
+  final Expando<List<AsmrTag>> _searchCatalogs = Expando();
+  List<AsmrTag> get searchVoiceActors => _searchCatalog(_voiceActorPreferences);
+  List<AsmrTag> get searchTags => _searchCatalog(_tagPreferences);
+
+  List<AsmrTag> _searchCatalog(AsmrTagPreferences preferences) =>
+      _searchCatalogs[preferences] ??= List.unmodifiable(
+        preferences.tags.values
+            .where((tag) => tag.key.startsWith('online:'))
+            .toList()
+          ..sort(_compareCatalogPopularity),
+      );
+
+  static int _compareCatalogPopularity(AsmrTag a, AsmrTag b) {
+    final aCount = a.workCount;
+    final bCount = b.workCount;
+    if (aCount == null && bCount != null) return 1;
+    if (bCount == null && aCount != null) return -1;
+    final countOrder = (bCount ?? 0).compareTo(aCount ?? 0);
+    return countOrder == 0 ? a.name.compareTo(b.name) : countOrder;
+  }
+
   Set<String> get excludedTagKeys => Set.unmodifiable(_tagPreferences.excluded);
   bool get tagCatalogComplete => _tagPreferences.catalogComplete;
   bool get isLoadingTagCatalog => _tagCatalogTask != null;
@@ -345,10 +366,10 @@ class AsmrLibraryController extends ChangeNotifier
     late final Future<void> task;
     task =
         (() async {
-          await initializeForVisiblePage();
           final epoch = _runtimeCacheEpoch;
           _voiceActorCatalogError = null;
           try {
+            await initializeForVisiblePage();
             await ensureTagInterests();
             final voices = await _remoteCatalogService.loadVoiceActorCatalog();
             if (_disposed || epoch != _runtimeCacheEpoch) return;
@@ -446,10 +467,10 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   Future<void> _loadTagCatalog() async {
-    await initializeForVisiblePage();
     final epoch = _runtimeCacheEpoch;
     _tagCatalogError = null;
     try {
+      await initializeForVisiblePage();
       await ensureTagInterests();
       final tags = await _remoteCatalogService.loadTagCatalog();
       if (_disposed || epoch != _runtimeCacheEpoch) return;
@@ -460,7 +481,7 @@ class AsmrLibraryController extends ChangeNotifier
         state.catalogComplete = true;
       });
     } catch (error) {
-      _tagCatalogError = error;
+      if (!_disposed && epoch == _runtimeCacheEpoch) _tagCatalogError = error;
     }
   }
 

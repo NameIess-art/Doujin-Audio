@@ -8,6 +8,50 @@ void registerAsmrRemoteCatalogTests({
   setUp(() => preferences = preferencesStore());
 
   test(
+    'remote search keeps canonical query identity and joins terms only for API keywords',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: _FakeTestPersistenceRepository(const []),
+      );
+      controller.beginSearchSession();
+      await controller.ensureCategoryLoaded(
+        AsmrCategoryType.sales,
+        searchQuery: 'Sleep Induction, Voice Actor',
+        searchSession: true,
+      );
+      expect(api.searchKeywords, ['Sleep Induction Voice Actor']);
+      expect(
+        controller
+            .categoryViewState(
+              AsmrCategoryType.sales,
+              searchQuery: 'Sleep Induction, Voice Actor',
+              searchSession: true,
+            )
+            .activeQuery,
+        'Sleep Induction, Voice Actor',
+      );
+      controller.setSearchQuery(
+        'Sleep Induction Voice Actor',
+        AsmrCategoryType.sales,
+      );
+      expect(
+        controller
+            .categoryViewState(
+              AsmrCategoryType.sales,
+              searchQuery: 'Sleep Induction Voice Actor',
+              searchSession: true,
+            )
+            .hasAttemptedLoad,
+        isFalse,
+      );
+    },
+  );
+
+  test(
     'cancelled recommendations stop all candidate sources before page two',
     () async {
       await resetPrefs();

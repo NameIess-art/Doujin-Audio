@@ -9,6 +9,64 @@ void registerAsmrControllerStateTests({
   setUp(() => preferences = preferencesStore());
 
   test(
+    'search catalogs rank known counts before unknown counts and retain alphabetical pickers',
+    () async {
+      await resetPrefs();
+      final tags = AsmrTagPreferences();
+      for (final tag in [
+        AsmrTag(key: 'online:a', name: 'A'),
+        AsmrTag(key: 'local:private', name: 'Local only', workCount: 1000),
+        AsmrTag(key: 'online:b', name: 'B', workCount: 4),
+        AsmrTag(key: 'online:c', name: 'C', workCount: 9),
+        AsmrTag(key: 'online:d', name: 'D', workCount: 9),
+        AsmrTag(key: 'online:z', name: 'Z', workCount: 0),
+      ]) {
+        tags.mergeTag(tag);
+      }
+      await preferences.saveTagPreferences(tags);
+      await preferences.saveVoiceActorPreferences(tags);
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: _FakeAsmrApiService(),
+      );
+      await controller.initializeForVisiblePage();
+      expect(controller.searchTags, same(controller.searchTags));
+      expect(controller.searchVoiceActors, same(controller.searchVoiceActors));
+      expect(controller.searchTags.map((tag) => tag.name), [
+        'C',
+        'D',
+        'B',
+        'Z',
+        'A',
+      ]);
+      expect(controller.searchVoiceActors.map((tag) => tag.name), [
+        'C',
+        'D',
+        'B',
+        'Z',
+        'A',
+      ]);
+      expect(controller.allTags.map((tag) => tag.name), [
+        'A',
+        'B',
+        'C',
+        'D',
+        'Local only',
+        'Z',
+      ]);
+      expect(controller.allVoiceActors.map((tag) => tag.name), [
+        'A',
+        'B',
+        'C',
+        'D',
+        'Local only',
+        'Z',
+      ]);
+    },
+  );
+
+  test(
     'voice interests persist ten listening ranks and unlimited manual choices independently',
     () async {
       await resetPrefs();
@@ -1128,6 +1186,17 @@ void registerAsmrControllerStateTests({
       expect(filter('RJ0001').map((work) => work.id), [1]);
       await search('sleep circle');
       expect(filter('sleep circle'), isEmpty);
+      await search('Sleep Induction, CIRCLE demo, VOICE Actor');
+      expect(
+        filter(
+          'Sleep Induction, CIRCLE demo, VOICE Actor',
+        ).map((work) => work.id),
+        [1, 2],
+      );
+      await search('Sleep Induction, RJ0001');
+      expect(filter('Sleep Induction, RJ0001').map((work) => work.id), [1]);
+      await search('Sleep Induction, Missing');
+      expect(filter('Sleep Induction, Missing'), isEmpty);
       expect([first.titleReads, second.titleReads], [0, 0]);
       catalog.clearSearchQueries();
       expect(filter('Sleep Induction'), isEmpty);

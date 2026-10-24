@@ -2659,7 +2659,7 @@ void main() {
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final reduced in [false, true]) {
       testWidgets(
-        'non-sliding route fades only its header ($platform, $reduced)',
+        'search route fades without sliding ($platform, $reduced)',
         (tester) async {
           final navigatorKey = GlobalKey<NavigatorState>();
           await tester.pumpWidget(
@@ -2684,14 +2684,17 @@ void main() {
           final body = find.byKey(const ValueKey('search-fade-body'));
           final header = find.byKey(const ValueKey('search-fade-header'));
           final rect = tester.getRect(body);
-          expect(_effectiveOpacity(tester, body), 1);
+          expect(_effectiveOpacity(tester, body), reduced ? 1 : 0);
           expect(
             find.ancestor(of: body, matching: find.byType(SlideTransition)),
             findsNothing,
           );
           if (!reduced) {
             await tester.pump(const Duration(milliseconds: 150));
-            expect(_effectiveOpacity(tester, body), 1);
+            expect(
+              _effectiveOpacity(tester, body),
+              closeTo(kAppFadeCurve.transform(0.5), 0.001),
+            );
             expect(
               _effectiveOpacity(tester, header),
               closeTo(kAppFadeCurve.transform(0.5), 0.001),
@@ -2704,7 +2707,10 @@ void main() {
           await tester.pump();
           if (!reduced) {
             await tester.pump(const Duration(milliseconds: 150));
-            expect(_effectiveOpacity(tester, body), 1);
+            expect(
+              _effectiveOpacity(tester, body),
+              closeTo(kAppFadeCurve.transform(0.5), 0.001),
+            );
             expect(tester.getRect(body), rect);
           }
           await tester.pumpAndSettle();

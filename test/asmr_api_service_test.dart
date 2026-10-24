@@ -38,6 +38,7 @@ void main() {
           'online:c75838bb-1c4d-5850-8a93-b9a56593d511',
         );
         expect(voices.single.aliases, containsAll(['声優', 'Voice Actor']));
+        expect(voices.single.workCount, 1);
       } finally {
         service.close();
         await subscription.cancel();
@@ -75,6 +76,7 @@ void main() {
         final tags = await service.fetchTagCatalog();
         expect(tags.single.key, 'online:509');
         expect(tags.single.onlineId, 509);
+        expect(tags.single.workCount, 37);
         expect(tags.single.aliases, containsAll(['3D作品', '3D Works']));
       } finally {
         service.close();

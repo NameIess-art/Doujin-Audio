@@ -282,14 +282,6 @@ class _MyPageState extends ConsumerState<MyPage>
                               'my-${voiceActors ? 'voice-' : ''}interest-${interest.tag.key}',
                             ),
                             visualDensity: VisualDensity.compact,
-                            backgroundColor: Theme.of(
-                              context,
-                            ).colorScheme.primaryContainer,
-                            labelStyle: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onPrimaryContainer,
-                            ),
                             label: Text(interest.tag.name),
                             onPressed: () async {
                               final name = interest.tag.name;

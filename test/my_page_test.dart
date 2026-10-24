@@ -633,9 +633,8 @@ void main() {
         expect((chips.last.label as Text).data, 'Tag 5');
         expect(chips.every((chip) => chip.onDeleted == null), isTrue);
         final chip = find.byKey(const ValueKey('my-interest-local:tag 24'));
-        final scheme = Theme.of(tester.element(chip)).colorScheme;
-        expect(chips.first.backgroundColor, scheme.primaryContainer);
-        expect(chips.first.labelStyle?.color, scheme.onPrimaryContainer);
+        expect(chips.first.backgroundColor, isNull);
+        expect(chips.first.labelStyle, isNull);
         String? copied;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -676,7 +675,7 @@ void main() {
       },
     );
     testWidgets(
-      'voice interests show ten highlighted names and copy on $platform',
+      'voice interests show ten names and copy on $platform',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
         final controller = _InterestController(createTestAsmrServices());
@@ -721,10 +720,8 @@ void main() {
           const ValueKey('my-voice-interest-local:voice 13'),
         );
         final chip = tester.widget<InputChip>(first);
-        expect(
-          chip.backgroundColor,
-          Theme.of(tester.element(first)).colorScheme.primaryContainer,
-        );
+        expect(chip.backgroundColor, isNull);
+        expect(chip.labelStyle, isNull);
         String? copied;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(SystemChannels.platform, (call) async {

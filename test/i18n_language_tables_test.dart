@@ -8,7 +8,7 @@ void main() {
     'online library names share the existing navigation and startup keys',
     () {
       final tables = {
-        '在线音频库': appLanguageZh,
+        '在线作品库': appLanguageZh,
         'Online Audio Library': appLanguageEn,
         'オンライン音声ライブラリ': appLanguageJa,
       };
@@ -22,6 +22,14 @@ void main() {
         }
         expect(entry.value['asmr_account_title'], contains('ASMR.ONE'));
         expect(entry.value['asmr_download_hls_notice'], contains('M4A'));
+      }
+      for (final key in [
+        'music_library',
+        'show_local_library',
+        'storage_usage_audio_library',
+        'startup_page_library',
+      ]) {
+        expect(appLanguageZh[key], '本地作品库', reason: key);
       }
     },
   );

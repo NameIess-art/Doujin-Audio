@@ -47,6 +47,8 @@ class SettingsState {
     this.librarySortAscending = true,
     this.libraryGroupByLibrary = false,
     List<String> pinnedLibraryPaths = const <String>[],
+    List<String> librarySearchHistory = const <String>[],
+    List<String> asmrSearchHistory = const <String>[],
     this.playlistSortCriterion = PlaylistSortCriterion.name,
     this.playlistSortAscending = true,
     this.playlistGroupByLibrary = false,
@@ -81,6 +83,8 @@ class SettingsState {
     this.reduceAnimations = false,
     this.isInitialized = false,
   }) : pinnedLibraryPaths = immutableList(pinnedLibraryPaths),
+       librarySearchHistory = immutableList(librarySearchHistory),
+       asmrSearchHistory = immutableList(asmrSearchHistory),
        pinnedPlaylistSessionIds = immutableList(pinnedPlaylistSessionIds),
        customEqPresets = immutableList(customEqPresets),
        asmrDownloadFolderNameFields = immutableList(
@@ -95,6 +99,8 @@ class SettingsState {
   final bool librarySortAscending;
   final bool libraryGroupByLibrary;
   final List<String> pinnedLibraryPaths;
+  final List<String> librarySearchHistory;
+  final List<String> asmrSearchHistory;
   final PlaylistSortCriterion playlistSortCriterion;
   final bool playlistSortAscending;
   final bool playlistGroupByLibrary;
@@ -139,6 +145,8 @@ class SettingsState {
         other.librarySortAscending == librarySortAscending &&
         other.libraryGroupByLibrary == libraryGroupByLibrary &&
         listEquals(other.pinnedLibraryPaths, pinnedLibraryPaths) &&
+        listEquals(other.librarySearchHistory, librarySearchHistory) &&
+        listEquals(other.asmrSearchHistory, asmrSearchHistory) &&
         other.playlistSortCriterion == playlistSortCriterion &&
         other.playlistSortAscending == playlistSortAscending &&
         other.playlistGroupByLibrary == playlistGroupByLibrary &&
@@ -187,6 +195,8 @@ class SettingsState {
     librarySortAscending,
     libraryGroupByLibrary,
     Object.hashAll(pinnedLibraryPaths),
+    Object.hashAll(librarySearchHistory),
+    Object.hashAll(asmrSearchHistory),
     playlistSortCriterion,
     playlistSortAscending,
     playlistGroupByLibrary,

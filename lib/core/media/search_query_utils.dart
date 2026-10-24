@@ -26,6 +26,33 @@ String normalizeSearchQuery(String query) {
   return extractSearchTerms(query).join(' ');
 }
 
+/// Retains phrase boundaries for AND matching and removes duplicate conditions.
+String canonicalSearchQuery(String query) {
+  final seen = <String>{};
+  return extractSearchTerms(
+    query,
+  ).where((term) => seen.add(term.toLowerCase())).join(', ');
+}
+
+bool searchQueryContainsTerms(String query, String element) {
+  final terms = normalizedSearchTerms(element);
+  final selected = normalizedSearchTerms(query).toSet();
+  return terms.isNotEmpty && terms.every(selected.contains);
+}
+
+String toggleSearchQueryTerms(String query, String element) {
+  final current = extractSearchTerms(canonicalSearchQuery(query));
+  final elementTerms = extractSearchTerms(canonicalSearchQuery(element));
+  final keys = elementTerms.map((term) => term.toLowerCase()).toSet();
+  if (keys.isEmpty) return current.join(', ');
+  if (searchQueryContainsTerms(query, element)) {
+    return current
+        .where((term) => !keys.contains(term.toLowerCase()))
+        .join(', ');
+  }
+  return canonicalSearchQuery([...current, ...elementTerms].join(', '));
+}
+
 List<String> normalizedSearchTerms(String query) => extractSearchTerms(
   query,
 ).map((term) => term.toLowerCase()).toList(growable: false);

@@ -2,6 +2,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_tag_interest.dart';
 
 void main() {
+  test(
+    'catalog counts survive merge and cache round trips with old cache compatibility',
+    () {
+      final state = AsmrTagPreferences();
+      state.mergeTag(AsmrTag(key: 'online:1', name: 'Sleep', workCount: 37));
+      state.mergeTag(AsmrTag(key: 'online:1', name: 'Sleep translated'));
+      final restored = AsmrTagPreferences.fromJson(state.toJson());
+      expect(restored.tags['online:1']!.workCount, 37);
+      restored.mergeTag(AsmrTag(key: 'online:1', name: 'Sleep', workCount: 0));
+      expect(restored.tags['online:1']!.workCount, 0);
+      expect(AsmrTag.fromJson({'key': 'old', 'name': 'Old'}).workCount, isNull);
+    },
+  );
+
   test('voice tastes share ranking with ten slots and independent cursors', () {
     final voices = AsmrTagPreferences(limit: 10);
     final tags = AsmrTagPreferences();

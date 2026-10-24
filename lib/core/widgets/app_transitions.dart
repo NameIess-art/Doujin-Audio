@@ -317,6 +317,7 @@ class _RenderPageTransitionHost extends RenderProxyBox {
       if (!header.attached || !header.hasSize || header.child == null) continue;
       header.updateAncestorAnimations();
       var visible = true;
+      var prepared = false;
       var opacity = 1.0;
       for (
         RenderObject? ancestor = header.parent;
@@ -324,16 +325,18 @@ class _RenderPageTransitionHost extends RenderProxyBox {
         ancestor = ancestor.parent
       ) {
         if (ancestor == null ||
-            ancestor is RenderOffstage && ancestor.offstage) {
+            ancestor is RenderOffstage && ancestor.offstage ||
+            ancestor is RenderOpacity && ancestor.opacity == 0) {
           visible = false;
           break;
         }
         if (ancestor is RenderOpacity) opacity *= ancestor.opacity;
         if (ancestor is RenderAnimatedOpacity) {
           opacity *= ancestor.opacity.value;
+          if (ancestor is _RenderPreparedHeaderOpacity) prepared = true;
         }
       }
-      if (!visible || opacity == 0) continue;
+      if (!visible || (opacity == 0 && !prepared)) continue;
       final viewport = header.viewport.currentContext?.findRenderObject();
       if (viewport is! RenderBox || !viewport.hasSize) continue;
       final clip = MatrixUtils.transformRect(
@@ -941,13 +944,15 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
         child: RepaintBoundary(child: header),
         builder: (context, header) {
           final outgoing = kAppFadeCurve.transform(_secondaryAnimation.value);
+          final coveredHeader = Opacity(opacity: 1 - outgoing, child: header);
+          if (!animatePage || (!widget.slide && !widget.separateHeader)) {
+            return coveredHeader;
+          }
           final fadedHeader = _PreparedHeaderFadeTransition(
-            opacity: animatePage
-                ? _opacity
-                : const AlwaysStoppedAnimation<double>(1),
-            child: Opacity(opacity: 1 - outgoing, child: header),
+            opacity: _opacity,
+            child: coveredHeader,
           );
-          if (widget.separateHeader || !animatePage || !widget.slide) {
+          if (widget.separateHeader || !widget.slide) {
             return fadedHeader;
           }
           // Unseparated pages slide as a whole; keep their header in place
@@ -969,7 +974,10 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
             position: _position,
             child: RepaintBoundary(child: page),
           )
-        : page;
+        : _PreparedHeaderFadeTransition(
+            opacity: _opacity,
+            child: RepaintBoundary(child: page),
+          );
   }
 
   @override

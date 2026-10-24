@@ -1,6 +1,8 @@
 import 'asmr_providers.dart';
 import 'asmr_theme.dart';
 import '../../library/presentation/library_providers.dart';
+import '../../settings/presentation/settings_providers.dart';
+import '../../../core/widgets/drag_only_scrollbar.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';

@@ -1,49 +1,20 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/widgets/search_highlight.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
-import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
-import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_category_widgets.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_ui_helpers.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 import 'support/app_runtime_test_fixture.dart';
-
-class _CountingCategoryEntry extends AudioLibraryCategoryEntry {
-  _CountingCategoryEntry(AudioLibraryCategoryEntry entry)
-    : super(
-        target: entry.target,
-        title: entry.title,
-        path: entry.path,
-        isFolder: entry.isFolder,
-        detail: entry.detail,
-        tracks: entry.tracks,
-      );
-
-  final reads = <AudioLibraryCategoryType, int>{};
-  int searchableTextReads = 0;
-
-  @override
-  String get searchableText {
-    searchableTextReads++;
-    return super.searchableText;
-  }
-
-  @override
-  Set<String> normalizedTermsForCategory(AudioLibraryCategoryType type) {
-    reads.update(type, (value) => value + 1, ifAbsent: () => 1);
-    return super.normalizedTermsForCategory(type);
-  }
-}
+import 'support/runtime_test_models.dart';
 
 class _FixedCategorySnapshotCache extends LibrarySnapshotCacheService {
   _FixedCategorySnapshotCache({
@@ -51,25 +22,13 @@ class _FixedCategorySnapshotCache extends LibrarySnapshotCacheService {
     required super.detailCacheService,
     required this.snapshot,
   }) : super(
-         treeSnapshotBuilder: (_) async =>
-             LibraryTreeSnapshot(tree: const [], leafFolderCount: 0),
+         treeSnapshotBuilder: (payload) async => LibraryTreeSnapshot(
+           tree: payload.tracks.map(TrackNode.new).toList(),
+           leafFolderCount: 0,
+         ),
        );
 
   AudioLibraryCategorySnapshot snapshot;
-  int filterCalls = 0;
-  Future<LibraryCategoryFilterResult> Function(LibraryCategoryFilterRequest)?
-  filter;
-
-  @override
-  Future<LibraryCategoryFilterResult> filterCategoryEntries(
-    LibraryCategoryFilterRequest request,
-  ) async {
-    filterCalls++;
-    return filter == null
-        ? filterLibraryCategoryEntries(request)
-        : await filter!(request);
-  }
-
   @override
   AudioLibraryCategorySnapshot get categorySnapshotSync => snapshot;
 
@@ -119,111 +78,9 @@ void main() {
     },
   );
 
-  testWidgets(
-    'category filtering keeps old rows and rejects stale results and errors',
-    (tester) async {
-      UiInteractionCoordinator.instance.resetForTest();
-      addTearDown(UiInteractionCoordinator.instance.resetForTest);
-      final fixture = AppRuntimeWidgetTestFixture();
-      addTearDown(fixture.dispose);
-      final snapshot = AudioLibraryCategorySnapshot(
-        entries: [
-          for (final title in ['Alpha', 'Beta'])
-            _createEntry(
-              title: title,
-              path: '/$title',
-              tags: ['ASMR'],
-              voiceActors: ['Voice'],
-              circleName: 'Circle',
-            ),
-        ],
-        structureRevision: fixture.libraryService.structureRevision,
-        detailRevision: fixture.library.detailCacheService.revision,
-      );
-      final cache = _FixedCategorySnapshotCache(
-        libraryService: fixture.libraryService,
-        detailCacheService: fixture.library.detailCacheService,
-        snapshot: snapshot,
-      );
-      final library = LibraryFacade.create(
-        databaseRepository: fixture.persistenceRepository,
-        service: fixture.libraryService,
-        detailCacheService: fixture.library.detailCacheService,
-        snapshotCacheService: cache,
-      );
-      await tester.pumpWidget(
-        fixture.build(
-          const LibrarySearchPage(),
-          overrides: [libraryFacadeProvider.overrideWithValue(library)],
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(
-          const ValueKey('app_search_category_AudioLibraryCategoryType.tags'),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final requests = <LibraryCategoryFilterRequest>[];
-      final pending = <Completer<LibraryCategoryFilterResult>>[];
-      cache.filter = (request) {
-        requests.add(request);
-        final completer = Completer<LibraryCategoryFilterResult>();
-        pending.add(completer);
-        return completer.future;
-      };
-      Future<void> search(String text) async {
-        await tester.enterText(
-          find.byKey(const ValueKey('app_search_field')),
-          text,
-        );
-        await tester.pump(const Duration(milliseconds: 250));
-        await tester.pump();
-      }
-
-      await search('Alpha');
-      expect(find.byKey(const ValueKey('category_/Beta')), findsOneWidget);
-      await search('Beta');
-      final interaction = Object();
-      UiInteractionCoordinator.instance.beginInteraction(interaction);
-      pending[1].complete(filterLibraryCategoryEntries(requests[1]));
-      await tester.pump();
-      expect(find.byKey(const ValueKey('category_/Alpha')), findsOneWidget);
-      UiInteractionCoordinator.instance.cancelInteraction(interaction);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('category_/Alpha')), findsNothing);
-      expect(find.byKey(const ValueKey('category_/Beta')), findsOneWidget);
-      pending[0].completeError(StateError('obsolete'));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('library_category_error_tags')),
-        findsNothing,
-      );
-      await search('Alpha');
-      // Returning to the last committed input must also cancel the pending result.
-      await search('Beta');
-      pending[2].complete(filterLibraryCategoryEntries(requests[2]));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('category_/Alpha')), findsNothing);
-      expect(find.byKey(const ValueKey('category_/Beta')), findsOneWidget);
-      await search('Alpha');
-      pending[3].completeError(StateError('current'));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('library_category_error_tags')),
-        findsOneWidget,
-      );
-      cache.filter = null;
-      await tester.tap(find.text('重试'));
-      await pumpUntilFound(tester, find.byKey(const ValueKey('category_/Alpha')));
-      expect(find.byKey(const ValueKey('category_/Alpha')), findsOneWidget);
-      expect(find.byKey(const ValueKey('category_/Beta')), findsNothing);
-      expect(tester.takeException(), isNull);
-    },
-  );
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'categories share rows and pending requests while retaining filters on $platform',
+      'local search suggests terms and waits for confirmation on $platform',
       (tester) async {
         debugDefaultTargetPlatformOverride = platform;
         addTearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -231,31 +88,32 @@ void main() {
         addTearDown(UiInteractionCoordinator.instance.resetForTest);
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(fixture.dispose);
-        final darkTheme = ValueNotifier(false);
-        addTearDown(darkTheme.dispose);
-        final unrelatedRevision = ValueNotifier(0);
-        addTearDown(unrelatedRevision.dispose);
-        final entries = List.generate(
-          30,
-          (index) => _CountingCategoryEntry(
-            _createEntry(
-              title: 'Work $index',
-              path: '/work/$index',
-              tags: ['ASMR'],
-              voiceActors: ['Voice'],
-              circleName: 'Circle',
+        final tracks = [
+          for (final title in ['Alpha', 'Beta'])
+            testMusicTrack(
+              name: title,
+              path: '/$title.mp3',
+              groupKey: '/$title.mp3',
+              groupTitle: title,
+              isSingle: true,
             ),
-          ),
-        );
+        ];
+        fixture.library.addTracks(tracks, persist: false);
         final cache = _FixedCategorySnapshotCache(
           libraryService: fixture.libraryService,
           detailCacheService: fixture.library.detailCacheService,
           snapshot: AudioLibraryCategorySnapshot(
-            entries: entries,
-            tagTerms: ['ASMR'],
-            voiceActorTerms: ['Voice'],
-            circleTerms: ['Circle'],
-            structureRevision: fixture.libraryService.structureRevision,
+            entries: [
+              for (final title in ['Alpha', 'Beta'])
+                _createEntry(
+                  title: title,
+                  path: '/$title.mp3',
+                  tags: ['ASMR'],
+                  voiceActors: ['Voice'],
+                  circleName: 'Circle',
+                ),
+            ],
+            structureRevision: fixture.library.structureRevision,
             detailRevision: fixture.library.detailCacheService.revision,
           ),
         );
@@ -264,357 +122,145 @@ void main() {
           service: fixture.libraryService,
           detailCacheService: fixture.library.detailCacheService,
           snapshotCacheService: cache,
+          coverArtworkCacheService: fixture.library.coverArtworkCacheService,
+        );
+        await tester.runAsync(
+          fixture.library.coverArtworkCacheService.initialize,
         );
         await tester.pumpWidget(
           fixture.build(
-            ValueListenableBuilder<bool>(
-              valueListenable: darkTheme,
-              child: ValueListenableBuilder<int>(
-                valueListenable: unrelatedRevision,
-                builder: (_, _, _) => LibrarySearchPage(key: ValueKey(fixture)),
-              ),
-              builder: (_, dark, child) => Theme(
-                data: dark ? ThemeData.dark() : ThemeData.light(),
-                child: child!,
-              ),
-            ),
+            const LibrarySearchPage(),
             overrides: [libraryFacadeProvider.overrideWithValue(library)],
           ),
         );
         await tester.pumpAndSettle();
-        Future<void> choose(AudioLibraryCategoryType type) async {
-          await tester.tap(find.byKey(ValueKey('app_search_category_$type')));
-          await tester.pumpAndSettle();
-        }
-
-        await choose(AudioLibraryCategoryType.tags);
-        final sharedList = find.byKey(
-          const ValueKey('library_category_results'),
-        );
-        final scrollable = find.descendant(
-          of: sharedList,
-          matching: find.byType(Scrollable),
-        ).first;
-        final scrollState = tester.state(scrollable);
-        final firstRow = find
-            .byKey(const ValueKey('category_/work/0'))
-            .evaluate()
-            .single;
-        final filterCalls = cache.filterCalls;
-        final originalEntries = tester
-            .widgetList<AudioLibraryCategoryEntryCard>(
-              find.byType(AudioLibraryCategoryEntryCard),
-            )
-            .map((card) => card.entry)
-            .toList();
-        for (final category in [
-          AudioLibraryCategoryType.voiceActors,
-          AudioLibraryCategoryType.circles,
-          AudioLibraryCategoryType.tags,
-        ]) {
-          await choose(category);
-          expect(tester.state(scrollable), same(scrollState));
-          expect(
-            find.byKey(const ValueKey('category_/work/0')).evaluate().single,
-            same(firstRow),
-          );
-          expect(cache.filterCalls, filterCalls);
-          expect(
-            tester
-                .widgetList<AudioLibraryCategoryEntryCard>(
-                  find.byType(AudioLibraryCategoryEntryCard),
-                )
-                .map((card) => card.entry),
-            originalEntries,
-          );
-          expect(
-            tester
-                .widget<LibraryCategoryTermBox>(
-                  find.byType(LibraryCategoryTermBox),
-                )
-                .categoryType,
-            category,
-          );
-        }
-        final pending = Completer<LibraryCategoryFilterResult>();
-        late LibraryCategoryFilterRequest pendingRequest;
-        cache.filter = (request) {
-          pendingRequest = request;
-          return pending.future;
-        };
-        await tester.enterText(
-          find.byKey(const ValueKey('app_search_field')),
-          'Work',
-        );
-        await tester.pump(const Duration(milliseconds: 250));
-        await tester.pump();
-        expect(cache.filterCalls, filterCalls + 1);
-        await choose(AudioLibraryCategoryType.voiceActors);
-        await choose(AudioLibraryCategoryType.circles);
-        expect(cache.filterCalls, filterCalls + 1);
-        expect(tester.state(scrollable), same(scrollState));
         expect(
-          find.byKey(const ValueKey('category_/work/0')).evaluate().single,
-          same(firstRow),
+          find.byKey(const ValueKey('library_search_suggestions')),
+          findsOneWidget,
         );
-        pending.complete(filterLibraryCategoryEntries(pendingRequest));
-        await tester.pumpAndSettle();
-        cache.filter = null;
-        expect(cache.filterCalls, filterCalls + 1);
-        expect(tester.state(scrollable), same(scrollState));
-        await choose(AudioLibraryCategoryType.tags);
-        await tester.tap(find.widgetWithText(ActionChip, '展开'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.widgetWithText(FilterChip, 'ASMR'));
-        await tester.pumpAndSettle();
-        final tagListFinder = find.byKey(
-          const ValueKey('library_category_results'),
-        );
-        final tagList = tester.widget<ListView>(tagListFinder);
-        final termState = tester.state(find.byType(LibraryCategoryTermBox));
-        tagList.controller!.jumpTo(32);
-        await tester.pumpAndSettle();
-        final reads = Map<AudioLibraryCategoryType, int>.of(
-          entries.first.reads,
-        );
-        for (var round = 0; round < 2; round++) {
-          await choose(AudioLibraryCategoryType.voiceActors);
-          await choose(AudioLibraryCategoryType.tags);
-          expect(
-            tester.widget<ListView>(tagListFinder).controller,
-            same(tagList.controller),
-          );
-          expect(
-            tester.state(find.byType(LibraryCategoryTermBox)),
-            same(termState),
-          );
-          expect(tagList.controller!.offset, 32);
-          expect(
-            entries.first.reads[AudioLibraryCategoryType.tags],
-            reads[AudioLibraryCategoryType.tags],
-          );
-        }
-        unrelatedRevision.value++;
-        await tester.pumpAndSettle();
-        expect(tester.state(scrollable), same(scrollState));
-        expect(entries.first.reads, reads);
-        await choose(AudioLibraryCategoryType.voiceActors);
-        await choose(AudioLibraryCategoryType.tags);
-        tagList.controller!.jumpTo(0);
-        await tester.pumpAndSettle();
-        expect(
-          tester
-              .widget<FilterChip>(find.widgetWithText(FilterChip, 'ASMR'))
-              .selected,
-          isTrue,
-        );
-        expect(find.widgetWithText(ActionChip, '收起'), findsOneWidget);
-        darkTheme.value = true;
-        await tester.pumpAndSettle();
-        expect(
-          Theme.of(
-            tester.element(find.byType(AudioLibraryCategoryEntryCard).first),
-          ).brightness,
-          Brightness.dark,
-        );
-        AudioLibraryCategoryEntryCard firstCard() =>
-            tester.widget<AudioLibraryCategoryEntryCard>(
-              find.byType(AudioLibraryCategoryEntryCard).first,
+        expect(find.byType(LibraryTreeItem), findsNothing);
+        final scaffold = tester
+            .widget<AppSearchPageScaffold<AudioLibraryCategoryType>>(
+              find.byType(AppSearchPageScaffold<AudioLibraryCategoryType>),
             );
-        firstCard().onLongPress!();
+        expect(scaffold.categories, isEmpty);
+        expect(scaffold.onConfirm, isNull);
+        expect(find.text('历史'), findsOneWidget);
+        expect(find.text('声优'), findsOneWidget);
+        expect(find.text('标签'), findsOneWidget);
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const ValueKey('library_search_voices')),
+            matching: find.text('Voice'),
+          ),
+        );
         await tester.pumpAndSettle();
-        expect(firstCard().isSelectionMode, isTrue);
-        expect(firstCard().isSelected, isTrue);
-        tester
-            .widgetList<AudioLibraryCategoryEntryCard>(
-              find.byType(AudioLibraryCategoryEntryCard),
-            )
-            .elementAt(1)
-            .onToggleSelect!();
-        await tester.pumpAndSettle();
+        final field = find.byKey(const ValueKey('app_search_field'));
+        expect(tester.widget<TextField>(field).controller!.text, 'Voice');
         expect(
           tester
-              .widgetList<AudioLibraryCategoryEntryCard>(
-                find.byType(AudioLibraryCategoryEntryCard),
+              .widget<AppSearchSuggestionSection>(
+                find.byKey(const ValueKey('library_search_voices')),
               )
-              .take(2)
-              .every((card) => card.isSelected),
+              .isSelected('Voice'),
           isTrue,
         );
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const ValueKey('library_search_voices')),
+            matching: find.text('Voice'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.widget<TextField>(field).controller!.text, isEmpty);
+        await tester.enterText(field, 'Alpha, ASMR');
+        await tester.pumpAndSettle();
+        expect(find.byType(LibraryTreeItem), findsNothing);
+        expect(fixture.settings.librarySearchHistory, isEmpty);
         tester
             .widget<AppSearchPageScaffold<AudioLibraryCategoryType>>(
               find.byType(AppSearchPageScaffold<AudioLibraryCategoryType>),
             )
-            .onCategorySelected(AudioLibraryCategoryType.voiceActors);
+            .onConfirm!();
         await tester.pumpAndSettle();
-        await choose(AudioLibraryCategoryType.tags);
-        expect(firstCard().isSelectionMode, isFalse);
-        expect(find.widgetWithText(ActionChip, '收起'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('library_search_suggestions')),
+          findsNothing,
+        );
+        expect(find.byKey(const ValueKey('search_/Alpha.mp3')), findsOneWidget);
+        expect(find.byKey(const ValueKey('search_/Beta.mp3')), findsNothing);
+        expect(fixture.settings.librarySearchHistory, ['Alpha, ASMR']);
+        final item = tester.widget<LibraryTreeItem>(
+          find.byType(LibraryTreeItem).first,
+        );
+        item.onLongPress!();
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<LibraryTreeItem>(find.byType(LibraryTreeItem).first)
+              .isSelected,
+          isTrue,
+        );
+        expect(
+          tester
+              .widget<AppSearchPageScaffold<AudioLibraryCategoryType>>(
+                find.byType(AppSearchPageScaffold<AudioLibraryCategoryType>),
+              )
+              .showConfirmButton,
+          isFalse,
+        );
+        expect(find.byKey(const ValueKey('app_search_confirm')), findsNothing);
+        (tester
+                    .widget<AppSearchPageScaffold<AudioLibraryCategoryType>>(
+                      find.byType(
+                        AppSearchPageScaffold<AudioLibraryCategoryType>,
+                      ),
+                    )
+                    .controlsOverlay
+                as LibraryBatchSelectionHeader)
+            .onExit();
+        await tester.pumpAndSettle();
+        await tester.enterText(field, 'Beta');
+        await tester.pumpAndSettle();
+        expect(find.byType(LibraryTreeItem), findsNothing);
+        expect(
+          find.byKey(const ValueKey('library_search_suggestions')),
+          findsOneWidget,
+        );
+        final historyItem = find.descendant(
+          of: find.byKey(const ValueKey('library_search_history')),
+          matching: find.text('Alpha, ASMR'),
+        );
+        await tester.tap(historyItem);
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<TextField>(field).controller!.text,
+          'Beta, Alpha, ASMR',
+        );
+        await tester.tap(historyItem);
+        await tester.pumpAndSettle();
+        expect(tester.widget<TextField>(field).controller!.text, 'Beta');
+        await tester.showKeyboard(field);
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('search_/Beta.mp3')), findsOneWidget);
+        tester
+            .widget<AppSearchPageScaffold<AudioLibraryCategoryType>>(
+              find.byType(AppSearchPageScaffold<AudioLibraryCategoryType>),
+            )
+            .onCloseOrClear();
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('library_search_suggestions')),
+          findsOneWidget,
+        );
+        expect(find.byType(LibraryTreeItem), findsNothing);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
         debugDefaultTargetPlatformOverride = null;
       },
     );
   }
-  testWidgets(
-    'hidden visited categories wait for activation to filter latest state',
-    (tester) async {
-      UiInteractionCoordinator.instance.resetForTest();
-      addTearDown(UiInteractionCoordinator.instance.resetForTest);
-      final fixture = AppRuntimeWidgetTestFixture();
-      addTearDown(fixture.dispose);
-      final entries = [
-        for (final title in ['Alpha', 'Beta'])
-          _CountingCategoryEntry(
-            _createEntry(
-              title: title,
-              path: '/$title',
-              tags: [title == 'Alpha' ? 'ASMR' : 'Sleep'],
-              voiceActors: ['Voice'],
-              circleName: 'Circle',
-            ),
-          ),
-      ];
-      AudioLibraryCategorySnapshot snapshot() => AudioLibraryCategorySnapshot(
-        entries: entries,
-        tagTerms: ['ASMR', 'Sleep'],
-        voiceActorTerms: ['Voice'],
-        circleTerms: ['Circle'],
-        structureRevision: fixture.libraryService.structureRevision,
-        detailRevision: fixture.library.detailCacheService.revision,
-      );
-      final cache = _FixedCategorySnapshotCache(
-        libraryService: fixture.libraryService,
-        detailCacheService: fixture.library.detailCacheService,
-        snapshot: snapshot(),
-      );
-      final library = LibraryFacade.create(
-        databaseRepository: fixture.persistenceRepository,
-        service: fixture.libraryService,
-        detailCacheService: fixture.library.detailCacheService,
-        snapshotCacheService: cache,
-      );
-      await tester.pumpWidget(
-        fixture.build(
-          const LibrarySearchPage(),
-          overrides: [libraryFacadeProvider.overrideWithValue(library)],
-        ),
-      );
-      await tester.pumpAndSettle();
-      Future<void> choose(AudioLibraryCategoryType type) async {
-        await tester.tap(find.byKey(ValueKey('app_search_category_$type')));
-        await tester.pumpAndSettle();
-        // Category animation completion leaves the coordinator's idle timer
-        // armed; pumpAndSettle alone stops before deferred filter commits run.
-        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-        await tester.pumpAndSettle();
-      }
-
-      for (final type in AudioLibraryCategoryType.values.skip(1)) {
-        await choose(type);
-      }
-      expect(entries.every((entry) => entry.reads.isEmpty), isTrue);
-      expect(entries.every((entry) => entry.searchableTextReads == 0), isTrue);
-      await choose(AudioLibraryCategoryType.all);
-      final priorReads = Map<AudioLibraryCategoryType, int>.of(
-        entries.first.reads,
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('app_search_field')),
-        'Beta',
-      );
-      await tester.pump(const Duration(milliseconds: 250));
-      await tester.pumpAndSettle();
-      fixture.settings.pinnedLibraryPaths = ['/Beta'];
-      fixture.settings.syncSlice(isInitialized: true);
-      fixture.libraryService.markStructureChanged();
-      cache.snapshot = snapshot();
-      fixture.library.syncPresentationState(isInitialized: true);
-      await tester.pumpAndSettle();
-      expect(entries.first.reads, priorReads);
-      await choose(AudioLibraryCategoryType.tags);
-      expect(entries.first.reads, priorReads);
-      expect(entries.first.searchableTextReads, greaterThan(0));
-      expect(
-        entries.first.reads[AudioLibraryCategoryType.voiceActors],
-        priorReads[AudioLibraryCategoryType.voiceActors],
-      );
-      expect(find.byKey(const ValueKey('category_/Beta')), findsOneWidget);
-      expect(find.byKey(const ValueKey('category_/Alpha')), findsNothing);
-      final beforeSlide = entries.first.reads[AudioLibraryCategoryType.tags];
-      await tester.tap(
-        find.byKey(
-          const ValueKey(
-            'app_search_category_AudioLibraryCategoryType.voiceActors',
-          ),
-        ),
-      );
-      await tester.pump(const Duration(milliseconds: 16));
-      await tester.enterText(
-        find.byKey(const ValueKey('app_search_field')),
-        'Alpha',
-      );
-      await tester.pump(const Duration(milliseconds: 230));
-      expect(entries.first.reads[AudioLibraryCategoryType.tags], beforeSlide);
-      await tester.pumpAndSettle();
-      await tester.pump(UiInteractionCoordinator.instance.idleDelay);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('category_/Alpha')), findsOneWidget);
-      await choose(AudioLibraryCategoryType.tags);
-      await tester.tap(find.widgetWithText(ActionChip, '展开'));
-      await tester.pumpAndSettle();
-      final selector = tester.widget<LibraryCategoryTermBox>(
-        find.byType(LibraryCategoryTermBox),
-      );
-      selector.onToggle('ASMR');
-      selector.onToggle('Sleep');
-      await tester.pumpAndSettle();
-      final selected = tester.widget<LibraryCategoryTermBox>(
-        find.byType(LibraryCategoryTermBox),
-      );
-      expect(selected.selectedTerms, {'ASMR', 'Sleep'});
-      selected.onClear();
-      selected.onToggle('ASMR');
-      await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<LibraryCategoryTermBox>(find.byType(LibraryCategoryTermBox))
-            .selectedTerms,
-        {'ASMR'},
-      );
-      selected.onClear();
-      await tester.pumpAndSettle();
-      final cleared = tester.widget<LibraryCategoryTermBox>(
-        find.byType(LibraryCategoryTermBox),
-      );
-      cleared.onToggle('ASMR');
-      cleared.onClear();
-      await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<LibraryCategoryTermBox>(find.byType(LibraryCategoryTermBox))
-            .selectedTerms,
-        isEmpty,
-      );
-      await tester.tap(find.widgetWithText(FilterChip, 'Sleep'));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('category_/Alpha')), findsNothing);
-      expect(find.byKey(const ValueKey('category_/Beta')), findsNothing);
-      expect(entries.last.reads, isEmpty);
-      final rejectedReads = Map.of(entries.first.reads);
-      await tester.enterText(
-        find.byKey(const ValueKey('app_search_field')),
-        'Beta',
-      );
-      await tester.pump(const Duration(milliseconds: 250));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('category_/Beta')), findsOneWidget);
-      expect(find.byKey(const ValueKey('category_/Alpha')), findsNothing);
-      expect(entries.first.reads, rejectedReads);
-      expect(entries.last.reads[AudioLibraryCategoryType.tags], greaterThan(0));
-      expect(tester.takeException(), isNull);
-    },
-  );
 
   group('SearchHighlightScope.withTerms', () {
     testWidgets(
@@ -688,44 +334,47 @@ void main() {
             addTearDown(() => debugDefaultTargetPlatformOverride = null);
             await tester.binding.setSurfaceSize(Size(width, 800));
             addTearDown(() => tester.binding.setSurfaceSize(null));
-            final fixture = AppRuntimeWidgetTestFixture();
-            addTearDown(fixture.dispose);
-            final cache = _FixedCategorySnapshotCache(
-              libraryService: fixture.libraryService,
-              detailCacheService: fixture.library.detailCacheService,
-              snapshot: AudioLibraryCategorySnapshot(
-                entries: [
-                  _createEntry(
-                    title: 'Work',
-                    path: '/work',
-                    tags: ['ASMR'],
-                    voiceActors: ['Voice'],
-                    circleName: 'Circle',
-                  ),
-                ],
-                structureRevision: fixture.libraryService.structureRevision,
-                detailRevision: fixture.library.detailCacheService.revision,
-              ),
-            );
-            final library = LibraryFacade.create(
-              databaseRepository: fixture.persistenceRepository,
-              service: fixture.libraryService,
-              detailCacheService: fixture.library.detailCacheService,
-              snapshotCacheService: cache,
-            );
-            await tester.pumpWidget(
-              fixture.build(
-                const LibrarySearchPage(),
-                overrides: [libraryFacadeProvider.overrideWithValue(library)],
-              ),
-            );
-            await tester.pumpAndSettle();
+            final controller = TextEditingController();
+            final focus = FocusNode();
+            addTearDown(controller.dispose);
+            addTearDown(focus.dispose);
             for (final type in AudioLibraryCategoryType.values.skip(1)) {
-              await tester.tap(
-                find.byKey(ValueKey('app_search_category_$type')),
+              await tester.pumpWidget(
+                MaterialApp(
+                  home: AppSearchPageScaffold<AudioLibraryCategoryType>(
+                    key: ValueKey(type),
+                    controller: controller,
+                    focusNode: focus,
+                    hintText: 'Search',
+                    categories: [
+                      AppSearchCategory(value: type, label: type.name),
+                    ],
+                    selectedCategory: type,
+                    onCategorySelected: (_) {},
+                    onChanged: (_) {},
+                    onSubmitted: (_) {},
+                    onCloseOrClear: () {},
+                    body: ListView(
+                      padding: const EdgeInsets.fromLTRB(8, 100, 8, 16),
+                      children: [
+                        LibraryCategoryTermBox(
+                          categoryType: type,
+                          collapseOnMount: true,
+                          terms: const ['Term'],
+                          selectedTerms: const {},
+                          emptyText: 'Empty',
+                          clearLabel: 'Clear',
+                          searchHintText: 'Search terms',
+                          searchQuery: '',
+                          onSearchQueryChanged: (_) {},
+                          onToggle: (_) {},
+                          onClear: () {},
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               );
-              await tester.pumpAndSettle();
-              await tester.pump(UiInteractionCoordinator.instance.idleDelay);
               await tester.pumpAndSettle();
               final card = find.descendant(
                 of: find.byType(LibraryCategoryTermBox),

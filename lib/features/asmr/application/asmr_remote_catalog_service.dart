@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../domain/asmr_models.dart';
 import '../../../core/media/music_track.dart';
+import '../../../core/media/search_query_utils.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'asmr_api_service.dart';
 import 'asmr_recommendation_engine.dart';
@@ -170,7 +171,7 @@ class AsmrRemoteCatalogService {
       cancellationToken: cancellationToken,
       load: () => searchQuery.isNotEmpty
           ? _apiService.searchWorks(
-              keyword: searchQuery,
+              keyword: normalizeSearchQuery(searchQuery),
               order: spec.order,
               sort: spec.sort,
               page: page,

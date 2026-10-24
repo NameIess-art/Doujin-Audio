@@ -83,7 +83,9 @@ void main() {
         await pumpUntilFound(tester, japaneseCard);
         await tester.pumpAndSettle();
         expect(
-          tester.widget<TopPageHeader>(find.byType(TopPageHeader)).topCapsuleData,
+          tester
+              .widget<TopPageHeader>(find.byType(TopPageHeader))
+              .topCapsuleData,
           fixture.languageProvider.tr('asmr_header_stats_combined', {
             'count': '123456',
           }),
@@ -126,8 +128,12 @@ void main() {
         await pumpUntilFound(tester, notice);
         await tester.pumpAndSettle();
         expect(
-          tester.widget<TopPageHeader>(find.byType(TopPageHeader)).topCapsuleData,
-          fixture.languageProvider.tr('asmr_header_stats_loaded', {'count': '1'}),
+          tester
+              .widget<TopPageHeader>(find.byType(TopPageHeader))
+              .topCapsuleData,
+          fixture.languageProvider.tr('asmr_header_stats_loaded', {
+            'count': '1',
+          }),
         );
         expect(find.text('Published work'), findsOneWidget);
         expect(
@@ -798,8 +804,163 @@ void main() {
     );
 
     testWidgets(
-      'ASMR empty search displays cached cards without an opening placeholder on $platform',
+      'ASMR search starts with suggestions and only confirms nonempty drafts on $platform',
       (tester) async {
+        SharedPreferences.setMockInitialValues(const {'app_language': 'zh'});
+        final controller = _PresentationController(createTestAsmrServices());
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        fixture.settings.asmrSearchHistory = const ['Voice Actor, Sleep'];
+        fixture.settings.syncSlice();
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        final loads = controller.categoryLoads;
+        final reads = controller.categoryReads;
+        await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
+        await tester.pumpAndSettle();
+        AppSearchPageScaffold<AsmrCategoryType> search() =>
+            tester.widget(find.byType(AppSearchPageScaffold<AsmrCategoryType>));
+        expect(
+          find.byKey(const ValueKey('asmr_search_collected')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('asmr_search_history')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('asmr_search_voice_actors')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('asmr_search_tags')), findsOneWidget);
+        expect(search().categories, isNotEmpty);
+        expect(search().onConfirm, isNull);
+        expect(controller.categoryReads, reads);
+        expect(controller.categoryLoads, loads);
+        expect(controller.tagCatalogLoads, 1);
+        expect(controller.voiceCatalogLoads, 1);
+        final history = tester.widget<AppSearchSuggestionSection>(
+          find.byKey(const ValueKey('asmr_search_history')),
+        );
+        history.onToggle('Voice Actor, Sleep');
+        await tester.pumpAndSettle();
+        expect(search().controller.text, 'Voice Actor, Sleep');
+        expect(controller.categoryLoads, loads);
+        expect(search().onConfirm, isNotNull);
+        expect(
+          tester
+              .widget<AppSearchSuggestionSection>(
+                find.byKey(const ValueKey('asmr_search_tags')),
+              )
+              .isSelected('Sleep'),
+          isTrue,
+        );
+        tester
+            .widget<AppSearchSuggestionSection>(
+              find.byKey(const ValueKey('asmr_search_tags')),
+            )
+            .onToggle('Sleep');
+        await tester.pumpAndSettle();
+        expect(search().controller.text, 'Voice Actor');
+        search().onConfirm!();
+        await tester.pumpAndSettle();
+        expect(controller.lastSearchQuery, 'Voice Actor');
+        expect(
+          find.byKey(const ValueKey('asmr_search_collected')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('asmr_search_suggestions')),
+          findsNothing,
+        );
+        await tester.enterText(find.byType(TextField), 'Unconfirmed');
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('asmr_search_collected')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('asmr_search_suggestions')),
+          findsOneWidget,
+        );
+        expect(
+          fixture.settings.slice.state.asmrSearchHistory,
+          isNot(contains('Unconfirmed')),
+        );
+        search().onCloseOrClear();
+        await tester.pumpAndSettle();
+        expect(search().controller.text, isEmpty);
+        expect(search().onConfirm, isNull);
+        expect(controller.tagCatalogLoads, 1);
+        expect(controller.voiceCatalogLoads, 1);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'ASMR search catalog failures offer independent retries without blocking submission on $platform',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const {'app_language': 'zh'});
+        final controller = _PresentationController(createTestAsmrServices())
+          ..directoryError = StateError('Offline directory');
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
+        await tester.pumpAndSettle();
+        final voices = tester.widget<AppSearchSuggestionSection>(
+          find.byKey(const ValueKey('asmr_search_voice_actors')),
+        );
+        final tags = tester.widget<AppSearchSuggestionSection>(
+          find.byKey(const ValueKey('asmr_search_tags')),
+        );
+        expect(voices.errorText, isNotNull);
+        expect(tags.errorText, isNotNull);
+        expect(voices.items, ['Voice Actor']);
+        expect(tags.items, ['Sleep']);
+        voices.onRetry!();
+        tags.onRetry!();
+        expect(controller.voiceCatalogLoads, 2);
+        expect(controller.tagCatalogLoads, 2);
+        await tester.enterText(find.byType(TextField), 'Manual search');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pumpAndSettle();
+        expect(controller.lastSearchQuery, 'Manual search');
+        expect(
+          find.byKey(const ValueKey('asmr_search_collected')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'ASMR submitted search keeps loading until data and hides it when editing on $platform',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const {'app_language': 'zh'});
         final controller = _PresentationController(createTestAsmrServices());
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(controller.dispose);
@@ -814,131 +975,39 @@ void main() {
         );
         await pumpUntilFound(tester, find.text('Published work'));
         await tester.pumpAndSettle();
-        final reads = controller.categoryReads;
-        final loads = controller.categoryLoads;
-        final initializations = controller.initializations;
         await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
+        await tester.pumpAndSettle();
+        final load = Completer<void>();
+        controller
+          ..cacheValid = false
+          ..pendingCategoryLoad = load;
+        final search = tester.widget<AppSearchPageScaffold<AsmrCategoryType>>(
+          find.byType(AppSearchPageScaffold<AsmrCategoryType>),
+        );
+        search.onSubmitted('Pending query');
         await tester.pump();
-        // The prepared route's first layout is offstage. Inspect its first
-        // visible frame without advancing the entrance animation.
+        await tester.pump(interaction.idleDelay);
         await tester.pump();
         final results = find.byKey(const ValueKey('asmr_search_collected'));
-        expect(
-          find.descendant(of: results, matching: find.text('Published work')),
-          findsOneWidget,
-        );
         expect(
           find.descendant(
             of: results,
             matching: find.byKey(const ValueKey('loading')),
           ),
-          findsNothing,
-        );
-        expect(controller.categoryReads, reads);
-        await tester.pumpAndSettle();
-        expect(
-          find.descendant(of: results, matching: find.text('Published work')),
           findsOneWidget,
         );
-        expect(controller.categoryReads, reads);
-        expect(controller.categoryLoads, loads);
-        expect(controller.initializations, initializations);
-        final search = tester.widget<AppSearchPageScaffold<AsmrCategoryType>>(
-          find.byType(AppSearchPageScaffold<AsmrCategoryType>),
-        );
-        search.onSubmitted('new query');
+        await tester.enterText(find.byType(TextField), 'New draft');
         await tester.pumpAndSettle();
-        expect(controller.lastSearchQuery, 'new query');
-        expect(controller.categoryReads, greaterThan(reads));
-        final searchReads = controller.categoryReads;
-        search.controller.text = 'new query';
-        search.onCloseOrClear();
-        await tester.pump();
-        expect(
-          find.descendant(of: results, matching: find.text('Published work')),
-          findsOneWidget,
-        );
-        await tester.pumpAndSettle();
-        expect(controller.categoryReads, searchReads);
-        expect(controller.categoryLoads, loads);
-        expect(controller.initializations, initializations);
-        Navigator.of(tester.element(results)).pop();
-        await tester.pumpAndSettle();
-        controller.cacheValid = false;
-        controller.publish('Reloaded work');
-        tester
-            .widget<IconButton>(
-              find.byKey(const ValueKey('asmr_search_button')),
-            )
-            .onPressed!();
-        await tester.pumpAndSettle();
-        await tester.pump(interaction.idleDelay);
-        await tester.pumpAndSettle();
-        expect(controller.categoryLoads, greaterThan(loads));
-        expect(
-          find.descendant(of: results, matching: find.text('Reloaded work')),
-          findsOneWidget,
-        );
-        expect(tester.takeException(), isNull);
-        await tester.pumpWidget(const SizedBox.shrink());
-      },
-      variant: TargetPlatformVariant({platform}),
-    );
-
-    testWidgets(
-      'ASMR cold search keeps one loading view until data arrives on $platform',
-      (tester) async {
-        final controller = _PresentationController(createTestAsmrServices());
-        final fixture = AppRuntimeWidgetTestFixture();
-        addTearDown(controller.dispose);
-        addTearDown(fixture.dispose);
-        await tester.pumpWidget(
-          fixture.build(
-            const AsmrTab(),
-            overrides: [
-              asmrLibraryControllerProvider.overrideWithValue(controller),
-            ],
-          ),
-        );
-        await pumpUntilFound(tester, find.text('Published work'));
-        await tester.pumpAndSettle();
-        await tester.pump(interaction.idleDelay);
-        await tester.pumpAndSettle();
-        final load = Completer<void>();
-        controller
-          ..cacheValid = false
-          ..pendingCategoryLoad = load
-          ..publish('Loaded after opening');
-        await tester.pump();
-        await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
-        await tester.pump();
-        // Complete the prepared route's offstage layout before inspecting it.
-        await tester.pump();
-        final results = find.byKey(const ValueKey('asmr_search_collected'));
-        final loading = find.descendant(
-          of: results,
-          matching: find.byKey(const ValueKey('loading')),
-        );
-        expect(results, findsOneWidget);
-        expect(loading, findsOneWidget);
-        final loadingElement = tester.element(loading);
-        final categoryState = tester.state(results);
-        for (var frame = 0; frame < 3; frame++) {
-          await tester.pump(const Duration(milliseconds: 16));
-          expect(tester.element(loading), same(loadingElement));
-          expect(find.text('Loaded after opening'), findsNothing);
-        }
+        expect(results, findsNothing);
         load.complete();
+        controller.publish('Old result finished');
         await tester.pumpAndSettle();
-        expect(tester.state(results), same(categoryState));
-        expect(loading, findsNothing);
+        expect(results, findsNothing);
         expect(
-          find.descendant(
-            of: results,
-            matching: find.text('Loaded after opening'),
-          ),
+          find.byKey(const ValueKey('asmr_search_suggestions')),
           findsOneWidget,
         );
+        expect(find.text('Old result finished'), findsNothing);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       },
@@ -946,7 +1015,7 @@ void main() {
     );
 
     testWidgets(
-      'ASMR search debounces projections and keeps submit clear and category actions immediate on $platform',
+      'ASMR drafts stay unsubmitted across language route and sorting changes on $platform',
       (tester) async {
         SharedPreferences.setMockInitialValues(const {'app_language': 'zh'});
         final controller = _PresentationController(createTestAsmrServices());
@@ -967,27 +1036,13 @@ void main() {
         await tester.pumpAndSettle();
         AppSearchPageScaffold<AsmrCategoryType> search() =>
             tester.widget(find.byType(AppSearchPageScaffold<AsmrCategoryType>));
-        void type(String value) {
-          search().controller.text = value;
-          search().onChanged(value);
-        }
-
-        search().onSubmitted('Previous query');
-        await tester.pumpAndSettle();
-        expect(controller.lastSearchQuery, 'Previous query');
         controller.searchQueries.clear();
         controller.categoryRequestQueries.clear();
-        controller.categoryRequestLanguages.clear();
-        controller.cacheValid = false;
-        type('Sl');
-        await tester.pump(const Duration(milliseconds: 100));
-        type('Sleep');
-        await tester.pump(const Duration(milliseconds: 60));
+        await tester.enterText(find.byType(TextField), 'Sleep');
         await fixture.languageProvider.setLanguage(AppLanguage.en);
-        await tester.pump();
-        final navigator = Navigator.of(
-          tester.element(find.byType(AppSearchPageScaffold<AsmrCategoryType>)),
-        );
+        search().onCategorySelected!(AsmrCategoryType.favorites);
+        await tester.pumpAndSettle();
+        final navigator = Navigator.of(tester.element(find.byType(TextField)));
         unawaited(
           navigator.push(
             PageRouteBuilder<void>(
@@ -997,42 +1052,16 @@ void main() {
             ),
           ),
         );
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pumpAndSettle();
         navigator.pop();
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 79));
-        expect(controller.searchQueries, isNot(contains('Sl')));
-        expect(controller.searchQueries, isNot(contains('Sleep')));
-        expect(controller.searchQueries, isNot(contains('Previous query')));
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 1));
+        expect(controller.searchQueries, isEmpty);
         expect(controller.categoryRequestQueries, isEmpty);
-        await tester.pump(const Duration(milliseconds: 1));
-        await tester.pump(interaction.idleDelay);
+        search().onConfirm!();
         await tester.pumpAndSettle();
         expect(controller.lastSearchQuery, 'Sleep');
-        expect(controller.categoryRequestQueries, isNotEmpty);
-        expect(controller.categoryRequestQueries, everyElement('Sleep'));
-        expect(
-          controller.categoryRequestLanguages,
-          everyElement(AppLanguage.en),
-        );
-
-        type('Other');
-        await tester.pump(const Duration(milliseconds: 100));
-        search().onSubmitted('Submitted');
-        await tester.pumpAndSettle();
-        expect(controller.lastSearchQuery, 'Submitted');
-        expect(controller.searchQueries, isNot(contains('Other')));
-        type('Clear pending');
-        search().onCloseOrClear();
-        await tester.pumpAndSettle();
-        await tester.pump(const Duration(milliseconds: 300));
-        expect(controller.searchQueries, isNot(contains('Clear pending')));
-        type('Category pending');
-        search().onCategorySelected(AsmrCategoryType.favorites);
-        await tester.pumpAndSettle();
-        expect(controller.lastSearchQuery, 'Category pending');
-        type('Disposed pending');
+        await tester.enterText(find.byType(TextField), 'Disposed pending');
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(const Duration(milliseconds: 300));
         expect(controller.searchQueries, isNot(contains('Disposed pending')));
@@ -1324,13 +1353,17 @@ void main() {
           skipOffstage: false,
         );
         final browseCardCount = browseCards.evaluate().length;
-        final reads = controller.categoryReads;
         final loads = controller.categoryLoads;
 
         await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
         await tester.pump();
-        // Complete the prepared route's offstage layout before counting cards.
-        await tester.pump();
+        await tester.pumpAndSettle();
+        tester
+            .widget<AppSearchPageScaffold<AsmrCategoryType>>(
+              find.byType(AppSearchPageScaffold<AsmrCategoryType>),
+            )
+            .onSubmitted('Published');
+        await tester.pumpAndSettle();
         final results = find.byKey(const ValueKey('asmr_search_collected'));
         final searchCards = find.descendant(
           of: results,
@@ -1348,7 +1381,10 @@ void main() {
           reason: 'Search entrance should build fewer offscreen card rows.',
         );
         expect(
-          find.descendant(of: results, matching: find.text('Published work')),
+          find.descendant(
+            of: results,
+            matching: find.text('Published work', findRichText: true),
+          ),
           findsOneWidget,
         );
         await tester.pumpAndSettle();
@@ -1360,7 +1396,6 @@ void main() {
           expect(tester.widget(searchCards.first), same(originalCard));
         }
         await tester.pumpAndSettle();
-        expect(controller.categoryReads, reads);
         expect(controller.categoryLoads, loads);
         tester.view.physicalSize = const Size(640, 800);
         await tester.pumpAndSettle();
@@ -1373,7 +1408,7 @@ void main() {
         expect(
           find.descendant(
             of: results,
-            matching: find.text('Updated after resize'),
+            matching: find.text('Updated after resize', findRichText: true),
           ),
           findsOneWidget,
         );
@@ -1404,6 +1439,8 @@ void main() {
         await tester.pumpAndSettle();
         AppSearchPageScaffold<AsmrCategoryType> search() =>
             tester.widget(find.byType(AppSearchPageScaffold<AsmrCategoryType>));
+        search().onSubmitted('Published');
+        await tester.pumpAndSettle();
         final collected = find.byKey(
           const ValueKey('asmr_search_collected'),
           skipOffstage: false,
@@ -1411,21 +1448,21 @@ void main() {
         final initialWidget = tester.widget(collected);
         final initialState = tester.state(collected);
         for (var i = 0; i < 3; i++) {
-          search().onCategorySelected(AsmrCategoryType.recommendation);
+          search().onCategorySelected!(AsmrCategoryType.recommendation);
           await tester.pumpAndSettle();
-          search().onCategorySelected(AsmrCategoryType.collected);
+          search().onCategorySelected!(AsmrCategoryType.collected);
           await tester.pumpAndSettle();
         }
         expect(tester.widget(collected), same(initialWidget));
         expect(tester.state(collected), same(initialState));
 
-        search().onCategorySelected(AsmrCategoryType.recommendation);
+        search().onCategorySelected!(AsmrCategoryType.recommendation);
         await tester.pumpAndSettle();
         search().onSubmitted('Newest');
         controller.publish('Newest work');
         await tester.pumpAndSettle();
         final readsBeforeReturn = controller.categoryReads;
-        search().onCategorySelected(AsmrCategoryType.collected);
+        search().onCategorySelected!(AsmrCategoryType.collected);
         await tester.pumpAndSettle();
         await tester.pump(interaction.idleDelay);
         await tester.pumpAndSettle();
@@ -1799,6 +1836,32 @@ class _PresentationController extends AsmrLibraryController {
         remoteCatalogService: services.remoteCatalogService,
         accountSyncService: services.accountSyncService,
       );
+
+  Object? directoryError;
+  @override
+  Object? get tagCatalogError => directoryError;
+  @override
+  Object? get voiceActorCatalogError => directoryError;
+  int tagCatalogLoads = 0;
+  int voiceCatalogLoads = 0;
+  @override
+  Future<void> ensureTagCatalog({bool force = false}) async {
+    tagCatalogLoads++;
+  }
+
+  @override
+  Future<void> ensureVoiceActorCatalog({bool force = false}) async {
+    voiceCatalogLoads++;
+  }
+
+  @override
+  List<AsmrTag> get searchTags => [
+    AsmrTag(key: 'sleep', name: 'Sleep', workCount: 20),
+  ];
+  @override
+  List<AsmrTag> get searchVoiceActors => [
+    AsmrTag(key: 'voice', name: 'Voice Actor', workCount: 30),
+  ];
 
   String title = 'Published work';
   int revision = 0;

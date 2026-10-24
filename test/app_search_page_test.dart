@@ -306,6 +306,8 @@ void main() {
           controller: controller,
           focusNode: focusNode,
           hintText: 'Search audio',
+          showConfirmButton: true,
+          onConfirm: () {},
           categories: const [AppSearchCategory(value: 0, label: 'All')],
           selectedCategory: 0,
           onCategorySelected: (_) {},
@@ -869,6 +871,109 @@ void main() {
         find.byKey(const ValueKey<String>('app_search_categories')),
       );
       expect(categoryList.physics, isA<ClampingScrollPhysics>());
+    },
+  );
+
+  testWidgets(
+    'search results fade in and out over 300ms and hide confirm button',
+    (tester) async {
+      final controller = TextEditingController();
+      final focusNode = FocusNode();
+      final showResults = ValueNotifier<bool>(false);
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+      addTearDown(showResults.dispose);
+
+      double fadeOpacityOf(Finder finder) {
+        final fade = tester.widget<FadeTransition>(
+          find
+              .ancestor(of: finder, matching: find.byType(FadeTransition))
+              .first,
+        );
+        return fade.opacity.value;
+      }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ValueListenableBuilder<bool>(
+            valueListenable: showResults,
+            builder: (_, hasResults, _) => AppSearchPageScaffold<int>(
+              controller: controller,
+              focusNode: focusNode,
+              hintText: 'Search audio',
+              showConfirmButton: !hasResults,
+              onConfirm: () => showResults.value = true,
+              categories: const <AppSearchCategory<int>>[],
+              selectedCategory: 0,
+              onCategorySelected: (_) {},
+              onChanged: (_) => showResults.value = false,
+              onSubmitted: (_) => showResults.value = true,
+              onCloseOrClear: () => showResults.value = false,
+              body: const SizedBox.expand(
+                key: ValueKey<String>('test_suggestions'),
+              ),
+              resultsBody: hasResults
+                  ? const SizedBox.expand(
+                      key: ValueKey<String>('test_results'),
+                    )
+                  : null,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final suggestions = find.byKey(const ValueKey<String>('test_suggestions'));
+      final results = find.byKey(const ValueKey<String>('test_results'));
+      final confirm = find.byKey(const ValueKey<String>('app_search_confirm'));
+
+      expect(suggestions, findsOneWidget);
+      expect(results, findsNothing);
+      expect(confirm, findsOneWidget);
+
+      showResults.value = true;
+      await tester.pump();
+      expect(suggestions, findsOneWidget);
+      expect(results, findsOneWidget);
+      expect(fadeOpacityOf(results), 0);
+
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(
+        fadeOpacityOf(results),
+        closeTo(kAppFadeCurve.transform(0.5), 0.001),
+      );
+      expect(
+        fadeOpacityOf(suggestions),
+        closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
+      );
+
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pumpAndSettle();
+      expect(results, findsOneWidget);
+      expect(suggestions, findsNothing);
+      expect(confirm, findsNothing);
+
+      showResults.value = false;
+      await tester.pump();
+      expect(suggestions, findsOneWidget);
+      expect(results, findsOneWidget);
+      expect(fadeOpacityOf(results), 1);
+
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(
+        fadeOpacityOf(results),
+        closeTo(kAppFadeCurve.transform(0.5), 0.001),
+      );
+      expect(
+        fadeOpacityOf(suggestions),
+        closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
+      );
+
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pumpAndSettle();
+      expect(suggestions, findsOneWidget);
+      expect(results, findsNothing);
+      expect(confirm, findsOneWidget);
     },
   );
 }

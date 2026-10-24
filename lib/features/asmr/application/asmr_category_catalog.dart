@@ -104,9 +104,9 @@ final class AsmrCategoryCatalog {
   ]) => (
     scope: (context ?? _currentContext()).scope,
     category: category,
-    query: normalizeSearchQuery(query),
-    // An empty search displays the same loaded pages as the root category.
-    searchEpoch: searchSession && normalizeSearchQuery(query).isNotEmpty
+    query: canonicalSearchQuery(query),
+    // Empty category queries retain the root catalog identity.
+    searchEpoch: searchSession && canonicalSearchQuery(query).isNotEmpty
         ? _searchEpoch
         : 0,
   );
@@ -115,7 +115,7 @@ final class AsmrCategoryCatalog {
     String? query,
     bool searchSession = false,
   ]) {
-    final effectiveQuery = normalizeSearchQuery(
+    final effectiveQuery = canonicalSearchQuery(
       query ?? _lastQueries[category] ?? '',
     );
     // Offstage providers can read the previous keyword during invalidation.
@@ -148,7 +148,7 @@ final class AsmrCategoryCatalog {
     final state = _state(category, searchQuery, searchSession);
     if (state.preferencesStale) return false;
     if (!isRemote(category) &&
-        normalizeSearchQuery(searchQuery).isNotEmpty &&
+        canonicalSearchQuery(searchQuery).isNotEmpty &&
         !identical(state.localSource, _localWorks(category))) {
       return state.isLoading;
     }
@@ -199,7 +199,7 @@ final class AsmrCategoryCatalog {
           ? state.totalCount ?? works.length
           : works.length,
       hasCombinedTotalCount: state.hasCombinedTotalCount,
-      activeQuery: state.query ?? normalizeSearchQuery(searchQuery),
+      activeQuery: state.query ?? canonicalSearchQuery(searchQuery),
       lastError: state.error,
       operationError: state.error,
       revision: state.revision,
@@ -229,7 +229,7 @@ final class AsmrCategoryCatalog {
       );
     }
     final works = _localWorks(category);
-    final query = normalizeSearchQuery(searchQuery);
+    final query = canonicalSearchQuery(searchQuery);
     if (query.isEmpty) return _visible(works);
     final state = _state(category, query, searchSession);
     return _visible(
@@ -415,7 +415,7 @@ final class AsmrCategoryCatalog {
   }
 
   void setSearchQuery(String query, AsmrCategoryType category) {
-    final normalized = normalizeSearchQuery(query);
+    final normalized = canonicalSearchQuery(query);
     final changed = normalized != _searchQuery || category != _searchCategory;
     if (!changed) return;
     var stateChanged = false;
@@ -442,7 +442,7 @@ final class AsmrCategoryCatalog {
   }
 
   bool isSearchRequestCurrent(String query, AsmrCategoryType category) =>
-      normalizeSearchQuery(query) == _searchQuery &&
+      canonicalSearchQuery(query) == _searchQuery &&
       (_searchQuery.isEmpty || _searchCategory == category);
 
   bool _isCurrent(_CategoryKey key, _CategoryRequestKey request) =>
@@ -455,7 +455,7 @@ final class AsmrCategoryCatalog {
     required AsmrCategoryRequestContext context,
     bool searchSession = false,
   }) async {
-    final query = normalizeSearchQuery(searchQuery);
+    final query = canonicalSearchQuery(searchQuery);
     if (searchSession && !isSearchRequestCurrent(query, category)) return;
     if (!searchSession) _lastQueries[category] = query;
     final cacheKey = _key(category, query, context, searchSession);
@@ -633,7 +633,7 @@ final class AsmrCategoryCatalog {
     required AsmrCategoryRequestContext context,
     bool searchSession = false,
   }) async {
-    final query = normalizeSearchQuery(searchQuery);
+    final query = canonicalSearchQuery(searchQuery);
     if (searchSession && !isSearchRequestCurrent(query, category)) return;
     final state = _state(category, query, searchSession);
     final refreshTask = state.refreshTask;

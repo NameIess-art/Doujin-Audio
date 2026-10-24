@@ -1,4 +1,9 @@
 const Map<String, String> appLanguageEn = {
+  'search_history': 'Search history',
+  'search_library_history': 'History',
+  'search_history_empty': 'No recent searches',
+  'search_hot_voice_actors': 'Popular voice actors',
+  'search_hot_tags': 'Popular tags',
   'section_network': 'Network services',
   'section_network_subtitle': 'Site status, proxy and DNS',
   'network_site_tests': 'Site connection tests',

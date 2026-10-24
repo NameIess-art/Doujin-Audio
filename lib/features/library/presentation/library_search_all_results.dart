@@ -9,7 +9,6 @@ import '../../../app/presentation/screen_view_models.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
-import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
@@ -21,12 +20,10 @@ import 'library_tab_empty_scan.dart';
 import 'library_tab_tree_widgets.dart';
 import 'library_tab_ui_helpers.dart';
 
-/// Owns the asynchronous tree result while categories share the page controls.
+/// Owns the asynchronous tree result for a submitted library search.
 class LibrarySearchAllResults extends ConsumerStatefulWidget {
   const LibrarySearchAllResults({
     super.key,
-    this.isActive,
-    this.activityListenable,
     required this.query,
     this.queryRevision = 0,
     required this.structureRevision,
@@ -40,10 +37,8 @@ class LibrarySearchAllResults extends ConsumerStatefulWidget {
     required this.onTreeChanged,
   });
 
-  final bool Function()? isActive;
-  final Listenable? activityListenable;
   final String query;
-  // A clear action also resets errors when the committed query is already empty.
+  // Resubmitting the same query also resets its previous error.
   final int queryRevision;
   final int structureRevision;
   final int detailRevision;
@@ -78,42 +73,15 @@ class _LibrarySearchAllResultsState
   int _visibleSearchItemsVersion = 0;
   int _visibleSearchItemsCacheVersion = -1;
 
-  bool get _isActive => widget.isActive?.call() ?? true;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.activityListenable?.addListener(_handleActivityChanged);
-  }
-
-  void _handleActivityChanged() {
-    if (!_isActive) {
-      _pendingSearchKey = null;
-      UiInteractionCoordinator.instance.cancelCommit(_searchCommitKey);
-    } else if (_visibleSearchQuery != widget.query ||
-        _visibleSearchRevision != widget.structureRevision ||
-        _visibleSearchDetailRevision != widget.detailRevision) {
-      setState(() {});
-    }
-  }
-
   @override
   void didUpdateWidget(covariant LibrarySearchAllResults oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.activityListenable, widget.activityListenable)) {
-      oldWidget.activityListenable?.removeListener(_handleActivityChanged);
-      widget.activityListenable?.addListener(_handleActivityChanged);
-    }
-    if (!_isActive) {
-      _pendingSearchKey = null;
-      UiInteractionCoordinator.instance.cancelCommit(_searchCommitKey);
-    }
     if (oldWidget.query != widget.query ||
         oldWidget.queryRevision != widget.queryRevision) {
       _pendingSearchKey = null;
       _clearSearchError();
     }
-    if (_isActive && widget.isSelectionMode && !oldWidget.isSelectionMode) {
+    if (widget.isSelectionMode && !oldWidget.isSelectionMode) {
       _expandedSearchFolderPaths.clear();
       _visibleSearchItemsVersion++;
     }
@@ -121,7 +89,6 @@ class _LibrarySearchAllResultsState
 
   @override
   void dispose() {
-    widget.activityListenable?.removeListener(_handleActivityChanged);
     UiInteractionCoordinator.instance.cancelCommit(_searchCommitKey);
     super.dispose();
   }
@@ -143,12 +110,7 @@ class _LibrarySearchAllResultsState
     final categoryRevision = detailRevision;
     if (_visibleSearchQuery == query &&
         _visibleSearchRevision == structureRevision &&
-        _visibleSearchDetailRevision == categoryRevision &&
-        (query.isNotEmpty ||
-            libraryFacade.snapshotCacheService.treeSnapshotRevision ==
-                structureRevision ||
-            libraryFacade.snapshotCacheService.cardSnapshotRevision ==
-                structureRevision)) {
+        _visibleSearchDetailRevision == categoryRevision) {
       return;
     }
 
@@ -156,82 +118,12 @@ class _LibrarySearchAllResultsState
     final queryRevision = widget.queryRevision;
     bool isCurrentRequest() =>
         mounted &&
-        _isActive &&
         widget.queryRevision == queryRevision &&
         _pendingSearchKey == requestKey;
     if (_pendingSearchKey == requestKey) {
       return;
     }
     if (_visibleSearchErrorKey == requestKey) {
-      return;
-    }
-
-    if (query.isEmpty) {
-      final snapshots = libraryFacade.snapshotCacheService;
-      final hasCompleteTree =
-          snapshots.treeSnapshotRevision == structureRevision;
-      final currentTree = hasCompleteTree
-          ? snapshots.tree
-          : snapshots.cardSnapshotRevision == structureRevision
-          ? snapshots.cards
-          : null;
-      if (currentTree != null) {
-        _visibleSearchResult = FilteredLibraryTreeResult(
-          tree: currentTree,
-          matchCount: libraryTreeTrackCount(currentTree),
-        );
-        _visibleSearchQuery = query;
-        _visibleSearchRevision = structureRevision;
-        _visibleSearchDetailRevision = categoryRevision;
-        _expandedSearchFolderPaths.clear();
-        _visibleSearchItemsVersion++;
-        return;
-      }
-
-      _pendingSearchKey = requestKey;
-      unawaited(
-        libraryFacade
-            .ensureCardSnapshot()
-            .then<void>(
-              (snapshot) {
-                if (!isCurrentRequest()) return;
-                final tree = snapshot.tree;
-                UiInteractionCoordinator.instance.scheduleCommit(
-                  key: _searchCommitKey,
-                  priority: 5,
-                  commit: () {
-                    if (!isCurrentRequest()) return;
-                    setState(() {
-                      _visibleSearchResult = FilteredLibraryTreeResult(
-                        tree: tree,
-                        matchCount: libraryTreeTrackCount(tree),
-                      );
-                      _visibleSearchQuery = query;
-                      _visibleSearchRevision = structureRevision;
-                      _visibleSearchDetailRevision = categoryRevision;
-                      _pendingSearchKey = null;
-                      _clearSearchError();
-                      _expandedSearchFolderPaths.clear();
-                      _visibleSearchItemsVersion++;
-                    });
-                  },
-                );
-              },
-              onError: (Object error, StackTrace stackTrace) {
-                if (!isCurrentRequest()) return;
-                AppLogService.error(
-                  'library_search_snapshot_failed',
-                  error: error,
-                  stackTrace: stackTrace,
-                );
-                setState(() {
-                  _pendingSearchKey = null;
-                  _visibleSearchError = error;
-                  _visibleSearchErrorKey = requestKey;
-                });
-              },
-            ),
-      );
       return;
     }
 
@@ -364,27 +256,25 @@ class _LibrarySearchAllResultsState
 
   @override
   Widget build(BuildContext context) {
+    if (widget.query.trim().isEmpty) return const SizedBox.shrink();
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
     final structureRevision = widget.structureRevision;
     final detailRevision = widget.detailRevision;
     final topPadding = widget.topPadding;
-    if (_isActive) {
-      _ensureFilteredSearchSnapshot(
-        libraryFacade: libraryFacade,
-        query: widget.query,
-        structureRevision: structureRevision,
-        detailRevision: detailRevision,
-      );
-    }
+    _ensureFilteredSearchSnapshot(
+      libraryFacade: libraryFacade,
+      query: widget.query,
+      structureRevision: structureRevision,
+      detailRevision: detailRevision,
+    );
     final hasCurrentError =
         _visibleSearchErrorKey ==
         '$structureRevision|$detailRevision|${widget.query}';
     // Keep mounted rows while the next query is filtered; the first load still
     // uses a skeleton, and a failed new query keeps the existing error behavior.
-    final result =
-        _isActive && hasCurrentError && _visibleSearchQuery != widget.query
+    final result = hasCurrentError && _visibleSearchQuery != widget.query
         ? null
         : _visibleSearchResult;
     final tree = result?.tree;
@@ -403,17 +293,9 @@ class _LibrarySearchAllResultsState
     } else if (tree.isEmpty) {
       content = AppEmptyState(
         key: const ValueKey<String>('library_search_empty'),
-        icon: _visibleSearchQuery.isEmpty
-            ? Icons.library_music_outlined
-            : Icons.search_off_rounded,
-        title: i18n.tr(
-          _visibleSearchQuery.isEmpty ? 'no_audio_files' : 'no_search_results',
-        ),
-        message: i18n.tr(
-          _visibleSearchQuery.isEmpty
-              ? 'import_audio_hint'
-              : 'search_try_another_term',
-        ),
+        icon: Icons.search_off_rounded,
+        title: i18n.tr('no_search_results'),
+        message: i18n.tr('search_try_another_term'),
       );
     } else {
       final visibleItems = _flattenVisibleSearchTree(tree);
@@ -427,7 +309,7 @@ class _LibrarySearchAllResultsState
             LibraryLikeCardMetrics.listHorizontalPadding,
             topPadding,
             LibraryLikeCardMetrics.listHorizontalPadding,
-            MediaQuery.paddingOf(context).bottom + 16,
+            MediaQuery.paddingOf(context).bottom + 96,
           ),
           cacheExtent: 120,
           physics: const ClampingScrollPhysics(),
@@ -482,7 +364,7 @@ class _LibrarySearchAllResultsState
       showPlaceholder: result == null && !hasCurrentError,
       placeholder: LibraryLoadingSkeleton(
         bottomInset: 16,
-        topInset: AppSearchPageScaffold.controlsTopInset(context),
+        topInset: topPadding,
       ),
       content: content,
     );

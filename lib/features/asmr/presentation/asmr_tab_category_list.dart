@@ -172,8 +172,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.category != widget.category ||
         oldWidget.searchSession != widget.searchSession ||
-        normalizeSearchQuery(oldWidget.searchQuery) !=
-            normalizeSearchQuery(widget.searchQuery)) {
+        canonicalSearchQuery(oldWidget.searchQuery) !=
+            canonicalSearchQuery(widget.searchQuery)) {
       for (final entry in _collapsingWorks.values) {
         entry.dispose();
       }
@@ -256,7 +256,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
 
   @override
   Widget build(BuildContext context) {
-    final normalizedSearchQuery = normalizeSearchQuery(widget.searchQuery);
+    final normalizedSearchQuery = canonicalSearchQuery(widget.searchQuery);
     final request = (
       category: widget.category,
       searchQuery: normalizedSearchQuery,
@@ -303,7 +303,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final queryMismatch =
         widget.category != AsmrCategoryType.favorites &&
         widget.category != AsmrCategoryType.history &&
-        normalizeSearchQuery(state.activeQuery) != normalizedSearchQuery;
+        canonicalSearchQuery(state.activeQuery) != normalizedSearchQuery;
     final works = queryMismatch ? const <AsmrWork>[] : state.works;
     final isFavorites = widget.category == AsmrCategoryType.favorites;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
@@ -777,7 +777,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
             .read(asmrLibraryControllerProvider)
             ?.categoryViewState(
               widget.category,
-              searchQuery: normalizeSearchQuery(widget.searchQuery),
+              searchQuery: canonicalSearchQuery(widget.searchQuery),
               searchSession: widget.searchSession,
             );
         if (currentState == null ||

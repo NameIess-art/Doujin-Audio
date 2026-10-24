@@ -2418,6 +2418,10 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey<String>('asmr_search_collected')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('asmr_search_suggestions')),
       findsOneWidget,
     );
     expect(
@@ -2574,6 +2578,8 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
     await _waitForSearchRoute(tester);
+    await _submitSearchQuery(tester, 'work');
+    await _waitForAsmrContent(tester);
 
     final firstWork = find.text('Loaded work', findRichText: true);
     final secondWork = find.text('Second loaded work', findRichText: true);
@@ -3280,20 +3286,23 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey<String>('asmr_search_button')),
       );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-      await tester.pump(const Duration(milliseconds: 200));
+      await _waitForSearchRoute(tester);
       await tester.enterText(
         find.byKey(const ValueKey<String>('app_search_field')),
         'sleep',
       );
-      await tester.pump(const Duration(milliseconds: 260));
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await _waitForAsmrContent(tester);
 
+      final interactionSource = Object();
+      coordinator.beginInteraction(interactionSource);
+      addTearDown(() => coordinator.cancelInteraction(interactionSource));
       final recommendationLabel = harness.languageProvider.tr(
         'asmr_category_recommendation',
       );
       await tester.tap(find.text(recommendationLabel));
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
 
       final recommendationList = find.byKey(
         const ValueKey<String>('asmr_search_recommendation'),
@@ -3311,6 +3320,7 @@ void main() {
       expect(recommendationSkeletons, findsWidgets);
       expect(recommendationEmptyState, findsNothing);
 
+      coordinator.endInteraction(interactionSource);
       await tester.pump(const Duration(milliseconds: 600));
       await tester.pump(const Duration(milliseconds: 200));
       await tester.pump(coordinator.idleDelay);
@@ -3337,7 +3347,7 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'ASMR search invalidates input immediately and debounces dispatch on $platform',
+      'ASMR search waits for confirmation and editing restores suggestions on $platform',
       (tester) async {
         final controller = _QueuedEmptyAsmrLibraryController(
           services: createTestAsmrServices(),
@@ -3359,13 +3369,19 @@ void main() {
         );
         await tester.pumpAndSettle();
         controller.refreshRequests.clear();
+        controller.searchInputs.clear();
         final field = find.byKey(const ValueKey<String>('app_search_field'));
         await tester.enterText(field, 'old');
-        expect(controller.searchInputs, [(AsmrCategoryType.collected, 'old')]);
-        await tester.pump(const Duration(milliseconds: 120));
+        expect(controller.searchInputs, [(AsmrCategoryType.collected, '')]);
+        await tester.pump(const Duration(seconds: 1));
         expect(controller.refreshRequests, isEmpty);
+        expect(
+          find.byKey(const ValueKey('asmr_search_suggestions')),
+          findsOneWidget,
+        );
         await tester.enterText(field, 'old ');
-        await tester.pump(const Duration(milliseconds: 120));
+        await tester.pump();
+        await tester.tap(find.byKey(const ValueKey('app_search_confirm')));
         for (var i = 0; i < 20 && controller.refreshRequests.isEmpty; i++) {
           await tester.pump(const Duration(milliseconds: 100));
         }
@@ -3375,17 +3391,21 @@ void main() {
         await tester.enterText(field, 'new');
         await tester.pump(const Duration(milliseconds: 100));
         await tester.enterText(field, 'newest');
-        expect(controller.searchInputs.map((input) => input.$2), [
-          'old',
-          'new',
-          'newest',
-        ]);
-        await tester.pump(const Duration(milliseconds: 239));
+        await tester.pump(const Duration(seconds: 1));
+        expect(
+          find.byKey(const ValueKey('asmr_search_suggestions')),
+          findsOneWidget,
+        );
         expect(controller.refreshRequests, hasLength(1));
+        await tester.tap(find.byKey(const ValueKey('app_search_confirm')));
         for (var i = 0; i < 20 && controller.refreshRequests.length < 2; i++) {
           await tester.pump(const Duration(milliseconds: 100));
         }
         expect(controller.refreshRequests, [
+          (AsmrCategoryType.collected, 'old'),
+          (AsmrCategoryType.collected, 'newest'),
+        ]);
+        expect(controller.searchInputs.where((input) => input.$2.isNotEmpty), [
           (AsmrCategoryType.collected, 'old'),
           (AsmrCategoryType.collected, 'newest'),
         ]);
@@ -3433,11 +3453,13 @@ void main() {
         controller.initializationWait = initialization.future;
         final field = find.byKey(const ValueKey<String>('app_search_field'));
         await tester.enterText(field, 'old');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
         await tester.pump(const Duration(milliseconds: 250));
         if (leavePage) {
           await tester.pumpWidget(const SizedBox.shrink());
         } else {
           await tester.enterText(field, 'new');
+          await tester.testTextInput.receiveAction(TextInputAction.search);
           await tester.pump(const Duration(milliseconds: 250));
         }
         initialization.complete();
@@ -3475,6 +3497,11 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
     await _waitForSearchRoute(tester);
+    await _submitSearchQuery(tester, 'initial');
+    await _waitForAsmrContent(tester);
+    expect(controller.collectedSearchRefreshCount, 1);
+    controller.completeCollectedSearchRefresh();
+    await _waitForAsmrContent(tester);
 
     final searchPage = find.byKey(
       const ValueKey<String>('asmr_search_collected'),
@@ -3483,7 +3510,7 @@ void main() {
       of: searchPage,
       matching: find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
     );
-    final scrollController = tester.widget<ScrollView>(contentList).controller!;
+    var scrollController = tester.widget<ScrollView>(contentList).controller!;
     expect(scrollController.position.maxScrollExtent, greaterThan(0));
     scrollController.jumpTo(scrollController.position.maxScrollExtent);
     await tester.pump();
@@ -3493,12 +3520,20 @@ void main() {
       find.byKey(const ValueKey<String>('app_search_field')),
       'sleep',
     );
+    await tester.pump();
+    await tester.pump(kAppFadeDuration);
+    expect(searchPage, findsNothing);
+    expect(
+      find.byKey(const ValueKey('asmr_search_suggestions')),
+      findsOneWidget,
+    );
+    expect(controller.collectedSearchRefreshCount, 1);
+    await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump(const Duration(milliseconds: 250));
     await tester.pump();
 
-    expect(controller.collectedSearchRefreshCount, 0);
     await _waitForAsmrContent(tester);
-    expect(controller.collectedSearchRefreshCount, 1);
+    expect(controller.collectedSearchRefreshCount, 2);
     expect(
       find.descendant(
         of: searchPage,
@@ -3509,6 +3544,7 @@ void main() {
 
     controller.completeCollectedSearchRefresh();
     await _waitForAsmrContent(tester);
+    scrollController = tester.widget<ScrollView>(contentList).controller!;
     expect(scrollController.offset, 0);
     final refreshIndicator = tester.widget<GlassRefreshIndicator>(
       find.descendant(
@@ -3519,7 +3555,7 @@ void main() {
     final refreshFuture = refreshIndicator.onRefresh();
     await tester.pump();
 
-    expect(controller.collectedSearchRefreshCount, 2);
+    expect(controller.collectedSearchRefreshCount, 3);
     expect(
       find.descendant(
         of: searchPage,
@@ -3569,6 +3605,7 @@ void main() {
       find.byKey(const ValueKey<String>('app_search_field')),
       'sleep',
     );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump(const Duration(milliseconds: 250));
     await _waitForAsmrContent(tester);
     expect(find.text('Second loaded work', findRichText: true), findsOneWidget);
@@ -4009,6 +4046,8 @@ void main() {
               find.byKey(const ValueKey<String>('asmr_search_button')),
             );
             await tester.pumpAndSettle();
+            await _submitSearchQuery(tester, 'work');
+            await tester.pumpAndSettle();
           }
           void select(AsmrCategoryType category) {
             if (inSearch) {
@@ -4016,7 +4055,7 @@ void main() {
                   .widget<AppSearchPageScaffold<AsmrCategoryType>>(
                     find.byType(AppSearchPageScaffold<AsmrCategoryType>),
                   )
-                  .onCategorySelected(category);
+                  .onCategorySelected!(category);
             } else {
               tester
                   .widget<HeaderSegmentedCategoryBar<AsmrCategoryType>>(
@@ -4039,6 +4078,7 @@ void main() {
           final outgoingScroll = tester
               .widget<ScrollView>(collectedList)
               .controller!;
+          final collectedElement = tester.element(collectedList);
           unawaited(
             outgoingScroll.animateTo(
               outgoingScroll.offset + 100,
@@ -4068,10 +4108,17 @@ void main() {
           await tester.pumpAndSettle();
           await tester.pump(UiInteractionCoordinator.instance.idleDelay);
           await tester.pumpAndSettle();
+          expect(tester.element(collectedList), same(collectedElement));
           expect(
-            controller.categoryViewReadCounts[AsmrCategoryType.collected],
-            inSearch ? collectedReads : greaterThan(collectedReads!),
+            tester.widget<ScrollView>(collectedList).controller,
+            same(outgoingScroll),
           );
+          if (!inSearch) {
+            expect(
+              controller.categoryViewReadCounts[AsmrCategoryType.collected],
+              greaterThan(collectedReads!),
+            );
+          }
           expect(find.text('Loaded work', findRichText: true), findsOneWidget);
           expect(tester.takeException(), isNull);
         },
@@ -7308,6 +7355,12 @@ final class _AppShellNativePlaybackRepository extends NativePlaybackRepository {
 
 final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   @override
+  Future<void> ensureVoiceActorCatalog({bool force = false}) async {}
+
+  @override
+  Future<void> ensureTagCatalog({bool force = false}) async {}
+
+  @override
   Future<void> ensureCategoryLoaded(
     AsmrCategoryType category, {
     String searchQuery = '',
@@ -7875,6 +7928,15 @@ Future<void> _waitForSearchRoute(WidgetTester tester) async {
     }
   }
   fail('Search route did not complete its prepared entrance fade');
+}
+
+Future<void> _submitSearchQuery(WidgetTester tester, String query) async {
+  await tester.enterText(
+    find.byKey(const ValueKey<String>('app_search_field')),
+    query,
+  );
+  await tester.testTextInput.receiveAction(TextInputAction.search);
+  await tester.pump();
 }
 
 Future<void> _waitForAsmrContent(WidgetTester tester) async {

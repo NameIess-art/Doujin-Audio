@@ -901,29 +901,16 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey<String>('asmr_search_button')),
       );
-      await tester.pump();
-      // The prepared route first lays out offstage, then exposes its content.
-      await tester.pump();
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
-          matching: find.text('Shared work 1'),
-        ),
-        findsOneWidget,
-      );
       await tester.pumpAndSettle();
       expect(
-        find.descendant(
-          of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
-          matching: find.text('Shared work 1'),
-        ),
+        find.byKey(const ValueKey('asmr_search_suggestions')),
         findsOneWidget,
       );
+      expect(find.byKey(const ValueKey('asmr_search_favorites')), findsNothing);
       expect(controller.ensureLanguages, hasLength(rootLoads));
-      await tester.tap(find.text('收藏'));
-      await tester.pumpAndSettle();
       Future<void> query(String value) async {
         await tester.enterText(find.byType(TextField), value);
+        await tester.testTextInput.receiveAction(TextInputAction.search);
         await tester.pump(const Duration(milliseconds: 260));
         // Scroll idle timers can outlive the last scheduled animation frame.
         // Wait for the new request's published cards before reading its offset.
@@ -976,16 +963,10 @@ void main() {
         tester.widget<TextField>(find.byType(TextField)).controller!.text,
         isEmpty,
       );
-      await tester.tap(find.text('收藏'));
-      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('asmr_search_favorites')), findsNothing);
       final reopenedScroll = tester
-          .widget<ScrollView>(
-            find.descendant(
-              of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
-              matching: find.byKey(
-                const PageStorageKey(AsmrCategoryType.favorites),
-              ),
-            ),
+          .widget<CustomScrollView>(
+            find.byKey(const ValueKey('asmr_search_suggestions')),
           )
           .controller!;
       expect(reopenedScroll.offset, 0);
@@ -1729,7 +1710,16 @@ void main() {
       }
       await tester.tap(find.text('收藏'));
       await tester.pumpAndSettle();
-      await tester.longPress(find.text('Batch work'));
+      if (inSearch) {
+        await tester.enterText(find.byType(TextField), 'Batch');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pumpAndSettle();
+      }
+      await pumpUntilFound(
+        tester,
+        find.byKey(ValueKey('asmr-work-${work.workKey}')),
+      );
+      await tester.longPress(find.byKey(ValueKey('asmr-work-${work.workKey}')));
       await tester.pumpAndSettle();
       expect(
         find.byKey(ValueKey<String>('${keyPrefix}_batch_selection_header')),
@@ -1775,7 +1765,16 @@ void main() {
       }
       await tester.tap(find.text('收藏'));
       await tester.pumpAndSettle();
-      await tester.longPress(find.text('Favorite batch work'));
+      if (inSearch) {
+        await tester.enterText(find.byType(TextField), 'Batch');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pumpAndSettle();
+      }
+      await pumpUntilFound(
+        tester,
+        find.byKey(ValueKey('asmr-work-${work.workKey}')),
+      );
+      await tester.longPress(find.byKey(ValueKey('asmr-work-${work.workKey}')));
       await tester.pumpAndSettle();
 
       await tester.tap(
@@ -1801,6 +1800,11 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
         remoteCatalogService: services.remoteCatalogService,
         accountSyncService: services.accountSyncService,
       );
+
+  @override
+  Future<void> ensureTagCatalog({bool force = false}) async {}
+  @override
+  Future<void> ensureVoiceActorCatalog({bool force = false}) async {}
 
   List<AsmrWork> favoriteWorks;
   Future<List<AsmrTrackFile>>? pendingTrackTree;

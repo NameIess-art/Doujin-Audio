@@ -1,4 +1,9 @@
 const Map<String, String> appLanguageJa = {
+  'search_history': '検索履歴',
+  'search_library_history': '履歴',
+  'search_history_empty': '検索履歴はありません',
+  'search_hot_voice_actors': '人気の声優',
+  'search_hot_tags': '人気のタグ',
   'section_network': 'ネットワークサービス',
   'section_network_subtitle': '接続状況、プロキシと DNS',
   'network_site_tests': 'サイト接続テスト',

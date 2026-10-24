@@ -138,6 +138,7 @@ class AsmrApiService {
           return AsmrTag(
             key: 'online:$id',
             onlineId: id is int ? id : null,
+            workCount: (json['count'] as num?)?.toInt(),
             name: json['name'] as String? ?? aliases.first,
             aliases: aliases,
           );

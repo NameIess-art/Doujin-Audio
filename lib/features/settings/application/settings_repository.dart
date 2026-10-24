@@ -9,6 +9,7 @@ import '../../asmr/domain/asmr_media_sources.dart';
 import '../../../core/state/audio_state_slice.dart';
 import '../../../core/app_language.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/media/search_query_utils.dart';
 import '../../../core/ui/app_interaction_feedback_settings.dart';
 import '../../asmr/domain/asmr_download.dart';
 import '../../player/domain/audio_effects.dart';
@@ -45,6 +46,8 @@ class SettingsRepository {
   bool librarySortAscending = true;
   bool libraryGroupByLibrary = false;
   List<String> pinnedLibraryPaths = <String>[];
+  List<String> librarySearchHistory = const <String>[];
+  List<String> asmrSearchHistory = const <String>[];
   PlaylistSortCriterion playlistSortCriterion = PlaylistSortCriterion.name;
   bool playlistSortAscending = true;
   bool playlistGroupByLibrary = false;
@@ -217,6 +220,10 @@ class SettingsRepository {
         pinnedPlaylistSessionIds = <String>[];
       }
       customEqPresets = _decodeEqPresets(playback['customEqPresets']);
+      librarySearchHistory = _decodeSearchHistory(
+        playback['librarySearchHistory'],
+      );
+      asmrSearchHistory = _decodeSearchHistory(playback['asmrSearchHistory']);
       maxCacheBytes =
           (playback['maxCacheBytes'] as num?)?.toInt() ??
           AppCacheService.defaultMaxCacheBytes;
@@ -269,6 +276,8 @@ class SettingsRepository {
         'librarySortAscending': librarySortAscending,
         'libraryGroupByLibrary': libraryGroupByLibrary,
         'pinnedLibraryPaths': pinnedLibraryPaths,
+        'librarySearchHistory': librarySearchHistory,
+        'asmrSearchHistory': asmrSearchHistory,
         'playlistSortCriterion': playlistSortCriterion.name,
         'playlistSortAscending': playlistSortAscending,
         'playlistGroupByLibrary': playlistGroupByLibrary,
@@ -408,6 +417,20 @@ class SettingsRepository {
 
   Future<void> toggleLibraryPathPinned(String path) =>
       toggleLibraryPathsPinned([path]);
+
+  Future<void> recordSearchQuery(String query, {required bool online}) {
+    final normalized = canonicalSearchQuery(query);
+    if (normalized.isEmpty) return Future<void>.value();
+    return _change(() async {
+      final history = online ? asmrSearchHistory : librarySearchHistory;
+      final next = _decodeSearchHistory(<String>[normalized, ...history]);
+      if (online) {
+        asmrSearchHistory = next;
+      } else {
+        librarySearchHistory = next;
+      }
+    });
+  }
 
   Future<void> pinPlaylistSessions(Iterable<String> sessionIds) {
     final ids = sessionIds.toList(growable: false);
@@ -711,6 +734,8 @@ class SettingsRepository {
     librarySortAscending = snapshot.librarySortAscending;
     libraryGroupByLibrary = snapshot.libraryGroupByLibrary;
     pinnedLibraryPaths = snapshot.pinnedLibraryPaths;
+    librarySearchHistory = snapshot.librarySearchHistory;
+    asmrSearchHistory = snapshot.asmrSearchHistory;
     playlistSortCriterion = snapshot.playlistSortCriterion;
     playlistSortAscending = snapshot.playlistSortAscending;
     playlistGroupByLibrary = snapshot.playlistGroupByLibrary;
@@ -755,6 +780,8 @@ class SettingsRepository {
     librarySortAscending = true;
     libraryGroupByLibrary = false;
     pinnedLibraryPaths = <String>[];
+    librarySearchHistory = const <String>[];
+    asmrSearchHistory = const <String>[];
     playlistSortCriterion = PlaylistSortCriterion.name;
     playlistSortAscending = true;
     playlistGroupByLibrary = false;
@@ -803,6 +830,20 @@ class SettingsRepository {
         .toList(growable: false);
   }
 
+  List<String> _decodeSearchHistory(Object? value) {
+    if (value is! List) return const <String>[];
+    final seen = <String>{};
+    return List<String>.unmodifiable(
+      value
+          .whereType<String>()
+          .map(canonicalSearchQuery)
+          .where((query) {
+            return query.isNotEmpty && seen.add(query.toLowerCase());
+          })
+          .take(50),
+    );
+  }
+
   void syncSlice({bool isInitialized = false}) {
     slice.update(_snapshot(isInitialized: isInitialized));
   }
@@ -821,6 +862,14 @@ class SettingsRepository {
           listEquals(previous.pinnedLibraryPaths, pinnedLibraryPaths)
           ? previous.pinnedLibraryPaths
           : pinnedLibraryPaths,
+      librarySearchHistory:
+          listEquals(previous.librarySearchHistory, librarySearchHistory)
+          ? previous.librarySearchHistory
+          : librarySearchHistory,
+      asmrSearchHistory:
+          listEquals(previous.asmrSearchHistory, asmrSearchHistory)
+          ? previous.asmrSearchHistory
+          : asmrSearchHistory,
       playlistSortCriterion: playlistSortCriterion,
       playlistSortAscending: playlistSortAscending,
       playlistGroupByLibrary: playlistGroupByLibrary,

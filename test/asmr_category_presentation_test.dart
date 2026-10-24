@@ -895,6 +895,27 @@ void main() {
           fixture.settings.slice.state.asmrSearchHistory,
           isNot(contains('Unconfirmed')),
         );
+        final loadsBeforeClear = controller.categoryLoads;
+        final historyBeforeClear =
+            fixture.settings.slice.state.asmrSearchHistory;
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const ValueKey('asmr_search_history')),
+            matching: find.byTooltip('清空'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(fixture.settings.slice.state.asmrSearchHistory, isEmpty);
+        expect(search().controller.text, 'Unconfirmed');
+        expect(find.text('搜索历史已清空'), findsOneWidget);
+        await tester.tap(find.text('撤销'));
+        await tester.pumpAndSettle();
+        expect(
+          fixture.settings.slice.state.asmrSearchHistory,
+          historyBeforeClear,
+        );
+        expect(search().controller.text, 'Unconfirmed');
+        expect(controller.categoryLoads, loadsBeforeClear);
         search().onCloseOrClear();
         await tester.pumpAndSettle();
         expect(search().controller.text, isEmpty);
@@ -1423,6 +1444,89 @@ void main() {
         );
       }
     }
+
+    testWidgets(
+      'ASMR large library scroll keeps card work within the viewport on $platform',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = Size(
+          platform == TargetPlatform.windows ? 1280 : 450,
+          800,
+        );
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final controller = _PresentationController(createTestAsmrServices())
+          ..publishedWorks = [
+            for (var index = 0; index < 1000; index++)
+              AsmrWork.fromJson({
+                'id': index + 1,
+                'title': 'Published work $index with a long descriptive title',
+                'circle': const {
+                  'name': 'A circle with a long descriptive name',
+                },
+                'vas': const [
+                  {'name': 'Voice actor one'},
+                  {'name': 'Voice actor two'},
+                ],
+                'tags': const [
+                  {'name': 'Relaxation'},
+                  {'name': 'Sleep aid'},
+                ],
+              }),
+          ];
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        final cards = find.byType(LibraryLikeMetadataWorkCardContent);
+        await pumpUntilFound(tester, cards);
+        await tester.pumpAndSettle();
+        final categoryReads = controller.categoryReads;
+        final existingCards = cards.evaluate().toSet();
+        var existingCardBuilds = 0;
+        var newCardBuilds = 0;
+        final previous = debugOnRebuildDirtyWidget;
+        debugOnRebuildDirtyWidget = (element, builtOnce) {
+          previous?.call(element, builtOnce);
+          if (element.widget is! LibraryLikeMetadataWorkCardContent) return;
+          if (existingCards.contains(element)) {
+            existingCardBuilds++;
+          } else {
+            newCardBuilds++;
+          }
+        };
+        addTearDown(() => debugOnRebuildDirtyWidget = previous);
+        final list = find.byKey(
+          const PageStorageKey(AsmrCategoryType.collected),
+        );
+        final gesture = await tester.startGesture(
+          tester.getCenter(list) + const Offset(0, 100),
+        );
+        for (final direction in [-1, 1]) {
+          for (var frame = 0; frame < 16; frame++) {
+            await gesture.moveBy(Offset(0, direction * 30));
+            await tester.pump(const Duration(milliseconds: 16));
+            expect(cards.evaluate().length, lessThan(60));
+          }
+        }
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(controller.categoryReads, categoryReads);
+        expect(existingCardBuilds, 0);
+        expect(newCardBuilds, greaterThan(0));
+        expect(newCardBuilds, lessThan(60));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
 
     testWidgets(
       'ASMR offscreen load-more progress stays idle until visible on $platform',

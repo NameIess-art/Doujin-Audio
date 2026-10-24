@@ -200,6 +200,103 @@ void main() {
     },
   );
 
+  for (final online in [false, true]) {
+    test(
+      'undo merges cleared history with later searches (online: $online)',
+      () async {
+        await settings.recordSearchQuery('Local', online: false);
+        await settings.recordSearchQuery('Online', online: true);
+        final queued = settings.recordSearchQuery('Actor, Tag', online: online);
+        final clearing = settings.clearSearchHistory(online: online);
+        await queued;
+        final removed = await clearing;
+        expect(removed, ['Actor, Tag', online ? 'Online' : 'Local']);
+        expect(() => removed.clear(), throwsUnsupportedError);
+        await settings.recordSearchQuery('New', online: online);
+        await settings.recordSearchQuery('actor, tag', online: online);
+        await settings.restoreSearchHistory(removed, online: online);
+        final expected = ['actor, tag', 'New', online ? 'Online' : 'Local'];
+        expect(
+          online ? settings.asmrSearchHistory : settings.librarySearchHistory,
+          expected,
+        );
+        expect(
+          online ? settings.librarySearchHistory : settings.asmrSearchHistory,
+          online ? ['Local'] : ['Online'],
+        );
+        final restarted = SettingsRepository();
+        addTearDown(restarted.dispose);
+        await restarted.loadPersistedState(enforceCacheLimit: false);
+        expect(
+          online ? restarted.asmrSearchHistory : restarted.librarySearchHistory,
+          expected,
+        );
+      },
+    );
+
+    test(
+      'failed history undo preserves newer searches (online: $online)',
+      () async {
+        await settings.recordSearchQuery('Old', online: online);
+        final removed = await settings.clearSearchHistory(online: online);
+        await settings.recordSearchQuery('New', online: online);
+        final snapshot = settings.slice.state;
+        preferences.beforeSave = () async => false;
+        await expectLater(
+          settings.restoreSearchHistory(removed, online: online),
+          throwsStateError,
+        );
+        expect(settings.slice.state, snapshot);
+        expect(
+          online ? settings.asmrSearchHistory : settings.librarySearchHistory,
+          ['New'],
+        );
+      },
+    );
+
+    test(
+      'clearing history persists only its scope (online: $online)',
+      () async {
+        await settings.recordSearchQuery('Local', online: false);
+        await settings.recordSearchQuery('Online', online: true);
+        await settings.clearSearchHistory(online: online);
+        expect(
+          settings.slice.state.librarySearchHistory,
+          online ? ['Local'] : <String>[],
+        );
+        expect(
+          settings.slice.state.asmrSearchHistory,
+          online ? <String>[] : ['Online'],
+        );
+        final restarted = SettingsRepository();
+        addTearDown(restarted.dispose);
+        await restarted.loadPersistedState(enforceCacheLimit: false);
+        expect(restarted.librarySearchHistory, settings.librarySearchHistory);
+        expect(restarted.asmrSearchHistory, settings.asmrSearchHistory);
+        final writes = preferences.writes.length;
+        await settings.clearSearchHistory(online: online);
+        expect(preferences.writes.length, writes);
+      },
+    );
+
+    test(
+      'failed history clearing restores its scope (online: $online)',
+      () async {
+        await settings.recordSearchQuery('Local', online: false);
+        await settings.recordSearchQuery('Online', online: true);
+        final original = settings.slice.state;
+        preferences.beforeSave = () async => false;
+        await expectLater(
+          settings.clearSearchHistory(online: online),
+          throwsStateError,
+        );
+        expect(settings.librarySearchHistory, ['Local']);
+        expect(settings.asmrSearchHistory, ['Online']);
+        expect(settings.slice.state, original);
+      },
+    );
+  }
+
   test('history snapshots are immutable and participate in state equality', () {
     final source = ['Actor, Tag'];
     final state = SettingsState(

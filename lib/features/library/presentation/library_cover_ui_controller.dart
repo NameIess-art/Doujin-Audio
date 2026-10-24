@@ -67,6 +67,22 @@ final class LibraryCoverUiController {
     );
   }
 
+  Future<String?> deferredPlaybackCover(
+    MusicTrack? track, {
+    BuildContext? context,
+  }) {
+    if (track == null) return SynchronousFuture(null);
+    final cache = _library.coverArtworkCacheService;
+    final coverKey = cache.coverSearchKeyForTrack(track) ?? track.path;
+    final revision = cache.revisionForScope(coverKey);
+    return _deferredLookup(
+      key: 'playback:$coverKey:$revision',
+      cached: cache.cachedFutureForPlaybackTrack(track),
+      context: context,
+      lookup: () => _library.playbackCoverPathFutureForTrack(track),
+    );
+  }
+
   Future<String?> deferredRemoteCover(String url, {BuildContext? context}) {
     final normalizedUrl = url.trim();
     final revision = _library.coverArtworkCacheService.revisionForScope(
@@ -104,11 +120,23 @@ final class LibraryCoverUiController {
   }
 
   void _schedulePendingLookups() {
-    if (_scheduleBatchPending) return;
+    if (_disposed || _interactionPaused || _scheduleBatchPending) return;
     _scheduleBatchPending = true;
     scheduleMicrotask(() {
       _scheduleBatchPending = false;
-      if (_disposed) return;
+      if (_disposed || _interactionPaused) return;
+      // A fling can recycle many rows while slow artwork occupies every slot.
+      // Retire those requests before sorting the next viewport's candidates.
+      _deferredLookups.removeWhere((_, request) {
+        request.contexts.removeWhere((context) => !context.mounted);
+        if (request.started ||
+            request.hasUnscopedRequest ||
+            request.contexts.isNotEmpty) {
+          return false;
+        }
+        request.result.complete(null);
+        return true;
+      });
       // Admit this frame's cards together after layout, so the first built
       // cache-extent item cannot start before the viewport's center is known.
       _scheduler.setPaused(true);
@@ -155,6 +183,7 @@ final class LibraryCoverUiController {
   }
 
   Future<void> _runLookup(String key, _DeferredCoverLookup request) async {
+    if (request.result.isCompleted) return;
     // A cached page can become hidden while its request is queued. Keep the
     // same future for its return, without starting invisible cover discovery.
     if (!_disposed && !_canRunLookup(request)) {
@@ -162,6 +191,7 @@ final class LibraryCoverUiController {
       return;
     }
     final completer = request.result;
+    request.started = true;
     try {
       final hasMountedRequester =
           request.hasUnscopedRequest ||
@@ -245,4 +275,5 @@ final class _DeferredCoverLookup {
   final contexts = <BuildContext>{};
   bool hasUnscopedRequest = false;
   bool submitted = false;
+  bool started = false;
 }

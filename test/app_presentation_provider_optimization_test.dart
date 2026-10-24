@@ -6,10 +6,12 @@ import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
+import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -70,6 +72,107 @@ void main() {
     UiInteractionCoordinator.instance.resetForTest();
   });
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  test('cached card details are available on the first synchronous read', () {
+    final fixture = AppRuntimeWidgetTestFixture();
+    final container = ProviderContainer(
+      overrides: [libraryFacadeProvider.overrideWithValue(fixture.library)],
+    );
+    addTearDown(fixture.dispose);
+    addTearDown(container.dispose);
+    final target = AudioDetailTarget.libraryRootFolder('/library/cached');
+    final detail = AudioDetail.empty(target).copyWith(workTitle: 'Cached work');
+    fixture.library.detailCacheService.markChanged(detail);
+    final provider = libraryDetailForTargetProvider(target);
+    final subscription = container.listen(provider, (_, _) {});
+    addTearDown(subscription.close);
+    expect(container.read(provider).isLoading, false);
+    expect(container.read(provider).requireValue.workTitle, 'Cached work');
+  });
+
+  testWidgets(
+    'a thousand local works keep cards stable while scrolling in both directions',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
+          ? const Size(1280, 800)
+          : const Size(450, 800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final tracks = List.generate(
+        1000,
+        (index) => testMusicTrack(
+          name: 'Work ${index.toString().padLeft(4, '0')}',
+          path: '/library/scroll/$index.mp3',
+          groupKey: '/library/scroll/$index.mp3',
+          groupTitle: 'Work $index',
+          isSingle: true,
+        ),
+      );
+      fixture.library.addTracks(tracks, persist: false);
+      for (final track in tracks) {
+        fixture.library.detailCacheService.markChanged(
+          AudioDetail.empty(
+            AudioDetailTarget.singleAudioFile(track.path),
+          ).copyWith(workTitle: track.displayName),
+        );
+      }
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+      fixture.settingsRepository.syncSlice(isInitialized: true);
+      await tester.runAsync(fixture.library.ensureCardSnapshot);
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await pumpUntilLibraryTreeReady(tester, fixture.library);
+      final list = find.byKey(const PageStorageKey<String>('library_list'));
+      await pumpUntilFound(tester, list);
+      await pumpAndSettleWithAsync(tester);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(LibraryTab)),
+      );
+      final snapshot = container.read(librarySortedSnapshotUiProvider).nodes;
+      final initialCards = find
+          .byType(LibraryLikeSingleAudioCardContent)
+          .evaluate()
+          .toSet();
+      expect(initialCards.length, inInclusiveRange(1, 60));
+      var existingBuilds = 0;
+      final previous = debugOnRebuildDirtyWidget;
+      debugOnRebuildDirtyWidget = (element, builtOnce) {
+        previous?.call(element, builtOnce);
+        if (builtOnce && initialCards.contains(element)) existingBuilds++;
+      };
+      try {
+        final controller = tester.widget<ScrollView>(list).controller!;
+        for (final delta in [-600.0, -900.0, 600.0, 900.0]) {
+          final before = controller.offset;
+          await tester.drag(list, Offset(0, delta));
+          await tester.pumpAndSettle();
+          expect(
+            controller.offset,
+            delta < 0 ? greaterThan(before) : lessThan(before),
+          );
+          expect(
+            find.byType(LibraryLikeSingleAudioCardContent).evaluate().length,
+            lessThan(60),
+          );
+          expect(
+            container.read(librarySortedSnapshotUiProvider).nodes,
+            same(snapshot),
+          );
+        }
+        expect(existingBuilds, 0);
+        expect(tester.takeException(), isNull);
+      } finally {
+        debugOnRebuildDirtyWidget = previous;
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('paused library sorting retains results until it resumes', (
     tester,

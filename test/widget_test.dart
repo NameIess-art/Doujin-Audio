@@ -21,6 +21,7 @@ import 'package:doujin_audio/main.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
+import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/app/presentation/mobile_dock_capsule_content.dart';
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
@@ -2369,6 +2370,57 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining(privateDetail), findsNothing);
+  });
+
+  testWidgets('app shell search controls follow the 300 ms route fade', (
+    tester,
+  ) async {
+    await _pumpAppShell(tester, includePlaybackSession: false);
+    await _swipeToAsmrPage(tester);
+    await _waitForMainPage(tester, 0);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
+    await tester.pump();
+    await tester.pump();
+    final field = find.byKey(const ValueKey('app_search_field'));
+    final route = ModalRoute.of(tester.element(field))!;
+    double opacity(Finder target) => tester
+        .widgetList<Widget>(
+          find.ancestor(
+            of: target,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is FadeTransition || widget is Opacity,
+            ),
+          ),
+        )
+        .fold(1.0, (value, widget) => value * (widget is Opacity
+            ? widget.opacity
+            : (widget as FadeTransition).opacity.value));
+    const controls = [
+      'app_search_field',
+      'app_search_close',
+      'app_search_category_shell',
+    ];
+    for (final key in controls) {
+      expect(opacity(find.byKey(ValueKey(key))), 0, reason: key);
+    }
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(route.animation!.value, closeTo(0.5, 0.001));
+    for (final key in controls) {
+      expect(
+        opacity(find.byKey(ValueKey(key))),
+        closeTo(kAppFadeCurve.transform(0.5), 0.001),
+        reason: key,
+      );
+    }
+    await _waitForSearchRoute(tester);
+    await tester.tap(find.byKey(const ValueKey('app_search_close')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(opacity(field), closeTo(kAppFadeCurve.transform(0.5), 0.001));
+    await tester.pumpAndSettle();
+    await pumpUntilUiIdle(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('ASMR main page moves category and search controls to search', (
@@ -5602,6 +5654,89 @@ void main() {
     await _pumpMainScreenAnimations(tester);
     expect(tester.takeException(), isNull);
   });
+
+  for (final (platform, size) in [
+    (TargetPlatform.android, const Size(390, 820)),
+    (TargetPlatform.android, const Size(820, 390)),
+    (TargetPlatform.windows, const Size(1280, 800)),
+  ]) {
+    for (final dialog in [false, true]) {
+      testWidgets(
+        'keyboard motion retains app shell and forwards routed insets '
+        '${platform.name} $size dialog=$dialog',
+        (tester) async {
+          _setLogicalTestViewSize(tester, size);
+          addTearDown(tester.view.resetViewInsets);
+          await _pumpAppShell(tester);
+          await _tapSettingsDestination(tester);
+          await _pumpMainScreenAnimations(tester);
+          final main = tester.element(find.byType(MainScreen));
+          final navigation = WorkDetailNavigationScope.maybeOf(main)!;
+          double? routedInset;
+          Widget inputPage(BuildContext context) {
+            routedInset = MediaQuery.viewInsetsOf(context).bottom;
+            return dialog
+                ? const AlertDialog(content: TextField())
+                : const Scaffold(
+                    body: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: TextField(),
+                    ),
+                  );
+          }
+
+          unawaited(
+            dialog
+                ? showDialog<void>(context: main, builder: inputPage)
+                : navigation.contentNavigatorKey.currentState!.push<void>(
+                    MaterialPageRoute<void>(builder: inputPage),
+                  ),
+          );
+          await tester.pumpAndSettle();
+          final shellElements = <Element>{
+            main,
+            ...find
+                .byType(MainContentNavigator, skipOffstage: false)
+                .evaluate(),
+            ...find
+                .byType(MobileDockCapsuleContent, skipOffstage: false)
+                .evaluate(),
+            ...find.byType(MySettingsPage, skipOffstage: false).evaluate(),
+          };
+          final rebuilds = <String, int>{};
+          final previous = debugOnRebuildDirtyWidget;
+          debugOnRebuildDirtyWidget = (element, builtOnce) {
+            previous?.call(element, builtOnce);
+            if (shellElements.contains(element)) {
+              final type = element.widget.runtimeType.toString();
+              rebuilds.update(type, (count) => count + 1, ifAbsent: () => 1);
+            }
+          };
+          addTearDown(() => debugOnRebuildDirtyWidget = previous);
+          for (final bottom in [
+            80.0,
+            160.0,
+            240.0,
+            320.0,
+            240.0,
+            160.0,
+            80.0,
+            0.0,
+          ]) {
+            tester.view.viewInsets = FakeViewPadding(bottom: bottom);
+            await tester.pump(const Duration(milliseconds: 16));
+            expect(routedInset, bottom);
+          }
+          expect(rebuilds, isEmpty);
+          debugOnRebuildDirtyWidget = previous;
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pumpAndSettle();
+        },
+        variant: TargetPlatformVariant.only(platform),
+      );
+    }
+  }
 
   testWidgets('ASMR playback errors show retry subtitle and retry spinner', (
     tester,

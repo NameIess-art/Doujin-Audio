@@ -35,6 +35,11 @@ void main() {
       expect(tester.getSize(expandButtons.first), const Size(24, 24));
       expect(tester.getTopRight(expandButtons.first).dx, 320 - 16);
       final firstChip = tester.widget<InputChip>(find.byType(InputChip).first);
+      expect(
+        firstChip.padding,
+        const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      );
+      expect(firstChip.labelPadding, const EdgeInsets.symmetric(horizontal: 4));
       expect(firstChip.visualDensity, VisualDensity.compact);
       expect(firstChip.backgroundColor, isNull);
       for (final chip in find.byType(InputChip).evaluate()) {
@@ -64,6 +69,69 @@ void main() {
       TargetPlatform.android,
       TargetPlatform.windows,
     }),
+  );
+
+  testWidgets(
+    'clear icon precedes expansion and is disabled for empty history',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      var items = List.generate(6, (i) => 'History suggestion $i');
+      var clears = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) => CustomScrollView(
+                slivers: [
+                  AppSearchSuggestionSection(
+                    title: 'History',
+                    items: items,
+                    isSelected: (_) => false,
+                    onToggle: (_) {},
+                    emptyText: 'Empty',
+                    expandLabel: 'Expand',
+                    collapseLabel: 'Collapse',
+                    clearLabel: 'Clear history',
+                    onClear: () => setState(() {
+                      clears++;
+                      items = [];
+                    }),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final clear = find.byTooltip('Clear history');
+      final expand = find.byTooltip('Expand');
+      expect(find.byIcon(Icons.delete_outline_rounded), findsOneWidget);
+      expect(
+        tester.getTopRight(clear).dx,
+        lessThan(tester.getTopLeft(expand).dx),
+      );
+      expect(tester.getCenter(clear).dy, tester.getCenter(expand).dy);
+      await tester.tap(clear);
+      await tester.pumpAndSettle();
+      expect(clears, 1);
+      expect(find.text('Empty'), findsOneWidget);
+      expect(expand, findsNothing);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.ancestor(
+                of: find.byIcon(Icons.delete_outline_rounded),
+                matching: find.byType(IconButton),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(clear);
+      expect(clears, 1);
+    },
   );
 
   testWidgets('sections fold by rows, expand independently, and build lazily', (
@@ -294,6 +362,67 @@ void main() {
     expect(items.highestReadIndex, 4999);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'scrolling reuses unchanged suggestion rows instead of rebuilding chips',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      final items = _TrackedSuggestions(5000);
+      var selectionChecks = 0;
+      var selected = false;
+      Widget buildPage() => MaterialApp(
+        home: Scaffold(
+          body: CustomScrollView(
+            controller: scroll,
+            slivers: [
+              AppSearchSuggestionSection(
+                title: 'Voices',
+                items: items,
+                isSelected: (_) {
+                  selectionChecks++;
+                  return selected;
+                },
+                onToggle: (_) {},
+                emptyText: 'Empty',
+                expandLabel: 'Expand',
+                collapseLabel: 'Collapse',
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Expand'));
+      await tester.pumpAndSettle();
+      selectionChecks = 0;
+      final reads = items.readCount;
+      for (var i = 1; i <= 20; i++) {
+        scroll.jumpTo(i.toDouble());
+        await tester.pump();
+      }
+      debugPrint(
+        'Suggestion scroll: chip builds=$selectionChecks, '
+        'source reads=${items.readCount - reads}',
+      );
+      expect(selectionChecks, lessThan(10));
+      selected = true;
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<InputChip>(find.byType(InputChip).first).selected,
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('row caches refresh with source, limit, and text geometry', (
     tester,

@@ -278,7 +278,9 @@ extension NotificationFacadeSync on NotificationFacade {
     );
     final navigationChanged =
         metadataChanged || previous.navigation != navigation;
-    final track = metadataChanged ? trackByPath(trackPath) : null;
+    final track = metadataChanged
+        ? _notificationTrackForSession(session)
+        : null;
     final artPath = metadataChanged
         ? coverPathForTrack(track, trackPath: trackPath)
         : previous.payload['artPath'] as String?;

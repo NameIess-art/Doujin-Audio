@@ -377,6 +377,10 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
                         key: const ValueKey('asmr_search_history'),
                         title: i18n.tr('search_history'),
                         items: history,
+                        onClear: () => unawaited(
+                          clearSearchHistoryWithFeedback(context, online: true),
+                        ),
+                        clearLabel: i18n.tr('clear'),
                         isSelected: _isSuggestionSelected,
                         onToggle: _toggleSuggestion,
                         emptyText: i18n.tr('search_history_empty'),

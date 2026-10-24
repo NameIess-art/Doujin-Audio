@@ -22,6 +22,105 @@ import 'support/test_persistence_repository.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('remote session cover checks and payloads use owned metadata', () async {
+    final service = _RecordingPlaybackNotificationService();
+    final resolvedPaths = <String>[];
+    final fixture = _createNotificationFixture(
+      service,
+      registerSession: false,
+      trackByPath: (trackPath) {
+        resolvedPaths.add(trackPath);
+        return null;
+      },
+    );
+    addTearDown(fixture.dispose);
+    final tracks = List.generate(
+      80,
+      (index) => _notificationTrack(
+        'https://audio.example.com/$index.mp3',
+        'Remote audio $index',
+      ),
+    );
+    for (final track in tracks) {
+      fixture.playback.createTrackSession(track, customQueueTracks: [track]);
+    }
+
+    for (var lookup = 0; lookup < 12; lookup++) {
+      expect(fixture.facade.isActiveCoverKey('unrelated:$lookup'), isFalse);
+    }
+    expect(resolvedPaths, isEmpty);
+
+    fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(resolvedPaths, isEmpty);
+    final items = service.payloads.single['items'] as List;
+    expect(items, hasLength(tracks.length));
+    expect(
+      items.map((item) => item['title']),
+      unorderedEquals(tracks.map((track) => track.displayName)),
+    );
+  });
+
+  for (final queueHasOriginalPath in [false, true]) {
+    test(
+      'notification metadata resolves ${queueHasOriginalPath ? 'original' : 'retargeted'} queue paths',
+      () async {
+        final service = _RecordingPlaybackNotificationService();
+        final resolvedPaths = <String>[];
+        final fixture = _createNotificationFixture(
+          service,
+          trackByPath: (trackPath) {
+            resolvedPaths.add(trackPath);
+            return null;
+          },
+        );
+        addTearDown(fixture.dispose);
+        const original = 'https://audio.example.com/before.mp3';
+        const retargeted = 'https://audio.example.com/after.mp3';
+        final track = _notificationTrack(
+          queueHasOriginalPath ? original : retargeted,
+          'Owned queue title',
+        );
+        fixture.session
+          ..customQueueTracks = [track]
+          ..currentTrackPath = queueHasOriginalPath ? retargeted : original;
+        fixture.playback.rememberRetargetedPath(original, retargeted);
+
+        expect(fixture.facade.isActiveCoverKey('unrelated'), isFalse);
+        expect(resolvedPaths, isEmpty);
+        fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(resolvedPaths, isEmpty);
+        final items = service.payloads.single['items'] as List;
+        expect(items.single['title'], track.displayName);
+      },
+    );
+  }
+
+  test('notification metadata falls back when queue has no track', () async {
+    final service = _RecordingPlaybackNotificationService();
+    final track = _notificationTrack(
+      'https://audio.example.com/fallback.mp3',
+      'Fallback title',
+    );
+    final resolvedPaths = <String>[];
+    final fixture = _createNotificationFixture(
+      service,
+      trackByPath: (trackPath) {
+        resolvedPaths.add(trackPath);
+        return track;
+      },
+    );
+    addTearDown(fixture.dispose);
+    fixture.session.currentTrackPath = track.path;
+
+    fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(resolvedPaths, [track.path]);
+    final items = service.payloads.single['items'] as List;
+    expect(items.single['title'], track.displayName);
+  });
+
   test(
     'disabled notifications never load subtitles on focused progress',
     () async {
@@ -507,6 +606,15 @@ void main() {
     expect(native.pausedSessionIds, <String>[session.id]);
   });
 }
+
+MusicTrack _notificationTrack(String path, String title) => MusicTrack(
+  path: path,
+  displayName: title,
+  groupKey: 'notification-work',
+  groupTitle: 'Notification work',
+  groupSubtitle: '',
+  isSingle: false,
+);
 
 _NotificationFixture _createNotificationFixture(
   PlaybackNotificationService service, {

@@ -886,15 +886,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
           );
     final layoutSize = _layoutViewSize();
     final width = layoutSize.width;
-    final mediaQuery = MediaQuery.of(context);
-    final rawTop = mediaQuery.padding.top;
+    final padding = MediaQuery.paddingOf(context);
+    final viewPadding = MediaQuery.viewPaddingOf(context);
+    final orientation = MediaQuery.orientationOf(context);
+    final rawTop = padding.top;
     final isDesktop =
         defaultTargetPlatform == TargetPlatform.windows ||
-        mediaQuery.orientation == Orientation.landscape ||
+        orientation == Orientation.landscape ||
         width >= _desktopBreakpoint;
     final isLandscape =
         defaultTargetPlatform == TargetPlatform.windows ||
-        mediaQuery.orientation == Orientation.landscape;
+        orientation == Orientation.landscape;
     final navigationLayout = (isDesktop, isLandscape);
     var navigationLayoutChanged = _previousNavigationLayout != navigationLayout;
     _previousNavigationLayout = navigationLayout;
@@ -910,17 +912,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
         ? max(rawTop, _stablePortraitTopPadding)
         : rawTop;
     final effectivePadding = effectiveTop != rawTop
-        ? mediaQuery.padding.copyWith(top: effectiveTop)
-        : mediaQuery.padding;
+        ? padding.copyWith(top: effectiveTop)
+        : padding;
     final effectiveViewPadding = !isDesktop && _stablePortraitTopPadding > 0
-        ? mediaQuery.viewPadding.copyWith(
-            top: max(mediaQuery.viewPadding.top, _stablePortraitTopPadding),
+        ? viewPadding.copyWith(
+            top: max(viewPadding.top, _stablePortraitTopPadding),
           )
-        : mediaQuery.viewPadding;
-    final effectiveMediaQuery = mediaQuery.copyWith(
-      padding: effectivePadding,
-      viewPadding: effectiveViewPadding,
-    );
+        : viewPadding;
 
     final content = ListenableBuilder(
       // Only landscape changes the main layout when a detail pane opens.
@@ -948,9 +946,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
               ? Duration.zero
               : kThemeAnimationDuration,
           curve: Curves.easeInOut,
-          builder: (context, animatedSidebarWidth, child) => MediaQuery(
-            data: effectiveMediaQuery,
-            child: AnnotatedRegion<SystemUiOverlayStyle>(
+          builder: (context, animatedSidebarWidth, child) {
+            final shell = AnnotatedRegion<SystemUiOverlayStyle>(
               value: overlayStyle,
               child: Scaffold(
                 resizeToAvoidBottomInset: false,
@@ -962,8 +959,18 @@ class _MainScreenState extends ConsumerState<MainScreen>
                   child: child!,
                 ),
               ),
-            ),
-          ),
+            );
+            // Forward live IME metrics without rebuilding the main shell.
+            return Builder(
+              builder: (context) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  padding: effectivePadding,
+                  viewPadding: effectiveViewPadding,
+                ),
+                child: shell,
+              ),
+            );
+          },
           // Only the detail pane needs the animated sidebar width. Retain the
           // navigation and dock instead of rebuilding them on every frame.
           child: Stack(
@@ -1005,45 +1012,42 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                     final contentWidth = splitContent
                                         ? max(0.0, constraints.maxWidth - 1) / 2
                                         : constraints.maxWidth;
+                                    final navigatorContent = Builder(
+                                      builder: (context) => MobileOverlayInset(
+                                        bottomInset: mobileContentInset,
+                                        menuOverlayKey: _mainMenuOverlayKey,
+                                        menuDismiss:
+                                            detailNavigation?.menuDismiss,
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            _buildContentNavigator(
+                                              context,
+                                              bottomInset: mobileContentInset,
+                                              isDesktop: isDesktop,
+                                              isLandscapeLayout: isLandscape,
+                                              tinyMode: isTinyWindow,
+                                            ),
+                                            Overlay(key: _mainMenuOverlayKey),
+                                          ],
+                                        ),
+                                      ),
+                                    );
                                     return SizedBox(
                                       key: const ValueKey(
                                         'main_content_region',
                                       ),
                                       width: contentWidth,
                                       height: constraints.maxHeight,
-                                      child: MediaQuery(
-                                        data: MediaQuery.of(context).copyWith(
-                                          size: Size(
-                                            contentWidth,
-                                            constraints.maxHeight,
+                                      child: Builder(
+                                        builder: (context) => MediaQuery(
+                                          data: MediaQuery.of(context).copyWith(
+                                            size: Size(
+                                              contentWidth,
+                                              constraints.maxHeight,
+                                            ),
                                           ),
-                                        ),
-                                        child: Builder(
-                                          builder: (context) =>
-                                              MobileOverlayInset(
-                                                bottomInset: mobileContentInset,
-                                                menuOverlayKey:
-                                                    _mainMenuOverlayKey,
-                                                menuDismiss: detailNavigation
-                                                    ?.menuDismiss,
-                                                child: Stack(
-                                                  fit: StackFit.expand,
-                                                  children: [
-                                                    _buildContentNavigator(
-                                                      context,
-                                                      bottomInset:
-                                                          mobileContentInset,
-                                                      isDesktop: isDesktop,
-                                                      isLandscapeLayout:
-                                                          isLandscape,
-                                                      tinyMode: isTinyWindow,
-                                                    ),
-                                                    Overlay(
-                                                      key: _mainMenuOverlayKey,
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
+                                          child: navigatorContent,
                                         ),
                                       ),
                                     );
@@ -1064,41 +1068,32 @@ class _MainScreenState extends ConsumerState<MainScreen>
         );
       },
     );
-    return MediaQuery.removeViewInsets(
-      key: const ValueKey<String>('main_screen_keyboard_inset_boundary'),
-      context: context,
-      removeBottom: true,
-      child: defaultTargetPlatform == TargetPlatform.windows
-          ? CallbackShortcuts(
-              bindings: {
-                for (final (index, key) in [
-                  LogicalKeyboardKey.digit1,
-                  LogicalKeyboardKey.digit2,
-                  LogicalKeyboardKey.digit3,
-                  LogicalKeyboardKey.digit4,
-                ].indexed)
-                  SingleActivator(key, control: true): () {
-                    if (index < _currentDestinations().length) {
-                      _switchPage(index);
-                    }
-                  },
-                for (final backwards in [false, true])
-                  SingleActivator(
-                    LogicalKeyboardKey.tab,
-                    control: true,
-                    shift: backwards,
-                  ): () => _switchPage(
-                    (_activePageIndex.value + (backwards ? -1 : 1)) %
-                        _currentDestinations().length,
-                  ),
-              },
-              child: Focus(
-                autofocus: true,
-                skipTraversal: true,
-                child: content,
-              ),
-            )
-          : content,
-    );
+    return defaultTargetPlatform == TargetPlatform.windows
+        ? CallbackShortcuts(
+            bindings: {
+              for (final (index, key) in [
+                LogicalKeyboardKey.digit1,
+                LogicalKeyboardKey.digit2,
+                LogicalKeyboardKey.digit3,
+                LogicalKeyboardKey.digit4,
+              ].indexed)
+                SingleActivator(key, control: true): () {
+                  if (index < _currentDestinations().length) {
+                    _switchPage(index);
+                  }
+                },
+              for (final backwards in [false, true])
+                SingleActivator(
+                  LogicalKeyboardKey.tab,
+                  control: true,
+                  shift: backwards,
+                ): () => _switchPage(
+                  (_activePageIndex.value + (backwards ? -1 : 1)) %
+                      _currentDestinations().length,
+                ),
+            },
+            child: Focus(autofocus: true, skipTraversal: true, child: content),
+          )
+        : content;
   }
 }

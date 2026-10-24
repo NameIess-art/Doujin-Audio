@@ -14,7 +14,7 @@ extension _MainScreenLayout on _MainScreenState {
       isLandscapeLayout: isLandscapeLayout,
     );
     // Secondary routes cover and reveal this same dock with their page motion.
-    final mainPage = isDesktop
+    final pageContent = isDesktop
         ? body
         : Stack(
             fit: StackFit.expand,
@@ -34,6 +34,16 @@ extension _MainScreenLayout on _MainScreenState {
               ),
             ],
           );
+    // Only the home page ignores IME height. Routes above it still need live
+    // insets so search fields and dialogs can move clear of the keyboard.
+    final mainPage = Builder(
+      builder: (context) => MediaQuery.removeViewInsets(
+        key: const ValueKey<String>('main_screen_keyboard_inset_boundary'),
+        context: context,
+        removeBottom: true,
+        child: pageContent,
+      ),
+    );
     final navigation = WorkDetailNavigationScope.maybeOf(context);
     if (navigation == null) return mainPage;
     return MainContentNavigator(
@@ -536,12 +546,12 @@ extension _MainScreenLayout on _MainScreenState {
     final contentBox =
         _dockContentKey.currentContext?.findRenderObject() as RenderBox?;
     if (contentBox != null && contentBox.hasSize) {
-      final systemBottom = MediaQuery.of(context).padding.bottom;
+      final systemBottom = MediaQuery.paddingOf(context).bottom;
       return (max(systemBottom, kMobileDockBottomMargin) +
               contentBox.size.height)
           .clamp(0.0, double.infinity);
     }
-    final systemBottom = MediaQuery.of(context).padding.bottom;
+    final systemBottom = MediaQuery.paddingOf(context).bottom;
     return max(systemBottom, kMobileDockBottomMargin) + 72;
   }
 }

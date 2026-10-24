@@ -111,7 +111,9 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     }
     Future<String?> coverFuture(MusicTrack track) => _coverFutures.putIfAbsent(
       track.path,
-      () => library.playbackCoverPathFutureForTrack(track),
+      () => ref
+          .read(libraryCoverUiControllerProvider)
+          .deferredPlaybackCover(track, context: context),
     );
     final tracks = queue.expandedTracks;
     final activeColor = cardState.queueColorValue == null

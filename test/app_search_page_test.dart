@@ -173,6 +173,126 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  for (final hasCategories in [false, true]) {
+    testWidgets(
+      'lifted search header paints its full 300 ms entrance and exit fade (categories: $hasCategories)',
+      (tester) async {
+        final controller = TextEditingController();
+        final focusNode = FocusNode();
+        addTearDown(controller.dispose);
+        addTearDown(focusNode.dispose);
+        final navigator = GlobalKey<NavigatorState>();
+        final surface = GlobalKey();
+        Future<Color> headerPixel(Offset point) async =>
+            (await tester.runAsync(() async {
+              final boundary = tester.renderObject<RenderRepaintBoundary>(
+                find.byKey(surface),
+              );
+              final image = await boundary.toImage();
+              final data = await image.toByteData();
+              final offset =
+                  (point.dy.floor() * image.width + point.dx.floor()) * 4;
+              final color = Color.fromARGB(
+                data!.getUint8(offset + 3),
+                data.getUint8(offset),
+                data.getUint8(offset + 1),
+                data.getUint8(offset + 2),
+              );
+              image.dispose();
+              return color;
+            }))!;
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: surface,
+            child: MaterialApp(
+              navigatorKey: navigator,
+              debugShowCheckedModeBanner: false,
+              theme: ThemeData(
+                colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue)
+                    .copyWith(
+                      surface: Colors.black,
+                      surfaceContainerHigh: const Color(0xffff0000),
+                    ),
+              ),
+              builder: (_, child) => AppPageTransitionHost(child: child!),
+              home: const Scaffold(backgroundColor: Colors.black),
+            ),
+          ),
+        );
+        final route = buildAppPageRoute<void>(
+          context: navigator.currentContext!,
+          slide: false,
+          separateHeader: true,
+          child: AppSearchPageScaffold<int>(
+            controller: controller,
+            focusNode: focusNode,
+            hintText: 'Search',
+            categories: hasCategories
+                ? const [AppSearchCategory(value: 0, label: 'All')]
+                : const [],
+            selectedCategory: 0,
+            onCategorySelected: (_) {},
+            onChanged: (_) {},
+            onSubmitted: (_) {},
+            onCloseOrClear: () => navigator.currentState!.pop(),
+            body: const SizedBox.expand(),
+          ),
+        );
+        expect(route.transitionDuration, const Duration(milliseconds: 300));
+        expect(
+          route.reverseTransitionDuration,
+          const Duration(milliseconds: 300),
+        );
+        unawaited(navigator.currentState!.push(route));
+        await tester.pump();
+        await tester.pump();
+        final points = [
+          for (final key in [
+            'app_search_field_shell',
+            'app_search_close',
+            if (hasCategories) 'app_search_category_shell',
+          ])
+            tester.getRect(find.byKey(ValueKey(key))).centerRight -
+                const Offset(12, 0),
+        ];
+        for (final point in points) {
+          expect(await headerPixel(point), Colors.black);
+        }
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(route.animation!.value, closeTo(0.5, 0.001));
+        final entering = [for (final point in points) await headerPixel(point)];
+        await tester.pump(const Duration(milliseconds: 150));
+        final settled = [for (final point in points) await headerPixel(point)];
+        for (var i = 0; i < points.length; i++) {
+          expect(settled[i].r, greaterThan(0.2));
+          expect(
+            entering[i].r,
+            closeTo(settled[i].r * kAppFadeCurve.transform(0.5), 0.01),
+          );
+        }
+        navigator.currentState!.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        for (var i = 0; i < points.length; i++) {
+          expect(
+            (await headerPixel(points[i])).r,
+            closeTo(settled[i].r * kAppFadeCurve.transform(0.5), 0.01),
+          );
+        }
+        await tester.pumpAndSettle();
+        for (final point in points) {
+          expect(await headerPixel(point), Colors.black);
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets('fading search requests focus once after entrance completes', (
     tester,
   ) async {

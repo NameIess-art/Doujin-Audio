@@ -76,9 +76,27 @@ extension NotificationFacadeCovers on NotificationFacade {
     );
   }
 
+  MusicTrack? _notificationTrackForSession(PlaybackSession session) {
+    final trackPath = session.currentTrackPath;
+    final playback = _playback;
+    final resolvedPath = playback?.resolveRetargetedPath(trackPath);
+    final track = session.trackForPath(trackPath, resolvedPath: resolvedPath);
+    if (track != null) return track;
+    final originalPath =
+        playback?.originalPathForRetargeted(trackPath) ??
+        (resolvedPath == null
+            ? null
+            : playback?.originalPathForRetargeted(resolvedPath));
+    if (originalPath != null) {
+      final originalTrack = session.trackForPath(originalPath);
+      if (originalTrack != null) return originalTrack;
+    }
+    return trackByPath(trackPath);
+  }
+
   bool _isActiveCoverKey(String coverSearchKey) {
     var active = false;
-    for (final session in activeSessions) {
+    for (final session in _sessions.values) {
       final cached = _notificationPresentations[session.id];
       if (cached != null && cached.trackPath == session.currentTrackPath) {
         if (cached.coverSearchKey == coverSearchKey) {
@@ -87,7 +105,7 @@ extension NotificationFacadeCovers on NotificationFacade {
         }
         continue;
       }
-      final track = trackByPath(session.currentTrackPath);
+      final track = _notificationTrackForSession(session);
       if (_notificationCoverSearchKey(
             track,
             trackPath: session.currentTrackPath,

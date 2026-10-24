@@ -193,9 +193,8 @@ class _RoutedPlaybackDockHostState
   }
 
   Widget _buildRoutedPlaybackDockOverlay(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    final supportsRoutedDock =
-        mediaQuery.size.width >= 300 && mediaQuery.size.height >= 300;
+    final size = MediaQuery.sizeOf(context);
+    final supportsRoutedDock = size.width >= 300 && size.height >= 300;
     return Positioned(
       left: 0,
       right: 0,
@@ -243,7 +242,8 @@ class _RoutedPlaybackDockHostState
   }
 
   Widget _wrapNavigator(BuildContext context, Widget child) {
-    final mediaQuery = MediaQuery.of(context);
+    final size = MediaQuery.sizeOf(context);
+    final padding = MediaQuery.paddingOf(context);
     final hasOverlaySessions = ref.watch(
       mainOverlayUiProvider.select((state) => state.overlaySessions.isNotEmpty),
     );
@@ -254,8 +254,7 @@ class _RoutedPlaybackDockHostState
         final isWorkDetailRoute =
             _routeObserver.topRoute?.settings.name == workDetailRouteName ||
             _routeObserver.isWorkDetailDeparting;
-        final supportsRoutedDock =
-            mediaQuery.size.width >= 300 && mediaQuery.size.height >= 300;
+        final supportsRoutedDock = size.width >= 300 && size.height >= 300;
         final reserveWorkDetailDockInset =
             widget.enabled &&
             isWorkDetailRoute &&
@@ -265,7 +264,7 @@ class _RoutedPlaybackDockHostState
             ? kActiveSessionCarouselDockHeight +
                   kMobileDockBottomMargin +
                   6 +
-                  mediaQuery.padding.bottom
+                  padding.bottom
             : 0.0;
         return MobileOverlayInset(
           bottomInset: routeDockInset,

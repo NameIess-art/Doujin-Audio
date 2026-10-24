@@ -372,7 +372,9 @@ class _NetworkSettingsControlsState
     padding: const EdgeInsets.all(16),
     child: Row(
       children: [
-        Expanded(child: Text(title)),
+        Expanded(
+          child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+        ),
         const SizedBox(width: 8),
         _probeAction(i18n, key, uri),
       ],

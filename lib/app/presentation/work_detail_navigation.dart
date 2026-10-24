@@ -303,12 +303,21 @@ class WorkDetailPane extends StatelessWidget {
       builder: (context, child) {
         // The main body fills this MediaQuery. Update route metrics before
         // layout, so resizing cannot rebuild navigator overlays during layout.
-        final mediaQuery = MediaQuery.of(context);
-        final size = mediaQuery.size;
+        final size = MediaQuery.sizeOf(context);
         final contentWidth = (size.width - sidebarWidth).clamp(0.0, size.width);
         final paneWidth = isLandscape
             ? (contentWidth - 1).clamp(0.0, contentWidth) / 2
             : size.width;
+        final detailNavigator = MainContentNavigator(
+          key: const ValueKey('work_detail_pane'),
+          navigation: navigation,
+          navigatorKey: navigation.navigatorKey,
+          observer: navigation.observer,
+          isLandscape: isLandscape,
+          geometry: geometry,
+          backgroundColor: isLandscape ? null : Colors.transparent,
+          child: const SizedBox.shrink(),
+        );
         return PopScope<Object?>(
           canPop:
               !navigation.isOpen &&
@@ -353,22 +362,18 @@ class WorkDetailPane extends StatelessWidget {
                 width: paneWidth,
                 child: Offstage(
                   offstage: !navigation.isOpen,
-                  child: MediaQuery(
-                    data: mediaQuery.copyWith(
-                      size: Size(paneWidth, size.height),
-                      padding: mediaQuery.padding.copyWith(left: 0),
-                      viewPadding: mediaQuery.viewPadding.copyWith(left: 0),
-                    ),
-                    child: MainContentNavigator(
-                      key: const ValueKey('work_detail_pane'),
-                      navigation: navigation,
-                      navigatorKey: navigation.navigatorKey,
-                      observer: navigation.observer,
-                      isLandscape: isLandscape,
-                      geometry: geometry,
-                      backgroundColor: isLandscape ? null : Colors.transparent,
-                      child: const SizedBox.shrink(),
-                    ),
+                  child: Builder(
+                    builder: (context) {
+                      final mediaQuery = MediaQuery.of(context);
+                      return MediaQuery(
+                        data: mediaQuery.copyWith(
+                          size: Size(paneWidth, size.height),
+                          padding: mediaQuery.padding.copyWith(left: 0),
+                          viewPadding: mediaQuery.viewPadding.copyWith(left: 0),
+                        ),
+                        child: detailNavigator,
+                      );
+                    },
                   ),
                 ),
               ),

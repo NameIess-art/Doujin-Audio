@@ -3,11 +3,11 @@ import '../../../settings/presentation/settings_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/ui/visual_settings_providers.dart';
 import '../../../../core/widgets/async_cover_image.dart';
-import '../../../library/application/library_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../playback_providers.dart';
 import '../session_video_surface.dart';
@@ -171,14 +171,18 @@ class _SessionCoverThumbnailState extends ConsumerState<SessionCoverThumbnail> {
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
 
-  Future<String?> _futureFor(LibraryFacade library) {
+  Future<String?> _futureFor() {
     final trackPath = widget.track?.path;
     if (_coverFuture == null ||
         _lastTrackPath != trackPath ||
         _lastCoverGeneration != widget.coverGeneration) {
       _lastTrackPath = trackPath;
       _lastCoverGeneration = widget.coverGeneration;
-      _coverFuture = library.playbackCoverPathFutureForTrack(widget.track);
+      // Admit discovery through the same bounded queue as library artwork;
+      // deferring image decode alone still starts source work during layout.
+      _coverFuture = ref
+          .read(libraryCoverUiControllerProvider)
+          .deferredPlaybackCover(widget.track, context: context);
     }
     return _coverFuture!;
   }
@@ -189,11 +193,12 @@ class _SessionCoverThumbnailState extends ConsumerState<SessionCoverThumbnail> {
     final cover = AsyncLocalCoverImage(
       deferLoadDuringInteraction: true,
       onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
-      future: _futureFor(library),
+      future: _futureFor(),
       requestKey: (widget.sessionId, widget.track?.path),
       initialPath: widget.coverPath,
-      retryFutureBuilder: () =>
-          library.playbackCoverPathFutureForTrack(widget.track),
+      retryFutureBuilder: () => ref
+          .read(libraryCoverUiControllerProvider)
+          .deferredPlaybackCover(widget.track, context: context),
       cacheWidth: widget.coverCacheWidth,
       useDefaultCacheWidth: widget.coverCacheWidth != null,
       fit: BoxFit.cover,

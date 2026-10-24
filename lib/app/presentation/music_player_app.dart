@@ -377,57 +377,68 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
                 physics: AppScrollBehavior.defaultScrollPhysics,
               ),
               builder: (context, child) {
-                final mediaQuery = MediaQuery.of(context);
-                final rawTop = mediaQuery.padding.top;
-                final isLandscape =
-                    defaultTargetPlatform == TargetPlatform.windows ||
-                    mediaQuery.orientation == Orientation.landscape;
-
-                if (!isLandscape && rawTop > _stablePortraitTopPadding) {
-                  _stablePortraitTopPadding = rawTop;
-                }
-
-                final isAndroidLandscape =
-                    defaultTargetPlatform == TargetPlatform.android &&
-                    mediaQuery.orientation == Orientation.landscape;
-                if (isAndroidLandscape) {
-                  // Playback hides the status bar; retain the same header inset
-                  // for the main page and every route in the navigator.
-                  _stableLandscapeTopPadding = math.max(
-                    _stableLandscapeTopPadding,
-                    math.max(rawTop, mediaQuery.viewPadding.top),
-                  );
-                }
-                final stableTop = isAndroidLandscape
-                    // The first landscape frame can arrive after immersive
-                    // mode has hidden both inset values. Retain the known
-                    // portrait height until Android reports a landscape inset.
-                    ? (_stableLandscapeTopPadding > 0
-                          ? _stableLandscapeTopPadding
-                          : _stablePortraitTopPadding)
-                    : !isLandscape
-                    ? _stablePortraitTopPadding
-                    : 0.0;
-                final effectiveTop = math.max(rawTop, stableTop);
-                final effectivePadding = effectiveTop != rawTop
-                    ? mediaQuery.padding.copyWith(top: effectiveTop)
-                    : mediaQuery.padding;
-                final effectiveViewPadding = stableTop > 0
-                    ? mediaQuery.viewPadding.copyWith(
-                        top: math.max(mediaQuery.viewPadding.top, stableTop),
-                      )
-                    : mediaQuery.viewPadding;
-
-                final effectiveMediaQuery = mediaQuery.copyWith(
-                  padding: effectivePadding,
-                  viewPadding: effectiveViewPadding,
-                  disableAnimations:
-                      disableAnimations || mediaQuery.disableAnimations,
+                final routedContent = wrapNavigator(
+                  context,
+                  child ?? const SizedBox(),
                 );
+                final navigatorContent = Builder(
+                  builder: (context) {
+                    final mediaQuery = MediaQuery.of(context);
+                    final rawTop = mediaQuery.padding.top;
+                    final isLandscape =
+                        defaultTargetPlatform == TargetPlatform.windows ||
+                        mediaQuery.orientation == Orientation.landscape;
 
-                final navigatorContent = MediaQuery(
-                  data: effectiveMediaQuery,
-                  child: wrapNavigator(context, child ?? const SizedBox()),
+                    if (!isLandscape && rawTop > _stablePortraitTopPadding) {
+                      _stablePortraitTopPadding = rawTop;
+                    }
+
+                    final isAndroidLandscape =
+                        defaultTargetPlatform == TargetPlatform.android &&
+                        mediaQuery.orientation == Orientation.landscape;
+                    if (isAndroidLandscape) {
+                      // Playback hides the status bar; retain the same header inset
+                      // for the main page and every route in the navigator.
+                      _stableLandscapeTopPadding = math.max(
+                        _stableLandscapeTopPadding,
+                        math.max(rawTop, mediaQuery.viewPadding.top),
+                      );
+                    }
+                    final stableTop = isAndroidLandscape
+                        // The first landscape frame can arrive after immersive
+                        // mode has hidden both inset values. Retain the known
+                        // portrait height until Android reports a landscape inset.
+                        ? (_stableLandscapeTopPadding > 0
+                              ? _stableLandscapeTopPadding
+                              : _stablePortraitTopPadding)
+                        : !isLandscape
+                        ? _stablePortraitTopPadding
+                        : 0.0;
+                    final effectiveTop = math.max(rawTop, stableTop);
+                    final effectivePadding = effectiveTop != rawTop
+                        ? mediaQuery.padding.copyWith(top: effectiveTop)
+                        : mediaQuery.padding;
+                    final effectiveViewPadding = stableTop > 0
+                        ? mediaQuery.viewPadding.copyWith(
+                            top: math.max(
+                              mediaQuery.viewPadding.top,
+                              stableTop,
+                            ),
+                          )
+                        : mediaQuery.viewPadding;
+
+                    final effectiveMediaQuery = mediaQuery.copyWith(
+                      padding: effectivePadding,
+                      viewPadding: effectiveViewPadding,
+                      disableAnimations:
+                          disableAnimations || mediaQuery.disableAnimations,
+                    );
+
+                    return MediaQuery(
+                      data: effectiveMediaQuery,
+                      child: routedContent,
+                    );
+                  },
                 );
                 final content = ListenableBuilder(
                   listenable: _runtimeBootstrapController,

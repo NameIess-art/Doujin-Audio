@@ -431,6 +431,18 @@ class CoverArtworkCacheService {
     );
   }
 
+  Future<String?>? cachedFutureForPlaybackTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) {
+    if (PathMatcher.isRemoteUri(trackPath ?? track?.path ?? '') &&
+        track?.remoteCoverUrl != null) {
+      return cachedFutureForRemoteCover(track!.remoteCoverUrl!);
+    }
+    final key = coverSearchKeyForTrack(track, trackPath: trackPath);
+    return key == null ? null : _playbackTrackCoverFutures[key];
+  }
+
   Future<String?> futureForPlaybackTrack(
     MusicTrack? track, {
     String? trackPath,

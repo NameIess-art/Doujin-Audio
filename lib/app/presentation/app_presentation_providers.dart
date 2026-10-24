@@ -341,7 +341,7 @@ final libraryDetailRevisionProvider = Provider<int>((ref) {
 });
 
 final libraryDetailForTargetProvider = FutureProvider.autoDispose
-    .family<AudioDetail, AudioDetailTarget>((ref, target) async {
+    .family<AudioDetail, AudioDetailTarget>((ref, target) {
       final facade = ref.read(libraryFacadeProvider);
       final canonicalTarget = facade.canonicalAudioDetailTarget(target);
       ref.watch(
@@ -354,7 +354,9 @@ final libraryDetailForTargetProvider = FutureProvider.autoDispose
           facade.resolvedAudioDetail(canonicalTarget) ??
           snapshot?.detailFor(canonicalTarget);
       if (detail != null) return detail;
-      return (await facade.loadAudioDetail(canonicalTarget)).detail;
+      return facade
+          .loadAudioDetail(canonicalTarget)
+          .then((result) => result.detail);
     });
 
 final libraryCoverForTrackProvider = FutureProvider.autoDispose
@@ -606,6 +608,35 @@ final sessionDetailTransportProvider = Provider.autoDispose
           ? null
           : sessionDetailViewStateFromSession(session);
     });
+
+Future<void> clearSearchHistoryWithFeedback(
+  BuildContext context, {
+  required bool online,
+}) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final settings = container.read(settingsRepositoryProvider);
+  final i18n = container.read(appLanguageProviderInstanceProvider);
+  // The undo prompt can outlive the search route that requested it.
+  final feedbackContext = Navigator.of(context).context;
+  var removed = const <String>[];
+  final saved = await saveSettingsWithFeedback(context, () async {
+    removed = await settings.clearSearchHistory(online: online);
+  });
+  if (!saved || removed.isEmpty || !context.mounted) return;
+  showAppSnackBar(
+    context,
+    i18n.tr('search_history_cleared'),
+    icon: Icons.delete_outline_rounded,
+    duration: kUndoableRemovalFeedbackDuration,
+    actionLabel: i18n.tr('undo'),
+    onAction: () => unawaited(
+      saveSettingsWithFeedback(
+        feedbackContext,
+        () => settings.restoreSearchHistory(removed, online: online),
+      ),
+    ),
+  );
+}
 
 int _settingsSaveSequence = 0;
 

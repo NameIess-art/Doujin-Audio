@@ -432,6 +432,34 @@ class SettingsRepository {
     });
   }
 
+  Future<List<String>> clearSearchHistory({required bool online}) async {
+    var removed = const <String>[];
+    await _change(() async {
+      removed = List<String>.unmodifiable(
+        online ? asmrSearchHistory : librarySearchHistory,
+      );
+      if (online) {
+        asmrSearchHistory = const <String>[];
+      } else {
+        librarySearchHistory = const <String>[];
+      }
+    });
+    return removed;
+  }
+
+  Future<void> restoreSearchHistory(
+    List<String> removed, {
+    required bool online,
+  }) => _change(() async {
+    final history = online ? asmrSearchHistory : librarySearchHistory;
+    final restored = _decodeSearchHistory(<String>[...history, ...removed]);
+    if (online) {
+      asmrSearchHistory = restored;
+    } else {
+      librarySearchHistory = restored;
+    }
+  });
+
   Future<void> pinPlaylistSessions(Iterable<String> sessionIds) {
     final ids = sessionIds.toList(growable: false);
     return _change(() async {

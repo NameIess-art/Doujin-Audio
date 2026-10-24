@@ -937,7 +937,7 @@ class _CoveringPageTransitionState extends State<_CoveringPageTransition> {
         if (!widget.separateHeader || !animatePage) return body;
         return widget.slide
             ? SlideTransition(position: _position, child: body)
-            : body;
+            : FadeTransition(opacity: _opacity, child: body);
       },
       headerBuilder: (context, header) => AnimatedBuilder(
         animation: _headerAnimation,

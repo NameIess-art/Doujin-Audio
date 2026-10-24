@@ -19,6 +19,8 @@ class AppSearchSuggestionSection extends StatefulWidget {
     this.onRetry,
     this.retryLabel = 'Retry',
     this.maxExpandedItems,
+    this.onClear,
+    this.clearLabel = 'Clear',
   }) : assert(maxExpandedItems == null || maxExpandedItems > 0);
 
   final String title;
@@ -36,6 +38,8 @@ class AppSearchSuggestionSection extends StatefulWidget {
   final VoidCallback? onRetry;
   final String retryLabel;
   final int? maxExpandedItems;
+  final VoidCallback? onClear;
+  final String clearLabel;
 
   @override
   State<AppSearchSuggestionSection> createState() =>
@@ -46,6 +50,8 @@ class _AppSearchSuggestionSectionState
     extends State<AppSearchSuggestionSection> {
   static const _gap = 8.0;
   static const _rowGap = 4.0;
+  static const _chipPadding = EdgeInsets.symmetric(horizontal: 4, vertical: 8);
+  static const _labelPadding = EdgeInsets.symmetric(horizontal: 4);
   bool _expanded = false;
   List<String>? _layoutItems;
   final List<List<String>> _rows = [];
@@ -60,7 +66,7 @@ class _AppSearchSuggestionSectionState
   Locale? _layoutLocale;
   bool _layoutComplete = false;
 
-  void _layout(
+  bool _layout(
     double width,
     TextStyle style,
     TextScaler scaler,
@@ -82,7 +88,7 @@ class _AppSearchSuggestionSectionState
         identical(_layoutItems, widget.items) &&
         _layoutLimit == limit &&
         _itemCount == itemCount) {
-      return;
+      return false;
     }
     _layoutWidth = width;
     _layoutStyle = style;
@@ -97,6 +103,7 @@ class _AppSearchSuggestionSectionState
     _rows.clear();
     _layoutComplete = itemCount == 0;
     _ensureRows(3);
+    return true;
   }
 
   void _ensureRows(int count) {
@@ -104,11 +111,9 @@ class _AppSearchSuggestionSectionState
     final width = _layoutWidth!;
     final style = _layoutStyle!;
     final scaler = _layoutScaler!;
-    final fontSize = style.fontSize ?? 14.0;
-    final textScale = scaler.scale(fontSize) / 14.0;
-    // Includes 16px chip padding, scaled label padding (16px..8px), and 2px border.
+    // Match the rendered chip padding, with 2px reserved for its border.
     final horizontalPadding =
-        18.0 + (16.0 - 8.0 * (textScale - 1.0).clamp(0.0, 1.0));
+        _chipPadding.horizontal + _labelPadding.horizontal + 2;
     final painter = TextPainter(
       textDirection: _layoutDirection!,
       textScaler: scaler,
@@ -159,15 +164,18 @@ class _AppSearchSuggestionSectionState
     final scaler = MediaQuery.textScalerOf(context);
     final direction = Directionality.of(context);
     final locale = Localizations.maybeLocaleOf(context);
+    Widget? content;
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
       sliver: SliverLayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.crossAxisExtent;
-          _layout(width, style, scaler, direction, locale);
+          if (_layout(width, style, scaler, direction, locale)) content = null;
           final canExpand = !_layoutComplete || _rows.length > 3;
           final count = _expanded ? _rows.length : math.min(3, _rows.length);
-          return SliverMainAxisGroup(
+          // Scroll offsets change sliver constraints every frame, but not the
+          // rows. Keep their delegate so only newly visible chips are built.
+          return content ??= SliverMainAxisGroup(
             slivers: [
               SliverToBoxAdapter(
                 child: Padding(
@@ -181,34 +189,30 @@ class _AppSearchSuggestionSectionState
                             widget.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontSize: 16,
+                            ),
                           ),
                         ),
+                        if (widget.onClear != null) ...[
+                          _headerButton(
+                            Icons.delete_outline_rounded,
+                            widget.clearLabel,
+                            widget.items.isEmpty ? null : widget.onClear,
+                            accent,
+                          ),
+                          if (canExpand) const SizedBox(width: 8),
+                        ],
                         if (canExpand)
-                          SizedBox.square(
-                            dimension: 24,
-                            child: IconButton(
-                              onPressed: () =>
-                                  setState(() => _expanded = !_expanded),
-                              tooltip: _expanded
-                                  ? widget.collapseLabel
-                                  : widget.expandLabel,
-                              padding: EdgeInsets.zero,
-                              visualDensity: VisualDensity.compact,
-                              style: IconButton.styleFrom(
-                                foregroundColor: accent,
-                                minimumSize: const Size.square(24),
-                                maximumSize: const Size.square(24),
-                                padding: EdgeInsets.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              icon: Icon(
-                                _expanded
-                                    ? Icons.expand_less_rounded
-                                    : Icons.expand_more_rounded,
-                                size: 18,
-                              ),
-                            ),
+                          _headerButton(
+                            _expanded
+                                ? Icons.expand_less_rounded
+                                : Icons.expand_more_rounded,
+                            _expanded
+                                ? widget.collapseLabel
+                                : widget.expandLabel,
+                            () => setState(() => _expanded = !_expanded),
+                            accent,
                           ),
                       ],
                     ),
@@ -285,11 +289,36 @@ class _AppSearchSuggestionSectionState
     );
   }
 
+  Widget _headerButton(
+    IconData icon,
+    String tooltip,
+    VoidCallback? onPressed,
+    Color accent,
+  ) => SizedBox.square(
+    dimension: 24,
+    child: IconButton(
+      onPressed: onPressed,
+      tooltip: tooltip,
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      style: IconButton.styleFrom(
+        foregroundColor: accent,
+        minimumSize: const Size.square(24),
+        maximumSize: const Size.square(24),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: Icon(icon, size: 18),
+    ),
+  );
+
   Widget _chip(String text, double maxWidth, ColorScheme cs, Color accent) {
     final selected = widget.isSelected(text);
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
       child: InputChip(
+        padding: _chipPadding,
+        labelPadding: _labelPadding,
         visualDensity: VisualDensity.compact,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         showCheckmark: false,

@@ -2,6 +2,7 @@ const Map<String, String> appLanguageEn = {
   'search_history': 'Search history',
   'search_library_history': 'History',
   'search_history_empty': 'No recent searches',
+  'search_history_cleared': 'Search history cleared',
   'search_hot_voice_actors': 'Popular voice actors',
   'search_hot_tags': 'Popular tags',
   'section_network': 'Network services',

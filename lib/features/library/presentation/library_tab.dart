@@ -150,6 +150,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         context: context,
         child: const LibrarySearchPage(),
         slide: false,
+        separateHeader: true,
       ),
     );
   }

@@ -2676,6 +2676,7 @@ void main() {
           final route = buildAppPageRoute<void>(
             context: navigatorKey.currentContext!,
             slide: false,
+            separateHeader: true,
             child: regions('search-fade'),
           );
           unawaited(navigatorKey.currentState!.push(route));

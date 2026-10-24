@@ -312,6 +312,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                 List<String> items,
                 String emptyText, {
                 bool metadata = false,
+                VoidCallback? onClear,
               }) => AppSearchSuggestionSection(
                 key: ValueKey(key),
                 title: title,
@@ -321,6 +322,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                 emptyText: emptyText,
                 expandLabel: i18n.tr('expand'),
                 collapseLabel: i18n.tr('collapse'),
+                onClear: onClear,
+                clearLabel: i18n.tr('clear'),
                 isLoading:
                     metadata &&
                     state.connectionState == ConnectionState.waiting &&
@@ -356,6 +359,12 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                             i18n.tr('search_library_history'),
                             history,
                             i18n.tr('search_history_empty'),
+                            onClear: () => unawaited(
+                              clearSearchHistoryWithFeedback(
+                                context,
+                                online: false,
+                              ),
+                            ),
                           ),
                           section(
                             'library_search_voices',

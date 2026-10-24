@@ -9,6 +9,7 @@ import 'package:doujin_audio/features/library/application/cover_artwork_cache_se
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/presentation/library_card_artwork.dart';
 import 'package:doujin_audio/features/library/presentation/library_cover_ui_controller.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playlist_media_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +17,176 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  testWidgets('paused cover discovery does not sort or submit new requests', (
+    tester,
+  ) async {
+    final cache = _RecordingCovers(blockAll: true);
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: cache,
+    );
+    final scheduler = _CountingScheduler()..setPaused(true);
+    final covers = LibraryCoverUiController(
+      library: fixture.library,
+      scheduler: scheduler,
+    );
+    addTearDown(fixture.dispose);
+    addTearDown(covers.dispose);
+    final futures = [
+      for (var i = 0; i < 30; i++) covers.deferredFolderCover('/folder/$i'),
+    ];
+    await tester.pump();
+    expect(scheduler.submissions, 0);
+    expect(cache.requests, isEmpty);
+    covers.setInteractionPaused(false);
+    await tester.pump();
+    expect(cache.requests, hasLength(1));
+    cache.release.complete();
+    await tester.pumpAndSettle();
+    await Future.wait(futures);
+    expect(cache.requests, hasLength(30));
+  });
+
+  testWidgets(
+    'fast scrolling retires stale cover requests before I/O frees up',
+    (tester) async {
+      final cache = _RecordingCovers(blockAll: true);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      final covers = LibraryCoverUiController(
+        library: fixture.library,
+        scheduler: WarmupScheduler(maxQueueSize: 2),
+      );
+      final scroll = ScrollController();
+      final finished = <int>{};
+      addTearDown(fixture.dispose);
+      addTearDown(covers.dispose);
+      addTearDown(scroll.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox.expand(
+            child: ListView.builder(
+              controller: scroll,
+              itemExtent: 100,
+              cacheExtent: 0,
+              itemCount: 1000,
+              itemBuilder: (context, index) => Builder(
+                builder: (context) {
+                  unawaited(
+                    covers
+                        .deferredFolderCover('/folder/$index', context: context)
+                        .then((_) => finished.add(index)),
+                  );
+                  return const SizedBox(height: 100);
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      final activeCount = cache.requests.length;
+      expect(activeCount, 1);
+      for (var i = 1; i <= 8; i++) {
+        scroll.jumpTo(i * 3000);
+        await tester.pump();
+      }
+      expect(
+        finished.length,
+        greaterThan(30),
+        reason:
+            'Offscreen requests must not accumulate behind slow artwork I/O.',
+      );
+      expect(cache.requests, hasLength(activeCount));
+      await tester.pumpWidget(const SizedBox.shrink());
+      cache.release.complete();
+      await tester.pumpAndSettle();
+      expect(cache.requests, hasLength(activeCount));
+    },
+  );
+
+  testWidgets(
+    'playlist thumbnail discovery is bounded and skips rows removed while queued',
+    (tester) async {
+      final cache = _RecordingCovers(blockAll: true);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      final covers = LibraryCoverUiController(library: fixture.library);
+      addTearDown(fixture.dispose);
+      addTearDown(covers.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          ListView(
+            cacheExtent: 2000,
+            children: [
+              for (var i = 0; i < 30; i++)
+                SessionCoverThumbnail(
+                  sessionId: 'session-$i',
+                  track: _track(i),
+                  coverPath: null,
+                  coverGeneration: 0,
+                  coverCacheWidth: 64,
+                ),
+            ],
+          ),
+          overrides: [
+            libraryCoverUiControllerProvider.overrideWithValue(covers),
+          ],
+        ),
+      );
+      final limit = defaultTargetPlatform == TargetPlatform.windows ? 4 : 1;
+      expect(cache.requests, hasLength(limit));
+      expect(cache.requests, everyElement(startsWith('playback:')));
+      await tester.pumpWidget(const SizedBox.shrink());
+      cache.release.complete();
+      await tester.pumpAndSettle();
+      // A fast fling can remove queued rows before their source lookup starts.
+      expect(cache.requests, hasLength(limit));
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets('warm playlist artwork bypasses a paused discovery queue', (
+    tester,
+  ) async {
+    var downloads = 0;
+    final service = LibraryService();
+    final cache = CoverArtworkCacheService(
+      libraryService: service,
+      remoteCoverDownloader: (_) async {
+        downloads++;
+        return '/warm-playlist.png';
+      },
+    );
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: cache,
+    );
+    final covers = LibraryCoverUiController(library: fixture.library);
+    addTearDown(service.dispose);
+    addTearDown(fixture.dispose);
+    addTearDown(covers.dispose);
+    final track = MusicTrack(
+      path: 'https://audio/track.mp3',
+      displayName: 'Remote',
+      groupKey: 'work',
+      groupTitle: 'Work',
+      groupSubtitle: '',
+      isSingle: false,
+      remoteCoverUrl: 'https://cover/warm',
+    );
+    final first = covers.deferredPlaybackCover(track);
+    expect(covers.deferredPlaybackCover(track), same(first));
+    await tester.pump();
+    expect(await first, '/warm-playlist.png');
+    covers.setInteractionPaused(true);
+    expect(await covers.deferredPlaybackCover(track), '/warm-playlist.png');
+    expect(downloads, 1);
+  });
+
   testWidgets(
     'Windows cover loading does not wait for a slow first download',
     (tester) async {
@@ -588,6 +759,30 @@ MusicTrack _track(int index) => MusicTrack(
   isSingle: true,
 );
 
+class _CountingScheduler extends WarmupScheduler {
+  int submissions = 0;
+
+  @override
+  bool schedule({
+    required String key,
+    required int priority,
+    int Function()? priorityResolver,
+    required int generation,
+    void Function()? onDiscard,
+    required Future<void> Function() task,
+  }) {
+    submissions++;
+    return super.schedule(
+      key: key,
+      priority: priority,
+      priorityResolver: priorityResolver,
+      generation: generation,
+      onDiscard: onDiscard,
+      task: task,
+    );
+  }
+}
+
 class _RecordingCovers extends CoverArtworkCacheService {
   _RecordingCovers({this.result, this.blockAll = false})
     : super(libraryService: LibraryService());
@@ -615,4 +810,10 @@ class _RecordingCovers extends CoverArtworkCacheService {
   @override
   Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) =>
       _record('track:${(track?.path ?? trackPath!).split('/').last}');
+
+  @override
+  Future<String?> futureForPlaybackTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) => _record('playback:${(track?.path ?? trackPath!).split('/').last}');
 }

@@ -323,9 +323,11 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                   hasCategories: widget.categories.isNotEmpty,
                 ) +
                 12,
-            child: const AppEdgeFadeMask(
-              key: ValueKey<String>('app_search_top_fade_mask'),
-              direction: AppEdgeFadeDirection.towardTop,
+            child: const AppPageHeaderTransition(
+              child: AppEdgeFadeMask(
+                key: ValueKey<String>('app_search_top_fade_mask'),
+                direction: AppEdgeFadeDirection.towardTop,
+              ),
             ),
           ),
           Builder(

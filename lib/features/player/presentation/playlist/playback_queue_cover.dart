@@ -40,7 +40,9 @@ class QueueTrackCoverState extends ConsumerState<QueueTrackCover> {
     } else if (_future == null ||
         _trackPath != widget.track.path ||
         _coverGeneration != coverGeneration) {
-      _future = library.playbackCoverPathFutureForTrack(widget.track);
+      _future = ref
+          .read(libraryCoverUiControllerProvider)
+          .deferredPlaybackCover(widget.track, context: context);
     }
     _trackPath = widget.track.path;
     _coverGeneration = coverGeneration;

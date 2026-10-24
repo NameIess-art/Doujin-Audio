@@ -2,6 +2,7 @@ const Map<String, String> appLanguageZh = {
   'search_history': '搜索历史',
   'search_library_history': '历史',
   'search_history_empty': '暂无搜索记录',
+  'search_history_cleared': '搜索历史已清空',
   'search_hot_voice_actors': '热门声优',
   'search_hot_tags': '热门标签',
   'section_network': '网络服务',

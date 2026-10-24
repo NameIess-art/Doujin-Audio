@@ -284,6 +284,27 @@ void main() {
           findsOneWidget,
         );
         expect(find.byType(LibraryTreeItem), findsNothing);
+        await tester.enterText(field, 'Keep draft');
+        await tester.pumpAndSettle();
+        final historyBeforeClear =
+            fixture.settings.slice.state.librarySearchHistory;
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const ValueKey('library_search_history')),
+            matching: find.byTooltip('清空'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(fixture.settings.slice.state.librarySearchHistory, isEmpty);
+        expect(tester.widget<TextField>(field).controller!.text, 'Keep draft');
+        expect(find.text('搜索历史已清空'), findsOneWidget);
+        await tester.tap(find.text('撤销'));
+        await tester.pumpAndSettle();
+        expect(
+          fixture.settings.slice.state.librarySearchHistory,
+          historyBeforeClear,
+        );
+        expect(tester.widget<TextField>(field).controller!.text, 'Keep draft');
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
         debugDefaultTargetPlatformOverride = null;

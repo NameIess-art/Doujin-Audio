@@ -5,7 +5,6 @@ class AsmrTag {
     required this.key,
     required this.name,
     this.onlineId,
-    this.workCount,
     Iterable<String> aliases = const [],
   }) : aliases = List.unmodifiable(
          {name, ...aliases}.where((e) => e.trim().isNotEmpty),
@@ -13,20 +12,17 @@ class AsmrTag {
   final String key;
   final String name;
   final int? onlineId;
-  final int? workCount;
   final List<String> aliases;
   Map<String, Object?> toJson() => {
     'key': key,
     'name': name,
     'id': onlineId,
-    'count': workCount,
     'aliases': aliases,
   };
   factory AsmrTag.fromJson(Map<String, dynamic> json) => AsmrTag(
     key: json['key'] as String,
     name: json['name'] as String,
     onlineId: (json['id'] as num?)?.toInt(),
-    workCount: (json['count'] as num?)?.toInt(),
     aliases: (json['aliases'] as List? ?? []).cast<String>(),
   );
 }
@@ -86,7 +82,6 @@ class AsmrTagPreferences {
       key: tag.key,
       name: tag.name,
       onlineId: tag.onlineId,
-      workCount: tag.workCount ?? tags[tag.key]?.workCount,
       aliases: aliases,
     );
   }

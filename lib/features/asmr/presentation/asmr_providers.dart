@@ -37,6 +37,7 @@ final asmrTagInterestsProvider =
       return interactionDeferredListenableStream(
         source: controller,
         read: () => controller.interestTags,
+        deferInitialRead: true,
         structural: true,
       );
     });
@@ -60,6 +61,7 @@ final asmrVoiceActorInterestsProvider =
       return interactionDeferredListenableStream(
         source: controller,
         read: () => controller.voiceActorInterests,
+        deferInitialRead: true,
         structural: true,
       );
     });

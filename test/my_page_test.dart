@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:doujin_audio/app/presentation/listening_time_chart.dart';
 import 'package:doujin_audio/app/presentation/main_destination.dart';
@@ -21,6 +22,7 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -32,6 +34,32 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await AppPreferences.init();
+  });
+
+  testWidgets('first taste projections wait for scrolling to finish', (
+    tester,
+  ) async {
+    final controller = _InterestController(createTestAsmrServices());
+    final container = ProviderContainer(
+      overrides: [asmrLibraryControllerProvider.overrideWithValue(controller)],
+    );
+    addTearDown(controller.dispose);
+    addTearDown(container.dispose);
+    final interaction = UiInteractionCoordinator.instance;
+    final drag = Object();
+    addTearDown(() => interaction.cancelInteraction(drag));
+    interaction.beginInteraction(drag);
+    container.listen(asmrTagInterestsProvider, (_, _) {});
+    container.listen(asmrVoiceActorInterestsProvider, (_, _) {});
+    await tester.pump();
+    expect(controller.interestReads, 0);
+    expect(controller.voiceInterestReads, 0);
+    interaction.cancelInteraction(drag);
+    await pumpUntilUiIdle(tester);
+    expect(controller.interestReads, greaterThan(0));
+    expect(controller.voiceInterestReads, greaterThan(0));
+    expect(container.read(asmrTagInterestsProvider).hasValue, isTrue);
+    expect(container.read(asmrVoiceActorInterestsProvider).hasValue, isTrue);
   });
 
   test(
@@ -167,6 +195,123 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'vertical round trips retain chart and daily state on $platform',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final controller = _DailyController(createTestAsmrServices())
+          ..loadingDaily = false
+          ..picks = List.generate(
+            20,
+            (i) => AsmrWork.fromJson({'id': 8000 + i, 'title': 'Daily $i'}),
+          );
+        for (var i = 0; i < 30; i++) {
+          controller.state.learned[controller.state.resolve('Interest $i')] =
+              i + 1;
+          controller.voices.learned[controller.voices.resolve('Voice $i')] =
+              i + 1;
+        }
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        tester.view.physicalSize = const Size(360, 400);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final days = _CountingListeningDays(
+          List.generate(
+            3650,
+            (i) => ListeningDay(
+              date: DateTime(2026, 10, 24 - i),
+              duration: const Duration(minutes: 5),
+            ),
+          ),
+        );
+        await tester.pumpWidget(
+          fixture.build(
+            Theme(
+              data: ThemeData(platform: platform),
+              child: const MyPage(tabIndex: 3),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+              listeningActivityProvider.overrideWith(
+                (ref) => Stream.value(ListeningActivityView(days: days)),
+              ),
+            ],
+          ),
+        );
+        await pumpAndSettleWithAsync(tester);
+        final chart = tester.state(find.byType(ListeningTimeChart));
+        final vertical = find.byWidgetPredicate(
+          (widget) =>
+              widget is ListView && widget.scrollDirection == Axis.vertical,
+        );
+        final scroll = tester.widget<ListView>(vertical).controller!;
+        final week = find.widgetWithText(
+          ChoiceChip,
+          fixture.languageProvider.tr('my_interval_week'),
+        );
+        await tester.tap(week);
+        await tester.pumpAndSettle();
+        days.reads = 0;
+        // Visit the horizontal row once before moving it beyond the cache window.
+        scroll.jumpTo(240);
+        await pumpAndSettleWithAsync(tester);
+        final daily = find.byKey(const ValueKey('my-daily-viewport'));
+        final dailyScroll = tester
+            .widget<ListView>(
+              find.descendant(of: daily, matching: find.byType(ListView)),
+            )
+            .controller!;
+        dailyScroll.jumpTo(150);
+        await tester.pumpAndSettle();
+        final calls = controller.dailyCalls;
+        // Hold the scroll interaction while the taste sections first enter.
+        final interaction = UiInteractionCoordinator.instance;
+        final drag = Object();
+        interaction.beginInteraction(drag);
+        addTearDown(() => interaction.cancelInteraction(drag));
+        final tagReads = controller.interestReads;
+        final voiceReads = controller.voiceInterestReads;
+        scroll.jumpTo(scroll.position.maxScrollExtent);
+        for (var i = 0; i < 20; i++) {
+          controller.notifyListeners();
+        }
+        await tester.pump();
+        expect(controller.interestReads, tagReads);
+        expect(controller.voiceInterestReads, voiceReads);
+        interaction.cancelInteraction(drag);
+        await pumpUntilUiIdle(tester);
+        await pumpAndSettleWithAsync(tester);
+        final settledTagReads = controller.interestReads;
+        final settledVoiceReads = controller.voiceInterestReads;
+        for (var i = 0; i < 3; i++) {
+          scroll.jumpTo(scroll.position.maxScrollExtent);
+          await tester.pumpAndSettle();
+          scroll.jumpTo(0);
+          await pumpAndSettleWithAsync(tester);
+        }
+        expect(tester.state(find.byType(ListeningTimeChart)), same(chart));
+        expect(tester.widget<ChoiceChip>(week).selected, isTrue);
+        scroll.jumpTo(240);
+        await pumpAndSettleWithAsync(tester);
+        final restored = tester
+            .widget<ListView>(
+              find.descendant(of: daily, matching: find.byType(ListView)),
+            )
+            .controller!;
+        expect(restored, same(dailyScroll));
+        expect(restored.offset, 150);
+        expect(controller.dailyCalls, calls);
+        expect(controller.interestReads, settledTagReads);
+        expect(controller.voiceInterestReads, settledVoiceReads);
+        expect(days.reads, 0);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+
     testWidgets(
       'daily picks defer requests, show twenty covers, retry and open details on $platform',
       (tester) async {
@@ -625,6 +770,8 @@ void main() {
         await tester.ensureVisible(
           find.text(fixture.languageProvider.tr('my_interests')),
         );
+        await pumpUntilUiIdle(tester);
+        await pumpAndSettleWithAsync(tester);
         final chips = tester
             .widgetList<InputChip>(find.byType(InputChip))
             .toList();
@@ -707,6 +854,8 @@ void main() {
         await tester.ensureVisible(
           find.text(fixture.languageProvider.tr('my_voice_interests')),
         );
+        await pumpUntilUiIdle(tester);
+        await pumpAndSettleWithAsync(tester);
         final chips = find.byWidgetPredicate(
           (widget) =>
               widget is InputChip &&
@@ -1104,6 +1253,25 @@ void main() {
   }
 }
 
+class _CountingListeningDays extends ListBase<ListeningDay> {
+  _CountingListeningDays(this.values);
+  final List<ListeningDay> values;
+  int reads = 0;
+  @override
+  int get length => values.length;
+  @override
+  set length(int value) => throw UnsupportedError('immutable');
+  @override
+  ListeningDay operator [](int index) {
+    reads++;
+    return values[index];
+  }
+
+  @override
+  void operator []=(int index, ListeningDay value) =>
+      throw UnsupportedError('immutable');
+}
+
 class _InterestController extends AsmrLibraryController {
   _InterestController(TestAsmrServices services)
     : super(
@@ -1115,9 +1283,13 @@ class _InterestController extends AsmrLibraryController {
   }
   final voices = AsmrTagPreferences();
   int voiceSaves = 0;
+  int voiceInterestReads = 0;
   @override
-  List<AsmrTagInterest> get voiceActorInterests =>
-      voices.interests.take(10).toList();
+  List<AsmrTagInterest> get voiceActorInterests {
+    voiceInterestReads++;
+    return voices.interests.take(10).toList();
+  }
+
   @override
   List<AsmrTagInterest> get listenedVoiceActorInterests =>
       voices.listenedInterests.take(10).toList();

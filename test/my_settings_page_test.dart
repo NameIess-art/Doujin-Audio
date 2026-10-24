@@ -88,11 +88,12 @@ void main() {
           _expectSeparateSwitch(tester, 'switch-to-settings');
           expect(activitySubscriptions, 1);
           final myState = tester.state(my);
-          final chart = find.byType(ListeningTimeChart);
+          final chart = find.byType(ListeningTimeChart, skipOffstage: false);
           final chartState = tester.state(chart);
           final month = find.widgetWithText(
             ChoiceChip,
             fixture.languageProvider.tr('my_interval_month'),
+            skipOffstage: false,
           );
           await tester.ensureVisible(month);
           await tester.tap(month);

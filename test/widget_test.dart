@@ -3372,7 +3372,7 @@ void main() {
         controller.searchInputs.clear();
         final field = find.byKey(const ValueKey<String>('app_search_field'));
         await tester.enterText(field, 'old');
-        expect(controller.searchInputs, [(AsmrCategoryType.collected, '')]);
+        expect(controller.searchInputs, isEmpty);
         await tester.pump(const Duration(seconds: 1));
         expect(controller.refreshRequests, isEmpty);
         expect(
@@ -7355,10 +7355,7 @@ final class _AppShellNativePlaybackRepository extends NativePlaybackRepository {
 
 final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   @override
-  Future<void> ensureVoiceActorCatalog({bool force = false}) async {}
-
-  @override
-  Future<void> ensureTagCatalog({bool force = false}) async {}
+  Future<void> ensureSearchSuggestions({bool force = false}) async {}
 
   @override
   Future<void> ensureCategoryLoaded(

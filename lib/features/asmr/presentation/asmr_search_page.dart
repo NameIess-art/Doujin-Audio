@@ -19,7 +19,10 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   final ScrollController _suggestionsScrollController = ScrollController();
   late final ValueNotifier<int> _activeCategoryIndex;
   String _query = '';
-  String _inputQuery = '';
+  final ValueNotifier<String> _inputQuery = ValueNotifier('');
+  Set<String> _selectedQueryTerms = const {};
+  late final ValueNotifier<(AsmrSearchSuggestions?, Object?)> _suggestions;
+  late final Listenable _suggestionChanges;
   bool _showSearchPlaceholder = false;
   bool _isSelectionMode = false;
   final Set<String> _selectedWorkIds = <String>{};
@@ -44,13 +47,18 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       initialIndex >= 0 ? initialIndex : 0,
     );
     _searchController = ref.read(asmrLibraryControllerProvider);
+    _suggestions = ValueNotifier((
+      _searchController?.searchSuggestions,
+      _searchController?.searchSuggestionsError,
+    ));
+    _suggestionChanges = Listenable.merge([_inputQuery, _suggestions]);
+    _searchController?.addListener(_handleSuggestionsChanged);
     _searchController?.beginSearchSession();
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
     _languageProvider.addListener(_handleLanguageChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(_searchController?.ensureVoiceActorCatalog(force: true));
-      unawaited(_searchController?.ensureTagCatalog(force: true));
+      unawaited(_searchController?.ensureSearchSuggestions());
     });
   }
 
@@ -59,23 +67,48 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     _scheduleRefresh();
   }
 
+  void _handleSuggestionsChanged() {
+    // Catalog, playback, and account notifications do not affect these chips.
+    _suggestions.value = (
+      _searchController?.searchSuggestions,
+      _searchController?.searchSuggestionsError,
+    );
+  }
+
+  bool _isSuggestionSelected(String value) {
+    final terms = normalizedSearchTerms(value);
+    return terms.isNotEmpty && terms.every(_selectedQueryTerms.contains);
+  }
+
   void _resetScroll() {
     final controller = _scrollControllers[_category]!;
     if (controller.hasClients) controller.jumpTo(0);
   }
 
   void _onChanged(String value) {
+    final input = canonicalSearchQuery(value);
+    final needsPageBuild =
+        _query.isNotEmpty || _inputQuery.value.isEmpty != input.isEmpty;
     UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
     _refreshPending = false;
-    _searchController?.setSearchQuery('', _category);
-    _resetScroll();
-    setState(() {
-      _inputQuery = canonicalSearchQuery(value);
+    if (_query.isNotEmpty) {
+      _searchController?.setSearchQuery('', _category);
+      _resetScroll();
+    }
+    void updateDraft() {
+      _selectedQueryTerms = normalizedSearchTerms(input).toSet();
+      _inputQuery.value = input;
       _query = '';
       _requestSerial++;
       _showSearchPlaceholder = false;
       _clearSelection();
-    });
+    }
+
+    if (needsPageBuild) {
+      setState(updateDraft);
+    } else {
+      updateDraft();
+    }
   }
 
   void _toggleSuggestion(String value) {
@@ -94,7 +127,8 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       text: query,
       selection: TextSelection.collapsed(offset: query.length),
     );
-    _inputQuery = query;
+    _selectedQueryTerms = normalizedSearchTerms(query).toSet();
+    _inputQuery.value = query;
     _searchController?.setSearchQuery(query, _category);
     _resetScroll();
     setState(() {
@@ -308,94 +342,96 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     double topInset,
     double bottomInset,
   ) {
-    final settings =
-        ref.watch(settingsStateProvider).value ??
-        ref.read(settingsRepositoryProvider).slice.state;
-    final controller = ref.watch(asmrLibraryControllerProvider);
-    Widget buildSections() => PageHeaderInset(
-      topInset: topInset,
-      child: ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-        child: DragOnlyScrollbar(
-          controller: _suggestionsScrollController,
-          thumbVisibility: defaultTargetPlatform == TargetPlatform.windows,
-          child: CustomScrollView(
-            key: const ValueKey('asmr_search_suggestions'),
-            controller: _suggestionsScrollController,
-            slivers: [
-              SliverToBoxAdapter(child: SizedBox(height: topInset)),
-              AppSearchSuggestionSection(
-                key: const ValueKey('asmr_search_history'),
-                title: i18n.tr('search_history'),
-                items: settings.asmrSearchHistory,
-                isSelected: (value) =>
-                    searchQueryContainsTerms(_inputQuery, value),
-                onToggle: _toggleSuggestion,
-                emptyText: i18n.tr('search_history_empty'),
-                expandLabel: i18n.tr('expand'),
-                collapseLabel: i18n.tr('collapse'),
-                accentColor: accent,
+    return Consumer(
+      builder: (context, ref, _) {
+        final history =
+            ref.watch(
+              settingsStateProvider.select(
+                (state) => state.value?.asmrSearchHistory,
               ),
-              AppSearchSuggestionSection(
-                key: const ValueKey('asmr_search_voice_actors'),
-                title: i18n.tr('search_hot_voice_actors'),
-                items:
-                    controller?.searchVoiceActors.map((e) => e.name).toList() ??
-                    const [],
-                isSelected: (value) =>
-                    searchQueryContainsTerms(_inputQuery, value),
-                onToggle: _toggleSuggestion,
-                emptyText: i18n.tr('no_search_results'),
-                expandLabel: i18n.tr('expand'),
-                collapseLabel: i18n.tr('collapse'),
-                accentColor: accent,
-                isLoading: controller?.isLoadingVoiceActorCatalog ?? false,
-                errorText: controller?.voiceActorCatalogError == null
-                    ? null
-                    : localizedAsmrCatalogErrorText(
-                        i18n,
-                        controller!.voiceActorCatalogError,
+            ) ??
+            ref.read(settingsRepositoryProvider).slice.state.asmrSearchHistory;
+        return ListenableBuilder(
+          listenable: _suggestionChanges,
+          builder: (context, _) {
+            final (suggestions, error) = _suggestions.value;
+            final errorText = error == null
+                ? null
+                : localizedAsmrCatalogErrorText(i18n, error);
+            return PageHeaderInset(
+              topInset: topInset,
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(scrollbars: false),
+                child: DragOnlyScrollbar(
+                  controller: _suggestionsScrollController,
+                  thumbVisibility:
+                      defaultTargetPlatform == TargetPlatform.windows,
+                  child: CustomScrollView(
+                    key: const ValueKey('asmr_search_suggestions'),
+                    controller: _suggestionsScrollController,
+                    slivers: [
+                      SliverToBoxAdapter(child: SizedBox(height: topInset)),
+                      AppSearchSuggestionSection(
+                        key: const ValueKey('asmr_search_history'),
+                        title: i18n.tr('search_history'),
+                        items: history,
+                        isSelected: _isSuggestionSelected,
+                        onToggle: _toggleSuggestion,
+                        emptyText: i18n.tr('search_history_empty'),
+                        expandLabel: i18n.tr('expand'),
+                        collapseLabel: i18n.tr('collapse'),
+                        accentColor: accent,
                       ),
-                retryLabel: i18n.tr('retry'),
-                onRetry: () =>
-                    unawaited(controller?.ensureVoiceActorCatalog(force: true)),
-              ),
-              AppSearchSuggestionSection(
-                key: const ValueKey('asmr_search_tags'),
-                title: i18n.tr('search_hot_tags'),
-                items:
-                    controller?.searchTags.map((e) => e.name).toList() ??
-                    const [],
-                isSelected: (value) =>
-                    searchQueryContainsTerms(_inputQuery, value),
-                onToggle: _toggleSuggestion,
-                emptyText: i18n.tr('no_search_results'),
-                expandLabel: i18n.tr('expand'),
-                collapseLabel: i18n.tr('collapse'),
-                accentColor: accent,
-                isLoading: controller?.isLoadingTagCatalog ?? false,
-                errorText: controller?.tagCatalogError == null
-                    ? null
-                    : localizedAsmrCatalogErrorText(
-                        i18n,
-                        controller!.tagCatalogError,
+                      AppSearchSuggestionSection(
+                        key: const ValueKey('asmr_search_voice_actors'),
+                        title: i18n.tr('search_hot_voice_actors'),
+                        items: suggestions?.voiceActors ?? const [],
+                        maxExpandedItems: AsmrSearchSuggestions.displayLimit,
+                        isSelected: _isSuggestionSelected,
+                        onToggle: _toggleSuggestion,
+                        emptyText: i18n.tr('no_search_results'),
+                        expandLabel: i18n.tr('expand'),
+                        collapseLabel: i18n.tr('collapse'),
+                        accentColor: accent,
+                        errorText: errorText,
+                        retryLabel: i18n.tr('retry'),
+                        onRetry: () => unawaited(
+                          _searchController?.ensureSearchSuggestions(
+                            force: true,
+                          ),
+                        ),
                       ),
-                retryLabel: i18n.tr('retry'),
-                onRetry: () =>
-                    unawaited(controller?.ensureTagCatalog(force: true)),
+                      AppSearchSuggestionSection(
+                        key: const ValueKey('asmr_search_tags'),
+                        title: i18n.tr('search_hot_tags'),
+                        items: suggestions?.tags ?? const [],
+                        maxExpandedItems: AsmrSearchSuggestions.displayLimit,
+                        isSelected: _isSuggestionSelected,
+                        onToggle: _toggleSuggestion,
+                        emptyText: i18n.tr('no_search_results'),
+                        expandLabel: i18n.tr('expand'),
+                        collapseLabel: i18n.tr('collapse'),
+                        accentColor: accent,
+                        errorText: errorText,
+                        retryLabel: i18n.tr('retry'),
+                        onRetry: () => unawaited(
+                          _searchController?.ensureSearchSuggestions(
+                            force: true,
+                          ),
+                        ),
+                      ),
+                      SliverToBoxAdapter(child: SizedBox(height: bottomInset)),
+                    ],
+                  ),
+                ),
               ),
-              SliverToBoxAdapter(child: SizedBox(height: bottomInset)),
-            ],
-          ),
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
-    return controller == null
-        ? buildSections()
-        : ListenableBuilder(
-            listenable: controller,
-            builder: (_, _) => buildSections(),
-          );
   }
 
   @override
@@ -403,6 +439,9 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
     _activeCategoryIndex.dispose();
     _suggestionsScrollController.dispose();
+    _searchController?.removeListener(_handleSuggestionsChanged);
+    _suggestions.dispose();
+    _inputQuery.dispose();
     _searchController?.endSearchSession();
     _languageProvider.removeListener(_handleLanguageChanged);
     _controller.dispose();
@@ -488,7 +527,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
           accentColor: accent,
           showConfirmButton: _query.isEmpty,
           confirmLabel: i18n.tr('confirm'),
-          onConfirm: _inputQuery.isEmpty
+          onConfirm: _inputQuery.value.isEmpty
               ? null
               : () => unawaited(_onSubmitted(_controller.text)),
           controlsOverlay: _isSelectionMode

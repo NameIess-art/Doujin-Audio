@@ -9,17 +9,17 @@ void registerAsmrControllerStateTests({
   setUp(() => preferences = preferencesStore());
 
   test(
-    'search catalogs rank known counts before unknown counts and retain alphabetical pickers',
+    'complete interest catalogs retain alphabetical pickers',
     () async {
       await resetPrefs();
       final tags = AsmrTagPreferences();
       for (final tag in [
         AsmrTag(key: 'online:a', name: 'A'),
-        AsmrTag(key: 'local:private', name: 'Local only', workCount: 1000),
-        AsmrTag(key: 'online:b', name: 'B', workCount: 4),
-        AsmrTag(key: 'online:c', name: 'C', workCount: 9),
-        AsmrTag(key: 'online:d', name: 'D', workCount: 9),
-        AsmrTag(key: 'online:z', name: 'Z', workCount: 0),
+        AsmrTag(key: 'local:private', name: 'Local only'),
+        AsmrTag(key: 'online:b', name: 'B'),
+        AsmrTag(key: 'online:c', name: 'C'),
+        AsmrTag(key: 'online:d', name: 'D'),
+        AsmrTag(key: 'online:z', name: 'Z'),
       ]) {
         tags.mergeTag(tag);
       }
@@ -31,22 +31,6 @@ void registerAsmrControllerStateTests({
         apiService: _FakeAsmrApiService(),
       );
       await controller.initializeForVisiblePage();
-      expect(controller.searchTags, same(controller.searchTags));
-      expect(controller.searchVoiceActors, same(controller.searchVoiceActors));
-      expect(controller.searchTags.map((tag) => tag.name), [
-        'C',
-        'D',
-        'B',
-        'Z',
-        'A',
-      ]);
-      expect(controller.searchVoiceActors.map((tag) => tag.name), [
-        'C',
-        'D',
-        'B',
-        'Z',
-        'A',
-      ]);
       expect(controller.allTags.map((tag) => tag.name), [
         'A',
         'B',

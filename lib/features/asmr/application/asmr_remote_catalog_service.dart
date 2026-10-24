@@ -72,6 +72,18 @@ class AsmrRemoteCatalogService {
   Future<List<AsmrTag>> loadTagCatalog() => _apiService.fetchTagCatalog();
   Future<List<AsmrTag>> loadVoiceActorCatalog() =>
       _apiService.fetchVoiceActorCatalog();
+  Future<AsmrSearchSuggestions> loadSearchSuggestions({
+    AsmrRequestCancellationToken? cancellationToken,
+  }) {
+    final japaneseApiService = _japaneseApiService;
+    if (japaneseApiService == null) {
+      throw StateError('The Eara catalog client is not available.');
+    }
+    return japaneseApiService.fetchSearchSuggestions(
+      cancellationToken: cancellationToken,
+    );
+  }
+
   Future<List<MusicTrack>> loadLocalTracksForInterests() =>
       _persistenceRepository.loadTracksForRecommendations();
 

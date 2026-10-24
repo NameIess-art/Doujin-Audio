@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/persistence/persisted_state_reloader.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../domain/asmr_models.dart';
+import '../domain/asmr_search_suggestions.dart';
 import '../../../core/media/music_track.dart';
 import '../../library/application/work_text_service.dart';
 import 'asmr_account_sync_service.dart';
@@ -11,6 +13,7 @@ import 'asmr_category_catalog.dart';
 import 'asmr_download_manager.dart';
 import 'asmr_playback_coordinator.dart';
 import 'asmr_preferences.dart';
+import 'asmr_search_suggestions_seed.dart';
 import 'asmr_remote_catalog_service.dart';
 import 'asmr_request_cancellation.dart';
 import 'asmr_library_view_state.dart';
@@ -20,6 +23,7 @@ import '../../../core/app_language.dart';
 
 export 'asmr_library_view_state.dart';
 export '../domain/asmr_tag_interest.dart';
+export '../domain/asmr_search_suggestions.dart';
 export 'asmr_work_content_mapping.dart' show collectAsmrWorkTextFiles;
 
 typedef _AsmrSyncRequestKey = ({int authEpoch, String token});
@@ -141,25 +145,113 @@ class AsmrLibraryController extends ChangeNotifier
     return tags;
   }
 
-  final Expando<List<AsmrTag>> _searchCatalogs = Expando();
-  List<AsmrTag> get searchVoiceActors => _searchCatalog(_voiceActorPreferences);
-  List<AsmrTag> get searchTags => _searchCatalog(_tagPreferences);
+  AsmrSearchSuggestions _searchSuggestions = initialAsmrSearchSuggestions;
+  AsmrSearchSuggestions get searchSuggestions => _searchSuggestions;
+  Object? _searchSuggestionsError;
+  Object? get searchSuggestionsError => _searchSuggestionsError;
+  Future<void>? _searchSuggestionsTask;
+  bool get isLoadingSearchSuggestions => _searchSuggestionsTask != null;
+  DateTime? _searchSuggestionsUpdatedAt;
+  AsmrRequestCancellationToken? _searchSuggestionsCancellation;
+  static const _searchSuggestionsFreshFor = Duration(hours: 6);
 
-  List<AsmrTag> _searchCatalog(AsmrTagPreferences preferences) =>
-      _searchCatalogs[preferences] ??= List.unmodifiable(
-        preferences.tags.values
-            .where((tag) => tag.key.startsWith('online:'))
-            .toList()
-          ..sort(_compareCatalogPopularity),
+  Future<void> ensureSearchSuggestions({bool force = false}) {
+    if (_disposed) return Future.value();
+    final pending = _searchSuggestionsTask;
+    if (pending != null) return pending;
+    final age = DateTime.now().difference(
+      _searchSuggestionsUpdatedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+    );
+    if (!force && !age.isNegative && age < _searchSuggestionsFreshFor) {
+      return Future.value();
+    }
+    final cancellation = AsmrRequestCancellationToken();
+    _searchSuggestionsCancellation = cancellation;
+    final epoch = _runtimeCacheEpoch;
+    _searchSuggestionsError = null;
+    late final Future<void> task;
+    task = _loadSearchSuggestions(epoch, cancellation, force: force)
+        .whenComplete(() {
+          if (!identical(task, _searchSuggestionsTask)) return;
+          _searchSuggestionsTask = null;
+          _searchSuggestionsCancellation = null;
+          notifyListeners();
+        });
+    _searchSuggestionsTask = task;
+    notifyListeners();
+    return task;
+  }
+
+  Future<void> _loadSearchSuggestions(
+    int epoch,
+    AsmrRequestCancellationToken cancellation, {
+    required bool force,
+  }) async {
+    bool isCurrent() =>
+        !_disposed && epoch == _runtimeCacheEpoch && !cancellation.isCancelled;
+    // Search suggestions must not wait for account restoration, the full voice
+    // directory, or a scan/derivation of the user's local listening interests.
+    try {
+      final cached = await cancellation.waitFor(
+        _preferencesStore.loadSearchSuggestions(),
       );
+      if (!isCurrent()) return;
+      if (cached != null) {
+        _searchSuggestions = cached.suggestions;
+        _searchSuggestionsUpdatedAt = cached.updatedAt;
+        notifyListeners();
+        final age = DateTime.now().difference(cached.updatedAt);
+        if (!force && !age.isNegative && age < _searchSuggestionsFreshFor) {
+          return;
+        }
+      }
+    } catch (error, stack) {
+      if (!isCurrent()) return;
+      AppLogService.warning(
+        'asmr_search_suggestions_cache_read_failed',
+        error: error,
+        stackTrace: stack,
+      );
+    }
+    try {
+      final suggestions = await cancellation
+          .waitFor(
+            _remoteCatalogService.loadSearchSuggestions(
+              cancellationToken: cancellation,
+            ),
+          )
+          .timeout(
+            const Duration(seconds: 5),
+            onTimeout: () {
+              cancellation.cancel();
+              throw TimeoutException('Search suggestions request timed out.');
+            },
+          );
+      if (!isCurrent()) return;
+      final updatedAt = DateTime.now();
+      _searchSuggestions = suggestions;
+      _searchSuggestionsUpdatedAt = updatedAt;
+      notifyListeners();
+      // Publish first; disk writes must not delay already available suggestions.
+      await _runStateMutation(() async {
+        if (isCurrent()) {
+          await _preferencesStore.saveSearchSuggestions(suggestions, updatedAt);
+        }
+      });
+    } catch (error) {
+      if (_disposed || epoch != _runtimeCacheEpoch) return;
+      if (error is AsmrRequestCancelled) return;
+      _searchSuggestionsError = error;
+    }
+  }
 
-  static int _compareCatalogPopularity(AsmrTag a, AsmrTag b) {
-    final aCount = a.workCount;
-    final bCount = b.workCount;
-    if (aCount == null && bCount != null) return 1;
-    if (bCount == null && aCount != null) return -1;
-    final countOrder = (bCount ?? 0).compareTo(aCount ?? 0);
-    return countOrder == 0 ? a.name.compareTo(b.name) : countOrder;
+  void _invalidateSearchSuggestions() {
+    _searchSuggestionsCancellation?.cancel();
+    _searchSuggestionsCancellation = null;
+    _searchSuggestionsTask = null;
+    _searchSuggestionsUpdatedAt = null;
+    _searchSuggestionsError = null;
+    _searchSuggestions = initialAsmrSearchSuggestions;
   }
 
   Set<String> get excludedTagKeys => Set.unmodifiable(_tagPreferences.excluded);
@@ -560,6 +652,7 @@ class AsmrLibraryController extends ChangeNotifier
       _catalog.setSearchQuery(query, category);
 
   void clearRuntimeCaches() {
+    _invalidateSearchSuggestions();
     _invalidateDailyRecommendations();
     _voiceActorCatalogTask = null;
     _voiceActorCatalogError = null;
@@ -845,6 +938,7 @@ class AsmrLibraryController extends ChangeNotifier
 
   @override
   Future<void> reloadPersistedState() async {
+    _invalidateSearchSuggestions();
     _invalidateDailyRecommendations();
     _voiceActorCatalogTask = null;
     _voiceActorCatalogError = null;
@@ -1438,6 +1532,7 @@ class AsmrLibraryController extends ChangeNotifier
   @override
   void dispose() {
     if (_disposed) return;
+    _searchSuggestionsCancellation?.cancel();
     _dailyRecommendationsCancellation?.cancel();
     _disposed = true;
     _activeSyncCancellationToken?.cancel();

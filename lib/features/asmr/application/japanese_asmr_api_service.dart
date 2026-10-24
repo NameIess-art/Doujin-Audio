@@ -5,7 +5,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../domain/asmr_models.dart';
+import '../domain/asmr_search_suggestions.dart';
 import 'asmr_api_service.dart';
+
+export '../domain/asmr_search_suggestions.dart';
 
 /// Eara exposes an indexed Japanese ASMR catalog, not an ASMR.ONE account API.
 class JapaneseAsmrApiService {
@@ -22,6 +25,20 @@ class JapaneseAsmrApiService {
     if (_closed) return;
     _closed = true;
     _client.close(force: true);
+  }
+
+  Future<AsmrSearchSuggestions> fetchSearchSuggestions({
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    final body = await _get(
+      'search-suggestions',
+      const {},
+      cancellationToken,
+      endpointPath: 'api/search-suggestions',
+    );
+    final result = await compute(_decodeSearchSuggestions, body);
+    cancellationToken?.throwIfCancelled();
+    return result;
   }
 
   Future<AsmrWorkPage> searchWorks({
@@ -66,12 +83,13 @@ class JapaneseAsmrApiService {
   Future<String> _get(
     String operation,
     Map<String, String> query,
-    AsmrRequestCancellationToken? cancellationToken,
-  ) async {
+    AsmrRequestCancellationToken? cancellationToken, {
+    String? endpointPath,
+  }) async {
     if (_closed) throw StateError('Japanese ASMR client is closed.');
     cancellationToken?.throwIfCancelled();
     final uri = _baseUri
-        .resolve('api/jp-asmr/$operation')
+        .resolve(endpointPath ?? 'api/jp-asmr/$operation')
         .replace(queryParameters: query);
     HttpClientRequest? request;
     StreamSubscription<String>? subscription;
@@ -128,6 +146,14 @@ class JapaneseAsmrApiService {
       await subscription?.cancel();
     }
   }
+}
+
+AsmrSearchSuggestions _decodeSearchSuggestions(String body) {
+  final json = jsonDecode(body);
+  if (json is! Map<String, dynamic>) {
+    throw const FormatException('Invalid Eara search suggestions response.');
+  }
+  return AsmrSearchSuggestions.fromJson(json);
 }
 
 AsmrWorkPage _decodeJapaneseWorkPage(

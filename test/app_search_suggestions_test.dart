@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -159,6 +161,200 @@ void main() {
     expect(toggled, item);
   });
 
+  testWidgets(
+    'bounded sections never traverse or reveal the full directory',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      final items = _TrackedSuggestions(5000);
+      Widget buildPage() => MaterialApp(
+        home: Scaffold(
+          body: CustomScrollView(
+            controller: scroll,
+            slivers: [
+              AppSearchSuggestionSection(
+                title: 'Voices',
+                items: items,
+                maxExpandedItems: 30,
+                isSelected: (_) => false,
+                onToggle: (_) {},
+                emptyText: 'Empty',
+                expandLabel: 'Expand',
+                collapseLabel: 'Collapse',
+              ),
+            ],
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      expect(find.text('suggestion 0002'), findsOneWidget);
+      expect(find.text('suggestion 0003'), findsNothing);
+      expect(items.highestReadIndex, 3);
+      expect(items.readCount, 4);
+      await tester.tap(find.byTooltip('Expand'));
+      await tester.pumpAndSettle();
+      expect(find.text('suggestion 0003'), findsOneWidget);
+      expect(find.byType(InputChip).evaluate().length, lessThanOrEqualTo(30));
+      await tester.scrollUntilVisible(
+        find.text('suggestion 0029'),
+        600,
+        scrollable: find.byType(Scrollable).first,
+      );
+      scroll.jumpTo(scroll.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(find.text('suggestion 0029'), findsOneWidget);
+      expect(find.text('suggestion 0030'), findsNothing);
+      expect(find.text('suggestion 4999'), findsNothing);
+      expect(items.highestReadIndex, 29);
+      expect(items.readCount, 30);
+
+      // Neither a selection rebuild nor cached scrolling rereads the directory.
+      items.readCount = 0;
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      expect(items.highestReadIndex, 29);
+      expect(items.readCount, 0);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets('large local directories only lay out rows when needed', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final items = _TrackedSuggestions(5000);
+    var selected = false;
+    Widget buildPage() => MaterialApp(
+      home: Scaffold(
+        body: CustomScrollView(
+          slivers: [
+            AppSearchSuggestionSection(
+              title: 'Voices',
+              items: items,
+              isSelected: (_) => selected,
+              onToggle: (_) {},
+              emptyText: 'Empty',
+              expandLabel: 'Expand',
+              collapseLabel: 'Collapse',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+    final initialReads = items.readCount;
+    items.readCount = 0;
+    selected = true;
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+    final selectionReads = items.readCount;
+    items.readCount = 0;
+    await tester.tap(find.byTooltip('Expand'));
+    await tester.pumpAndSettle();
+    final expansionReads = items.readCount;
+    debugPrint(
+      'Suggestion source reads: initial=$initialReads, '
+      'selection=$selectionReads, expand=$expansionReads',
+    );
+    expect(initialReads, lessThan(10));
+    expect(selectionReads, 0);
+    expect(expansionReads, lessThan(100));
+    expect(find.text('suggestion 4999'), findsNothing);
+    expect(
+      tester.widget<InputChip>(find.byType(InputChip).first).selected,
+      isTrue,
+    );
+
+    items.readCount = 0;
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+    expect(items.readCount, 0);
+    await tester.binding.setSurfaceSize(const Size(500, 800));
+    await tester.pumpAndSettle();
+    expect(items.readCount, greaterThan(0));
+    expect(items.readCount, lessThan(100));
+    // Unlimited local sections remain fully accessible after lazy expansion.
+    await tester.scrollUntilVisible(
+      find.text('suggestion 4999'),
+      10000,
+      maxScrolls: 30,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('suggestion 4999'), findsOneWidget);
+    expect(items.highestReadIndex, 4999);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('row caches refresh with source, limit, and text geometry', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    var items = _TrackedSuggestions(50);
+    var limit = 3;
+    var scale = 1.0;
+    var fontSize = 14.0;
+    Widget buildPage() => MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+        child: ChipTheme(
+          data: ChipThemeData(labelStyle: TextStyle(fontSize: fontSize)),
+          child: Scaffold(
+            body: CustomScrollView(
+              slivers: [
+                AppSearchSuggestionSection(
+                  title: 'Voices',
+                  items: items,
+                  maxExpandedItems: limit,
+                  isSelected: (_) => false,
+                  onToggle: (_) {},
+                  emptyText: 'Empty',
+                  expandLabel: 'Expand',
+                  collapseLabel: 'Collapse',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+    expect(items.readCount, 3);
+    expect(find.byTooltip('Expand'), findsNothing);
+    limit = 30;
+    items.readCount = 0;
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+    expect(items.readCount, greaterThan(0));
+    expect(items.highestReadIndex, lessThan(30));
+    expect(find.byTooltip('Expand'), findsOneWidget);
+
+    for (final geometry in ['scale', 'style', 'source']) {
+      if (geometry == 'scale') scale = 1.5;
+      if (geometry == 'style') fontSize = 18;
+      if (geometry == 'source') items = _TrackedSuggestions(50, prefix: 'new');
+      items.readCount = 0;
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      expect(items.readCount, greaterThan(0), reason: geometry);
+      expect(items.readCount, lessThan(30), reason: geometry);
+    }
+    expect(find.text('new 0000'), findsOneWidget);
+    expect(find.text('suggestion 0000'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('confirmation remains above keyboard without category header', (
     tester,
   ) async {
@@ -200,4 +396,28 @@ void main() {
     await tester.tap(button);
     expect(confirmed, 1);
   });
+}
+
+class _TrackedSuggestions extends ListBase<String> {
+  _TrackedSuggestions(this.length, {this.prefix = 'suggestion'});
+
+  @override
+  final int length;
+  final String prefix;
+  int highestReadIndex = -1;
+  int readCount = 0;
+
+  @override
+  set length(int value) => throw UnsupportedError('Read-only suggestions');
+
+  @override
+  String operator [](int index) {
+    readCount++;
+    if (index > highestReadIndex) highestReadIndex = index;
+    return '$prefix ${index.toString().padLeft(4, '0')}';
+  }
+
+  @override
+  void operator []=(int index, String value) =>
+      throw UnsupportedError('Read-only suggestions');
 }

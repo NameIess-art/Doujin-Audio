@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../domain/asmr_tag_interest.dart';
+import '../domain/asmr_search_suggestions.dart';
 import '../../../core/app_language.dart';
 import '../domain/asmr_models.dart';
 import '../domain/asmr_persistence_repository.dart';
@@ -15,6 +16,7 @@ class AsmrPreferencesStore {
   static const String _lastSyncAtKey = 'asmr_last_sync_at_v1';
   static const String _syncOutboxSeededKey = 'asmr_sync_outbox_seeded_v2';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
+  static const _searchSuggestionsKey = 'asmr_search_suggestions_v1';
 
   final AsmrPersistenceRepository _repository;
 
@@ -25,6 +27,7 @@ class AsmrPreferencesStore {
       _tagPreferencesKey,
       _voiceActorPreferencesKey,
       _lastSyncAtKey,
+      _searchSuggestionsKey,
       _syncOutboxSeededKey,
       for (final language in AsmrContentLanguage.values)
         'asmr_daily_discovery_v1_${language.name}',
@@ -32,6 +35,28 @@ class AsmrPreferencesStore {
       await _repository.saveSetting(key, null);
     }
   }
+
+  Future<({AsmrSearchSuggestions suggestions, DateTime updatedAt})?>
+  loadSearchSuggestions() async {
+    final raw = await _repository.loadSetting(_searchSuggestionsKey);
+    if (raw == null) return null;
+    final json = jsonDecode(raw) as Map<String, dynamic>;
+    return (
+      suggestions: AsmrSearchSuggestions.fromJson(json),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+
+  Future<void> saveSearchSuggestions(
+    AsmrSearchSuggestions suggestions,
+    DateTime updatedAt,
+  ) => _repository.saveSetting(
+    _searchSuggestionsKey,
+    jsonEncode({
+      ...suggestions.toJson(),
+      'updatedAt': updatedAt.toIso8601String(),
+    }),
+  );
 
   Future<AsmrTagPreferences> loadTagPreferences() async {
     final raw = await _repository.loadSetting(_tagPreferencesKey);

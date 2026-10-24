@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// A sliver section that folds by rendered rows, independently of item count.
@@ -19,9 +18,12 @@ class AppSearchSuggestionSection extends StatefulWidget {
     this.errorText,
     this.onRetry,
     this.retryLabel = 'Retry',
-  });
+    this.maxExpandedItems,
+  }) : assert(maxExpandedItems == null || maxExpandedItems > 0);
 
   final String title;
+
+  /// Replace the list when its contents change so row measurements can be reused.
   final List<String> items;
   final bool Function(String) isSelected;
   final ValueChanged<String> onToggle;
@@ -33,6 +35,7 @@ class AppSearchSuggestionSection extends StatefulWidget {
   final String? errorText;
   final VoidCallback? onRetry;
   final String retryLabel;
+  final int? maxExpandedItems;
 
   @override
   State<AppSearchSuggestionSection> createState() =>
@@ -44,8 +47,12 @@ class _AppSearchSuggestionSectionState
   static const _gap = 8.0;
   static const _rowGap = 4.0;
   bool _expanded = false;
-  List<String> _layoutItems = const [];
-  List<List<String>> _rows = const [];
+  List<String>? _layoutItems;
+  final List<List<String>> _rows = [];
+  int _itemCount = 0;
+  int _nextItemIndex = 0;
+  (String, double)? _pendingItem;
+  int? _layoutLimit;
   double? _layoutWidth;
   TextStyle? _layoutStyle;
   TextScaler? _layoutScaler;
@@ -60,13 +67,21 @@ class _AppSearchSuggestionSectionState
     TextDirection direction,
     Locale? locale,
   ) {
+    // Source identity avoids copying or comparing entire local directories when
+    // only the selection changes. The limit is applied before any item access.
+    final limit = widget.maxExpandedItems;
+    final itemCount = math.min(
+      limit ?? widget.items.length,
+      widget.items.length,
+    );
     if (_layoutWidth == width &&
         _layoutStyle == style &&
         _layoutScaler == scaler &&
         _layoutDirection == direction &&
         _layoutLocale == locale &&
-        listEquals(_layoutItems, widget.items) &&
-        (!_expanded || _layoutComplete)) {
+        identical(_layoutItems, widget.items) &&
+        _layoutLimit == limit &&
+        _itemCount == itemCount) {
       return;
     }
     _layoutWidth = width;
@@ -74,47 +89,64 @@ class _AppSearchSuggestionSectionState
     _layoutScaler = scaler;
     _layoutDirection = direction;
     _layoutLocale = locale;
-    _layoutItems = List.of(widget.items);
-    final rows = <List<String>>[];
-    var row = <String>[];
-    var used = 0.0;
-    _layoutComplete = true;
+    _layoutItems = widget.items;
+    _layoutLimit = limit;
+    _itemCount = itemCount;
+    _nextItemIndex = 0;
+    _pendingItem = null;
+    _rows.clear();
+    _layoutComplete = itemCount == 0;
+    _ensureRows(3);
+  }
+
+  void _ensureRows(int count) {
+    if (_layoutComplete || _rows.length >= count) return;
+    final width = _layoutWidth!;
+    final style = _layoutStyle!;
+    final scaler = _layoutScaler!;
     final fontSize = style.fontSize ?? 14.0;
     final textScale = scaler.scale(fontSize) / 14.0;
     // Includes 16px chip padding, scaled label padding (16px..8px), and 2px border.
     final horizontalPadding =
         18.0 + (16.0 - 8.0 * (textScale - 1.0).clamp(0.0, 1.0));
     final painter = TextPainter(
-      textDirection: direction,
+      textDirection: _layoutDirection!,
       textScaler: scaler,
-      locale: locale,
+      locale: _layoutLocale,
       maxLines: 1,
     );
-    for (final item in widget.items) {
-      painter.text = TextSpan(text: item, style: style);
-      painter.layout();
-      final itemWidth = math.min(
-        width,
-        painter.width.ceilToDouble() + horizontalPadding,
-      );
-      if (row.isNotEmpty && used + _gap + itemWidth > width) {
-        rows.add(row);
-        row = [];
-        used = 0;
-        // Only the first hidden row is needed to offer expansion. Expanded
-        // sections measure the directory once and build visible rows lazily.
-        if (!_expanded && rows.length == 3) {
-          _layoutComplete = false;
+    while (_rows.length < count && !_layoutComplete) {
+      final row = <String>[];
+      var used = 0.0;
+      while (_pendingItem != null || _nextItemIndex < _itemCount) {
+        final String item;
+        final double itemWidth;
+        if (_pendingItem case final pending?) {
+          (item, itemWidth) = pending;
+          _pendingItem = null;
+        } else {
+          item = _layoutItems![_nextItemIndex++];
+          painter.text = TextSpan(text: item, style: style);
+          painter.layout();
+          itemWidth = math.min(
+            width,
+            painter.width.ceilToDouble() + horizontalPadding,
+          );
+        }
+        if (row.isNotEmpty && used + _gap + itemWidth > width) {
+          // Keep the lookahead so expansion and scrolling measure each item
+          // once, rather than measuring the entire directory on expansion.
+          _pendingItem = (item, itemWidth);
           break;
         }
+        if (row.isNotEmpty) used += _gap;
+        row.add(item);
+        used += itemWidth;
       }
-      if (row.isNotEmpty) used += _gap;
-      row.add(item);
-      used += itemWidth;
+      if (row.isNotEmpty) _rows.add(row);
+      _layoutComplete = _pendingItem == null && _nextItemIndex == _itemCount;
     }
     painter.dispose();
-    if (row.isNotEmpty) rows.add(row);
-    _rows = rows;
   }
 
   @override
@@ -220,20 +252,31 @@ class _AppSearchSuggestionSectionState
                   ),
                 ),
               SliverList.builder(
-                itemCount: count,
-                itemBuilder: (context, index) => Padding(
-                  padding: EdgeInsets.only(
-                    bottom: index + 1 < count ? _rowGap : 0,
-                  ),
-                  child: Row(
-                    children: [
-                      for (var i = 0; i < _rows[index].length; i++) ...[
-                        if (i > 0) const SizedBox(width: _gap),
-                        _chip(_rows[index][i], width, cs, accent),
+                itemCount: _expanded
+                    ? (_layoutComplete ? _rows.length : null)
+                    : count,
+                itemBuilder: (context, index) {
+                  _ensureRows(index + 1);
+                  if (index >= _rows.length) return null;
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      bottom:
+                          (_expanded
+                              ? !_layoutComplete || index + 1 < _rows.length
+                              : index + 1 < count)
+                          ? _rowGap
+                          : 0,
+                    ),
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < _rows[index].length; i++) ...[
+                          if (i > 0) const SizedBox(width: _gap),
+                          _chip(_rows[index][i], width, cs, accent),
+                        ],
                       ],
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               ),
             ],
           );

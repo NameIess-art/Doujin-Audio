@@ -346,7 +346,12 @@ class _MyPageState extends ConsumerState<MyPage>
         16,
         MobileOverlayInset.of(context) + 16,
       ),
-      children: children,
+      // There are only five bounded sections. Recreating an offscreen section
+      // would rescan chart history and restart artwork, titles and taste reads
+      // as it re-enters the viewport during a drag.
+      children: [
+        for (final child in children) _RetainedMySection(child: child),
+      ],
     );
     Widget listeningChart(ListeningActivityView? view) => Consumer(
       builder: (context, ref, _) {
@@ -541,6 +546,26 @@ class _MyPageState extends ConsumerState<MyPage>
         ),
       ),
     );
+  }
+}
+
+class _RetainedMySection extends StatefulWidget {
+  const _RetainedMySection({required this.child});
+  final Widget child;
+
+  @override
+  State<_RetainedMySection> createState() => _RetainedMySectionState();
+}
+
+class _RetainedMySectionState extends State<_RetainedMySection>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
 

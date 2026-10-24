@@ -6,6 +6,7 @@ import 'package:doujin_audio/core/widgets/search_highlight.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_category_widgets.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
+import 'package:doujin_audio/features/library/presentation/library_search_all_results.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_ui_helpers.dart';
@@ -175,6 +176,20 @@ void main() {
         expect(tester.widget<TextField>(field).controller!.text, isEmpty);
         await tester.enterText(field, 'Alpha, ASMR');
         await tester.pumpAndSettle();
+        final draftScaffold = tester.widget(
+          find.byType(AppSearchPageScaffold<AudioLibraryCategoryType>),
+        );
+        await tester.enterText(field, 'Alpha, AS');
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget(
+            find.byType(AppSearchPageScaffold<AudioLibraryCategoryType>),
+          ),
+          same(draftScaffold),
+          reason: 'Ongoing draft input only updates suggestion selections.',
+        );
+        await tester.enterText(field, 'Alpha, ASMR');
+        await tester.pumpAndSettle();
         expect(find.byType(LibraryTreeItem), findsNothing);
         expect(fixture.settings.librarySearchHistory, isEmpty);
         tester
@@ -190,6 +205,20 @@ void main() {
         expect(find.byKey(const ValueKey('search_/Alpha.mp3')), findsOneWidget);
         expect(find.byKey(const ValueKey('search_/Beta.mp3')), findsNothing);
         expect(fixture.settings.librarySearchHistory, ['Alpha, ASMR']);
+        final resultElement = tester.element(
+          find.byType(LibrarySearchAllResults),
+        );
+        tester
+            .widget<AppSearchPageScaffold<AudioLibraryCategoryType>>(
+              find.byType(AppSearchPageScaffold<AudioLibraryCategoryType>),
+            )
+            .onSubmitted('Alpha, ASMR');
+        await tester.pumpAndSettle();
+        expect(
+          tester.element(find.byType(LibrarySearchAllResults)),
+          same(resultElement),
+          reason: 'Repeated confirmation reuses the existing query cache.',
+        );
         final item = tester.widget<LibraryTreeItem>(
           find.byType(LibraryTreeItem).first,
         );

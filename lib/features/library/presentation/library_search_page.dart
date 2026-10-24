@@ -31,6 +31,7 @@ class LibrarySearchPage extends ConsumerStatefulWidget {
 class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
+  final _draftQuery = ValueNotifier<String>('');
   final _resultsScrollController = ScrollController(keepScrollOffset: false);
   final _suggestionsScrollController = ScrollController(
     keepScrollOffset: false,
@@ -45,6 +46,12 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   int? _categorySnapshotDetailRevision;
 
   void _onChanged(String value) {
+    final enabled = extractSearchTerms(value).isNotEmpty;
+    final wasEnabled = extractSearchTerms(_draftQuery.value).isNotEmpty;
+    _draftQuery.value = value;
+    if (_submittedQuery == null && !_isSelectionMode && enabled == wasEnabled) {
+      return;
+    }
     setState(() {
       _submittedQuery = null;
       _queryRevision++;
@@ -65,6 +72,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   void _onSubmitted(String value) {
     final query = canonicalSearchQuery(value);
     if (query.isEmpty) return;
+    _draftQuery.value = query;
     _controller.value = TextEditingValue(
       text: query,
       selection: TextSelection.collapsed(offset: query.length),
@@ -189,6 +197,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
+    _draftQuery.dispose();
     _resultsScrollController.dispose();
     _suggestionsScrollController.dispose();
     super.dispose();
@@ -241,7 +250,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                 key: const ValueKey('library_search_hero_mode'),
                 enabled: false,
                 child: LibrarySearchAllResults(
-                  key: ValueKey(('library_search_confirmed', _queryRevision)),
+                  key: const ValueKey('library_search_confirmed'),
                   query: query,
                   queryRevision: _queryRevision,
                   structureRevision: structureRevision,
@@ -266,11 +275,6 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     double topInset,
   ) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final history = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.librarySearchHistory ?? const <String>[],
-      ),
-    );
     if (_categorySnapshotFuture == null ||
         _categorySnapshotStructureRevision != structureRevision ||
         _categorySnapshotDetailRevision != detailRevision) {
@@ -286,80 +290,97 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
               cached?.detailRevision == detailRevision
           ? cached
           : null,
-      builder: (context, state) {
-        AppSearchSuggestionSection section(
-          String key,
-          String title,
-          List<String> items,
-          String emptyText, {
-          bool metadata = false,
-        }) => AppSearchSuggestionSection(
-          key: ValueKey(key),
-          title: title,
-          items: items,
-          isSelected: (element) =>
-              searchQueryContainsTerms(_controller.text, element),
-          onToggle: _toggleTerm,
-          emptyText: emptyText,
-          expandLabel: i18n.tr('expand'),
-          collapseLabel: i18n.tr('collapse'),
-          isLoading:
-              metadata &&
-              state.connectionState == ConnectionState.waiting &&
-              state.data == null,
-          errorText: metadata && state.hasError
-              ? i18n.tr('operation_failed_retry')
-              : null,
-          retryLabel: i18n.tr('retry'),
-          onRetry: metadata && state.hasError
-              ? () => setState(() {
-                  _categorySnapshotFuture = libraryFacade
-                      .audioLibraryCategorySnapshot();
-                })
-              : null,
-        );
-        return DragOnlyScrollbar(
-          controller: _suggestionsScrollController,
-          padding: EdgeInsets.only(top: topInset),
-          child: CustomScrollView(
-            key: const ValueKey('library_search_suggestions'),
-            controller: _suggestionsScrollController,
-            physics: const ClampingScrollPhysics(),
-            slivers: [
-              SliverPadding(
-                padding: EdgeInsets.only(
-                  top: topInset,
-                  bottom: MediaQuery.paddingOf(context).bottom + 96,
-                ),
-                sliver: SliverMainAxisGroup(
+      builder: (context, state) => Consumer(
+        builder: (context, ref, _) {
+          final history = ref.watch(
+            settingsStateProvider.select(
+              (state) => state.value?.librarySearchHistory ?? const <String>[],
+            ),
+          );
+          return ValueListenableBuilder<String>(
+            valueListenable: _draftQuery,
+            builder: (context, draft, _) {
+              final selected = normalizedSearchTerms(draft).toSet();
+              bool isSelected(String element) {
+                final terms = normalizedSearchTerms(element);
+                return terms.isNotEmpty && terms.every(selected.contains);
+              }
+
+              AppSearchSuggestionSection section(
+                String key,
+                String title,
+                List<String> items,
+                String emptyText, {
+                bool metadata = false,
+              }) => AppSearchSuggestionSection(
+                key: ValueKey(key),
+                title: title,
+                items: items,
+                isSelected: isSelected,
+                onToggle: _toggleTerm,
+                emptyText: emptyText,
+                expandLabel: i18n.tr('expand'),
+                collapseLabel: i18n.tr('collapse'),
+                isLoading:
+                    metadata &&
+                    state.connectionState == ConnectionState.waiting &&
+                    state.data == null,
+                errorText: metadata && state.hasError
+                    ? i18n.tr('operation_failed_retry')
+                    : null,
+                retryLabel: i18n.tr('retry'),
+                onRetry: metadata && state.hasError
+                    ? () => setState(() {
+                        _categorySnapshotFuture = libraryFacade
+                            .audioLibraryCategorySnapshot();
+                      })
+                    : null,
+              );
+              return DragOnlyScrollbar(
+                controller: _suggestionsScrollController,
+                padding: EdgeInsets.only(top: topInset),
+                child: CustomScrollView(
+                  key: const ValueKey('library_search_suggestions'),
+                  controller: _suggestionsScrollController,
+                  physics: const ClampingScrollPhysics(),
                   slivers: [
-                    section(
-                      'library_search_history',
-                      i18n.tr('search_library_history'),
-                      history,
-                      i18n.tr('search_history_empty'),
-                    ),
-                    section(
-                      'library_search_voices',
-                      i18n.tr('library_category_voice_actors'),
-                      state.data?.voiceActorTerms ?? const [],
-                      i18n.tr('library_category_no_voice_actors'),
-                      metadata: true,
-                    ),
-                    section(
-                      'library_search_tags',
-                      i18n.tr('library_category_tags'),
-                      state.data?.tagTerms ?? const [],
-                      i18n.tr('library_category_no_tags'),
-                      metadata: true,
+                    SliverPadding(
+                      padding: EdgeInsets.only(
+                        top: topInset,
+                        bottom: MediaQuery.paddingOf(context).bottom + 96,
+                      ),
+                      sliver: SliverMainAxisGroup(
+                        slivers: [
+                          section(
+                            'library_search_history',
+                            i18n.tr('search_library_history'),
+                            history,
+                            i18n.tr('search_history_empty'),
+                          ),
+                          section(
+                            'library_search_voices',
+                            i18n.tr('library_category_voice_actors'),
+                            state.data?.voiceActorTerms ?? const [],
+                            i18n.tr('library_category_no_voice_actors'),
+                            metadata: true,
+                          ),
+                          section(
+                            'library_search_tags',
+                            i18n.tr('library_category_tags'),
+                            state.data?.tagTerms ?? const [],
+                            i18n.tr('library_category_no_tags'),
+                            metadata: true,
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 

@@ -32,6 +32,7 @@ Doujin Audio 不集成分析、广告、远程遥测或崩溃上报 SDK，不会
 
 - **ASMR.ONE**：浏览作品、登录、同步收藏与进度、播放或下载用户选择的内容。
 - **Japanese ASMR / Eara**：使用在线作品库，或作品元数据按 DLsite、ASMR.ONE 顺序获取后仍需回退或补充时，将搜索词、分页参数或作品编号发送至 Eara 的 `earaasmr.com` 目录接口。封面、播放及下载访问 Japanese ASMR 的对应媒体站点（包括 `weeabo0.xyz`、`weeab0o.xyz` 和 `buzzheavier.com` 子域）；部分请求携带站点所需的 Referer。不会向 Eara 或这些媒体站点发送 ASMR.ONE 用户名、密码、token 或设备指纹。仅收录于 Japanese ASMR 的作品收藏和历史在本地保存，不上传至 ASMR.ONE；两站共有作品可按同一编号参与 ASMR.ONE 账号同步。
+- **热门搜索建议**：进入在线搜索页时，从 Eara 的 `earaasmr.com/api/search-suggestions` 获取公开热门声优和标签并缓存在本机；该请求不携带搜索词、搜索历史、ASMR.ONE 账户凭据或设备指纹。
 - **DLsite**：按用户操作查询作品元数据。
 - **GitHub Releases**：检查和下载应用更新；安装前校验同名 SHA-256 文件。
 - **远程封面或字幕地址**：播放在线作品时加载展示或字幕所需资源。

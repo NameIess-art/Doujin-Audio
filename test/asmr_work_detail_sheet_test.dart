@@ -1802,9 +1802,7 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
       );
 
   @override
-  Future<void> ensureTagCatalog({bool force = false}) async {}
-  @override
-  Future<void> ensureVoiceActorCatalog({bool force = false}) async {}
+  Future<void> ensureSearchSuggestions({bool force = false}) async {}
 
   List<AsmrWork> favoriteWorks;
   Future<List<AsmrTrackFile>>? pendingTrackTree;

@@ -4199,7 +4199,7 @@ void main() {
   );
 
   testWidgets(
-    'landscape playlist keeps sixty sessions within a bounded scroll window',
+    'playlist keeps 500 sessions within a bounded scroll window',
     (tester) async {
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -4211,7 +4211,9 @@ void main() {
         () => messenger.setMockMethodCallHandler(notificationsChannel, null),
       );
       tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.android
+          ? const Size(412, 892)
+          : const Size(1280, 800);
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetPhysicalSize);
       final covers = _RecordingPlaybackCoverCacheService();
@@ -4220,7 +4222,7 @@ void main() {
       );
       addTearDown(fixture.dispose);
       final tracks = List.generate(
-        60,
+        500,
         (index) => testMusicTrack(
           name: 'Scroll session $index',
           path: '/playlist-scroll/track-$index.mp3',
@@ -4270,6 +4272,27 @@ void main() {
         inInclusiveRange(1, scrollingLimit),
       );
 
+      // Scrolling must recycle rows without rebuilding the retained cards.
+      final retainedCards = find.byType(SessionListCard).evaluate().toSet();
+      var retainedBuilds = 0;
+      final previousRebuildHook = debugOnRebuildDirtyWidget;
+      debugOnRebuildDirtyWidget = (element, builtOnce) {
+        previousRebuildHook?.call(element, builtOnce);
+        if (retainedCards.contains(element)) retainedBuilds++;
+      };
+      try {
+        final gesture = await tester.startGesture(tester.getCenter(list));
+        for (var frame = 0; frame < 12; frame++) {
+          await gesture.moveBy(const Offset(0, -8));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(retainedBuilds, 0);
+      } finally {
+        debugOnRebuildDirtyWidget = previousRebuildHook;
+      }
+
       final container = ProviderScope.containerOf(
         tester.element(find.byType(PlaylistTab)),
       );
@@ -4282,7 +4305,7 @@ void main() {
         attempt < 20 && controller.position.extentAfter > 0.5;
         attempt++
       ) {
-        await tester.drag(list, const Offset(0, -400));
+        await tester.drag(list, const Offset(0, -2000));
         await tester.pumpAndSettle();
         expect(
           find.byType(SessionListCard).evaluate().length,
@@ -5281,20 +5304,19 @@ void main() {
       find.byKey(ValueKey('playback_queue_row_surface_${queueSession.id}')),
     );
     expect(queueRowMaterial.color, Colors.transparent);
-    final activeHighlight = tester.widget<DecoratedBox>(
-      find.byKey(
-        ValueKey('playback_queue_active_highlight_${queueSession.id}'),
+    expect(
+      find.ancestor(
+        of: find.byKey(
+          ValueKey('playback_queue_card_content_${queueSession.id}'),
+        ),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is DecoratedBox &&
+              widget.decoration is ShapeDecoration &&
+              (widget.decoration as ShapeDecoration).gradient != null,
+        ),
       ),
+      findsNothing,
     );
-    final activeGradient =
-        (activeHighlight.decoration as ShapeDecoration).gradient!
-            as LinearGradient;
-    expect(activeGradient.colors, const <Color>[
-      Colors.transparent,
-      Colors.transparent,
-    ]);
-    expect(activeGradient.begin, Alignment.topLeft);
-    expect(activeGradient.end, Alignment.bottomRight);
 
     expect(
       find.descendant(
@@ -6135,7 +6157,7 @@ void main() {
           )
           .first,
     );
-    expect(visualCard.clipBehavior, Clip.antiAlias);
+    expect(visualCard.clipBehavior, Clip.none);
     expect(visualCard.shape, same(playlistRowShape));
     expect(cardContent.padding, playlistRowPadding);
     final cardContentRow = cardContent.child! as Row;
@@ -9176,24 +9198,6 @@ void main() {
       expect(
         find.byKey(const ValueKey('playlist_temporary_session_divider')),
         findsNothing,
-      );
-      final temporaryHighlight = tester.widget<DecoratedBox>(
-        find.byKey(ValueKey('playlist_card_highlight_${temporary.id}')),
-      );
-      final savedHighlight = tester.widget<DecoratedBox>(
-        find.byKey(ValueKey('playlist_card_highlight_${saved.id}')),
-      );
-      expect(
-        ((temporaryHighlight.decoration as ShapeDecoration).shape
-                as RoundedRectangleBorder)
-            .side,
-        BorderSide.none,
-      );
-      expect(
-        ((savedHighlight.decoration as ShapeDecoration).shape
-                as RoundedRectangleBorder)
-            .side,
-        BorderSide.none,
       );
       expect(
         find.byKey(ValueKey<String>('playlist_card_raised_${temporary.id}')),

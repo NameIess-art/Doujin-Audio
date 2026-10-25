@@ -228,231 +228,220 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
             color: isSelected
                 ? cs.primaryContainer.withValues(alpha: 0.15)
                 : Colors.transparent,
-            child: DecoratedBox(
-              key: ValueKey('playback_queue_active_highlight_${session.id}'),
-              decoration: ShapeDecoration(
-                gradient: playlistActiveHighlightGradient(isPlaying),
-                shape: playlistRowShape,
-              ),
-              child: InkWell(
-                excludeFromSemantics: true,
-                onTap: () {
-                  if (isSelectionMode) {
-                    onToggleSelect?.call();
-                  } else {
-                    AppInteractionFeedback.trigger(
-                      AppInteractionFeedbackType.tap,
-                    );
-                    onOpen();
-                  }
-                },
-                onLongPress: () {
-                  if (isSelectionMode) {
-                    onToggleSelect?.call();
-                  } else {
-                    onLongPress?.call();
-                  }
-                },
-                child: Padding(
-                  key: ValueKey<String>(
-                    'playback_queue_card_content_${session.id}',
-                  ),
-                  padding: playlistRowPadding,
-                  child: Row(
-                    children: [
-                      Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          _QueueCoverGrid(
-                            items: coverItems,
-                            coverCacheWidth: coverCacheWidth,
-                          ),
-                          Positioned(
-                            right: -2,
-                            bottom: -2,
-                            child: PlaylistSelectionIndicator(
-                              sessionId: session.id,
-                              isSelected: isSelected,
-                            ),
-                          ),
-                          Positioned(
-                            top: -2,
-                            right: -2,
-                            child: PlaylistPinnedIndicator(
-                              isPinned: isPinned,
-                              sessionId: session.id,
-                              color: activeColor,
-                              isSelected: isSelected,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Semantics(
-                          button: true,
-                          selected: isSelectionMode ? isSelected : null,
-                          label: i18n.tr('open_playback_details'),
-                          onTap: isSelectionMode ? onToggleSelect : onOpen,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                queue.name,
-                                key: ValueKey<String>(
-                                  'playback_queue_name_${session.id}',
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: cs.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
-                                    ),
-                              ),
-                              const SizedBox(height: 3),
-                              Text.rich(
-                                TextSpan(
-                                  children: [
-                                    if (isPlaying)
-                                      WidgetSpan(
-                                        alignment: PlaceholderAlignment.middle,
-                                        child: Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 6,
-                                          ),
-                                          child: PlayingSoundWaveIndicator(
-                                            key: ValueKey<String>(
-                                              'playback_queue_sound_wave_${session.id}',
-                                            ),
-                                            color: activeColor,
-                                            isPlaying: isPlaying,
-                                          ),
-                                        ),
-                                      ),
-                                    TextSpan(text: currentTrackName),
-                                  ],
-                                ),
-                                key: ValueKey<String>(
-                                  'playback_queue_track_0_${session.id}',
-                                ),
-                                semanticsLabel: currentTrackName,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 14,
-                                      height: 1.12,
-                                      color: isPlaying ? activeColor : null,
-                                    ),
-                              ),
-                            ],
+            child: InkWell(
+              excludeFromSemantics: true,
+              onTap: () {
+                if (isSelectionMode) {
+                  onToggleSelect?.call();
+                } else {
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.tap,
+                  );
+                  onOpen();
+                }
+              },
+              onLongPress: () {
+                if (isSelectionMode) {
+                  onToggleSelect?.call();
+                } else {
+                  onLongPress?.call();
+                }
+              },
+              child: Padding(
+                key: ValueKey<String>(
+                  'playback_queue_card_content_${session.id}',
+                ),
+                padding: playlistRowPadding,
+                child: Row(
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _QueueCoverGrid(
+                          items: coverItems,
+                          coverCacheWidth: coverCacheWidth,
+                        ),
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: PlaylistSelectionIndicator(
+                            sessionId: session.id,
+                            isSelected: isSelected,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: AppSpacing.xxs),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SessionFeatureBadgeStack(
-                                featureIcons: sessionFeatureBadgeIcons(
-                                  showSubtitles: showSubtitles,
-                                  channelSwapEnabled:
-                                      cardState.channelSwapEnabled,
-                                  audioEffects: cardState.audioEffects,
-                                  speed: cardState.speed,
-                                ),
-                                color: featureIconColor,
-                                child: IconButton(
-                                  tooltip: cardState.isPlaying
-                                      ? i18n.tr('pause')
-                                      : i18n.tr('play'),
-                                  onPressed: tracks.isEmpty
-                                      ? null
-                                      : () {
-                                          AppInteractionFeedback.trigger(
-                                            AppInteractionFeedbackType
-                                                .selection,
-                                          );
-                                          playback.toggleSessionPlayPause(
-                                            session.id,
-                                          );
-                                        },
-                                  style: IconButton.styleFrom(
-                                    foregroundColor: isPlaying
-                                        ? activeColor
-                                        : cs.onSurface,
-                                    minimumSize: const Size(44, 44),
-                                    maximumSize: const Size(44, 44),
-                                    padding: EdgeInsets.zero,
+                        Positioned(
+                          top: -2,
+                          right: -2,
+                          child: PlaylistPinnedIndicator(
+                            isPinned: isPinned,
+                            sessionId: session.id,
+                            color: activeColor,
+                            isSelected: isSelected,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Semantics(
+                        button: true,
+                        selected: isSelectionMode ? isSelected : null,
+                        label: i18n.tr('open_playback_details'),
+                        onTap: isSelectionMode ? onToggleSelect : onOpen,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              queue.name,
+                              key: ValueKey<String>(
+                                'playback_queue_name_${session.id}',
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
                                   ),
-                                  icon: AnimatedSwitcher(
-                                    switchOutCurve: kAppFadeCurve,
-                                    switchInCurve: kAppFadeCurve,
-                                    duration:
-                                        MediaQuery.disableAnimationsOf(context)
-                                        ? Duration.zero
-                                        : kAppFadeDuration,
-                                    transitionBuilder: (child, animation) {
-                                      return ScaleTransition(
-                                        scale:
-                                            Tween<double>(
-                                              begin: 0.4,
-                                              end: 1.0,
-                                            ).animate(
-                                              CurvedAnimation(
-                                                parent: animation,
-                                                curve: Curves.easeOutBack,
-                                              ),
-                                            ),
-                                        child: FadeTransition(
-                                          opacity: animation,
-                                          child: child,
+                            ),
+                            const SizedBox(height: 3),
+                            Text.rich(
+                              TextSpan(
+                                children: [
+                                  if (isPlaying)
+                                    WidgetSpan(
+                                      alignment: PlaceholderAlignment.middle,
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 6,
                                         ),
-                                      );
-                                    },
-                                    child:
-                                        cardState.isLoading ||
-                                            cardState.playbackError != null
-                                        ? const SizedBox(
-                                            key: ValueKey('loading'),
-                                            width: 22,
-                                            height: 22,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2.3,
-                                            ),
-                                          )
-                                        : Icon(
-                                            isPlaying
-                                                ? Icons.pause_rounded
-                                                : Icons.play_arrow_rounded,
-                                            key: ValueKey(isPlaying),
-                                            size: 28,
+                                        child: PlayingSoundWaveIndicator(
+                                          key: ValueKey<String>(
+                                            'playback_queue_sound_wave_${session.id}',
                                           ),
+                                          color: activeColor,
+                                          isPlaying: isPlaying,
+                                        ),
+                                      ),
+                                    ),
+                                  TextSpan(text: currentTrackName),
+                                ],
+                              ),
+                              key: ValueKey<String>(
+                                'playback_queue_track_0_${session.id}',
+                              ),
+                              semanticsLabel: currentTrackName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14,
+                                    height: 1.12,
+                                    color: isPlaying ? activeColor : null,
                                   ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xxs),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SessionFeatureBadgeStack(
+                              featureIcons: sessionFeatureBadgeIcons(
+                                showSubtitles: showSubtitles,
+                                channelSwapEnabled:
+                                    cardState.channelSwapEnabled,
+                                audioEffects: cardState.audioEffects,
+                                speed: cardState.speed,
+                              ),
+                              color: featureIconColor,
+                              child: IconButton(
+                                tooltip: cardState.isPlaying
+                                    ? i18n.tr('pause')
+                                    : i18n.tr('play'),
+                                onPressed: tracks.isEmpty
+                                    ? null
+                                    : () {
+                                        AppInteractionFeedback.trigger(
+                                          AppInteractionFeedbackType.selection,
+                                        );
+                                        playback.toggleSessionPlayPause(
+                                          session.id,
+                                        );
+                                      },
+                                style: IconButton.styleFrom(
+                                  foregroundColor: isPlaying
+                                      ? activeColor
+                                      : cs.onSurface,
+                                  minimumSize: const Size(44, 44),
+                                  maximumSize: const Size(44, 44),
+                                  padding: EdgeInsets.zero,
+                                ),
+                                icon: AnimatedSwitcher(
+                                  switchOutCurve: kAppFadeCurve,
+                                  switchInCurve: kAppFadeCurve,
+                                  duration:
+                                      MediaQuery.disableAnimationsOf(context)
+                                      ? Duration.zero
+                                      : kAppFadeDuration,
+                                  transitionBuilder: (child, animation) {
+                                    return ScaleTransition(
+                                      scale: Tween<double>(begin: 0.4, end: 1.0)
+                                          .animate(
+                                            CurvedAnimation(
+                                              parent: animation,
+                                              curve: Curves.easeOutBack,
+                                            ),
+                                          ),
+                                      child: FadeTransition(
+                                        opacity: animation,
+                                        child: child,
+                                      ),
+                                    );
+                                  },
+                                  child:
+                                      cardState.isLoading ||
+                                          cardState.playbackError != null
+                                      ? const SizedBox(
+                                          key: ValueKey('loading'),
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.3,
+                                          ),
+                                        )
+                                      : Icon(
+                                          isPlaying
+                                              ? Icons.pause_rounded
+                                              : Icons.play_arrow_rounded,
+                                          key: ValueKey(isPlaying),
+                                          size: 28,
+                                        ),
                                 ),
                               ),
-                              if (cardState.playbackError != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Icon(
-                                    Icons.error_outline_rounded,
-                                    size: 14,
-                                    color: cs.error,
-                                  ),
+                            ),
+                            if (cardState.playbackError != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Icon(
+                                  Icons.error_outline_rounded,
+                                  size: 14,
+                                  color: cs.error,
                                 ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),

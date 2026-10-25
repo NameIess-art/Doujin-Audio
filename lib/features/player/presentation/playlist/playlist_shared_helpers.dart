@@ -84,15 +84,6 @@ Color playlistTemporaryCardColor(BuildContext context) {
   return isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
 }
 
-LinearGradient playlistActiveHighlightGradient([
-  bool isPlaying = false,
-  Color highlightColor = Colors.transparent,
-]) => const LinearGradient(
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-  colors: <Color>[Colors.transparent, Colors.transparent],
-);
-
 UndoableRemovalKey playbackSessionRemovalKey(String sessionId) =>
     UndoableRemovalKey('playback-session', sessionId);
 

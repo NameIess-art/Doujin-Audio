@@ -5,9 +5,9 @@
     "sha256": "858141a2826f53e8374cb07de2638e0f1ac944f49b897dd558feba5597e86d1c"
   },
   "mpv": {
-    "version": "20260903-69e63f425a",
-    "url": "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260903/mpv-dev-x86_64-20260903-git-69e63f425a.7z",
-    "sha256": "fac135c68a35b7639e39d72c0c365104edbaebdea39a0dfdd8c36e8c8e80faef"
+    "version": "20261018-01e2533f31",
+    "url": "https://downloads.sourceforge.net/project/mpv-player-windows/libmpv/mpv-dev-x86_64-20261018-git-01e2533f31.7z?download=1",
+    "sha256": "d7f5621f42b6e161fe032df914a10bdece28a89df3e57c6c3e16a5a250929b5e"
   },
   "ffmpeg": {
     "version": "8.0.1",

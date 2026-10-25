@@ -3,7 +3,7 @@ Doujin Audio Windows distribution
 Application: GPL-3.0, https://github.com/NameIess-art/Doujin-Audio
 Flutter and Dart: BSD-3-Clause, https://github.com/flutter/flutter
 media_kit: MIT, https://github.com/media-kit/media-kit
-libmpv Windows runtime: GPL, https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20260903
+libmpv Windows runtime 20261018-01e2533f31: GPL, https://sourceforge.net/projects/mpv-player-windows/files/libmpv/mpv-dev-x86_64-20261018-git-01e2533f31.7z/
 libmpv corresponding source and build recipes: https://github.com/shinchiro/mpv-winbuild-cmake
 media_kit rendering SDK and ANGLE: https://github.com/media-kit/libmpv-win32-video-build/releases/tag/2023-09-24
 FFmpeg 8.0.1 essentials: GPL-3.0, https://github.com/GyanD/codexffmpeg/releases/tag/8.0.1

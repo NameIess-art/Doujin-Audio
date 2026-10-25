@@ -92,14 +92,13 @@ endif()
 # media_kit's minimal binary omits the audio filters used by this application.
 # Keep its rendering SDK, and install the complete libmpv with the same ABI.
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../tool/windows_dependencies.json" WINDOWS_DEPENDENCIES)
-string(JSON MPV_URL GET "${WINDOWS_DEPENDENCIES}" mpv url)
 string(JSON MPV_SHA256 GET "${WINDOWS_DEPENDENCIES}" mpv sha256)
 string(JSON MPV_VERSION GET "${WINDOWS_DEPENDENCIES}" mpv version)
-set(MPV_ARCHIVE "${CMAKE_BINARY_DIR}/mpv-full-${MPV_VERSION}.7z")
+# PrepareOnly downloads runtime inputs; verify the shared cache again before extraction.
+set(MPV_ARCHIVE "${CMAKE_CURRENT_SOURCE_DIR}/../.dart_tool/windows_dependencies/mpv-full-${MPV_VERSION}.7z")
 set(MPV_DIRECTORY "${CMAKE_BINARY_DIR}/mpv-full-${MPV_VERSION}")
 if(NOT EXISTS "${MPV_ARCHIVE}")
-  file(DOWNLOAD "${MPV_URL}" "${MPV_ARCHIVE}.part" EXPECTED_HASH "SHA256=${MPV_SHA256}" TLS_VERIFY ON TIMEOUT 600)
-  file(RENAME "${MPV_ARCHIVE}.part" "${MPV_ARCHIVE}")
+  message(FATAL_ERROR "Run tool/build_windows.bat -PrepareOnly to prepare the complete libmpv archive")
 endif()
 file(SHA256 "${MPV_ARCHIVE}" MPV_ACTUAL_SHA256)
 if(NOT MPV_ACTUAL_SHA256 STREQUAL MPV_SHA256)

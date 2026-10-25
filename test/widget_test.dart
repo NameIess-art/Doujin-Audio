@@ -3701,20 +3701,15 @@ void main() {
     final workTitle = find.text('Loaded work', findRichText: true);
     expect(workTitle, findsOneWidget);
     final workCard = tester.widget<Material>(
-      find
-          .ancestor(
-            of: workTitle,
-            matching: find.byWidgetPredicate(
-              (widget) => widget is Material && widget.type == MaterialType.card,
-            ),
-          )
-          .first,
+      find.ancestor(of: workTitle, matching: find.byType(Material)).first,
     );
     expect(workCard.color, Colors.transparent);
     expect(workCard.elevation, 0);
     expect(workCard.shadowColor, Colors.transparent);
     expect(workCard.surfaceTintColor, Colors.transparent);
-    expect((workCard.shape as RoundedRectangleBorder).side, BorderSide.none);
+    expect(workCard.type, MaterialType.canvas);
+    expect(workCard.clipBehavior, Clip.none);
+    expect(workCard.shape, isNull);
     final rjPosition = tester.widget<Positioned>(
       find
           .ancestor(
@@ -3729,6 +3724,7 @@ void main() {
     final swipeCard = tester.widget<SwipeRevealCard>(
       find.ancestor(of: workTitle, matching: find.byType(SwipeRevealCard)),
     );
+    expect((swipeCard.shape as RoundedRectangleBorder).side, BorderSide.none);
     expect(
       swipeCard.closedColor,
       Theme.of(tester.element(workTitle)).colorScheme.surface,

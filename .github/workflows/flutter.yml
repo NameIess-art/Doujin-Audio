@@ -379,6 +379,7 @@ jobs:
           # their hashes and recreates extracted tools before using them.
           path: |
             .dart_tool/windows_dependencies/*.zip
+            .dart_tool/windows_dependencies/*.7z
             .dart_tool/windows_dependencies/*.dll
             .dart_tool/windows_dependencies/*.exe
           key: windows-downloads-${{ runner.arch }}-${{ hashFiles('tool/windows_dependencies.json') }}

@@ -11,7 +11,8 @@ function Get-VerifiedDependency($Dependency, [string]$Name) {
     if (!(Test-Path -LiteralPath $destination)) {
         Write-Host "Downloading pinned dependency: $Name"
         $partial = "$destination.part"
-        Invoke-WebRequest -Uri $Dependency.url -OutFile $partial -UseBasicParsing
+        # SourceForge serves an HTML landing page to PowerShell's browser-like default user agent.
+        Invoke-WebRequest -Uri $Dependency.url -OutFile $partial -UserAgent 'DoujinAudio-build' -UseBasicParsing
         if ((Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Dependency.sha256) {
             throw "Checksum mismatch: $Name"
         }
@@ -43,6 +44,7 @@ try {
     if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne $tag) { throw 'Git tag does not match pubspec.yaml.' }
     $archive = Get-VerifiedDependency $manifest.ffmpeg "ffmpeg-$($manifest.ffmpeg.version).zip"
     $null = Get-VerifiedDependency $manifest.sqlite "sqlite3-$($manifest.sqlite.version).dll"
+    $null = Get-VerifiedDependency $manifest.mpv "mpv-full-$($manifest.mpv.version).7z"
     $ffmpegRoot = Join-Path $dependencyRoot "ffmpeg-$($manifest.ffmpeg.version)-essentials_build"
     # Re-extract verified input so modified cached binaries cannot enter a package.
     Expand-Archive -LiteralPath $archive -DestinationPath $dependencyRoot -Force

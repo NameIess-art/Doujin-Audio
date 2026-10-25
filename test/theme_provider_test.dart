@@ -11,6 +11,54 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test(
+    'theme flush captures submitted writes without waiting for later ones',
+    () async {
+      final firstGate = Completer<bool>();
+      final laterGate = Completer<bool>();
+      final provider = ThemeProvider(
+        loadPersistedState: false,
+        preferenceWriter: (key, value) =>
+            key == 'themeMode' ? firstGate.future : laterGate.future,
+      );
+      addTearDown(provider.dispose);
+      final first = provider.setThemeMode(ThemeMode.dark);
+      final flushing = provider.flushPendingWrites();
+      final later = provider.setPureBlackTheme(true);
+      firstGate.complete(true);
+      await flushing;
+      expect(await first, isTrue);
+      laterGate.complete(true);
+      expect(await later, isTrue);
+    },
+  );
+
+  test(
+    'theme flush preserves failed saves while later writes recover',
+    () async {
+      final gate = Completer<bool>();
+      final provider = ThemeProvider(
+        loadPersistedState: false,
+        preferenceWriter: (key, value) =>
+            key == 'themeMode' ? gate.future : Future.value(true),
+      );
+      addTearDown(provider.dispose);
+      final failed = provider.setThemeMode(ThemeMode.dark);
+      final succeeding = provider.setPureBlackTheme(true);
+      final flushing = expectLater(
+        provider.flushPendingWrites(),
+        throwsStateError,
+      );
+      gate.complete(false);
+      expect(await failed, isFalse);
+      expect(await succeeding, isTrue);
+      await flushing;
+      expect(provider.themeMode, ThemeMode.system);
+      expect(provider.pureBlackTheme, isTrue);
+      await provider.flushPendingWrites();
+    },
+  );
+
   test('defaults to system theme', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     await AppPreferences.init();

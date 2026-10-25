@@ -95,6 +95,7 @@ class AsmrDownloadManager {
   final List<String> _queue = [];
   final Set<String> _startingTasks = {};
   final Set<String> _activeTasks = {};
+  final Map<String, Future<void>> _taskRemovals = {};
   final Map<String, List<PlannedDownloadFile>> _plannedFilesMap = {};
   final Map<String, Set<String>> _manualRetryOnlyPaths = {};
 
@@ -259,7 +260,31 @@ class AsmrDownloadManager {
     return Directory(normalized).exists();
   }
 
-  Future<void> cancelTask(String workId, {bool deleteDownloaded = true}) async {
+  Future<void> _runTaskRemoval(
+    String workId,
+    Future<void> Function() operation,
+  ) {
+    final existing = _taskRemovals[workId];
+    if (existing != null) return existing;
+    if (_disposed || _shutdownFuture != null) return Future<void>.value();
+    late final Future<void> pending;
+    pending = Future<void>.sync(operation).whenComplete(() {
+      _taskRemovals.remove(workId);
+    });
+    _taskRemovals[workId] = pending;
+    return pending;
+  }
+
+  Future<void> cancelTask(String workId, {bool deleteDownloaded = true}) =>
+      _runTaskRemoval(
+        workId,
+        () => _cancelTask(workId, deleteDownloaded: deleteDownloaded),
+      );
+
+  Future<void> _cancelTask(
+    String workId, {
+    required bool deleteDownloaded,
+  }) async {
     if (_disposed || _shutdownFuture != null) return;
     await initialize();
     if (_disposed || _shutdownFuture != null) return;
@@ -303,8 +328,9 @@ class AsmrDownloadManager {
     _plannedFilesMap.remove(workId);
     _outputs.createdOutputPaths.remove(workId);
     _outputs.createdJsonDocuments.remove(workId);
-    _store.remove(workId);
-    _store.notifyTaskChanged();
+    if (_store.remove(workId) != null) {
+      _store.notifyTaskChanged();
+    }
   }
 
   Future<void> _discardTaskStaging(AsmrDownloadTaskSnapshot task) =>
@@ -314,30 +340,48 @@ class AsmrDownloadManager {
         _outputs.createdOutputPaths[task.work.workKey] ?? const {},
       );
 
-  Future<void> deleteTask(String workId) async {
+  Future<void> deleteTask(String workId) =>
+      _runTaskRemoval(workId, () => _deleteTask(workId));
+
+  Future<void> _deleteTask(String workId) async {
     if (_disposed || _shutdownFuture != null) return;
     await initialize();
     if (_disposed || _shutdownFuture != null) return;
-    final task = _store[workId];
-    if (task == null) return;
-    final createdPaths = Set<String>.from(
-      _outputs.createdOutputPaths[workId] ?? const <String>{},
-    );
-    final createdJsons = Map<String, CreatedDownloadJsonDocument>.from(
-      _outputs.createdJsonDocuments[workId] ?? const {},
-    );
-    if (_activeTasks.contains(workId) || _queue.contains(workId)) {
-      await cancelTask(workId, deleteDownloaded: false);
-    } else {
-      _removeTask(workId);
+    if (_store[workId] == null || !_startingTasks.add(workId)) return;
+    AsmrDownloadTaskSnapshot? deletingTask;
+    try {
+      // An already-issued commit can still create output while interruption
+      // drains. Keep its ownership until every deletion has succeeded.
+      await pauseTask(workId);
+      final task = _store[workId];
+      if (task == null || _disposed || _shutdownFuture != null) return;
+      deletingTask = task;
+      await _outputs.deleteTaskDownloadedFiles(
+        task,
+        createdJsonDocs: Map<String, CreatedDownloadJsonDocument>.from(
+          _outputs.createdJsonDocuments[workId] ?? const {},
+        ),
+      );
+      await _discardTaskStaging(task);
+      _store.remove(workId);
+      _store.notifyTaskChanged(changedWorkIds: {workId});
       await flushPersistence();
+      _removeTask(workId);
+    } catch (error) {
+      final task = _store[workId] ?? deletingTask;
+      if (task != null) {
+        _store[workId] = task.copyWith(
+          status: AsmrDownloadTaskStatus.failed,
+          message: 'failed',
+          error: error.toString(),
+        );
+        _store.notifyTaskChanged(changedWorkIds: {workId});
+        await flushPersistence();
+      }
+      rethrow;
+    } finally {
+      _startingTasks.remove(workId);
     }
-
-    await _outputs.deleteTaskDownloadedFiles(
-      task,
-      extraCreatedPaths: createdPaths,
-      createdJsonDocs: createdJsons,
-    );
   }
 
   Future<void> pauseTask(String workId) async {
@@ -764,6 +808,7 @@ class AsmrDownloadManager {
       final completedTask = failed == 0 ? _store[workId] : null;
       await flushPersistence();
       if (!_disposed &&
+          _shutdownFuture == null &&
           completedTask != null &&
           !_transfers.isCancelled(workId)) {
         _completedTasksController.add(completedTask);
@@ -819,7 +864,7 @@ class AsmrDownloadManager {
       _activeTasks.remove(workId);
 
       _store.removeLiveProgress(workId);
-      if (!_disposed) {
+      if (!_disposed && _shutdownFuture == null) {
         AppCacheService.scheduleEnforce();
         _processQueue();
       }
@@ -873,14 +918,22 @@ class AsmrDownloadManager {
     }
     final runningWorkIds = <String>{..._queue, ..._activeTasks};
     final activeCompletions = _transfers.pendingTasks;
-    _disposed = true;
+    final pendingRemovals = Future.wait<void>(_taskRemovals.values);
     _queue.clear();
-    unawaited(_completedTasksController.close());
-
     _manualRetryOnlyPaths.clear();
     _transfers.shutdown();
-    await _store.shutdown(pauseWorkIds: runningWorkIds);
-    await activeCompletions;
+    try {
+      try {
+        await Future.wait<void>([activeCompletions, pendingRemovals]);
+      } finally {
+        // Removal may be awaiting native deletion or persistence after its
+        // transfer has finished. Its final state must reach the store first.
+        await _store.shutdown(pauseWorkIds: runningWorkIds);
+      }
+    } finally {
+      _disposed = true;
+      unawaited(_completedTasksController.close());
+    }
   }
 
   void dispose() {
@@ -893,24 +946,11 @@ class AsmrDownloadManager {
   ) async {
     final lookup = _metadataLookup;
     if (lookup == null || work.rjCode.isEmpty) return null;
-    final interrupted = Completer<DlsiteMetadata>();
-    // Lookup uses the shared clients; stopping one task must not close them.
-    final timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      try {
-        _transfers.throwIfCancelled(workId);
-      } on DownloadCancelled catch (error, stackTrace) {
-        if (!interrupted.isCompleted) {
-          interrupted.completeError(error, stackTrace);
-        }
-      }
-    });
     try {
-      final metadata = await Future.any([
-        lookup(work.rjCode),
-        interrupted.future,
-      ]);
-      _transfers.throwIfCancelled(workId);
-      return metadata;
+      return await _transfers.waitForExternal(
+        workId,
+        () => lookup(work.rjCode),
+      );
     } on DownloadCancelled {
       rethrow;
     } catch (error, stackTrace) {
@@ -920,8 +960,6 @@ class AsmrDownloadManager {
         stackTrace: stackTrace,
       );
       return null;
-    } finally {
-      timer.cancel();
     }
   }
 

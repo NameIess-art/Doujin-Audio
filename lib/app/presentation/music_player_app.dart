@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../localization/app_language_provider.dart';
 import '../application/app_bootstrap_controller.dart';
 import '../application/app_runtime_graph.dart';
+import '../application/app_runtime_lifecycle.dart';
 import '../application/windows_runtime_binding.dart';
 import '../state/app_runtime_providers.dart';
 import '../presentation/app_presentation_providers.dart';
@@ -51,18 +52,17 @@ Widget createAudioPlayerApp({
     :asmrMetadataService,
     :asmrLibraryController,
     :asmrPlaybackCoordinator,
-    :asmrApiService,
-    :japaneseAsmrApiService,
     :initializePresentation,
     :initializeRuntimeData,
-    :initializeSecondaryData,
   ) = createProductionAppRuntime(
     windowsRuntime: windowsRuntime,
   );
 
   final app = ProviderScope(
     overrides: [
-      listeningActivityServiceProvider.overrideWithValue(runtimeGraph.listeningActivity!),
+      listeningActivityServiceProvider.overrideWithValue(
+        runtimeGraph.listeningActivity!,
+      ),
       ...createAppRuntimeOverrides(
         persistence: runtimeGraph.persistence,
         runtime: runtimeGraph.runtime,
@@ -82,22 +82,12 @@ Widget createAudioPlayerApp({
       appLanguageProviderInstanceProvider.overrideWithValue(
         appLanguageProvider,
       ),
-      appUpdateServiceProvider.overrideWith((ref) {
-        ref.onDispose(appUpdateService.dispose);
-        return appUpdateService;
-      }),
+      appUpdateServiceProvider.overrideWithValue(appUpdateService),
       asmrDownloadManagerProvider.overrideWithValue(asmrDownloadManager),
       asmrWorkFinderProvider.overrideWithValue(
         asmrMetadataService.findAsmrWorkByRjCode,
       ),
-      asmrLibraryControllerProvider.overrideWith((ref) {
-        ref.onDispose(() {
-          asmrLibraryController.dispose();
-          asmrApiService.close();
-          japaneseAsmrApiService.close();
-        });
-        return asmrLibraryController;
-      }),
+      asmrLibraryControllerProvider.overrideWithValue(asmrLibraryController),
       asmrPlaybackCoordinatorProvider.overrideWithValue(
         asmrPlaybackCoordinator,
       ),
@@ -108,7 +98,6 @@ Widget createAudioPlayerApp({
       onBootstrapSettled: onBootstrapSettled,
       presentationInitializer: initializePresentation,
       runtimeInitializer: initializeRuntimeData,
-      secondaryInitializer: initializeSecondaryData,
     ),
   );
 
@@ -122,7 +111,6 @@ class MusicPlayerApp extends ConsumerStatefulWidget {
     this.onBootstrapSettled,
     this.presentationInitializer,
     this.runtimeInitializer,
-    this.secondaryInitializer,
     super.key,
   });
 
@@ -131,7 +119,6 @@ class MusicPlayerApp extends ConsumerStatefulWidget {
   final VoidCallback? onBootstrapSettled;
   final Future<void> Function()? presentationInitializer;
   final Future<void> Function()? runtimeInitializer;
-  final Future<void> Function()? secondaryInitializer;
 
   @override
   ConsumerState<MusicPlayerApp> createState() => _MusicPlayerAppState();
@@ -141,6 +128,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
     with WidgetsBindingObserver {
   late final AppBootstrapController _presentationBootstrapController;
   late final AppBootstrapController _runtimeBootstrapController;
+  late final AppRuntimeLifecycle _runtime;
   late final bool _shouldShowOnboarding;
   final _navigatorKey = GlobalKey<NavigatorState>();
   late final _workDetailNavigation = WorkDetailNavigation(
@@ -149,7 +137,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   var _restoreOutcomeScheduled = false;
   var _presentationSettledNotified = false;
   var _secondaryFrameReady = false;
-  Future<void>? _secondaryInitialization;
+  bool _secondaryInitializationRequested = false;
   double _stablePortraitTopPadding = 0;
   double _stableLandscapeTopPadding = 0;
   late final AppOrientationController _orientationController;
@@ -157,13 +145,12 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   @override
   void initState() {
     super.initState();
+    _runtime = ref.read(audioRuntimeCoordinatorProvider);
     _orientationController = ref.read(appOrientationControllerProvider);
     WidgetsBinding.instance.addObserver(this);
     UiInteractionCoordinator.instance.addListener(
       _scheduleSecondaryInitialization,
     );
-    // Register root-owned disposal even when onboarding hides the ASMR page.
-    ref.read(asmrLibraryControllerProvider);
     _presentationBootstrapController = AppBootstrapController(
       initializer: () async {
         final initializer = widget.presentationInitializer;
@@ -185,6 +172,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
           widget.runtimeInitializer ??
           ref.read(audioRuntimeCoordinatorProvider).start,
     );
+    _runtimeBootstrapController.addListener(_scheduleSecondaryInitialization);
     _shouldShowOnboarding =
         widget.shouldShowOnboarding ??
         AppPreferences.shouldShowOnboardingSync();
@@ -220,8 +208,18 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
       _handlePresentationStateChanged,
     );
     _presentationBootstrapController.dispose();
+    _runtimeBootstrapController.removeListener(_scheduleSecondaryInitialization);
     _runtimeBootstrapController.dispose();
     _workDetailNavigation.dispose();
+    unawaited(
+      _runtime.dispose().catchError((Object error, StackTrace stack) {
+        AppLogService.error(
+          'app_runtime_shutdown_failed',
+          error: error,
+          stackTrace: stack,
+        );
+      }),
+    );
     super.dispose();
   }
 
@@ -254,7 +252,10 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   }
 
   void _scheduleSecondaryInitialization() {
-    if (!mounted || !_secondaryFrameReady || _secondaryInitialization != null) {
+    if (!mounted ||
+        !_secondaryFrameReady ||
+        _runtimeBootstrapController.state.phase != AppBootstrapPhase.ready ||
+        _secondaryInitializationRequested) {
       return;
     }
     final interaction = UiInteractionCoordinator.instance;
@@ -265,9 +266,13 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
       generation: interaction.generation,
       priority: 200,
       task: () async {
-        if (!mounted || _secondaryInitialization != null) return;
-        _secondaryInitialization = _initializeSecondaryData();
-        await _secondaryInitialization;
+        if (!mounted ||
+            _runtimeBootstrapController.state.phase != AppBootstrapPhase.ready ||
+            _secondaryInitializationRequested) {
+          return;
+        }
+        _secondaryInitializationRequested = true;
+        await _initializeSecondaryData();
       },
     );
   }
@@ -275,7 +280,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp>
   Future<void> _initializeSecondaryData() async {
     AppCacheService.scheduleEnforce();
     try {
-      await widget.secondaryInitializer?.call();
+      await _runtime.initializeSecondaryData();
     } catch (error, stackTrace) {
       AppLogService.warning(
         'app_secondary_initialization_failed',

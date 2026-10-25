@@ -48,6 +48,8 @@ final class ListeningActivityService {
   Future<void> _tail = Future.value();
   Timer? _timer;
   bool _disposed = false;
+  Future<void>? _disposeFuture;
+  Future<void>? _startFuture;
   bool _needsReload = true;
   DateTime? _loadedDay;
   int _historyLimit = 40;
@@ -63,6 +65,7 @@ final class ListeningActivityService {
   }, isBroadcast: true);
 
   Future<void> _serialize(Future<void> Function() action) {
+    if (_disposeFuture != null) return Future<void>.value();
     final task = _tail.then((_) async {
       if (_disposed) return;
       try {
@@ -76,8 +79,12 @@ final class ListeningActivityService {
     return task;
   }
 
-  Future<void> start() async {
-    if (_disposed || _timer != null) return;
+  Future<void> start() {
+    if (_disposeFuture != null || _timer != null) return Future<void>.value();
+    return _startFuture ??= _start().whenComplete(() => _startFuture = null);
+  }
+
+  Future<void> _start() async {
     try {
       await refresh();
     } catch (error, stack) {
@@ -87,7 +94,7 @@ final class ListeningActivityService {
         stackTrace: stack,
       );
     }
-    if (_disposed) return;
+    if (_disposeFuture != null) return;
     _timer ??= Timer.periodic(const Duration(seconds: 30), (_) {
       unawaited(
         refresh(forceReload: false).catchError((
@@ -245,7 +252,9 @@ final class ListeningActivityService {
     );
   }
 
-  Future<void> dispose() async {
+  Future<void> dispose() => _disposeFuture ??= _dispose();
+
+  Future<void> _dispose() async {
     _timer?.cancel();
     await _tail;
     _disposed = true;

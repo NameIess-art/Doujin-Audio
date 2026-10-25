@@ -753,6 +753,228 @@ void main() {
     });
   }
 
+  test(
+    'shutdown propagates final persistence failure and still closes streams',
+    () async {
+      final manager = AsmrDownloadManager(
+        persistenceWriter: (_) async => throw StateError('final_write_failed'),
+      );
+      await manager.initialize();
+      manager.debugSetCurrentTaskForTesting(
+        _failedTaskSnapshot(Directory.systemTemp.path),
+      );
+      final idsClosed = manager.taskIdsStream.drain<void>();
+      final tasksClosed = manager.taskStream(_key(1)).drain<void>();
+      final buttonsClosed = manager.buttonViewStateStream.drain<void>();
+      final completedClosed = manager.completedTasks.drain<void>();
+      final shutdown = manager.shutdown();
+      expect(identical(shutdown, manager.shutdown()), isTrue);
+      await expectLater(shutdown, throwsStateError);
+      await Future.wait([
+        idsClosed,
+        tasksClosed,
+        buttonsClosed,
+        completedClosed,
+      ]);
+      await expectLater(manager.shutdown(), throwsStateError);
+    },
+  );
+
+  test(
+    'failed task removal persistence preserves a retryable record',
+    () async {
+      String? persisted;
+      var rejectRemoval = true;
+      final manager = AsmrDownloadManager(
+        persistenceWriter: (payload) async {
+          if (payload == null && rejectRemoval) {
+            rejectRemoval = false;
+            throw StateError('removal_write_failed');
+          }
+          persisted = payload;
+        },
+      );
+      try {
+        await manager.initialize();
+        manager.debugSetCurrentTaskForTesting(
+          _failedTaskSnapshot(Directory.systemTemp.path).copyWith(
+            selectedRoots: [
+              _file(downloadUrl: 'https://example.invalid/track.mp3'),
+            ],
+          ),
+        );
+        await expectLater(manager.deleteTask(_key(1)), throwsStateError);
+        expect(manager.getTask(_key(1))?.status, AsmrDownloadTaskStatus.failed);
+        expect(decodePersistedDownloadTasks(persisted!).tasks, hasLength(1));
+        await manager.deleteTask(_key(1));
+        expect(manager.getTask(_key(1)), isNull);
+        expect(persisted, isNull);
+      } finally {
+        rejectRemoval = false;
+        await manager.shutdown();
+      }
+    },
+  );
+
+  for (final deletionFails in [false, true]) {
+    test('shutdown drains native deletion before closing store '
+        '(failure: $deletionFails)', () async {
+      final temp = await Directory.systemTemp.createTemp('asmr_delete_shutdown_');
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final gateway = _StatefulSafGateway(
+        beforeDelete: (_) async {
+          started.complete();
+          await release.future;
+        },
+      )..rejectDelete = deletionFails;
+      const output = 'content://downloads/tree/root::Work/Track.mp3';
+      gateway.existingPaths.add(output);
+      String? persisted;
+      final manager = AsmrDownloadManager(
+        fileCacheGateway: gateway,
+        stagingDirectoryProvider: () async => temp,
+        persistenceWriter: (payload) async => persisted = payload,
+      );
+      try {
+        await manager.initialize();
+        manager.debugSetCurrentTaskForTesting(
+          _failedTaskSnapshot('content://downloads/tree/root').copyWith(
+            selectedRoots: [
+              _file(downloadUrl: 'https://example.invalid/track.mp3'),
+            ],
+          ),
+        );
+        manager.debugRecordCreatedOutputPathForTesting(_key(1), output);
+        final deletion = manager.deleteTask(_key(1));
+        final checkedDeletion = deletionFails
+            ? expectLater(deletion, throwsA(isA<FileSystemException>()))
+            : deletion;
+        await started.future.timeout(const Duration(seconds: 5));
+        final cancellation = manager.cancelTask(_key(1));
+        expect(identical(deletion, cancellation), isTrue);
+        var stopped = false;
+        final shutdown = manager.shutdown().then((_) => stopped = true);
+        final checkedShutdown = deletionFails
+            ? expectLater(shutdown, throwsA(isA<FileSystemException>()))
+            : shutdown;
+        await Future<void>.delayed(Duration.zero);
+        expect(stopped, isFalse);
+        release.complete();
+        await Future.wait([checkedDeletion, checkedShutdown]);
+        if (deletionFails) {
+          expect(
+            manager.getTask(_key(1))?.status,
+            AsmrDownloadTaskStatus.failed,
+          );
+          expect(decodePersistedDownloadTasks(persisted!).tasks, hasLength(1));
+        } else {
+          expect(manager.getTask(_key(1)), isNull);
+          expect(persisted, isNull);
+        }
+      } finally {
+        if (!release.isCompleted) release.complete();
+        await temp.delete(recursive: true);
+      }
+    });
+  }
+
+  for (final action in ['shutdown', 'delete', 'delete_failure', 'cancel_shutdown']) {
+    test('SAF commit drains before $action captures ownership', () async {
+      final temp = await Directory.systemTemp.createTemp('asmr_saf_drain_');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        request.response.headers.set(HttpHeaders.etagHeader, '"entity"');
+        request.response.contentLength = 3;
+        request.response.add([1, 2, 3]);
+        await request.response.close();
+      });
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final gateway = _StatefulSafGateway(
+        beforeCopy: (_) async {
+          started.complete();
+          await release.future;
+        },
+      );
+      String? persisted;
+      final manager = AsmrDownloadManager(
+        fileCacheGateway: gateway,
+        persistenceWriter: (payload) async => persisted = payload,
+        stagingDirectoryProvider: () async => temp,
+      );
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: [
+            _file(
+              downloadUrl: 'http://${server.address.host}:${server.port}/track',
+              size: 3,
+            ),
+          ],
+          destinationRoot: 'content://downloads/tree/root',
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+          saveCover: false,
+        );
+        await started.future.timeout(const Duration(seconds: 5));
+        gateway.rejectDelete = action == 'delete_failure';
+        final interrupted = switch (action) {
+          'shutdown' => manager.shutdown(),
+          'cancel_shutdown' => manager.cancelTask(_key(1)),
+          _ => manager.deleteTask(_key(1)),
+        };
+        final checked = action == 'delete_failure'
+            ? expectLater(interrupted, throwsA(isA<FileSystemException>()))
+            : interrupted;
+        Future<void>? overlappingShutdown;
+        if (action == 'cancel_shutdown') {
+          await Future<void>.delayed(Duration.zero);
+          expect(manager.getTask(_key(1))?.message, 'canceling');
+          overlappingShutdown = manager.shutdown();
+          await Future<void>.delayed(Duration.zero);
+        }
+        release.complete();
+        await checked.timeout(const Duration(seconds: 5));
+        await overlappingShutdown;
+        if (action == 'shutdown') {
+          final restored = AsmrDownloadManager(
+            fileCacheGateway: gateway,
+            persistenceReader: () async => persisted,
+            persistenceWriter: (payload) async => persisted = payload,
+            stagingDirectoryProvider: () async => temp,
+          );
+          try {
+            await restored.initialize();
+            await restored.deleteTask(_key(1));
+          } finally {
+            await restored.shutdown();
+          }
+        } else if (action == 'delete_failure') {
+          expect(
+            manager.getTask(_key(1))?.status,
+            AsmrDownloadTaskStatus.failed,
+          );
+          expect(decodePersistedDownloadTasks(persisted!).tasks, hasLength(1));
+          gateway.rejectDelete = false;
+          await manager.deleteTask(_key(1));
+        }
+        expect(gateway.existingPaths, isEmpty);
+        if (action == 'cancel_shutdown') expect(persisted, isNull);
+        expect(
+          manager.getTask(_key(1)),
+          action == 'shutdown' ? isNotNull : isNull,
+        );
+      } finally {
+        if (!release.isCompleted) release.complete();
+        gateway.rejectDelete = false;
+        await manager.shutdown();
+        await server.close(force: true);
+        await temp.delete(recursive: true);
+      }
+    });
+  }
+
   test('completion stream closes without any listeners', () async {
     final manager = _manager();
     await manager.shutdown().timeout(const Duration(seconds: 5));
@@ -2557,17 +2779,28 @@ void main() {
   }
 
   for (final usesSaf in [false, true]) {
-    for (final action in ['pause', 'cancel_keep', 'cancel_delete']) {
+    for (final action in [
+      'pause',
+      'cancel_keep',
+      'cancel_delete',
+      'delete',
+      'delete_failure',
+      'shutdown',
+    ]) {
       test('metadata committed during $action retains correct ownership '
           '(SAF: $usesSaf)', () async {
         final tempDir = await Directory.systemTemp.createTemp(
           'asmr_early_metadata_',
         );
         final documents = _CompletionMetadataStore(tempDir.path);
+        documents.rejectDelete = action == 'delete_failure';
+        String? persisted;
+        final gateway = _StatefulSafGateway();
         final manager = AsmrDownloadManager(
-          fileCacheGateway: _StatefulSafGateway(),
+          fileCacheGateway: gateway,
           jsonDocumentStore: documents,
-          persistTasks: false,
+          persistTasks: action == 'shutdown',
+          persistenceWriter: (payload) async => persisted = payload,
           stagingDirectoryProvider: () async => tempDir,
         );
         final metadata = File(path.join(tempDir.path, 'doujin-audio.json'));
@@ -2585,16 +2818,50 @@ void main() {
           await documents.writeStarted.future.timeout(
             const Duration(seconds: 5),
           );
-          final interrupted = action == 'pause'
-              ? manager.pauseTask(_key(1))
-              : manager.cancelTask(
-                  _key(1),
-                  deleteDownloaded: action == 'cancel_delete',
-                );
+          final interrupted = switch (action) {
+            'pause' => manager.pauseTask(_key(1)),
+            'delete' => manager.deleteTask(_key(1)),
+            'delete_failure' => manager.deleteTask(_key(1)),
+            'shutdown' => manager.shutdown(),
+            _ => manager.cancelTask(
+              _key(1),
+              deleteDownloaded: action == 'cancel_delete',
+            ),
+          };
+          final checked = action == 'delete_failure'
+              ? expectLater(interrupted, throwsA(isA<FileSystemException>()))
+              : interrupted;
           documents.releaseWrite.complete();
-          await interrupted.timeout(const Duration(seconds: 5));
-          expect(await metadata.exists(), action != 'cancel_delete');
-          if (action == 'pause') {
+          await checked.timeout(const Duration(seconds: 5));
+          expect(
+            await metadata.exists(),
+            !['cancel_delete', 'delete'].contains(action),
+          );
+          if (action == 'shutdown') {
+            final restored = AsmrDownloadManager(
+              fileCacheGateway: gateway,
+              jsonDocumentStore: documents,
+              persistenceReader: () async => persisted,
+              persistenceWriter: (payload) async => persisted = payload,
+              stagingDirectoryProvider: () async => tempDir,
+            );
+            try {
+              await restored.initialize();
+              expect(restored.getTask(_key(1))?.completedFiles, 1);
+              await restored.deleteTask(_key(1));
+              expect(await metadata.exists(), isFalse);
+            } finally {
+              await restored.shutdown();
+            }
+          } else if (action == 'delete_failure') {
+            expect(
+              manager.getTask(_key(1))?.status,
+              AsmrDownloadTaskStatus.failed,
+            );
+            documents.rejectDelete = false;
+            await manager.deleteTask(_key(1));
+            expect(await metadata.exists(), isFalse);
+          } else if (action == 'pause') {
             final paused = manager.getTask(_key(1))!;
             expect(paused.status, AsmrDownloadTaskStatus.paused);
             expect(paused.completedFiles, 1);
@@ -5783,6 +6050,7 @@ final class _CompletionMetadataStore implements JsonDocumentStore {
   final releaseWrite = Completer<void>();
   JsonDocumentLocation? location;
   bool rejectWrite = false;
+  bool rejectDelete = false;
 
   JsonDocumentLocation _local(JsonDocumentLocation value) =>
       JsonDocumentLocation.folderChild(folder: folder, name: value.name);
@@ -5820,10 +6088,17 @@ final class _CompletionMetadataStore implements JsonDocumentStore {
   Future<JsonDocumentDeleteResult> delete({
     required JsonDocumentLocation location,
     required String expectedRevision,
-  }) => _delegate.delete(
-    location: _local(location),
-    expectedRevision: expectedRevision,
-  );
+  }) => rejectDelete
+      ? Future.value(
+          const JsonDocumentDeleteResult(
+            status: JsonDocumentDeleteStatus.conflict,
+            error: 'delete_failed',
+          ),
+        )
+      : _delegate.delete(
+          location: _local(location),
+          expectedRevision: expectedRevision,
+        );
 }
 
 final class _ExistingJsonSafGateway extends FileCachePlatformGateway {
@@ -5901,11 +6176,16 @@ final class _RecordingSafGateway extends FileCachePlatformGateway {
 }
 
 final class _StatefulSafGateway extends FileCachePlatformGateway {
-  _StatefulSafGateway({this.beforeCopy, this.resolveFolderName})
-    : super(isAndroid: () => true);
+  _StatefulSafGateway({
+    this.beforeCopy,
+    this.beforeDelete,
+    this.resolveFolderName,
+  }) : super(isAndroid: () => true);
 
   final Future<void> Function(String)? beforeCopy;
+  final Future<void> Function(String)? beforeDelete;
   final String Function(String)? resolveFolderName;
+  bool rejectDelete = false;
 
   final Set<String> existingPaths = <String>{};
   final List<String> copiedRelativePaths = <String>[];
@@ -5945,6 +6225,8 @@ final class _StatefulSafGateway extends FileCachePlatformGateway {
 
   @override
   Future<bool> deleteDocumentPath(String path) async {
+    await beforeDelete?.call(path);
+    if (rejectDelete) return false;
     deletedPaths.add(path);
     existingPaths.remove(path);
     return true;

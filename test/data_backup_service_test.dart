@@ -6,6 +6,9 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
+import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_auth_service.dart';
 import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
@@ -55,6 +58,64 @@ void main() {
     if (sourceDatabase.isOpen) await sourceDatabase.close();
     await temporaryDirectory.delete(recursive: true);
   });
+
+  test(
+    'export waits for queued settings and theme before taking preferences',
+    () async {
+      final settingsGate = Completer<void>();
+      final themeGate = Completer<void>();
+      final settings = SettingsRepository(
+        readProxyPassword: () async => null,
+        writeProxyPassword: (_) => settingsGate.future,
+      );
+      final theme = ThemeProvider(
+        preferenceWriter: (key, value) async {
+          await themeGate.future;
+          return AppPreferences.setString(key, value as String);
+        },
+      );
+      addTearDown(settings.dispose);
+      addTearDown(theme.dispose);
+      final first = settings.setNetworkRouteSettings(
+        settings.networkRouteSettings,
+        password: 'queued-password',
+      );
+      final last = settings.setAllowVideoPlayback(false);
+      final themeWrite = theme.setThemeMode(ThemeMode.light);
+      final service = DataBackupService(
+        database: appDatabase,
+        accountStore: accountStore,
+        appUpdateService: _FakeAppUpdateService(),
+        supportDirectoryProvider: () async => temporaryDirectory,
+        beforeExport: () => Future.wait([
+          settings.flushPendingWrites(),
+          theme.flushPendingWrites(),
+        ]),
+      );
+      final outputPath = '${temporaryDirectory.path}/queued.dabackup';
+      final exporting = service.exportBackup(outputPath);
+      await Future<void>.delayed(Duration.zero);
+      expect(await File(outputPath).exists(), isFalse);
+      settingsGate.complete();
+      themeGate.complete();
+      final backup = await exporting;
+      await Future.wait([first, last, themeWrite]);
+      final archive = ZipDecoder().decodeBytes(await backup.readAsBytes());
+      final preferences =
+          jsonDecode(
+                utf8.decode(
+                  archive.findFile('preferences.json')!.content as List<int>,
+                ),
+              )
+              as Map<String, dynamic>;
+      expect(preferences['themeMode'], 'light');
+      expect(
+        (jsonDecode(preferences['playback_settings_v1'] as String)
+            as Map)['allowVideoPlayback'],
+        isFalse,
+      );
+    },
+  );
 
   test('startup removes abandoned work without a pending restore', () async {
     for (final name in ['export_interrupted', 'validation_interrupted']) {

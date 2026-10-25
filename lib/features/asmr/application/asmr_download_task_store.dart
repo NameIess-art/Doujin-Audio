@@ -368,17 +368,20 @@ final class AsmrDownloadTaskStore {
       }
     }
     _persistenceDirty = true;
-    unawaited(_persistCurrentTasks());
+    final finalWrite = _persistCurrentTasks();
     _shutdown = true;
     _liveDownloadedBytes.clear();
     _liveFileDownloadedBytes.clear();
-    await _persistenceTail;
-    await Future.wait<void>([
-      _persistedUriReferenceRevisionController.close(),
-      _taskIdsController.close(),
-      _taskChangesController.close(),
-      _buttonViewStateController.close(),
-    ]);
+    try {
+      await finalWrite;
+    } finally {
+      await Future.wait<void>([
+        _persistedUriReferenceRevisionController.close(),
+        _taskIdsController.close(),
+        _taskChangesController.close(),
+        _buttonViewStateController.close(),
+      ]);
+    }
   }
 
   void _syncPersistedUriReferences(

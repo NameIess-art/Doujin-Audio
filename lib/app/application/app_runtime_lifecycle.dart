@@ -1,6 +1,8 @@
 abstract interface class AppRuntimeLifecycle {
   Future<void> start();
 
+  Future<void> initializeSecondaryData();
+
   Future<void> enterBackground();
 
   Future<void> resumeForeground();

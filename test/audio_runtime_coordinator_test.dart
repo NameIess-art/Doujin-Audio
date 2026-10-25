@@ -11,6 +11,37 @@ import 'support/app_runtime_test_fixture.dart';
 void main() {
   AppRuntimeTestFixture.initialize();
   test(
+    'listener shutdown failure still drains startup and releases owners',
+    () async {
+      final pending = Completer<void>();
+      final failure = StateError('stop listening failed');
+      var released = false;
+      final coordinator = AudioRuntimeCoordinator(
+        snapshots: const Stream<NativePlaybackSnapshot>.empty(),
+        progressUpdates: const Stream<NativePlaybackProgressUpdate>.empty(),
+        startListening: () {},
+        stopListening: () async => throw failure,
+        onSnapshot: (_) {},
+        onProgress: (_) {},
+        onStart: () => pending.future,
+        onEnterBackground: () {},
+        onResumeForeground: () {},
+        onDispose: () => released = true,
+      );
+      final start = coordinator.start();
+      final shutdown = expectLater(
+        coordinator.dispose(),
+        throwsA(same(failure)),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(released, isFalse);
+      pending.complete();
+      await start;
+      await shutdown;
+      expect(released, isTrue);
+    },
+  );
+  test(
     'shutdown keeps playback state alive for a pending native reconciliation',
     () async {
       final repository = _DelayedSnapshotRepository();

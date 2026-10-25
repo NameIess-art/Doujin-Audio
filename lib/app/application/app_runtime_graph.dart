@@ -68,11 +68,8 @@ typedef ProductionAppRuntime = ({
   AsmrMetadataService asmrMetadataService,
   AsmrLibraryController asmrLibraryController,
   AsmrPlaybackCoordinator asmrPlaybackCoordinator,
-  AsmrApiService asmrApiService,
-  JapaneseAsmrApiService japaneseAsmrApiService,
   Future<void> Function() initializePresentation,
   Future<void> Function() initializeRuntimeData,
-  Future<void> Function() initializeSecondaryData,
 });
 
 typedef AppRuntimeGraph = ({
@@ -107,6 +104,9 @@ AppRuntimeGraph createAppRuntimeGraph({
   bool persistenceEnabled = true,
   ListeningActivityService? listeningActivity,
   RuntimeBinding? asmrNetworkBinding,
+  Future<void> Function()? initializeSecondaryData,
+  Future<void> Function()? initializeListeningHistory,
+  void Function()? disposeSecondaryData,
 }) {
   if (asmrDownloads != null && libraryScanLabels == null) {
     throw ArgumentError('ASMR downloads require libraryScanLabels.');
@@ -266,6 +266,9 @@ AppRuntimeGraph createAppRuntimeGraph({
     disposeWorkTexts: workTexts.dispose,
     bindings: bindings,
     listeningActivity: listeningActivity,
+    initializeSecondaryData: initializeSecondaryData,
+    initializeListeningHistory: initializeListeningHistory,
+    disposeSecondaryData: disposeSecondaryData,
   );
   playback.configureUserLaunchInitialization(
     persistenceEnabled
@@ -403,47 +406,7 @@ ProductionAppRuntime createProductionAppRuntime({
           contributions: contributions,
         ),
   );
-  runtimeGraph = createAppRuntimeGraph(
-    asmrNetworkBinding: AsmrNetworkRuntimeBinding(
-      settings: settingsRepository,
-      api: asmrApiService,
-    ),
-    listeningActivity: listeningActivity,
-    library: libraryFacade,
-    playback: playbackFacade,
-    timer: timerFacade,
-    notifications: notificationFacade,
-    settings: settingsRepository,
-    asmrDownloads: asmrDownloadManager,
-    libraryScanLabels: () =>
-        LibraryScanLabels.fromTranslator(appLanguageProvider),
-  );
-
-  windowsRuntime?.bindRuntime(
-    runtime: runtimeGraph.runtime,
-    playback: playbackFacade,
-    notifications: notificationFacade,
-    timer: timerFacade,
-    invalidateInitialization: runtimeGraph.persistence.invalidatePendingLoad,
-  );
-
-  Future<void> initializePresentation() async {
-    await Future.wait<void>([
-      appLanguageProvider.initialized,
-      runtimeGraph.persistence.initializePresentation(),
-    ]);
-  }
-
-  Future<void> initializeSecondaryData() async {
-    await runtimeGraph.runtime.start();
-    await Future.wait<void>([
-      asmrDownloadManager.initialize(),
-      asmrLibraryController.initialize(
-        defaultLanguage: AsmrContentLanguage.fromAppLanguage(
-          appLanguageProvider.language,
-        ),
-      ),
-    ]);
+  Future<void> initializeListeningHistory() async {
     final legacyHistory = <ListeningHistoryEntry>[
       for (final track in libraryFacade.library)
         if (track.lastPlayedAt != null)
@@ -477,6 +440,49 @@ ProductionAppRuntime createProductionAppRuntime({
     await listeningActivity.seedHistory(legacyHistory);
   }
 
+  runtimeGraph = createAppRuntimeGraph(
+    asmrNetworkBinding: AsmrNetworkRuntimeBinding(
+      settings: settingsRepository,
+      api: asmrApiService,
+    ),
+    listeningActivity: listeningActivity,
+    initializeSecondaryData: () => asmrLibraryController.initialize(
+      defaultLanguage: AsmrContentLanguage.fromAppLanguage(
+        appLanguageProvider.language,
+      ),
+    ),
+    initializeListeningHistory: initializeListeningHistory,
+    disposeSecondaryData: () {
+      asmrLibraryController.dispose();
+      asmrApiService.close();
+      japaneseAsmrApiService.close();
+      appUpdateService.dispose();
+    },
+    library: libraryFacade,
+    playback: playbackFacade,
+    timer: timerFacade,
+    notifications: notificationFacade,
+    settings: settingsRepository,
+    asmrDownloads: asmrDownloadManager,
+    libraryScanLabels: () =>
+        LibraryScanLabels.fromTranslator(appLanguageProvider),
+  );
+
+  windowsRuntime?.bindRuntime(
+    runtime: runtimeGraph.runtime,
+    playback: playbackFacade,
+    notifications: notificationFacade,
+    timer: timerFacade,
+    invalidateInitialization: runtimeGraph.persistence.invalidatePendingLoad,
+  );
+
+  Future<void> initializePresentation() async {
+    await Future.wait<void>([
+      appLanguageProvider.initialized,
+      runtimeGraph.persistence.initializePresentation(),
+    ]);
+  }
+
   Future<void> initializeRuntimeData() =>
       windowsRuntime?.initializeRuntime(runtimeGraph.runtime.start) ??
       runtimeGraph.runtime.start();
@@ -489,10 +495,7 @@ ProductionAppRuntime createProductionAppRuntime({
     asmrMetadataService: asmrMetadataService,
     asmrLibraryController: asmrLibraryController,
     asmrPlaybackCoordinator: asmrPlaybackCoordinator,
-    asmrApiService: asmrApiService,
-    japaneseAsmrApiService: japaneseAsmrApiService,
     initializePresentation: initializePresentation,
     initializeRuntimeData: initializeRuntimeData,
-    initializeSecondaryData: initializeSecondaryData,
   );
 }

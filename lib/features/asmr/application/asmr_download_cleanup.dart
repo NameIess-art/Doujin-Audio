@@ -96,35 +96,45 @@ class AsmrDownloadOutputStore {
 
   Future<void> deleteTaskDownloadedFiles(
     AsmrDownloadTaskSnapshot task, {
-    Set<String> extraCreatedPaths = const <String>{},
     Map<String, CreatedDownloadJsonDocument> createdJsonDocs = const {},
   }) async {
     final workRootPath = task.workRootPath;
     final isSaf = PathMatcher.isContentUri(workRootPath);
 
-    final filesToDelete = <String>{
-      ...extraCreatedPaths,
-      ...?createdOutputPaths[task.work.workKey],
-    };
+    final filesToDelete = <String>{...?createdOutputPaths[task.work.workKey]};
 
     // JSON documents must be deleted with their recorded revision. A skipped
     // file, or a document changed after download, belongs to the user.
     for (final entry in createdJsonDocs.entries) {
       filesToDelete.remove(entry.key);
-      try {
-        await _jsonDocumentStore.delete(
-          location: entry.value.location,
-          expectedRevision: entry.value.revision,
+      final deleted = await _jsonDocumentStore.delete(
+        location: entry.value.location,
+        expectedRevision: entry.value.revision,
+      );
+      if (deleted.status == JsonDocumentDeleteStatus.conflict &&
+          deleted.error != 'revision_mismatch') {
+        throw FileSystemException(
+          deleted.error ?? 'Unable to delete downloaded JSON.',
+          entry.key,
         );
-      } catch (_) {
-        // Document deletion is best-effort during rollback.
       }
     }
 
     // Legacy tasks may lack a revision token for their JSON documents.
     for (final targetPath in filesToDelete) {
       if (targetPath.toLowerCase().endsWith('.json')) continue;
-      await deleteOutputPath(targetPath);
+      if (PathMatcher.isContentUri(targetPath)) {
+        final deleted = await _fileCacheGateway.deleteDocumentPath(targetPath);
+        if (!deleted &&
+            await _fileCacheGateway.documentPathExists(targetPath)) {
+          throw FileSystemException(
+            'Unable to delete downloaded file.',
+            targetPath,
+          );
+        }
+      } else {
+        await deleteFileIfPresent(File(targetPath));
+      }
     }
 
     // Prune newly-empty directories on local filesystem.
@@ -194,18 +204,6 @@ class AsmrDownloadOutputStore {
       await file.delete();
     } on FileSystemException {
       if (await file.exists()) rethrow;
-    }
-  }
-
-  Future<void> deleteOutputPath(String outputPath) async {
-    try {
-      if (PathMatcher.isContentUri(outputPath)) {
-        await _fileCacheGateway.deleteDocumentPath(outputPath);
-      } else {
-        await deleteFileIfPresent(File(outputPath));
-      }
-    } catch (_) {
-      // Removing downloaded output is best effort.
     }
   }
 

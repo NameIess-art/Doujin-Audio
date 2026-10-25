@@ -258,6 +258,8 @@ final class _Runtime implements AppRuntimeLifecycle {
   @override
   Future<void> start() async {}
   @override
+  Future<void> initializeSecondaryData() async {}
+  @override
   Future<void> enterBackground() async {}
   @override
   Future<void> resumeForeground() async {}

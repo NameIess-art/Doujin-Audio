@@ -51,6 +51,31 @@ class AsmrDownloadTransferExecutor {
     }
   }
 
+  Future<T> waitForExternal<T>(
+    String workId,
+    Future<T> Function() operation,
+  ) async {
+    throwIfCancelled(workId);
+    final interrupted = Completer<T>();
+    // Shared clients outlive this task; interrupt its wait without closing them.
+    final timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      try {
+        throwIfCancelled(workId);
+      } on DownloadCancelled catch (error, stackTrace) {
+        if (!interrupted.isCompleted) {
+          interrupted.completeError(error, stackTrace);
+        }
+      }
+    });
+    try {
+      final result = await Future.any([operation(), interrupted.future]);
+      throwIfCancelled(workId);
+      return result;
+    } finally {
+      timer.cancel();
+    }
+  }
+
   void pause(String workId) {
     _paused.add(workId);
     _activeHttpClients[workId]?.close(force: true);
@@ -81,7 +106,8 @@ class AsmrDownloadTransferExecutor {
   void shutdown() {
     _disposed = true;
     _activeFileRetryDispatchers.clear();
-    _cancelled.addAll(_completions.keys);
+    // Exit preserves resumable work; an earlier cancel must still clean output.
+    _paused.addAll(_completions.keys.where((workId) => !isCancelled(workId)));
     for (final client in _activeHttpClients.values) {
       client.close(force: true);
     }

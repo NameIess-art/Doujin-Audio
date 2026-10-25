@@ -77,6 +77,9 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
   }
 
   @override
+  Future<void> initializeSecondaryData() => start();
+
+  @override
   Future<void> enterBackground() => _queueLifecycle(background: true);
 
   @override
@@ -127,9 +130,20 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
   Future<void> _dispose() async {
     if (_disposed) return;
     _disposed = true;
-    await _snapshotSubscription?.cancel();
-    await _progressSubscription?.cancel();
-    if (_listenersStarted) await _stopListening();
+    Object? firstError;
+    StackTrace? firstStack;
+    Future<void> attempt(AudioRuntimeAction action) async {
+      try {
+        await action();
+      } catch (error, stack) {
+        firstError ??= error;
+        firstStack ??= stack;
+      }
+    }
+
+    await attempt(() => _snapshotSubscription?.cancel());
+    await attempt(() => _progressSubscription?.cancel());
+    if (_listenersStarted) await attempt(_stopListening);
     final start = _startFuture;
     if (start != null) {
       try {
@@ -148,6 +162,7 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
         // alive until already-started native replies finish applying state.
       }
     }
-    await _onDispose();
+    await attempt(_onDispose);
+    if (firstError != null) Error.throwWithStackTrace(firstError!, firstStack!);
   }
 }

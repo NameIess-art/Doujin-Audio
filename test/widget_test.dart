@@ -732,16 +732,16 @@ void main() {
     );
     await tester.pump();
 
-    expect(downloads.pauseAllCalls, 0);
+    expect(downloads.shutdownCalls, 0);
 
     WidgetsBinding.instance.handleAppLifecycleStateChanged(
       AppLifecycleState.detached,
     );
     await tester.runAsync(
-      () => downloads.paused.timeout(const Duration(seconds: 2)),
+      () => downloads.shutdownComplete.timeout(const Duration(seconds: 2)),
     );
 
-    expect(downloads.pauseAllCalls, 1);
+    expect(downloads.shutdownCalls, 1);
 
     await tester.pumpWidget(const SizedBox.shrink());
     WidgetsBinding.instance.handleAppLifecycleStateChanged(
@@ -4500,12 +4500,14 @@ void main() {
     tester,
   ) async {
     var attempts = 0;
+    var secondaryStarts = 0;
     await _pumpAppShell(
       tester,
       waitForStartup: false,
       runtimeInitializer: () async {
         if (++attempts == 1) throw StateError('core unavailable');
       },
+      secondaryInitializer: () async => secondaryStarts++,
     );
     await tester.pump();
     await tester.pump();
@@ -4515,6 +4517,7 @@ void main() {
       find.byKey(const ValueKey<String>('app_error_view')),
       findsOneWidget,
     );
+    expect(secondaryStarts, 0);
     await tester.tap(
       find.byKey(const ValueKey<String>('startup_retry_button')),
     );
@@ -4524,6 +4527,8 @@ void main() {
     expect(tester.element(find.byType(MainScreen)), same(mainScreen));
     expect(attempts, 2);
     await tester.pump(const Duration(milliseconds: 750));
+    await pumpAndSettleWithAsync(tester);
+    expect(secondaryStarts, 1);
   });
 
   testWidgets(
@@ -4579,26 +4584,19 @@ void main() {
     expect(find.byType(MainScreen), findsNothing);
   });
 
-  testWidgets('app root registers ASMR ownership before leaving onboarding', (
+  testWidgets('app root releases runtime ownership before leaving onboarding', (
     tester,
   ) async {
-    var acquired = 0;
     var released = 0;
     await _pumpAppShell(
       tester,
       shouldShowOnboarding: true,
-      additionalOverrides: [
-        asmrLibraryControllerProvider.overrideWith((ref) {
-          acquired++;
-          ref.onDispose(() => released++);
-          return null;
-        }),
-      ],
+      disposeSecondaryData: () => released++,
     );
     expect(find.byType(MainScreen), findsNothing);
-    expect(acquired, 1);
+    expect(released, 0);
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
+    await pumpAndSettleWithAsync(tester);
     expect(released, 1);
   });
 
@@ -7911,6 +7909,7 @@ Future<_AppShellHarness> _pumpAppShell(
   Future<void> Function()? presentationInitializer,
   Future<void> Function()? runtimeInitializer,
   Future<void> Function()? secondaryInitializer,
+  void Function()? disposeSecondaryData,
   void Function(SettingsRepository settings)? configureSettings,
   bool? shouldShowOnboarding,
   VoidCallback? onBootstrapSettled,
@@ -7939,6 +7938,8 @@ Future<_AppShellHarness> _pumpAppShell(
     notificationStateService: notificationCoordinatorService,
     settingsRepository: settingsRepository,
     asmrDownloads: downloads,
+    initializeSecondaryData: secondaryInitializer,
+    disposeSecondaryData: disposeSecondaryData,
   );
   addTearDown(() => unawaited(runtimeGraph.runtime.dispose()));
   settingsRepository.syncSlice(isInitialized: true);
@@ -7994,7 +7995,6 @@ Future<_AppShellHarness> _pumpAppShell(
       shouldShowOnboarding: shouldShowOnboarding,
       presentationInitializer: presentationInitializer,
       runtimeInitializer: runtimeInitializer,
-      secondaryInitializer: secondaryInitializer,
       onBootstrapSettled: onBootstrapSettled,
     ),
   );
@@ -8014,15 +8014,19 @@ Future<_AppShellHarness> _pumpAppShell(
 final class _TrackingAsmrDownloadManager extends AsmrDownloadManager {
   _TrackingAsmrDownloadManager() : super(persistTasks: false);
 
-  final Completer<void> _paused = Completer<void>();
-  int pauseAllCalls = 0;
+  final Completer<void> _shutdownComplete = Completer<void>();
+  Future<void>? _shutdown;
+  int shutdownCalls = 0;
 
-  Future<void> get paused => _paused.future;
+  Future<void> get shutdownComplete => _shutdownComplete.future;
 
   @override
-  Future<void> pauseAllTasks() async {
-    pauseAllCalls++;
-    if (!_paused.isCompleted) _paused.complete();
+  Future<void> shutdown() => _shutdown ??= _shutdownOnce();
+
+  Future<void> _shutdownOnce() async {
+    shutdownCalls++;
+    await super.shutdown();
+    _shutdownComplete.complete();
   }
 }
 

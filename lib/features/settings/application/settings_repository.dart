@@ -717,6 +717,10 @@ class SettingsRepository {
   }, afterSave: afterSave == null ? null : (_) => afterSave());
 
   Future<void> _writeTail = Future<void>.value();
+  final _pendingWrites = <Future<void>>{};
+
+  /// Waits for writes already submitted, preserving their failure results.
+  Future<void> flushPendingWrites() => Future.wait(_pendingWrites.toList());
 
   Future<void> _change(
     Future<void> Function() update, {
@@ -746,9 +750,10 @@ class SettingsRepository {
         syncSlice(isInitialized: snapshot.isInitialized);
       }
     });
+    _pendingWrites.add(operation);
     _writeTail = operation.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace _) {},
+      (_) => _pendingWrites.remove(operation),
+      onError: (Object _, StackTrace _) => _pendingWrites.remove(operation),
     );
     return operation;
   }

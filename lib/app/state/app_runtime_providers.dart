@@ -114,6 +114,10 @@ final dataBackupServiceProvider = Provider<DataBackupService>((ref) {
   return DataBackupService(
     appUpdateService: ref.watch(appUpdateServiceProvider),
     beforeExport: () async {
+      await Future.wait([
+        ref.read(settingsRepositoryProvider).flushPendingWrites(),
+        ref.read(themeProviderInstanceProvider).flushPendingWrites(),
+      ]);
       await ref.read(listeningActivityServiceProvider)?.refresh();
       await ref.read(libraryFacadeProvider).flushPendingPersistence();
       await ref.read(playbackFacadeProvider).flushSessionStatePersistence();

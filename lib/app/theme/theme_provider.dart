@@ -355,6 +355,15 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
 
   final ThemePreferenceWriter _preferenceWriter;
   Future<void> _preferenceWriteTail = Future<void>.value();
+  final _pendingPreferenceWrites = <Future<bool>>{};
+
+  /// Captures current writes so later changes cannot extend a backup barrier.
+  Future<void> flushPendingWrites() async {
+    final results = await Future.wait(_pendingPreferenceWrites.toList());
+    if (results.contains(false)) {
+      throw StateError('theme_preferences_write_failed');
+    }
+  }
 
   static Future<bool> _writePreference(String key, Object value) {
     return switch (value) {
@@ -368,9 +377,11 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     final write = _preferenceWriteTail.then(
       (_) => _preferenceWriter(key, value),
     );
+    _pendingPreferenceWrites.add(write);
     _preferenceWriteTail = write.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace _) {},
+      (_) => _pendingPreferenceWrites.remove(write),
+      onError: (Object _, StackTrace _) =>
+          _pendingPreferenceWrites.remove(write),
     );
     return write;
   }

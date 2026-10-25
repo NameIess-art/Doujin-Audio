@@ -33,6 +33,7 @@ import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
+import 'package:doujin_audio/features/player/application/listening_activity_service.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_command_runner.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
@@ -78,6 +79,10 @@ AppRuntimeGraph createTestRuntimeGraph({
   SettingsRepository? settingsRepository,
   bool skipPersistence = true,
   bool startRuntime = false,
+  Future<void> Function()? initializeSecondaryData,
+  Future<void> Function()? initializeListeningHistory,
+  void Function()? disposeSecondaryData,
+  ListeningActivityService? listeningActivity,
 }) {
   final database = persistenceRepository ?? TestPersistenceRepository();
   final detailCache =
@@ -140,6 +145,10 @@ AppRuntimeGraph createTestRuntimeGraph({
         ),
     asmrPlaybackCacheService: asmrPlaybackCacheService,
     persistenceEnabled: !skipPersistence,
+    initializeSecondaryData: initializeSecondaryData,
+    initializeListeningHistory: initializeListeningHistory,
+    disposeSecondaryData: disposeSecondaryData,
+    listeningActivity: listeningActivity,
   );
   if (startRuntime) unawaited(graph.runtime.start());
   return graph;

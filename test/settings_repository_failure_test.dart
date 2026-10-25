@@ -44,6 +44,43 @@ void main() {
     AppInteractionFeedbackSettings.hapticFeedbackEnabled = true;
   });
 
+  test('flush waits for submitted writes but not later changes', () async {
+    final firstGate = Completer<bool>();
+    final laterGate = Completer<bool>();
+    preferences.beforeSave = () =>
+        preferences.writes.length == 1 ? firstGate.future : laterGate.future;
+    final first = settings.setAllowVideoPlayback(false);
+    final flushing = settings.flushPendingWrites();
+    final later = settings.setShowLocalLibrary(false);
+    firstGate.complete(true);
+    await flushing;
+    expect(settings.slice.state.allowVideoPlayback, isFalse);
+    expect(settings.slice.state.showLocalLibrary, isTrue);
+    laterGate.complete(true);
+    await Future.wait([first, later]);
+  });
+
+  test(
+    'flush reports a queued failure even when the next write succeeds',
+    () async {
+      final gate = Completer<bool>();
+      preferences.beforeSave = () =>
+          preferences.writes.length == 1 ? gate.future : Future.value(true);
+      final failed = settings.setAllowVideoPlayback(false);
+      final failure = expectLater(failed, throwsStateError);
+      final succeeding = settings.setShowLocalLibrary(false);
+      final flushing = expectLater(
+        settings.flushPendingWrites(),
+        throwsStateError,
+      );
+      gate.complete(false);
+      await Future.wait([failure, succeeding, flushing]);
+      expect(settings.allowVideoPlayback, isTrue);
+      expect(settings.showLocalLibrary, isFalse);
+      await settings.flushPendingWrites();
+    },
+  );
+
   test('merged page mode is persisted and restored on restart', () async {
     expect(
       settings.slice.state.mySettingsPageMode,

@@ -33,6 +33,39 @@ void main() {
   tearDown(() => db.close());
 
   test(
+    'concurrent importer starts share hydration and disposal drains it',
+    () async {
+      final pending = Completer<void>();
+      final started = Completer<void>();
+      var reads = 0;
+      final service = ListeningActivityService(
+        repository: repository,
+        readUsage: () async {
+          reads++;
+          started.complete();
+          await pending.future;
+          return [];
+        },
+        acknowledgeUsage: (_) async {},
+        resolveTrack: (_) => null,
+        recordInterests: ({required batchId, required contributions}) async {},
+      );
+      final first = service.start();
+      expect(service.start(), same(first));
+      await started.future;
+      final shutdown = service.dispose();
+      expect(service.dispose(), same(shutdown));
+      await service.refresh();
+      pending.complete();
+      await first;
+      await shutdown;
+      expect(reads, 1);
+      await service.start();
+      expect(reads, 1);
+    },
+  );
+
+  test(
     'Android channel remote usage imports metadata and can be retried',
     () async {
       const channel = MethodChannel(NativePlaybackChannel.name);

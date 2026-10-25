@@ -112,7 +112,7 @@ The Android bottom menu and Windows sidebar share a single My / Settings entry a
 ### Personalization and data maintenance
 
 - **Network services**: Test DLsite, ASMR mirrors, and Japanese ASMR; choose a mirror. System/VPN, HTTP, SOCKS5 (with optional authentication), and custom DNS apply to in-app requests, including streaming, downloads, updates, and translation. New connections use changed settings while current tasks continue. Proxy passwords remain encrypted on the device and are excluded from preference backups.
-- Choose light, dark, or system theme, a theme color, separate ASMR.ONE colors, the startup page, transition speed, reduced motion, and cover decoding quality. The interface supports Simplified Chinese, English, and Japanese.
+- Choose light, dark, or system theme, pure black theme, frosted menu bars, a theme color, separate ASMR.ONE colors, the startup page, transition speed, reduced motion, and cover decoding quality. The interface supports Simplified Chinese, English, and Japanese.
 - On Android, configure behavior after headphone disconnection, temporary audio-focus loss, or calls, and choose exclusive audio focus or mixing with other applications.
 - `.dabackup` stores the library, settings, playback history and sessions, timeline markers, and ASMR.ONE credentials. Restores are validated before replacing data at the next cold start, with rollback on failure. **Restores are supported only on the same platform.**
 - Persistent cover caching supports offline access and survives restarts, with no automatic eviction by age or capacity. Lists, filters, pagination, and browsing positions are retained only during the current run; reopening details loads the file tree again.

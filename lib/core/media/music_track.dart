@@ -59,6 +59,19 @@ class MusicTrack {
   /// Whether this track uses specialized ASMR visual styling and accent.
   bool get usesAsmrVisualTheme => isRemoteAsmr;
 
+  String get remoteCircleName {
+    final circleName = remoteMetadata?['circleName'];
+    if (circleName is String && circleName.trim().isNotEmpty) {
+      return circleName.trim();
+    }
+    final circle = remoteMetadata?['circle'];
+    if (circle is String) return circle.trim();
+    if (circle is Map && circle['name'] is String) {
+      return (circle['name'] as String).trim();
+    }
+    return '';
+  }
+
   MusicTrack copyWith({
     Duration? duration,
     Duration? lastPlayedPosition,

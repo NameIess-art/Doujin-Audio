@@ -8,6 +8,42 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 
 void main() {
   test(
+    'circle directory preserves stable IDs and multilingual aliases',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        expect(request.uri.path, '/api/circles/');
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode([
+            {
+              'id': 42,
+              'name': '社团',
+              'i18n': {
+                'en-us': {'name': 'Circle'},
+              },
+            },
+          ]),
+        );
+        await request.response.close();
+      });
+      final service = AsmrApiService(
+        baseUri: Uri.parse('http://${server.address.address}:${server.port}'),
+      );
+      try {
+        final circles = await service.fetchCircleCatalog();
+        expect(circles.single.key, 'online:42');
+        expect(circles.single.onlineId, 42);
+        expect(circles.single.aliases, containsAll(['社团', 'Circle']));
+      } finally {
+        service.close();
+        await subscription.cancel();
+        await server.close(force: true);
+      }
+    },
+  );
+
+  test(
     'complete voice directory retains UUIDs and multilingual names',
     () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

@@ -947,6 +947,7 @@ List<MusicTrack> _recommendationTracksFromRows(
           remoteMetadataKeys: const [
             'id',
             'circleName',
+            'circle',
             'tags',
             'voiceActors',
             'vas',

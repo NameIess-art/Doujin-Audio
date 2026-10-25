@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/player/application/listening_activity_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_tag_interest.dart';
@@ -108,6 +109,11 @@ void main() {
               expect(contributions.single.tags, ['Voice One', 'Voice Two']);
               expect(contributions.single.duration, const Duration(minutes: 1));
             },
+        recordCircleInterests:
+            ({required batchId, required contributions}) async {
+              expect(contributions.single.tags, ['Circle']);
+              expect(contributions.single.duration, const Duration(minutes: 1));
+            },
       );
       addTearDown(service.dispose);
       await service.refresh();
@@ -146,9 +152,11 @@ void main() {
           hasUsage = false;
         },
         resolveTrack: (_) => local,
-        resolveLocalVoiceActors: (track) async {
+        resolveLocalAudioDetail: (track) async {
           expect(track.path, local.path);
-          return ['Voice One', 'Voice Two'];
+          return AudioDetail.empty(
+            AudioDetailTarget.libraryRootFolder('/work'),
+          ).copyWith(voiceActors: ['Voice One', 'Voice Two']);
         },
         recordInterests: ({required batchId, required contributions}) async {
           tags.recordListeningBatch(batchId, contributions);
@@ -157,6 +165,10 @@ void main() {
             ({required batchId, required contributions}) async {
               if (failVoices) throw StateError('voice preference save failed');
               voicePreferences.recordListeningBatch(batchId, contributions);
+            },
+        recordCircleInterests:
+            ({required batchId, required contributions}) async {
+              expect(contributions, isEmpty);
             },
       );
       addTearDown(service.dispose);
@@ -176,6 +188,125 @@ void main() {
         const Duration(minutes: 1),
       );
       expect(tags.interests, isEmpty);
+    },
+  );
+
+  test('circle interests use explicit remote metadata only', () async {
+    for (final metadata in <Map<String, Object?>>[
+      {'circleName': ' Remote Circle '},
+      {'circle': ' Remote Circle '},
+      {
+        'circle': {'name': ' Remote Circle '},
+      },
+      {'name': 'Album name'},
+    ]) {
+      final batch = _batch('circles:${metadata.keys.single}:1', 60000);
+      final remote = _track().copyWith(
+        remoteMetadataKind: MusicTrack.remoteMetadataKindJapaneseAsmr,
+        remoteMetadata: metadata,
+      );
+      final service = ListeningActivityService(
+        repository: repository,
+        readUsage: () async => [batch],
+        acknowledgeUsage: (_) async {},
+        resolveTrack: (_) => remote,
+        resolveLocalAudioDetail: (_) async =>
+            throw StateError('remote tracks must not load local metadata'),
+        recordInterests: ({required batchId, required contributions}) async {},
+        recordCircleInterests:
+            ({required batchId, required contributions}) async {
+              if (metadata.containsKey('name')) {
+                expect(contributions, isEmpty);
+              } else {
+                expect(contributions.single.tags, ['Remote Circle']);
+                expect(
+                  contributions.single.duration,
+                  const Duration(minutes: 1),
+                );
+              }
+            },
+      );
+      await service.refresh();
+      await service.dispose();
+    }
+  });
+
+  test('local voice and circle interests share one detail read', () async {
+    var detailReads = 0;
+    final voicePreferences = AsmrTagPreferences();
+    final circlePreferences = AsmrTagPreferences();
+    final batches = [_batch('local:1', 30000), _batch('local:2', 30000)];
+    final service = ListeningActivityService(
+      repository: repository,
+      readUsage: () async => batches,
+      acknowledgeUsage: (_) async {},
+      resolveTrack: (_) => _track(),
+      resolveLocalAudioDetail: (_) async {
+        detailReads++;
+        return AudioDetail.empty(
+          AudioDetailTarget.libraryRootFolder('/work'),
+        ).copyWith(voiceActors: ['Local Voice'], circleName: ' Local Circle ');
+      },
+      recordInterests: ({required batchId, required contributions}) async {},
+      recordVoiceActorInterests:
+          ({required batchId, required contributions}) async {
+            voicePreferences.recordListeningBatch(batchId, contributions);
+          },
+      recordCircleInterests:
+          ({required batchId, required contributions}) async {
+            circlePreferences.recordListeningBatch(batchId, contributions);
+          },
+    );
+    addTearDown(service.dispose);
+    await service.refresh();
+    expect(detailReads, 1);
+    expect(voicePreferences.interests.single.tag.name, 'Local Voice');
+    expect(circlePreferences.interests.single.tag.name, 'Local Circle');
+    expect(voicePreferences.learned.values, [1.0]);
+    expect(circlePreferences.learned.values, [1.0]);
+  });
+
+  test(
+    'circle write failure retries without early ack or duplicate learning',
+    () async {
+      var failCircles = true;
+      final voicePreferences = AsmrTagPreferences();
+      final circlePreferences = AsmrTagPreferences();
+      final acknowledged = <String>[];
+      final batch = _batch('circles:retry:1', 60000);
+      final service = ListeningActivityService(
+        repository: repository,
+        readUsage: () async => acknowledged.isEmpty ? [batch] : [],
+        acknowledgeUsage: (ids) async => acknowledged.addAll(ids),
+        resolveTrack: (_) => _track(),
+        resolveLocalAudioDetail: (_) async => AudioDetail.empty(
+          AudioDetailTarget.libraryRootFolder('/work'),
+        ).copyWith(voiceActors: ['Local Voice'], circleName: 'Local Circle'),
+        recordInterests: ({required batchId, required contributions}) async {},
+        recordVoiceActorInterests:
+            ({required batchId, required contributions}) async {
+              voicePreferences.recordListeningBatch(batchId, contributions);
+            },
+        recordCircleInterests:
+            ({required batchId, required contributions}) async {
+              circlePreferences.recordListeningBatch(batchId, contributions);
+              if (failCircles) {
+                throw StateError('circle preference save failed');
+              }
+            },
+      );
+      addTearDown(service.dispose);
+      await expectLater(service.refresh(), throwsStateError);
+      expect(acknowledged, isEmpty);
+      failCircles = false;
+      await service.refresh();
+      expect(acknowledged, [batch.id]);
+      expect(voicePreferences.learned.values, [1.0]);
+      expect(circlePreferences.learned.values, [1.0]);
+      expect(
+        (await repository.loadDays()).single.duration,
+        const Duration(minutes: 1),
+      );
     },
   );
 

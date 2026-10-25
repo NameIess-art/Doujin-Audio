@@ -9,6 +9,266 @@ void registerAsmrControllerStateTests({
   setUp(() => preferences = preferencesStore());
 
   test(
+    'circle preferences derive real creator names and persist twenty ranks independently',
+    () async {
+      await resetPrefs();
+      await preferences.saveFavoriteWorks([
+        _work(id: 1, title: 'Favorite work', circleName: 'Favorite circle'),
+      ]);
+      await preferences.saveHistoryWorks([
+        _work(id: 2, title: 'History work', circleName: 'History circle'),
+      ]);
+      final repository = _InterestTracksRepository(
+        () async => [
+          _track(
+            groupTitle: 'A work title, not a circle',
+            tags: [],
+          ).copyWith(remoteMetadata: {'circleName': 'Local circle'}),
+          _track(groupTitle: 'Another work title', tags: []).copyWith(
+            remoteMetadata: {
+              'circleName': ' ',
+              'circle': {'name': ' Nested circle '},
+            },
+          ),
+          _track(groupTitle: 'String creator metadata', tags: []).copyWith(
+            remoteMetadata: {'circleName': '', 'circle': ' String circle '},
+          ),
+          _track(groupTitle: 'No creator metadata', tags: []),
+        ],
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: repository,
+        apiService: _FakeAsmrApiService(),
+      );
+      addTearDown(controller.dispose);
+      await controller.ensureTagInterests();
+      expect(controller.allCircles.map((tag) => tag.name), [
+        'Favorite circle',
+        'History circle',
+        'Local circle',
+        'Nested circle',
+        'String circle',
+      ]);
+      expect(controller.circleInterests, isEmpty);
+      await expectLater(
+        controller.applyCircleSelections(
+          changes: {'local:local circle': true, 'missing': true},
+        ),
+        throwsArgumentError,
+      );
+      expect(controller.manualInterestCircleKeys, isEmpty);
+      await controller.recordCircleListeningBatch(
+        batchId: 'creator:1',
+        contributions: [
+          for (var i = 0; i < 25; i++)
+            (tags: ['Circle $i'], duration: Duration(minutes: i + 1)),
+        ],
+      );
+      await controller.recordCircleListeningBatch(
+        batchId: 'creator:1',
+        contributions: [
+          (tags: ['Circle 24'], duration: const Duration(minutes: 100)),
+        ],
+      );
+      await controller.applyCircleSelections(
+        changes: {'local:local circle': true},
+      );
+      await controller.recordVoiceActorListeningBatch(
+        batchId: 'creator:1',
+        contributions: [
+          (tags: ['Independent voice'], duration: const Duration(minutes: 5)),
+        ],
+      );
+      expect(controller.listenedCircleInterests, hasLength(20));
+      expect(controller.circleInterests.first.tag.name, 'Circle 24');
+      expect(controller.circleInterests.first.weight, 25);
+      expect(controller.listenedVoiceActorInterests.single.weight, 5);
+      await controller.reloadPersistedState();
+      expect(controller.circleInterests, hasLength(20));
+      expect(controller.circleInterests.first.weight, 25);
+      expect(controller.manualInterestCircleKeys, {'local:local circle'});
+      expect((await preferences.loadCirclePreferences()).limit, 20);
+    },
+  );
+
+  test(
+    'circle catalog merges local choices, retains cache on failure and rejects stale restores',
+    () async {
+      await resetPrefs();
+      final state = AsmrTagPreferences();
+      final key = state.resolve('Known circle');
+      state.setInterested(key, true);
+      state.excluded.add(key);
+      state.learned[key] = 6;
+      await preferences.saveCirclePreferences(state);
+      final api = _CircleCatalogApi();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      addTearDown(controller.dispose);
+      await controller.ensureCircleCatalog();
+      expect(controller.circleCatalogComplete, isFalse);
+      expect(controller.circleCatalogError, isStateError);
+      expect(controller.manualInterestCircleKeys, {key});
+      api.fail = false;
+      await controller.ensureCircleCatalog(force: true);
+      expect(controller.circleCatalogComplete, isTrue);
+      expect(controller.manualInterestCircleKeys, {'online:circle-id'});
+      expect(controller.excludedCircleKeys, {'online:circle-id'});
+      expect(controller.listenedCircleInterests.single.weight, 6);
+      final pending = Completer<List<AsmrTag>>();
+      api.pending = pending;
+      final stale = controller.ensureCircleCatalog(force: true);
+      await api.started.future;
+      expect(controller.isLoadingCircleCatalog, isTrue);
+      await controller.reloadPersistedState();
+      pending.complete([AsmrTag(key: 'online:stale', name: 'Stale')]);
+      await stale;
+      expect(controller.isLoadingCircleCatalog, isFalse);
+      expect(
+        controller.allCircles.map((tag) => tag.key),
+        isNot(contains('online:stale')),
+      );
+      expect(
+        (await preferences.loadCirclePreferences()).tags,
+        isNot(contains('online:stale')),
+      );
+      expect(controller.excludedCircleKeys, {'online:circle-id'});
+    },
+  );
+
+  for (final voice in [false, true]) {
+    test(
+      'creator exclusion filters categories and daily cache, restores raw works: voice=$voice',
+      () async {
+        await resetPrefs();
+        final state = AsmrTagPreferences();
+        state.mergeTag(
+          AsmrTag(
+            key: 'online:creator',
+            name: 'Excluded creator',
+            aliases: ['Excluded alias'],
+          ),
+        );
+        if (voice) {
+          await preferences.saveVoiceActorPreferences(state);
+        } else {
+          await preferences.saveCirclePreferences(state);
+        }
+        final blocked = AsmrWork.fromJson({
+          ..._work(
+            id: 100,
+            title: 'Blocked',
+            circleName: voice ? 'Allowed circle' : 'Excluded alias',
+          ).toJson(),
+          'voiceActors': voice ? ['Excluded alias'] : <String>[],
+        });
+        final allowed = _work(
+          id: 101,
+          title: 'Allowed',
+          circleName: 'Allowed circle',
+        );
+        final day = DateTime(2026, 10, 25);
+        await preferences.saveDailyRecommendations(
+          language: AsmrContentLanguage.zh,
+          date: '2026-10-25',
+          works: [blocked, allowed],
+        );
+        final controller = createTestAsmrController(
+          preferencesStore: preferences,
+          persistenceRepository: persistenceRepository(),
+          apiService: _FakeAsmrApiService(
+            recommendationWorks: [blocked, allowed],
+          ),
+        );
+        addTearDown(controller.dispose);
+        await controller.ensureCategoryLoaded(AsmrCategoryType.release);
+        await controller.ensureDailyRecommendations(now: day);
+        final original = controller.worksFor(AsmrCategoryType.release);
+        Future<void> select(Map<String, bool> changes) => voice
+            ? controller.applyVoiceActorSelections(
+                excluded: true,
+                changes: changes,
+              )
+            : controller.applyCircleSelections(
+                excluded: true,
+                changes: changes,
+              );
+        await expectLater(
+          select({'online:creator': true, 'missing': true}),
+          throwsArgumentError,
+        );
+        expect(
+          voice
+              ? controller.excludedVoiceActorKeys
+              : controller.excludedCircleKeys,
+          isEmpty,
+        );
+        await select({'online:creator': true});
+        expect(
+          controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+          [101],
+        );
+        expect(controller.dailyRecommendations.map((work) => work.id), [101]);
+        await controller.reloadPersistedState();
+        expect(
+          voice
+              ? controller.excludedVoiceActorKeys
+              : controller.excludedCircleKeys,
+          {'online:creator'},
+        );
+        await controller.ensureCategoryLoaded(AsmrCategoryType.release);
+        expect(
+          controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+          [101],
+        );
+        await select({'online:creator': false});
+        expect(
+          controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+          original.map((work) => work.id),
+        );
+      },
+    );
+  }
+
+  test(
+    'circle selections refresh an already loaded recommendation page',
+    () async {
+      await resetPrefs();
+      final state = AsmrTagPreferences();
+      state.resolve('First circle');
+      state.resolve('Second circle');
+      await preferences.saveCirclePreferences(state);
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: _FakeAsmrApiService(
+          recommendationWorks: [
+            _work(id: 100, title: 'First', circleName: 'First circle'),
+            _work(id: 101, title: 'Second', circleName: 'Second circle'),
+          ],
+        ),
+      );
+      addTearDown(controller.dispose);
+      await controller.ensureCategoryLoaded(AsmrCategoryType.recommendation);
+      expect(
+        controller.worksFor(AsmrCategoryType.recommendation).first.id,
+        100,
+      );
+      await controller.applyCircleSelections(
+        changes: {'local:second circle': true},
+      );
+      expect(
+        controller.worksFor(AsmrCategoryType.recommendation).first.id,
+        101,
+      );
+    },
+  );
+
+  test(
     'complete interest catalogs retain alphabetical pickers',
     () async {
       await resetPrefs();
@@ -51,14 +311,14 @@ void registerAsmrControllerStateTests({
   );
 
   test(
-    'voice interests persist ten listening ranks and unlimited manual choices independently',
+    'voice interests persist twenty listening ranks and unlimited manual choices independently',
     () async {
       await resetPrefs();
       final repository = _InterestTracksRepository(
         () async => [
           _track(groupTitle: 'Known voices', tags: ['sleep']).copyWith(
             remoteMetadata: {
-              'voiceActors': [for (var i = 0; i < 15; i++) 'Voice $i'],
+              'voiceActors': [for (var i = 0; i < 25; i++) 'Voice $i'],
             },
           ),
         ],
@@ -69,7 +329,7 @@ void registerAsmrControllerStateTests({
         apiService: _FakeAsmrApiService(),
       );
       await controller.ensureTagInterests();
-      expect(controller.allVoiceActors, hasLength(15));
+      expect(controller.allVoiceActors, hasLength(25));
       expect(controller.voiceActorInterests, isEmpty);
       await expectLater(
         controller.applyVoiceActorSelections(
@@ -79,12 +339,12 @@ void registerAsmrControllerStateTests({
       );
       expect(controller.manualInterestVoiceActorKeys, isEmpty);
       await controller.applyVoiceActorSelections(
-        changes: {for (var i = 0; i < 15; i++) 'local:voice $i': true},
+        changes: {for (var i = 0; i < 25; i++) 'local:voice $i': true},
       );
-      expect(controller.manualInterestVoiceActorKeys, hasLength(15));
-      expect(controller.voiceActorInterests, hasLength(10));
+      expect(controller.manualInterestVoiceActorKeys, hasLength(25));
+      expect(controller.voiceActorInterests, hasLength(20));
       final contributions = [
-        for (var i = 0; i < 15; i++)
+        for (var i = 0; i < 25; i++)
           (tags: ['Voice $i'], duration: Duration(minutes: i + 1)),
       ];
       await controller.recordVoiceActorListeningBatch(
@@ -101,14 +361,38 @@ void registerAsmrControllerStateTests({
           (tags: ['sleep'], duration: const Duration(minutes: 5)),
         ],
       );
-      expect(controller.listenedVoiceActorInterests, hasLength(10));
-      expect(controller.voiceActorInterests.first.tag.name, 'Voice 14');
-      expect(controller.voiceActorInterests.first.weight, 15);
+      expect(controller.listenedVoiceActorInterests, hasLength(20));
+      expect(controller.voiceActorInterests.first.tag.name, 'Voice 24');
+      expect(controller.voiceActorInterests.first.weight, 25);
       expect(controller.interestTags.single.weight, 5);
       await controller.reloadPersistedState();
-      expect(controller.voiceActorInterests.first.weight, 15);
-      expect(controller.manualInterestVoiceActorKeys, hasLength(15));
-      expect((await preferences.loadVoiceActorPreferences()).limit, 10);
+      expect(controller.voiceActorInterests.first.weight, 25);
+      expect(controller.manualInterestVoiceActorKeys, hasLength(25));
+      expect((await preferences.loadVoiceActorPreferences()).limit, 20);
+    },
+  );
+
+  test(
+    'saved ten-slot voice preferences load twenty without losing state',
+    () async {
+      await resetPrefs();
+      final voices = AsmrTagPreferences(limit: 10);
+      for (var i = 0; i < 25; i++) {
+        final key = voices.resolve('Voice $i');
+        voices.setInterested(key, true);
+        voices.learned[key] = i + 1;
+      }
+      voices.consumedSequences['voice'] = 7;
+      voices.catalogComplete = true;
+      await preferences.saveVoiceActorPreferences(voices);
+      final restored = await preferences.loadVoiceActorPreferences();
+      expect(restored.limit, 20);
+      expect(restored.interests, hasLength(20));
+      expect(restored.interests.first.tag.name, 'Voice 24');
+      expect(restored.manualInterests, voices.manualInterests);
+      expect(restored.learned, voices.learned);
+      expect(restored.consumedSequences, voices.consumedSequences);
+      expect(restored.catalogComplete, isTrue);
     },
   );
 
@@ -154,14 +438,14 @@ void registerAsmrControllerStateTests({
   );
 
   test(
-    'daily discovery upgrades old cache with listening and manual interests and restores it',
+    'daily discovery upgrades old cache with creator interests and restores it',
     () async {
       await resetPrefs();
       final repository = persistenceRepository();
       final state = AsmrTagPreferences();
       state.learned[state.resolve('listened')] = 60;
       state.setInterested(state.resolve('manual'), true);
-      await preferences.saveTagPreferences(state);
+      await preferences.saveCirclePreferences(state);
       await preferences.saveDailyRecommendations(
         language: AsmrContentLanguage.zh,
         date: '2026-10-24',
@@ -170,22 +454,20 @@ void registerAsmrControllerStateTests({
       const cacheKey = 'asmr_daily_discovery_v1_zh';
       final oldCache = (await repository.loadSetting(
         cacheKey,
-      ))!.replaceFirst('"version":2,', '');
+      ))!.replaceFirst('"version":3,', '"version":2,');
       await repository.saveSetting(cacheKey, oldCache);
       final api = _FakeAsmrApiService(
+        pagedSearchWorks: true,
         recommendationWorks: List.generate(
           100,
           (i) => _work(
             id: 5000 + i,
             title: 'Daily $i',
-            tags: [
-              if (i < 20)
-                'listened'
-              else if (i < 40)
-                'manual'
-              else
-                'Explore $i',
-            ],
+            circleName: i < 20
+                ? 'listened'
+                : i < 40
+                ? 'manual'
+                : 'Other $i',
           ),
         ),
       );
@@ -201,20 +483,22 @@ void registerAsmrControllerStateTests({
       expect(picks, hasLength(20));
       expect(
         picks.where(
-          (w) => w.tags.contains('listened') || w.tags.contains('manual'),
+          (w) => w.circleName == 'listened' || w.circleName == 'manual',
         ),
-        hasLength(12),
+        hasLength(20),
       );
-      expect(picks.any((w) => w.tags.contains('listened')), isTrue);
-      expect(picks.any((w) => w.tags.contains('manual')), isTrue);
+      expect(picks.any((w) => w.circleName == 'listened'), isTrue);
+      expect(picks.any((w) => w.circleName == 'manual'), isTrue);
       expect(
         (await preferences.loadDailyRecommendations(
           AsmrContentLanguage.zh,
         ))!.version,
-        2,
+        AsmrPreferencesStore.dailyRecommendationsVersion,
       );
-      final requests = api.fetchWorkRequests.length;
+      final requests = api.searchWorkRequests.length;
       expect(requests, greaterThan(0));
+      expect(api.searchKeywords.toSet(), {'listened', 'manual'});
+      expect(api.fetchWorkRequests, isEmpty);
       final restored = createTestAsmrController(
         preferencesStore: preferences,
         persistenceRepository: repository,
@@ -226,7 +510,127 @@ void registerAsmrControllerStateTests({
         restored.dailyRecommendations.map((w) => w.workKey),
         picks.map((w) => w.workKey),
       );
-      expect(api.fetchWorkRequests.length, requests);
+      expect(api.searchWorkRequests.length, requests);
+    },
+  );
+
+  test(
+    'daily discovery searches creators, samples older pages and refreshes changed interests',
+    () async {
+      await resetPrefs();
+      final voices = AsmrTagPreferences();
+      voices.setInterested(voices.resolve('Voice A'), true);
+      final circles = AsmrTagPreferences();
+      circles.setInterested(circles.resolve('Circle B'), true);
+      circles.resolve('Circle C');
+      await preferences.saveVoiceActorPreferences(voices);
+      await preferences.saveCirclePreferences(circles);
+      final api = _DailyCreatorApi();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      addTearDown(controller.dispose);
+      final day = DateTime(2026, 10, 25);
+      await controller.ensureDailyRecommendations(now: day);
+      expect(api.requests.toSet(), {
+        'voice a:1',
+        'voice a:10',
+        'circle b:1',
+        'circle b:10',
+      });
+      expect(api.fetchWorkRequests, isEmpty);
+      expect(controller.dailyRecommendations.map((w) => w.id).take(2), [1, 2]);
+      expect(controller.dailyRecommendations, hasLength(4));
+      expect(controller.dailyRecommendations.any((w) => w.id == 999), isFalse);
+      final count = api.requests.length;
+      await controller.ensureDailyRecommendations(now: day);
+      expect(api.requests, hasLength(count));
+      await controller.applyVoiceActorSelections(
+        changes: {'local:voice a': false},
+      );
+      expect(
+        controller.dailyRecommendations.every(
+          (w) => w.circleName == 'Circle B',
+        ),
+        isTrue,
+      );
+      await controller.applyCircleSelections(
+        changes: {'local:circle b': false, 'local:circle c': true},
+      );
+      expect(api.requests, containsAll(['circle c:1', 'circle c:10']));
+      expect(
+        controller.dailyRecommendations.every(
+          (w) => w.circleName == 'Circle C',
+        ),
+        isTrue,
+      );
+      expect(controller.dailyRecommendations, hasLength(2));
+      final restored = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      addTearDown(restored.dispose);
+      final savedCount = api.requests.length;
+      await restored.ensureDailyRecommendations(now: day);
+      expect(api.requests, hasLength(savedCount));
+      expect(
+        restored.dailyRecommendations.map((w) => w.id),
+        controller.dailyRecommendations.map((w) => w.id),
+      );
+    },
+  );
+
+  test(
+    'daily discovery replaces a pending request when listening adds a creator',
+    () async {
+      await resetPrefs();
+      final circles = AsmrTagPreferences();
+      circles.setInterested(circles.resolve('Circle B'), true);
+      await preferences.saveCirclePreferences(circles);
+      final started = Completer<void>();
+      final gate = Completer<void>();
+      final api = _DailyCreatorApi(
+        beforeFetchSearchResponse: (_) async {
+          if (!started.isCompleted) started.complete();
+          await gate.future;
+        },
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      final day = DateTime(2026, 10, 25);
+      final previous = controller.ensureDailyRecommendations(now: day);
+      await started.future;
+      await controller.recordVoiceActorListeningBatch(
+        batchId: 'daily:1',
+        contributions: [
+          (tags: ['Voice A'], duration: const Duration(minutes: 1)),
+        ],
+      );
+      gate.complete();
+      await previous;
+      await controller.ensureDailyRecommendations(now: day);
+      expect(
+        controller.dailyRecommendations.any(
+          (w) => w.voiceActors.contains('Voice A'),
+        ),
+        isTrue,
+      );
+      expect(controller.dailyRecommendations, hasLength(4));
+      final requests = api.requests.length;
+      await controller.recordVoiceActorListeningBatch(
+        batchId: 'daily:2',
+        contributions: [
+          (tags: ['Voice A'], duration: const Duration(minutes: 1)),
+        ],
+      );
+      await controller.ensureDailyRecommendations(now: day);
+      expect(api.requests, hasLength(requests));
     },
   );
 
@@ -3249,6 +3653,58 @@ class _BrowseChangingApi extends AsmrApiService {
   }
 }
 
+class _DailyCreatorApi extends _FakeAsmrApiService {
+  _DailyCreatorApi({super.beforeFetchSearchResponse});
+  final requests = <String>[];
+
+  @override
+  Future<AsmrWorkPage> searchWorks({
+    required String keyword,
+    required String order,
+    required String sort,
+    int page = 1,
+    int pageSize = 40,
+    String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    requests.add('$keyword:$page');
+    await beforeFetchSearchResponse?.call('$keyword:$page');
+    cancellationToken?.throwIfCancelled();
+    expect(order, 'release');
+    expect(sort, 'desc');
+    final id = switch (keyword) {
+      'voice a' => 1,
+      'circle b' => 2,
+      _ => 3,
+    };
+    return AsmrWorkPage(
+      works: [
+        AsmrWork.fromJson({
+          ..._work(
+            id: page == 1 ? id : 100 + id,
+            title: 'Creator work',
+            circleName: keyword == 'voice a'
+                ? 'Other circle'
+                : keyword == 'circle b'
+                ? 'Circle B'
+                : 'Circle C',
+            releaseDate: page == 1
+                ? DateTime(2026, 10, 26 - id)
+                : DateTime(2020),
+          ).toJson(),
+          'voiceActors': keyword == 'voice a' ? ['Voice A'] : <String>[],
+        }),
+        for (var i = 1; i < pageSize; i++)
+          _work(id: 999, title: 'Keyword match only'),
+      ],
+      currentPage: page,
+      pageSize: pageSize,
+      totalCount: 400,
+    );
+  }
+}
+
 class _DailyFailingPreferencesStore extends AsmrPreferencesStore {
   _DailyFailingPreferencesStore({required super.repository});
   bool failDailySave = true;
@@ -3257,12 +3713,14 @@ class _DailyFailingPreferencesStore extends AsmrPreferencesStore {
     required AsmrContentLanguage language,
     required String date,
     required List<AsmrWork> works,
+    String interests = '',
   }) {
     if (failDailySave) throw StateError('save failed');
     return super.saveDailyRecommendations(
       language: language,
       date: date,
       works: works,
+      interests: interests,
     );
   }
 }
@@ -3292,5 +3750,21 @@ class _VoiceCatalogApi extends _FakeAsmrApiService {
       return pending!.future;
     }
     return [AsmrTag(key: 'online:voice-id', name: 'Known voice')];
+  }
+}
+
+class _CircleCatalogApi extends _FakeAsmrApiService {
+  bool fail = true;
+  Completer<List<AsmrTag>>? pending;
+  final started = Completer<void>();
+
+  @override
+  Future<List<AsmrTag>> fetchCircleCatalog() async {
+    if (fail) throw StateError('offline');
+    if (pending != null) {
+      started.complete();
+      return pending!.future;
+    }
+    return [AsmrTag(key: 'online:circle-id', name: 'Known circle')];
   }
 }

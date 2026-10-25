@@ -9,13 +9,13 @@ import '../../../core/media/music_track.dart';
 class AsmrRecommendationEngine {
   const AsmrRecommendationEngine();
 
-  /// Daily interest matches with room for discovery across tags and creators.
+  /// New releases from interesting creators first, then their older works.
   List<AsmrWork> rankDaily({
     required List<AsmrWork> candidates,
     required int daySeed,
     Set<String> previousWorkKeys = const <String>{},
-    Map<String, double> tagWeights = const {},
     Map<String, double> voiceActorWeights = const {},
+    Map<String, double> circleWeights = const {},
     int limit = 20,
   }) {
     if (limit <= 0 || candidates.isEmpty) return const <AsmrWork>[];
@@ -26,24 +26,44 @@ class AsmrRecommendationEngine {
         unique[work.workKey] = work;
       }
     }
-    final preferences = <String>{
-      for (final entry in tagWeights.entries)
-        if (entry.value > 0) _normalizeTerm(entry.key),
-    };
     final voicePreferences = <String>{
       for (final entry in voiceActorWeights.entries)
-        if (entry.value > 0) _normalizeTerm(entry.key),
+        if (entry.value > 0 && _normalizeTerm(entry.key).isNotEmpty)
+          _normalizeTerm(entry.key),
     };
+    final circlePreferences = <String>{
+      for (final entry in circleWeights.entries)
+        if (entry.value > 0 && _normalizeTerm(entry.key).isNotEmpty)
+          _normalizeTerm(entry.key),
+    };
+    final hasCreatorInterests =
+        voicePreferences.isNotEmpty || circlePreferences.isNotEmpty;
+    final today = DateTime.utc(
+      daySeed ~/ 10000,
+      daySeed ~/ 100 % 100,
+      daySeed % 100,
+    );
+    final recentStart = today.subtract(const Duration(days: 30));
     final remaining =
         <
           ({
             AsmrWork work,
             double base,
             Map<String, double> terms,
-            bool matchesInterest,
+            DateTime? newReleaseDate,
           })
         >[];
     for (final work in unique.values) {
+      final matchesInterest =
+          work.voiceActors.any(
+            (name) => voicePreferences.contains(_normalizeTerm(name)),
+          ) ||
+          circlePreferences.contains(_normalizeTerm(work.circleName));
+      if (hasCreatorInterests && !matchesInterest) continue;
+      final releaseDate = work.releaseDate ?? work.createDate;
+      final date = releaseDate == null
+          ? null
+          : DateTime.utc(releaseDate.year, releaseDate.month, releaseDate.day);
       final terms = <String, double>{};
       void addTerms(String kind, Iterable<String> values, double weight) {
         final names = values
@@ -55,7 +75,6 @@ class AsmrRecommendationEngine {
         }
       }
 
-      addTerms('tag', work.tags, 0.8);
       addTerms('voice', work.voiceActors, 0.4);
       addTerms('circle', [work.circleName], 0.4);
       remaining.add((
@@ -65,31 +84,27 @@ class AsmrRecommendationEngine {
             _qualityScore(work) * 0.35 -
             (previousWorkKeys.contains(work.workKey) ? 3 : 0),
         terms: terms,
-        matchesInterest:
-            work.tags.any((tag) => preferences.contains(_normalizeTerm(tag))) ||
-            work.voiceActors.any(
-              (name) => voicePreferences.contains(_normalizeTerm(name)),
-            ),
+        newReleaseDate:
+            date != null && !date.isBefore(recentStart) && !date.isAfter(today)
+            ? date
+            : null,
       ));
     }
+    remaining.sort((a, b) {
+      if (a.newReleaseDate == null) return b.newReleaseDate == null ? 0 : 1;
+      if (b.newReleaseDate == null) return -1;
+      return b.newReleaseDate!.compareTo(a.newReleaseDate!);
+    });
     final result = <AsmrWork>[];
     final coverage = <String, int>{};
     while (remaining.isNotEmpty && result.length < limit) {
       var best = 0;
       var bestScore = double.negativeInfinity;
-      // Three interest slots followed by two discovery slots in each group of
-      // five. If either pool runs out, use the other rather than leave gaps.
-      final preferInterest = result.length % 5 < 3;
-      final usePreferredPool =
-          (preferences.isNotEmpty || voicePreferences.isNotEmpty) &&
-          remaining.any(
-            (candidate) => candidate.matchesInterest == preferInterest,
-          );
+      final newestDate = remaining.first.newReleaseDate;
       for (var index = 0; index < remaining.length; index++) {
         final candidate = remaining[index];
-        if (usePreferredPool && candidate.matchesInterest != preferInterest) {
-          continue;
-        }
+        // Keep release priority even when yesterday already included the work.
+        if (candidate.newReleaseDate != newestDate) continue;
         var score = candidate.base;
         for (final term in candidate.terms.entries) {
           score += term.value / (1 + (coverage[term.key] ?? 0));
@@ -121,6 +136,7 @@ class AsmrRecommendationEngine {
     Set<String> explorationWorkIds = const <String>{},
     Map<String, double>? tagWeights,
     Map<String, double>? voiceActorWeights,
+    Map<String, double>? circleWeights,
   }) {
     final request = AsmrRecommendationRankRequest(
       candidates: candidates,
@@ -132,6 +148,7 @@ class AsmrRecommendationEngine {
       explorationWorkIds: explorationWorkIds,
       tagWeights: tagWeights,
       voiceActorWeights: voiceActorWeights,
+      circleWeights: circleWeights,
     );
     return compute(rankAsmrRecommendations, request);
   }
@@ -146,6 +163,7 @@ class AsmrRecommendationEngine {
     Set<String> explorationWorkIds = const <String>{},
     Map<String, double>? tagWeights,
     Map<String, double>? voiceActorWeights,
+    Map<String, double>? circleWeights,
   }) {
     final profile = _RecommendationProfile.build(
       localTracks: localTracks,
@@ -153,6 +171,7 @@ class AsmrRecommendationEngine {
       historyWorks: historyWorks,
       tagWeights: tagWeights,
       voiceActorWeights: voiceActorWeights,
+      circleWeights: circleWeights,
     );
     final stats = _CandidateStats.build(candidates);
     final scored = <_ScoredWork>[
@@ -352,6 +371,7 @@ class AsmrRecommendationRankRequest {
     this.explorationWorkIds = const <String>{},
     this.tagWeights,
     this.voiceActorWeights,
+    this.circleWeights,
   });
 
   final List<AsmrWork> candidates;
@@ -363,6 +383,7 @@ class AsmrRecommendationRankRequest {
   final Set<String> explorationWorkIds;
   final Map<String, double>? tagWeights;
   final Map<String, double>? voiceActorWeights;
+  final Map<String, double>? circleWeights;
 }
 
 List<AsmrWork> rankAsmrRecommendations(AsmrRecommendationRankRequest request) {
@@ -376,6 +397,7 @@ List<AsmrWork> rankAsmrRecommendations(AsmrRecommendationRankRequest request) {
     explorationWorkIds: request.explorationWorkIds,
     tagWeights: request.tagWeights,
     voiceActorWeights: request.voiceActorWeights,
+    circleWeights: request.circleWeights,
   );
 }
 
@@ -415,6 +437,7 @@ class _RecommendationProfile {
     required List<AsmrWork> historyWorks,
     Map<String, double>? tagWeights,
     Map<String, double>? voiceActorWeights,
+    Map<String, double>? circleWeights,
   }) {
     final builder = _RecommendationProfileBuilder();
     final favoriteWeight = favoriteWorks.isEmpty
@@ -440,6 +463,9 @@ class _RecommendationProfile {
     }
     if (voiceActorWeights != null) {
       builder.voiceActorWeights.addAll(voiceActorWeights);
+    }
+    if (circleWeights != null) {
+      builder.circleWeights.addAll(circleWeights);
     }
     return builder.build();
   }

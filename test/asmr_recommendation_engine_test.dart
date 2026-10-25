@@ -7,6 +7,45 @@ void main() {
   const engine = AsmrRecommendationEngine();
 
   test(
+    'circle interests affect daily and asynchronous recommendations',
+    () async {
+      final candidates = [
+        for (var i = 0; i < 50; i++)
+          work(
+            id: i + 1,
+            title: 'Work $i',
+            circleName: i < 20 ? 'Favorite' : 'Other $i',
+          ),
+      ];
+      final daily = engine.rankDaily(
+        candidates: candidates,
+        daySeed: 20261025,
+        circleWeights: {' favorite ': 1},
+      );
+      expect(
+        daily.where((work) => work.circleName == 'Favorite'),
+        hasLength(20),
+      );
+      final ranked = await engine.rankAsync(
+        candidates: candidates,
+        localTracks: [],
+        favoriteWorks: [],
+        historyWorks: [],
+        circleWeights: {'favorite': 1},
+      );
+      expect(ranked.first.circleName, 'Favorite');
+      final other = engine.rank(
+        candidates: candidates,
+        localTracks: [],
+        favoriteWorks: [],
+        historyWorks: [],
+        circleWeights: {'other 49': 1},
+      );
+      expect(other.first.circleName, 'Other 49');
+    },
+  );
+
+  test(
     'manual and listened voice interests affect both recommendation styles',
     () async {
       final candidates = [
@@ -24,7 +63,7 @@ void main() {
       );
       expect(
         daily.where((w) => w.voiceActors.contains('Favorite')),
-        hasLength(12),
+        hasLength(20),
       );
       final ranked = await engine.rankAsync(
         candidates: candidates,
@@ -45,73 +84,206 @@ void main() {
     },
   );
 
-  test('daily discovery balances interest matches with broad exploration', () {
+  test('daily recommendations only include interested voices or circles', () {
     final candidates = [
-      for (var id = 0; id < 100; id++)
-        work(
-          id: id + 1,
-          title: 'Work $id',
-          tags: [id < 40 ? 'SLEEP' : 'Explore $id'],
-        ),
+      work(id: 1, title: 'Voice', voiceActors: ['Mika']),
+      work(id: 2, title: 'Circle', circleName: 'Dream'),
+      work(id: 3, title: 'Both', voiceActors: ['Mika'], circleName: 'Dream'),
+      work(id: 4, title: 'Tag only', tags: ['Sleep'], rating: 5),
+      work(id: 5, title: 'Other creator', voiceActors: ['Other']),
     ];
     final ranking = engine.rankDaily(
       candidates: candidates,
       daySeed: 20261024,
-      tagWeights: {' sleep ': 5},
+      voiceActorWeights: {' mika ': 1},
+      circleWeights: {' DREAM ': 1},
     );
-    expect(ranking, hasLength(20));
-    expect(ranking.where((w) => w.tags.contains('SLEEP')), hasLength(12));
-    expect(ranking.where((w) => !w.tags.contains('SLEEP')), hasLength(8));
+    expect(ranking.map((work) => work.id), unorderedEquals([1, 2, 3]));
     expect(
       engine
           .rankDaily(
             candidates: candidates.reversed.toList(),
             daySeed: 20261024,
-            tagWeights: {' sleep ': 5},
+            voiceActorWeights: {' mika ': 1},
+            circleWeights: {' DREAM ': 1},
           )
           .map((w) => w.workKey),
       ranking.map((w) => w.workKey),
     );
-    final otherInterest = engine.rankDaily(
-      candidates: candidates,
-      daySeed: 20261024,
-      tagWeights: {'Explore 50': 1},
-    );
-    expect(otherInterest.first.tags, ['Explore 50']);
   });
 
   test(
-    'daily discovery fills twenty when an interest or exploration pool is small',
+    'daily recommendations put new releases first and fill with old works',
     () {
-      final candidates = [
-        for (var id = 0; id < 40; id++)
-          work(
-            id: id + 1,
-            title: 'Work $id',
-            tags: [id < 4 ? 'Sleep' : 'Other'],
-          ),
-      ];
       final ranked = engine.rankDaily(
-        candidates: candidates,
-        daySeed: 5,
-        tagWeights: {'Sleep': 1},
+        candidates: [
+          for (var id = 1; id <= 25; id++)
+            work(
+              id: id,
+              title: 'Old $id',
+              voiceActors: ['Mika'],
+              releaseDate: DateTime(2020, 1, id),
+              rating: 5,
+            ),
+          work(
+            id: 26,
+            title: 'Recent',
+            voiceActors: ['Mika'],
+            releaseDate: DateTime(2026, 10),
+          ),
+          work(
+            id: 27,
+            title: 'Newest',
+            voiceActors: ['Mika'],
+            releaseDate: DateTime(2026, 10, 25),
+          ),
+        ],
+        daySeed: 20261025,
+        voiceActorWeights: {'Mika': 1},
       );
       expect(ranked, hasLength(20));
-      expect(ranked.where((w) => w.tags.contains('Sleep')), hasLength(4));
-      final allMatches = engine.rankDaily(
-        candidates: candidates,
-        daySeed: 5,
-        tagWeights: {'Sleep': 1, 'Other': 1},
-      );
-      expect(allMatches, hasLength(20));
-      final noMatches = engine.rankDaily(
-        candidates: candidates,
-        daySeed: 5,
-        tagWeights: {'Missing': 1},
-      );
-      expect(noMatches, hasLength(20));
+      expect(ranked.take(2).map((work) => work.id), [27, 26]);
+      expect(ranked.skip(2).every((work) => work.id <= 25), isTrue);
     },
   );
+
+  test('daily new release priority survives yesterday repetition', () {
+    final newest = work(
+      id: 1,
+      title: 'Newest',
+      circleName: 'Dream',
+      releaseDate: DateTime(2026, 10, 25),
+    );
+    final ranked = engine.rankDaily(
+      candidates: [
+        newest,
+        work(
+          id: 2,
+          title: 'Earlier new work',
+          circleName: 'Dream',
+          releaseDate: DateTime(2026, 10, 24),
+          rating: 5,
+        ),
+        work(id: 3, title: 'Old work', circleName: 'Dream', rating: 5),
+      ],
+      daySeed: 20261025,
+      circleWeights: {'Dream': 1},
+      previousWorkKeys: {newest.workKey},
+    );
+    expect(ranked.map((work) => work.id), [1, 2, 3]);
+  });
+
+  test('daily uses creation date only when release date is absent', () {
+    final ranked = engine.rankDaily(
+      candidates: [
+        work(id: 1, title: 'No date', circleName: 'Dream', rating: 5),
+        work(
+          id: 2,
+          title: 'Recent upload of old release',
+          circleName: 'Dream',
+          releaseDate: DateTime(2020),
+          createDate: DateTime(2026, 10, 25),
+          rating: 5,
+        ),
+        work(
+          id: 3,
+          title: 'Creation date fallback',
+          circleName: 'Dream',
+          createDate: DateTime(2026, 10, 24),
+        ),
+      ],
+      daySeed: 20261025,
+      circleWeights: {'Dream': 1},
+    );
+    expect(ranked.first.id, 3);
+    expect(ranked.skip(1).map((work) => work.id), unorderedEquals([1, 2]));
+  });
+
+  test(
+    'daily new release range excludes future and older than thirty days',
+    () {
+      final ranked = engine.rankDaily(
+        candidates: [
+          work(
+            id: 1,
+            title: 'Future',
+            releaseDate: DateTime(2026, 10, 26),
+            createDate: DateTime(2026, 10, 25),
+            rating: 5,
+          ),
+          work(
+            id: 2,
+            title: 'Thirty one days old',
+            releaseDate: DateTime(2026, 9, 24),
+            rating: 5,
+          ),
+          work(
+            id: 3,
+            title: 'Thirty days old',
+            releaseDate: DateTime(2026, 9, 25),
+          ),
+          work(
+            id: 4,
+            title: 'Released today at a later hour',
+            releaseDate: DateTime(2026, 10, 25, 23, 59),
+          ),
+        ],
+        daySeed: 20261025,
+        circleWeights: {'Circle': 1},
+      );
+      expect(ranked.take(2).map((work) => work.id), [4, 3]);
+      expect(ranked.skip(2).map((work) => work.id), unorderedEquals([1, 2]));
+    },
+  );
+
+  test('daily does not fill missing creator matches with unrelated works', () {
+    final candidates = [
+      for (var id = 1; id <= 40; id++)
+        work(
+          id: id,
+          title: 'Work $id',
+          voiceActors: [id <= 4 ? 'Mika' : 'Other'],
+          tags: ['Sleep'],
+        ),
+    ];
+    final ranked = engine.rankDaily(
+      candidates: candidates,
+      daySeed: 5,
+      voiceActorWeights: {'Mika': 1},
+    );
+    expect(ranked, hasLength(4));
+    expect(ranked.every((work) => work.voiceActors.contains('Mika')), isTrue);
+    expect(
+      engine.rankDaily(
+        candidates: candidates,
+        daySeed: 5,
+        circleWeights: {'Missing': 1},
+      ),
+      isEmpty,
+    );
+  });
+
+  test('daily cold start ignores tags and nonpositive creator interests', () {
+    final candidates = [
+      for (var id = 1; id <= 40; id++)
+        work(id: id, title: 'Work $id', tags: ['Sleep']),
+    ];
+    final ranked = engine.rankDaily(candidates: candidates, daySeed: 5);
+    final withoutTags = engine.rankDaily(
+      candidates: [
+        for (final candidate in candidates)
+          work(id: candidate.id, title: candidate.title),
+      ],
+      daySeed: 5,
+      voiceActorWeights: {'Mika': 0, ' ': 1},
+      circleWeights: {'Dream': -1, '': 1},
+    );
+    expect(ranked, hasLength(20));
+    expect(
+      ranked.map((work) => work.workKey),
+      withoutTags.map((work) => work.workKey),
+    );
+  });
 
   test(
     'daily discovery deduplicates, keeps quality and defaults to twenty',
@@ -197,7 +369,7 @@ void main() {
     },
   );
 
-  for (final dimension in ['tag', 'voice', 'circle']) {
+  for (final dimension in ['voice', 'circle']) {
     test(
       'daily discovery spreads across $dimension instead of one large group',
       () {
@@ -206,7 +378,6 @@ void main() {
             work(
               id: id,
               title: 'Work $id',
-              tags: dimension == 'tag' ? ['Tag ${id <= 40 ? 0 : id}'] : [],
               voiceActors: dimension == 'voice'
                   ? ['Voice ${id <= 40 ? 0 : id}']
                   : [],

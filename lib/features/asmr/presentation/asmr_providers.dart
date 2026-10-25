@@ -19,52 +19,56 @@ final asmrLibraryControllerProvider = Provider<AsmrLibraryController?>((ref) {
 });
 
 final asmrTagInterestsProvider =
-    StreamProvider.autoDispose<List<AsmrTagInterest>>((ref) {
-      final controller = ref.watch(asmrLibraryControllerProvider);
-      if (controller == null) return Stream.value(const []);
-      unawaited(
-        controller.ensureTagInterests().catchError((
-          Object error,
-          StackTrace stack,
-        ) {
-          AppLogService.warning(
-            'asmr_tag_interests_load_failed',
-            error: error,
-            stackTrace: stack,
-          );
-        }),
-      );
-      return interactionDeferredListenableStream(
-        source: controller,
-        read: () => controller.interestTags,
-        deferInitialRead: true,
-        structural: true,
-      );
-    });
+    StreamProvider.autoDispose<List<AsmrTagInterest>>(
+      (ref) =>
+          _interestStream(ref, (controller) => controller.interestTags, 'tag'),
+    );
 
 final asmrVoiceActorInterestsProvider =
-    StreamProvider.autoDispose<List<AsmrTagInterest>>((ref) {
-      final controller = ref.watch(asmrLibraryControllerProvider);
-      if (controller == null) return Stream.value(const []);
-      unawaited(
-        controller.ensureTagInterests().catchError((
-          Object error,
-          StackTrace stack,
-        ) {
-          AppLogService.warning(
-            'asmr_voice_interests_load_failed',
-            error: error,
-            stackTrace: stack,
-          );
-        }),
-      );
-      return interactionDeferredListenableStream(
-        source: controller,
-        read: () => controller.voiceActorInterests,
-        deferInitialRead: true,
-        structural: true,
-      );
-    });
+    StreamProvider.autoDispose<List<AsmrTagInterest>>(
+      (ref) => _interestStream(
+        ref,
+        (controller) => controller.voiceActorInterests,
+        'voice',
+      ),
+    );
+
+final asmrCircleInterestsProvider =
+    StreamProvider.autoDispose<List<AsmrTagInterest>>(
+      (ref) => _interestStream(
+        ref,
+        (controller) => controller.circleInterests,
+        'circle',
+      ),
+    );
+
+Stream<List<AsmrTagInterest>> _interestStream(
+  Ref ref,
+  List<AsmrTagInterest> Function(AsmrLibraryController) read,
+  String kind,
+) async* {
+  final controller = ref.watch(asmrLibraryControllerProvider);
+  if (controller == null) {
+    yield const [];
+    return;
+  }
+  try {
+    await controller.ensureTagInterests();
+  } catch (error, stack) {
+    AppLogService.warning(
+      'asmr_${kind}_interests_load_failed',
+      error: error,
+      stackTrace: stack,
+    );
+    rethrow;
+  }
+  yield* interactionDeferredListenableStream(
+    source: controller,
+    read: () => read(controller),
+    deferInitialRead: true,
+    structural: true,
+  );
+}
 
 final asmrWorkFinderProvider =
     Provider<

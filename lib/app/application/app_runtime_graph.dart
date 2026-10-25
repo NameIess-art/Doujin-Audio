@@ -374,14 +374,12 @@ ProductionAppRuntime createProductionAppRuntime({
     readUsage: nativePlaybackRepository.readUsage,
     acknowledgeUsage: nativePlaybackRepository.acknowledgeUsage,
     resolveTrack: (path) => runtimeGraph.audioPaths.trackByPath(path),
-    resolveLocalVoiceActors: (track) async {
+    resolveLocalAudioDetail: (track) async {
       final target = libraryFacade.audioDetailTargetForTrack(track);
       final cached =
           libraryFacade.resolvedAudioDetail(target) ??
           libraryFacade.categorySnapshot?.detailFor(target);
-      final detail =
-          cached ?? (await libraryFacade.loadAudioDetail(target)).detail;
-      return detail.voiceActors;
+      return cached ?? (await libraryFacade.loadAudioDetail(target)).detail;
     },
     recordInterests: ({required batchId, required contributions}) async {
       await asmrLibraryController.initialize(
@@ -396,6 +394,11 @@ ProductionAppRuntime createProductionAppRuntime({
     },
     recordVoiceActorInterests: ({required batchId, required contributions}) =>
         asmrLibraryController.recordVoiceActorListeningBatch(
+          batchId: batchId,
+          contributions: contributions,
+        ),
+    recordCircleInterests: ({required batchId, required contributions}) =>
+        asmrLibraryController.recordCircleListeningBatch(
           batchId: batchId,
           contributions: contributions,
         ),

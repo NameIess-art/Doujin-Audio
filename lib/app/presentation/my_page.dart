@@ -47,6 +47,7 @@ class MyPage extends ConsumerStatefulWidget {
 class _MyPageState extends ConsumerState<MyPage>
     with MainTabStateMixin<MyPage> {
   final _scroll = ScrollController();
+  MyInterestType _interestType = MyInterestType.tags;
   late final _refreshCommitKey =
       'my_activity_refresh_${identityHashCode(this)}';
   @override
@@ -81,16 +82,12 @@ class _MyPageState extends ConsumerState<MyPage>
     super.dispose();
   }
 
-  void _openTags(bool excluded, {bool voiceActors = false}) =>
-      Navigator.of(context).push<void>(
-        buildAppPageRoute<void>(
-          context: context,
-          child: MyTagManagementPage(
-            excluded: excluded,
-            voiceActors: voiceActors,
-          ),
-        ),
-      );
+  void _openTags(bool excluded) => Navigator.of(context).push<void>(
+    buildAppPageRoute<void>(
+      context: context,
+      child: MyTagManagementPage(excluded: excluded, type: _interestType),
+    ),
+  );
 
   Future<void> _setChartStyle(ListeningChartStyle style) async {
     try {
@@ -179,25 +176,13 @@ class _MyPageState extends ConsumerState<MyPage>
       String title,
       Widget child, {
       Widget? trailing,
-      String? titleNote,
+      Widget? titleWidget,
       bool skeleton = false,
+      double headerSpacing = 4,
     }) {
-      final titleLabel = Wrap(
-        spacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          if (titleNote != null)
-            Text(
-              titleNote,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-              ),
-            ),
-        ],
-      );
+      final titleLabel =
+          titleWidget ??
+          Text(title, style: Theme.of(context).textTheme.titleMedium);
       return Card(
         margin: const EdgeInsets.only(bottom: 16),
         child: Padding(
@@ -236,7 +221,7 @@ class _MyPageState extends ConsumerState<MyPage>
                   ],
                 ),
               ),
-              const SizedBox(height: 4),
+              SizedBox(height: headerSpacing),
               child,
             ],
           ),
@@ -244,46 +229,90 @@ class _MyPageState extends ConsumerState<MyPage>
       );
     }
 
-    Widget interestSection({bool voiceActors = false}) => section(
-      i18n.tr(voiceActors ? 'my_voice_interests' : 'my_interests'),
-      controller == null
-          ? Text(
-              i18n.tr(
-                voiceActors ? 'my_no_voice_interests' : 'my_no_interests',
+    Widget interestTabs() => Wrap(
+      spacing: 8,
+      children: [
+        for (final type in MyInterestType.values)
+          Semantics(
+            selected: _interestType == type,
+            child: TextButton(
+              key: ValueKey(
+                'my-interest-tab-${type == MyInterestType.voiceActors ? 'voices' : type.name}',
               ),
-            )
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                textStyle: Theme.of(context).textTheme.titleMedium,
+                foregroundColor: _interestType == type
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                backgroundColor: _interestType == type
+                    ? Theme.of(context).colorScheme.secondaryContainer
+                    : null,
+              ),
+              onPressed: () {
+                if (_interestType == type) return;
+                setState(() => _interestType = type);
+              },
+              child: Text(i18n.tr(type.titleKey)),
+            ),
+          ),
+      ],
+    );
+    final interestKeyPrefix = switch (_interestType) {
+      MyInterestType.tags => '',
+      MyInterestType.voiceActors => 'voice-',
+      MyInterestType.circles => 'circle-',
+    };
+    Widget interestSection() => section(
+      i18n.tr('my_interests'),
+      controller == null
+          ? Text(i18n.tr(_interestType.emptyKey))
           : Consumer(
               builder: (context, ref, _) {
-                final interests =
-                    ref
-                        .watch(
-                          voiceActors
-                              ? asmrVoiceActorInterestsProvider
-                              : asmrTagInterestsProvider,
-                        )
-                        .value ??
-                    const [];
+                final tags = ref.watch(asmrTagInterestsProvider);
+                final voices = ref.watch(asmrVoiceActorInterestsProvider);
+                final circles = ref.watch(asmrCircleInterestsProvider);
+                final state = switch (_interestType) {
+                  MyInterestType.tags => tags,
+                  MyInterestType.voiceActors => voices,
+                  MyInterestType.circles => circles,
+                };
+                if (!state.hasValue) {
+                  if (state.hasError) {
+                    return TextButton(
+                      onPressed: () => ref.invalidate(switch (_interestType) {
+                        MyInterestType.tags => asmrTagInterestsProvider,
+                        MyInterestType.voiceActors =>
+                          asmrVoiceActorInterestsProvider,
+                        MyInterestType.circles => asmrCircleInterestsProvider,
+                      }),
+                      child: Text(i18n.tr('my_retry')),
+                    );
+                  }
+                  return const ShimmerLoader(
+                    child: ShimmerContainer(
+                      width: 120,
+                      height: 32,
+                      borderRadius: 8,
+                    ),
+                  );
+                }
+                final interests = state.requireValue;
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (interests.isEmpty)
-                      Text(
-                        i18n.tr(
-                          voiceActors
-                              ? 'my_no_voice_interests'
-                              : 'my_no_interests',
-                        ),
-                      ),
+                      Text(i18n.tr(_interestType.emptyKey)),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        for (final interest in interests.take(
-                          voiceActors ? 10 : 20,
-                        ))
+                        for (final interest in interests.take(20))
                           InputChip(
                             key: ValueKey(
-                              'my-${voiceActors ? 'voice-' : ''}interest-${interest.tag.key}',
+                              'my-${interestKeyPrefix}interest-${interest.tag.key}',
                             ),
                             padding: const EdgeInsets.symmetric(
                               horizontal: 4,
@@ -321,38 +350,29 @@ class _MyPageState extends ConsumerState<MyPage>
                           ),
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
                       runSpacing: 4,
                       children: [
                         OutlinedButton.icon(
-                          onPressed: () =>
-                              _openTags(false, voiceActors: voiceActors),
+                          onPressed: () => _openTags(false),
                           icon: const Icon(Icons.add_rounded),
-                          label: Text(
-                            i18n.tr(
-                              voiceActors
-                                  ? 'my_add_voice_interest'
-                                  : 'my_add_interest',
-                            ),
-                          ),
+                          label: Text(i18n.tr(_interestType.addKey)),
                         ),
-                        if (!voiceActors)
-                          OutlinedButton.icon(
-                            onPressed: () => _openTags(true),
-                            icon: const Icon(Icons.block_rounded),
-                            label: Text(i18n.tr('my_excluded_tags')),
-                          ),
+                        OutlinedButton.icon(
+                          onPressed: () => _openTags(true),
+                          icon: const Icon(Icons.block_rounded),
+                          label: Text(i18n.tr(_interestType.excludedKey)),
+                        ),
                       ],
                     ),
                   ],
                 );
               },
             ),
-      titleNote: i18n.tr(
-        voiceActors ? 'my_voice_interest_limit' : 'my_interest_limit',
-      ),
+      titleWidget: interestTabs(),
+      headerSpacing: 12,
     );
 
     Widget pageList(
@@ -369,7 +389,7 @@ class _MyPageState extends ConsumerState<MyPage>
         16,
         MobileOverlayInset.of(context) + 16,
       ),
-      // There are only five bounded sections. Recreating an offscreen section
+      // There are only four bounded sections. Recreating an offscreen section
       // would rescan chart history and restart artwork, titles and taste reads
       // as it re-enters the viewport during a drag.
       children: [
@@ -441,8 +461,8 @@ class _MyPageState extends ConsumerState<MyPage>
         ),
       ),
     );
-    Widget interestSkeleton({bool voiceActors = false}) => section(
-      i18n.tr(voiceActors ? 'my_voice_interests' : 'my_interests'),
+    Widget interestSkeleton() => section(
+      i18n.tr('my_interests'),
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -450,7 +470,7 @@ class _MyPageState extends ConsumerState<MyPage>
             spacing: 8,
             runSpacing: 8,
             children: List.generate(
-              voiceActors ? 10 : 20,
+              20,
               (index) => SizedBox(
                 height: 40,
                 child: Center(
@@ -464,26 +484,20 @@ class _MyPageState extends ConsumerState<MyPage>
               ),
             ),
           ),
-          const SizedBox(height: 4),
-          Wrap(
+          const SizedBox(height: 12),
+          const Wrap(
             spacing: 8,
             runSpacing: 4,
             children: [
-              const ShimmerContainer(width: 160, height: 40, borderRadius: 20),
-              if (!voiceActors)
-                const ShimmerContainer(
-                  width: 192,
-                  height: 40,
-                  borderRadius: 20,
-                ),
+              ShimmerContainer(width: 160, height: 40, borderRadius: 20),
+              ShimmerContainer(width: 192, height: 40, borderRadius: 20),
             ],
           ),
         ],
       ),
       skeleton: true,
-      titleNote: i18n.tr(
-        voiceActors ? 'my_voice_interest_limit' : 'my_interest_limit',
-      ),
+      titleWidget: interestTabs(),
+      headerSpacing: 12,
     );
 
     final skeleton = Builder(
@@ -504,7 +518,6 @@ class _MyPageState extends ConsumerState<MyPage>
                 skeleton: true,
               ),
               interestSkeleton(),
-              interestSkeleton(voiceActors: true),
             ], scrollable: false),
           ),
         ),
@@ -546,7 +559,6 @@ class _MyPageState extends ConsumerState<MyPage>
                     const _DailyRecommendations(),
                   ),
                   interestSection(),
-                  interestSection(voiceActors: true),
                 ], controller: _scroll),
               ),
             ),

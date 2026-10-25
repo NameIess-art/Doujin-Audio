@@ -12,16 +12,64 @@ import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/scroll_activity_gate.dart';
 import '../../core/widgets/top_page_header.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
+import '../../features/asmr/application/asmr_library_controller.dart';
 
-/// Both preference editors share the same searchable catalog and state owner.
+enum MyInterestType {
+  tags(
+    'my_interests',
+    'my_no_interests',
+    'my_add_interest',
+    'my_excluded_tags',
+    'my_listened_tag',
+    'my_catalog',
+    'my_search_tags',
+  ),
+  voiceActors(
+    'my_voice_interests',
+    'my_no_voice_interests',
+    'my_add_voice_interest',
+    'my_excluded_voice_actors',
+    'my_listened_voice_actor',
+    'my_voice_catalog',
+    'my_voice_search',
+  ),
+  circles(
+    'my_circle_interests',
+    'my_no_circle_interests',
+    'my_add_circle_interest',
+    'my_excluded_circles',
+    'my_listened_circle',
+    'my_circle_catalog',
+    'my_circle_search',
+  );
+
+  const MyInterestType(
+    this.titleKey,
+    this.emptyKey,
+    this.addKey,
+    this.excludedKey,
+    this.listenedKey,
+    this.catalogKey,
+    this.searchKey,
+  );
+  final String titleKey;
+  final String emptyKey;
+  final String addKey;
+  final String excludedKey;
+  final String listenedKey;
+  final String catalogKey;
+  final String searchKey;
+}
+
+/// All interest editors share the searchable catalog and draft confirmation.
 class MyTagManagementPage extends ConsumerStatefulWidget {
   const MyTagManagementPage({
     super.key,
     required this.excluded,
-    this.voiceActors = false,
-  }) : assert(!voiceActors || !excluded);
+    this.type = MyInterestType.tags,
+  });
   final bool excluded;
-  final bool voiceActors;
+  final MyInterestType type;
 
   @override
   ConsumerState<MyTagManagementPage> createState() =>
@@ -37,12 +85,15 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
   void initState() {
     super.initState();
     final controller = ref.read(asmrLibraryControllerProvider);
-    unawaited(
-      widget.voiceActors
-          ? controller?.ensureVoiceActorCatalog()
-          : controller?.ensureTagCatalog(),
-    );
+    if (controller != null) unawaited(_loadCatalog(controller));
   }
+
+  Future<void> _loadCatalog(AsmrLibraryController controller) =>
+      switch (widget.type) {
+        MyInterestType.tags => controller.ensureTagCatalog(),
+        MyInterestType.voiceActors => controller.ensureVoiceActorCatalog(),
+        MyInterestType.circles => controller.ensureCircleCatalog(),
+      };
 
   @override
   void dispose() {
@@ -55,14 +106,20 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     if (controller == null || _saving) return;
     setState(() => _saving = true);
     try {
-      if (widget.voiceActors) {
-        await controller.applyVoiceActorSelections(changes: _changes);
-      } else {
-        await controller.applyTagSelections(
+      await switch (widget.type) {
+        MyInterestType.tags => controller.applyTagSelections(
           excluded: widget.excluded,
           changes: _changes,
-        );
-      }
+        ),
+        MyInterestType.voiceActors => controller.applyVoiceActorSelections(
+          excluded: widget.excluded,
+          changes: _changes,
+        ),
+        MyInterestType.circles => controller.applyCircleSelections(
+          excluded: widget.excluded,
+          changes: _changes,
+        ),
+      };
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
       if (mounted) showAppSnackBar(context, error.toString());
@@ -88,47 +145,60 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
         searchPadding.vertical +
         AppPageHeaderMetrics.firstContentSpacing;
     final content = controller == null
-        ? Center(
-            child: Text(
-              i18n.tr(
-                widget.voiceActors
-                    ? 'my_voice_catalog_incomplete'
-                    : 'my_catalog_incomplete',
-              ),
-            ),
-          )
+        ? Center(child: Text(i18n.tr('${widget.type.catalogKey}_incomplete')))
         : ListenableBuilder(
             listenable: controller,
             builder: (context, _) {
               final listened = {
-                for (final interest
-                    in widget.voiceActors
-                        ? controller.listenedVoiceActorInterests
-                        : controller.listenedTagInterests)
+                for (final interest in switch (widget.type) {
+                  MyInterestType.tags => controller.listenedTagInterests,
+                  MyInterestType.voiceActors =>
+                    controller.listenedVoiceActorInterests,
+                  MyInterestType.circles => controller.listenedCircleInterests,
+                })
                   interest.tag.key: interest.weight,
               };
               final selected = widget.excluded
-                  ? controller.excludedTagKeys
+                  ? switch (widget.type) {
+                      MyInterestType.tags => controller.excludedTagKeys,
+                      MyInterestType.voiceActors =>
+                        controller.excludedVoiceActorKeys,
+                      MyInterestType.circles => controller.excludedCircleKeys,
+                    }
                   : {
-                      ...(widget.voiceActors
-                          ? controller.manualInterestVoiceActorKeys
-                          : controller.manualInterestTagKeys),
+                      ...switch (widget.type) {
+                        MyInterestType.tags => controller.manualInterestTagKeys,
+                        MyInterestType.voiceActors =>
+                          controller.manualInterestVoiceActorKeys,
+                        MyInterestType.circles =>
+                          controller.manualInterestCircleKeys,
+                      },
                       ...listened.keys,
                     };
               final query = _search.text.trim().toLowerCase();
-              final loading = widget.voiceActors
-                  ? controller.isLoadingVoiceActorCatalog
-                  : controller.isLoadingTagCatalog;
-              final complete = widget.voiceActors
-                  ? controller.voiceActorCatalogComplete
-                  : controller.tagCatalogComplete;
-              final error = widget.voiceActors
-                  ? controller.voiceActorCatalogError
-                  : controller.tagCatalogError;
+              final (loading, complete, error) = switch (widget.type) {
+                MyInterestType.tags => (
+                  controller.isLoadingTagCatalog,
+                  controller.tagCatalogComplete,
+                  controller.tagCatalogError,
+                ),
+                MyInterestType.voiceActors => (
+                  controller.isLoadingVoiceActorCatalog,
+                  controller.voiceActorCatalogComplete,
+                  controller.voiceActorCatalogError,
+                ),
+                MyInterestType.circles => (
+                  controller.isLoadingCircleCatalog,
+                  controller.circleCatalogComplete,
+                  controller.circleCatalogError,
+                ),
+              };
               final tags =
-                  (widget.voiceActors
-                          ? controller.allVoiceActors
-                          : controller.allTags)
+                  (switch (widget.type) {
+                        MyInterestType.tags => controller.allTags,
+                        MyInterestType.voiceActors => controller.allVoiceActors,
+                        MyInterestType.circles => controller.allCircles,
+                      })
                       .where(
                         (tag) =>
                             query.isEmpty ||
@@ -164,22 +234,14 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                             Expanded(
                               child: Text(
                                 i18n.tr(
-                                  error == null
-                                      ? (widget.voiceActors
-                                            ? 'my_voice_catalog_incomplete'
-                                            : 'my_catalog_incomplete')
-                                      : (widget.voiceActors
-                                            ? 'my_voice_catalog_error'
-                                            : 'my_catalog_error'),
+                                  '${widget.type.catalogKey}_${error == null ? 'incomplete' : 'error'}',
                                 ),
                               ),
                             ),
                             TextButton(
                               onPressed: loading
                                   ? null
-                                  : () => widget.voiceActors
-                                        ? controller.ensureVoiceActorCatalog()
-                                        : controller.ensureTagCatalog(),
+                                  : () => _loadCatalog(controller),
                               child: Text(i18n.tr('my_retry')),
                             ),
                           ],
@@ -202,13 +264,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                           title: Text(tag.name),
                           subtitle:
                               !widget.excluded && listened.containsKey(tag.key)
-                              ? Text(
-                                  i18n.tr(
-                                    widget.voiceActors
-                                        ? 'my_listened_voice_actor'
-                                        : 'my_listened_tag',
-                                  ),
-                                )
+                              ? Text(i18n.tr(widget.type.listenedKey))
                               : null,
                           value:
                               (!widget.excluded &&
@@ -305,17 +361,18 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                   right: 0,
                   child: TopPageHeader(
                     title: i18n.tr(
-                      widget.voiceActors
-                          ? 'my_add_voice_interest'
-                          : (widget.excluded
-                                ? 'my_excluded_tags'
-                                : 'my_add_interest'),
+                      widget.excluded
+                          ? widget.type.excludedKey
+                          : widget.type.addKey,
                     ),
-                    icon: widget.voiceActors
-                        ? Icons.record_voice_over_rounded
-                        : widget.excluded
+                    icon: widget.excluded
                         ? Icons.block_rounded
-                        : Icons.sell_outlined,
+                        : switch (widget.type) {
+                            MyInterestType.tags => Icons.sell_outlined,
+                            MyInterestType.voiceActors =>
+                              Icons.record_voice_over_rounded,
+                            MyInterestType.circles => Icons.groups_rounded,
+                          },
                     leading: const BackButton(),
                     additionalChild: Padding(
                       padding: searchPadding,
@@ -330,11 +387,7 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
                             fontSize: 14,
                           ),
                           decoration: InputDecoration(
-                            hintText: i18n.tr(
-                              widget.voiceActors
-                                  ? 'my_voice_search'
-                                  : 'my_search_tags',
-                            ),
+                            hintText: i18n.tr(widget.type.searchKey),
                             hintStyle: theme.textTheme.bodyMedium?.copyWith(
                               color: cs.onSurfaceVariant,
                               fontSize: 14,

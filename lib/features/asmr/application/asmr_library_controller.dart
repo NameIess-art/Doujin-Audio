@@ -1,5 +1,6 @@
 import '../domain/asmr_tag_interest.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/persistence/persisted_state_reloader.dart';
@@ -26,16 +27,20 @@ export '../domain/asmr_tag_interest.dart';
 export '../domain/asmr_search_suggestions.dart';
 export 'asmr_work_content_mapping.dart' show collectAsmrWorkTextFiles;
 
+enum _CreatorInterest { voiceActor, circle }
+
 typedef _AsmrSyncRequestKey = ({int authEpoch, String token});
 
 List<MusicTrack> _buildPlayableTracks(
   ({AsmrWork work, List<AsmrTrackFile> tree}) input,
 ) => flattenAsmrPlayableTracks(input.work, input.tree);
 
-(AsmrTagPreferences, AsmrTagPreferences) _deriveTagInterests(
+(AsmrTagPreferences, AsmrTagPreferences, AsmrTagPreferences)
+_deriveTagInterests(
   ({
     AsmrTagPreferences state,
     AsmrTagPreferences voices,
+    AsmrTagPreferences circles,
     List<MusicTrack> tracks,
     List<AsmrWork> favorites,
     List<AsmrWork> history,
@@ -44,6 +49,7 @@ List<MusicTrack> _buildPlayableTracks(
 ) {
   final state = AsmrTagPreferences.fromJson(input.state.toJson());
   final voices = AsmrTagPreferences.fromJson(input.voices.toJson());
+  final circles = AsmrTagPreferences.fromJson(input.circles.toJson());
   final tagGroups = input.tracks
       .map((track) => track.tags)
       .followedBy(input.favorites.map((work) => work.tags))
@@ -71,7 +77,14 @@ List<MusicTrack> _buildPlayableTracks(
       if (name.trim().isNotEmpty) voices.resolve(name);
     }
   }
-  return (state, voices);
+  final circleNames = input.tracks
+      .map((track) => track.remoteCircleName)
+      .followedBy(input.favorites.map((work) => work.circleName))
+      .followedBy(input.history.map((work) => work.circleName));
+  for (final name in circleNames) {
+    if (name.trim().isNotEmpty) circles.resolve(name);
+  }
+  return (state, voices, circles);
 }
 
 class AsmrLibraryController extends ChangeNotifier
@@ -88,6 +101,8 @@ class AsmrLibraryController extends ChangeNotifier
         _tagPreferences.recommendationWeights;
     _remoteCatalogService.voiceActorWeights = () =>
         _voiceActorPreferences.recommendationWeights;
+    _remoteCatalogService.circleWeights = () =>
+        _circlePreferences.recommendationWeights;
     _remoteCatalogService.prepareTagInterests = (tracks) =>
         ensureTagInterests(localTracks: tracks);
   }
@@ -110,26 +125,49 @@ class AsmrLibraryController extends ChangeNotifier
         category == AsmrCategoryType.favorites ? _favoriteWorks : _historyWorks,
     favoriteIds: () => _favoriteIds,
     isWorkAllowed: _isWorkAllowed,
-    hasExclusions: () => _tagPreferences.excluded.isNotEmpty,
+    hasExclusions: () =>
+        _tagPreferences.excluded.isNotEmpty ||
+        _voiceActorPreferences.excluded.isNotEmpty ||
+        _circlePreferences.excluded.isNotEmpty,
     currentContext: () => _categoryRequestContext,
   );
 
   AsmrTagPreferences _tagPreferences = AsmrTagPreferences();
-  AsmrTagPreferences _voiceActorPreferences = AsmrTagPreferences(limit: 10);
-  Future<void>? _voiceActorCatalogTask;
-  Object? _voiceActorCatalogError;
+  AsmrTagPreferences _voiceActorPreferences = AsmrTagPreferences();
+  AsmrTagPreferences _circlePreferences = AsmrTagPreferences();
+  final Map<_CreatorInterest, Future<void>> _creatorCatalogTasks = {};
+  final Map<_CreatorInterest, Object> _creatorCatalogErrors = {};
   List<AsmrTagInterest> get voiceActorInterests =>
       _voiceActorPreferences.interests;
   List<AsmrTagInterest> get listenedVoiceActorInterests =>
       _voiceActorPreferences.listenedInterests;
   Set<String> get manualInterestVoiceActorKeys =>
       Set.unmodifiable(_voiceActorPreferences.manualInterests);
+  Set<String> get excludedVoiceActorKeys =>
+      Set.unmodifiable(_voiceActorPreferences.excluded);
   List<AsmrTag> get allVoiceActors =>
       _voiceActorPreferences.tags.values.toList()
         ..sort((a, b) => a.name.compareTo(b.name));
   bool get voiceActorCatalogComplete => _voiceActorPreferences.catalogComplete;
-  bool get isLoadingVoiceActorCatalog => _voiceActorCatalogTask != null;
-  Object? get voiceActorCatalogError => _voiceActorCatalogError;
+  bool get isLoadingVoiceActorCatalog =>
+      _creatorCatalogTasks.containsKey(_CreatorInterest.voiceActor);
+  Object? get voiceActorCatalogError =>
+      _creatorCatalogErrors[_CreatorInterest.voiceActor];
+  List<AsmrTagInterest> get circleInterests => _circlePreferences.interests;
+  List<AsmrTagInterest> get listenedCircleInterests =>
+      _circlePreferences.listenedInterests;
+  Set<String> get manualInterestCircleKeys =>
+      Set.unmodifiable(_circlePreferences.manualInterests);
+  Set<String> get excludedCircleKeys =>
+      Set.unmodifiable(_circlePreferences.excluded);
+  List<AsmrTag> get allCircles =>
+      _circlePreferences.tags.values.toList()
+        ..sort((a, b) => a.name.compareTo(b.name));
+  bool get circleCatalogComplete => _circlePreferences.catalogComplete;
+  bool get isLoadingCircleCatalog =>
+      _creatorCatalogTasks.containsKey(_CreatorInterest.circle);
+  Object? get circleCatalogError =>
+      _creatorCatalogErrors[_CreatorInterest.circle];
   Future<void>? _tagInterestsTask;
   bool _tagInterestsReady = false;
   Future<void>? _tagCatalogTask;
@@ -262,17 +300,40 @@ class AsmrLibraryController extends ChangeNotifier
   String? _dailyRecommendationsDate;
   AsmrContentLanguage? _dailyRecommendationsLanguage;
   int _dailyRecommendationsVersion = 0;
+  String _dailyRecommendationsInterests = '';
   Future<void>? _dailyRecommendationsTask;
   String? _dailyRequestedDate;
   AsmrRequestCancellationToken? _dailyRecommendationsCancellation;
   Object? _dailyRecommendationsError;
-  List<AsmrWork> get dailyRecommendations => _dailyRecommendations
-      .where(_isWorkAllowed)
-      .take(20)
-      .toList(growable: false);
+  List<AsmrWork> get dailyRecommendations {
+    final voices = _voiceActorPreferences.recommendationWeights;
+    final circles = _circlePreferences.recommendationWeights;
+    return _dailyRecommendations
+        .where((work) {
+          if (!_isWorkAllowed(work)) return false;
+          return voices.isEmpty && circles.isEmpty ||
+              work.voiceActors.any(
+                (name) => voices.containsKey(normalizeAsmrTag(name)),
+              ) ||
+              circles.containsKey(normalizeAsmrTag(work.circleName));
+        })
+        .take(20)
+        .toList(growable: false);
+  }
+
   String? get dailyRecommendationsDate => _dailyRecommendationsDate;
   bool get isLoadingDailyRecommendations => _dailyRecommendationsTask != null;
   Object? get dailyRecommendationsError => _dailyRecommendationsError;
+
+  String get _dailyInterestSignature {
+    final voices = _voiceActorPreferences.recommendationWeights.keys.toList()
+      ..sort();
+    final circles = _circlePreferences.recommendationWeights.keys.toList()
+      ..sort();
+    return voices.isEmpty && circles.isEmpty
+        ? ''
+        : jsonEncode([voices, circles]);
+  }
 
   Future<void> ensureDailyRecommendations({DateTime? now}) {
     if (_disposed) return Future.value();
@@ -292,10 +353,14 @@ class AsmrLibraryController extends ChangeNotifier
     task = (() async {
       try {
         await initializeForVisiblePage();
+        await ensureTagInterests();
         cancellation.throwIfCancelled();
         final language = _contentLanguage;
+        final interests = _dailyInterestSignature;
         if (_dailyRecommendationsLanguage == language &&
-            _dailyRecommendationsVersion == 2 &&
+            _dailyRecommendationsVersion ==
+                AsmrPreferencesStore.dailyRecommendationsVersion &&
+            _dailyRecommendationsInterests == interests &&
             _dailyRecommendationsDate == date) {
           return;
         }
@@ -312,10 +377,15 @@ class AsmrLibraryController extends ChangeNotifier
         _dailyRecommendations = cached?.works ?? const [];
         _dailyRecommendationsDate = cached?.date;
         _dailyRecommendationsVersion = cached?.version ?? 0;
+        _dailyRecommendationsInterests = cached?.interests ?? '';
         _dailyRecommendationsError = null;
         notifyListeners();
-        if (cached?.date == date && cached?.version == 2) return;
-        await ensureTagInterests();
+        if (cached?.date == date &&
+            cached?.version ==
+                AsmrPreferencesStore.dailyRecommendationsVersion &&
+            cached?.interests == interests) {
+          return;
+        }
         cancellation.throwIfCancelled();
         final works = await _remoteCatalogService.loadDailyRecommendations(
           language: language,
@@ -331,6 +401,7 @@ class AsmrLibraryController extends ChangeNotifier
           cancellation.throwIfCancelled();
           if (_disposed ||
               epoch != _runtimeCacheEpoch ||
+              interests != _dailyInterestSignature ||
               language != _contentLanguage) {
             return;
           }
@@ -338,6 +409,7 @@ class AsmrLibraryController extends ChangeNotifier
             language: language,
             date: date,
             works: works,
+            interests: interests,
           );
           if (_disposed ||
               cancellation.isCancelled ||
@@ -347,7 +419,9 @@ class AsmrLibraryController extends ChangeNotifier
           }
           _dailyRecommendations = List.unmodifiable(works);
           _dailyRecommendationsDate = date;
-          _dailyRecommendationsVersion = 2;
+          _dailyRecommendationsVersion =
+              AsmrPreferencesStore.dailyRecommendationsVersion;
+          _dailyRecommendationsInterests = interests;
         });
       } on AsmrRequestCancelled {
         // A restore or language change owns the new cache boundary.
@@ -374,15 +448,20 @@ class AsmrLibraryController extends ChangeNotifier
   void _invalidateDailyRecommendations() {
     _dailyRecommendationsCancellation?.cancel();
     _dailyRecommendationsTask = null;
+    _dailyRequestedDate = null;
+    _dailyRecommendationsCancellation = null;
     _dailyRecommendations = const [];
     _dailyRecommendationsDate = null;
     _dailyRecommendationsLanguage = null;
     _dailyRecommendationsVersion = 0;
+    _dailyRecommendationsInterests = '';
     _dailyRecommendationsError = null;
   }
 
   bool _isWorkAllowed(AsmrWork work) =>
-      !_tagPreferences.excludes(names: work.tags, ids: work.tagIds);
+      !_tagPreferences.excludes(names: work.tags, ids: work.tagIds) &&
+      !_voiceActorPreferences.excludes(names: work.voiceActors) &&
+      !_circlePreferences.excludes(names: [work.circleName]);
 
   Future<void> _mutateTagPreferences(
     void Function(AsmrTagPreferences) mutate, {
@@ -403,86 +482,184 @@ class AsmrLibraryController extends ChangeNotifier
   Future<void> setTagInterested(String key, bool interested) =>
       applyTagSelections(excluded: false, changes: {key: interested});
 
-  Future<void> _mutateVoiceActorPreferences(
+  AsmrTagPreferences _creatorPreferences(_CreatorInterest kind) =>
+      kind == _CreatorInterest.voiceActor
+      ? _voiceActorPreferences
+      : _circlePreferences;
+
+  Future<void> _mutateCreatorPreferences(
+    _CreatorInterest kind,
     void Function(AsmrTagPreferences) mutate, {
     bool interruptRecommendations = false,
     int? expectedEpoch,
-  }) => _runStateMutation(() async {
-    if (_disposed ||
-        (expectedEpoch != null && expectedEpoch != _runtimeCacheEpoch)) {
-      return;
+  }) async {
+    String? dailyDate;
+    await _runStateMutation(() async {
+      if (_disposed ||
+          (expectedEpoch != null && expectedEpoch != _runtimeCacheEpoch)) {
+        return;
+      }
+      final previousInterests = _dailyInterestSignature;
+      final next = AsmrTagPreferences.fromJson(
+        _creatorPreferences(kind).toJson(),
+      );
+      mutate(next);
+      if (kind == _CreatorInterest.voiceActor) {
+        await _preferencesStore.saveVoiceActorPreferences(next);
+      } else {
+        await _preferencesStore.saveCirclePreferences(next);
+      }
+      if (_disposed ||
+          (expectedEpoch != null && expectedEpoch != _runtimeCacheEpoch)) {
+        return;
+      }
+      if (kind == _CreatorInterest.voiceActor) {
+        _voiceActorPreferences = next;
+      } else {
+        _circlePreferences = next;
+      }
+      if (previousInterests != _dailyInterestSignature) {
+        dailyDate = _dailyRequestedDate;
+        _invalidateDailyRecommendations();
+      }
+      _catalog.preferencesChanged(
+        interruptRecommendations: interruptRecommendations,
+      );
+      _bumpGlobalRevision();
+      notifyListeners();
+    });
+    if (dailyDate != null) {
+      // Listening persistence must not wait for remote recommendation requests.
+      unawaited(ensureDailyRecommendations(now: DateTime.parse(dailyDate!)));
     }
-    final next = AsmrTagPreferences.fromJson(_voiceActorPreferences.toJson());
-    mutate(next);
-    await _preferencesStore.saveVoiceActorPreferences(next);
-    if (_disposed ||
-        (expectedEpoch != null && expectedEpoch != _runtimeCacheEpoch)) {
-      return;
-    }
-    _voiceActorPreferences = next;
-    _catalog.preferencesChanged(
-      interruptRecommendations: interruptRecommendations,
-    );
-    _bumpGlobalRevision();
-    notifyListeners();
-  });
+  }
 
   Future<void> applyVoiceActorSelections({
+    bool excluded = false,
     required Map<String, bool> changes,
-  }) async {
+  }) => _applyCreatorSelections(_CreatorInterest.voiceActor, excluded, changes);
+
+  Future<void> applyCircleSelections({
+    bool excluded = false,
+    required Map<String, bool> changes,
+  }) => _applyCreatorSelections(_CreatorInterest.circle, excluded, changes);
+
+  Future<void> _applyCreatorSelections(
+    _CreatorInterest kind,
+    bool excluded,
+    Map<String, bool> changes,
+  ) async {
     if (changes.isEmpty) return;
     final selections = Map<String, bool>.of(changes);
     await ensureTagInterests();
-    await _mutateVoiceActorPreferences((state) {
-      for (final entry in selections.entries) {
-        state.setInterested(entry.key, entry.value);
-      }
-    }, interruptRecommendations: true);
+    final dailyDate = _dailyRequestedDate;
+    await _mutateCreatorPreferences(
+      kind,
+      (state) => _applySelections(state, selections, excluded: excluded),
+      interruptRecommendations: true,
+    );
+    if (!excluded && dailyDate != null) {
+      await ensureDailyRecommendations(now: DateTime.parse(dailyDate));
+    }
     await _refreshRecommendationsAfterPreferenceChange();
+  }
+
+  static void _applySelections(
+    AsmrTagPreferences state,
+    Map<String, bool> changes, {
+    required bool excluded,
+  }) {
+    for (final entry in changes.entries) {
+      if (!excluded) {
+        state.setInterested(entry.key, entry.value);
+      } else {
+        if (!state.tags.containsKey(entry.key)) {
+          throw ArgumentError.value(entry.key, 'key');
+        }
+        if (entry.value) {
+          state.excluded.add(entry.key);
+        } else {
+          state.excluded.remove(entry.key);
+        }
+      }
+    }
   }
 
   Future<void> recordVoiceActorListeningBatch({
     required String batchId,
     required List<({List<String> tags, Duration duration})> contributions,
-  }) async {
+  }) => _recordCreatorListeningBatch(
+    _CreatorInterest.voiceActor,
+    batchId,
+    contributions,
+  );
+
+  Future<void> recordCircleListeningBatch({
+    required String batchId,
+    required List<({List<String> tags, Duration duration})> contributions,
+  }) => _recordCreatorListeningBatch(
+    _CreatorInterest.circle,
+    batchId,
+    contributions,
+  );
+
+  Future<void> _recordCreatorListeningBatch(
+    _CreatorInterest kind,
+    String batchId,
+    List<({List<String> tags, Duration duration})> contributions,
+  ) async {
     await ensureTagInterests();
-    await _mutateVoiceActorPreferences(
+    await _mutateCreatorPreferences(
+      kind,
       (state) => state.recordListeningBatch(batchId, contributions),
     );
   }
 
-  Future<void> ensureVoiceActorCatalog({bool force = false}) {
-    final pending = _voiceActorCatalogTask;
+  Future<void> ensureVoiceActorCatalog({bool force = false}) =>
+      _ensureCreatorCatalog(_CreatorInterest.voiceActor, force: force);
+
+  Future<void> ensureCircleCatalog({bool force = false}) =>
+      _ensureCreatorCatalog(_CreatorInterest.circle, force: force);
+
+  Future<void> _ensureCreatorCatalog(
+    _CreatorInterest kind, {
+    required bool force,
+  }) {
+    final pending = _creatorCatalogTasks[kind];
     if (pending != null) return pending;
-    if (!force && voiceActorCatalogComplete) return ensureTagInterests();
+    if (!force && _creatorPreferences(kind).catalogComplete) {
+      return ensureTagInterests();
+    }
     late final Future<void> task;
     task =
         (() async {
           final epoch = _runtimeCacheEpoch;
-          _voiceActorCatalogError = null;
+          _creatorCatalogErrors.remove(kind);
           try {
             await initializeForVisiblePage();
             await ensureTagInterests();
-            final voices = await _remoteCatalogService.loadVoiceActorCatalog();
+            final entries = await (kind == _CreatorInterest.voiceActor
+                ? _remoteCatalogService.loadVoiceActorCatalog()
+                : _remoteCatalogService.loadCircleCatalog());
             if (_disposed || epoch != _runtimeCacheEpoch) return;
-            await _mutateVoiceActorPreferences((state) {
-              for (final voice in voices) {
-                state.mergeTag(voice);
+            await _mutateCreatorPreferences(kind, (state) {
+              for (final entry in entries) {
+                state.mergeTag(entry);
               }
               state.catalogComplete = true;
             }, expectedEpoch: epoch);
           } catch (error) {
             if (!_disposed && epoch == _runtimeCacheEpoch) {
-              _voiceActorCatalogError = error;
+              _creatorCatalogErrors[kind] = error;
             }
           }
         })().whenComplete(() {
-          if (identical(task, _voiceActorCatalogTask)) {
-            _voiceActorCatalogTask = null;
+          if (identical(task, _creatorCatalogTasks[kind])) {
+            _creatorCatalogTasks.remove(kind);
           }
           notifyListeners();
         });
-    _voiceActorCatalogTask = task;
+    _creatorCatalogTasks[kind] = task;
     notifyListeners();
     return task;
   }
@@ -495,22 +672,10 @@ class AsmrLibraryController extends ChangeNotifier
     if (changes.isEmpty) return;
     final selections = Map<String, bool>.of(changes);
     await ensureTagInterests();
-    await _mutateTagPreferences((state) {
-      for (final entry in selections.entries) {
-        if (!excluded) {
-          state.setInterested(entry.key, entry.value);
-        } else {
-          if (!state.tags.containsKey(entry.key)) {
-            throw ArgumentError.value(entry.key, 'key');
-          }
-          if (entry.value) {
-            state.excluded.add(entry.key);
-          } else {
-            state.excluded.remove(entry.key);
-          }
-        }
-      }
-    }, interruptRecommendations: true);
+    await _mutateTagPreferences(
+      (state) => _applySelections(state, selections, excluded: excluded),
+      interruptRecommendations: true,
+    );
     await _refreshRecommendationsAfterPreferenceChange();
   }
 
@@ -596,6 +761,7 @@ class AsmrLibraryController extends ChangeNotifier
             final state = await compute(_deriveTagInterests, (
               state: _tagPreferences,
               voices: _voiceActorPreferences,
+              circles: _circlePreferences,
               tracks: tracks,
               favorites: _favoriteWorks,
               history: _historyWorks,
@@ -603,9 +769,11 @@ class AsmrLibraryController extends ChangeNotifier
             if (_disposed || epoch != _runtimeCacheEpoch) return;
             await _preferencesStore.saveTagPreferences(state.$1);
             await _preferencesStore.saveVoiceActorPreferences(state.$2);
+            await _preferencesStore.saveCirclePreferences(state.$3);
             if (_disposed || epoch != _runtimeCacheEpoch) return;
             _tagPreferences = state.$1;
             _voiceActorPreferences = state.$2;
+            _circlePreferences = state.$3;
             _tagInterestsReady = true;
             _bumpGlobalRevision();
             notifyListeners();
@@ -654,8 +822,8 @@ class AsmrLibraryController extends ChangeNotifier
   void clearRuntimeCaches() {
     _invalidateSearchSuggestions();
     _invalidateDailyRecommendations();
-    _voiceActorCatalogTask = null;
-    _voiceActorCatalogError = null;
+    _creatorCatalogTasks.clear();
+    _creatorCatalogErrors.clear();
     _runtimeCacheEpoch++;
     _contentEpoch++;
     _catalog.clearWorks();
@@ -877,6 +1045,8 @@ class AsmrLibraryController extends ChangeNotifier
     _voiceActorPreferences = await _preferencesStore
         .loadVoiceActorPreferences();
     if (_disposed) return;
+    _circlePreferences = await _preferencesStore.loadCirclePreferences();
+    if (_disposed) return;
     _catalog.updateLocalCounts();
     _initialized = true;
     _bumpGlobalRevision();
@@ -940,8 +1110,8 @@ class AsmrLibraryController extends ChangeNotifier
   Future<void> reloadPersistedState() async {
     _invalidateSearchSuggestions();
     _invalidateDailyRecommendations();
-    _voiceActorCatalogTask = null;
-    _voiceActorCatalogError = null;
+    _creatorCatalogTasks.clear();
+    _creatorCatalogErrors.clear();
     _initialized = false;
     _tagInterestsReady = false;
     _tagInterestsTask = null;

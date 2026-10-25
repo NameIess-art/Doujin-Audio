@@ -13,6 +13,7 @@ class AsmrPreferencesStore {
   static const String _tagPreferencesKey = 'asmr_tag_preferences_v1';
   static const String _voiceActorPreferencesKey =
       'asmr_voice_actor_preferences_v1';
+  static const String _circlePreferencesKey = 'asmr_circle_preferences_v1';
   static const String _lastSyncAtKey = 'asmr_last_sync_at_v1';
   static const String _syncOutboxSeededKey = 'asmr_sync_outbox_seeded_v2';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
@@ -26,6 +27,7 @@ class AsmrPreferencesStore {
       _contentLanguageKey,
       _tagPreferencesKey,
       _voiceActorPreferencesKey,
+      _circlePreferencesKey,
       _lastSyncAtKey,
       _searchSuggestionsKey,
       _syncOutboxSeededKey,
@@ -71,8 +73,11 @@ class AsmrPreferencesStore {
   Future<AsmrTagPreferences> loadVoiceActorPreferences() async {
     final raw = await _repository.loadSetting(_voiceActorPreferencesKey);
     return raw == null
-        ? AsmrTagPreferences(limit: 10)
-        : AsmrTagPreferences.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+        ? AsmrTagPreferences()
+        : AsmrTagPreferences.fromJson({
+            ...jsonDecode(raw) as Map<String, dynamic>,
+            'limit': 20,
+          });
   }
 
   Future<void> saveVoiceActorPreferences(AsmrTagPreferences value) =>
@@ -81,7 +86,22 @@ class AsmrPreferencesStore {
         jsonEncode(value.toJson()),
       );
 
-  Future<({String date, List<AsmrWork> works, int version})?>
+  Future<AsmrTagPreferences> loadCirclePreferences() async {
+    final raw = await _repository.loadSetting(_circlePreferencesKey);
+    return raw == null
+        ? AsmrTagPreferences()
+        : AsmrTagPreferences.fromJson({
+            ...jsonDecode(raw) as Map<String, dynamic>,
+            'limit': 20,
+          });
+  }
+
+  Future<void> saveCirclePreferences(AsmrTagPreferences value) => _repository
+      .saveSetting(_circlePreferencesKey, jsonEncode(value.toJson()));
+
+  static const dailyRecommendationsVersion = 3;
+
+  Future<({String date, List<AsmrWork> works, int version, String interests})?>
   loadDailyRecommendations(AsmrContentLanguage language) async {
     final raw = await _repository.loadSetting(
       'asmr_daily_discovery_v1_${language.name}',
@@ -91,6 +111,7 @@ class AsmrPreferencesStore {
     return (
       date: value['date'] as String,
       version: (value['version'] as num?)?.toInt() ?? 1,
+      interests: value['interests'] as String? ?? '',
       works: (value['works'] as List)
           .map(
             (work) => AsmrWork.fromJson(
@@ -106,11 +127,13 @@ class AsmrPreferencesStore {
     required AsmrContentLanguage language,
     required String date,
     required List<AsmrWork> works,
+    String interests = '',
   }) => _repository.saveSetting(
     'asmr_daily_discovery_v1_${language.name}',
     jsonEncode({
       'date': date,
-      'version': 2,
+      'version': dailyRecommendationsVersion,
+      'interests': interests,
       'works': works.map((work) => work.toJson()).toList(),
     }),
   );

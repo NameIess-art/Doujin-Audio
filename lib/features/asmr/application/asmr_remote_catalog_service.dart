@@ -21,8 +21,8 @@ List<AsmrWork> _rankDailyDiscovery(
   candidates: input.$1,
   daySeed: input.$2,
   previousWorkKeys: input.$3,
-  tagWeights: input.$4,
-  voiceActorWeights: input.$5,
+  voiceActorWeights: input.$4,
+  circleWeights: input.$5,
   limit: 80,
 );
 
@@ -68,10 +68,12 @@ class AsmrRemoteCatalogService {
   bool Function(AsmrWork) isWorkAllowed = (_) => true;
   Map<String, double>? Function() tagWeights = () => null;
   Map<String, double>? Function() voiceActorWeights = () => null;
+  Map<String, double>? Function() circleWeights = () => null;
   Future<void> Function(List<MusicTrack>)? prepareTagInterests;
   Future<List<AsmrTag>> loadTagCatalog() => _apiService.fetchTagCatalog();
   Future<List<AsmrTag>> loadVoiceActorCatalog() =>
       _apiService.fetchVoiceActorCatalog();
+  Future<List<AsmrTag>> loadCircleCatalog() => _apiService.fetchCircleCatalog();
   Future<AsmrSearchSuggestions> loadSearchSuggestions({
     AsmrRequestCancellationToken? cancellationToken,
   }) {
@@ -93,18 +95,41 @@ class AsmrRemoteCatalogService {
     required Set<String> previousWorkKeys,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
-    final results = await Future.wait(
-      _recommendationSources.map(
-        (category) => _loadRecommendationPagesSafely(
-          category,
-          searchQuery: '',
-          language: language,
-          token: null,
-          refreshSeed: daySeed,
-          cancellationToken: cancellationToken,
+    final voices = Map<String, double>.of(voiceActorWeights() ?? const {});
+    final circles = Map<String, double>.of(circleWeights() ?? const {});
+    final creatorQueries = {
+      for (final entry in [...voices.entries, ...circles.entries])
+        if (entry.value > 0 && entry.key.trim().isNotEmpty) entry.key.trim(),
+    }.toList()..sort();
+    final requests = creatorQueries.isEmpty
+        ? [for (final category in _recommendationSources) (category, '')]
+        : [
+            for (final query in creatorQueries)
+              (AsmrCategoryType.release, query),
+          ];
+    final results = <_RecommendationPagesResult>[];
+    // Bound creator searches so larger interest lists do not flood both sites.
+    for (var start = 0; start < requests.length; start += 4) {
+      cancellationToken?.throwIfCancelled();
+      results.addAll(
+        await Future.wait(
+          requests
+              .skip(start)
+              .take(4)
+              .map(
+                (request) => _loadRecommendationPagesSafely(
+                  request.$1,
+                  searchQuery: request.$2,
+                  language: language,
+                  token: null,
+                  refreshSeed: daySeed,
+                  sampleOlderPage: creatorQueries.isNotEmpty,
+                  cancellationToken: cancellationToken,
+                ),
+              ),
         ),
-      ),
-    );
+      );
+    }
     cancellationToken?.throwIfCancelled();
     final candidates = <String, AsmrWork>{};
     Object? error;
@@ -126,8 +151,8 @@ class AsmrRemoteCatalogService {
       candidates.values.where(isWorkAllowed).toList(growable: false),
       daySeed,
       previousWorkKeys,
-      tagWeights() ?? const <String, double>{},
-      voiceActorWeights() ?? const <String, double>{},
+      voices,
+      circles,
     ));
     cancellationToken?.throwIfCancelled();
     return ranking;
@@ -293,6 +318,7 @@ class AsmrRemoteCatalogService {
         explorationWorkIds: promotedIds,
         tagWeights: tagWeights(),
         voiceActorWeights: voiceActorWeights(),
+        circleWeights: circleWeights(),
       ),
       details: <String, Object?>{
         'candidates': candidateList.length,
@@ -396,6 +422,7 @@ class AsmrRemoteCatalogService {
     required AsmrContentLanguage language,
     required String? token,
     required int refreshSeed,
+    bool sampleOlderPage = false,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
     final pages = <AsmrWorkPage>[];
@@ -413,12 +440,19 @@ class AsmrRemoteCatalogService {
       cancellationToken?.throwIfCancelled();
       pages.add(firstPage);
       if (firstPage.hasMore) {
+        final totalCount = sampleOlderPage && firstPage is AsmrMergedWorkPage
+            ? cursor._totals.values.fold<int>(
+                0,
+                (largest, count) => count > largest ? count : largest,
+              )
+            : firstPage.totalCount;
         final totalPages =
-            (firstPage.totalCount + firstPage.pageSize - 1) ~/
-            firstPage.pageSize;
+            (totalCount + firstPage.pageSize - 1) ~/ firstPage.pageSize;
         final nextPage =
-            firstPage is AsmrMergedWorkPage ||
-                searchQuery.isNotEmpty ||
+            (!sampleOlderPage &&
+                    (firstPage is AsmrMergedWorkPage ||
+                        searchQuery.isNotEmpty)) ||
+                totalPages <= 1 ||
                 refreshSeed <= 1
             ? 2
             : 2 + (refreshSeed - 1) % (totalPages - 1);
@@ -430,7 +464,8 @@ class AsmrRemoteCatalogService {
             language: language,
             token: token,
             cancellationToken: cancellationToken,
-            cursor: cursor,
+            // Sample source pages directly, rather than leftover merged buffers.
+            cursor: sampleOlderPage ? null : cursor,
           ),
         );
       }

@@ -293,10 +293,7 @@ void main() {
         }
 
         await open();
-        final limit = find.text(
-          fixture.languageProvider.tr('my_interest_limit'),
-        );
-        expect(limit, findsNothing);
+        expect(find.textContaining('（前'), findsNothing);
         await tester.tap(find.byType(CheckboxListTile));
         await tester.pumpAndSettle();
         expect(controller.saveCalls, 0);

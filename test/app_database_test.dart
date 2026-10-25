@@ -1760,6 +1760,30 @@ void main() {
     },
   );
 
+  test('recommendation reads retain circle objects and strings', () async {
+    await appDatabase.saveAllTracks([
+      for (var index = 0; index < 2; index++)
+        MusicTrack(
+          path: '/local/circle$index/track.mp3',
+          displayName: 'Track',
+          groupKey: 'work$index',
+          groupTitle: 'Unrelated work title',
+          groupSubtitle: '',
+          isSingle: true,
+          remoteMetadata: {
+            'circle': index == 0 ? {'name': ' Circle 0 '} : ' Circle 1 ',
+          },
+        ),
+    ]);
+    final tracks = await SqliteAsmrRepository(
+      database: appDatabase,
+    ).loadTracksForRecommendations();
+    expect(
+      tracks.map((track) => track.remoteCircleName),
+      unorderedEquals(['Circle 0', 'Circle 1']),
+    );
+  });
+
   test(
     'slim recommendation reads preserve ranking and owned exclusions',
     () async {

@@ -64,6 +64,34 @@ void main() {
   });
 
   test(
+    'interest providers stay loading until initialization publishes real content',
+    () async {
+      final controller = _PendingInterestController(createTestAsmrServices());
+      final container = ProviderContainer(
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      );
+      addTearDown(controller.dispose);
+      addTearDown(container.dispose);
+      final published = <List<AsmrTagInterest>>[];
+      container.listen(asmrTagInterestsProvider, (_, next) {
+        if (next.hasValue) published.add(next.requireValue);
+      });
+      await Future<void>.delayed(Duration.zero);
+      UiInteractionCoordinator.instance.flushPendingCommitsForTest();
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(asmrTagInterestsProvider).isLoading, isTrue);
+      expect(published, isEmpty);
+      controller.ready.complete();
+      await Future<void>.delayed(Duration.zero);
+      UiInteractionCoordinator.instance.flushPendingCommitsForTest();
+      await Future<void>.delayed(Duration.zero);
+      expect(published.single.single.tag.name, 'Sleep');
+    },
+  );
+
+  test(
     'merged My and settings is permanent after playlist in all visibility combinations',
     () {
       for (final local in [false, true]) {
@@ -937,7 +965,7 @@ void main() {
         );
         expect(
           find.descendant(of: header, matching: find.byType(TextButton)),
-          findsNothing,
+          findsNWidgets(3),
         );
         expect(controller.interestTags, hasLength(20));
         await tester.pumpWidget(const SizedBox.shrink());
@@ -945,13 +973,17 @@ void main() {
       },
     );
     testWidgets(
-      'voice interests show ten names and copy on $platform',
+      'interest tabs share one card, show twenty voices and copy on $platform',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
         final controller = _InterestController(createTestAsmrServices());
-        for (var index = 0; index < 14; index++) {
+        for (var index = 0; index < 25; index++) {
           final key = controller.voices.resolve('Voice $index');
           controller.voices.learned[key] = index.toDouble();
+          controller.circles.learned[controller.circles.resolve(
+            'Circle $index',
+          )] = index
+              .toDouble();
         }
         addTearDown(fixture.dispose);
         addTearDown(controller.dispose);
@@ -979,6 +1011,42 @@ void main() {
         );
         await pumpUntilUiIdle(tester);
         await pumpAndSettleWithAsync(tester);
+        expect(
+          find.byKey(const ValueKey('my-interest-local:sleep')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('my_add_interest')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('my_add_voice_interest')),
+          findsNothing,
+        );
+        final tagsTab = find.byKey(const ValueKey('my-interest-tab-tags'));
+        final voicesTab = find.byKey(const ValueKey('my-interest-tab-voices'));
+        expect(
+          tester.element(
+            find.ancestor(of: tagsTab, matching: find.byType(Card)).first,
+          ),
+          same(
+            tester.element(
+              find.ancestor(of: voicesTab, matching: find.byType(Card)).first,
+            ),
+          ),
+        );
+        await tester.tap(voicesTab);
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('my-voice-interest-local:voice 24')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('my_no_voice_interests')),
+          findsNothing,
+        );
+        await pumpUntilUiIdle(tester);
+        await pumpAndSettleWithAsync(tester);
         final chips = find.byWidgetPredicate(
           (widget) =>
               widget is InputChip &&
@@ -987,10 +1055,37 @@ void main() {
                   ) ==
                   true,
         );
-        expect(chips, findsNWidgets(10));
+        expect(chips, findsNWidgets(20));
         final first = find.byKey(
-          const ValueKey('my-voice-interest-local:voice 13'),
+          const ValueKey('my-voice-interest-local:voice 24'),
         );
+        expect(
+          find.byKey(const ValueKey('my-voice-interest-local:voice 4')),
+          findsNothing,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('my_add_interest')),
+          findsNothing,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('my_excluded_tags')),
+          findsNothing,
+        );
+        final addVoice = find.text(
+          fixture.languageProvider.tr('my_add_voice_interest'),
+        );
+        await tester.ensureVisible(addVoice);
+        await tester.tap(addVoice);
+        await pumpAndSettleWithAsync(tester);
+        expect(
+          tester
+              .widget<MyTagManagementPage>(find.byType(MyTagManagementPage))
+              .type,
+          MyInterestType.voiceActors,
+        );
+        await tester.pageBack();
+        await pumpAndSettleWithAsync(tester);
+        expect(chips, findsNWidgets(20));
         final chip = tester.widget<InputChip>(first);
         expect(chip.backgroundColor, isNull);
         expect(chip.labelStyle, isNull);
@@ -1019,81 +1114,245 @@ void main() {
               .defaultBinaryMessenger
               .setMockMethodCallHandler(SystemChannels.platform, null),
         );
+        await tester.ensureVisible(first);
         await tester.tap(first);
         await tester.pump();
-        expect(copied, 'Voice 13');
+        expect(copied, 'Voice 24');
+        expect(find.textContaining('（前'), findsNothing);
+        await tester.ensureVisible(tagsTab);
+        await tester.tap(tagsTab);
+        await tester.pump();
         expect(
-          find.text(fixture.languageProvider.tr('my_voice_interest_limit')),
+          find.byKey(const ValueKey('my-interest-local:sleep')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('my_no_interests')),
+          findsNothing,
+        );
+        await pumpUntilUiIdle(tester);
+        await pumpAndSettleWithAsync(tester);
+        expect(chips, findsNothing);
+        expect(
+          find.byKey(const ValueKey('my-interest-local:sleep')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('my_excluded_tags')),
+          findsOneWidget,
+        );
+        final circlesTab = find.byKey(
+          const ValueKey('my-interest-tab-circles'),
+        );
+        await tester.tap(circlesTab);
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('my-circle-interest-local:circle 24')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('my_no_circle_interests')),
+          findsNothing,
+        );
+        await pumpUntilUiIdle(tester);
+        await pumpAndSettleWithAsync(tester);
+        expect(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is InputChip &&
+                (widget.key as ValueKey?)?.value.toString().startsWith(
+                      'my-circle-interest-',
+                    ) ==
+                    true,
+          ),
+          findsNWidgets(20),
+        );
+        expect(
+          find.byKey(const ValueKey('my-circle-interest-local:circle 24')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('my-circle-interest-local:circle 4')),
+          findsNothing,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('my_add_circle_interest')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('my_excluded_circles')),
           findsOneWidget,
         );
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
       },
     );
-    testWidgets(
-      'voice catalog keeps automatic names and saves only on confirmation on $platform',
-      (tester) async {
-        final fixture = AppRuntimeWidgetTestFixture();
-        final controller = _InterestController(createTestAsmrServices());
-        final automatic = controller.voices.resolve('Frequent Voice');
-        controller.voices.learned[automatic] = 60;
-        for (var index = 0; index < 25; index++) {
-          controller.voices.resolve('Other Voice $index');
-        }
-        addTearDown(fixture.dispose);
-        addTearDown(controller.dispose);
-        await tester.pumpWidget(
-          fixture.build(
-            Theme(
-              data: ThemeData(platform: platform),
-              child: Builder(
-                builder: (context) => TextButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const MyTagManagementPage(
-                        excluded: false,
-                        voiceActors: true,
+    for (final type in [MyInterestType.voiceActors, MyInterestType.circles]) {
+      testWidgets(
+        '$type catalog keeps automatic names and saves only on confirmation on $platform',
+        (tester) async {
+          final fixture = AppRuntimeWidgetTestFixture();
+          final controller = _InterestController(createTestAsmrServices());
+          final preferences = type == MyInterestType.voiceActors
+              ? controller.voices
+              : controller.circles;
+          final automatic = preferences.resolve('Frequent Voice');
+          preferences.learned[automatic] = 60;
+          for (var index = 0; index < 25; index++) {
+            preferences.resolve('Other Voice $index');
+          }
+          addTearDown(fixture.dispose);
+          addTearDown(controller.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              Theme(
+                data: ThemeData(platform: platform),
+                child: Builder(
+                  builder: (context) => TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            MyTagManagementPage(excluded: false, type: type),
                       ),
                     ),
+                    child: const Text('Open voices'),
                   ),
-                  child: const Text('Open voices'),
                 ),
               ),
+              overrides: [
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+              ],
             ),
-            overrides: [
-              asmrLibraryControllerProvider.overrideWithValue(controller),
-            ],
-          ),
-        );
-        await tester.tap(find.text('Open voices'));
-        await tester.pumpAndSettle();
-        final locked = tester.widget<CheckboxListTile>(
-          find.byKey(ValueKey(automatic)),
-        );
-        expect(locked.value, isTrue);
-        expect(locked.onChanged, isNull);
-        expect(
-          find.text(fixture.languageProvider.tr('my_listened_voice_actor')),
-          findsOneWidget,
-        );
-        await tester.enterText(find.byType(TextField), 'Other Voice 24');
-        await tester.pump();
-        await tester.tap(find.byType(CheckboxListTile));
-        await tester.pumpAndSettle();
-        expect(controller.voiceSaves, 0);
-        expect(controller.manualInterestVoiceActorKeys, isEmpty);
-        await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
-        await tester.pumpAndSettle();
-        expect(controller.voiceSaves, 1);
-        expect(controller.manualInterestVoiceActorKeys, {
-          'local:other voice 24',
-        });
-        expect(find.byType(MyTagManagementPage), findsNothing);
-        expect(controller.state.manualInterests, {'local:sleep'});
-        await tester.pumpWidget(const SizedBox.shrink());
-        await tester.pumpAndSettle();
-      },
-    );
+          );
+          await tester.tap(find.text('Open voices'));
+          await tester.pumpAndSettle();
+          final locked = tester.widget<CheckboxListTile>(
+            find.byKey(ValueKey(automatic)),
+          );
+          expect(locked.value, isTrue);
+          expect(locked.onChanged, isNull);
+          expect(
+            find.text(fixture.languageProvider.tr(type.listenedKey)),
+            findsOneWidget,
+          );
+          await tester.enterText(find.byType(TextField), 'Other Voice 24');
+          await tester.pump();
+          await tester.tap(find.byType(CheckboxListTile));
+          await tester.pumpAndSettle();
+          expect(controller.voiceSaves + controller.circleSaves, 0);
+          expect(controller.manualInterestVoiceActorKeys, isEmpty);
+          await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+          await tester.pumpAndSettle();
+          expect(controller.voiceSaves + controller.circleSaves, 1);
+          expect(preferences.manualInterests, {'local:other voice 24'});
+          expect(find.byType(MyTagManagementPage), findsNothing);
+          expect(controller.state.manualInterests, {'local:sleep'});
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pumpAndSettle();
+        },
+      );
+
+      testWidgets(
+        '$type unwanted selections confirm, retry and discard on $platform',
+        (tester) async {
+          final fixture = AppRuntimeWidgetTestFixture();
+          final controller = _InterestController(createTestAsmrServices());
+          final preferences = type == MyInterestType.voiceActors
+              ? controller.voices
+              : controller.circles;
+          final key = preferences.resolve('Automatic creator');
+          preferences.learned[key] = 60;
+          addTearDown(fixture.dispose);
+          addTearDown(controller.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              Theme(
+                data: ThemeData(platform: platform),
+                child: const MyPage(tabIndex: 3),
+              ),
+              overrides: [
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+                listeningActivityProvider.overrideWith(
+                  (ref) => Stream.value(const ListeningActivityView()),
+                ),
+              ],
+            ),
+          );
+          await pumpAndSettleWithAsync(tester);
+          await pumpUntilUiIdle(tester);
+          await pumpAndSettleWithAsync(tester);
+          final tab = find.byKey(
+            ValueKey(
+              'my-interest-tab-${type == MyInterestType.voiceActors ? 'voices' : 'circles'}',
+            ),
+          );
+          await tester.ensureVisible(tab);
+          await tester.pumpAndSettle();
+          await tester.tap(tab);
+          await pumpUntilUiIdle(tester);
+          await pumpAndSettleWithAsync(tester);
+          Future<void> openExcluded() async {
+            final button = find.text(
+              fixture.languageProvider.tr(type.excludedKey),
+            );
+            await tester.ensureVisible(button);
+            await tester.pumpAndSettle();
+            await tester.tap(button);
+            await pumpAndSettleWithAsync(tester);
+            final page = tester.widget<MyTagManagementPage>(
+              find.byType(MyTagManagementPage),
+            );
+            expect(page.type, type);
+            expect(page.excluded, isTrue);
+            await tester.enterText(find.byType(TextField), 'Automatic');
+            await tester.pumpAndSettle();
+          }
+
+          await openExcluded();
+          expect(
+            tester
+                .widget<CheckboxListTile>(find.byType(CheckboxListTile))
+                .onChanged,
+            isNotNull,
+          );
+          await tester.tap(find.byType(CheckboxListTile));
+          await tester.pump();
+          expect(preferences.excluded, isEmpty);
+          controller.failCreatorSave = true;
+          await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+          await tester.pumpAndSettle();
+          expect(find.byType(MyTagManagementPage), findsOneWidget);
+          expect(
+            tester
+                .widget<CheckboxListTile>(find.byType(CheckboxListTile))
+                .value,
+            isTrue,
+          );
+          expect(preferences.excluded, isEmpty);
+          controller.failCreatorSave = false;
+          await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+          await pumpAndSettleWithAsync(tester);
+          expect(preferences.excluded, {key});
+          await openExcluded();
+          expect(
+            tester
+                .widget<CheckboxListTile>(find.byType(CheckboxListTile))
+                .value,
+            isTrue,
+          );
+          await tester.tap(find.byType(CheckboxListTile));
+          await tester.pageBack();
+          await pumpAndSettleWithAsync(tester);
+          expect(preferences.excluded, {key});
+          await openExcluded();
+          await tester.tap(find.byType(CheckboxListTile));
+          await tester.tap(find.byKey(const ValueKey('my_tags_confirm')));
+          await pumpAndSettleWithAsync(tester);
+          expect(preferences.excluded, isEmpty);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
     testWidgets(
       'tag catalog uses floating header and retains search on $platform',
       (tester) async {
@@ -1331,12 +1590,11 @@ void main() {
         headerHeights.add(bounds.height);
       }
       expect(headerHeights.toSet().length, 1);
-      final interestLimit = find.text(i18n.tr('my_interest_limit'));
-      expect(interestLimit, findsOneWidget);
-      expect(
-        tester.widget<Text>(interestLimit).style?.color?.a,
-        closeTo(0.7, 0.01),
-      );
+      expect(find.textContaining('（前'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('my-interest-tab-voices')));
+      await pumpUntilUiIdle(tester);
+      await pumpAndSettleWithAsync(tester);
+      expect(find.text(i18n.tr('my_no_voice_interests')), findsOneWidget);
       final heading = find.text(i18n.tr('my_listening_time'));
       await tester.ensureVisible(heading);
       final headingBounds = tester.getRect(heading);
@@ -1416,19 +1674,58 @@ class _InterestController extends AsmrLibraryController {
     state.setInterested(state.resolve('Sleep'), true);
   }
   final voices = AsmrTagPreferences();
+  final circles = AsmrTagPreferences();
+  int circleSaves = 0;
+  bool failCreatorSave = false;
   int voiceSaves = 0;
   int voiceInterestReads = 0;
   @override
   List<AsmrTagInterest> get voiceActorInterests {
     voiceInterestReads++;
-    return voices.interests.take(10).toList();
+    return voices.interests;
   }
 
   @override
   List<AsmrTagInterest> get listenedVoiceActorInterests =>
-      voices.listenedInterests.take(10).toList();
+      voices.listenedInterests;
   @override
   Set<String> get manualInterestVoiceActorKeys => voices.manualInterests;
+  @override
+  Set<String> get excludedVoiceActorKeys => voices.excluded;
+  @override
+  List<AsmrTagInterest> get circleInterests => circles.interests;
+  @override
+  List<AsmrTagInterest> get listenedCircleInterests =>
+      circles.listenedInterests;
+  @override
+  Set<String> get manualInterestCircleKeys => circles.manualInterests;
+  @override
+  Set<String> get excludedCircleKeys => circles.excluded;
+  @override
+  List<AsmrTag> get allCircles => circles.tags.values.toList();
+  @override
+  bool get circleCatalogComplete => true;
+  @override
+  Future<void> ensureCircleCatalog({bool force = false}) async {}
+  @override
+  Future<void> applyCircleSelections({
+    bool excluded = false,
+    required Map<String, bool> changes,
+  }) async {
+    if (failCreatorSave) throw StateError('save failed');
+    circleSaves++;
+    for (final change in changes.entries) {
+      if (excluded) {
+        change.value
+            ? circles.excluded.add(change.key)
+            : circles.excluded.remove(change.key);
+      } else {
+        circles.setInterested(change.key, change.value);
+      }
+    }
+    notifyListeners();
+  }
+
   @override
   List<AsmrTag> get allVoiceActors => voices.tags.values.toList();
   @override
@@ -1437,16 +1734,26 @@ class _InterestController extends AsmrLibraryController {
   Future<void> ensureVoiceActorCatalog({bool force = false}) async {}
   @override
   Future<void> applyVoiceActorSelections({
+    bool excluded = false,
     required Map<String, bool> changes,
   }) async {
+    if (failCreatorSave) throw StateError('save failed');
     voiceSaves++;
     for (final change in changes.entries) {
-      voices.setInterested(change.key, change.value);
+      if (excluded) {
+        change.value
+            ? voices.excluded.add(change.key)
+            : voices.excluded.remove(change.key);
+      } else {
+        voices.setInterested(change.key, change.value);
+      }
     }
     notifyListeners();
   }
 
   final state = AsmrTagPreferences();
+  @override
+  Future<void> ensureTagInterests({List<MusicTrack>? localTracks}) async {}
   @override
   Future<void> ensureDailyRecommendations({DateTime? now}) async {}
   int removals = 0;
@@ -1473,6 +1780,15 @@ class _InterestController extends AsmrLibraryController {
     state.setInterested(key, interested);
     notifyListeners();
   }
+}
+
+class _PendingInterestController extends _InterestController {
+  _PendingInterestController(super.services);
+  final ready = Completer<void>();
+
+  @override
+  Future<void> ensureTagInterests({List<MusicTrack>? localTracks}) =>
+      ready.future;
 }
 
 class _DailyController extends _InterestController {

@@ -96,6 +96,9 @@ class AsmrApiService {
   Future<List<AsmrTag>> fetchVoiceActorCatalog() =>
       _fetchInterestCatalog('/api/vas/');
 
+  Future<List<AsmrTag>> fetchCircleCatalog() =>
+      _fetchInterestCatalog('/api/circles/');
+
   Future<List<AsmrTag>> _fetchInterestCatalog(String path) async {
     final response = await _send(method: 'GET', path: path);
     if (response is! List || response.isEmpty) {

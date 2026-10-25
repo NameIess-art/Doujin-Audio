@@ -21,7 +21,8 @@ final class ListeningActivityService {
     required MusicTrack? Function(String) resolveTrack,
     required ListeningInterestRecorder recordInterests,
     ListeningInterestRecorder? recordVoiceActorInterests,
-    Future<List<String>> Function(MusicTrack)? resolveLocalVoiceActors,
+    ListeningInterestRecorder? recordCircleInterests,
+    Future<AudioDetail> Function(MusicTrack)? resolveLocalAudioDetail,
     DateTime Function()? now,
   }) : _repository = repository,
        _readUsage = readUsage,
@@ -29,7 +30,8 @@ final class ListeningActivityService {
        _resolveTrack = resolveTrack,
        _recordInterests = recordInterests,
        _recordVoiceActorInterests = recordVoiceActorInterests,
-       _resolveLocalVoiceActors = resolveLocalVoiceActors,
+       _recordCircleInterests = recordCircleInterests,
+       _resolveLocalAudioDetail = resolveLocalAudioDetail,
        _now = now ?? DateTime.now;
 
   final ListeningActivityRepository _repository;
@@ -38,7 +40,8 @@ final class ListeningActivityService {
   final MusicTrack? Function(String) _resolveTrack;
   final ListeningInterestRecorder _recordInterests;
   final ListeningInterestRecorder? _recordVoiceActorInterests;
-  final Future<List<String>> Function(MusicTrack)? _resolveLocalVoiceActors;
+  final ListeningInterestRecorder? _recordCircleInterests;
+  final Future<AudioDetail> Function(MusicTrack)? _resolveLocalAudioDetail;
   final DateTime Function() _now;
   final _changes = StreamController<ListeningActivityView>.broadcast();
   ListeningActivityView? _view;
@@ -107,10 +110,12 @@ final class ListeningActivityService {
     // The chart's date window must also advance when an idle page crosses midnight.
     if (forceReload || _loadedDay != _today()) _needsReload = true;
     final batches = await _readUsage();
+    final localDetails = <String, AudioDetail>{};
     for (final batch in batches) {
       final days = <ListeningDayContribution>[];
       final interests = <({List<String> tags, Duration duration})>[];
       final voiceInterests = <({List<String> tags, Duration duration})>[];
+      final circleInterests = <({List<String> tags, Duration duration})>[];
       for (final day in batch.days) {
         final works = <ListeningWorkContribution>[];
         for (final work in day.works) {
@@ -133,15 +138,32 @@ final class ListeningActivityService {
               duration: Duration(milliseconds: work.milliseconds),
             ));
           }
+          AudioDetail? detail;
+          final resolveLocalAudioDetail = _resolveLocalAudioDetail;
+          if (!track.isRemoteAsmr && resolveLocalAudioDetail != null) {
+            detail =
+                localDetails[track.path] ??
+                await resolveLocalAudioDetail(track);
+            localDetails[track.path] = detail;
+          }
           final voiceActors = <String>{
             ..._metadataTags(track.remoteMetadata?['voiceActors']),
             ..._metadataTags(track.remoteMetadata?['vas']),
-            if (!track.isRemoteAsmr && _resolveLocalVoiceActors != null)
-              ...await _resolveLocalVoiceActors(track),
+            ...?detail?.voiceActors,
           }.toList();
           if (voiceActors.isNotEmpty) {
             voiceInterests.add((
               tags: voiceActors,
+              duration: Duration(milliseconds: work.milliseconds),
+            ));
+          }
+          final circles = <String>{
+            track.remoteCircleName,
+            if (detail != null) detail.circleName.trim(),
+          }..remove('');
+          if (circles.isNotEmpty) {
+            circleInterests.add((
+              tags: circles.toList(),
               duration: Duration(milliseconds: work.milliseconds),
             ));
           }
@@ -161,6 +183,10 @@ final class ListeningActivityService {
       await _recordVoiceActorInterests?.call(
         batchId: batch.id,
         contributions: voiceInterests,
+      );
+      await _recordCircleInterests?.call(
+        batchId: batch.id,
+        contributions: circleInterests,
       );
       await _acknowledgeUsage([batch.id]);
     }

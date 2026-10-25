@@ -173,9 +173,7 @@ Future<void> _toggleSelectedAsmrWorksFavorite({
       actionLabel: i18n.tr('undo'),
       onAction: () =>
           unawaited(_toggleAsmrWorksFavorite(ref, works, favorite: true)),
-      duration: const Duration(seconds: 5),
-      showCountdown: true,
-      showActionCountdown: true,
+      isUndoAction: true,
       tone: AppFeedbackTone.warning,
       icon: Icons.favorite_border_rounded,
       iconColor: accent,

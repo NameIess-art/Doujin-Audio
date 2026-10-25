@@ -17,7 +17,11 @@ OutputDir={#OutputPath}
 OutputBaseFilename={#OutputName}
 SetupIconFile=..\windows\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\doujin_audio.exe
-Compression=lzma2
+Compression=lzma2/ultra64
+; The static FFmpeg tools share code across their roughly 95 MiB images.
+LZMADictionarySize=131072
+LZMANumBlockThreads=1
+LZMAUseSeparateProcess=yes
 SolidCompression=yes
 WizardStyle=modern
 VersionInfoVersion={#AppVersion}.{#BuildNumber}

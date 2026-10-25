@@ -908,7 +908,7 @@ void main() {
         expect(fixture.settings.slice.state.asmrSearchHistory, isEmpty);
         expect(search().controller.text, 'Unconfirmed');
         expect(find.text('搜索历史已清空'), findsOneWidget);
-        await tester.tap(find.text('撤销'));
+        await tester.tap(find.text('撤销 (5s)'));
         await tester.pumpAndSettle();
         expect(
           fixture.settings.slice.state.asmrSearchHistory,

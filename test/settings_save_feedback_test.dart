@@ -101,29 +101,55 @@ void main() {
     Navigator.of(home).pop();
     await tester.pump();
     expect(searchContext.mounted, isFalse);
-    await tester.tap(find.text(language.tr('undo')));
+    await tester.tap(find.text('${language.tr('undo')} (5s)'));
     await tester.pumpAndSettle();
     expect(settings.slice.state.librarySearchHistory, ['Saved']);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('search history remains cleared when the undo prompt expires', (
-    tester,
-  ) async {
-    final settings = SettingsRepository()..syncSlice(isInitialized: true);
-    addTearDown(() => unawaited(settings.dispose()));
-    await settings.recordSearchQuery('Saved', online: true);
-    final context = await mount(tester, settings: settings);
-    await clearSearchHistoryWithFeedback(context, online: true);
-    await tester.pumpAndSettle();
-    expect(find.text(language.tr('undo')), findsOneWidget);
-    await tester.pump(const Duration(seconds: 5));
-    await tester.pumpAndSettle();
-    expect(find.text(language.tr('undo')), findsNothing);
-    expect(settings.slice.state.asmrSearchHistory, isEmpty);
-    await tester.pumpWidget(const SizedBox());
-  });
+  for (final online in [false, true]) {
+    testWidgets(
+      'search history undo counts down for 5 seconds (online: $online)',
+      (tester) async {
+        final settings = SettingsRepository()..syncSlice(isInitialized: true);
+        addTearDown(() => unawaited(settings.dispose()));
+        await settings.recordSearchQuery('Saved', online: online);
+        final context = await mount(tester, settings: settings);
+        await clearSearchHistoryWithFeedback(context, online: online);
+        await tester.pump();
+        expect(
+          find.text(language.tr('search_history_cleared')),
+          findsOneWidget,
+        );
+        for (var seconds = 5; seconds >= 1; seconds--) {
+          expect(
+            find.text('${language.tr('undo')} (${seconds}s)'),
+            findsOneWidget,
+          );
+          await tester.pump(const Duration(seconds: 1));
+        }
+        // The deadline disables the action before the exit fade completes.
+        await tester.tap(
+          find.text('${language.tr('undo')} (1s)'),
+          warnIfMissed: false,
+        );
+        await tester.pumpAndSettle();
+        expect(find.textContaining('${language.tr('undo')} ('), findsNothing);
+        expect(
+          online
+              ? settings.slice.state.asmrSearchHistory
+              : settings.slice.state.librarySearchHistory,
+          isEmpty,
+        );
+        await tester.pumpWidget(const SizedBox());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   testWidgets('overlapping saves retain separate results', (tester) async {
     final context = await mount(tester);

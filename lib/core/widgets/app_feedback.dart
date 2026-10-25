@@ -181,7 +181,7 @@ void showAppSnackBar(
   ValueChanged<AppFeedbackDismissReason>? onDismissed,
   bool provideHapticFeedback = true,
   bool? showCountdown,
-  bool? showActionCountdown,
+  bool isUndoAction = false,
 }) {
   _showTopFeedback(
     context,
@@ -190,11 +190,12 @@ void showAppSnackBar(
     title: title,
     icon: icon,
     iconColor: iconColor,
-    duration:
-        duration ??
-        (tone == AppFeedbackTone.destructive
-            ? const Duration(seconds: 5)
-            : const Duration(seconds: 2)),
+    duration: isUndoAction
+        ? kUndoableRemovalFeedbackDuration
+        : duration ??
+              (tone == AppFeedbackTone.destructive
+                  ? const Duration(seconds: 5)
+                  : const Duration(seconds: 2)),
     actionLabel: actionLabel,
     onAction: onAction,
     replacementGroup: replacementGroup,
@@ -202,13 +203,9 @@ void showAppSnackBar(
     onDismissed: onDismissed,
     provideHapticFeedback: provideHapticFeedback,
     showCountdown:
-        showCountdown ??
-        (tone == AppFeedbackTone.destructive ||
-            replacementGroup == _undoableRemovalFeedbackGroup ||
-            showActionCountdown == true),
-    showActionCountdown:
-        showActionCountdown ??
-        (replacementGroup == _undoableRemovalFeedbackGroup),
+        isUndoAction ||
+        (showCountdown ?? (tone == AppFeedbackTone.destructive)),
+    showActionCountdown: isUndoAction,
   );
 }
 
@@ -279,7 +276,7 @@ void showPendingUndoableRemovalFeedback(
     nextMessage,
     tone: AppFeedbackTone.destructive,
     icon: icon,
-    duration: kUndoableRemovalFeedbackDuration,
+    isUndoAction: true,
     actionLabel: undoLabel,
     onAction: () => unawaited(service.undoPending()),
     replacementGroup: _undoableRemovalFeedbackGroup,

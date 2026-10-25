@@ -376,6 +376,10 @@ Future<void> main(List<String> args) async {
         '-DANDROID_ABI=$abi',
         '-DANDROID_PLATFORM=android-24',
         '-DCMAKE_BUILD_TYPE=Release',
+        // Keep Release CPU optimizations and the public C ABI, including
+        // upstream APIs without explicit export annotations.
+        '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON',
+        '-DCMAKE_VISIBILITY_INLINES_HIDDEN=ON',
         '-DGGML_NATIVE=OFF',
         ...common,
       ]);

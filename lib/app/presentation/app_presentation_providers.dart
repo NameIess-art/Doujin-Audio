@@ -627,7 +627,7 @@ Future<void> clearSearchHistoryWithFeedback(
     context,
     i18n.tr('search_history_cleared'),
     icon: Icons.delete_outline_rounded,
-    duration: kUndoableRemovalFeedbackDuration,
+    isUndoAction: true,
     actionLabel: i18n.tr('undo'),
     onAction: () => unawaited(
       saveSettingsWithFeedback(

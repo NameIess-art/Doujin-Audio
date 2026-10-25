@@ -391,6 +391,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       tone: AppFeedbackTone.destructive,
       icon: Icons.remove_circle_outline_rounded,
       actionLabel: i18n.tr('undo'),
+      isUndoAction: true,
       onAction: () => unawaited(_saveField(field, previousDetail)),
     );
   }

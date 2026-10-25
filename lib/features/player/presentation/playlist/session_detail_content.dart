@@ -602,7 +602,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
             ? AppFeedbackTone.destructive
             : AppFeedbackTone.warning,
         icon: Icons.sell_rounded,
-        duration: kUndoableRemovalFeedbackDuration,
+        isUndoAction: true,
         actionLabel: i18n.tr('undo'),
         onAction: () =>
             unawaited(_restoreDeletedSegment(removedLabel, timeSegments)),

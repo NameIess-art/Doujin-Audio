@@ -298,7 +298,7 @@ void main() {
         expect(fixture.settings.slice.state.librarySearchHistory, isEmpty);
         expect(tester.widget<TextField>(field).controller!.text, 'Keep draft');
         expect(find.text('搜索历史已清空'), findsOneWidget);
-        await tester.tap(find.text('撤销'));
+        await tester.tap(find.text('撤销 (5s)'));
         await tester.pumpAndSettle();
         expect(
           fixture.settings.slice.state.librarySearchHistory,

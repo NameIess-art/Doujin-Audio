@@ -44,9 +44,8 @@ class CoverArtworkFrame extends StatelessWidget {
                 color: Theme.of(context).brightness == Brightness.dark
                     ? const Color(0x70000000)
                     : const Color(0x3D000000),
-                blurRadius: 8,
-                spreadRadius: 1,
-                offset: const Offset(0, 3),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
               ),
             ]
           : null,

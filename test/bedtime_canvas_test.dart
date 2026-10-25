@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/core/media/time_text_formatters.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
@@ -99,6 +101,73 @@ void main() {
       await tester.tapAt(center);
       await tester.pump();
     }
+
+    testWidgets(
+      'ten countdown ticks rebuild only status and preserve language and cancel updates',
+      (tester) async {
+        fixture.timerService
+          ..timerMode = TimerMode.manual
+          ..timerDuration = const Duration(minutes: 1)
+          ..timerActive = true
+          ..timerRemaining = const Duration(minutes: 1);
+        fixture.timer.syncPresentationState();
+        await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
+        await tester.pump();
+        await tester.pump();
+        var canvasBuilds = 0;
+        var statusBuilds = 0;
+        final previous = debugOnRebuildDirtyWidget;
+        debugOnRebuildDirtyWidget = (element, builtOnce) {
+          if (element.widget is BedtimeCanvasPage) canvasBuilds++;
+          if (element.widget.runtimeType.toString() == '_BedtimeTimerStatus') {
+            statusBuilds++;
+          }
+          previous?.call(element, builtOnce);
+        };
+        addTearDown(() => debugOnRebuildDirtyWidget = previous);
+        // Publish ten authoritative one-second snapshots without advancing the
+        // independent minute clock or breathing animation in this scope test.
+        for (var second = 1; second <= 10; second++) {
+          final remaining = Duration(seconds: 60 - second);
+          fixture.timerService.timerRemaining = remaining;
+          fixture.timer.syncPresentationState();
+          await tester.pump();
+          await tester.pump();
+          expect(
+            find.text(
+              '${fixture.languageProvider.tr('sleep_countdown')}  '
+              '${formatDurationCompact(remaining)}',
+            ),
+            findsOneWidget,
+          );
+        }
+        expect(canvasBuilds, 0);
+        expect(statusBuilds, 10);
+        addTearDown(() => fixture.languageProvider.setLanguage(AppLanguage.zh));
+        await fixture.languageProvider.setLanguage(AppLanguage.en);
+        await tester.pump();
+        await tester.pump();
+        expect(
+          find.text(
+            '${fixture.languageProvider.tr('sleep_countdown')}  '
+            '${formatDurationCompact(const Duration(seconds: 50))}',
+          ),
+          findsOneWidget,
+        );
+        fixture.timer.cancelTimer();
+        await tester.pump();
+        await tester.pump();
+        expect(
+          find.text(fixture.languageProvider.tr('no_timer_set')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
 
     testWidgets('manages keepScreenOn lifecycle when entering and exiting', (
       tester,

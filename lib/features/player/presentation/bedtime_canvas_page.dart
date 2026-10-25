@@ -327,25 +327,9 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final timerState =
-        ref.watch(timerStateProvider).value ??
-        ref.read(timerFacadeProvider).state;
-
     final now = DateTime.now();
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-
-    final String timerText;
-    if (timerState.stopAfterCurrentTrack) {
-      timerText = i18n.tr('stop_after_current_track');
-    } else if (timerState.active &&
-        timerState.remaining != null &&
-        timerState.remaining! > Duration.zero) {
-      timerText =
-          '${i18n.tr('sleep_countdown')}  ${formatDurationCompact(timerState.remaining!)}';
-    } else {
-      timerText = i18n.tr('no_timer_set');
-    }
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -381,30 +365,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
                       ),
                       const SizedBox(height: 12),
                       // Sleep timer / status subtitle
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            timerState.stopAfterCurrentTrack
-                                ? Icons.music_note_rounded
-                                : timerState.active
-                                ? Icons.timer_outlined
-                                : Icons.nights_stay_outlined,
-                            size: 14,
-                            color: Colors.white.withValues(alpha: 0.85),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            timerText,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.85),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w400,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
-                      ),
+                      const _BedtimeTimerStatus(),
                     ],
                   ),
                 ),
@@ -508,6 +469,55 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
           ),
         ),
       ),
+    );
+  }
+}
+
+class _BedtimeTimerStatus extends ConsumerWidget {
+  const _BedtimeTimerStatus();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final timerState =
+        ref.watch(timerStateProvider).value ??
+        ref.read(timerFacadeProvider).state;
+    final String timerText;
+    if (timerState.stopAfterCurrentTrack) {
+      timerText = i18n.tr('stop_after_current_track');
+    } else if (timerState.active &&
+        timerState.remaining != null &&
+        timerState.remaining! > Duration.zero) {
+      timerText =
+          '${i18n.tr('sleep_countdown')}  ${formatDurationCompact(timerState.remaining!)}';
+    } else {
+      timerText = i18n.tr('no_timer_set');
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          timerState.stopAfterCurrentTrack
+              ? Icons.music_note_rounded
+              : timerState.active
+              ? Icons.timer_outlined
+              : Icons.nights_stay_outlined,
+          size: 14,
+          color: Colors.white.withValues(alpha: 0.85),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          timerText,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.85),
+            fontSize: 13,
+            fontWeight: FontWeight.w400,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ],
     );
   }
 }

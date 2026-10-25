@@ -67,7 +67,7 @@ Stream<List<AsmrTagInterest>> _interestStream(
     read: () => read(controller),
     deferInitialRead: true,
     structural: true,
-  );
+  ).distinct((previous, next) => identical(previous, next));
 }
 
 final asmrWorkFinderProvider =

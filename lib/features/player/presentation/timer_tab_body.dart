@@ -5,17 +5,12 @@ extension _TimerTabBody on _TimerTabState {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final timer = ref.read(timerFacadeProvider);
-    final timerSlice =
-        ref.watch(timerStateProvider).value ?? TimerStateSliceData();
+    final timerSlice = ref.watch(timerConfigurationUiProvider);
     _syncDraftFromState(timerSlice);
     final cs = Theme.of(context).colorScheme;
     final timerConfigured = timerSlice.duration != null;
     final timerActive = timerSlice.active;
-    final timerExpired =
-        timerConfigured &&
-        !timerSlice.active &&
-        timerSlice.remaining != null &&
-        timerSlice.remaining! <= Duration.zero;
+    final timerExpired = timerSlice.expired;
     final autoResumeCountdownTarget = _TimerTabState._timerRuntimeCalculator
         .autoResumeCountdownTarget(
           timerExpired: timerExpired,
@@ -25,15 +20,7 @@ extension _TimerTabBody on _TimerTabState {
           minute: timerSlice.autoResumeMinute,
           now: DateTime.now(),
         );
-    final timerWaitingTrigger =
-        timerConfigured &&
-        !timerExpired &&
-        !timerSlice.active &&
-        timerSlice.mode == TimerMode.trigger &&
-        timerSlice.remaining != null &&
-        timerSlice.remaining! > Duration.zero;
-    final summaryDuration =
-        timerSlice.remaining ?? timerSlice.duration ?? _pickedDuration;
+    final timerWaitingTrigger = timerSlice.waitingTrigger;
     final summaryMode = timerSlice.mode ?? _selectedMode;
     final draftModeTitle = _modeTitle(i18n, summaryMode);
     final showCompactOnly = widget.compactOnly;
@@ -353,9 +340,27 @@ extension _TimerTabBody on _TimerTabState {
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            _TimerSummaryChip(
-                              icon: Icons.timer_outlined,
-                              text: _fmtDuration(summaryDuration),
+                            Consumer(
+                              builder: (context, ref, _) {
+                                final remaining =
+                                    ref.watch(
+                                      timerStateProvider.select(
+                                        (state) => state.value?.remaining,
+                                      ),
+                                    ) ??
+                                    ref
+                                        .read(timerFacadeProvider)
+                                        .state
+                                        .remaining;
+                                return _TimerSummaryChip(
+                                  icon: Icons.timer_outlined,
+                                  text: _fmtDuration(
+                                    remaining ??
+                                        timerSlice.duration ??
+                                        _pickedDuration,
+                                  ),
+                                );
+                              },
                             ),
                             _TimerSummaryChip(
                               icon: summaryMode == TimerMode.manual

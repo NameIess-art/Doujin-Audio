@@ -3,6 +3,64 @@ import 'package:doujin_audio/features/asmr/domain/asmr_tag_interest.dart';
 
 void main() {
   test(
+    'batch directory merge retains sequential aliases and preference signals',
+    () {
+      AsmrTagPreferences seed() {
+        final state = AsmrTagPreferences();
+        for (final name in ['First', 'Second', 'Third']) {
+          final key = state.resolve(name);
+          state.learned[key] = 3;
+          state.manualInterests.add(key);
+          state.excluded.add(key);
+        }
+        return state;
+      }
+
+      final incoming = [
+        AsmrTag(key: 'online:1', name: 'First', aliases: ['Second']),
+        AsmrTag(key: 'online:2', name: 'Third', aliases: ['Second']),
+        AsmrTag(key: 'online:1', name: 'Renamed', aliases: ['Other']),
+      ];
+      final sequential = seed();
+      for (final tag in incoming) {
+        sequential.mergeTag(tag);
+      }
+      final batch = seed()..mergeTags(incoming);
+      expect(batch.toJson(), sequential.toJson());
+      expect(batch.learned, {'online:1': 6, 'online:2': 3});
+      expect(batch.manualInterests, {'online:1', 'online:2'});
+      expect(batch.excluded, {'online:1', 'online:2'});
+      expect(
+        batch.tags['online:1']!.aliases,
+        containsAll(['First', 'Second', 'Other']),
+      );
+      expect(batch.tags['online:2']!.aliases, containsAll(['Third', 'Second']));
+    },
+  );
+
+  for (final count in [1000, 5000, 20000]) {
+    test('$count directory entries migrate local aliases in one batch', () {
+      final state = AsmrTagPreferences();
+      for (var index = 0; index < count; index++) {
+        final key = 'local:$index';
+        state.tags[key] = AsmrTag(key: key, name: 'Alias $index');
+        state.learned[key] = index + 1.0;
+      }
+      state.mergeTags([
+        for (var index = 0; index < count; index++)
+          AsmrTag(
+            key: 'online:$index',
+            name: 'Name $index',
+            aliases: ['Alias $index'],
+          ),
+      ]);
+      expect(state.tags, hasLength(count));
+      expect(state.tags.keys.every((key) => key.startsWith('online:')), isTrue);
+      expect(state.learned['online:${count - 1}'], count.toDouble());
+    });
+  }
+
+  test(
     'recommendation weights use relative listening time and manual choices',
     () {
       final state = AsmrTagPreferences();

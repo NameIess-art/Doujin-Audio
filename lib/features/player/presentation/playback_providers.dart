@@ -7,6 +7,7 @@ import '../application/playback_session_snapshot.dart';
 import '../application/playback_subtitle_service.dart';
 import '../application/subtitle_overlay_controller.dart';
 import '../application/timer_facade.dart';
+import '../domain/playback_mode.dart';
 
 final playbackFacadeProvider = Provider<PlaybackFacade>((ref) {
   throw UnimplementedError(
@@ -63,6 +64,54 @@ final playbackSessionProvider = Provider.autoDispose
 
 final timerStateProvider = StreamProvider<TimerStateSliceData>((ref) {
   return ref.watch(timerFacadeProvider).states;
+});
+
+typedef TimerConfigurationUiState = ({
+  TimerMode? mode,
+  Duration? duration,
+  TimerMode draftMode,
+  Duration selectedDuration,
+  bool active,
+  bool expired,
+  bool waitingTrigger,
+  bool autoResumeEnabled,
+  int autoResumeHour,
+  int autoResumeMinute,
+  DateTime? autoResumeAt,
+  int pausedSessionCount,
+  bool stopAfterCurrentTrack,
+});
+
+// Countdown ticks belong to the time text, while configuration and phase
+// changes must still update the surrounding controls immediately.
+final timerConfigurationUiProvider = Provider<TimerConfigurationUiState>((ref) {
+  final state =
+      ref.watch(timerStateProvider).value ??
+      ref.read(timerFacadeProvider).state;
+  return (
+    mode: state.mode,
+    duration: state.duration,
+    draftMode: state.draftMode,
+    selectedDuration: state.duration ?? state.remaining ?? state.draftDuration,
+    active: state.active,
+    expired:
+        state.duration != null &&
+        !state.active &&
+        state.remaining != null &&
+        state.remaining! <= Duration.zero,
+    waitingTrigger:
+        state.duration != null &&
+        !state.active &&
+        state.mode == TimerMode.trigger &&
+        state.remaining != null &&
+        state.remaining! > Duration.zero,
+    autoResumeEnabled: state.autoResumeEnabled,
+    autoResumeHour: state.autoResumeHour,
+    autoResumeMinute: state.autoResumeMinute,
+    autoResumeAt: state.autoResumeAt,
+    pausedSessionCount: state.pausedByTimerSessionIds.length,
+    stopAfterCurrentTrack: state.stopAfterCurrentTrack,
+  );
 });
 
 final activeSessionDetailIdsProvider =

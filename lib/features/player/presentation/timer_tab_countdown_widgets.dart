@@ -11,7 +11,7 @@ class _CountdownCard extends ConsumerWidget {
     this.compact = false,
   });
 
-  final TimerStateSliceData timerState;
+  final TimerConfigurationUiState timerState;
   final bool timerExpired;
   final bool waitingTrigger;
   final String Function(Duration) fmtDuration;
@@ -23,8 +23,6 @@ class _CountdownCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final remaining = timerState.remaining ?? Duration.zero;
-
     final showAutoResumeCountdown = timerExpired && autoResumeAt != null;
 
     final title = showAutoResumeCountdown
@@ -104,20 +102,32 @@ class _CountdownCard extends ConsumerWidget {
               const SizedBox(height: 18),
             ],
             Center(
-              child: TargetCountdownBuilder(
-                target: showAutoResumeCountdown ? autoResumeAt : null,
-                builder: (context, autoResumeRemaining) {
-                  return Text(
-                    showAutoResumeCountdown
-                        ? fmtDuration(autoResumeRemaining)
-                        : fmtDuration(remaining),
-                    style: TextStyle(
-                      fontSize: compact ? 32 : 46,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: compact ? 1.4 : 2.6,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                      color: timeColor,
-                    ),
+              child: Consumer(
+                builder: (context, ref, _) {
+                  final remaining =
+                      ref.watch(
+                        timerStateProvider.select(
+                          (state) => state.value?.remaining,
+                        ),
+                      ) ??
+                      ref.read(timerFacadeProvider).state.remaining ??
+                      Duration.zero;
+                  return TargetCountdownBuilder(
+                    target: showAutoResumeCountdown ? autoResumeAt : null,
+                    builder: (context, autoResumeRemaining) {
+                      return Text(
+                        showAutoResumeCountdown
+                            ? fmtDuration(autoResumeRemaining)
+                            : fmtDuration(remaining),
+                        style: TextStyle(
+                          fontSize: compact ? 32 : 46,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: compact ? 1.4 : 2.6,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                          color: timeColor,
+                        ),
+                      );
+                    },
                   );
                 },
               ),
@@ -126,11 +136,11 @@ class _CountdownCard extends ConsumerWidget {
               Builder(
                 builder: (context) {
                   final chips = <Widget>[
-                    if (timerState.pausedByTimerSessionIds.isNotEmpty)
+                    if (timerState.pausedSessionCount > 0)
                       _TimerSummaryChip(
                         icon: Icons.pause_circle_outline_rounded,
                         text: i18n.tr('paused_audio_count', {
-                          'count': timerState.pausedByTimerSessionIds.length,
+                          'count': timerState.pausedSessionCount,
                         }),
                         foregroundColor: cs.onErrorContainer,
                         backgroundColor: cs.errorContainer,

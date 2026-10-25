@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/persistence/persisted_state_reloader.dart';
 import '../../../core/logging/app_log_service.dart';
+import '../../../core/immutable_collections.dart';
 import '../domain/asmr_models.dart';
 import '../domain/asmr_search_suggestions.dart';
 import '../../../core/media/music_track.dart';
@@ -30,6 +31,16 @@ export 'asmr_work_content_mapping.dart' show collectAsmrWorkTextFiles;
 enum _CreatorInterest { voiceActor, circle }
 
 typedef _AsmrSyncRequestKey = ({int authEpoch, String token});
+typedef _InterestSnapshot = ({
+  List<AsmrTagInterest> interests,
+  Map<String, double> weights,
+});
+
+AsmrTagPreferences _mergeTagCatalog(
+  ({AsmrTagPreferences state, List<AsmrTag> entries}) input,
+) => AsmrTagPreferences.fromJson(input.state.toJson())
+  ..mergeTags(input.entries)
+  ..catalogComplete = true;
 
 List<MusicTrack> _buildPlayableTracks(
   ({AsmrWork work, List<AsmrTrackFile> tree}) input,
@@ -98,11 +109,11 @@ class AsmrLibraryController extends ChangeNotifier
        _accountSyncService = accountSyncService {
     _remoteCatalogService.isWorkAllowed = _isWorkAllowed;
     _remoteCatalogService.tagWeights = () =>
-        _tagPreferences.recommendationWeights;
+        _interestSnapshot(_tagPreferences).weights;
     _remoteCatalogService.voiceActorWeights = () =>
-        _voiceActorPreferences.recommendationWeights;
+        _interestSnapshot(_voiceActorPreferences).weights;
     _remoteCatalogService.circleWeights = () =>
-        _circlePreferences.recommendationWeights;
+        _interestSnapshot(_circlePreferences).weights;
     _remoteCatalogService.prepareTagInterests = (tracks) =>
         ensureTagInterests(localTracks: tracks);
   }
@@ -135,12 +146,21 @@ class AsmrLibraryController extends ChangeNotifier
   AsmrTagPreferences _tagPreferences = AsmrTagPreferences();
   AsmrTagPreferences _voiceActorPreferences = AsmrTagPreferences();
   AsmrTagPreferences _circlePreferences = AsmrTagPreferences();
+  final _interestSnapshots = Expando<_InterestSnapshot>();
+  _InterestSnapshot _interestSnapshot(AsmrTagPreferences preferences) {
+    final cached = _interestSnapshots[preferences];
+    if (cached != null) return cached;
+    final interests = immutableList(preferences.listenedInterests);
+    return _interestSnapshots[preferences] = (
+      interests: interests,
+      weights: immutableMap(preferences.recommendationWeightsFor(interests)),
+    );
+  }
   final Map<_CreatorInterest, Future<void>> _creatorCatalogTasks = {};
   final Map<_CreatorInterest, Object> _creatorCatalogErrors = {};
   List<AsmrTagInterest> get voiceActorInterests =>
-      _voiceActorPreferences.interests;
-  List<AsmrTagInterest> get listenedVoiceActorInterests =>
-      _voiceActorPreferences.listenedInterests;
+      _interestSnapshot(_voiceActorPreferences).interests;
+  List<AsmrTagInterest> get listenedVoiceActorInterests => voiceActorInterests;
   Set<String> get manualInterestVoiceActorKeys =>
       Set.unmodifiable(_voiceActorPreferences.manualInterests);
   Set<String> get excludedVoiceActorKeys =>
@@ -153,9 +173,9 @@ class AsmrLibraryController extends ChangeNotifier
       _creatorCatalogTasks.containsKey(_CreatorInterest.voiceActor);
   Object? get voiceActorCatalogError =>
       _creatorCatalogErrors[_CreatorInterest.voiceActor];
-  List<AsmrTagInterest> get circleInterests => _circlePreferences.interests;
-  List<AsmrTagInterest> get listenedCircleInterests =>
-      _circlePreferences.listenedInterests;
+  List<AsmrTagInterest> get circleInterests =>
+      _interestSnapshot(_circlePreferences).interests;
+  List<AsmrTagInterest> get listenedCircleInterests => circleInterests;
   Set<String> get manualInterestCircleKeys =>
       Set.unmodifiable(_circlePreferences.manualInterests);
   Set<String> get excludedCircleKeys =>
@@ -172,9 +192,9 @@ class AsmrLibraryController extends ChangeNotifier
   bool _tagInterestsReady = false;
   Future<void>? _tagCatalogTask;
   Object? _tagCatalogError;
-  List<AsmrTagInterest> get interestTags => _tagPreferences.interests;
-  List<AsmrTagInterest> get listenedTagInterests =>
-      _tagPreferences.listenedInterests;
+  List<AsmrTagInterest> get interestTags =>
+      _interestSnapshot(_tagPreferences).interests;
+  List<AsmrTagInterest> get listenedTagInterests => interestTags;
   Set<String> get manualInterestTagKeys =>
       Set.unmodifiable(_tagPreferences.manualInterests);
   List<AsmrTag> get allTags {
@@ -305,20 +325,45 @@ class AsmrLibraryController extends ChangeNotifier
   String? _dailyRequestedDate;
   AsmrRequestCancellationToken? _dailyRecommendationsCancellation;
   Object? _dailyRecommendationsError;
+  ({
+    List<AsmrWork> source,
+    AsmrTagPreferences tags,
+    AsmrTagPreferences voices,
+    AsmrTagPreferences circles,
+    List<AsmrWork> works,
+  })?
+  _dailySnapshot;
   List<AsmrWork> get dailyRecommendations {
-    final voices = _voiceActorPreferences.recommendationWeights;
-    final circles = _circlePreferences.recommendationWeights;
-    return _dailyRecommendations
-        .where((work) {
-          if (!_isWorkAllowed(work)) return false;
-          return voices.isEmpty && circles.isEmpty ||
-              work.voiceActors.any(
-                (name) => voices.containsKey(normalizeAsmrTag(name)),
-              ) ||
-              circles.containsKey(normalizeAsmrTag(work.circleName));
-        })
-        .take(20)
-        .toList(growable: false);
+    final cached = _dailySnapshot;
+    if (cached != null &&
+        identical(cached.source, _dailyRecommendations) &&
+        identical(cached.tags, _tagPreferences) &&
+        identical(cached.voices, _voiceActorPreferences) &&
+        identical(cached.circles, _circlePreferences)) {
+      return cached.works;
+    }
+    final voices = _interestSnapshot(_voiceActorPreferences).weights;
+    final circles = _interestSnapshot(_circlePreferences).weights;
+    final works = immutableList(
+      _dailyRecommendations
+          .where((work) {
+            if (!_isWorkAllowed(work)) return false;
+            return voices.isEmpty && circles.isEmpty ||
+                work.voiceActors.any(
+                  (name) => voices.containsKey(normalizeAsmrTag(name)),
+                ) ||
+                circles.containsKey(normalizeAsmrTag(work.circleName));
+          })
+          .take(20),
+    );
+    _dailySnapshot = (
+      source: _dailyRecommendations,
+      tags: _tagPreferences,
+      voices: _voiceActorPreferences,
+      circles: _circlePreferences,
+      works: works,
+    );
+    return works;
   }
 
   String? get dailyRecommendationsDate => _dailyRecommendationsDate;
@@ -326,9 +371,10 @@ class AsmrLibraryController extends ChangeNotifier
   Object? get dailyRecommendationsError => _dailyRecommendationsError;
 
   String get _dailyInterestSignature {
-    final voices = _voiceActorPreferences.recommendationWeights.keys.toList()
-      ..sort();
-    final circles = _circlePreferences.recommendationWeights.keys.toList()
+    final voices = _interestSnapshot(
+      _voiceActorPreferences,
+    ).weights.keys.toList()..sort();
+    final circles = _interestSnapshot(_circlePreferences).weights.keys.toList()
       ..sort();
     return voices.isEmpty && circles.isEmpty
         ? ''
@@ -446,6 +492,7 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   void _invalidateDailyRecommendations() {
+    _dailySnapshot = null;
     _dailyRecommendationsCancellation?.cancel();
     _dailyRecommendationsTask = null;
     _dailyRequestedDate = null;
@@ -464,13 +511,25 @@ class AsmrLibraryController extends ChangeNotifier
       !_circlePreferences.excludes(names: [work.circleName]);
 
   Future<void> _mutateTagPreferences(
-    void Function(AsmrTagPreferences) mutate, {
+    void Function(AsmrTagPreferences)? mutate, {
     bool interruptRecommendations = false,
+    List<AsmrTag>? catalog,
+    int? expectedEpoch,
   }) => _runStateMutation(() async {
-    final next = AsmrTagPreferences.fromJson(_tagPreferences.toJson());
-    mutate(next);
+    bool isCurrent() =>
+        !_disposed &&
+        (expectedEpoch == null || expectedEpoch == _runtimeCacheEpoch);
+    if (!isCurrent()) return;
+    final next = catalog == null
+        ? AsmrTagPreferences.fromJson(_tagPreferences.toJson())
+        : await compute(_mergeTagCatalog, (
+            state: _tagPreferences,
+            entries: catalog,
+          ));
+    if (!isCurrent()) return;
+    mutate?.call(next);
     await _preferencesStore.saveTagPreferences(next);
-    if (_disposed) return;
+    if (!isCurrent()) return;
     _tagPreferences = next;
     _catalog.preferencesChanged(
       interruptRecommendations: interruptRecommendations,
@@ -489,9 +548,10 @@ class AsmrLibraryController extends ChangeNotifier
 
   Future<void> _mutateCreatorPreferences(
     _CreatorInterest kind,
-    void Function(AsmrTagPreferences) mutate, {
+    void Function(AsmrTagPreferences)? mutate, {
     bool interruptRecommendations = false,
     int? expectedEpoch,
+    List<AsmrTag>? catalog,
   }) async {
     String? dailyDate;
     await _runStateMutation(() async {
@@ -500,10 +560,17 @@ class AsmrLibraryController extends ChangeNotifier
         return;
       }
       final previousInterests = _dailyInterestSignature;
-      final next = AsmrTagPreferences.fromJson(
-        _creatorPreferences(kind).toJson(),
-      );
-      mutate(next);
+      final next = catalog == null
+          ? AsmrTagPreferences.fromJson(_creatorPreferences(kind).toJson())
+          : await compute(_mergeTagCatalog, (
+              state: _creatorPreferences(kind),
+              entries: catalog,
+            ));
+      if (_disposed ||
+          (expectedEpoch != null && expectedEpoch != _runtimeCacheEpoch)) {
+        return;
+      }
+      mutate?.call(next);
       if (kind == _CreatorInterest.voiceActor) {
         await _preferencesStore.saveVoiceActorPreferences(next);
       } else {
@@ -642,12 +709,12 @@ class AsmrLibraryController extends ChangeNotifier
                 ? _remoteCatalogService.loadVoiceActorCatalog()
                 : _remoteCatalogService.loadCircleCatalog());
             if (_disposed || epoch != _runtimeCacheEpoch) return;
-            await _mutateCreatorPreferences(kind, (state) {
-              for (final entry in entries) {
-                state.mergeTag(entry);
-              }
-              state.catalogComplete = true;
-            }, expectedEpoch: epoch);
+            await _mutateCreatorPreferences(
+              kind,
+              null,
+              catalog: entries,
+              expectedEpoch: epoch,
+            );
           } catch (error) {
             if (!_disposed && epoch == _runtimeCacheEpoch) {
               _creatorCatalogErrors[kind] = error;
@@ -731,12 +798,7 @@ class AsmrLibraryController extends ChangeNotifier
       await ensureTagInterests();
       final tags = await _remoteCatalogService.loadTagCatalog();
       if (_disposed || epoch != _runtimeCacheEpoch) return;
-      await _mutateTagPreferences((state) {
-        for (final tag in tags) {
-          state.mergeTag(tag);
-        }
-        state.catalogComplete = true;
-      });
+      await _mutateTagPreferences(null, catalog: tags, expectedEpoch: epoch);
     } catch (error) {
       if (!_disposed && epoch == _runtimeCacheEpoch) _tagCatalogError = error;
     }

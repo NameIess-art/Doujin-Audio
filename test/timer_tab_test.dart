@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/core/media/time_text_formatters.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
@@ -21,6 +23,99 @@ void main() {
     UiInteractionCoordinator.instance.resetForTest();
     UiInteractionNavigatorObserver.instance.resetForTest();
   });
+
+  for (final compact in [false, true]) {
+    testWidgets(
+      '${compact ? 'compact' : 'full'} timer isolates ten seconds of ticks and refreshes phase and language',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        fixture.timerService
+          ..timerMode = TimerMode.manual
+          ..timerDuration = const Duration(minutes: 1)
+          ..timerActive = true
+          ..timerRemaining = const Duration(minutes: 1);
+        fixture.timer.syncPresentationState();
+        await tester.pumpWidget(
+          fixture.build(
+            TimerTab(
+              showHeader: false,
+              compactOnly: compact,
+              initialCompactDetail: compact,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final builds = <String, int>{};
+        final previous = debugOnRebuildDirtyWidget;
+        debugOnRebuildDirtyWidget = (element, builtOnce) {
+          final name = element.widget.runtimeType.toString();
+          builds.update(name, (count) => count + 1, ifAbsent: () => 1);
+          previous?.call(element, builtOnce);
+        };
+        addTearDown(() => debugOnRebuildDirtyWidget = previous);
+        for (var second = 1; second <= 10; second++) {
+          fixture.timerService.timerRemaining = Duration(seconds: 60 - second);
+          fixture.timer.syncPresentationState();
+          await tester.pump(const Duration(seconds: 1));
+          await tester.pump();
+          expect(
+            find.text(formatDurationHms(Duration(seconds: 60 - second))),
+            findsWidgets,
+          );
+        }
+        for (final name in [
+          'TimerTab',
+          '_CountdownCard',
+          '_DurationPicker',
+          '_TimerSectionTitle',
+        ]) {
+          expect(builds[name] ?? 0, 0, reason: name);
+        }
+        fixture.timerService
+          ..timerActive = false
+          ..timerRemaining = Duration.zero;
+        fixture.timer.syncPresentationState();
+        await tester.pumpAndSettle();
+        expect(
+          find.text(fixture.languageProvider.tr('countdown_finished')),
+          findsWidgets,
+        );
+        fixture.timerService
+          ..autoResumeEnabled = true
+          ..autoResumeHour = 9
+          ..autoResumeMinute = 15
+          ..autoResumeAt = DateTime.now().add(const Duration(hours: 1));
+        fixture.timer.syncPresentationState();
+        await tester.pump();
+        await tester.pump();
+        expect(
+          find.text(fixture.languageProvider.tr('waiting_for_auto_resume')),
+          findsWidgets,
+        );
+        addTearDown(() => fixture.languageProvider.setLanguage(AppLanguage.zh));
+        await fixture.languageProvider.setLanguage(AppLanguage.en);
+        await tester.pump();
+        await tester.pump();
+        expect(
+          find.text(fixture.languageProvider.tr('waiting_for_auto_resume')),
+          findsWidgets,
+        );
+        fixture.timer.cancelTimer();
+        await tester.pumpAndSettle();
+        expect(
+          find.text(fixture.languageProvider.tr('waiting_for_auto_resume')),
+          findsNothing,
+        );
+        expect(find.byType(ListWheelScrollView), findsNWidgets(3));
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   testWidgets(
     'timer permission checks wait for opening and resume interactions',

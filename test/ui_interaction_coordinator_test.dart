@@ -8,6 +8,120 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('overlapping sources publish only aggregate state changes', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator(idleDelay: Duration.zero);
+    addTearDown(coordinator.dispose);
+    final sources = List.generate(100, (_) => Object());
+    final published = <(bool, bool)>[];
+    coordinator.addListener(() {
+      published.add((
+        coordinator.isInteracting,
+        coordinator.isVisualUpdateDeferred,
+      ));
+    });
+    for (final source in sources) {
+      coordinator.beginInteraction(source);
+    }
+    for (final source in sources.take(99)) {
+      coordinator.cancelInteraction(source);
+    }
+    expect(coordinator.isInteracting, isTrue);
+    expect(published, [(true, false)]);
+    coordinator.endInteraction(sources.last);
+    expect(published, [(true, false), (false, false)]);
+  });
+
+  testWidgets('navigation release publishes visual readiness during a scroll', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator();
+    addTearDown(coordinator.dispose);
+    final scroll = Object();
+    final navigation = Object();
+    final published = <(bool, bool)>[];
+    coordinator.addListener(() {
+      published.add((
+        coordinator.isInteracting,
+        coordinator.isVisualUpdateDeferred,
+      ));
+    });
+    coordinator.beginInteraction(scroll);
+    coordinator.beginNavigation(navigation);
+    coordinator.endNavigation(navigation);
+    expect(published, [(true, false), (true, true), (true, false)]);
+    await tester.pump(coordinator.idleDelay);
+    expect(published, hasLength(3));
+    coordinator.cancelInteraction(scroll);
+    expect(published.last, (false, false));
+  });
+
+  testWidgets(
+    'reused navigation source reestablishes the guard during its idle tail',
+    (tester) async {
+      final coordinator = UiInteractionCoordinator();
+      addTearDown(coordinator.dispose);
+      final source = Object();
+      final published = <(bool, bool)>[];
+      coordinator.addListener(() {
+        published.add((
+          coordinator.isInteracting,
+          coordinator.isVisualUpdateDeferred,
+        ));
+      });
+      coordinator.beginNavigation(source);
+      coordinator.endNavigation(source);
+      await tester.pump(const Duration(milliseconds: 80));
+      coordinator.beginNavigation(source);
+      await tester.pump(coordinator.idleDelay);
+      expect(coordinator.isVisualUpdateDeferred, isTrue);
+      expect(coordinator.navigationAllowed.value, isFalse);
+      coordinator.cancelNavigation(source);
+      expect(published, [
+        (true, true),
+        (true, false),
+        (true, true),
+        (false, false),
+      ]);
+      expect(coordinator.navigationAllowed.value, isTrue);
+    },
+  );
+
+  testWidgets(
+    'overlapping visual guards release scroll commits only after both end',
+    (tester) async {
+      final coordinator = UiInteractionCoordinator(idleDelay: Duration.zero);
+      addTearDown(coordinator.dispose);
+      final scroll = Object();
+      final navigation = Object();
+      final firstFrame = Object();
+      var notifications = 0;
+      var committed = false;
+      coordinator.addListener(() => notifications++);
+      coordinator.beginInteraction(scroll);
+      coordinator.beginNavigation(navigation);
+      coordinator.beginInteraction(firstFrame, deferVisualUpdates: true);
+      coordinator.scheduleCommit(
+        key: 'visible-scroll-result',
+        allowDuringScroll: true,
+        commit: () => committed = true,
+      );
+      coordinator.endNavigation(navigation);
+      await tester.pump();
+      expect(committed, isFalse);
+      expect(coordinator.isVisualUpdateDeferred, isTrue);
+      expect(notifications, 2);
+      coordinator.cancelInteraction(firstFrame);
+      await tester.pump();
+      expect(committed, isTrue);
+      expect(coordinator.isInteracting, isTrue);
+      expect(notifications, 3);
+      coordinator.cancelInteraction(scroll);
+      expect(notifications, 4);
+    },
+  );
+
   testWidgets('pending commits wake when their external condition resumes', (
     tester,
   ) async {
@@ -319,7 +433,7 @@ void main() {
         coordinator.beginInteraction(scroll);
         // A source already registered by ordinary work can upgrade its guard.
         coordinator.beginInteraction(source, deferVisualUpdates: true);
-        expect(notifications, 3);
+        expect(notifications, 2);
         expect(coordinator.navigationAllowed.value, isTrue);
         coordinator.scheduleCommit(
           key: 'visible-cover',
@@ -341,7 +455,7 @@ void main() {
         }
         expect(coordinator.isVisualUpdateDeferred, isFalse);
         expect(coordinator.isInteracting, isTrue);
-        expect(notifications, 4);
+        expect(notifications, 3);
         await tester.pump();
         expect(committed, isTrue);
         coordinator.cancelInteraction(scroll);

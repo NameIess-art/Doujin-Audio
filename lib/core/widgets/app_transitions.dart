@@ -280,17 +280,10 @@ class _RenderPageTransitionHost extends RenderProxyBox {
     markNeedsPaint();
   }
 
-  int _comparePaintOrder(RenderObject first, RenderObject second) {
-    List<RenderObject> path(RenderObject node) => [
-      for (
-        RenderObject? ancestor = node;
-        ancestor != null;
-        ancestor = ancestor.parent
-      )
-        ancestor,
-    ];
-    final firstPath = path(first).reversed.toList();
-    final secondPath = path(second).reversed.toList();
+  int _comparePaintOrder(
+    List<RenderObject> firstPath,
+    List<RenderObject> secondPath,
+  ) {
     var index = 0;
     while (index < firstPath.length &&
         index < secondPath.length &&
@@ -311,11 +304,14 @@ class _RenderPageTransitionHost extends RenderProxyBox {
   void paint(PaintingContext context, Offset offset) {
     super.paint(context, offset);
     if (!enabled) return;
-    // Cached tabs can reverse their Stack order without mounting new headers.
-    final orderedHeaders = headers.toList()..sort(_comparePaintOrder);
-    for (final header in orderedHeaders) {
+    final visibleHeaders =
+        <
+          ({_RenderPageHeader header, List<RenderObject> path, double opacity})
+        >[];
+    for (final header in headers) {
       if (!header.attached || !header.hasSize || header.child == null) continue;
-      header.updateAncestorAnimations();
+      final path = <RenderObject>[header];
+      final animations = <Animation<double>>{};
       var visible = true;
       var prepared = false;
       var opacity = 1.0;
@@ -330,20 +326,39 @@ class _RenderPageTransitionHost extends RenderProxyBox {
           visible = false;
           break;
         }
+        path.add(ancestor);
         if (ancestor is RenderOpacity) opacity *= ancestor.opacity;
         if (ancestor is RenderAnimatedOpacity) {
+          animations.add(ancestor.opacity);
           opacity *= ancestor.opacity.value;
           if (ancestor is _RenderPreparedHeaderOpacity) prepared = true;
         }
       }
       if (!visible || (opacity == 0 && !prepared)) continue;
+      header.updateAncestorAnimations(observed: animations);
+      path.add(this);
+      visibleHeaders.add((
+        header: header,
+        path: path.reversed.toList(growable: false),
+        opacity: opacity,
+      ));
+    }
+    // Cached tabs can reverse their Stack order without mounting new headers.
+    // Sort only visible headers and reuse the ancestry collected above for
+    // each comparison; hidden cached pages add no sorting or listener work.
+    visibleHeaders.sort((a, b) => _comparePaintOrder(a.path, b.path));
+    for (final entry in visibleHeaders) {
+      final header = entry.header;
       final viewport = header.viewport.currentContext?.findRenderObject();
       if (viewport is! RenderBox || !viewport.hasSize) continue;
       final clip = MatrixUtils.transformRect(
         viewport.getTransformTo(this),
         Offset.zero & viewport.size,
       );
-      context.pushOpacity(offset, (opacity * 255).round(), (context, offset) {
+      context.pushOpacity(offset, (entry.opacity * 255).round(), (
+        context,
+        offset,
+      ) {
         context.pushClipRect(needsCompositing, offset, clip, (context, offset) {
           context.pushTransform(
             needsCompositing,
@@ -390,14 +405,16 @@ class _RenderPageHeader extends RenderProxyBox {
   GlobalKey viewport;
   final Set<Animation<double>> _ancestorAnimations = {};
 
-  void updateAncestorAnimations() {
-    final animations = <Animation<double>>{};
-    for (
-      RenderObject? ancestor = parent;
-      ancestor != null && ancestor != host;
-      ancestor = ancestor.parent
-    ) {
-      if (ancestor is RenderAnimatedOpacity) animations.add(ancestor.opacity);
+  void updateAncestorAnimations({Set<Animation<double>>? observed}) {
+    final animations = observed ?? <Animation<double>>{};
+    if (observed == null) {
+      for (
+        RenderObject? ancestor = parent;
+        ancestor != null && ancestor != host;
+        ancestor = ancestor.parent
+      ) {
+        if (ancestor is RenderAnimatedOpacity) animations.add(ancestor.opacity);
+      }
     }
     for (final animation in _ancestorAnimations.difference(animations)) {
       animation.removeListener(host.markNeedsPaint);

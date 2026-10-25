@@ -634,7 +634,7 @@ final _dailyRecommendationsProvider = StreamProvider.autoDispose((ref) {
       date: controller.dailyRecommendationsDate,
       language: controller.contentLanguage,
     ),
-  );
+  ).distinct();
 });
 
 class _DailyRecommendations extends ConsumerStatefulWidget {
@@ -776,10 +776,10 @@ class _DailyRecommendationsState extends ConsumerState<_DailyRecommendations>
                   ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
                   child: ListView.separated(
                     controller: controller,
-                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
                     scrollDirection: Axis.horizontal,
                     itemCount: state.works.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    separatorBuilder: (_, _) => const SizedBox.shrink(),
                     itemBuilder: (context, index) =>
                         _DailyWorkCard(work: state.works[index]),
                   ),
@@ -875,16 +875,16 @@ class _HistoryStripState extends ConsumerState<_HistoryStrip> {
             ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
             child: ListView.separated(
               controller: controller,
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+              padding: const EdgeInsets.symmetric(horizontal: 2),
               scrollDirection: Axis.horizontal,
               itemCount:
                   widget.view.history.length +
                   (widget.view.hasMoreHistory ? 1 : 0),
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              separatorBuilder: (_, _) => const SizedBox.shrink(),
               itemBuilder: (context, index) {
                 if (index == widget.view.history.length) {
                   return SizedBox(
-                    width: 100,
+                    width: 112,
                     child: Center(
                       child: _loading
                           ? const CircularProgressIndicator()
@@ -1026,43 +1026,48 @@ class _WorkCoverCard extends StatelessWidget {
         label: title,
         button: true,
         child: SizedBox(
-          width: _HistoryWorkCard.coverWidth,
-          child: CoverArtworkFrame(
-            key: ValueKey(cardKey),
-            borderRadius: BorderRadius.circular(12),
-            child: Material(
-              child: InkWell(
-                onTap: onOpen,
-                child: ExcludeSemantics(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      cover,
-                      Positioned(
-                        bottom: 8,
-                        left: 8,
-                        right: 8,
-                        child: Text(
-                          title,
-                          key: ValueKey(titleKey),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            height: 1.25,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black87,
-                                blurRadius: 4,
-                                offset: Offset(0, 1),
+          width: _HistoryWorkCard.coverWidth + 12,
+          child: ClipRect(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+              child: CoverArtworkFrame(
+                key: ValueKey(cardKey),
+                borderRadius: BorderRadius.circular(12),
+                child: Material(
+                  child: InkWell(
+                    onTap: onOpen,
+                    child: ExcludeSemantics(
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          cover,
+                          Positioned(
+                            bottom: 8,
+                            left: 8,
+                            right: 8,
+                            child: Text(
+                              title,
+                              key: ValueKey(titleKey),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                height: 1.25,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black87,
+                                    blurRadius: 4,
+                                    offset: Offset(0, 1),
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),

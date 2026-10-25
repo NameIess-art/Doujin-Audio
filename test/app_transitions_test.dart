@@ -3911,6 +3911,57 @@ void main() {
     expect(find.text('lazy-1', skipOffstage: false), findsOneWidget);
   });
 
+  testWidgets('lifted headers visit hidden ancestry once per paint', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    addTearDown(index.dispose);
+    final reads = List<int>.filled(8, 0);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppFadeThroughIndexedStack.lazy(
+          indexListenable: index,
+          itemCount: reads.length,
+          separateHeader: true,
+          itemBuilder: (_, page) => Column(
+            children: [
+              _AncestorReadProbe(
+                onRead: () => reads[page]++,
+                child: AppPageHeaderTransition(
+                  child: Text('paint-header-$page'),
+                ),
+              ),
+              Expanded(
+                child: AppPageContentTransition(
+                  child: Text('paint-body-$page'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    for (var page = 1; page < reads.length; page++) {
+      index.value = page;
+      await tester.pumpAndSettle();
+    }
+    final host = tester.renderObject(find.byType(AppPageTransitionHost).first);
+    for (var frame = 0; frame < 3; frame++) {
+      reads.fillRange(0, reads.length, 0);
+      host.markNeedsPaint();
+      await tester.pump();
+      expect(reads.take(reads.length - 1), everyElement(1));
+    }
+    index.value = 0;
+    await tester.pumpAndSettle();
+    expect(find.text('paint-header-0'), findsOneWidget);
+    reads.fillRange(0, reads.length, 0);
+    host.markNeedsPaint();
+    await tester.pump();
+    expect(reads.skip(1), everyElement(1));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('cached hidden pages do not layout during switching or resize', (
     tester,
   ) async {
@@ -4561,4 +4612,26 @@ List<Key?> _paintOrder(WidgetTester tester) {
             candidate.children.every((child) => child.key is ValueKey<String>),
       );
   return stack.children.map((child) => child.key).toList(growable: false);
+}
+
+class _AncestorReadProbe extends SingleChildRenderObjectWidget {
+  const _AncestorReadProbe({required this.onRead, required super.child});
+
+  final VoidCallback onRead;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _AncestorReadBox(onRead);
+}
+
+class _AncestorReadBox extends RenderProxyBox {
+  _AncestorReadBox(this.onRead);
+
+  final VoidCallback onRead;
+
+  @override
+  RenderObject? get parent {
+    onRead();
+    return super.parent;
+  }
 }

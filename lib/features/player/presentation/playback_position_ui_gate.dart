@@ -67,6 +67,7 @@ class PlaybackPositionUiGate extends ChangeNotifier {
        _interactionCoordinator =
            interactionCoordinator ?? UiInteractionCoordinator.instance,
        _value = PlaybackPositionUiSnapshot.fromSession(session) {
+    _publishedValue = _value;
     _bindSession();
     _interactionCoordinator.addListener(_handleInteractionChanged);
   }
@@ -77,6 +78,8 @@ class PlaybackPositionUiGate extends ChangeNotifier {
   final bool includeBufferedPosition;
   PlaybackSessionSnapshot _session;
   PlaybackPositionUiSnapshot _value;
+  late PlaybackPositionUiSnapshot _publishedValue;
+  Object? _pendingPublish;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration?>? _durationSub;
   StreamSubscription<Duration>? _bufferedSub;
@@ -101,7 +104,8 @@ class PlaybackPositionUiGate extends ChangeNotifier {
 
   void updateSession(PlaybackSessionSnapshot session) {
     if (identical(_session, session)) return;
-    final streamsChanged = _session.id != session.id ||
+    final streamsChanged =
+        _session.id != session.id ||
         _session.positionStream != session.positionStream ||
         _session.durationStream != session.durationStream ||
         _session.bufferedPositionStream != session.bufferedPositionStream;
@@ -123,8 +127,12 @@ class PlaybackPositionUiGate extends ChangeNotifier {
         bufferedPosition: session.bufferedPosition,
       );
       if (_value != nextValue) {
-        _value = nextValue;
-        _publish(force: trackChanged);
+        if (trackChanged) {
+          _value = nextValue;
+          _publish(force: true);
+        } else {
+          _updateValue(nextValue);
+        }
       }
     }
   }
@@ -159,14 +167,28 @@ class PlaybackPositionUiGate extends ChangeNotifier {
   void _updateValue(PlaybackPositionUiSnapshot nextValue) {
     if (_value == nextValue) return;
     _value = nextValue;
-    _publish();
+    _dirty = true;
+    if (_pendingPublish != null) return;
+    final pending = _pendingPublish = Object();
+    // A native sample arrives on three asynchronous streams. Publish after
+    // their same-turn events so listeners see one complete sample.
+    scheduleMicrotask(() {
+      if (_disposed || !identical(_pendingPublish, pending)) return;
+      _pendingPublish = null;
+      _publish();
+    });
   }
 
   void _publish({bool force = false}) {
     if (_disposed) return;
     if (force) {
+      _pendingPublish = null;
       _throttleTimer?.cancel();
       _throttleTimer = null;
+    }
+    if (_value == _publishedValue) {
+      _dirty = false;
+      return;
     }
     if (!_tickerModeEnabled ||
         (deferDuringInteraction && _interactionCoordinator.isInteracting)) {
@@ -188,6 +210,7 @@ class PlaybackPositionUiGate extends ChangeNotifier {
     }
     _dirty = false;
     _lastNotifyMs = now;
+    _publishedValue = _value;
     notifyListeners();
   }
 
@@ -208,6 +231,7 @@ class PlaybackPositionUiGate extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _pendingPublish = null;
     _sessionGeneration++;
     _throttleTimer?.cancel();
     _throttleTimer = null;

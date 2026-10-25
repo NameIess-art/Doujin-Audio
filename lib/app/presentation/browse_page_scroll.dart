@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,9 +37,8 @@ class BrowsePageScroll extends ConsumerStatefulWidget {
         .dependOnInheritedWidgetOfExactType<_BrowseAnchors>()
         ?.owner;
     if (owner == null) return;
-    final nextIds = immutableList(ids);
-    owner._prepareColumns(columnCount, rowExtent, topPadding, nextIds);
-    owner._anchorIds = nextIds;
+    owner._updateAnchorIds(ids);
+    owner._prepareColumns(columnCount, rowExtent, topPadding);
     owner._scheduleRestore();
   }
 
@@ -57,16 +57,25 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
   bool _applyingRestore = false;
   late int _epoch;
   List<String> _anchorIds = const [];
+  Map<String, int> _anchorIndices = const {};
   (double, double)? _lastDimensions;
   Key? _contentKey;
   int? _columnCount;
 
-  void _prepareColumns(
-    int? columns,
-    double? extent,
-    double topPadding,
-    List<String> nextIds,
-  ) {
+  void _updateAnchorIds(Iterable<String> ids) {
+    // Library and online projections already own immutable ordered snapshots.
+    // Reuse those identities; mutable callers still receive a defensive copy.
+    final next = immutableList(ids);
+    if (identical(next, _anchorIds) || listEquals(next, _anchorIds)) return;
+    _anchorIds = next;
+    final indices = <String, int>{};
+    for (var index = 0; index < next.length; index++) {
+      indices.putIfAbsent(next[index], () => index);
+    }
+    _anchorIndices = indices;
+  }
+
+  void _prepareColumns(int? columns, double? extent, double topPadding) {
     final previous = _columnCount;
     _columnCount = columns;
     if (previous == null ||
@@ -95,9 +104,9 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
     if (extent == null || extent <= 0) return;
     _save();
     final saved = _store.stateFor(widget.pageKey);
-    final index = nextIds.indexOf(saved['anchor'] as String? ?? '');
+    final index = _anchorIndices[saved['anchor']];
     final offset = (saved['anchorOffset'] as num?)?.toDouble();
-    if (index < 0 || offset == null) return;
+    if (index == null || offset == null) return;
     final destination = (topPadding + (index ~/ columns) * extent - offset)
         .clamp(position.minScrollExtent, double.infinity);
     // Column grouping changes before the viewport lays out. Correct its offset
@@ -192,16 +201,18 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
           box,
         )?.getOffsetToReveal(box, 0).offset;
         if (destination != null) destination -= anchorOffset;
-      } else if (anchor is String && _anchorIds.contains(anchor)) {
+      } else if (anchor is String && _anchorIndices.containsKey(anchor)) {
         // Lazy lists may put the stable item outside the old pixel window after
         // insertion or a layout change. Estimate from currently mounted rows,
         // then use the item's actual geometry on the next frame.
-        final targetIndex = _anchorIds.indexOf(anchor);
+        final targetIndex = _anchorIndices[anchor]!;
         final samples = <(int, double)>[];
         for (final entry in _anchors.entries) {
-          final index = _anchorIds.indexOf(entry.key);
+          final index = _anchorIndices[entry.key];
           final render = entry.value.findRenderObject();
-          if (index < 0 || render is! RenderBox || !render.attached) continue;
+          if (index == null || render is! RenderBox || !render.attached) {
+            continue;
+          }
           final reveal = RenderAbstractViewport.maybeOf(
             render,
           )?.getOffsetToReveal(render, 0);
@@ -287,7 +298,7 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
 
   @override
   Widget build(BuildContext context) {
-    if (widget.anchorIds.isNotEmpty) _anchorIds = widget.anchorIds;
+    if (widget.anchorIds.isNotEmpty) _updateAnchorIds(widget.anchorIds);
     _scheduleRestore();
     return _BrowseAnchors(
       owner: this,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
@@ -21,6 +23,160 @@ PlaybackSession _session(String id) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  for (final interval in [Duration.zero, const Duration(milliseconds: 32)]) {
+    testWidgets(
+      'one native sample publishes one complete snapshot ($interval)',
+      (tester) async {
+        final session = _session('one');
+        final gate = PlaybackPositionUiGate(
+          session: PlaybackSessionSnapshot.fromRuntime(session),
+          minUpdateInterval: interval,
+        );
+        addTearDown(gate.dispose);
+        addTearDown(session.shutdown);
+        final published = <PlaybackPositionUiSnapshot>[];
+        gate.addListener(() => published.add(gate.value));
+
+        for (var second = 1; second <= 10; second++) {
+          session.applyNativeProgress(
+            NativePlaybackProgressUpdate(
+              sessionId: session.id,
+              position: Duration(seconds: second),
+              duration: const Duration(minutes: 1),
+              bufferedPosition: Duration(seconds: second + 5),
+              nativeElapsedRealtimeMs: second * 1000,
+            ),
+          );
+          await tester.pump();
+          await tester.pump(interval);
+          expect(published, hasLength(second));
+          expect(
+            published.last,
+            PlaybackPositionUiSnapshot(
+              position: Duration(seconds: second),
+              duration: const Duration(minutes: 1),
+              bufferedPosition: Duration(seconds: second + 5),
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(published, hasLength(second));
+        }
+      },
+    );
+  }
+
+  testWidgets(
+    'throttled progress returning to the published value emits nothing',
+    (tester) async {
+      final session = _session('one');
+      final gate = PlaybackPositionUiGate(
+        session: PlaybackSessionSnapshot.fromRuntime(session),
+      );
+      addTearDown(gate.dispose);
+      addTearDown(session.shutdown);
+      var notifications = 0;
+      gate.addListener(() => notifications++);
+
+      session.setOptimisticPosition(const Duration(seconds: 5));
+      await tester.pump();
+      expect(notifications, 1);
+      session.setOptimisticPosition(const Duration(seconds: 7));
+      await tester.pump();
+      expect(notifications, 1);
+      session.setOptimisticPosition(const Duration(seconds: 5));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 32));
+      expect(notifications, 1);
+      expect(gate.value.position, const Duration(seconds: 5));
+    },
+  );
+
+  testWidgets('switching sessions invalidates a queued publication', (
+    tester,
+  ) async {
+    final first = _session('one');
+    final second = _session('two');
+    second.setOptimisticPosition(const Duration(seconds: 20));
+    await tester.pump();
+    final gate = PlaybackPositionUiGate(
+      session: PlaybackSessionSnapshot.fromRuntime(first),
+      minUpdateInterval: Duration.zero,
+    );
+    addTearDown(gate.dispose);
+    addTearDown(first.shutdown);
+    addTearDown(second.shutdown);
+    final published = <Duration>[];
+    gate.addListener(() => published.add(gate.value.position));
+
+    first.setOptimisticPosition(const Duration(seconds: 5));
+    scheduleMicrotask(
+      () => gate.updateSession(PlaybackSessionSnapshot.fromRuntime(second)),
+    );
+    await tester.pump();
+    expect(published, [const Duration(seconds: 20)]);
+    await tester.pump(const Duration(milliseconds: 32));
+    expect(published, hasLength(1));
+  });
+
+  testWidgets('disposing before a queued publication releases it', (
+    tester,
+  ) async {
+    final session = _session('one');
+    final gate = PlaybackPositionUiGate(
+      session: PlaybackSessionSnapshot.fromRuntime(session),
+    );
+    addTearDown(session.shutdown);
+    var notifications = 0;
+    gate.addListener(() => notifications++);
+    session.setOptimisticPosition(const Duration(seconds: 5));
+    scheduleMicrotask(gate.dispose);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 32));
+    expect(notifications, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'changing tracks flushes the reset snapshot before queued progress',
+    (tester) async {
+      final session = _session('one');
+      final gate = PlaybackPositionUiGate(
+        session: PlaybackSessionSnapshot.fromRuntime(session),
+      );
+      addTearDown(gate.dispose);
+      addTearDown(session.shutdown);
+      final published = <PlaybackPositionUiSnapshot>[];
+      gate.addListener(() => published.add(gate.value));
+      session.setOptimisticPosition(const Duration(seconds: 5));
+      await tester.pump();
+      published.clear();
+
+      session.applyNativeProgress(
+        const NativePlaybackProgressUpdate(
+          sessionId: 'one',
+          position: Duration(seconds: 10),
+          duration: Duration(minutes: 1),
+          bufferedPosition: Duration(seconds: 15),
+          nativeElapsedRealtimeMs: 10000,
+        ),
+      );
+      scheduleMicrotask(() {
+        session.currentTrackPath = '/audio/next.mp3';
+        session.resetStreamsForNewTrack();
+        gate.updateSession(PlaybackSessionSnapshot.fromRuntime(session));
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 32));
+      expect(published, [
+        const PlaybackPositionUiSnapshot(
+          position: Duration.zero,
+          duration: null,
+          bufferedPosition: Duration.zero,
+        ),
+      ]);
+    },
+  );
 
   testWidgets(
     'throttles frequent position notifications but keeps latest value',

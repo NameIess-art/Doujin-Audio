@@ -57,33 +57,58 @@ class AsmrTagPreferences {
     return key;
   }
 
-  void mergeTag(AsmrTag tag) {
-    final keys = tags.values
-        .where(
-          (old) =>
-              old.key != tag.key &&
-              old.key.startsWith('local:') &&
-              old.aliases.any(
-                (alias) => tag.aliases.any(
-                  (value) => normalizeAsmrTag(value) == normalizeAsmrTag(alias),
-                ),
-              ),
-        )
-        .map((e) => e.key)
-        .toList();
-    final aliases = {...tag.aliases, ...?tags[tag.key]?.aliases};
-    for (final key in keys) {
-      aliases.addAll(tags.remove(key)!.aliases);
-      learned[tag.key] = (learned[tag.key] ?? 0) + (learned.remove(key) ?? 0);
-      if (manualInterests.remove(key)) manualInterests.add(tag.key);
-      if (excluded.remove(key)) excluded.add(tag.key);
+  void mergeTag(AsmrTag tag) => mergeTags([tag]);
+
+  void mergeTags(Iterable<AsmrTag> incoming) {
+    final localAliases = <String, Set<String>>{};
+    final localOrder = <String, int>{};
+    var nextOrder = 0;
+    void index(AsmrTag tag) {
+      if (!tag.key.startsWith('local:')) return;
+      localOrder.putIfAbsent(tag.key, () => nextOrder++);
+      for (final alias in tag.aliases) {
+        localAliases
+            .putIfAbsent(normalizeAsmrTag(alias), () => <String>{})
+            .add(tag.key);
+      }
     }
-    tags[tag.key] = AsmrTag(
-      key: tag.key,
-      name: tag.name,
-      onlineId: tag.onlineId,
-      aliases: aliases,
-    );
+
+    void unindex(AsmrTag tag) {
+      for (final alias in tag.aliases) {
+        localAliases[normalizeAsmrTag(alias)]?.remove(tag.key);
+      }
+    }
+
+    for (final tag in tags.values) {
+      index(tag);
+    }
+    for (final tag in incoming) {
+      final keys = <String>{
+        for (final alias in tag.aliases)
+          ...?localAliases[normalizeAsmrTag(alias)],
+      }..remove(tag.key);
+      // Match the previous sequential merge order when several locals share aliases.
+      final ordered = keys.toList()
+        ..sort((a, b) => localOrder[a]!.compareTo(localOrder[b]!));
+      final aliases = {...tag.aliases, ...?tags[tag.key]?.aliases};
+      for (final key in ordered) {
+        final previous = tags.remove(key)!;
+        unindex(previous);
+        localOrder.remove(key);
+        aliases.addAll(previous.aliases);
+        learned[tag.key] = (learned[tag.key] ?? 0) + (learned.remove(key) ?? 0);
+        if (manualInterests.remove(key)) manualInterests.add(tag.key);
+        if (excluded.remove(key)) excluded.add(tag.key);
+      }
+      final merged = AsmrTag(
+        key: tag.key,
+        name: tag.name,
+        onlineId: tag.onlineId,
+        aliases: aliases,
+      );
+      tags[tag.key] = merged;
+      index(merged);
+    }
   }
 
   List<AsmrTagInterest> get listenedInterests {
@@ -153,9 +178,14 @@ class AsmrTagPreferences {
         );
       });
 
-  Map<String, double> get recommendationWeights {
+  Map<String, double> get recommendationWeights =>
+      recommendationWeightsFor(listenedInterests);
+
+  Map<String, double> recommendationWeightsFor(
+    List<AsmrTagInterest> rankedInterests,
+  ) {
     final result = <String, double>{};
-    final listened = listenedInterests
+    final listened = rankedInterests
         .where(
           (entry) => entry.weight.isFinite && !excluded.contains(entry.tag.key),
         )

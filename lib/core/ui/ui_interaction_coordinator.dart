@@ -30,6 +30,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
   final Map<String, VoidCallback> _throttledCommits = <String, VoidCallback>{};
   bool _frameScheduled = false;
   int _generation = 0;
+  (bool, bool) _publishedInteractionState = (false, false);
 
   bool get isInteracting => _activeSources.isNotEmpty;
   bool get isVisualUpdateDeferred =>
@@ -49,12 +50,14 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _navigationSources.add(source);
     _navigationAllowed.value = false;
     beginInteraction(source);
+    _notifyInteractionChanged();
   }
 
   void endNavigation(Object source) {
     _navigationSources.remove(source);
     _navigationAllowed.value = _navigationSources.isEmpty;
     endInteraction(source);
+    _notifyInteractionChanged();
     scheduleCommitFrame();
   }
 
@@ -62,6 +65,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _navigationSources.remove(source);
     _navigationAllowed.value = _navigationSources.isEmpty;
     cancelInteraction(source);
+    _notifyInteractionChanged();
     scheduleCommitFrame();
   }
 
@@ -72,6 +76,15 @@ class UiInteractionCoordinator extends ChangeNotifier {
         deferVisualUpdates && _visualUpdateSources.add(source);
     if (!added && !visualProtectionAdded) return;
     _backgroundScheduler.setPaused(true);
+    _notifyInteractionChanged();
+  }
+
+  void _notifyInteractionChanged() {
+    final current = (isInteracting, isVisualUpdateDeferred);
+    if (_publishedInteractionState == current) return;
+    // Listeners consume the aggregate guard, not individual scrolls or fades.
+    // Keep visual release observable even while another interaction continues.
+    _publishedInteractionState = current;
     notifyListeners();
   }
 
@@ -175,9 +188,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     if (!_activeSources.remove(source)) return;
     _visualUpdateSources.remove(source);
     _backgroundScheduler.setPaused(isInteracting);
-    // Cover queries and scroll commits must resume when first-frame protection
-    // ends, even if a separate scroll interaction remains active.
-    notifyListeners();
+    _notifyInteractionChanged();
     scheduleCommitFrame();
   }
 
@@ -241,6 +252,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _visualUpdateSources.clear();
     _navigationAllowed.value = true;
     _backgroundScheduler.setPaused(false);
+    _publishedInteractionState = (false, false);
     notifyListeners();
     flushPendingCommitsForTest();
   }
@@ -264,6 +276,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _throttleTimers.clear();
     _throttledCommits.clear();
     _frameScheduled = false;
+    _publishedInteractionState = (false, false);
     notifyListeners();
   }
 

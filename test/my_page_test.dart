@@ -38,6 +38,68 @@ void main() {
     await AppPreferences.init();
   });
 
+  testWidgets(
+    'daily projection ignores unrelated notifications and preserves status updates',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final controller = _DailyController(createTestAsmrServices())
+        ..loadingDaily = false;
+      addTearDown(fixture.dispose);
+      addTearDown(controller.dispose);
+      tester.view.physicalSize = const Size(960, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        fixture.build(
+          const MyPage(tabIndex: 3),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+            listeningActivityProvider.overrideWith(
+              (ref) => Stream.value(const ListeningActivityView()),
+            ),
+          ],
+        ),
+      );
+      await pumpAndSettleWithAsync(tester);
+      var dailyBuilds = 0;
+      final previous = debugOnRebuildDirtyWidget;
+      debugOnRebuildDirtyWidget = (element, builtOnce) {
+        previous?.call(element, builtOnce);
+        if (element.widget.runtimeType.toString() == '_DailyRecommendations') {
+          dailyBuilds++;
+        }
+      };
+      addTearDown(() => debugOnRebuildDirtyWidget = previous);
+      for (var index = 0; index < 20; index++) {
+        controller.notifyListeners();
+        await pumpUntilUiIdle(tester);
+        await tester.pump();
+      }
+      expect(dailyBuilds, 0);
+      for (final change in <VoidCallback>[
+        () => controller.loadingDaily = true,
+        () => controller.dailyFailure = StateError('offline'),
+        () => controller.dailyDate = '2000-01-01',
+        () => controller.dailyLanguage = AsmrContentLanguage.en,
+      ]) {
+        final before = dailyBuilds;
+        change();
+        controller.notifyListeners();
+        await pumpUntilUiIdle(tester);
+        await tester.pump();
+        expect(dailyBuilds, before + 1);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('first taste projections wait for scrolling to finish', (
     tester,
   ) async {
@@ -511,9 +573,17 @@ void main() {
         );
         expect(tester.getSize(first), const Size(132, 99));
         expect(tester.widget<CoverArtworkFrame>(first).showShadow, isTrue);
+        final cardClip = find.ancestor(
+          of: first,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is ClipRect && widget.child is Padding,
+          ),
+        );
+        expect(tester.getSize(cardClip), const Size(144, 113));
+        expect(tester.getTopLeft(first).dx - tester.getTopLeft(cardClip).dx, 6);
         expect(
           tester.widget<ListView>(list).padding,
-          const EdgeInsets.fromLTRB(8, 6, 8, 8),
+          const EdgeInsets.symmetric(horizontal: 2),
         );
         expect(tester.getTopLeft(first).dy - tester.getTopLeft(viewport).dy, 6);
         expect(
@@ -1498,6 +1568,15 @@ void main() {
         final card = find.byKey(const ValueKey('my-history-card-work'));
         expect(tester.getSize(card), const Size(132, 99));
         expect(tester.widget<CoverArtworkFrame>(card).showShadow, isTrue);
+        final nextCard = find.byKey(const ValueKey('my-history-card-remote-0'));
+        expect(tester.getTopLeft(nextCard).dx - tester.getTopRight(card).dx, 12);
+        final cardClip = find.ancestor(
+          of: card,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is ClipRect && widget.child is Padding,
+          ),
+        );
+        expect(tester.getSize(cardClip), const Size(144, 113));
         expect(
           tester.getSize(
             find.byKey(const ValueKey('my-history-card-remote-0')),
@@ -1818,7 +1897,10 @@ class _DailyController extends _InterestController {
   bool loadingDaily = true;
   Object? dailyFailure;
   String? dailyDate;
+  AsmrContentLanguage dailyLanguage = AsmrContentLanguage.zh;
   List<AsmrWork> picks = [];
+  @override
+  AsmrContentLanguage get contentLanguage => dailyLanguage;
   @override
   List<AsmrWork> get dailyRecommendations => picks;
   @override

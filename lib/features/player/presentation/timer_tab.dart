@@ -12,7 +12,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
-import '../application/audio_state_services.dart';
 import '../application/timer_facade.dart';
 import '../domain/playback_mode.dart';
 import '../../settings/application/permission_status_service.dart';
@@ -129,8 +128,8 @@ class _TimerTabState extends ConsumerState<TimerTab>
   String _draftKey(TimerMode mode, Duration duration) =>
       '${mode.index}:${duration.inSeconds}';
 
-  void _syncDraftFromState(TimerStateSliceData state) {
-    final duration = state.duration ?? state.remaining ?? state.draftDuration;
+  void _syncDraftFromState(TimerConfigurationUiState state) {
+    final duration = state.selectedDuration;
     final mode = state.mode ?? state.draftMode;
     final key = _draftKey(mode, duration);
     if (_draftInitialized && _lastSyncedDraftKey == key) {

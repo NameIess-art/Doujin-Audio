@@ -12,6 +12,10 @@ const _samplePoints = [
   (111, 60),
   (70, 28),
   (70, 93),
+  (22, 60), // Outside the compact card's padding.
+  (118, 60),
+  (70, 22),
+  (70, 99),
 ];
 
 Future<List<Color>> _pixels(WidgetTester tester, GlobalKey key) async =>
@@ -40,7 +44,7 @@ void main() {
   for (final brightness in Brightness.values) {
     for (final radius in [null, 20.0]) {
       testWidgets(
-        'cover retains its size and rounded corners with an exterior shadow '
+        'cover retains its size and corners with a compact exterior shadow '
         'in $brightness (radius: ${radius ?? 'default'})',
         (tester) async {
           final previousDisableShadows = debugDisableShadows;
@@ -93,10 +97,11 @@ void main() {
                                     boxShadow: [
                                       BoxShadow(
                                         color: brightness == Brightness.dark
-                                            ? const Color(0x52000000)
-                                            : const Color(0x29000000),
-                                        blurRadius: 6,
-                                        offset: const Offset(0, 2),
+                                            ? const Color(0x70000000)
+                                            : const Color(0x3D000000),
+                                        blurRadius: 8,
+                                        spreadRadius: 1,
+                                        offset: const Offset(0, 3),
                                       ),
                                     ],
                                   ),
@@ -127,17 +132,25 @@ void main() {
             // A rounded corner must expose the surface or shadow, not the image.
             expect(pixels[2].r, closeTo(pixels[2].g, 1 / 255));
             expect(pixels[3], background);
-            for (final outside in pixels.skip(4)) {
+            for (final outside in pixels.skip(4).take(4)) {
               expect(outside.r, lessThan(background.r));
               expect(outside.r, closeTo(outside.g, 1 / 255));
               expect(outside.a, 1);
             }
+            for (final outside in pixels.skip(8)) {
+              expect(outside.r, closeTo(background.r, 1 / 255));
+            }
             updateShadow(() => usePreviousShadow = true);
             await tester.pump();
             final previousPixels = await _pixels(tester, boundaryKey);
-            for (var i = 4; i < pixels.length; i++) {
-              expect(pixels[i].r, lessThan(previousPixels[i].r));
+            for (var i = 8; i < pixels.length; i++) {
+              expect(pixels[i].r, greaterThanOrEqualTo(previousPixels[i].r));
             }
+            expect(
+              Iterable<int>.generate(pixels.length - 8, (i) => i + 8)
+                  .any((i) => pixels[i].r > previousPixels[i].r),
+              isTrue,
+            );
             updateShadow(() {
               usePreviousShadow = false;
               showShadow = false;

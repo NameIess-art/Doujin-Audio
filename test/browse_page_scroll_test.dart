@@ -20,6 +20,7 @@ void main() {
     int columns = 1,
     bool fixedExtent = true,
     ScrollController? placeholderController,
+    List<String>? ids,
   }) => ProviderScope(
     overrides: [browsePageStateStoreProvider.overrideWithValue(store)],
     child: MaterialApp(
@@ -28,12 +29,12 @@ void main() {
           pageKey: key,
           controller: controller,
           restoreReady: restoreReady,
-          anchorIds: List.generate(count, (i) => '${i + start}'),
+          anchorIds: ids ?? List.generate(count, (i) => '${i + start}'),
           child: LayoutBuilder(
             builder: (context, constraints) {
               BrowsePageScroll.setAnchorIds(
                 context,
-                List.generate(count, (i) => '${i + start}'),
+                ids ?? List.generate(count, (i) => '${i + start}'),
                 columnCount: columns,
                 rowExtent: extent,
               );
@@ -51,7 +52,7 @@ void main() {
                 itemBuilder: (_, row) => columns == 1 && fixedExtent
                     ? BrowseAnchor(
                         key: ValueKey('${row + start}'),
-                        id: '${row + start}',
+                        id: ids?[row] ?? '${row + start}',
                         child: Text('item $row'),
                       )
                     : SizedBox(
@@ -63,7 +64,9 @@ void main() {
                               if (row * columns + column < count)
                                 Expanded(
                                   child: BrowseAnchor(
-                                    id: '${row * columns + column + start}',
+                                    id:
+                                        ids?[row * columns + column] ??
+                                        '${row * columns + column + start}',
                                     child: Text(
                                       'item ${row * columns + column}',
                                     ),
@@ -100,6 +103,58 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     reopened.dispose();
   });
+
+  testWidgets(
+    'large catalogs preserve a scrolled anchor across insertion and column reflow',
+    (tester) async {
+      final store = BrowsePageStateStore();
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(page(store, controller, count: 20000));
+      await tester.pumpAndSettle();
+      controller.jumpTo(1200000);
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView), const Offset(0, -80));
+      await tester.pumpAndSettle();
+      final saved = store.stateFor('page');
+      final anchor = int.parse(saved['anchor'] as String);
+      final anchorOffset = saved['anchorOffset'] as double;
+      expect(anchor, greaterThanOrEqualTo(15000));
+      await tester.pumpWidget(
+        page(store, controller, count: 20005, start: -5, columns: 2),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        controller.offset,
+        closeTo(((anchor + 5) ~/ 2) * 80 - anchorOffset, 0.5),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'restoration uses the first duplicate ID in a large ordered snapshot',
+    (tester) async {
+      final store = BrowsePageStateStore();
+      store.update('page', {
+        'offset': 1600.0,
+        'anchor': 'duplicate',
+        'anchorOffset': 0.0,
+      });
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      final ids = List.generate(20000, (index) => '$index');
+      ids[10] = ids[19900] = 'duplicate';
+      await tester.pumpWidget(
+        page(store, controller, count: ids.length, ids: ids),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.offset, 800);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   testWidgets(
     'restoration waits for asynchronous content and clamps removed rows',

@@ -9,6 +9,101 @@ void registerAsmrControllerStateTests({
   setUp(() => preferences = preferencesStore());
 
   test(
+    'catalog compute keeps failed saves atomic and rejects a reload during preparation',
+    () async {
+      await resetPrefs();
+      final store = _CatalogFailingPreferencesStore(
+        repository: persistenceRepository(),
+      );
+      final api = _VoiceCatalogApi()..fail = false;
+      final controller = createTestAsmrController(
+        preferencesStore: store,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      addTearDown(controller.dispose);
+      await controller.ensureTagInterests();
+      final before = controller.voiceActorInterests;
+      store.failCatalogSave = true;
+      await controller.ensureVoiceActorCatalog();
+      expect(controller.voiceActorCatalogError, isStateError);
+      expect(controller.voiceActorCatalogComplete, isFalse);
+      expect(controller.allVoiceActors, isEmpty);
+      expect(controller.voiceActorInterests, same(before));
+      expect((await store.loadVoiceActorPreferences()).tags, isEmpty);
+      store.failCatalogSave = false;
+      api.pending = Completer<List<AsmrTag>>();
+      final loading = controller.ensureVoiceActorCatalog(force: true);
+      await api.started.future;
+      api.pending!.complete([
+        for (var i = 0; i < 20000; i++)
+          AsmrTag(key: 'online:$i', name: 'Voice $i'),
+      ]);
+      await Future<void>.delayed(Duration.zero);
+      await controller.reloadPersistedState();
+      await loading;
+      expect(controller.voiceActorCatalogComplete, isFalse);
+      expect(controller.allVoiceActors, isEmpty);
+      expect((await store.loadVoiceActorPreferences()).tags, isEmpty);
+    },
+  );
+
+  test(
+    'interest snapshots and provider emissions ignore unrelated controller changes',
+    () async {
+      await resetPrefs();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: _FakeAsmrApiService(),
+      );
+      addTearDown(controller.dispose);
+      await controller.ensureTagInterests();
+      final container = ProviderContainer(
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      );
+      addTearDown(container.dispose);
+      final publications = <List<AsmrTagInterest>>[];
+      container.listen(asmrTagInterestsProvider, (_, next) {
+        final value = next.value;
+        if (value != null) publications.add(value);
+      });
+      await Future<void>.delayed(Duration.zero);
+      UiInteractionCoordinator.instance.flushPendingCommitsForTest();
+      await Future<void>.delayed(Duration.zero);
+      final tags = controller.interestTags;
+      final voices = controller.voiceActorInterests;
+      final circles = controller.circleInterests;
+      final daily = controller.dailyRecommendations;
+      final initialPublications = publications.length;
+      expect(initialPublications, 1);
+      await controller.setVisibleCategories([AsmrCategoryType.release]);
+      UiInteractionCoordinator.instance.flushPendingCommitsForTest();
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.interestTags, same(tags));
+      expect(controller.voiceActorInterests, same(voices));
+      expect(controller.circleInterests, same(circles));
+      expect(controller.dailyRecommendations, same(daily));
+      expect(publications, hasLength(initialPublications));
+      expect(() => tags.clear(), throwsUnsupportedError);
+      expect(() => daily.clear(), throwsUnsupportedError);
+      await controller.recordTagListeningBatch(
+        batchId: 'snapshot:1',
+        contributions: [
+          (tags: ['New tag'], duration: const Duration(minutes: 1)),
+        ],
+      );
+      UiInteractionCoordinator.instance.flushPendingCommitsForTest();
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.interestTags.single.tag.name, 'New tag');
+      expect(controller.interestTags, isNot(same(tags)));
+      expect(controller.voiceActorInterests, same(voices));
+      expect(publications, hasLength(initialPublications + 1));
+    },
+  );
+  test(
     'circle preferences derive real creator names and persist twenty ranks independently',
     () async {
       await resetPrefs();
@@ -3703,6 +3798,16 @@ class _DailyCreatorApi extends _FakeAsmrApiService {
       pageSize: pageSize,
       totalCount: 400,
     );
+  }
+}
+
+class _CatalogFailingPreferencesStore extends AsmrPreferencesStore {
+  _CatalogFailingPreferencesStore({required super.repository});
+  bool failCatalogSave = false;
+  @override
+  Future<void> saveVoiceActorPreferences(AsmrTagPreferences value) {
+    if (failCatalogSave && value.catalogComplete) throw StateError('save failed');
+    return super.saveVoiceActorPreferences(value);
   }
 }
 

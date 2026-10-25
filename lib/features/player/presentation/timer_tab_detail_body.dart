@@ -12,7 +12,7 @@ extension _TimerTabDetailBody on _TimerTabState {
     required BuildContext context,
     required AppLanguageProvider i18n,
     required TimerFacade timer,
-    required TimerStateSliceData timerState,
+    required TimerConfigurationUiState timerState,
     required ColorScheme cs,
     required bool timerExpired,
     required bool timerWaitingTrigger,

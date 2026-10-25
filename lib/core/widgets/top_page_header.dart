@@ -498,12 +498,21 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                   right: 0,
                   height: topCapsuleHeight,
                   child: Opacity(
-                    opacity: topCapsuleOpacity,
-                    child: IgnorePointer(
-                      ignoring: collapseT > 0.8,
-                      child: ExcludeSemantics(
-                        excluding: collapseT > 0.8,
-                        child: topCapsuleWidget,
+                    // Skip the fully hidden backdrop without unmounting it.
+                    opacity: topCapsuleOpacity == 0 ? 0 : 1,
+                    // Apply alpha after the glass is composited. Inherited
+                    // opacity darkens its src-blended backdrop during collapse.
+                    child: ColorFiltered(
+                      colorFilter: ColorFilter.mode(
+                        Colors.white.withValues(alpha: topCapsuleOpacity),
+                        BlendMode.modulate,
+                      ),
+                      child: IgnorePointer(
+                        ignoring: collapseT > 0.8,
+                        child: ExcludeSemantics(
+                          excluding: collapseT > 0.8,
+                          child: topCapsuleWidget,
+                        ),
                       ),
                     ),
                   ),
@@ -585,7 +594,10 @@ class _AppHeaderSurface extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     return AppGlassSurface(
-      backgroundColor: cs.surface.withValues(alpha: cs.surface.a * 0.9),
+      enabled: tokens.barGlassEnabled,
+      backgroundColor: tokens.barGlassEnabled
+          ? cs.surface.withValues(alpha: cs.surface.a * 0.9)
+          : cs.surface,
       child: DecoratedBox(
         decoration: BoxDecoration(
           border: Border(
@@ -632,6 +644,7 @@ class HeaderFloatingSurface extends StatelessWidget {
     final headerSurface = context
         .findAncestorWidgetOfExactType<_AppHeaderSurface>();
     final useGlass =
+        AppDesignTokens.of(context).barGlassEnabled &&
         context.findAncestorWidgetOfExactType<AppPageHeaderTransition>() != null &&
         headerSurface?.floating != false;
     final backgroundColor = background.withValues(

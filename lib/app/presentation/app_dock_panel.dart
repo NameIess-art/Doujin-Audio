@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/widgets/app_glass_surface.dart';
+import '../theme/app_design_tokens.dart';
 
 class AppDockPanel extends StatelessWidget {
   const AppDockPanel({
@@ -20,9 +21,13 @@ class AppDockPanel extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? cs.surfaceContainer : cs.surfaceContainerHigh;
+    final glassEnabled = AppDesignTokens.of(context).barGlassEnabled;
     return AppGlassSurface(
+      enabled: glassEnabled,
       borderRadius: BorderRadius.circular(radius),
-      backgroundColor: bgColor.withValues(alpha: bgColor.a * 0.9),
+      backgroundColor: glassEnabled
+          ? bgColor.withValues(alpha: bgColor.a * 0.9)
+          : bgColor,
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(radius),

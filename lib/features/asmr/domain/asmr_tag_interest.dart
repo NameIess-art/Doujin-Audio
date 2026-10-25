@@ -98,25 +98,7 @@ class AsmrTagPreferences {
     return values.take(limit).toList(growable: false);
   }
 
-  List<AsmrTagInterest> get interests {
-    final values = [...listenedInterests];
-    if (values.length == limit) return values;
-    final listenedKeys = values.map((e) => e.tag.key).toSet();
-    final fallback =
-        manualInterests
-            .where(
-              (key) => !listenedKeys.contains(key) && tags.containsKey(key),
-            )
-            .map((key) => tags[key]!)
-            .toList()
-          ..sort((a, b) => a.name.compareTo(b.name));
-    values.addAll(
-      fallback
-          .take(limit - values.length)
-          .map((tag) => AsmrTagInterest(tag: tag, weight: 0)),
-    );
-    return values;
-  }
+  List<AsmrTagInterest> get interests => listenedInterests;
 
   void setInterested(String key, bool value) {
     if (!tags.containsKey(key)) throw ArgumentError.value(key, 'key');
@@ -144,10 +126,9 @@ class AsmrTagPreferences {
           .map(resolve)
           .toSet();
       if (keys.isEmpty || contribution.duration <= Duration.zero) continue;
+      // Every associated tag or creator was heard for the full playback time.
       final minutes =
-          contribution.duration.inMilliseconds /
-          Duration.millisecondsPerMinute /
-          keys.length;
+          contribution.duration.inMilliseconds / Duration.millisecondsPerMinute;
       for (final key in keys) {
         learned[key] = (learned[key] ?? 0) + minutes;
       }
@@ -174,13 +155,24 @@ class AsmrTagPreferences {
 
   Map<String, double> get recommendationWeights {
     final result = <String, double>{};
-    final keys = {
-      ...manualInterests,
-      ...listenedInterests.map((e) => e.tag.key),
+    final listened = listenedInterests
+        .where(
+          (entry) => entry.weight.isFinite && !excluded.contains(entry.tag.key),
+        )
+        .toList(growable: false);
+    final maximum = listened.isEmpty ? 0.0 : listened.first.weight;
+    final weights = <String, double>{
+      for (final entry in listened) entry.tag.key: entry.weight / maximum,
+      for (final key in manualInterests)
+        if (!excluded.contains(key)) key: 1,
     };
-    for (final key in keys) {
+    for (final entry in weights.entries) {
+      final key = entry.key;
       for (final alias in tags[key]?.aliases ?? <String>[]) {
-        result[normalizeAsmrTag(alias)] = 1;
+        final name = normalizeAsmrTag(alias);
+        if (name.isNotEmpty && entry.value > (result[name] ?? 0)) {
+          result[name] = entry.value;
+        }
       }
     }
     return result;

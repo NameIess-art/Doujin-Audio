@@ -581,6 +581,7 @@ const Map<String, String> appLanguageEn = {
   'theme_light': 'Light',
   'theme_dark': 'Dark',
   'black_theme': 'Pure black theme',
+  'bar_glass_enabled': 'Frosted menu bars',
   'differentiate_asmr_theme': 'Separate Online Audio Library colors',
   'app_theme_color': 'App color',
   'asmr_theme_color': 'Online Audio Library color',

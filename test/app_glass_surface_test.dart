@@ -6,6 +6,39 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets(
+    'disabled glass paints the supplied color without a backdrop filter',
+    (tester) async {
+      const tint = Color(0x80336699);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: AppGlassSurface(
+              enabled: false,
+              backgroundColor: tint,
+              borderRadius: BorderRadius.circular(12),
+              child: const SizedBox(width: 120, height: 60),
+            ),
+          ),
+        ),
+      );
+      expect(find.byType(BackdropFilter), findsNothing);
+      expect(tester.layers.whereType<BackdropFilterLayer>(), isEmpty);
+      expect(
+        tester
+            .widget<ColoredBox>(
+              find.descendant(
+                of: find.byType(AppGlassSurface),
+                matching: find.byType(ColoredBox),
+              ),
+            )
+            .color,
+        tint,
+      );
+      expect(tester.getSize(find.byType(ClipRRect)), const Size(120, 60));
+    },
+  );
+
   testWidgets('disjoint grouped glass matches independent glass during fades', (
     tester,
   ) async {

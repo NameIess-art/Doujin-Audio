@@ -478,8 +478,9 @@ class _QueueCoverGrid extends StatelessWidget {
               ),
             ],
           );
-    return ClipOval(
+    return CoverArtworkFrame(
       key: const ValueKey('playback_queue_cover_grid'),
+      borderRadius: BorderRadius.circular(playlistCoverSize / 2),
       child: SizedBox.square(dimension: playlistCoverSize, child: content),
     );
   }

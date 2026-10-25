@@ -739,7 +739,7 @@ class _DlsiteMetadataReviewPageState
                               const SizedBox(height: 20),
                             ],
                             if (coverUrl != null) ...[
-                              ClipRRect(
+                              CoverArtworkFrame(
                                 borderRadius: BorderRadius.circular(16),
                                 child: AspectRatio(
                                   aspectRatio: kStandardCoverAspectRatio,

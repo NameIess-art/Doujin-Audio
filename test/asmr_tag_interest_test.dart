@@ -2,13 +2,67 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_tag_interest.dart';
 
 void main() {
-  test('voice tastes share ranking with ten slots and independent cursors', () {
-    final voices = AsmrTagPreferences(limit: 10);
+  test(
+    'recommendation weights use relative listening time and manual choices',
+    () {
+      final state = AsmrTagPreferences();
+      state.recordListeningBatch('test:1', [
+        (tags: ['Frequent'], duration: const Duration(minutes: 120)),
+        (tags: ['Occasional'], duration: const Duration(minutes: 30)),
+      ]);
+      final manual = state.resolve('Manual');
+      state.setInterested(manual, true);
+      expect(state.recommendationWeights, {
+        'frequent': 1,
+        'occasional': 0.25,
+        'manual': 1,
+      });
+      state.setInterested(state.resolve('Occasional'), true);
+      expect(state.recommendationWeights['occasional'], 1);
+      state.setInterested(state.resolve('Occasional'), false);
+      expect(state.recommendationWeights['occasional'], 0.25);
+      expect(state.interests.map((interest) => interest.weight), [120, 30]);
+    },
+  );
+
+  test(
+    'excluded interests and their aliases never supply positive weights',
+    () {
+      final state = AsmrTagPreferences();
+      state.mergeTag(
+        AsmrTag(key: 'online:1', name: 'Blocked', aliases: ['Excluded alias']),
+      );
+      state.learned['online:1'] = 200;
+      state.setInterested('online:1', true);
+      state.excluded.add('online:1');
+      state.learned[state.resolve('Allowed')] = 50;
+      state.learned[state.resolve('Secondary')] = 10;
+      expect(state.recommendationWeights, {'allowed': 1, 'secondary': 0.2});
+      state.excluded.clear();
+      expect(state.recommendationWeights, {
+        'blocked': 1,
+        'excluded alias': 1,
+        'allowed': 0.25,
+        'secondary': 0.05,
+      });
+    },
+  );
+
+  test('recommendation aliases retain their strongest normalized weight', () {
+    final state = AsmrTagPreferences();
+    state.mergeTag(AsmrTag(key: 'a', name: 'A', aliases: [' Shared ']));
+    state.mergeTag(AsmrTag(key: 'b', name: 'B', aliases: ['SHARED']));
+    state.learned.addAll({'a': 100, 'b': 25});
+    expect(state.recommendationWeights, {'a': 1, 'b': 0.25, 'shared': 1});
+  });
+
+  test('voice tastes share playback ranking and independent cursors', () {
+    final voices = AsmrTagPreferences();
     final tags = AsmrTagPreferences();
     for (var i = 0; i < 15; i++) {
       voices.setInterested(voices.resolve('Voice $i'), true);
     }
-    expect(voices.interests, hasLength(10));
+    expect(voices.interests, isEmpty);
     expect(voices.manualInterests, hasLength(15));
     expect(voices.listenedInterests, isEmpty);
     const batch = (
@@ -18,15 +72,15 @@ void main() {
     expect(voices.recordListeningBatch('epoch:1', [batch]), isTrue);
     expect(voices.recordListeningBatch('epoch:1', [batch]), isFalse);
     expect(tags.recordListeningBatch('epoch:1', [batch]), isTrue);
-    expect(voices.interests.take(2).map((e) => e.weight), [10, 10]);
+    expect(voices.interests.take(2).map((e) => e.weight), [20, 20]);
     final restored = AsmrTagPreferences.fromJson(voices.toJson());
-    expect(restored.limit, 10);
+    expect(restored.limit, 20);
     expect(
       restored.interests.map((e) => e.tag.key),
       voices.interests.map((e) => e.tag.key),
     );
     restored.mergeTag(AsmrTag(key: 'online:uuid', name: 'Voice 14'));
-    expect(restored.learned['online:uuid'], 10);
+    expect(restored.learned['online:uuid'], 20);
     expect(restored.manualInterests, contains('online:uuid'));
     expect(restored.learned, isNot(contains('local:voice 14')));
   });
@@ -85,21 +139,21 @@ void main() {
   );
 
   test(
-    'manual choices fill only vacancies, without changing listening minutes',
+    'manual choices never fill playback rankings or change listening minutes',
     () {
       final state = AsmrTagPreferences();
       final a = state.resolve('A');
       final b = state.resolve('B');
       state.setInterested(a, true);
       state.setInterested(b, true);
-      expect(state.interests.map((e) => e.tag.key), [a, b]);
+      expect(state.interests, isEmpty);
       expect(state.listenedInterests, isEmpty);
       state.recordListeningBatch('test:1', [
         (tags: ['B'], duration: const Duration(minutes: 1)),
       ]);
-      expect(state.interests.map((e) => e.tag.key), [b, a]);
+      expect(state.interests.map((e) => e.tag.key), [b]);
       state.setInterested(b, false);
-      expect(state.interests.map((e) => e.tag.key), [b, a]);
+      expect(state.interests.map((e) => e.tag.key), [b]);
       expect(state.learned[b], 1);
       expect(state.recommendationWeights['b'], 1);
       state.setInterested(a, false);
@@ -149,7 +203,7 @@ void main() {
   );
 
   test(
-    'listening divides unique tag minutes and round trips batch cursors',
+    'listening credits full time to unique tags and round trips batch cursors',
     () {
       var state = AsmrTagPreferences();
       final batch = [
@@ -159,8 +213,8 @@ void main() {
       expect(state.recordListeningBatch('windows:epoch:1', batch), isTrue);
       state = AsmrTagPreferences.fromJson(state.toJson());
       expect(state.recordListeningBatch('windows:epoch:1', batch), isFalse);
-      expect(state.learned[state.resolve('a')], 10);
-      expect(state.learned[state.resolve('b')], 15);
+      expect(state.learned[state.resolve('a')], 20);
+      expect(state.learned[state.resolve('b')], 25);
       expect(state.manualInterests, isEmpty);
       expect(state.recordListeningBatch('windows:other:1', batch), isTrue);
       expect(state.consumedSequences.length, 2);

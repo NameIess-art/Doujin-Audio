@@ -112,7 +112,7 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
           SizedBox(
             width: width,
             height: height,
-            child: ClipRRect(
+            child: CoverArtworkFrame(
               borderRadius: BorderRadius.circular(
                 LibraryLikeCardMetrics.coverRadius,
               ),
@@ -221,7 +221,7 @@ class _LibraryTrackCoverThumbnailState
         SizedBox(
           width: width,
           height: height,
-          child: ClipRRect(
+          child: CoverArtworkFrame(
             borderRadius: BorderRadius.circular(
               LibraryLikeCardMetrics.coverRadius,
             ),

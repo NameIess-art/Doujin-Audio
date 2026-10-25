@@ -95,19 +95,6 @@ class SessionHeroArtwork extends ConsumerWidget {
                 color: cs.onSurface.withValues(alpha: 0.12),
                 width: 0.5,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  blurRadius: 56,
-                  spreadRadius: 4,
-                  offset: const Offset(0, 28),
-                ),
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.12),
-                  blurRadius: 24,
-                  offset: const Offset(0, 12),
-                ),
-              ],
             ),
             child: Material(
               type: MaterialType.transparency,
@@ -207,7 +194,10 @@ class _SessionCoverThumbnailState extends ConsumerState<SessionCoverThumbnail> {
       key: ValueKey<String>('playlist_cover_${widget.sessionId}'),
       width: playlistCoverSize,
       height: playlistCoverSize,
-      child: ClipOval(child: cover),
+      child: CoverArtworkFrame(
+        borderRadius: BorderRadius.circular(playlistCoverSize / 2),
+        child: cover,
+      ),
     );
   }
 }

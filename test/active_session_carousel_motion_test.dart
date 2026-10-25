@@ -28,6 +28,116 @@ void main() {
   tearDown(interaction.resetForTest);
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets('dock progress resizing avoids frame rebuilds on $platform', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final session =
+          PlaybackSession(
+              id: 'resize-progress',
+              currentTrackPath: '/resize-progress.mp3',
+              loopMode: SessionLoopMode.single,
+              nonSingleLoopMode: SessionLoopMode.single,
+              volume: 1,
+              createdAt: DateTime(2026),
+              state: const PlayerState(false, ProcessingState.ready),
+            )
+            ..duration = const Duration(minutes: 4)
+            ..setOptimisticPosition(const Duration(minutes: 1));
+      addTearDown(session.shutdown);
+      final geometryKey = GlobalKey();
+      var expanded = true;
+      Widget shell() => fixture.build(
+        Center(
+          child: SizedBox(
+            width: 400,
+            height: kActiveSessionCarouselDockHeight,
+            child: MobileDockCapsuleContent(
+              overlaySessions: [PlaybackSessionSnapshot.fromRuntime(session)],
+              isPlaybackExpanded: expanded,
+              i18n: fixture.languageProvider,
+              mobilePlaybackGeometryKey: geometryKey,
+              onShowPlayback: () {},
+              onShowDestinations: () {},
+              onReportPlaybackCoverRect: () {},
+              buildBottomBar:
+                  (
+                    _, {
+                    required isPlaybackExpanded,
+                    required appearance,
+                    required expansion,
+                    required availableWidth,
+                    required onCurrentTap,
+                  }) => const SizedBox.expand(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(shell());
+      await tester.pumpAndSettle();
+      final progress = find.byWidgetPredicate(
+        (widget) =>
+            widget is ClipRRect &&
+            widget.borderRadius == BorderRadius.circular(2.5),
+      );
+      DecoratedBox progressBackground() => tester.widget<DecoratedBox>(
+        find
+            .descendant(of: progress, matching: find.byType(DecoratedBox))
+            .first,
+      );
+      var progressRebuilds = 0;
+      Future<void> sampleFrames() async {
+        var previous = progressBackground();
+        for (var frame = 0; frame < 7; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          final next = progressBackground();
+          if (!identical(next, previous)) progressRebuilds++;
+          previous = next;
+        }
+      }
+
+      expanded = false;
+      await tester.pumpWidget(shell());
+      // Stay above the compact-cover threshold, then reverse mid-motion.
+      await sampleFrames();
+      expanded = true;
+      await tester.pumpWidget(shell());
+      await sampleFrames();
+      await tester.pumpAndSettle();
+      expect(progressRebuilds, 0);
+      await tester.pump(interaction.idleDelay);
+      await tester.pumpAndSettle();
+      for (final (position, fraction) in [
+        (Duration.zero, 0.0),
+        (const Duration(minutes: 2), 0.5),
+        (const Duration(minutes: 4), 1.0),
+        (const Duration(minutes: 5), 1.0),
+      ]) {
+        session.setOptimisticPosition(position);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        final fill = find.descendant(
+          of: find.descendant(
+            of: progress,
+            matching: find.byType(FractionallySizedBox),
+          ),
+          matching: find.byType(DecoratedBox),
+        );
+        expect(
+          tester.getSize(fill).width,
+          closeTo(tester.getSize(progress).width * fraction, 0.01),
+        );
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      debugDefaultTargetPlatformOverride = null;
+    });
+  }
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
       'carousel rebuilds indicators only at mapped page changes on $platform',
       (tester) async {

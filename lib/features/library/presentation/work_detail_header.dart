@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 
 class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
@@ -198,6 +199,13 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
       child: Stack(
         fit: StackFit.expand,
         children: [
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: rjBarHeight,
+            child: _rjBar,
+          ),
           // Cover Image area with Gradient and Title
           Positioned(
             key: const ValueKey('work_detail_cover_bounds'),
@@ -205,25 +213,22 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
             left: 0,
             right: 0,
             height: topSafeArea + currentCoverHeight,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                coverWidget,
-                // Gradient overlay
-                _coverGradient,
-                // Work title (max 3 lines) at the bottom of the cover
-                Positioned(left: 16, right: 16, bottom: 10, child: _title),
-              ],
+            // Paint after the metadata row so its opaque surface does not
+            // cover the shadow along the full-width artwork's bottom edge.
+            child: CoverArtworkFrame(
+              borderRadius: BorderRadius.zero,
+              clipBehavior: Clip.hardEdge,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  coverWidget,
+                  // Gradient overlay
+                  _coverGradient,
+                  // Work title (max 3 lines) at the bottom of the cover
+                  Positioned(left: 16, right: 16, bottom: 10, child: _title),
+                ],
+              ),
             ),
-          ),
-
-          // RJXXXX | 社团名 Row (Pinned at the bottom of the header, never collapsed!)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: rjBarHeight,
-            child: _rjBar,
           ),
         ],
       ),

@@ -342,7 +342,7 @@ void registerAsmrControllerStateTests({
         changes: {for (var i = 0; i < 25; i++) 'local:voice $i': true},
       );
       expect(controller.manualInterestVoiceActorKeys, hasLength(25));
-      expect(controller.voiceActorInterests, hasLength(20));
+      expect(controller.voiceActorInterests, isEmpty);
       final contributions = [
         for (var i = 0; i < 25; i++)
           (tags: ['Voice $i'], duration: Duration(minutes: i + 1)),
@@ -1121,9 +1121,10 @@ void registerAsmrControllerStateTests({
       );
       final saved = await preferences.loadTagPreferences();
       expect(
-        excluded ? saved.excluded : saved.interests.map((e) => e.tag.key),
+        excluded ? saved.excluded : saved.manualInterests,
         unorderedEquals([first, second]),
       );
+      expect(saved.interests, isEmpty);
     });
   }
 

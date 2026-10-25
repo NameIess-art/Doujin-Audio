@@ -561,7 +561,10 @@ class _QueueAudioEditCard extends ConsumerWidget {
                 ),
                 child: Row(
                   children: [
-                    ClipOval(
+                    CoverArtworkFrame(
+                      borderRadius: BorderRadius.circular(
+                        playlistCoverSize / 2,
+                      ),
                       child: SizedBox.square(
                         dimension: playlistCoverSize,
                         child: resolvedTrack == null

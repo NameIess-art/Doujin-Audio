@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/marquee_text.dart';
+import '../../../../core/widgets/async_cover_image.dart';
 import 'playlist_shared_helpers.dart';
 
 class SessionDetailLayout extends StatelessWidget {
@@ -57,7 +58,8 @@ class SessionDetailLayout extends StatelessWidget {
                 key: const ValueKey('session_detail_cover_area'),
                 child: AspectRatio(
                   aspectRatio: 4 / 3,
-                  child: ClipRRect(
+                  child: CoverArtworkFrame(
+                    showShadow: !isVideo,
                     borderRadius: BorderRadius.circular(16),
                     child: artwork,
                   ),
@@ -137,7 +139,8 @@ class SessionDetailLayout extends StatelessWidget {
                 curve: Curves.easeInOutCubic,
                 height: coverHeight,
                 width: double.infinity,
-                child: ClipRRect(
+                child: CoverArtworkFrame(
+                  showShadow: !isVideo && !segmentPanelExpanded,
                   borderRadius: BorderRadius.circular(16),
                   child: Stack(
                     fit: StackFit.expand,

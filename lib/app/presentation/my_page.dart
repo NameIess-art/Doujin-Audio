@@ -765,25 +765,23 @@ class _DailyRecommendationsState extends ConsumerState<_DailyRecommendations>
         if (state.works.isNotEmpty)
           SizedBox(
             height: _HistoryWorkCard.coverHeight + 14,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: ClipRRect(
-                key: const ValueKey('my-daily-viewport'),
-                borderRadius: BorderRadius.circular(12),
-                child: WindowsHorizontalWheelScroll(
-                  controller: _scroll,
-                  builder: (controller) => ScrollConfiguration(
-                    behavior: ScrollConfiguration.of(
-                      context,
-                    ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
-                    child: ListView.separated(
-                      controller: controller,
-                      scrollDirection: Axis.horizontal,
-                      itemCount: state.works.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 12),
-                      itemBuilder: (context, index) =>
-                          _DailyWorkCard(work: state.works[index]),
-                    ),
+            child: ClipRRect(
+              key: const ValueKey('my-daily-viewport'),
+              borderRadius: BorderRadius.circular(12),
+              child: WindowsHorizontalWheelScroll(
+                controller: _scroll,
+                builder: (controller) => ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(
+                    context,
+                  ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+                  child: ListView.separated(
+                    controller: controller,
+                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: state.works.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) =>
+                        _DailyWorkCard(work: state.works[index]),
                   ),
                 ),
               ),
@@ -866,50 +864,48 @@ class _HistoryStripState extends ConsumerState<_HistoryStrip> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     return SizedBox(
       height: _HistoryWorkCard.coverHeight + 14,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 14),
-        child: ClipRRect(
-          key: const ValueKey('my-history-viewport'),
-          borderRadius: BorderRadius.circular(12),
-          child: WindowsHorizontalWheelScroll(
-            controller: _scroll,
-            builder: (controller) => ScrollConfiguration(
-              behavior: ScrollConfiguration.of(
-                context,
-              ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
-              child: ListView.separated(
-                controller: controller,
-                scrollDirection: Axis.horizontal,
-                itemCount:
-                    widget.view.history.length +
-                    (widget.view.hasMoreHistory ? 1 : 0),
-                separatorBuilder: (_, _) => const SizedBox(width: 12),
-                itemBuilder: (context, index) {
-                  if (index == widget.view.history.length) {
-                    return SizedBox(
-                      width: 100,
-                      child: Center(
-                        child: _loading
-                            ? const CircularProgressIndicator()
-                            : TextButton(
-                                onPressed: _loadMore,
-                                child: Text(
-                                  i18n.tr(
-                                    _loadError == null
-                                        ? 'my_load_more'
-                                        : 'my_retry',
-                                  ),
+      child: ClipRRect(
+        key: const ValueKey('my-history-viewport'),
+        borderRadius: BorderRadius.circular(12),
+        child: WindowsHorizontalWheelScroll(
+          controller: _scroll,
+          builder: (controller) => ScrollConfiguration(
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+            child: ListView.separated(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+              scrollDirection: Axis.horizontal,
+              itemCount:
+                  widget.view.history.length +
+                  (widget.view.hasMoreHistory ? 1 : 0),
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                if (index == widget.view.history.length) {
+                  return SizedBox(
+                    width: 100,
+                    child: Center(
+                      child: _loading
+                          ? const CircularProgressIndicator()
+                          : TextButton(
+                              onPressed: _loadMore,
+                              child: Text(
+                                i18n.tr(
+                                  _loadError == null
+                                      ? 'my_load_more'
+                                      : 'my_retry',
                                 ),
                               ),
-                      ),
-                    );
-                  }
-                  return _HistoryWorkCard(
-                    entry: widget.view.history[index],
-                    onOpen: widget.onOpen,
+                            ),
+                    ),
                   );
-                },
-              ),
+                }
+                return _HistoryWorkCard(
+                  entry: widget.view.history[index],
+                  onOpen: widget.onOpen,
+                );
+              },
             ),
           ),
         ),
@@ -1031,7 +1027,7 @@ class _WorkCoverCard extends StatelessWidget {
         button: true,
         child: SizedBox(
           width: _HistoryWorkCard.coverWidth,
-          child: ClipRRect(
+          child: CoverArtworkFrame(
             key: ValueKey(cardKey),
             borderRadius: BorderRadius.circular(12),
             child: Material(

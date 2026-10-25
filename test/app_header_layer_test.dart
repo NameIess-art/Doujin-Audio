@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
@@ -74,6 +76,145 @@ Future<List<Color>> _pixels(
 }))!;
 
 void main() {
+  testWidgets(
+    'search capsules follow the bar glass preference without changing input',
+    (tester) async {
+      final controller = TextEditingController(text: 'Retained query');
+      final focus = FocusNode();
+      final enabled = ValueNotifier(false);
+      addTearDown(controller.dispose);
+      addTearDown(focus.dispose);
+      addTearDown(enabled.dispose);
+      await tester.pumpWidget(
+        ValueListenableBuilder<bool>(
+          valueListenable: enabled,
+          builder: (_, value, child) => MaterialApp(
+            theme: ThemeData(
+              extensions: [
+                AppDesignTokens.light.copyWith(barGlassEnabled: value),
+              ],
+            ),
+            home: child,
+          ),
+          child: AppSearchPageScaffold<int>(
+            controller: controller,
+            focusNode: focus,
+            hintText: 'Search',
+            onChanged: (_) {},
+            onSubmitted: (_) {},
+            onCloseOrClear: () {},
+            body: const SizedBox.expand(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final value in [false, true, false]) {
+        enabled.value = value;
+        await tester.pumpAndSettle();
+        expect(
+          find.byType(BackdropFilter),
+          value ? findsWidgets : findsNothing,
+        );
+        expect(
+          tester
+              .widgetList<AppGlassSurface>(find.byType(AppGlassSurface))
+              .map((surface) => surface.enabled),
+          everyElement(value),
+        );
+        expect(find.text('Retained query'), findsOneWidget);
+        expect(controller.text, 'Retained query');
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  for (final (brightness, sharedMask) in [
+    for (final brightness in Brightness.values)
+      for (final sharedMask in [false, true]) (brightness, sharedMask),
+  ]) {
+    testWidgets(
+      'top capsule fades toward the page color while collapsing in $brightness (shared mask: $sharedMask)',
+      (tester) async {
+        final controller = ScrollController();
+        addTearDown(controller.dispose);
+        final surface = GlobalKey();
+        final theme = ThemeData(
+          brightness: brightness,
+          extensions: [
+            (brightness == Brightness.dark
+                    ? AppDesignTokens.dark
+                    : AppDesignTokens.light)
+                .copyWith(barGlassEnabled: true),
+          ],
+        );
+        final header = TopPageHeader(
+          useSafeAreaTop: false,
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+          topCapsuleTitle: 'Library',
+          title: 'Actions',
+          collapseController: controller,
+        );
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: surface,
+            child: MaterialApp(
+              theme: theme,
+              home: Scaffold(
+                backgroundColor: theme.colorScheme.surface,
+                body: Stack(
+                  children: [
+                    ListView(
+                      controller: controller,
+                      children: const [SizedBox(height: 2000)],
+                    ),
+                    if (sharedMask)
+                      AppHeaderTransition(child: header)
+                    else
+                      header,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        Future<Color> capsulePixel() async {
+          final rect = tester.getRect(find.byType(HeaderTopCapsule));
+          return (await _pixels(tester, surface, [
+            Offset(rect.center.dx, rect.top + 8),
+          ])).single;
+        }
+
+        final expanded = await capsulePixel();
+        for (final progress in [0.25, 0.5, 0.75, 0.95, 1.0, 0.5, 0.0]) {
+          controller.jumpTo(56 * progress);
+          await tester.pump();
+          final actual = await capsulePixel();
+          final expected = Color.lerp(
+            expanded,
+            theme.colorScheme.surface,
+            Curves.easeIn.transform(progress),
+          )!;
+          for (final (value, target) in [
+            (actual.r, expected.r),
+            (actual.g, expected.g),
+            (actual.b, expected.b),
+          ]) {
+            expect(value, closeTo(target, 0.02), reason: 'Collapse $progress');
+          }
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   for (final (brightness, showFadeMask) in [
     for (final brightness in Brightness.values)
       for (final showFadeMask in [false, true]) (brightness, showFadeMask),
@@ -101,6 +242,12 @@ void main() {
               theme: ThemeData(
                 brightness: brightness,
                 platform: defaultTargetPlatform,
+                extensions: [
+                  (brightness == Brightness.dark
+                          ? AppDesignTokens.dark
+                          : AppDesignTokens.light)
+                      .copyWith(barGlassEnabled: true),
+                ],
               ),
               builder: (_, child) => AppPageTransitionHost(child: child!),
               home: Scaffold(backgroundColor: Colors.blue, body: backdrop),

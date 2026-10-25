@@ -11,6 +11,7 @@ import 'package:doujin_audio/app/localization/app_language_en.dart';
 import 'package:doujin_audio/app/localization/app_language_ja.dart';
 import 'package:doujin_audio/app/localization/app_language_zh.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -36,10 +37,14 @@ Widget _buildSurface(Widget child) => MaterialApp(
   ),
 );
 
-Widget _buildScrollableHeader() {
+Widget _buildScrollableHeader({bool barGlassEnabled = false}) {
   return ProviderScope(
     child: MaterialApp(
-      theme: ThemeData.light(useMaterial3: true),
+      theme: ThemeData.light(useMaterial3: true).copyWith(
+        extensions: [
+          AppDesignTokens.light.copyWith(barGlassEnabled: barGlassEnabled),
+        ],
+      ),
       home: Scaffold(
         body: ScrollActivityGate(
           child: Stack(
@@ -62,10 +67,15 @@ Widget _buildScrollableHeader() {
   );
 }
 
-Widget _buildPageAppBar() {
-  return const ProviderScope(
+Widget _buildPageAppBar({bool barGlassEnabled = false}) {
+  return ProviderScope(
     child: MaterialApp(
-      home: Scaffold(
+      theme: ThemeData(
+        extensions: [
+          AppDesignTokens.light.copyWith(barGlassEnabled: barGlassEnabled),
+        ],
+      ),
+      home: const Scaffold(
         appBar: AppPageAppBar(title: Text('Secondary page')),
         body: SizedBox.expand(),
       ),
@@ -181,7 +191,7 @@ void main() {
   testWidgets('top header keeps its glass bounded while scrolling', (
     tester,
   ) async {
-    await tester.pumpWidget(_buildScrollableHeader());
+    await tester.pumpWidget(_buildScrollableHeader(barGlassEnabled: true));
     await tester.pump();
 
     void expectBoundedGlass() {
@@ -215,7 +225,7 @@ void main() {
   testWidgets('secondary page app bar confines backdrop blur to its bar', (
     tester,
   ) async {
-    await tester.pumpWidget(_buildPageAppBar());
+    await tester.pumpWidget(_buildPageAppBar(barGlassEnabled: true));
     await tester.pump();
 
     expect(find.byType(BackdropFilter), findsOneWidget);

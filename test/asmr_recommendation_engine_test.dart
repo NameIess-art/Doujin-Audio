@@ -1,10 +1,128 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_tag_interest.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_recommendation_engine.dart';
 
 void main() {
   const engine = AsmrRecommendationEngine();
+
+  for (final dimension in ['tag', 'voice', 'circle']) {
+    AsmrWork match(int id, String name, {double rating = 0}) => work(
+      id: id,
+      title: '$dimension $name',
+      tags: dimension == 'tag' ? [name] : [],
+      voiceActors: dimension == 'voice' ? [name] : [],
+      circleName: dimension == 'circle' ? name : '',
+      rating: rating,
+    );
+
+    List<AsmrWork> rankWithWeights(
+      List<AsmrWork> candidates,
+      Map<String, double> weights,
+    ) => engine.rank(
+      candidates: candidates,
+      localTracks: [],
+      favoriteWorks: [],
+      historyWorks: [],
+      tagWeights: dimension == 'tag' ? weights : {},
+      voiceActorWeights: dimension == 'voice' ? weights : {},
+      circleWeights: dimension == 'circle' ? weights : {},
+    );
+
+    test(
+      '$dimension ranking respects listening time, manual and excluded tastes',
+      () {
+        final preferences = AsmrTagPreferences();
+        preferences.recordListeningBatch('test:1', [
+          (tags: ['Frequent'], duration: const Duration(minutes: 120)),
+          (tags: ['Occasional'], duration: const Duration(minutes: 30)),
+          (tags: ['Blocked'], duration: const Duration(minutes: 200)),
+        ]);
+        preferences.setInterested(preferences.resolve('Manual'), true);
+        preferences.setInterested(preferences.resolve('Blocked'), true);
+        preferences.excluded.add(preferences.resolve('Blocked'));
+        final ranked = rankWithWeights([
+          match(1, 'Manual'),
+          match(2, 'Occasional'),
+          match(3, 'Frequent'),
+          match(4, 'Quality only', rating: 5),
+          match(5, 'Blocked'),
+        ], preferences.recommendationWeights);
+        expect(ranked.map((work) => work.id), [1, 3, 2, 4, 5]);
+      },
+    );
+
+    test(
+      '$dimension explicit empty weights replace local and favorite tastes',
+      () {
+        final candidates = [
+          match(1, 'Quality only', rating: 1),
+          match(2, 'Implicit'),
+        ];
+        final favorites = [match(10, 'Implicit')];
+        final localTracks = [
+          track(groupTitle: 'Implicit', tags: ['Implicit']).copyWith(
+            remoteMetadata: {
+              'voiceActors': ['Implicit'],
+            },
+          ),
+        ];
+        final explicitEmpty = engine.rank(
+          candidates: candidates,
+          localTracks: localTracks,
+          favoriteWorks: favorites,
+          historyWorks: [],
+          tagWeights: {},
+          voiceActorWeights: {},
+          circleWeights: {},
+        );
+        final implicit = engine.rank(
+          candidates: candidates,
+          localTracks: localTracks,
+          favoriteWorks: favorites,
+          historyWorks: [],
+          tagWeights: dimension == 'tag' ? null : {},
+          voiceActorWeights: dimension == 'voice' ? null : {},
+          circleWeights: dimension == 'circle' ? null : {},
+        );
+        expect(explicitEmpty.map((work) => work.id), [1, 2]);
+        expect(implicit.map((work) => work.id), [2, 1]);
+      },
+    );
+
+    test(
+      '$dimension explicit weights normalize names and reject invalid values',
+      () {
+        final candidates = [
+          match(1, 'Invalid'),
+          match(2, 'High'),
+          match(3, 'Low'),
+          match(4, 'NaN'),
+          match(5, 'Negative'),
+          match(6, 'Zero'),
+        ];
+        final ranked = rankWithWeights(candidates, {
+          ' HIGH ': 1,
+          'high': 0.1,
+          ' low ': 0.25,
+          'invalid': double.infinity,
+          'nan': double.nan,
+          'negative': -1,
+          'zero': 0,
+          ' ': 100,
+        });
+        expect(ranked.take(2).map((work) => work.id), [2, 3]);
+        expect(
+          rankWithWeights(candidates, {
+            'invalid': double.infinity,
+            'nan': double.nan,
+          }).map((work) => work.id),
+          rankWithWeights(candidates, {}).map((work) => work.id),
+        );
+      },
+    );
+  }
 
   test(
     'circle interests affect daily and asynchronous recommendations',

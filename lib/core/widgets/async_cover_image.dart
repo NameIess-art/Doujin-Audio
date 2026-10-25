@@ -19,6 +19,46 @@ import 'scroll_activity_gate.dart';
 const Duration kCoverImageTransitionDuration = Duration.zero;
 const double kStandardCoverAspectRatio = 4 / 3;
 
+/// Keeps the cover's shadow outside its rounded image clip.
+class CoverArtworkFrame extends StatelessWidget {
+  const CoverArtworkFrame({
+    super.key,
+    required this.child,
+    this.borderRadius = const BorderRadius.all(Radius.circular(8)),
+    this.clipBehavior = Clip.antiAlias,
+    this.showShadow = true,
+  });
+
+  final Widget child;
+  final BorderRadius borderRadius;
+  final Clip clipBehavior;
+  final bool showShadow;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      borderRadius: borderRadius,
+      boxShadow: showShadow
+          ? [
+              BoxShadow(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0x70000000)
+                    : const Color(0x3D000000),
+                blurRadius: 8,
+                spreadRadius: 1,
+                offset: const Offset(0, 3),
+              ),
+            ]
+          : null,
+    ),
+    child: ClipRRect(
+      borderRadius: borderRadius,
+      clipBehavior: clipBehavior,
+      child: child,
+    ),
+  );
+}
+
 // Full-size artwork follows the selected quality; thumbnails use display pixels.
 int? coverCacheWidthForResolution(CoverImageResolution resolution) {
   switch (resolution) {

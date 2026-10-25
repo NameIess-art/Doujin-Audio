@@ -420,7 +420,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
           Text(i18n.tr('audio_detail_cover_image'), style: labelStyle),
           const SizedBox(height: 10),
         ],
-        ClipRRect(
+        CoverArtworkFrame(
           key: const ValueKey('audio_detail_cover_content'),
           borderRadius: BorderRadius.circular(16),
           child: Listener(

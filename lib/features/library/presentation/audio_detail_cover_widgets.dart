@@ -77,7 +77,7 @@ class _SingleFileCoverPreviewState
           children: [
             Text(i18n.tr('audio_detail_cover_image'), style: labelStyle),
             const SizedBox(height: 10),
-            ClipRRect(
+            CoverArtworkFrame(
               borderRadius: BorderRadius.circular(16),
               child: AspectRatio(
                 aspectRatio: kStandardCoverAspectRatio,

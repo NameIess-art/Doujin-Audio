@@ -17,6 +17,7 @@ import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
+import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
@@ -509,6 +510,16 @@ void main() {
           ValueKey('my-daily-card-${controller.picks.first.workKey}'),
         );
         expect(tester.getSize(first), const Size(132, 99));
+        expect(tester.widget<CoverArtworkFrame>(first).showShadow, isTrue);
+        expect(
+          tester.widget<ListView>(list).padding,
+          const EdgeInsets.fromLTRB(8, 6, 8, 8),
+        );
+        expect(tester.getTopLeft(first).dy - tester.getTopLeft(viewport).dy, 6);
+        expect(
+          tester.getBottomLeft(viewport).dy - tester.getBottomLeft(first).dy,
+          8,
+        );
         final labels = [
           'my_history',
           'my_daily_recommendations',
@@ -1357,7 +1368,8 @@ void main() {
       'tag catalog uses floating header and retains search on $platform',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
-        final controller = _InterestController(createTestAsmrServices());
+        final controller = _InterestController(createTestAsmrServices())
+          ..state.learned.clear();
         addTearDown(fixture.dispose);
         addTearDown(controller.dispose);
         await tester.pumpWidget(
@@ -1485,6 +1497,7 @@ void main() {
         expect(text.style?.shadows?.single.blurRadius, 4);
         final card = find.byKey(const ValueKey('my-history-card-work'));
         expect(tester.getSize(card), const Size(132, 99));
+        expect(tester.widget<CoverArtworkFrame>(card).showShadow, isTrue);
         expect(
           tester.getSize(
             find.byKey(const ValueKey('my-history-card-remote-0')),
@@ -1505,7 +1518,13 @@ void main() {
           tester.widget<ClipRRect>(viewport).borderRadius,
           BorderRadius.circular(12),
         );
-        expect(tester.getSize(viewport).height, 99);
+        expect(tester.getSize(viewport).height, 113);
+        expect(tester.getTopLeft(card).dy - tester.getTopLeft(viewport).dy, 6);
+        expect(
+          tester.getBottomLeft(viewport).dy - tester.getBottomLeft(card).dy,
+          8,
+        );
+        expect(tester.getTopLeft(card).dx - tester.getTopLeft(viewport).dx, 8);
         await pumpUntilUiIdle(tester);
         fixture.library.detailCacheService.markChanged(
           AudioDetail.empty(
@@ -1671,7 +1690,9 @@ class _InterestController extends AsmrLibraryController {
         remoteCatalogService: services.remoteCatalogService,
         accountSyncService: services.accountSyncService,
       ) {
-    state.setInterested(state.resolve('Sleep'), true);
+    final sleep = state.resolve('Sleep');
+    state.setInterested(sleep, true);
+    state.learned[sleep] = 1;
   }
   final voices = AsmrTagPreferences();
   final circles = AsmrTagPreferences();

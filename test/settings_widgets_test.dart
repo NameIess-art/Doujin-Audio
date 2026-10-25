@@ -24,6 +24,7 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/app/presentation/app_settings_group_card.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
@@ -246,7 +247,7 @@ void main() {
         of: categoryHeader,
         matching: find.byType(BackdropFilter),
       ),
-      findsWidgets,
+      findsNothing,
     );
     expect(categoryHeaderWidget.padding, AppPageHeaderMetrics.padding);
     expect(
@@ -1491,6 +1492,59 @@ void main() {
       expect(find.text('界面毛玻璃'), findsNothing);
       expect(find.text('播放页模糊背景'), findsNothing);
       expect(find.text(i18n.tr('subtitle_window_settings')), findsOneWidget);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'appearance applies and persists the bar glass switch immediately',
+    (tester) async {
+      await AppPreferences.init();
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pump();
+      final themeProvider = ProviderScope.containerOf(
+        tester.element(find.byType(SettingsTab)),
+        listen: false,
+      ).read(themeProviderInstanceProvider);
+      final i18n = harness.languageProvider;
+      await tester.tap(find.text(i18n.tr('section_appearance')));
+      await tester.pumpAndSettle();
+      final toggle = find.byKey(const ValueKey('bar_glass_enabled_tile'));
+      expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+      expect(find.text(i18n.tr('bar_glass_enabled')), findsOneWidget);
+      expect(tester.widget<SwitchListTile>(toggle).subtitle, isNull);
+      await Scrollable.ensureVisible(tester.element(toggle), alignment: 0.5);
+      await tester.pumpAndSettle();
+
+      await tester.tap(toggle);
+      await tester.pump();
+      expect(themeProvider.barGlassEnabled, isTrue);
+      expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+      expect(find.text(i18n.tr('bar_glass_enabled')), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(
+        AppDesignTokens.of(tester.element(toggle)).barGlassEnabled,
+        isTrue,
+      );
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getBool('barGlassEnabled'), isTrue);
+
+      await tester.tap(toggle);
+      await tester.pump();
+      expect(themeProvider.barGlassEnabled, isFalse);
+      expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+      expect(find.text(i18n.tr('bar_glass_enabled')), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(
+        AppDesignTokens.of(tester.element(toggle)).barGlassEnabled,
+        isFalse,
+      );
+      expect(preferences.getBool('barGlassEnabled'), isFalse);
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,

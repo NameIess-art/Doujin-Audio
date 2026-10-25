@@ -82,7 +82,6 @@ class _ActiveSessionCard extends ConsumerWidget {
             child: Material(
               type: MaterialType.transparency,
               shape: const CircleBorder(),
-              clipBehavior: Clip.antiAlias,
               child: InkWell(
                 customBorder: const CircleBorder(),
                 onTap: onOpen,
@@ -688,45 +687,40 @@ class _ActiveSessionProgressStripState
         borderRadius: BorderRadius.circular(2.5),
         child: SizedBox(
           height: 2.5,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final barWidth = constraints.maxWidth;
-              final fillWidth = (barWidth * fraction.clamp(0.0, 1.0))
-                  .roundToDouble();
-              return Stack(
-                children: [
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: cs.surfaceContainerHighest.withValues(
-                          alpha: 0.6,
-                        ),
+          // Dock expansion changes width every frame. Resolve the fraction in
+          // layout without rebuilding the progress decorations for each width.
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerHighest.withValues(alpha: 0.6),
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: fraction.clamp(0.0, 1.0),
+                  heightFactor: 1,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          widget.activeColor,
+                          widget.activeColor.withValues(alpha: 0.82),
+                        ],
+                      ),
+                      borderRadius: const BorderRadius.only(
+                        topRight: Radius.circular(3),
+                        bottomRight: Radius.circular(3),
                       ),
                     ),
                   ),
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: fillWidth,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            widget.activeColor,
-                            widget.activeColor.withValues(alpha: 0.82),
-                          ],
-                        ),
-                        borderRadius: const BorderRadius.only(
-                          topRight: Radius.circular(3),
-                          bottomRight: Radius.circular(3),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -759,10 +753,8 @@ class _ActiveSessionCover extends ConsumerWidget {
     return SizedBox.square(
       key: ValueKey<String>('active_session_cover_$sessionId'),
       dimension: dimension,
-      child: Material(
-        type: MaterialType.transparency,
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
+      child: CoverArtworkFrame(
+        borderRadius: BorderRadius.circular(dimension / 2),
         child: AsyncLocalCoverImage(
           onImageError:
               library.coverArtworkCacheService.reportArtworkReadFailure,

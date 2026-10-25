@@ -20,6 +20,15 @@ void main() {
     expect(provider.appThemeColor, ThemeAccentPreset.rose);
     expect(provider.asmrThemeColor, ThemeAccentPreset.blue);
     expect(provider.pureBlackTheme, isFalse);
+    expect(provider.barGlassEnabled, isFalse);
+    expect(
+      provider.lightTheme.extension<AppDesignTokens>()!.barGlassEnabled,
+      isFalse,
+    );
+    expect(
+      provider.darkTheme.extension<AppDesignTokens>()!.barGlassEnabled,
+      isFalse,
+    );
     expect(ThemeAccentPreset.values, hasLength(16));
   });
 
@@ -30,6 +39,7 @@ void main() {
         'themeMode': 'dark',
         'appThemeColor': 'mint',
         'pureBlackTheme': true,
+        'barGlassEnabled': true,
       });
       await AppPreferences.init();
       final provider = ThemeProvider(loadPersistedState: false);
@@ -37,10 +47,12 @@ void main() {
       expect(provider.themeMode, ThemeMode.system);
       expect(provider.appThemeColor, ThemeAccentPreset.rose);
       expect(provider.pureBlackTheme, false);
+      expect(provider.barGlassEnabled, false);
       await provider.reloadPersistedState();
       expect(provider.themeMode, ThemeMode.dark);
       expect(provider.appThemeColor, ThemeAccentPreset.mint);
       expect(provider.pureBlackTheme, true);
+      expect(provider.barGlassEnabled, true);
     },
   );
 
@@ -166,6 +178,76 @@ void main() {
     expect(preferences.getBool('pureBlackTheme'), isFalse);
   });
 
+  test('bar glass preference persists and updates both theme modes', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final provider = ThemeProvider();
+    addTearDown(provider.dispose);
+
+    expect(await provider.setBarGlassEnabled(true), isTrue);
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getBool('barGlassEnabled'), isTrue);
+    final restored = ThemeProvider();
+    addTearDown(restored.dispose);
+    expect(restored.barGlassEnabled, isTrue);
+    for (final theme in [restored.lightTheme, restored.darkTheme]) {
+      final tokens = theme.extension<AppDesignTokens>()!;
+      expect(tokens.barGlassEnabled, isTrue);
+      expect(tokens.copyWith(asmrAccent: Colors.red).barGlassEnabled, isTrue);
+      final disabled = tokens.copyWith(barGlassEnabled: false);
+      expect(tokens.lerp(disabled, 0).barGlassEnabled, isFalse);
+      expect(disabled.lerp(tokens, 0).barGlassEnabled, isTrue);
+    }
+
+    expect(await provider.setBarGlassEnabled(false), isTrue);
+    expect(preferences.getBool('barGlassEnabled'), isFalse);
+    await restored.reloadPersistedState();
+    expect(restored.barGlassEnabled, isFalse);
+    expect(
+      restored.lightTheme.extension<AppDesignTokens>()!.barGlassEnabled,
+      isFalse,
+    );
+    expect(
+      restored.darkTheme.extension<AppDesignTokens>()!.barGlassEnabled,
+      isFalse,
+    );
+  });
+
+  test(
+    'an older failed bar glass write keeps the latest optimistic value',
+    () async {
+      final writes = <Completer<bool>>[];
+      final provider = ThemeProvider(
+        loadPersistedState: false,
+        preferenceWriter: (_, _) {
+          final write = Completer<bool>();
+          writes.add(write);
+          return write.future;
+        },
+      );
+      addTearDown(provider.dispose);
+      final first = provider.setBarGlassEnabled(true);
+      final second = provider.setBarGlassEnabled(false);
+      final latest = provider.setBarGlassEnabled(true);
+      await Future<void>.delayed(Duration.zero);
+      expect(writes, hasLength(1));
+      writes.first.complete(false);
+      expect(await first, isFalse);
+      expect(provider.barGlassEnabled, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      writes[1].complete(false);
+      expect(await second, isFalse);
+      expect(provider.barGlassEnabled, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      writes.last.complete(true);
+      expect(await latest, isTrue);
+      expect(
+        provider.lightTheme.extension<AppDesignTokens>()!.barGlassEnabled,
+        isTrue,
+      );
+    },
+  );
+
   test(
     'failed preference writes roll back all optimistic theme changes',
     () async {
@@ -184,6 +266,13 @@ void main() {
 
       expect(await provider.setPureBlackTheme(true), isFalse);
       expect(provider.pureBlackTheme, isFalse);
+
+      expect(await provider.setBarGlassEnabled(true), isFalse);
+      expect(provider.barGlassEnabled, isFalse);
+      expect(
+        provider.lightTheme.extension<AppDesignTokens>()!.barGlassEnabled,
+        isFalse,
+      );
 
       expect(
         await provider.setAsmrThemeColor(ThemeAccentPreset.amber),

@@ -8,6 +8,122 @@ void registerAsmrRemoteCatalogTests({
   setUp(() => preferences = preferencesStore());
 
   test(
+    'online recommendations recall all three interests and keep search constrained',
+    () async {
+      await resetPrefs();
+      final tags = AsmrTagPreferences();
+      tags.learned[tags.resolve('Sleep')] = 60;
+      tags.setInterested(tags.resolve('Blocked'), true);
+      tags.excluded.add('local:blocked');
+      final voices = AsmrTagPreferences();
+      voices.learned[voices.resolve('Mika')] = 30;
+      final circles = AsmrTagPreferences();
+      circles.learned[circles.resolve('Dream')] = 20;
+      await preferences.saveTagPreferences(tags);
+      await preferences.saveVoiceActorPreferences(voices);
+      await preferences.saveCirclePreferences(circles);
+      final api = _InterestRecallApi();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: _FakeTestPersistenceRepository(const []),
+        apiService: api,
+      );
+      await controller.ensureCategoryLoaded(AsmrCategoryType.recommendation);
+      expect(api.searchKeywords.toSet(), {'sleep', 'mika', 'dream'});
+      expect(
+        controller
+            .worksFor(AsmrCategoryType.recommendation)
+            .map((work) => work.id)
+            .toSet(),
+        containsAll([101, 102, 103]),
+      );
+      expect(
+        controller
+            .worksFor(AsmrCategoryType.recommendation)
+            .any((work) => work.id == 999),
+        isFalse,
+      );
+      api.searchKeywords.clear();
+      controller.beginSearchSession();
+      await controller.ensureCategoryLoaded(
+        AsmrCategoryType.recommendation,
+        searchQuery: 'literal',
+        searchSession: true,
+      );
+      expect(api.searchKeywords, hasLength(4));
+      expect(api.searchKeywords, everyElement('literal'));
+    },
+  );
+
+  test(
+    'online interest recall is bounded and rotates secondary interests',
+    () async {
+      await resetPrefs();
+      final api = _InterestRecallApi();
+      final service = createTestAsmrServices(
+        apiService: api,
+        persistenceRepository: _FakeTestPersistenceRepository(const []),
+      ).remoteCatalogService;
+      service.tagWeights = () => {'tag0': 1, 'tag1': 0.5, 'tag2': 0.25};
+      service.voiceActorWeights = () => {
+        'voice0': 1,
+        'voice1': 0.5,
+        'voice2': 0.25,
+      };
+      service.circleWeights = () => {
+        'circle0': 1,
+        'circle1': 0.5,
+        'circle2': 0.25,
+      };
+      for (final seed in [1, 2]) {
+        api.searchKeywords.clear();
+        api.searchWorkRequests.clear();
+        await service.loadRecommendations(
+          searchQuery: '',
+          language: AsmrContentLanguage.zh,
+          token: null,
+          favoriteWorks: [],
+          historyWorks: [],
+          refreshSeed: seed,
+        );
+        expect(api.searchKeywords.toSet(), {
+          for (final kind in ['tag', 'voice', 'circle']) ...[
+            '${kind}0',
+            '$kind$seed',
+          ],
+        });
+        expect(api.searchWorkRequests, hasLength(6));
+        expect(api.searchWorkRequests, everyElement('release:desc:1'));
+      }
+    },
+  );
+
+  test(
+    'online interest recall keeps successful sources when one interest search fails',
+    () async {
+      await resetPrefs();
+      final api = _InterestRecallApi(failKeyword: 'mika');
+      final service = createTestAsmrServices(
+        apiService: api,
+        persistenceRepository: _FakeTestPersistenceRepository(const []),
+      ).remoteCatalogService;
+      service.tagWeights = () => {'sleep': 1};
+      service.voiceActorWeights = () => {'mika': 1};
+      final works = await service.loadRecommendations(
+        searchQuery: '',
+        language: AsmrContentLanguage.zh,
+        token: null,
+        favoriteWorks: [],
+        historyWorks: [],
+        refreshSeed: 1,
+      );
+      expect(works.first.id, 101);
+      expect(api.searchKeywords, containsAll(['sleep', 'mika']));
+      expect(api.fetchWorkRequests, isNotEmpty);
+    },
+  );
+
+  test(
     'remote search keeps canonical query identity and joins terms only for API keywords',
     () async {
       await resetPrefs();
@@ -798,4 +914,49 @@ void registerAsmrRemoteCatalogTests({
       expect(await workIds(AsmrCategoryType.history, ''), <int>[53, 54]);
     },
   );
+}
+
+class _InterestRecallApi extends _FakeAsmrApiService {
+  _InterestRecallApi({this.failKeyword});
+  final String? failKeyword;
+
+  @override
+  Future<AsmrWorkPage> searchWorks({
+    required String keyword,
+    required String order,
+    required String sort,
+    int page = 1,
+    int pageSize = 40,
+    String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    searchKeywords.add(keyword);
+    searchWorkRequests.add('$order:$sort:$page');
+    if (keyword == failKeyword) {
+      throw const HttpException('Interest search failed');
+    }
+    return AsmrWorkPage(
+      works: [
+        AsmrWork.fromJson({
+          ..._work(
+            id: switch (keyword) {
+              'sleep' => 101,
+              'mika' => 102,
+              'dream' => 103,
+              _ => 104,
+            },
+            title: 'Interest match',
+            tags: keyword == 'sleep' ? ['Sleep'] : [],
+            circleName: keyword == 'dream' ? 'Dream' : 'Unrelated',
+          ).toJson(),
+          'voiceActors': keyword == 'mika' ? ['Mika'] : <String>[],
+        }),
+        _work(id: 999, title: 'Blocked work', tags: ['Blocked']),
+      ],
+      currentPage: page,
+      pageSize: pageSize,
+      totalCount: 2,
+    );
+  }
 }

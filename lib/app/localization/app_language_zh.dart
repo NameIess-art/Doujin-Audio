@@ -542,6 +542,7 @@ const Map<String, String> appLanguageZh = {
   'theme_light': '浅色',
   'theme_dark': '深色',
   'black_theme': '纯黑主题',
+  'bar_glass_enabled': '菜单栏毛玻璃',
   'differentiate_asmr_theme': '在线作品库独立配色',
   'app_theme_color': '应用主题颜色',
   'asmr_theme_color': '在线作品库主题颜色',

@@ -127,6 +127,105 @@ void main() {
   );
 
   test(
+    'all interest rankings use full playback time and ignore unplayed manual choices',
+    () async {
+      final tags = AsmrTagPreferences();
+      final voices = AsmrTagPreferences();
+      final circles = AsmrTagPreferences();
+      for (final state in [tags, voices, circles]) {
+        state.setInterested(state.resolve('Never played'), true);
+      }
+      final tracks = [
+        for (final long in [true, false])
+          MusicTrack(
+            path: 'https://example.com/${long ? 'long' : 'short'}.mp3',
+            displayName: long ? 'Long work' : 'Short work',
+            groupKey: long ? 'long' : 'short',
+            groupTitle: long ? 'Long work' : 'Short work',
+            groupSubtitle: '',
+            isSingle: false,
+            remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+            tags: [
+              if (long) 'Long tag' else 'Short tag',
+              if (long) 'Shared tag',
+            ],
+            remoteMetadata: {
+              'voiceActors': [
+                if (long) 'Long voice' else 'Short voice',
+                if (long) 'Shared voice',
+              ],
+              'circleName': long ? 'Long circle' : 'Short circle',
+            },
+          ),
+      ];
+      final batch = PlaybackUsageBatch(
+        id: 'ranking:1',
+        days: [
+          PlaybackUsageDay(
+            date: '2026-10-25',
+            totalMs: const Duration(minutes: 20).inMilliseconds,
+            works: [
+              for (var i = 0; i < tracks.length; i++)
+                PlaybackUsageWork(
+                  key: 'ranking:$i',
+                  path: tracks[i].path,
+                  milliseconds: Duration(
+                    minutes: i == 0 ? 12 : 8,
+                  ).inMilliseconds,
+                  lastPlayedAtMs: 1000 + i,
+                ),
+            ],
+          ),
+        ],
+      );
+      final service = ListeningActivityService(
+        repository: repository,
+        readUsage: () async => [batch],
+        acknowledgeUsage: (_) async {},
+        resolveTrack: (path) =>
+            tracks.firstWhere((track) => track.path == path),
+        recordInterests: ({required batchId, required contributions}) async {
+          tags.recordListeningBatch(batchId, contributions);
+        },
+        recordVoiceActorInterests:
+            ({required batchId, required contributions}) async {
+              voices.recordListeningBatch(batchId, contributions);
+            },
+        recordCircleInterests:
+            ({required batchId, required contributions}) async {
+              circles.recordListeningBatch(batchId, contributions);
+            },
+      );
+      addTearDown(service.dispose);
+      await service.refresh();
+      await service.refresh();
+      for (final state in [tags, voices, circles]) {
+        final ranking = state.interests;
+        expect(ranking.first.tag.name, startsWith('Long'));
+        expect(ranking.first.weight, 12);
+        expect(ranking.last.tag.name, startsWith('Short'));
+        expect(ranking.last.weight, 8);
+        expect(
+          ranking.any((entry) => entry.tag.name == 'Never played'),
+          isFalse,
+        );
+        expect(
+          AsmrTagPreferences.fromJson(
+            state.toJson(),
+          ).interests.map((e) => e.weight),
+          ranking.map((e) => e.weight),
+        );
+      }
+      expect(tags.learned['local:shared tag'], 12);
+      expect(voices.learned['local:shared voice'], 12);
+      expect(
+        (await repository.loadDays()).single.duration,
+        const Duration(minutes: 20),
+      );
+    },
+  );
+
+  test(
     'voice interests import tagless local metadata before acknowledgement and retry independently',
     () async {
       final voicePreferences = AsmrTagPreferences(limit: 10);
@@ -182,7 +281,7 @@ void main() {
         'Voice One',
         'Voice Two',
       ]);
-      expect(voicePreferences.learned.values, everyElement(0.5));
+      expect(voicePreferences.learned.values, everyElement(1));
       expect(
         (await repository.loadDays()).single.duration,
         const Duration(minutes: 1),

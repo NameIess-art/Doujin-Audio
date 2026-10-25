@@ -1,3 +1,4 @@
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -10,24 +11,32 @@ void main() {
   testWidgets(
     'unmasked header keeps Android fades independent of grouped backdrops',
     (tester) async {
-      await tester.pumpWidget(const MaterialApp(
-        home: Scaffold(
-          body: TopPageHeader(
-            showFadeMask: false,
-            titleWidget: SizedBox.shrink(),
-            leading: HeaderFloatingButton(child: SizedBox.shrink()),
-            trailing: HeaderFloatingButton(child: SizedBox.shrink()),
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
+          ),
+          home: const Scaffold(
+            body: TopPageHeader(
+              showFadeMask: false,
+              titleWidget: SizedBox.shrink(),
+              leading: HeaderFloatingButton(child: SizedBox.shrink()),
+              trailing: HeaderFloatingButton(child: SizedBox.shrink()),
+            ),
           ),
         ),
-      ));
+      );
       expect(find.byType(AppEdgeFadeMask), findsNothing);
-      final filters = tester.renderObjectList<RenderBackdropFilter>(
-        find.byType(BackdropFilter),
-      ).toList();
+      final filters = tester
+          .renderObjectList<RenderBackdropFilter>(find.byType(BackdropFilter))
+          .toList();
       expect(filters, hasLength(2));
       if (Theme.of(tester.element(find.byType(TopPageHeader))).platform ==
           TargetPlatform.android) {
-        expect(filters.map((filter) => filter.backdropKey), everyElement(isNull));
+        expect(
+          filters.map((filter) => filter.backdropKey),
+          everyElement(isNull),
+        );
       } else {
         expect(filters.first.backdropKey, isNotNull);
         expect(filters.last.backdropKey, same(filters.first.backdropKey));
@@ -157,7 +166,9 @@ void main() {
           await tester.pump(const Duration(milliseconds: 150));
           final fades = find.descendant(
             of: find.byType(AppHeaderTransition),
-            matching: find.byWidgetPredicate((widget) => widget is FadeTransition),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is FadeTransition,
+            ),
           );
           expect(fades, findsNWidgets(2));
           for (final fade in tester.widgetList<FadeTransition>(fades)) {
@@ -201,6 +212,9 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(
+          extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
+        ),
         home: Scaffold(
           body: Column(
             children: [
@@ -242,17 +256,26 @@ void main() {
       findsNothing,
     );
     expect(
-      tester.widget<BackdropFilter>(find.descendant(
-        of: find.byKey(const ValueKey('transparent-header')),
-        matching: find.byType(BackdropFilter),
-      )).enabled,
+      tester
+          .widget<BackdropFilter>(
+            find.descendant(
+              of: find.byKey(const ValueKey('transparent-header')),
+              matching: find.byType(BackdropFilter),
+            ),
+          )
+          .enabled,
       isFalse,
     );
     expect(
-      tester.widget<AppGlassSurface>(find.descendant(
-        of: find.byKey(const ValueKey('partial-header')),
-        matching: find.byType(AppGlassSurface),
-      )).backgroundColor.a,
+      tester
+          .widget<AppGlassSurface>(
+            find.descendant(
+              of: find.byKey(const ValueKey('partial-header')),
+              matching: find.byType(AppGlassSurface),
+            ),
+          )
+          .backgroundColor
+          .a,
       0.45,
     );
   });
@@ -260,9 +283,14 @@ void main() {
   testWidgets('full-width title bar owns a single bounded glass surface', (
     tester,
   ) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: Scaffold(appBar: AppPageAppBar(title: Text('Title'))),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(
+          extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
+        ),
+        home: const Scaffold(appBar: AppPageAppBar(title: Text('Title'))),
+      ),
+    );
     expect(find.byType(BackdropFilter), findsOneWidget);
     final glass = find.byType(AppGlassSurface);
     expect(
@@ -338,6 +366,9 @@ void main() {
       const additionalChild = SizedBox(key: ValueKey('header-extra'));
       await tester.pumpWidget(
         MaterialApp(
+          theme: ThemeData(
+            extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
+          ),
           home: Scaffold(
             body: Stack(
               children: [

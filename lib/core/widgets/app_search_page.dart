@@ -623,6 +623,7 @@ class _SearchFloatingCapsule extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
+    final glassEnabled = AppDesignTokens.of(context).barGlassEnabled;
     final borderRadius = BorderRadius.circular(radius);
     final capsuleSurface = DecoratedBox(
       decoration: BoxDecoration(
@@ -634,7 +635,10 @@ class _SearchFloatingCapsule extends StatelessWidget {
       child: child,
     );
     return AppGlassSurface(
-      backgroundColor: background.withValues(alpha: background.a * 0.9),
+      enabled: glassEnabled,
+      backgroundColor: glassEnabled
+          ? background.withValues(alpha: background.a * 0.9)
+          : background,
       borderRadius: borderRadius,
       child: capsuleSurface,
     );

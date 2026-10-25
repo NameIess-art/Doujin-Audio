@@ -3751,7 +3751,7 @@ void main() {
           of: searchControls,
           matching: find.byType(BackdropFilter),
         ),
-        findsNWidgets(2),
+        findsNothing,
       );
       expect(
         tester
@@ -3775,20 +3775,6 @@ void main() {
         ),
         findsNothing,
       );
-      for (final filter
-          in find
-              .descendant(
-                of: searchControls,
-                matching: find.byType(BackdropFilter),
-              )
-              .evaluate()) {
-        final finder = find.byWidget(filter.widget);
-        expect(tester.getSize(finder).height, lessThan(100));
-        expect(
-          find.ancestor(of: finder, matching: find.byType(ClipRRect)),
-          findsWidgets,
-        );
-      }
       await tester.enterText(searchField, 'ocean');
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pump(const Duration(milliseconds: 250));

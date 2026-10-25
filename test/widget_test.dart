@@ -6132,7 +6132,7 @@ void main() {
     final decoration = tester.widget<DecoratedBox>(surface).decoration;
     expect(
       find.descendant(of: panel, matching: find.byType(BackdropFilter)),
-      findsOneWidget,
+      findsNothing,
     );
 
     UiInteractionCoordinator.instance.beginInteraction(interactionSource);
@@ -6142,7 +6142,7 @@ void main() {
     expect(tester.widget<DecoratedBox>(surface).decoration, decoration);
     expect(
       find.descendant(of: panel, matching: find.byType(BackdropFilter)),
-      findsOneWidget,
+      findsNothing,
     );
   });
 

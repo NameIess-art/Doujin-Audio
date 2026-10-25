@@ -107,29 +107,14 @@ class AsmrRemoteCatalogService {
             for (final query in creatorQueries)
               (AsmrCategoryType.release, query),
           ];
-    final results = <_RecommendationPagesResult>[];
-    // Bound creator searches so larger interest lists do not flood both sites.
-    for (var start = 0; start < requests.length; start += 4) {
-      cancellationToken?.throwIfCancelled();
-      results.addAll(
-        await Future.wait(
-          requests
-              .skip(start)
-              .take(4)
-              .map(
-                (request) => _loadRecommendationPagesSafely(
-                  request.$1,
-                  searchQuery: request.$2,
-                  language: language,
-                  token: null,
-                  refreshSeed: daySeed,
-                  sampleOlderPage: creatorQueries.isNotEmpty,
-                  cancellationToken: cancellationToken,
-                ),
-              ),
-        ),
-      );
-    }
+    final results = await _loadRecommendationRequests(
+      requests,
+      language: language,
+      token: null,
+      refreshSeed: daySeed,
+      sampleOlderPage: creatorQueries.isNotEmpty,
+      cancellationToken: cancellationToken,
+    );
     cancellationToken?.throwIfCancelled();
     final candidates = <String, AsmrWork>{};
     Object? error;
@@ -241,30 +226,87 @@ class AsmrRemoteCatalogService {
     void Function(int?)? onSourceTotalCount,
   }) async {
     cancellationToken?.throwIfCancelled();
-    final localTracksFuture = _loadLocalTracks();
-    final results = await Future.wait(
-      _recommendationSources.map(
-        (category) => _loadRecommendationPagesSafely(
-          category,
-          searchQuery: searchQuery,
+    final localTracksFuture = (() async {
+      final loading = _loadLocalTracks();
+      final tracks = await (cancellationToken?.waitFor(loading) ?? loading);
+      cancellationToken?.throwIfCancelled();
+      // A failed read must not seed interests from an empty library.
+      if (tracks != null) {
+        final preparation = prepareTagInterests?.call(tracks);
+        if (preparation != null) {
+          await (cancellationToken?.waitFor(preparation) ?? preparation);
+        }
+      }
+      return tracks ?? const <MusicTrack>[];
+    })();
+    final groups = await Future.wait([
+      _loadRecommendationRequests(
+        [
+          for (final category in _recommendationSources)
+            (category, searchQuery),
+        ],
+        language: language,
+        token: token,
+        refreshSeed: refreshSeed,
+        cancellationToken: cancellationToken,
+      ),
+      (() async {
+        await localTracksFuture;
+        cancellationToken?.throwIfCancelled();
+        // Interest recall must not broaden an explicit user search.
+        if (searchQuery.isNotEmpty) return <_RecommendationPagesResult>[];
+        final queries = <String>{};
+        for (final weights in [
+          tagWeights(),
+          voiceActorWeights(),
+          circleWeights(),
+        ]) {
+          final terms =
+              (weights?.entries ?? const <MapEntry<String, double>>[])
+                  .where(
+                    (entry) =>
+                        entry.value.isFinite &&
+                        entry.value > 0 &&
+                        entry.key.trim().isNotEmpty,
+                  )
+                  .toList()
+                ..sort((a, b) {
+                  final order = b.value.compareTo(a.value);
+                  return order == 0 ? a.key.compareTo(b.key) : order;
+                });
+          if (terms.isEmpty) continue;
+          queries.add(terms.first.key);
+          // Keep the strongest interest and rotate the second across refreshes.
+          if (terms.length > 1) {
+            final offset = refreshSeed > 0 ? refreshSeed - 1 : 0;
+            queries.add(terms[1 + offset % (terms.length - 1)].key);
+          }
+        }
+        return _loadRecommendationRequests(
+          [for (final query in queries) (AsmrCategoryType.release, query)],
           language: language,
           token: token,
           refreshSeed: refreshSeed,
+          firstPageOnly: true,
           cancellationToken: cancellationToken,
-        ),
-      ),
-    );
+        );
+      })(),
+    ]);
+    final results = groups.expand((group) => group).toList(growable: false);
     cancellationToken?.throwIfCancelled();
     final candidates = <String, AsmrWork>{};
     final firstPageIds = <String>{};
     final explorationIds = <String>{};
     Object? firstError;
     int? sourceTotalCount;
-    for (final result in results) {
+    for (var resultIndex = 0; resultIndex < results.length; resultIndex++) {
+      final result = results[resultIndex];
       firstError ??= result.error;
       for (var index = 0; index < result.pages.length; index++) {
         final page = result.pages[index];
-        if (index == 0 && page is AsmrMergedWorkPage) {
+        if (resultIndex < groups.first.length &&
+            index == 0 &&
+            page is AsmrMergedWorkPage) {
           sourceTotalCount ??= page.sourceTotalCount;
         }
         for (final work in result.pages[index].works) {
@@ -294,19 +336,7 @@ class AsmrRemoteCatalogService {
     final candidateList = candidates.values
         .where(isWorkAllowed)
         .toList(growable: false);
-    final loadedTracks =
-        await (cancellationToken?.waitFor(localTracksFuture) ??
-            localTracksFuture);
-    cancellationToken?.throwIfCancelled();
-    // A failed read must not permanently seed interests from an empty library.
-    if (loadedTracks != null) {
-      final preparation = prepareTagInterests?.call(loadedTracks);
-      if (preparation != null) {
-        await (cancellationToken?.waitFor(preparation) ?? preparation);
-      }
-    }
-    cancellationToken?.throwIfCancelled();
-    final localTracks = loadedTracks ?? const <MusicTrack>[];
+    final localTracks = await localTracksFuture;
     final ranking = AppLogService.measureAsync(
       'asmr_recommendation_rank',
       () => _recommendationEngine.rankAsync(
@@ -416,6 +446,42 @@ class AsmrRemoteCatalogService {
     if (firstError != null) throw firstError;
   }
 
+  Future<List<_RecommendationPagesResult>> _loadRecommendationRequests(
+    List<(AsmrCategoryType, String)> requests, {
+    required AsmrContentLanguage language,
+    required String? token,
+    required int refreshSeed,
+    bool sampleOlderPage = false,
+    bool firstPageOnly = false,
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    final results = <_RecommendationPagesResult>[];
+    // Bound interest searches so large preference lists do not flood either site.
+    for (var start = 0; start < requests.length; start += 4) {
+      cancellationToken?.throwIfCancelled();
+      results.addAll(
+        await Future.wait(
+          requests
+              .skip(start)
+              .take(4)
+              .map(
+                (request) => _loadRecommendationPagesSafely(
+                  request.$1,
+                  searchQuery: request.$2,
+                  language: language,
+                  token: token,
+                  refreshSeed: refreshSeed,
+                  sampleOlderPage: sampleOlderPage,
+                  firstPageOnly: firstPageOnly,
+                  cancellationToken: cancellationToken,
+                ),
+              ),
+        ),
+      );
+    }
+    return results;
+  }
+
   Future<_RecommendationPagesResult> _loadRecommendationPagesSafely(
     AsmrCategoryType category, {
     required String searchQuery,
@@ -423,6 +489,7 @@ class AsmrRemoteCatalogService {
     required String? token,
     required int refreshSeed,
     bool sampleOlderPage = false,
+    bool firstPageOnly = false,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
     final pages = <AsmrWorkPage>[];
@@ -439,7 +506,7 @@ class AsmrRemoteCatalogService {
       );
       cancellationToken?.throwIfCancelled();
       pages.add(firstPage);
-      if (firstPage.hasMore) {
+      if (!firstPageOnly && firstPage.hasMore) {
         final totalCount = sampleOlderPage && firstPage is AsmrMergedWorkPage
             ? cursor._totals.values.fold<int>(
                 0,

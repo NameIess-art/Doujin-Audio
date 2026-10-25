@@ -38,6 +38,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     required this.onWarning,
     required this.warningContainer,
     required this.onWarningContainer,
+    this.barGlassEnabled = false,
     this.spaceXxs = 4,
     this.spaceXs = 8,
     this.spaceSm = 12,
@@ -120,6 +121,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   final Color onWarning;
   final Color warningContainer;
   final Color onWarningContainer;
+  final bool barGlassEnabled;
   final double spaceXxs;
   final double spaceXs;
   final double spaceSm;
@@ -161,6 +163,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     Color? onWarning,
     Color? warningContainer,
     Color? onWarningContainer,
+    bool? barGlassEnabled,
     double? spaceXxs,
     double? spaceXs,
     double? spaceSm,
@@ -201,6 +204,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
       onWarning: onWarning ?? this.onWarning,
       warningContainer: warningContainer ?? this.warningContainer,
       onWarningContainer: onWarningContainer ?? this.onWarningContainer,
+      barGlassEnabled: barGlassEnabled ?? this.barGlassEnabled,
       spaceXxs: spaceXxs ?? this.spaceXxs,
       spaceXs: spaceXs ?? this.spaceXs,
       spaceSm: spaceSm ?? this.spaceSm,
@@ -234,6 +238,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   AppDesignTokens lerp(covariant AppDesignTokens? other, double t) {
     if (other == null) return this;
     return AppDesignTokens(
+      barGlassEnabled: other.barGlassEnabled,
       asmrAccent: Color.lerp(asmrAccent, other.asmrAccent, t)!,
       asmrContainer: Color.lerp(asmrContainer, other.asmrContainer, t)!,
       onAsmrContainer: Color.lerp(onAsmrContainer, other.onAsmrContainer, t)!,

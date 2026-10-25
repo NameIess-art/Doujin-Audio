@@ -545,6 +545,7 @@ const Map<String, String> appLanguageJa = {
   'theme_light': 'ライト',
   'theme_dark': 'ダーク',
   'black_theme': '純黒テーマ',
+  'bar_glass_enabled': 'メニューバーのすりガラス効果',
   'differentiate_asmr_theme': 'オンライン音声ライブラリの専用カラー',
   'app_theme_color': 'テーマ色',
   'asmr_theme_color': 'オンライン音声ライブラリのテーマ色',

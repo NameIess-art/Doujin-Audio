@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
@@ -209,6 +210,9 @@ void main() {
               navigatorKey: navigator,
               debugShowCheckedModeBanner: false,
               theme: ThemeData(
+                extensions: [
+                  AppDesignTokens.light.copyWith(barGlassEnabled: true),
+                ],
                 colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue)
                     .copyWith(
                       surface: Colors.black,
@@ -810,7 +814,13 @@ void main() {
           of: find.byKey(const ValueKey<String>('app_search_controls_overlay')),
           matching: find.byType(BackdropFilter),
         ),
-        findsNWidgets(3),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widgetList<AppGlassSurface>(find.byType(AppGlassSurface))
+            .map((surface) => surface.enabled),
+        everyElement(isFalse),
       );
       final inputDecorator = tester.widget<InputDecorator>(
         find.descendant(
@@ -844,6 +854,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(
+          extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
+        ),
         home: AppSearchPageScaffold<int>(
           controller: controller,
           focusNode: focusNode,

@@ -311,22 +311,26 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   static const _themeModeKey = 'themeMode';
   static const _differentiateAsmrThemeKey = 'differentiateAsmrTheme';
   static const _pureBlackThemeKey = 'pureBlackTheme';
+  static const _barGlassEnabledKey = 'barGlassEnabled';
   static const _appThemeColorKey = 'appThemeColor';
   static const _asmrThemeColorKey = 'asmrThemeColor';
 
   ThemeMode _themeMode = ThemeMode.system;
   bool _differentiateAsmrTheme = true;
   bool _pureBlackTheme = false;
+  bool _barGlassEnabled = false;
   ThemeAccentPreset _appThemeColor = ThemeAccentPreset.rose;
   ThemeAccentPreset _asmrThemeColor = ThemeAccentPreset.blue;
   late ThemeMode _persistedThemeMode;
   late bool _persistedDifferentiateAsmrTheme;
   late bool _persistedPureBlackTheme;
+  late bool _persistedBarGlassEnabled;
   late ThemeAccentPreset _persistedAppThemeColor;
   late ThemeAccentPreset _persistedAsmrThemeColor;
   int _themeModeMutation = 0;
   int _differentiateAsmrThemeMutation = 0;
   int _pureBlackThemeMutation = 0;
+  int _barGlassEnabledMutation = 0;
   int _appThemeColorMutation = 0;
   int _asmrThemeColorMutation = 0;
   late ThemeData _lightTheme;
@@ -335,6 +339,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   ThemeMode get themeMode => _themeMode;
   bool get differentiateAsmrTheme => _differentiateAsmrTheme;
   bool get pureBlackTheme => _pureBlackTheme;
+  bool get barGlassEnabled => _barGlassEnabled;
   ThemeAccentPreset get appThemeColor => _appThemeColor;
   ThemeAccentPreset get asmrThemeColor => _asmrThemeColor;
   ThemeData get lightTheme => _lightTheme;
@@ -392,6 +397,8 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       _differentiateAsmrTheme =
           AppPreferences.getBoolSync(_differentiateAsmrThemeKey) ?? true;
       _pureBlackTheme = AppPreferences.getBoolSync(_pureBlackThemeKey) ?? false;
+      _barGlassEnabled =
+          AppPreferences.getBoolSync(_barGlassEnabledKey) ?? false;
       _appThemeColor = readAppThemeColorSync();
       _asmrThemeColor = _readThemeColor(
         AppPreferences.getStringSync(_asmrThemeColorKey),
@@ -401,6 +408,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _persistedThemeMode = _themeMode;
     _persistedDifferentiateAsmrTheme = _differentiateAsmrTheme;
     _persistedPureBlackTheme = _pureBlackTheme;
+    _persistedBarGlassEnabled = _barGlassEnabled;
     _persistedAppThemeColor = _appThemeColor;
     _persistedAsmrThemeColor = _asmrThemeColor;
   }
@@ -468,6 +476,24 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     }
     if (mutation != _pureBlackThemeMutation) return false;
     _pureBlackTheme = _persistedPureBlackTheme;
+    _rebuildThemes();
+    notifyListeners();
+    return false;
+  }
+
+  Future<bool> setBarGlassEnabled(bool value) async {
+    if (_barGlassEnabled == value) return true;
+    final mutation = ++_barGlassEnabledMutation;
+    _barGlassEnabled = value;
+    _rebuildThemes();
+    notifyListeners();
+    final persisted = await _writePreferenceInOrder(_barGlassEnabledKey, value);
+    if (persisted) {
+      _persistedBarGlassEnabled = value;
+      return true;
+    }
+    if (mutation != _barGlassEnabledMutation) return false;
+    _barGlassEnabled = _persistedBarGlassEnabled;
     _rebuildThemes();
     notifyListeners();
     return false;
@@ -599,6 +625,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     AppDesignTokens tokens = scheme.brightness == Brightness.dark
         ? AppDesignTokens.dark
         : AppDesignTokens.light;
+    tokens = tokens.copyWith(barGlassEnabled: _barGlassEnabled);
 
     if (_differentiateAsmrTheme) {
       final asmrScheme = _asmrThemeColor.colorScheme(

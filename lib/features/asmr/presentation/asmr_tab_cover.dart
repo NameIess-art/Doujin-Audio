@@ -44,10 +44,11 @@ class _AsmrWorkCover extends ConsumerWidget {
           SizedBox(
             width: width,
             height: height,
-            child: ClipRRect(
+            child: CoverArtworkFrame(
               clipBehavior: Clip.hardEdge,
-              borderRadius:
-                  BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
+              borderRadius: BorderRadius.circular(
+                LibraryLikeCardMetrics.coverRadius,
+              ),
               child: Stack(
                 children: [
                   SizedBox(

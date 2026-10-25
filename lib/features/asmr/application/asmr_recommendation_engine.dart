@@ -456,17 +456,22 @@ class _RecommendationProfile {
     for (final track in localTracks) {
       builder.addTrack(track, localWeight);
     }
-    if (tagWeights != null) {
-      builder.tagWeights
-        ..clear()
-        ..addAll(tagWeights);
+    void replaceWeights(
+      Map<String, double> target,
+      Map<String, double>? weights,
+    ) {
+      if (weights == null) return;
+      target.clear();
+      for (final entry in weights.entries) {
+        final key = _normalizeTerm(entry.key);
+        if (key.isEmpty || !entry.value.isFinite || entry.value <= 0) continue;
+        if (entry.value > (target[key] ?? 0)) target[key] = entry.value;
+      }
     }
-    if (voiceActorWeights != null) {
-      builder.voiceActorWeights.addAll(voiceActorWeights);
-    }
-    if (circleWeights != null) {
-      builder.circleWeights.addAll(circleWeights);
-    }
+
+    replaceWeights(builder.tagWeights, tagWeights);
+    replaceWeights(builder.voiceActorWeights, voiceActorWeights);
+    replaceWeights(builder.circleWeights, circleWeights);
     return builder.build();
   }
 }

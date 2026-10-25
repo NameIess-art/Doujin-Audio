@@ -82,6 +82,22 @@ List<Widget> _buildSettingsAppearanceSection({
             contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           ),
         SwitchListTile(
+          key: const ValueKey<String>('bar_glass_enabled_tile'),
+          title: _settingsTitle(i18n.tr('bar_glass_enabled')),
+          value: themeProvider.barGlassEnabled,
+          onChanged: (value) {
+            unawaited(
+              _applyThemeChange(
+                context: context,
+                i18n: i18n,
+                change: () => themeProvider.setBarGlassEnabled(value),
+              ),
+            );
+          },
+          secondary: _settingsIcon(Icons.blur_on_rounded, cs.onSurface),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
+        SwitchListTile(
           title: _settingsTitle(i18n.tr('differentiate_asmr_theme')),
           value: themeProvider.differentiateAsmrTheme,
           onChanged: (value) {

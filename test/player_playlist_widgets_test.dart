@@ -2210,16 +2210,16 @@ void main() {
       );
       expect(
         tester
-            .widgetList<Material>(
+            .widget<CoverArtworkFrame>(
               find.descendant(
                 of: find.byKey(
                   const ValueKey<String>('active_session_cover_circular_1'),
                 ),
-                matching: find.byType(Material),
+                matching: find.byType(CoverArtworkFrame),
               ),
             )
-            .any((material) => material.shape is CircleBorder),
-        isTrue,
+            .borderRadius,
+        BorderRadius.circular(kActiveSessionCarouselDockHeight / 2),
       );
       expect(visibleSessions.last, 'circular_1');
 
@@ -2250,16 +2250,16 @@ void main() {
       );
       expect(
         tester
-            .widgetList<Material>(
+            .widget<CoverArtworkFrame>(
               find.descendant(
                 of: find.byKey(
                   const ValueKey<String>('active_session_cover_circular_2'),
                 ),
-                matching: find.byType(Material),
+                matching: find.byType(CoverArtworkFrame),
               ),
             )
-            .any((material) => material.shape is CircleBorder),
-        isTrue,
+            .borderRadius,
+        BorderRadius.circular(24),
       );
 
       await tester.pumpWidget(
@@ -4441,22 +4441,30 @@ void main() {
         const Size.square(52),
       );
       expect(
-        find.descendant(
-          of: find.byKey(
-            const ValueKey('playlist_cover_single-duration-session'),
-          ),
-          matching: find.byType(ClipOval),
-        ),
-        findsOneWidget,
+        tester
+            .widget<CoverArtworkFrame>(
+              find.descendant(
+                of: find.byKey(
+                  const ValueKey('playlist_cover_single-duration-session'),
+                ),
+                matching: find.byType(CoverArtworkFrame),
+              ),
+            )
+            .borderRadius,
+        BorderRadius.circular(playlistCoverSize / 2),
       );
       expect(
-        find.descendant(
-          of: find.byKey(
-            const ValueKey('playlist_cover_work-duration-session'),
-          ),
-          matching: find.byType(ClipOval),
-        ),
-        findsOneWidget,
+        tester
+            .widget<CoverArtworkFrame>(
+              find.descendant(
+                of: find.byKey(
+                  const ValueKey('playlist_cover_work-duration-session'),
+                ),
+                matching: find.byType(CoverArtworkFrame),
+              ),
+            )
+            .borderRadius,
+        BorderRadius.circular(playlistCoverSize / 2),
       );
 
       workSession.setOptimisticDuration(const Duration(minutes: 2, seconds: 5));
@@ -5190,7 +5198,10 @@ void main() {
       const ValueKey('playback_queue_cover_grid'),
     );
     expect(queueCoverGrid, findsOneWidget);
-    expect(tester.widget(queueCoverGrid), isA<ClipOval>());
+    expect(
+      tester.widget<CoverArtworkFrame>(queueCoverGrid).borderRadius,
+      BorderRadius.circular(playlistCoverSize / 2),
+    );
     expect(
       queueCard.closedColor,
       Theme.of(tester.element(find.byType(PlaylistTab))).colorScheme.surface,

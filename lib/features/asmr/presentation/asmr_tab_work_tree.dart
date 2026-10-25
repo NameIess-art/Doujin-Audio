@@ -130,11 +130,10 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
         ref.watch(asmrPlaybackCoordinatorProvider) != null;
     const cardShape = LibraryLikeCardMetrics.cardShape;
 
+    // The swipe shell already clips the rounded card; keep its ink surface
+    // rectangular so each scrolling row avoids another shaped physical layer.
     final cardContent = Material(
-      type: MaterialType.card,
       animationDuration: kAppSelectionDuration,
-      clipBehavior: Clip.hardEdge,
-      shape: cardShape,
       color: widget.isSelected
           ? cs.primaryContainer.withValues(alpha: 0.25)
           : Colors.transparent,

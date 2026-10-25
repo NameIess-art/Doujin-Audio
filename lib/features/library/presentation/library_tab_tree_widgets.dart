@@ -612,10 +612,8 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
         : RoundedRectangleBorder(borderRadius: folderRadius);
     final cardContent = isRootFolder
         ? Material(
-            type: MaterialType.card,
             animationDuration: kAppSelectionDuration,
-            clipBehavior: Clip.antiAlias,
-            shape: cardShape,
+            // The swipe surface already clips the row's rounded corners.
             color: widget.isSelected
                 ? cs.primaryContainer.withValues(alpha: 0.25)
                 : Colors.transparent,
@@ -786,7 +784,14 @@ class _TrackNodeWidget extends ConsumerWidget {
           )
         : null;
     final visibleCoverPath = track.isSingle && !track.isVideo
-        ? ref.watch(libraryCoverForTrackProvider(track.path)).value
+        ? ref
+              .watch(
+                libraryCoverForTrackProvider((
+                  trackPath: track.path,
+                  context: context,
+                )),
+              )
+              .value
         : null;
     final isAlreadyPlaying = ref.watch(isTrackActiveProvider(track.path));
     const cardShape = LibraryLikeCardMetrics.cardShape;
@@ -874,10 +879,8 @@ class _TrackNodeWidget extends ConsumerWidget {
         leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
         onRemove: () => _removeTrack(context, ref, track),
         child: Material(
-          type: MaterialType.card,
           animationDuration: kAppSelectionDuration,
-          clipBehavior: Clip.antiAlias,
-          shape: cardShape,
+          // The swipe surface already clips the row's rounded corners.
           color: isSelected
               ? cs.primaryContainer.withValues(alpha: 0.25)
               : (isAlreadyPlaying && !track.isVideo && useFeaturedCard)

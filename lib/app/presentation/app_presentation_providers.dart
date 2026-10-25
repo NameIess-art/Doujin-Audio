@@ -360,16 +360,23 @@ final libraryDetailForTargetProvider = FutureProvider.autoDispose
     });
 
 final libraryCoverForTrackProvider = FutureProvider.autoDispose
-    .family<String?, String>((ref, trackPath) async {
-      ref.watch(coverGenerationProvider);
+    .family<String?, ({String trackPath, BuildContext context})>((
+      ref,
+      request,
+    ) async {
       final facade = ref.read(libraryFacadeProvider);
-      final track = facade.trackByPath(trackPath);
+      final track = facade.trackByPath(request.trackPath);
       if (track == null || track.isVideo) return null;
+      final cache = facade.coverArtworkCacheService;
+      final coverKey = cache.coverSearchKeyForTrack(track) ?? track.path;
+      ref.watch(
+        coverGenerationProvider.select((_) => cache.revisionForScope(coverKey)),
+      );
       final resolved = facade.resolvedCoverPathForTrack(track);
       if (resolved != null && resolved.isNotEmpty) return resolved;
       return ref
           .read(libraryCoverUiControllerProvider)
-          .deferredTrackCover(track);
+          .deferredTrackCover(track, context: request.context);
     });
 
 final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {

@@ -12,6 +12,7 @@ import 'package:doujin_audio/features/library/presentation/library_cover_ui_cont
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_media_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -102,6 +103,84 @@ void main() {
       await tester.pumpAndSettle();
       expect(cache.requests, hasLength(activeCount));
     },
+  );
+
+  testWidgets(
+    'single-track cover provider skips rows scrolled away while queued',
+    (tester) async {
+      final cache = _RecordingCovers(blockAll: true);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      final covers = LibraryCoverUiController(library: fixture.library);
+      final scroll = ScrollController();
+      fixture.library.addTracks([
+        for (var i = 0; i < 100; i++) _track(i),
+      ], persist: false);
+      addTearDown(fixture.dispose);
+      addTearDown(covers.dispose);
+      addTearDown(scroll.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 300,
+              height: 600,
+              child: ListView.builder(
+                controller: scroll,
+                cacheExtent: 0,
+                itemExtent: 100,
+                itemCount: 100,
+                itemBuilder: (_, index) => Consumer(
+                  builder: (context, ref, _) {
+                    final cover = ref.watch(
+                      libraryCoverForTrackProvider((
+                        trackPath: _track(index).path,
+                        context: context,
+                      )),
+                    );
+                    return SizedBox(
+                      height: 100,
+                      child: Text(cover.value ?? '$index'),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+          overrides: [
+            libraryCoverUiControllerProvider.overrideWithValue(covers),
+          ],
+        ),
+      );
+      final concurrent = defaultTargetPlatform == TargetPlatform.windows
+          ? 4
+          : 1;
+      expect(cache.requests, hasLength(concurrent));
+      scroll.jumpTo(3000);
+      await tester.pump();
+      expect(cache.requests, hasLength(concurrent));
+      cache.release.complete();
+      await tester.pumpAndSettle();
+      final afterScroll = cache.requests.skip(concurrent).toList();
+      expect(afterScroll, isNotEmpty);
+      expect(
+        afterScroll,
+        everyElement(
+          predicate<String>(
+            (request) => int.parse(request.split(':').last) >= 30,
+          ),
+        ),
+        reason: 'Disposed row providers must not keep cover discovery queued.',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(

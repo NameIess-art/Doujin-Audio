@@ -163,7 +163,11 @@ class _MyPageState extends ConsumerState<MyPage>
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final activity = ref.watch(listeningActivityProvider);
+    final activityReady = ref.watch(
+      listeningActivityProvider.select(
+        (state) => state.hasValue || state.hasError,
+      ),
+    );
     final controller = ref.watch(asmrLibraryControllerProvider);
     final top =
         MediaQuery.paddingOf(context).top +
@@ -372,8 +376,9 @@ class _MyPageState extends ConsumerState<MyPage>
         for (final child in children) _RetainedMySection(child: child),
       ],
     );
-    Widget listeningChart(ListeningActivityView? view) => Consumer(
+    Widget listeningChart({bool skeleton = false}) => Consumer(
       builder: (context, ref, _) {
+        final activity = skeleton ? null : ref.watch(listeningActivityProvider);
         final style =
             ref.watch(
               settingsStateProvider.select(
@@ -389,21 +394,32 @@ class _MyPageState extends ConsumerState<MyPage>
           i18n.tr('my_listening_time'),
           chart,
           trailing: duration,
-          skeleton: view == null,
+          skeleton: skeleton,
         );
-        return view == null
-            ? ListeningTimeChart.skeleton(
-                i18n: i18n,
-                style: style,
-                builder: buildSection,
-              )
-            : ListeningTimeChart(
-                days: view.days,
-                i18n: i18n,
-                style: style,
-                onStyleChanged: _setChartStyle,
-                builder: buildSection,
-              );
+        if (skeleton) {
+          return ListeningTimeChart.skeleton(
+            i18n: i18n,
+            style: style,
+            builder: buildSection,
+          );
+        }
+        return activity!.when(
+          data: (view) => ListeningTimeChart(
+            days: view.days,
+            i18n: i18n,
+            style: style,
+            onStyleChanged: _setChartStyle,
+            builder: buildSection,
+          ),
+          loading: () => const SizedBox.shrink(),
+          error: (error, stack) => section(
+            i18n.tr('my_listening_time'),
+            TextButton(
+              onPressed: _refreshActivity,
+              child: Text(i18n.tr('my_retry')),
+            ),
+          ),
+        );
       },
     );
     Widget coverSkeleton(String key) => SizedBox(
@@ -476,7 +492,7 @@ class _MyPageState extends ConsumerState<MyPage>
           child: ShimmerLoader(
             key: const ValueKey('my-page-skeleton'),
             child: pageList([
-              listeningChart(null),
+              listeningChart(skeleton: true),
               section(
                 i18n.tr('my_history'),
                 coverSkeleton('my-skeleton-history'),
@@ -501,31 +517,28 @@ class _MyPageState extends ConsumerState<MyPage>
           children: [
             Positioned.fill(
               child: AppPageContentTransition.deferred(
-                isReady: activity.hasValue || activity.hasError,
+                isReady: activityReady,
                 placeholder: skeleton,
                 builder: (_) => pageList([
-                  activity.when(
-                    data: listeningChart,
-                    loading: () => const SizedBox.shrink(),
-                    error: (error, stack) => section(
-                      i18n.tr('my_listening_time'),
-                      TextButton(
-                        onPressed: _refreshActivity,
-                        child: Text(i18n.tr('my_retry')),
-                      ),
-                    ),
-                  ),
+                  listeningChart(),
                   section(
                     i18n.tr('my_history'),
-                    activity.when(
-                      data: (view) => view.history.isEmpty
-                          ? Text(i18n.tr('my_no_history'))
-                          : _HistoryStrip(view: view, onOpen: _openHistory),
-                      loading: () => const SizedBox.shrink(),
-                      error: (error, stack) => TextButton(
-                        onPressed: _refreshActivity,
-                        child: Text(i18n.tr('my_retry')),
-                      ),
+                    Consumer(
+                      builder: (context, ref, _) => ref
+                          .watch(listeningActivityProvider)
+                          .when(
+                            data: (view) => view.history.isEmpty
+                                ? Text(i18n.tr('my_no_history'))
+                                : _HistoryStrip(
+                                    view: view,
+                                    onOpen: _openHistory,
+                                  ),
+                            loading: () => const SizedBox.shrink(),
+                            error: (error, stack) => TextButton(
+                              onPressed: _refreshActivity,
+                              child: Text(i18n.tr('my_retry')),
+                            ),
+                          ),
                     ),
                   ),
                   section(

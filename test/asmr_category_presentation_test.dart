@@ -1488,6 +1488,13 @@ void main() {
         final cards = find.byType(LibraryLikeMetadataWorkCardContent);
         await pumpUntilFound(tester, cards);
         await tester.pumpAndSettle();
+        expect(
+          find.ancestor(of: cards, matching: find.byType(PhysicalShape)),
+          findsNothing,
+          reason:
+              'Rounded card clipping belongs to the swipe shell; '
+              'each visible row must avoid a second shaped physical surface.',
+        );
         final categoryReads = controller.categoryReads;
         final existingCards = cards.evaluate().toSet();
         var existingCardBuilds = 0;

@@ -10,6 +10,7 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/path_display.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/ui/interaction_deferred_stream.dart';
 import 'package:doujin_audio/features/player/application/listening_activity_service.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
@@ -195,6 +196,105 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'activity updates after scrolling rebuild only dependent My sections on $platform',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final controller = _DailyController(createTestAsmrServices())
+          ..loadingDaily = false;
+        final updates = StreamController<ListeningActivityView>();
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        addTearDown(updates.close);
+        tester.view.physicalSize = const Size(390, 700);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          fixture.build(
+            Theme(
+              data: ThemeData(platform: platform),
+              child: const MyPage(tabIndex: 3),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+              listeningActivityProvider.overrideWith(
+                (ref) => interactionDeferredValueStream(
+                  updates.stream,
+                  structural: true,
+                ),
+              ),
+            ],
+          ),
+        );
+        updates.add(const ListeningActivityView());
+        await pumpAndSettleWithAsync(tester);
+        final view = ListeningActivityView(
+          days: [
+            ListeningDay(
+              date: DateTime.now(),
+              duration: const Duration(minutes: 10),
+            ),
+          ],
+          history: [
+            ListeningHistoryEntry(
+              workKey: 'updated',
+              track: MusicTrack(
+                path: 'https://example.com/updated.mp3',
+                displayName: 'Updated track',
+                groupKey: 'updated',
+                groupTitle: 'Updated work',
+                groupSubtitle: '',
+                isSingle: false,
+                remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+                remoteMetadata: const {'title': 'Updated work'},
+              ),
+            ),
+          ],
+        );
+        final root = tester.element(find.byType(MyPage));
+        var rootBuilds = 0;
+        final previousRebuildHook = debugOnRebuildDirtyWidget;
+        debugOnRebuildDirtyWidget = (element, builtOnce) {
+          previousRebuildHook?.call(element, builtOnce);
+          if (identical(element, root)) rootBuilds++;
+        };
+        try {
+          final list = find.byWidgetPredicate(
+            (widget) =>
+                widget is ListView && widget.scrollDirection == Axis.vertical,
+          );
+          final gesture = await tester.startGesture(tester.getCenter(list));
+          await gesture.moveBy(const Offset(0, -40));
+          await tester.pump(const Duration(milliseconds: 16));
+          updates.add(view);
+          await tester.pump();
+          expect(
+            tester
+                .widget<ListeningTimeChart>(find.byType(ListeningTimeChart))
+                .days,
+            isEmpty,
+          );
+          await gesture.up();
+          await pumpUntilUiIdle(tester);
+          await pumpAndSettleWithAsync(tester);
+          expect(
+            tester
+                .widget<ListeningTimeChart>(find.byType(ListeningTimeChart))
+                .days,
+            same(view.days),
+          );
+          expect(find.text('Updated work'), findsOneWidget);
+          expect(rootBuilds, 0);
+        } finally {
+          debugOnRebuildDirtyWidget = previousRebuildHook;
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+    );
+
     testWidgets(
       'vertical round trips retain chart and daily state on $platform',
       (tester) async {

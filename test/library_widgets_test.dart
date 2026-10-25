@@ -786,7 +786,7 @@ void main() {
   }
 
   testWidgets(
-    'library fixed rows skip intermediate cards on a distant jump',
+    'library fixed rows skip intermediate cards and keep scrolling surfaces simple',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(450, 650);
@@ -800,15 +800,17 @@ void main() {
       addTearDown(scroll.dispose);
       final nodes = List.generate(
         1000,
-        (index) => TrackNode(
-          testMusicTrack(
-            name: 'Jump $index',
-            path: '/fixed/jump-$index.mp3',
-            groupKey: '/fixed',
-            groupTitle: 'Fixed',
-            isSingle: true,
-          ),
-        ),
+        (index) => index.isOdd
+            ? FolderNode('Jump $index', '/fixed/work-$index')
+            : TrackNode(
+                testMusicTrack(
+                  name: 'Jump $index',
+                  path: '/fixed/jump-$index.mp3',
+                  groupKey: '/fixed',
+                  groupTitle: 'Fixed',
+                  isSingle: true,
+                ),
+              ),
       );
       final built = <String>{};
       await tester.pumpWidget(
@@ -839,10 +841,50 @@ void main() {
       scroll.jumpTo(0);
       await tester.pump();
       expect(find.text('Jump 0', findRichText: true), findsOneWidget);
+      await tester.pumpAndSettle();
+      final list = find.byKey(const PageStorageKey<String>('library_list'));
+      final cardContents = find.descendant(
+        of: list,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is LibraryLikeWorkCardContent ||
+              widget is LibraryLikeSingleAudioCardContent,
+        ),
+      );
+      expect(cardContents, findsWidgets);
+      expect(
+        find.ancestor(of: cardContents, matching: find.byType(PhysicalShape)),
+        findsNothing,
+      );
+      final retainedCards = find
+          .descendant(of: list, matching: find.byType(SwipeRevealCard))
+          .evaluate()
+          .toSet();
+      expect(retainedCards, isNotEmpty);
+      var retainedBuilds = 0;
+      final previousRebuildHook = debugOnRebuildDirtyWidget;
+      debugOnRebuildDirtyWidget = (element, builtOnce) {
+        previousRebuildHook?.call(element, builtOnce);
+        if (retainedCards.contains(element)) retainedBuilds++;
+      };
+      try {
+        final gesture = await tester.startGesture(tester.getCenter(list));
+        for (var frame = 0; frame < 12; frame++) {
+          await gesture.moveBy(const Offset(0, -8));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(retainedBuilds, 0);
+      } finally {
+        debugOnRebuildDirtyWidget = previousRebuildHook;
+      }
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(
@@ -1829,7 +1871,15 @@ void main() {
     expect(workCard.elevation, 0);
     expect(workCard.shadowColor, Colors.transparent);
     expect(workCard.surfaceTintColor, Colors.transparent);
-    expect((workCard.shape as RoundedRectangleBorder).side, BorderSide.none);
+    expect(workCard.type, MaterialType.canvas);
+    expect(workCard.clipBehavior, Clip.none);
+    expect(workCard.shape, isNull);
+    final swipeCard = tester.widget<SwipeRevealCard>(
+      find
+          .ancestor(of: workTitle, matching: find.byType(SwipeRevealCard))
+          .first,
+    );
+    expect((swipeCard.shape as RoundedRectangleBorder).side, BorderSide.none);
     final libraryList = tester.widget<ListView>(
       find.byKey(const PageStorageKey<String>('library_list')),
     );
@@ -1840,7 +1890,7 @@ void main() {
     final libraryCards = find.descendant(
       of: find.byKey(const PageStorageKey<String>('library_list')),
       matching: find.byWidgetPredicate(
-        (widget) => widget is Material && widget.type == MaterialType.card,
+        (widget) => widget is LibraryTreeItem,
       ),
     );
     expect(libraryCards, findsNWidgets(2));
@@ -6089,20 +6139,24 @@ void main() {
               .first;
           final surface = tester.widget<Material>(selectionSurface);
           expect(surface.animationDuration, const Duration(milliseconds: 80));
-          final paintedSurface = tester.widget<PhysicalShape>(
-            find.descendant(
-              of: selectionSurface,
-              matching: find.byType(PhysicalShape),
-            ).first,
+          final paintedSurface = tester.widget<PhysicalModel>(
+            find
+                .descendant(
+                  of: selectionSurface,
+                  matching: find.byType(PhysicalModel),
+                )
+                .first,
           );
           expect(paintedSurface.color, surface.color);
           final tapSurface = tester.widget<InkWell>(
-            find.ancestor(
-              of: trackFinder,
-              matching: find.byWidgetPredicate(
-                (widget) => widget is InkWell && widget.onLongPress != null,
-              ),
-            ).first,
+            find
+                .ancestor(
+                  of: trackFinder,
+                  matching: find.byWidgetPredicate(
+                    (widget) => widget is InkWell && widget.onLongPress != null,
+                  ),
+                )
+                .first,
           );
           expect(tapSurface.splashFactory, InkSplash.splashFactory);
           expect(tapSurface.highlightColor, Colors.transparent);

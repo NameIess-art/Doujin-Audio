@@ -1223,6 +1223,20 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('已选择 1 项'), findsOneWidget);
+        final selectedSurface = tester.widget<Material>(
+          find
+              .ancestor(
+                of: find.text('Work 0'),
+                matching: find.byType(Material),
+              )
+              .first,
+        );
+        expect(
+          selectedSurface.color,
+          Theme.of(
+            tester.element(find.text('Work 0')),
+          ).colorScheme.primaryContainer.withValues(alpha: 0.25),
+        );
         await tester.tap(find.text('Work 1'));
         await tester.pumpAndSettle();
         expect(find.text('已选择 2 项'), findsOneWidget);

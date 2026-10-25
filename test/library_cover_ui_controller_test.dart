@@ -106,6 +106,66 @@ void main() {
   );
 
   testWidgets(
+    'revisiting a queued cover reuses its request while artwork I/O is blocked',
+    (tester) async {
+      final cache = _RecordingCovers(blockAll: true);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      final covers = LibraryCoverUiController(
+        library: fixture.library,
+        scheduler: WarmupScheduler(),
+      );
+      addTearDown(fixture.dispose);
+      addTearDown(covers.dispose);
+      final active = covers.deferredRemoteCover('https://cover/active');
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        if (!cache.release.isCompleted) cache.release.complete();
+        await tester.pumpAndSettle();
+      });
+      await tester.pump();
+      final futures = <String, Future<String?>>{};
+      Widget page(String id) => MaterialApp(
+        home: Builder(
+          key: ValueKey(id),
+          builder: (context) {
+            futures[id] = covers.deferredRemoteCover(
+              'https://cover/$id',
+              context: context,
+            );
+            return const SizedBox.expand();
+          },
+        ),
+      );
+
+      await tester.pumpWidget(page('returning'));
+      final returning = futures['returning']!;
+      var completed = false;
+      unawaited(returning.then((_) => completed = true));
+      await tester.pumpWidget(page('other'));
+      expect(cache.requests, ['remote:active']);
+      // Dropping the queued request here leaves its key in the scheduler.
+      // Revisiting it would then retry forever without yielding to I/O.
+      expect(completed, isFalse);
+
+      await tester.pumpWidget(page('returning'));
+      expect(futures['returning'], same(returning));
+      expect(cache.requests, ['remote:active']);
+      cache.release.complete();
+      await tester.pumpAndSettle();
+      await Future.wait([active, ...futures.values]);
+      expect(cache.requests, ['remote:active', 'remote:returning']);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'single-track cover provider skips rows scrolled away while queued',
     (tester) async {
       final cache = _RecordingCovers(blockAll: true);

@@ -126,10 +126,13 @@ final class LibraryCoverUiController {
       _scheduleBatchPending = false;
       if (_disposed || _interactionPaused) return;
       // A fling can recycle many rows while slow artwork occupies every slot.
-      // Retire those requests before sorting the next viewport's candidates.
+      // Retire unsubmitted requests before sorting the next viewport's candidates.
       _deferredLookups.removeWhere((_, request) {
         request.contexts.removeWhere((context) => !context.mounted);
-        if (request.started ||
+        // Queued keys still belong to the scheduler. Keep their request so a
+        // returning row reuses it instead of retrying a duplicate key forever.
+        if (request.submitted ||
+            request.started ||
             request.hasUnscopedRequest ||
             request.contexts.isNotEmpty) {
           return false;

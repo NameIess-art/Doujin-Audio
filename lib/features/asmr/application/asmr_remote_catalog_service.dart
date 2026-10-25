@@ -1,7 +1,6 @@
 import '../domain/asmr_tag_interest.dart';
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 
 import '../domain/asmr_models.dart';
 import '../../../core/media/music_track.dart';
@@ -13,18 +12,6 @@ import 'japanese_asmr_api_service.dart';
 import '../domain/asmr_persistence_repository.dart';
 
 part 'asmr_catalog_merge.dart';
-
-List<AsmrWork> _rankDailyDiscovery(
-  (List<AsmrWork>, int, Set<String>, Map<String, double>, Map<String, double>)
-  input,
-) => const AsmrRecommendationEngine().rankDaily(
-  candidates: input.$1,
-  daySeed: input.$2,
-  previousWorkKeys: input.$3,
-  voiceActorWeights: input.$4,
-  circleWeights: input.$5,
-  limit: 80,
-);
 
 class AsmrRemoteCatalogService {
   AsmrRemoteCatalogService({
@@ -88,60 +75,6 @@ class AsmrRemoteCatalogService {
 
   Future<List<MusicTrack>> loadLocalTracksForInterests() =>
       _persistenceRepository.loadTracksForRecommendations();
-
-  Future<List<AsmrWork>> loadDailyRecommendations({
-    required AsmrContentLanguage language,
-    required int daySeed,
-    required Set<String> previousWorkKeys,
-    AsmrRequestCancellationToken? cancellationToken,
-  }) async {
-    final voices = Map<String, double>.of(voiceActorWeights() ?? const {});
-    final circles = Map<String, double>.of(circleWeights() ?? const {});
-    final creatorQueries = {
-      for (final entry in [...voices.entries, ...circles.entries])
-        if (entry.value > 0 && entry.key.trim().isNotEmpty) entry.key.trim(),
-    }.toList()..sort();
-    final requests = creatorQueries.isEmpty
-        ? [for (final category in _recommendationSources) (category, '')]
-        : [
-            for (final query in creatorQueries)
-              (AsmrCategoryType.release, query),
-          ];
-    final results = await _loadRecommendationRequests(
-      requests,
-      language: language,
-      token: null,
-      refreshSeed: daySeed,
-      sampleOlderPage: creatorQueries.isNotEmpty,
-      cancellationToken: cancellationToken,
-    );
-    cancellationToken?.throwIfCancelled();
-    final candidates = <String, AsmrWork>{};
-    Object? error;
-    for (final result in results) {
-      error ??= result.error;
-      for (final page in result.pages) {
-        for (final work in page.works) {
-          candidates.update(
-            work.workKey,
-            (old) => old.mergedWith(work),
-            ifAbsent: () => work,
-          );
-        }
-      }
-    }
-    if (candidates.isEmpty && error != null) throw error;
-    // Keep reserves in the daily cache so exclusions can refill the visible 20.
-    final ranking = await compute(_rankDailyDiscovery, (
-      candidates.values.where(isWorkAllowed).toList(growable: false),
-      daySeed,
-      previousWorkKeys,
-      voices,
-      circles,
-    ));
-    cancellationToken?.throwIfCancelled();
-    return ranking;
-  }
 
   Future<AsmrWorkPage> loadPage(
     AsmrCategoryType category, {
@@ -451,7 +384,6 @@ class AsmrRemoteCatalogService {
     required AsmrContentLanguage language,
     required String? token,
     required int refreshSeed,
-    bool sampleOlderPage = false,
     bool firstPageOnly = false,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
@@ -471,7 +403,6 @@ class AsmrRemoteCatalogService {
                   language: language,
                   token: token,
                   refreshSeed: refreshSeed,
-                  sampleOlderPage: sampleOlderPage,
                   firstPageOnly: firstPageOnly,
                   cancellationToken: cancellationToken,
                 ),
@@ -488,7 +419,6 @@ class AsmrRemoteCatalogService {
     required AsmrContentLanguage language,
     required String? token,
     required int refreshSeed,
-    bool sampleOlderPage = false,
     bool firstPageOnly = false,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
@@ -507,18 +437,12 @@ class AsmrRemoteCatalogService {
       cancellationToken?.throwIfCancelled();
       pages.add(firstPage);
       if (!firstPageOnly && firstPage.hasMore) {
-        final totalCount = sampleOlderPage && firstPage is AsmrMergedWorkPage
-            ? cursor._totals.values.fold<int>(
-                0,
-                (largest, count) => count > largest ? count : largest,
-              )
-            : firstPage.totalCount;
         final totalPages =
-            (totalCount + firstPage.pageSize - 1) ~/ firstPage.pageSize;
+            (firstPage.totalCount + firstPage.pageSize - 1) ~/
+            firstPage.pageSize;
         final nextPage =
-            (!sampleOlderPage &&
-                    (firstPage is AsmrMergedWorkPage ||
-                        searchQuery.isNotEmpty)) ||
+            firstPage is AsmrMergedWorkPage ||
+                searchQuery.isNotEmpty ||
                 totalPages <= 1 ||
                 refreshSeed <= 1
             ? 2
@@ -531,8 +455,7 @@ class AsmrRemoteCatalogService {
             language: language,
             token: token,
             cancellationToken: cancellationToken,
-            // Sample source pages directly, rather than leftover merged buffers.
-            cursor: sampleOlderPage ? null : cursor,
+            cursor: cursor,
           ),
         );
       }

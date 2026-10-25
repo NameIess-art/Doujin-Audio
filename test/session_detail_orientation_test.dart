@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
+import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_page.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_scaffold.dart';
 import 'package:flutter/material.dart';
@@ -18,6 +20,8 @@ void main() {
     'pop',
     'drag',
     'cancel',
+    'local work',
+    'online work',
   ]) {
     for (final reducedMotion in [false, true]) {
       testWidgets(
@@ -38,12 +42,19 @@ void main() {
           addTearDown(UiInteractionCoordinator.instance.resetForTest);
           final fixture = AppRuntimeWidgetTestFixture();
           addTearDown(fixture.dispose);
-          final track = testMusicTrack(
+          final opensWork = action.endsWith(' work');
+          var track = testMusicTrack(
             name: 'Orientation',
             path: '/music/orientation.mp3',
             groupKey: '/music',
             groupTitle: 'Music',
           );
+          if (action == 'online work') {
+            track = track.copyWith(
+              remoteMetadataKind: 'asmr.one',
+              remoteMetadata: const {'id': 42, 'title': 'Orientation'},
+            );
+          }
           fixture.library.addTracks([track], persist: false);
           final session = fixture.playback.createTrackSession(track);
           fixture.playbackService.syncSlice(
@@ -62,15 +73,31 @@ void main() {
           final homePaintSizes = <Size>[];
           final homeRepaint = ValueNotifier(0);
           addTearDown(homeRepaint.dispose);
+          final root = GlobalKey<NavigatorState>();
+          final navigation = WorkDetailNavigation(rootNavigatorKey: root);
+          addTearDown(navigation.dispose);
+          final home = Scaffold(
+            body: CustomPaint(
+              key: const ValueKey('orientation_home'),
+              painter: _RecordHomePaint(homePaintSizes, homeRepaint),
+              child: const SizedBox.expand(),
+            ),
+          );
           await tester.pumpWidget(
             fixture.build(
-              Scaffold(
-                body: CustomPaint(
-                  key: const ValueKey('orientation_home'),
-                  painter: _RecordHomePaint(homePaintSizes, homeRepaint),
-                  child: const SizedBox.expand(),
-                ),
-              ),
+              opensWork
+                  ? WorkDetailNavigationScope(
+                      navigation: navigation,
+                      child: MaterialApp(
+                        navigatorKey: root,
+                        home: WorkDetailPane(
+                          isLandscape: false,
+                          sidebarWidth: 0,
+                          child: home,
+                        ),
+                      ),
+                    )
+                  : home,
               overrides: [
                 appOrientationControllerProvider.overrideWithValue(orientation),
               ],
@@ -79,7 +106,7 @@ void main() {
           final navigator = Navigator.of(
             tester.element(find.byKey(const ValueKey('orientation_home'))),
           );
-          final route = SessionDetailRoute(sessionId: session.id);
+          final route = _GuardedSessionDetailRoute(sessionId: session.id);
           unawaited(navigator.push(route));
           await tester.pumpAndSettle();
           tester.view.physicalSize = const Size(820, 390);
@@ -91,6 +118,11 @@ void main() {
             find.byType(SessionDetailScaffold),
           );
           switch (action) {
+            case 'local work':
+            case 'online work':
+              await tester.tap(
+                find.byTooltip(fixture.languageProvider.tr('audio_detail')),
+              );
             case 'close':
             case 'background':
               await tester.tap(
@@ -130,6 +162,10 @@ void main() {
           } else {
             expect(calls, [AppOrientationPolicy.portrait.allowedOrientations]);
             expect(route.preparingForExit, isTrue);
+            if (opensWork) {
+              expect(route.popAttempts, 0);
+              expect(navigation.isOpen, isFalse);
+            }
             if (action == 'background') {
               tester.binding.handleAppLifecycleStateChanged(
                 AppLifecycleState.inactive,
@@ -141,7 +177,11 @@ void main() {
               await tester.pump();
             }
             tester.view.physicalSize = const Size(390, 820);
-            await tester.pumpAndSettle();
+            if (opensWork) {
+              await pumpAndSettleWithAsync(tester);
+            } else {
+              await tester.pumpAndSettle();
+            }
             expect(find.byType(SessionDetailPage), findsNothing);
             expect(navigator.canPop(), isFalse);
             expect(homePaintSizes, isNotEmpty);
@@ -149,6 +189,17 @@ void main() {
               homePaintSizes.every((size) => size.height > size.width),
               isTrue,
             );
+            if (opensWork) {
+              expect(navigation.isOpen, isTrue);
+              final work = tester.widget<WorkDetailPage>(
+                find.byType(WorkDetailPage),
+              );
+              expect(work.asmrWork != null, action == 'online work');
+              navigation.navigatorKey.currentState!.pop();
+              await tester.pumpAndSettle();
+              await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+              expect(navigation.isOpen, isFalse);
+            }
           }
           expect(tester.takeException(), isNull);
           await tester.pumpWidget(const SizedBox.shrink());
@@ -157,6 +208,22 @@ void main() {
         variant: TargetPlatformVariant.only(TargetPlatform.android),
       );
     }
+  }
+}
+
+class _GuardedSessionDetailRoute extends SessionDetailRoute {
+  _GuardedSessionDetailRoute({required super.sessionId});
+
+  int popAttempts = 0;
+
+  @override
+  bool didPop(void result) {
+    // Bound the regression failure: popUntil would otherwise loop forever
+    // while the phone is waiting for a portrait metrics event.
+    if (++popAttempts > 2 && requiresPortraitRestore) {
+      throw StateError('Repeated pop before portrait restoration');
+    }
+    return super.didPop(result);
   }
 }
 

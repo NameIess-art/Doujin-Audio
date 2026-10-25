@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/widgets/app_transitions.dart';
+import '../../features/player/presentation/playlist/session_detail_route.dart';
 import 'main_screen.dart';
 import 'routed_playback_dock_host.dart';
 
@@ -42,6 +43,11 @@ class WorkDetailNavigation extends ChangeNotifier {
   }) async {
     final navigator = Navigator.of(context);
     final origin = readAppRoute(context);
+    if (returnToMain && origin is SessionDetailRoute) {
+      // popUntil retries synchronously when the detail refuses to pop, which
+      // would block the portrait metrics event it needs before it can exit.
+      await origin.prepareForExit();
+    }
     await WidgetsBinding.instance.endOfFrame;
     if (!context.mounted || !navigator.mounted || origin?.isCurrent == false) {
       return;

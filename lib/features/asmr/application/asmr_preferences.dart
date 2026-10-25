@@ -31,8 +31,6 @@ class AsmrPreferencesStore {
       _lastSyncAtKey,
       _searchSuggestionsKey,
       _syncOutboxSeededKey,
-      for (final language in AsmrContentLanguage.values)
-        'asmr_daily_discovery_v1_${language.name}',
     ]) {
       await _repository.saveSetting(key, null);
     }
@@ -98,45 +96,6 @@ class AsmrPreferencesStore {
 
   Future<void> saveCirclePreferences(AsmrTagPreferences value) => _repository
       .saveSetting(_circlePreferencesKey, jsonEncode(value.toJson()));
-
-  static const dailyRecommendationsVersion = 3;
-
-  Future<({String date, List<AsmrWork> works, int version, String interests})?>
-  loadDailyRecommendations(AsmrContentLanguage language) async {
-    final raw = await _repository.loadSetting(
-      'asmr_daily_discovery_v1_${language.name}',
-    );
-    if (raw == null) return null;
-    final value = jsonDecode(raw) as Map<String, dynamic>;
-    return (
-      date: value['date'] as String,
-      version: (value['version'] as num?)?.toInt() ?? 1,
-      interests: value['interests'] as String? ?? '',
-      works: (value['works'] as List)
-          .map(
-            (work) => AsmrWork.fromJson(
-              Map<String, dynamic>.from(work as Map),
-              language: language,
-            ),
-          )
-          .toList(growable: false),
-    );
-  }
-
-  Future<void> saveDailyRecommendations({
-    required AsmrContentLanguage language,
-    required String date,
-    required List<AsmrWork> works,
-    String interests = '',
-  }) => _repository.saveSetting(
-    'asmr_daily_discovery_v1_${language.name}',
-    jsonEncode({
-      'date': date,
-      'version': dailyRecommendationsVersion,
-      'interests': interests,
-      'works': works.map((work) => work.toJson()).toList(),
-    }),
-  );
 
   Future<List<AsmrCategoryType>> loadVisibleCategories() async {
     final stored = await _repository.loadVisibleCategoryNames();

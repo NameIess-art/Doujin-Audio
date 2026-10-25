@@ -19,9 +19,7 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
-import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
-import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,68 +35,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await AppPreferences.init();
   });
-
-  testWidgets(
-    'daily projection ignores unrelated notifications and preserves status updates',
-    (tester) async {
-      final fixture = AppRuntimeWidgetTestFixture();
-      final controller = _DailyController(createTestAsmrServices())
-        ..loadingDaily = false;
-      addTearDown(fixture.dispose);
-      addTearDown(controller.dispose);
-      tester.view.physicalSize = const Size(960, 1000);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      await tester.pumpWidget(
-        fixture.build(
-          const MyPage(tabIndex: 3),
-          overrides: [
-            asmrLibraryControllerProvider.overrideWithValue(controller),
-            listeningActivityProvider.overrideWith(
-              (ref) => Stream.value(const ListeningActivityView()),
-            ),
-          ],
-        ),
-      );
-      await pumpAndSettleWithAsync(tester);
-      var dailyBuilds = 0;
-      final previous = debugOnRebuildDirtyWidget;
-      debugOnRebuildDirtyWidget = (element, builtOnce) {
-        previous?.call(element, builtOnce);
-        if (element.widget.runtimeType.toString() == '_DailyRecommendations') {
-          dailyBuilds++;
-        }
-      };
-      addTearDown(() => debugOnRebuildDirtyWidget = previous);
-      for (var index = 0; index < 20; index++) {
-        controller.notifyListeners();
-        await pumpUntilUiIdle(tester);
-        await tester.pump();
-      }
-      expect(dailyBuilds, 0);
-      for (final change in <VoidCallback>[
-        () => controller.loadingDaily = true,
-        () => controller.dailyFailure = StateError('offline'),
-        () => controller.dailyDate = '2000-01-01',
-        () => controller.dailyLanguage = AsmrContentLanguage.en,
-      ]) {
-        final before = dailyBuilds;
-        change();
-        controller.notifyListeners();
-        await pumpUntilUiIdle(tester);
-        await tester.pump();
-        expect(dailyBuilds, before + 1);
-      }
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-    },
-    variant: const TargetPlatformVariant({
-      TargetPlatform.android,
-      TargetPlatform.windows,
-    }),
-  );
 
   testWidgets('first taste projections wait for scrolling to finish', (
     tester,
@@ -291,8 +227,7 @@ void main() {
       'activity updates after scrolling rebuild only dependent My sections on $platform',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
-        final controller = _DailyController(createTestAsmrServices())
-          ..loadingDaily = false;
+        final controller = _InterestController(createTestAsmrServices());
         final updates = StreamController<ListeningActivityView>();
         addTearDown(fixture.dispose);
         addTearDown(controller.dispose);
@@ -387,15 +322,10 @@ void main() {
     );
 
     testWidgets(
-      'vertical round trips retain chart and daily state on $platform',
+      'vertical round trips retain chart and history state on $platform',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
-        final controller = _DailyController(createTestAsmrServices())
-          ..loadingDaily = false
-          ..picks = List.generate(
-            20,
-            (i) => AsmrWork.fromJson({'id': 8000 + i, 'title': 'Daily $i'}),
-          );
+        final controller = _InterestController(createTestAsmrServices());
         for (var i = 0; i < 30; i++) {
           controller.state.learned[controller.state.resolve('Interest $i')] =
               i + 1;
@@ -426,7 +356,28 @@ void main() {
             overrides: [
               asmrLibraryControllerProvider.overrideWithValue(controller),
               listeningActivityProvider.overrideWith(
-                (ref) => Stream.value(ListeningActivityView(days: days)),
+                (ref) => Stream.value(
+                  ListeningActivityView(
+                    days: days,
+                    history: List.generate(
+                      20,
+                      (i) => ListeningHistoryEntry(
+                        workKey: 'history-$i',
+                        track: MusicTrack(
+                          path: 'https://example.com/history-$i.mp3',
+                          displayName: 'History track $i',
+                          groupKey: 'history-$i',
+                          groupTitle: 'History work $i',
+                          groupSubtitle: '',
+                          isSingle: false,
+                          remoteMetadataKind:
+                              MusicTrack.remoteMetadataKindAsmrOne,
+                          remoteMetadata: {'title': 'History work $i'},
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
@@ -448,15 +399,14 @@ void main() {
         // Visit the horizontal row once before moving it beyond the cache window.
         scroll.jumpTo(240);
         await pumpAndSettleWithAsync(tester);
-        final daily = find.byKey(const ValueKey('my-daily-viewport'));
-        final dailyScroll = tester
+        final history = find.byKey(const ValueKey('my-history-viewport'));
+        final historyScroll = tester
             .widget<ListView>(
-              find.descendant(of: daily, matching: find.byType(ListView)),
+              find.descendant(of: history, matching: find.byType(ListView)),
             )
             .controller!;
-        dailyScroll.jumpTo(150);
+        historyScroll.jumpTo(150);
         await tester.pumpAndSettle();
-        final calls = controller.dailyCalls;
         // Hold the scroll interaction while the taste sections first enter.
         final interaction = UiInteractionCoordinator.instance;
         final drag = Object();
@@ -488,141 +438,15 @@ void main() {
         await pumpAndSettleWithAsync(tester);
         final restored = tester
             .widget<ListView>(
-              find.descendant(of: daily, matching: find.byType(ListView)),
+              find.descendant(of: history, matching: find.byType(ListView)),
             )
             .controller!;
-        expect(restored, same(dailyScroll));
+        expect(restored, same(historyScroll));
         expect(restored.offset, 150);
-        expect(controller.dailyCalls, calls);
         expect(controller.interestReads, settledTagReads);
         expect(controller.voiceInterestReads, settledVoiceReads);
         expect(days.reads, 0);
         expect(tester.takeException(), isNull);
-        await tester.pumpWidget(const SizedBox.shrink());
-        await tester.pumpAndSettle();
-      },
-    );
-
-    testWidgets(
-      'daily picks defer requests, show twenty covers, retry and open details on $platform',
-      (tester) async {
-        final fixture = AppRuntimeWidgetTestFixture();
-        final controller = _DailyController(createTestAsmrServices());
-        addTearDown(fixture.dispose);
-        addTearDown(controller.dispose);
-        tester.view.physicalSize = const Size(960, 1000);
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-        final interaction = UiInteractionCoordinator.instance;
-        final motion = Object();
-        interaction.beginNavigation(motion);
-        await tester.pumpWidget(
-          fixture.build(
-            Theme(
-              data: ThemeData(platform: platform),
-              child: const MyPage(tabIndex: 3),
-            ),
-            overrides: [
-              asmrLibraryControllerProvider.overrideWithValue(controller),
-              listeningActivityProvider.overrideWith(
-                (ref) => Stream.value(const ListeningActivityView()),
-              ),
-            ],
-          ),
-        );
-        await tester.pump(const Duration(milliseconds: 100));
-        expect(controller.dailyCalls, 0);
-        interaction.cancelNavigation(motion);
-        await pumpUntilUiIdle(tester);
-        await tester.pump(const Duration(milliseconds: 400));
-        expect(controller.dailyCalls, greaterThan(0));
-        expect(find.byKey(const ValueKey('my-daily-loading')), findsOneWidget);
-        controller.loadingDaily = false;
-        controller.dailyFailure = StateError('offline');
-        controller.notifyListeners();
-        await pumpAndSettleWithAsync(tester);
-        final i18n = fixture.languageProvider;
-        expect(find.text(i18n.tr('my_daily_error')), findsOneWidget);
-        await tester.tap(find.text(i18n.tr('my_retry')));
-        await pumpUntilUiIdle(tester);
-        expect(controller.dailyCalls, greaterThan(1));
-        controller.dailyFailure = null;
-        controller.picks = List.generate(
-          20,
-          (i) => AsmrWork.fromJson({
-            'id': 9000 + i,
-            'title': 'Daily work $i',
-            'sourceId': 'RJ${9000 + i}',
-          }),
-        );
-        controller.notifyListeners();
-        await pumpAndSettleWithAsync(tester);
-        final viewport = find.byKey(const ValueKey('my-daily-viewport'));
-        expect(
-          tester.widget<ClipRRect>(viewport).borderRadius,
-          BorderRadius.circular(12),
-        );
-        final list = find.descendant(
-          of: viewport,
-          matching: find.byType(ListView),
-        );
-        expect(tester.widget<ListView>(list).semanticChildCount, 20);
-        final first = find.byKey(
-          ValueKey('my-daily-card-${controller.picks.first.workKey}'),
-        );
-        expect(tester.getSize(first), const Size(132, 99));
-        expect(tester.widget<CoverArtworkFrame>(first).showShadow, isTrue);
-        final cardClip = find.ancestor(
-          of: first,
-          matching: find.byWidgetPredicate(
-            (widget) => widget is ClipRect && widget.child is Padding,
-          ),
-        );
-        expect(tester.getSize(cardClip), const Size(144, 113));
-        expect(tester.getTopLeft(first).dx - tester.getTopLeft(cardClip).dx, 6);
-        expect(
-          tester.widget<ListView>(list).padding,
-          const EdgeInsets.symmetric(horizontal: 2),
-        );
-        expect(tester.getTopLeft(first).dy - tester.getTopLeft(viewport).dy, 6);
-        expect(
-          tester.getBottomLeft(viewport).dy - tester.getBottomLeft(first).dy,
-          8,
-        );
-        final labels = [
-          'my_history',
-          'my_daily_recommendations',
-          'my_interests',
-        ];
-        final positions = [
-          for (final label in labels)
-            tester
-                .getTopLeft(
-                  find.byKey(ValueKey('my-section-header-${i18n.tr(label)}')),
-                )
-                .dy,
-        ];
-        expect(positions[1], greaterThan(positions[0]));
-        expect(positions[2], greaterThan(positions[1]));
-        controller.dailyDate = '2000-01-01';
-        controller.dailyFailure = StateError('offline');
-        controller.notifyListeners();
-        await pumpAndSettleWithAsync(tester);
-        expect(find.text(i18n.tr('my_daily_stale')), findsOneWidget);
-        expect(first, findsOneWidget);
-        controller.dailyFailure = null;
-        await tester.tap(first);
-        await pumpAndSettleWithAsync(tester);
-        expect(find.byType(WorkDetailPage), findsOneWidget);
-        await tester.pageBack();
-        await pumpAndSettleWithAsync(tester);
-        expect(
-          find.byKey(
-            ValueKey('my-daily-card-${controller.picks.first.workKey}'),
-          ),
-          findsOneWidget,
-        );
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
       },
@@ -782,8 +606,6 @@ void main() {
             );
             final history = find.byKey(const ValueKey('my-skeleton-history'));
             expect(tester.getSize(history).height, 113);
-            final daily = find.byKey(const ValueKey('my-skeleton-daily'));
-            expect(tester.getSize(daily).height, 113);
             final covers = find.descendant(
               of: history,
               matching: find.byType(ShimmerContainer),
@@ -1670,12 +1492,7 @@ void main() {
       expect(find.text(i18n.tr('my_listening_time')), findsOneWidget);
       expect(find.text(i18n.tr('my_no_history')), findsOneWidget);
       final headerHeights = <double>[];
-      for (final label in [
-        'my_listening_time',
-        'my_history',
-        'my_daily_recommendations',
-        'my_interests',
-      ]) {
+      for (final label in ['my_listening_time', 'my_history', 'my_interests']) {
         final header = find.byKey(
           ValueKey('my-section-header-${i18n.tr(label)}'),
         );
@@ -1854,8 +1671,6 @@ class _InterestController extends AsmrLibraryController {
   final state = AsmrTagPreferences();
   @override
   Future<void> ensureTagInterests({List<MusicTrack>? localTracks}) async {}
-  @override
-  Future<void> ensureDailyRecommendations({DateTime? now}) async {}
   int removals = 0;
   int interestReads = 0;
   @override
@@ -1889,36 +1704,6 @@ class _PendingInterestController extends _InterestController {
   @override
   Future<void> ensureTagInterests({List<MusicTrack>? localTracks}) =>
       ready.future;
-}
-
-class _DailyController extends _InterestController {
-  _DailyController(super.services);
-  int dailyCalls = 0;
-  bool loadingDaily = true;
-  Object? dailyFailure;
-  String? dailyDate;
-  AsmrContentLanguage dailyLanguage = AsmrContentLanguage.zh;
-  List<AsmrWork> picks = [];
-  @override
-  AsmrContentLanguage get contentLanguage => dailyLanguage;
-  @override
-  List<AsmrWork> get dailyRecommendations => picks;
-  @override
-  bool get isLoadingDailyRecommendations => loadingDaily;
-  @override
-  Object? get dailyRecommendationsError => dailyFailure;
-  @override
-  String? get dailyRecommendationsDate => dailyDate;
-  @override
-  Future<void> ensureDailyRecommendations({DateTime? now}) async {
-    dailyCalls++;
-  }
-
-  @override
-  Future<List<AsmrTrackFile>> ensureTrackTree(
-    AsmrWork work, {
-    bool forceRefresh = false,
-  }) async => [];
 }
 
 class _ListeningRepository implements ListeningActivityRepository {

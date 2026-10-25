@@ -405,37 +405,6 @@ void main() {
   );
 
   test(
-    'daily creator recommendations sample old pages within each source total',
-    () async {
-      AsmrWork creatorWork(int id, bool japanese, bool recent) =>
-          AsmrWork.fromJson({
-            ..._work(id, japanese: japanese).toJson(),
-            'circleName': 'Favorite circle',
-            'releaseDate': recent ? '2026-10-25' : '2020-01-01',
-          });
-      final one = _OneApi({
-        1: [for (var i = 1; i <= 40; i++) creatorWork(i, false, true)],
-        2: [for (var i = 41; i <= 80; i++) creatorWork(i, false, false)],
-      });
-      final jp = _JapaneseApi({
-        1: [for (var i = 101; i <= 140; i++) creatorWork(i, true, true)],
-        2: [for (var i = 141; i <= 180; i++) creatorWork(i, true, false)],
-      });
-      final service = _catalog(one, jp)
-        ..circleWeights = () => {'favorite circle': 1};
-      final picks = await service.loadDailyRecommendations(
-        language: AsmrContentLanguage.zh,
-        daySeed: 20261025,
-        previousWorkKeys: {},
-      );
-      expect(jp.calls, [1, 2]);
-      expect(picks, hasLength(80));
-      expect(picks.take(40).every((w) => w.releaseDate!.year == 2026), isTrue);
-      expect(picks.skip(40).every((w) => w.releaseDate!.year == 2020), isTrue);
-    },
-  );
-
-  test(
     'unavailable ONE media switches the entire directory before queue creation',
     () async {
       final one = _OneApi({})..mediaError = const HttpException('Unavailable');

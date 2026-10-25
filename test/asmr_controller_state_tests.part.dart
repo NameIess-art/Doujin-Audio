@@ -76,7 +76,6 @@ void registerAsmrControllerStateTests({
       final tags = controller.interestTags;
       final voices = controller.voiceActorInterests;
       final circles = controller.circleInterests;
-      final daily = controller.dailyRecommendations;
       final initialPublications = publications.length;
       expect(initialPublications, 1);
       await controller.setVisibleCategories([AsmrCategoryType.release]);
@@ -85,10 +84,8 @@ void registerAsmrControllerStateTests({
       expect(controller.interestTags, same(tags));
       expect(controller.voiceActorInterests, same(voices));
       expect(controller.circleInterests, same(circles));
-      expect(controller.dailyRecommendations, same(daily));
       expect(publications, hasLength(initialPublications));
       expect(() => tags.clear(), throwsUnsupportedError);
-      expect(() => daily.clear(), throwsUnsupportedError);
       await controller.recordTagListeningBatch(
         batchId: 'snapshot:1',
         contributions: [
@@ -237,7 +234,7 @@ void registerAsmrControllerStateTests({
 
   for (final voice in [false, true]) {
     test(
-      'creator exclusion filters categories and daily cache, restores raw works: voice=$voice',
+      'creator exclusion filters categories and restores raw works: voice=$voice',
       () async {
         await resetPrefs();
         final state = AsmrTagPreferences();
@@ -266,12 +263,6 @@ void registerAsmrControllerStateTests({
           title: 'Allowed',
           circleName: 'Allowed circle',
         );
-        final day = DateTime(2026, 10, 25);
-        await preferences.saveDailyRecommendations(
-          language: AsmrContentLanguage.zh,
-          date: '2026-10-25',
-          works: [blocked, allowed],
-        );
         final controller = createTestAsmrController(
           preferencesStore: preferences,
           persistenceRepository: persistenceRepository(),
@@ -281,7 +272,6 @@ void registerAsmrControllerStateTests({
         );
         addTearDown(controller.dispose);
         await controller.ensureCategoryLoaded(AsmrCategoryType.release);
-        await controller.ensureDailyRecommendations(now: day);
         final original = controller.worksFor(AsmrCategoryType.release);
         Future<void> select(Map<String, bool> changes) => voice
             ? controller.applyVoiceActorSelections(
@@ -307,7 +297,6 @@ void registerAsmrControllerStateTests({
           controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
           [101],
         );
-        expect(controller.dailyRecommendations.map((work) => work.id), [101]);
         await controller.reloadPersistedState();
         expect(
           voice
@@ -529,438 +518,6 @@ void registerAsmrControllerStateTests({
         (await preferences.loadVoiceActorPreferences()).tags,
         isNot(contains('online:stale')),
       );
-    },
-  );
-
-  test(
-    'daily discovery upgrades old cache with creator interests and restores it',
-    () async {
-      await resetPrefs();
-      final repository = persistenceRepository();
-      final state = AsmrTagPreferences();
-      state.learned[state.resolve('listened')] = 60;
-      state.setInterested(state.resolve('manual'), true);
-      await preferences.saveCirclePreferences(state);
-      await preferences.saveDailyRecommendations(
-        language: AsmrContentLanguage.zh,
-        date: '2026-10-24',
-        works: [_work(id: 9000, title: 'Old daily pick')],
-      );
-      const cacheKey = 'asmr_daily_discovery_v1_zh';
-      final oldCache = (await repository.loadSetting(
-        cacheKey,
-      ))!.replaceFirst('"version":3,', '"version":2,');
-      await repository.saveSetting(cacheKey, oldCache);
-      final api = _FakeAsmrApiService(
-        pagedSearchWorks: true,
-        recommendationWorks: List.generate(
-          100,
-          (i) => _work(
-            id: 5000 + i,
-            title: 'Daily $i',
-            circleName: i < 20
-                ? 'listened'
-                : i < 40
-                ? 'manual'
-                : 'Other $i',
-          ),
-        ),
-      );
-      final controller = createTestAsmrController(
-        preferencesStore: preferences,
-        persistenceRepository: repository,
-        apiService: api,
-      );
-      addTearDown(controller.dispose);
-      final day = DateTime(2026, 10, 24);
-      await controller.ensureDailyRecommendations(now: day);
-      final picks = controller.dailyRecommendations;
-      expect(picks, hasLength(20));
-      expect(
-        picks.where(
-          (w) => w.circleName == 'listened' || w.circleName == 'manual',
-        ),
-        hasLength(20),
-      );
-      expect(picks.any((w) => w.circleName == 'listened'), isTrue);
-      expect(picks.any((w) => w.circleName == 'manual'), isTrue);
-      expect(
-        (await preferences.loadDailyRecommendations(
-          AsmrContentLanguage.zh,
-        ))!.version,
-        AsmrPreferencesStore.dailyRecommendationsVersion,
-      );
-      final requests = api.searchWorkRequests.length;
-      expect(requests, greaterThan(0));
-      expect(api.searchKeywords.toSet(), {'listened', 'manual'});
-      expect(api.fetchWorkRequests, isEmpty);
-      final restored = createTestAsmrController(
-        preferencesStore: preferences,
-        persistenceRepository: repository,
-        apiService: api,
-      );
-      addTearDown(restored.dispose);
-      await restored.ensureDailyRecommendations(now: day);
-      expect(
-        restored.dailyRecommendations.map((w) => w.workKey),
-        picks.map((w) => w.workKey),
-      );
-      expect(api.searchWorkRequests.length, requests);
-    },
-  );
-
-  test(
-    'daily discovery searches creators, samples older pages and refreshes changed interests',
-    () async {
-      await resetPrefs();
-      final voices = AsmrTagPreferences();
-      voices.setInterested(voices.resolve('Voice A'), true);
-      final circles = AsmrTagPreferences();
-      circles.setInterested(circles.resolve('Circle B'), true);
-      circles.resolve('Circle C');
-      await preferences.saveVoiceActorPreferences(voices);
-      await preferences.saveCirclePreferences(circles);
-      final api = _DailyCreatorApi();
-      final controller = createTestAsmrController(
-        preferencesStore: preferences,
-        persistenceRepository: persistenceRepository(),
-        apiService: api,
-      );
-      addTearDown(controller.dispose);
-      final day = DateTime(2026, 10, 25);
-      await controller.ensureDailyRecommendations(now: day);
-      expect(api.requests.toSet(), {
-        'voice a:1',
-        'voice a:10',
-        'circle b:1',
-        'circle b:10',
-      });
-      expect(api.fetchWorkRequests, isEmpty);
-      expect(controller.dailyRecommendations.map((w) => w.id).take(2), [1, 2]);
-      expect(controller.dailyRecommendations, hasLength(4));
-      expect(controller.dailyRecommendations.any((w) => w.id == 999), isFalse);
-      final count = api.requests.length;
-      await controller.ensureDailyRecommendations(now: day);
-      expect(api.requests, hasLength(count));
-      await controller.applyVoiceActorSelections(
-        changes: {'local:voice a': false},
-      );
-      expect(
-        controller.dailyRecommendations.every(
-          (w) => w.circleName == 'Circle B',
-        ),
-        isTrue,
-      );
-      await controller.applyCircleSelections(
-        changes: {'local:circle b': false, 'local:circle c': true},
-      );
-      expect(api.requests, containsAll(['circle c:1', 'circle c:10']));
-      expect(
-        controller.dailyRecommendations.every(
-          (w) => w.circleName == 'Circle C',
-        ),
-        isTrue,
-      );
-      expect(controller.dailyRecommendations, hasLength(2));
-      final restored = createTestAsmrController(
-        preferencesStore: preferences,
-        persistenceRepository: persistenceRepository(),
-        apiService: api,
-      );
-      addTearDown(restored.dispose);
-      final savedCount = api.requests.length;
-      await restored.ensureDailyRecommendations(now: day);
-      expect(api.requests, hasLength(savedCount));
-      expect(
-        restored.dailyRecommendations.map((w) => w.id),
-        controller.dailyRecommendations.map((w) => w.id),
-      );
-    },
-  );
-
-  test(
-    'daily discovery replaces a pending request when listening adds a creator',
-    () async {
-      await resetPrefs();
-      final circles = AsmrTagPreferences();
-      circles.setInterested(circles.resolve('Circle B'), true);
-      await preferences.saveCirclePreferences(circles);
-      final started = Completer<void>();
-      final gate = Completer<void>();
-      final api = _DailyCreatorApi(
-        beforeFetchSearchResponse: (_) async {
-          if (!started.isCompleted) started.complete();
-          await gate.future;
-        },
-      );
-      final controller = createTestAsmrController(
-        preferencesStore: preferences,
-        persistenceRepository: persistenceRepository(),
-        apiService: api,
-      );
-      final day = DateTime(2026, 10, 25);
-      final previous = controller.ensureDailyRecommendations(now: day);
-      await started.future;
-      await controller.recordVoiceActorListeningBatch(
-        batchId: 'daily:1',
-        contributions: [
-          (tags: ['Voice A'], duration: const Duration(minutes: 1)),
-        ],
-      );
-      gate.complete();
-      await previous;
-      await controller.ensureDailyRecommendations(now: day);
-      expect(
-        controller.dailyRecommendations.any(
-          (w) => w.voiceActors.contains('Voice A'),
-        ),
-        isTrue,
-      );
-      expect(controller.dailyRecommendations, hasLength(4));
-      final requests = api.requests.length;
-      await controller.recordVoiceActorListeningBatch(
-        batchId: 'daily:2',
-        contributions: [
-          (tags: ['Voice A'], duration: const Duration(minutes: 1)),
-        ],
-      );
-      await controller.ensureDailyRecommendations(now: day);
-      expect(api.requests, hasLength(requests));
-    },
-  );
-
-  test(
-    'daily discovery failed save is retryable and language/day races cannot overwrite cache',
-    () async {
-      await resetPrefs();
-      final repository = persistenceRepository();
-      final store = _DailyFailingPreferencesStore(repository: repository);
-      var gate = Completer<void>()..complete();
-      var started = Completer<void>();
-      final api = _FakeAsmrApiService(
-        recommendationWorks: List.generate(
-          60,
-          (i) => _work(id: 4000 + i, title: 'Daily $i'),
-        ),
-        beforeFetchWorkResponse: (_) {
-          if (!started.isCompleted) started.complete();
-          return gate.future;
-        },
-      );
-      final controller = createTestAsmrController(
-        preferencesStore: store,
-        persistenceRepository: repository,
-        apiService: api,
-      );
-      final day = DateTime(2026, 10, 24);
-      await controller.ensureDailyRecommendations(now: day);
-      expect(controller.dailyRecommendationsError, isNotNull);
-      expect(controller.dailyRecommendationsDate, isNull);
-      expect(
-        await store.loadDailyRecommendations(AsmrContentLanguage.zh),
-        isNull,
-      );
-      store.failDailySave = false;
-      await controller.ensureDailyRecommendations(now: day);
-      expect(controller.dailyRecommendationsDate, '2026-10-24');
-      gate = Completer<void>();
-      started = Completer<void>();
-      final old = controller.ensureDailyRecommendations(
-        now: DateTime(2026, 10, 25),
-      );
-      await started.future;
-      final rollover = controller.ensureDailyRecommendations(
-        now: DateTime(2026, 10, 26),
-      );
-      await controller.setContentLanguage(AsmrContentLanguage.ja);
-      final japanese = controller.ensureDailyRecommendations(
-        now: DateTime(2026, 10, 26),
-      );
-      gate.complete();
-      await Future.wait([old, rollover, japanese]);
-      expect(controller.dailyRecommendationsDate, '2026-10-26');
-      expect(
-        (await store.loadDailyRecommendations(AsmrContentLanguage.zh))!.date,
-        '2026-10-24',
-      );
-      expect(
-        (await store.loadDailyRecommendations(AsmrContentLanguage.ja))!.date,
-        '2026-10-26',
-      );
-    },
-  );
-
-  test(
-    'daily discovery persists a stable twenty, rolls over, and refills exclusions',
-    () async {
-      await resetPrefs();
-      final state = AsmrTagPreferences();
-      state.resolve('blocked');
-      await preferences.saveTagPreferences(state);
-      final api = _FakeAsmrApiService(
-        recommendationWorks: List.generate(
-          80,
-          (i) => _work(
-            id: 1000 + i,
-            title: 'Daily $i',
-            tags: [i.isEven ? 'blocked' : 'other'],
-          ),
-        ),
-      );
-      final controller = createTestAsmrController(
-        preferencesStore: preferences,
-        persistenceRepository: persistenceRepository(),
-        apiService: api,
-      );
-      final day = DateTime(2026, 10, 24);
-      final pending = controller.ensureDailyRecommendations(now: day);
-      expect(controller.ensureDailyRecommendations(now: day), same(pending));
-      await pending;
-      expect(controller.dailyRecommendations, hasLength(20));
-      final first = controller.dailyRecommendations
-          .map((w) => w.workKey)
-          .toList();
-      final requests = api.fetchWorkRequests.length;
-      expect(
-        api.fetchWorkOrders.toSet(),
-        containsAll([
-          'create_date:desc',
-          'dl_count:desc',
-          'rate_average_2dp:desc',
-          'release:desc',
-        ]),
-      );
-      await controller.ensureDailyRecommendations(now: day);
-      expect(api.fetchWorkRequests.length, requests);
-      final restored = createTestAsmrController(
-        preferencesStore: preferences,
-        persistenceRepository: persistenceRepository(),
-        apiService: api,
-      );
-      await restored.ensureDailyRecommendations(now: day);
-      expect(restored.dailyRecommendations.map((w) => w.workKey), first);
-      expect(api.fetchWorkRequests.length, requests);
-      await restored.setTagExcluded('local:blocked', true);
-      expect(restored.dailyRecommendations, hasLength(20));
-      expect(
-        restored.dailyRecommendations.every((w) => !w.tags.contains('blocked')),
-        isTrue,
-      );
-      expect(api.fetchWorkRequests.length, requests);
-      await controller.ensureDailyRecommendations(now: DateTime(2026, 10, 25));
-      expect(controller.dailyRecommendationsDate, '2026-10-25');
-      expect(
-        controller.dailyRecommendations.map((w) => w.workKey),
-        isNot(first),
-      );
-      expect(api.fetchWorkRequests.length, greaterThan(requests));
-    },
-  );
-
-  test(
-    'daily discovery offline keeps last picks and can retry without saving a fresh date',
-    () async {
-      await resetPrefs();
-      final yesterday = List.generate(
-        20,
-        (i) => _work(id: 2000 + i, title: 'Yesterday $i'),
-      );
-      await preferences.saveDailyRecommendations(
-        language: AsmrContentLanguage.zh,
-        date: '2026-10-23',
-        works: yesterday,
-      );
-      final api = _FakeAsmrApiService(
-        failingFetchOrders: {
-          'create_date',
-          'dl_count',
-          'rate_average_2dp',
-          'release',
-        },
-      );
-      final controller = createTestAsmrController(
-        preferencesStore: preferences,
-        persistenceRepository: persistenceRepository(),
-        apiService: api,
-      );
-      await controller.ensureDailyRecommendations(now: DateTime(2026, 10, 24));
-      expect(controller.dailyRecommendations, hasLength(20));
-      expect(controller.dailyRecommendationsDate, '2026-10-23');
-      expect(controller.dailyRecommendationsError, isNotNull);
-      expect(controller.isLoadingDailyRecommendations, isFalse);
-      expect(
-        (await preferences.loadDailyRecommendations(
-          AsmrContentLanguage.zh,
-        ))!.date,
-        '2026-10-23',
-      );
-      api.failingFetchOrders.clear();
-      await controller.ensureDailyRecommendations(now: DateTime(2026, 10, 24));
-      expect(controller.dailyRecommendationsDate, '2026-10-24');
-      expect(controller.dailyRecommendationsError, isNull);
-    },
-  );
-
-  test(
-    'daily discovery late requests obey current exclusions and restore boundaries',
-    () async {
-      await resetPrefs();
-      final state = AsmrTagPreferences();
-      state.resolve('blocked');
-      await preferences.saveTagPreferences(state);
-      var gate = Completer<void>();
-      var started = Completer<void>();
-      final api = _FakeAsmrApiService(
-        recommendationWorks: List.generate(
-          60,
-          (i) => _work(
-            id: 3000 + i,
-            title: 'Race $i',
-            tags: [i.isEven ? 'blocked' : 'other'],
-          ),
-        ),
-        beforeFetchWorkResponse: (_) {
-          if (!started.isCompleted) started.complete();
-          return gate.future;
-        },
-      );
-      final controller = createTestAsmrController(
-        preferencesStore: preferences,
-        persistenceRepository: persistenceRepository(),
-        apiService: api,
-      );
-      final first = controller.ensureDailyRecommendations(
-        now: DateTime(2026, 10, 24),
-      );
-      await started.future;
-      await controller.setTagExcluded('local:blocked', true);
-      gate.complete();
-      await first;
-      expect(controller.dailyRecommendations, hasLength(20));
-      expect(
-        controller.dailyRecommendations.every(
-          (w) => !w.tags.contains('blocked'),
-        ),
-        isTrue,
-      );
-      gate = Completer<void>();
-      started = Completer<void>();
-      final late = controller.ensureDailyRecommendations(
-        now: DateTime(2026, 10, 25),
-      );
-      await started.future;
-      await controller.reloadPersistedState();
-      gate.complete();
-      await late;
-      expect(controller.dailyRecommendations, isEmpty);
-      expect(
-        (await preferences.loadDailyRecommendations(
-          AsmrContentLanguage.zh,
-        ))!.date,
-        '2026-10-24',
-      );
-      await controller.ensureDailyRecommendations(now: DateTime(2026, 10, 24));
-      expect(controller.dailyRecommendations, hasLength(20));
     },
   );
 
@@ -3749,58 +3306,6 @@ class _BrowseChangingApi extends AsmrApiService {
   }
 }
 
-class _DailyCreatorApi extends _FakeAsmrApiService {
-  _DailyCreatorApi({super.beforeFetchSearchResponse});
-  final requests = <String>[];
-
-  @override
-  Future<AsmrWorkPage> searchWorks({
-    required String keyword,
-    required String order,
-    required String sort,
-    int page = 1,
-    int pageSize = 40,
-    String? token,
-    AsmrContentLanguage language = AsmrContentLanguage.zh,
-    AsmrRequestCancellationToken? cancellationToken,
-  }) async {
-    requests.add('$keyword:$page');
-    await beforeFetchSearchResponse?.call('$keyword:$page');
-    cancellationToken?.throwIfCancelled();
-    expect(order, 'release');
-    expect(sort, 'desc');
-    final id = switch (keyword) {
-      'voice a' => 1,
-      'circle b' => 2,
-      _ => 3,
-    };
-    return AsmrWorkPage(
-      works: [
-        AsmrWork.fromJson({
-          ..._work(
-            id: page == 1 ? id : 100 + id,
-            title: 'Creator work',
-            circleName: keyword == 'voice a'
-                ? 'Other circle'
-                : keyword == 'circle b'
-                ? 'Circle B'
-                : 'Circle C',
-            releaseDate: page == 1
-                ? DateTime(2026, 10, 26 - id)
-                : DateTime(2020),
-          ).toJson(),
-          'voiceActors': keyword == 'voice a' ? ['Voice A'] : <String>[],
-        }),
-        for (var i = 1; i < pageSize; i++)
-          _work(id: 999, title: 'Keyword match only'),
-      ],
-      currentPage: page,
-      pageSize: pageSize,
-      totalCount: 400,
-    );
-  }
-}
-
 class _CatalogFailingPreferencesStore extends AsmrPreferencesStore {
   _CatalogFailingPreferencesStore({required super.repository});
   bool failCatalogSave = false;
@@ -3808,26 +3313,6 @@ class _CatalogFailingPreferencesStore extends AsmrPreferencesStore {
   Future<void> saveVoiceActorPreferences(AsmrTagPreferences value) {
     if (failCatalogSave && value.catalogComplete) throw StateError('save failed');
     return super.saveVoiceActorPreferences(value);
-  }
-}
-
-class _DailyFailingPreferencesStore extends AsmrPreferencesStore {
-  _DailyFailingPreferencesStore({required super.repository});
-  bool failDailySave = true;
-  @override
-  Future<void> saveDailyRecommendations({
-    required AsmrContentLanguage language,
-    required String date,
-    required List<AsmrWork> works,
-    String interests = '',
-  }) {
-    if (failDailySave) throw StateError('save failed');
-    return super.saveDailyRecommendations(
-      language: language,
-      date: date,
-      works: works,
-      interests: interests,
-    );
   }
 }
 

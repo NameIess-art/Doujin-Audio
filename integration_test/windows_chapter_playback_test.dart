@@ -181,7 +181,13 @@ void registerWindowsChapterPlaybackTest() {
         await bridge.dispose();
         await server.close(force: true);
         await serving.cancel();
-        await directory.delete(recursive: true);
+        for (var attempt = 0; attempt < 10 && await directory.exists(); attempt++) {
+          try {
+            await directory.delete(recursive: true);
+          } on FileSystemException {
+            await Future<void>.delayed(const Duration(milliseconds: 200));
+          }
+        }
       }
     }),
     skip: !Platform.isWindows,

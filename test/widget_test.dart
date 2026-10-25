@@ -5862,18 +5862,18 @@ void main() {
     );
     expect(
       tester
-          .widget<Material>(
+          .widget<CoverArtworkFrame>(
             find.descendant(
               of: find
                   .byKey(
                     const ValueKey('active_session_cover_asmr_error_session'),
                   )
                   .first,
-              matching: find.byType(Material),
+              matching: find.byType(CoverArtworkFrame),
             ),
           )
-          .shape,
-      isA<CircleBorder>(),
+          .borderRadius,
+      BorderRadius.circular(24),
     );
 
     expect(

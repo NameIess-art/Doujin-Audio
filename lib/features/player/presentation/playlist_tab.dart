@@ -659,8 +659,14 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       final isTemporary = session.isTemporary;
       final isPinned =
           !isTemporary && pinnedPlaylistSessionIds.contains(session.id);
-      final track = paths.sessionTrackForPath(session.id, structure.trackPath);
-      final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
+      // Queue rows resolve their own current track and cover mosaic. Only
+      // ordinary sessions need the single-track artwork prepared here.
+      final track = structure.isPlaybackQueue
+          ? null
+          : paths.sessionTrackForPath(session.id, structure.trackPath);
+      final coverPath = structure.isPlaybackQueue
+          ? null
+          : library.resolvedPlaybackCoverPathForTrack(track);
       final card = RepaintBoundary(
         child: structure.isPlaybackQueue
             ? PlaybackQueueCard(

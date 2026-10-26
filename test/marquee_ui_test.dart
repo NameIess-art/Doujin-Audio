@@ -77,6 +77,78 @@ Future<void> _pumpMarqueeFrames(WidgetTester tester, int milliseconds) async {
 
 void main() {
   testWidgets(
+    'scroll boundaries do not rebuild mounted marquee text',
+    (tester) async {
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.resetForTest();
+      addTearDown(interaction.resetForTest);
+      var observerBuilds = 0;
+      await tester.pumpWidget(
+        _buildApp(
+          ScrollActivityGate(
+            child: Column(
+              children: [
+                Builder(
+                  builder: (context) {
+                    ScrollActivityGate.isScrollingOf(context);
+                    observerBuilds++;
+                    return const SizedBox.shrink();
+                  },
+                ),
+                for (var i = 0; i < 20; i++)
+                  SizedBox(
+                    width: 120,
+                    height: 20,
+                    child: MarqueeText(text: 'Long scrolling metadata $i'),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      var marqueeBuilds = 0;
+      final previous = debugOnRebuildDirtyWidget;
+      debugOnRebuildDirtyWidget = (element, builtOnce) {
+        previous?.call(element, builtOnce);
+        if (element.widget is MarqueeText) marqueeBuilds++;
+      };
+      addTearDown(() => debugOnRebuildDirtyWidget = previous);
+      final element = tester.element(find.byType(MarqueeText).first);
+      final metrics = FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: 100,
+        pixels: 0,
+        viewportDimension: 100,
+        axisDirection: AxisDirection.down,
+        devicePixelRatio: 1,
+      );
+      ScrollStartNotification(
+        metrics: metrics,
+        context: element,
+      ).dispatch(element);
+      await tester.pump();
+      expect(interaction.isInteracting, isTrue);
+      ScrollEndNotification(
+        metrics: metrics,
+        context: element,
+      ).dispatch(element);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump();
+      expect(observerBuilds, 3);
+      expect(marqueeBuilds, 0);
+      debugPrint(
+        'MARQUEE_SCROLL_BOUNDARIES mounted=20 rebuilds=$marqueeBuilds',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.windows}),
+  );
+
+  testWidgets(
     'fitting card text creates no horizontal scrollable',
     (tester) async {
       await tester.pumpWidget(

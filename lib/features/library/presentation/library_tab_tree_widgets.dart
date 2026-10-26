@@ -34,6 +34,8 @@ import 'library_card_artwork.dart';
 import 'library_tab_ui_helpers.dart';
 
 const Color _librarySelectionCheckmarkColor = Color(0xFF4CAF50);
+const double kLibraryChildFolderTileHeight = 44;
+const double kLibraryTrackTileHeight = 38;
 
 class LibrarySelectionIndicator extends StatelessWidget {
   const LibrarySelectionIndicator({
@@ -239,7 +241,7 @@ class LibraryFolderNodeWidget extends ConsumerStatefulWidget {
 class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
   static const double _rootFolderTileHeight =
       LibraryLikeCardMetrics.rootTileHeight;
-  static const double _childFolderTileHeight = 44;
+  static const double _childFolderTileHeight = kLibraryChildFolderTileHeight;
   static const double _childFolderTitleBlockHeight = 36;
 
   final ExpansibleController _expansionController = ExpansibleController();
@@ -953,7 +955,7 @@ class _TrackNodeWidget extends ConsumerWidget {
             child: ColoredBox(
               color: Colors.transparent,
               child: SizedBox(
-                height: 38,
+                height: kLibraryTrackTileHeight,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.xs,

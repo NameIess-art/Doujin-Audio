@@ -794,6 +794,26 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         _uniformRoots;
     final useFixedExtent =
         uniformRootRows && tilePadding <= LibraryLikeCardMetrics.coverDistance;
+    final useKnownRowExtents =
+        !useFixedExtent &&
+        _presentedProjectionVersion == _visibleItemsVersion &&
+        !_removalMotionActive &&
+        _removingItemIds.isEmpty &&
+        _cardExpansionMotions.isEmpty &&
+        _folderLoadAnimations.isEmpty &&
+        _folderTreeErrorPaths.isEmpty &&
+        tilePadding <= LibraryLikeCardMetrics.coverDistance;
+    double itemExtent(VisibleLibraryItem item) => switch (item.node) {
+      FolderNode(:final depth) =>
+        depth == 0
+            ? LibraryLikeCardMetrics.rootTileHeight
+            : kLibraryChildFolderTileHeight,
+      TrackNode(:final track) =>
+        track.isSingle
+            ? LibraryLikeCardMetrics.rootTileHeight
+            : kLibraryTrackTileHeight,
+      _ => 0,
+    };
     Widget buildTopLevelLibraryItem(BuildContext context, int index) {
       final item = visibleItems[index];
       final node = item.node;
@@ -913,6 +933,20 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
             cacheExtent: widget.cacheExtent,
             itemExtent: useFixedExtent
                 ? LibraryLikeCardMetrics.rootTileHeight
+                : null,
+            // Expanded trees have mixed but known row heights. Supplying them
+            // lets distant scrollbar jumps skip building every crossed track.
+            itemExtentBuilder: useKnownRowExtents
+                ? (rowIndex, _) {
+                    var height = 0.0;
+                    for (var column = 0; column < columnCount; column++) {
+                      final index = rowIndex * columnCount + column;
+                      if (index >= visibleItems.length) break;
+                      final extent = itemExtent(visibleItems[index]);
+                      if (extent > height) height = extent;
+                    }
+                    return height;
+                  }
                 : null,
             physics: widget.physics,
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,

@@ -11,6 +11,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show clampDouble;
 import 'package:flutter/material.dart';
 
+import '../../app/theme/app_design_tokens.dart';
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_feedback.dart';
 import 'app_glass_surface.dart';
@@ -793,6 +794,7 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
                   );
 
                   final Widget materialIndicator = AppGlassSurface(
+                    enabled: AppDesignTokens.of(context).barGlassEnabled,
                     backgroundColor:
                         widget.backgroundColor ?? cs.surfaceContainerHigh,
                     borderRadius: BorderRadius.circular(100),

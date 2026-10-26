@@ -28,6 +28,46 @@ class _CollapsingAsmrWork {
   }
 }
 
+class _AsmrWorkRowsDelegate extends SliverChildBuilderDelegate {
+  _AsmrWorkRowsDelegate(
+    super.builder, {
+    required this.works,
+    required this.columnCount,
+    required this.searchQuery,
+    required this.searchSession,
+    required this.isSelectionMode,
+    required Set<String> selectedWorkIds,
+    required Map<String, Animation<double>> loadingAnimations,
+    required this.collapsingWorks,
+    super.childCount,
+    super.findChildIndexCallback,
+  }) : selectedWorkIds = Set.of(selectedWorkIds),
+       loadingAnimations = Map.of(loadingAnimations);
+
+  final List<AsmrWork> works;
+  final int columnCount;
+  final String searchQuery;
+  final bool searchSession;
+  final bool isSelectionMode;
+  final Set<String> selectedWorkIds;
+  final Map<String, Animation<double>> loadingAnimations;
+  final Map<String, _CollapsingAsmrWork> collapsingWorks;
+
+  @override
+  bool shouldRebuild(covariant _AsmrWorkRowsDelegate oldDelegate) {
+    // Paging progress and retry/footer updates do not change the row content.
+    // Let mounted cards keep their layout and decoded covers for those commits.
+    return !identical(works, oldDelegate.works) ||
+        columnCount != oldDelegate.columnCount ||
+        searchQuery != oldDelegate.searchQuery ||
+        searchSession != oldDelegate.searchSession ||
+        isSelectionMode != oldDelegate.isSelectionMode ||
+        !setEquals(selectedWorkIds, oldDelegate.selectedWorkIds) ||
+        !mapEquals(loadingAnimations, oldDelegate.loadingAnimations) ||
+        !identical(collapsingWorks, oldDelegate.collapsingWorks);
+  }
+}
+
 class _AsmrCategoryList extends ConsumerStatefulWidget {
   const _AsmrCategoryList({
     super.key,
@@ -607,7 +647,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                     );
                   }
 
-                  final rows = SliverChildBuilderDelegate(
+                  final rows = _AsmrWorkRowsDelegate(
                     (context, rowIndex) {
                       if (columnCount == 1) {
                         return buildWorkCard(visibleWorks[rowIndex]);
@@ -638,6 +678,14 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         ],
                       );
                     },
+                    works: visibleWorks,
+                    columnCount: columnCount,
+                    searchQuery: widget.searchQuery,
+                    searchSession: widget.searchSession,
+                    isSelectionMode: widget.isSelectionMode,
+                    selectedWorkIds: widget.selectedWorkIds,
+                    loadingAnimations: _loadingWorkAnimations,
+                    collapsingWorks: _visibleCollapsing,
                     childCount: rowCount,
                     findChildIndexCallback: columnCount == 1
                         ? (key) => workKeyIndices[key]
@@ -717,12 +765,13 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final page = Theme(
       data: theme.copyWith(
         scrollbarTheme: theme.scrollbarTheme.copyWith(
-          thumbColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.dragged)) return asmrBlue;
-            if (states.contains(WidgetState.hovered)) {
-              return asmrBlue.withValues(alpha: 0.7);
-            }
-            return theme.colorScheme.outlineVariant.withValues(alpha: 0.5);
+          // Value equality avoids invalidating every card's Theme on paging.
+          thumbColor: WidgetStateProperty.fromMap({
+            WidgetState.dragged: asmrBlue,
+            WidgetState.hovered: asmrBlue.withValues(alpha: 0.7),
+            WidgetState.any: theme.colorScheme.outlineVariant.withValues(
+              alpha: 0.5,
+            ),
           }),
         ),
       ),

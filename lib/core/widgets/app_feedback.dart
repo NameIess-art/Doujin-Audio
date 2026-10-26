@@ -920,6 +920,7 @@ class AppFeedbackSurface extends StatelessWidget {
         ],
       ),
       child: AppGlassSurface(
+        enabled: tokens.barGlassEnabled,
         backgroundColor: surfaceColor,
         borderRadius: BorderRadius.circular(resolvedBorderRadius),
         child: surface,

@@ -102,6 +102,10 @@ class _MarqueeTextState extends State<MarqueeText>
   bool _canAnimate = false;
   bool _pointerDown = false;
   bool _userScrolling = false;
+  ValueListenable<bool>? _scrollActivity;
+
+  bool get _animationAllowed =>
+      _canAnimate && !(_scrollActivity?.value ?? false);
 
   double get _pauseDuration => widget.pauseDuration.inMicroseconds / 1000000;
 
@@ -112,12 +116,23 @@ class _MarqueeTextState extends State<MarqueeText>
         defaultTargetPlatform != TargetPlatform.android &&
         TickerMode.valuesOf(context).enabled &&
         !MediaQuery.disableAnimationsOf(context) &&
-        !MarqueePauseScope.isPausedOf(context) &&
-        !ScrollActivityGate.isScrollingOf(context);
+        !MarqueePauseScope.isPausedOf(context);
+    final activity = ScrollActivityGate.scrollingListenableOf(context);
+    if (!identical(activity, _scrollActivity)) {
+      _scrollActivity?.removeListener(_handleScrollActivity);
+      _scrollActivity = activity;
+      _scrollActivity?.addListener(_handleScrollActivity);
+    }
+    _handleScrollActivity();
+  }
+
+  void _handleScrollActivity() {
     _syncTicker();
-    if (!_canAnimate && _controller.hasClients && _controller.offset != 0) {
+    if (!_animationAllowed &&
+        _controller.hasClients &&
+        _controller.offset != 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_canAnimate && _controller.hasClients) {
+        if (mounted && !_animationAllowed && _controller.hasClients) {
           _controller.jumpTo(0);
         }
       });
@@ -137,7 +152,7 @@ class _MarqueeTextState extends State<MarqueeText>
 
   void _syncTicker() {
     final shouldRun =
-        _canAnimate &&
+        _animationAllowed &&
         !_pointerDown &&
         !_userScrolling &&
         _controller.hasClients &&
@@ -196,6 +211,7 @@ class _MarqueeTextState extends State<MarqueeText>
 
   @override
   void dispose() {
+    _scrollActivity?.removeListener(_handleScrollActivity);
     _ticker.dispose();
     _controller.dispose();
     super.dispose();

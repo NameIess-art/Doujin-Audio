@@ -62,10 +62,14 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
     : super(libraryService: LibraryService());
 
   final List<String> requestedPaths = <String>[];
+  final List<String> resolvedPlaybackPaths = <String>[];
 
   @override
-  String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) =>
-      null;
+  String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {
+    final resolvedPath = track?.path ?? trackPath;
+    if (resolvedPath != null) resolvedPlaybackPaths.add(resolvedPath);
+    return null;
+  }
 
   @override
   Future<String?> futureForPlaybackTrack(
@@ -4652,6 +4656,73 @@ void main() {
       }),
     );
   }
+
+  testWidgets(
+    'playlist queue rows only resolve artwork used by the cover mosaic',
+    (tester) async {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        notificationsChannel,
+        (_) async => <String, Object?>{'ok': true, 'value': null},
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+      );
+      final covers = _RecordingPlaybackCoverCacheService();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: covers,
+      );
+      addTearDown(fixture.dispose);
+      final tracks = List.generate(
+        2,
+        (index) => testMusicTrack(
+          name: 'Queue track $index',
+          path: '/library/queue-artwork/track-$index.mp3',
+          groupKey: '/library/queue-artwork',
+          groupTitle: 'Queue work',
+        ),
+      );
+      fixture.library.addTracks(tracks, persist: false);
+      final session = fixture.playback.createPlaybackQueue('Queue')
+        ..currentTrackPath = tracks.last.path
+        ..playbackQueue = PlaybackQueueDefinition(
+          name: 'Queue',
+          entries: [
+            PlaybackQueueEntry(
+              id: 'work',
+              kind: PlaybackQueueEntryKind.work,
+              title: 'Queue work',
+              tracks: tracks,
+            ),
+          ],
+        );
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pump(const Duration(milliseconds: 120));
+      await tester.pumpAndSettle();
+      covers.resolvedPlaybackPaths.clear();
+
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PlaybackQueueCard), findsOneWidget);
+      expect(covers.resolvedPlaybackPaths, contains(tracks.first.path));
+      expect(covers.resolvedPlaybackPaths, isNot(contains(tracks.last.path)));
+      expect(find.text(tracks.last.displayName), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('queue cover lookup is reused across card rebuilds', (
     tester,

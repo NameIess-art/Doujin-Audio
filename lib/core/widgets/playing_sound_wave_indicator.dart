@@ -1,5 +1,8 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'scroll_activity_gate.dart';
 
 /// An animated audio equalizer sound wave indicator with vertical jumping bars.
 /// Commonly placed next to the track name in media lists to mark the active item.
@@ -40,6 +43,8 @@ class PlayingSoundWaveIndicator extends StatefulWidget {
 class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  ValueListenable<bool>? _scrollActivity;
+  bool _animationsAllowed = false;
 
   @override
   void initState() {
@@ -48,27 +53,44 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
       vsync: this,
       duration: const Duration(seconds: 22),
     );
-    if (widget.isPlaying) {
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _animationsAllowed =
+        TickerMode.valuesOf(context).enabled &&
+        !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+    final activity = ScrollActivityGate.scrollingListenableOf(context);
+    if (!identical(activity, _scrollActivity)) {
+      _scrollActivity?.removeListener(_syncAnimation);
+      _scrollActivity = activity;
+      _scrollActivity?.addListener(_syncAnimation);
+    }
+    _syncAnimation();
+  }
+
+  void _syncAnimation() {
+    final animate =
+        widget.isPlaying &&
+        _animationsAllowed &&
+        !(_scrollActivity?.value ?? false);
+    if (animate && !_controller.isAnimating) {
       _controller.repeat();
+    } else if (!animate && _controller.isAnimating) {
+      _controller.stop();
     }
   }
 
   @override
   void didUpdateWidget(covariant PlayingSoundWaveIndicator oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isPlaying != oldWidget.isPlaying) {
-      if (widget.isPlaying) {
-        if (!_controller.isAnimating) {
-          _controller.repeat();
-        }
-      } else {
-        _controller.stop();
-      }
-    }
+    _syncAnimation();
   }
 
   @override
   void dispose() {
+    _scrollActivity?.removeListener(_syncAnimation);
     _controller.dispose();
     super.dispose();
   }
@@ -81,18 +103,6 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
         widget.barCount * widget.barWidth +
         (widget.barCount - 1) * widget.barSpacing;
 
-    final disableAnimations =
-        MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-    final isTickerActive = TickerMode.valuesOf(context).enabled;
-
-    if (disableAnimations || !isTickerActive) {
-      if (_controller.isAnimating) {
-        _controller.stop();
-      }
-    } else if (widget.isPlaying && !_controller.isAnimating) {
-      _controller.repeat();
-    }
-
     return RepaintBoundary(
       child: SizedBox(
         width: totalWidth,
@@ -102,7 +112,7 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
           painter: _SoundWavePainter(
             animation: _controller,
             color: effectiveColor,
-            isPlaying: widget.isPlaying && !disableAnimations,
+            isPlaying: widget.isPlaying && _animationsAllowed,
             barCount: widget.barCount,
             barWidth: widget.barWidth,
             barSpacing: widget.barSpacing,

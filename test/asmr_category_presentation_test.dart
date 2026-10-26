@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:doujin_audio/core/app_language.dart';
+import 'package:doujin_audio/core/immutable_collections.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
@@ -43,6 +44,60 @@ void main() {
       );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'online pagination status retains mounted cards on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices())
+          ..publishedWorks = immutableList([
+            for (var index = 0; index < 1000; index++)
+              AsmrWork.fromJson({'id': index + 1, 'title': 'Work $index'}),
+          ])
+          ..hasMore = true;
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        final cards = find.byType(LibraryLikeMetadataWorkCardContent);
+        await pumpUntilFound(tester, cards);
+        await tester.pumpAndSettle();
+        final mountedCards = cards.evaluate().toSet();
+        var cardBuilds = 0;
+        final previous = debugOnRebuildDirtyWidget;
+        debugOnRebuildDirtyWidget = (element, builtOnce) {
+          previous?.call(element, builtOnce);
+          if (mountedCards.contains(element)) cardBuilds++;
+        };
+        addTearDown(() => debugOnRebuildDirtyWidget = previous);
+
+        await controller.loadMoreCategory(AsmrCategoryType.collected);
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
+        expect(controller.hasMore, isFalse);
+        expect(cardBuilds, 0);
+        expect(cards.evaluate().toSet(), mountedCards);
+
+        // Data commits still update the same mounted rows.
+        controller
+          ..publishedWorks = [
+            AsmrWork.fromJson(const {'id': 1, 'title': 'Updated work'}),
+            ...controller.publishedWorks!.skip(1),
+          ]
+          ..publish('Updated work');
+        await pumpUntilFound(tester, find.text('Updated work'));
+        expect(cardBuilds, greaterThan(0));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     testWidgets(
       'online library retains separate cards for equal source IDs on $platform',
       (tester) async {

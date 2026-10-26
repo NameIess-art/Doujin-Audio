@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
@@ -7,6 +8,77 @@ import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 void main() {
+  for (final brightness in Brightness.values) {
+    testWidgets(
+      'active refresh follows bar glass preference in $brightness',
+      (tester) async {
+        final enabled = ValueNotifier(false);
+        addTearDown(enabled.dispose);
+        final refresh = Completer<void>();
+        final key = GlobalKey<GlassRefreshIndicatorState>();
+        final theme = ThemeData(brightness: brightness);
+        await tester.pumpWidget(
+          ValueListenableBuilder<bool>(
+            valueListenable: enabled,
+            builder: (_, value, child) => MaterialApp(
+              theme: theme.copyWith(
+                extensions: [
+                  (brightness == Brightness.dark
+                          ? AppDesignTokens.dark
+                          : AppDesignTokens.light)
+                      .copyWith(barGlassEnabled: value),
+                ],
+              ),
+              home: child,
+            ),
+            child: Scaffold(
+              body: GlassRefreshIndicator(
+                key: key,
+                onRefresh: () => refresh.future,
+                child: ListView(children: const [SizedBox(height: 800)]),
+              ),
+            ),
+          ),
+        );
+        final pending = key.currentState!.show();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        final state = key.currentState;
+        for (final value in [false, true, false]) {
+          enabled.value = value;
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+          expect(key.currentState, same(state));
+          expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+          expect(
+            find.byType(BackdropFilter),
+            value ? findsOneWidget : findsNothing,
+          );
+          final glass = find.byType(AppGlassSurface);
+          expect(tester.widget<AppGlassSurface>(glass).enabled, value);
+          final tint = tester.widget<ColoredBox>(
+            find.descendant(of: glass, matching: find.byType(ColoredBox)).first,
+          );
+          expect(
+            tint.color.a,
+            closeTo(
+              value ? (brightness == Brightness.dark ? .84 : .8) : 1,
+              .005,
+            ),
+          );
+        }
+        refresh.complete();
+        await tester.pump();
+        await pending;
+        await tester.pumpAndSettle();
+        expect(find.byType(AppGlassSurface), findsNothing);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
   testWidgets('hidden refresh releases deferred updates on other pages', (
     tester,
   ) async {
@@ -100,6 +172,9 @@ void main() {
     final refresh = Completer<void>();
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(
+          extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
+        ),
         home: Scaffold(
           body: GlassRefreshIndicator(
             onRefresh: () => refresh.future,
@@ -164,7 +239,15 @@ void main() {
       const backgroundColor = Color(0x99FF0000);
       await tester.pumpWidget(
         MaterialApp(
-          theme: ThemeData(brightness: brightness),
+          theme: ThemeData(
+            brightness: brightness,
+            extensions: [
+              (brightness == Brightness.dark
+                      ? AppDesignTokens.dark
+                      : AppDesignTokens.light)
+                  .copyWith(barGlassEnabled: true),
+            ],
+          ),
           home: Scaffold(
             body: GlassRefreshIndicator(
               backgroundColor: backgroundColor,
@@ -217,6 +300,9 @@ void main() {
     final key = GlobalKey<GlassRefreshIndicatorState>();
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(
+          extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
+        ),
         home: Scaffold(
           body: GlassRefreshIndicator(
             key: key,

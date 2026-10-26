@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
@@ -27,6 +28,10 @@ class ScrollActivityGate extends StatefulWidget {
     final scope = context.getInheritedWidgetOfExactType<_ScrollActivityScope>();
     return scope?.notifier?.value ?? false;
   }
+
+  /// Animation owners can react directly without rebuilding their text/layout.
+  static ValueListenable<bool>? scrollingListenableOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_ScrollActivityScope>()?.notifier;
 
   @override
   State<ScrollActivityGate> createState() => _ScrollActivityGateState();

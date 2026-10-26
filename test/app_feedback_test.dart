@@ -10,13 +10,90 @@ import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
-Widget _feedbackApp({required Widget home}) {
-  return MaterialApp(theme: ThemeData.dark(useMaterial3: true), home: home);
+Widget _feedbackApp({required Widget home, bool barGlassEnabled = false}) {
+  return MaterialApp(
+    theme: ThemeData.dark(useMaterial3: true).copyWith(
+      extensions: [
+        AppDesignTokens.dark.copyWith(barGlassEnabled: barGlassEnabled),
+      ],
+    ),
+    home: home,
+  );
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  for (final brightness in Brightness.values) {
+    testWidgets(
+      'visible notification follows bar glass preference in $brightness',
+      (tester) async {
+        final enabled = ValueNotifier(false);
+        addTearDown(enabled.dispose);
+        final theme = ThemeData(brightness: brightness);
+        late BuildContext feedbackContext;
+        await tester.pumpWidget(
+          ValueListenableBuilder<bool>(
+            valueListenable: enabled,
+            builder: (_, value, child) => MaterialApp(
+              theme: theme.copyWith(
+                extensions: [
+                  (brightness == Brightness.dark
+                          ? AppDesignTokens.dark
+                          : AppDesignTokens.light)
+                      .copyWith(barGlassEnabled: value),
+                ],
+              ),
+              home: child,
+            ),
+            child: Scaffold(
+              body: Builder(
+                builder: (context) {
+                  feedbackContext = context;
+                  return const SizedBox();
+                },
+              ),
+            ),
+          ),
+        );
+        showAppSnackBar(
+          feedbackContext,
+          'Saved',
+          duration: const Duration(minutes: 1),
+        );
+        await tester.pumpAndSettle();
+        final bounds = tester.getRect(find.byType(AppFeedbackSurface));
+        for (final value in [false, true, false]) {
+          enabled.value = value;
+          await tester.pumpAndSettle();
+          expect(find.text('Saved'), findsOneWidget);
+          expect(tester.getRect(find.byType(AppFeedbackSurface)), bounds);
+          expect(
+            find.byType(BackdropFilter),
+            value ? findsOneWidget : findsNothing,
+          );
+          final glass = find.byType(AppGlassSurface);
+          expect(tester.widget<AppGlassSurface>(glass).enabled, value);
+          final tint = tester.widget<ColoredBox>(
+            find.descendant(of: glass, matching: find.byType(ColoredBox)).first,
+          );
+          expect(
+            tint.color.a,
+            closeTo(
+              value ? (brightness == Brightness.dark ? .84 : .8) : 1,
+              .005,
+            ),
+          );
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
   testWidgets(
     'completion feedback defers catalog commits only during its fade',
     (tester) async {
@@ -622,6 +699,7 @@ void main() {
     (tester) async {
       Widget buildSurface() {
         return _feedbackApp(
+          barGlassEnabled: true,
           home: const Scaffold(
             body: Center(
               child: SizedBox(
@@ -673,6 +751,7 @@ void main() {
   testWidgets('top feedback fades without moving its surface', (tester) async {
     await tester.pumpWidget(
       _feedbackApp(
+        barGlassEnabled: true,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(

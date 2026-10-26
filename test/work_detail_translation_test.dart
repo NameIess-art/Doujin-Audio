@@ -316,6 +316,10 @@ void main() {
               .segments,
           ['Original directory'],
         );
+        // Folder entries mount after the outgoing directory fades out. Their
+        // translation batch starts when those entries register their text.
+        await pumpUntilFound(tester, find.text('Original audio'));
+        await _batch(tester);
         expect(service.calls.last.texts, contains('Original audio'));
         service.calls.last.complete();
         // The directory transition can still protect this scrollable when

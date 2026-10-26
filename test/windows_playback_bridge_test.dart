@@ -41,8 +41,6 @@ void main() {
         playlistReads++;
         return playlistGetter?.call(player) ?? _playlistJson(player);
       },
-      retainNativeCurrentEntry: (player) =>
-          (player.platform! as _Player).retainCurrentEntry(),
       createPlayer: () {
         final platform = _Player();
         configureNextPlayer?.call(platform);
@@ -602,7 +600,7 @@ void main() {
   );
 
   test(
-    'track stop trims a long queue in one native operation before a seek',
+    'track stop synchronizes a long queue before a queued seek',
     () async {
       final queue = [
         for (var i = 0; i < 2000; i++)
@@ -621,16 +619,15 @@ void main() {
       );
       final player = players.single;
       final current = player.state.playlist.medias[1234];
-      player.retainGate = Completer<void>();
-      player.retainStarted = Completer<void>();
+      player.removeGate = Completer<void>();
+      player.removeStarted = Completer<void>();
       final stopping = bridge.setStopAfterCurrentTrack('one', true);
-      await player.retainStarted!.future;
+      await player.removeStarted!.future;
       final seeking = bridge.seek('one', const Duration(seconds: 15));
-      player.retainGate!.complete();
+      player.removeGate!.complete();
       expect((await stopping).isOk, isTrue);
       expect((await seeking).isOk, isTrue);
-      expect(player.retains, 1);
-      expect(player.removes, 0);
+      expect(player.removes, queue.length - 1);
       expect(player.opens, 1);
       expect(player.state.playlist.medias.single, same(current));
       expect(player.state.position, const Duration(seconds: 15));
@@ -655,7 +652,7 @@ void main() {
         autoPlay: true,
       );
       final player = players.single;
-      player.retainError = StateError('playlist-clear failed');
+      player.removeError = StateError('playlist-remove failed');
       final result = await bridge.setStopAfterCurrentTrack('one', true);
       expect(result.errorCodeOrNull, NativeErrorCode.playerError);
       expect(player.disposed, isTrue);
@@ -664,7 +661,7 @@ void main() {
       expect(snapshot.stopAfterCurrentTrack, isFalse);
       expect(snapshot.playWhenReady, isFalse);
       expect(snapshot.retainedUris, hasLength(2));
-      expect(snapshot.error, contains('playlist-clear failed'));
+      expect(snapshot.error, contains('playlist-remove failed'));
     },
   );
 
@@ -2704,9 +2701,8 @@ class _Player extends PlatformPlayer {
   }
 
   int opens = 0, plays = 0, adds = 0, removes = 0, moves = 0;
-  int retains = 0;
-  Object? retainError;
-  Completer<void>? retainGate, retainStarted;
+  Object? removeError;
+  Completer<void>? removeGate, removeStarted;
   int playlistModeWrites = 0;
   Object? playlistModeError;
   int? moveErrorAt;
@@ -2728,17 +2724,6 @@ class _Player extends PlatformPlayer {
   final seeks = <Duration>[];
   final actions = <String>[];
 
-  Future<void> retainCurrentEntry() async {
-    retains++;
-    if (retainStarted?.isCompleted == false) retainStarted!.complete();
-    await retainGate?.future;
-    if (retainError != null) throw retainError!;
-    state = state.copyWith(
-      playlist: Playlist([state.playlist.medias[state.playlist.index]]),
-    );
-    playlistController.add(state.playlist);
-  }
-
   @override
   Future<void> add(Media media) async {
     adds++;
@@ -2758,6 +2743,9 @@ class _Player extends PlatformPlayer {
   @override
   Future<void> remove(int index) async {
     removes++;
+    if (removeStarted?.isCompleted == false) removeStarted!.complete();
+    await removeGate?.future;
+    if (removeError != null) throw removeError!;
     final items = [...state.playlist.medias]..removeAt(index);
     state = state.copyWith(
       playlist: Playlist(

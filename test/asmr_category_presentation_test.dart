@@ -1174,6 +1174,12 @@ void main() {
     testWidgets(
       'ASMR submitted search keeps loading until data and hides it when editing on $platform',
       (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = platform == TargetPlatform.android
+            ? const Size(390, 820)
+            : const Size(1280, 800);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
         SharedPreferences.setMockInitialValues(const {'app_language': 'zh'});
         final controller = _PresentationController(createTestAsmrServices());
         final fixture = AppRuntimeWidgetTestFixture();
@@ -1209,6 +1215,15 @@ void main() {
             matching: find.byKey(const ValueKey('loading')),
           ),
           findsOneWidget,
+        );
+        await tester.pump(kAppFadeDuration);
+        final placeholders = find.descendant(
+          of: results,
+          matching: find.byType(LibraryLikeSkeletonCard),
+        );
+        expect(
+          tester.getBottomLeft(placeholders.last).dy,
+          greaterThanOrEqualTo(tester.getBottomLeft(results).dy),
         );
         await tester.enterText(find.byType(TextField), 'New draft');
         await tester.pumpAndSettle();
@@ -1878,7 +1893,13 @@ void main() {
         await tester.pump();
         expect(card(1), findsOneWidget);
         expect(tester.element(card(2)), same(retainedCard));
-        expect(favoriteSliver(SliverList), findsOneWidget);
+        expect(
+          find.descendant(
+            of: favoriteList,
+            matching: find.byWidgetPredicate((widget) => widget is SliverList),
+          ),
+          findsOneWidget,
+        );
         expect(favoriteSliver(SliverFixedExtentList), findsNothing);
         final nextTop = tester.getTopLeft(card(2)).dy;
         await tester.pump(const Duration(milliseconds: 16));

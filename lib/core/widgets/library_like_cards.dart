@@ -161,7 +161,8 @@ class LibrarySkeletonListView extends StatelessWidget {
         );
         final contentHeight = math.max(
           0.0,
-          constraints.maxHeight - topInset - bottomInset,
+          // Loading rows also cover the reserved space behind the bottom dock.
+          constraints.maxHeight - topInset,
         );
         final rowCount = math.max(
           itemCount,

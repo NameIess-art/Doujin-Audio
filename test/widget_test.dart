@@ -4591,15 +4591,23 @@ void main() {
     tester,
   ) async {
     var released = 0;
+    final releaseComplete = Completer<void>();
     await _pumpAppShell(
       tester,
       shouldShowOnboarding: true,
-      disposeSecondaryData: () => released++,
+      disposeSecondaryData: () {
+        released++;
+        releaseComplete.complete();
+      },
     );
     expect(find.byType(MainScreen), findsNothing);
     expect(released, 0);
     await tester.pumpWidget(const SizedBox.shrink());
-    await pumpAndSettleWithAsync(tester);
+    // Shutdown drains startup futures after the root stops scheduling frames.
+    for (var frame = 0; frame < 100 && !releaseComplete.isCompleted; frame++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    }
     expect(released, 1);
   });
 

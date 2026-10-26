@@ -8336,7 +8336,8 @@ void main() {
         const ValueKey('session_detail_cover_subtitle-session'),
       );
       final initialCoverHeight = tester.getSize(cover).height;
-      expect(initialCoverHeight, 270.0);
+      expect(tester.getSize(cover), const Size(344, 258));
+      expect(tester.getSize(cover).aspectRatio, closeTo(4 / 3, 0.001));
 
       result.session.beginPreparation(showLoading: true, autoPlay: true);
       result.fixture.playbackService.markActiveSessionsDirty();
@@ -8361,11 +8362,11 @@ void main() {
       expect(fadeIn.opacity.value, greaterThan(0));
       expect(fadeIn.opacity.value, lessThan(1));
       final midCoverHeight = tester.getSize(cover).height;
-      expect(midCoverHeight, 270.0);
+      expect(midCoverHeight, initialCoverHeight);
 
       await tester.pump(const Duration(milliseconds: 350));
       final loadingCoverHeight = tester.getSize(cover).height;
-      expect(loadingCoverHeight, 270.0);
+      expect(loadingCoverHeight, initialCoverHeight);
 
       result.session.finishPreparation(
         result.session.loadGeneration,
@@ -8401,7 +8402,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(placeholderFinder, findsNothing);
       await tester.pump(const Duration(milliseconds: 250));
-      expect(tester.getSize(cover).height, 270.0);
+      expect(tester.getSize(cover).height, initialCoverHeight);
     },
   );
 
@@ -8506,7 +8507,7 @@ void main() {
         find.ancestor(of: cue, matching: find.byType(Opacity)).first,
       );
 
-      expect(tester.getSize(viewport).height, 288.0);
+      expect(tester.getSize(viewport).height, 300.0);
       expect(opacityFor(cue0).opacity, 0.30);
       expect(opacityFor(cue1).opacity, 1);
       expect(opacityFor(cue2).opacity, 0.30);

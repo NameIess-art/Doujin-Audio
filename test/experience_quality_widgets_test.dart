@@ -998,20 +998,24 @@ void main() {
             home: Scaffold(
               body: LibrarySkeletonListView(
                 topInset: 64,
-                bottomInset: 24,
+                bottomInset: 120,
                 itemCount: count,
               ),
             ),
           ),
         );
-        for (final size in [const Size(390, 1200), const Size(1280, 1000)]) {
+        for (final size in [
+          const Size(390, 820),
+          const Size(390, 1200),
+          const Size(1280, 1000),
+        ]) {
           tester.view.physicalSize = size;
           await tester.pump();
           final cards = find.byType(LibraryLikeSkeletonCard);
           final first = tester.getRect(cards.first);
           final last = tester.getRect(cards.last);
           expect(first.top, 64);
-          expect(last.bottom, greaterThanOrEqualTo(size.height - 24));
+          expect(last.bottom, greaterThanOrEqualTo(size.height));
           expect(cards.evaluate().length, greaterThan(count));
           final second = tester.getRect(cards.at(1));
           if (size.width == 390) {

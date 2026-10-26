@@ -29,15 +29,12 @@ class WindowsPlaybackBridge
     Player Function()? createPlayer,
     bool persistUsage = false,
     Future<String> Function(Player)? readNativePlaylist,
-    Future<void> Function(Player)? retainNativeCurrentEntry,
     Duration Function()? monotonicElapsed,
     VideoControllerConfiguration videoControllerConfiguration =
         const VideoControllerConfiguration(),
   }) : _persistUsage = persistUsage,
        _createPlayer = createPlayer ?? _defaultPlayer,
        _readNativePlaylist = readNativePlaylist,
-       _retainNativeCurrentEntry =
-           retainNativeCurrentEntry ?? _defaultRetainNativeCurrentEntry,
        _monotonicElapsed = monotonicElapsed,
        _videoControllerConfiguration = videoControllerConfiguration;
 
@@ -58,9 +55,6 @@ class WindowsPlaybackBridge
     }
     return player;
   }
-
-  static Future<void> _defaultRetainNativeCurrentEntry(Player player) =>
-      (player.platform! as NativePlayer).command(['playlist-clear']);
 
   final bool _persistUsage;
   File? _usageFile;
@@ -123,7 +117,6 @@ class WindowsPlaybackBridge
 
   final Player Function() _createPlayer;
   final Future<String> Function(Player)? _readNativePlaylist;
-  final Future<void> Function(Player) _retainNativeCurrentEntry;
   final VideoControllerConfiguration _videoControllerConfiguration;
   final _sessions = <String, _WindowsPlaybackSession>{};
   final _snapshots = StreamController<NativePlaybackSnapshot>.broadcast();
@@ -1103,9 +1096,11 @@ class WindowsPlaybackBridge
             throw StateError('Native entry is unmapped');
           }
           session.index = logicalIndex;
-          // mpv's playlist-clear retains the playing entry and its decoder. One
-          // command avoids queuing a native mutation for every other track.
-          await _retainNativeCurrentEntry(player);
+          // Raw mpv playlist-clear leaves media_kit's retained Media list stale.
+          // Use its API so later queue restoration sees the same native entries.
+          for (var i = ids.length - 1; i >= 0; i--) {
+            if (i != currentIndex) await player.remove(i);
+          }
           session.nativeQueueLimited = true;
           await session.mapNativeEntries(player);
         } finally {

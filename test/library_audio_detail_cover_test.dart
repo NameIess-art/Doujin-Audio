@@ -199,7 +199,7 @@ void main() {
           }
           final arguments = call.arguments as Map<Object?, Object?>;
           return arguments['path'] == trackPath &&
-              arguments['groupKey'] == groupKey &&
+              arguments['groupKey'] == null &&
               arguments['rootFolder'] == null;
         }),
         isTrue,

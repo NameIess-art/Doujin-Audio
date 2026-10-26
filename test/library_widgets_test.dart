@@ -4349,13 +4349,18 @@ void main() {
     await tester.tap(
       find.widgetWithText(TextButton, languageProvider.tr('restore')).first,
     );
-    await tester.pump();
+    await _waitForLibraryProjection(
+      tester,
+      () => find.text('1 \u9996\u97f3\u9891', findRichText: true)
+          .evaluate().isNotEmpty,
+    );
 
     expect(find.text('WorkA', findRichText: true), findsOneWidget);
     expect(find.text('1 \u9996\u97f3\u9891', findRichText: true), findsWidgets);
 
     expect(find.text('Disc1', findRichText: true), findsOneWidget);
     expect(find.text(languageProvider.tr('exclude')), findsWidgets);
+    await finishLibraryTest(tester, fixture);
   });
 
   testWidgets(
@@ -4458,6 +4463,8 @@ void main() {
       ).first;
       expect(tester.widget<FadeTransition>(placeholderFade).opacity.value, 1);
       expect(tester.widget<FadeTransition>(contentFade).opacity.value, 0);
+      // Tree projection mounts the fade after the disk result is committed.
+      await tester.pump();
       final halfFadeDuration = kPlaceholderContentTransitionDuration ~/ 2;
       await tester.pump(halfFadeDuration);
       expect(skeleton, findsOneWidget);
@@ -4656,6 +4663,10 @@ void main() {
         FilledButton,
         fixture.languageProvider.tr('retry'),
       );
+      await _waitForLibraryProjection(
+        tester,
+        () => retryButton.evaluate().isNotEmpty,
+      );
       expect(retryButton, findsOneWidget);
       expect(fixture.runtimeGraph.library.trackByPath(track.path), same(track));
       await tester.pumpAndSettle();
@@ -4742,7 +4753,10 @@ void main() {
           authoritative: true,
         ),
       );
-      await tester.pump();
+      await _waitForLibraryProjection(
+        tester,
+        () => find.text('Old track', findRichText: true).evaluate().isNotEmpty,
+      );
       expect(find.text('Old track', findRichText: true), findsOneWidget);
       await pumpUntilUiIdle(tester);
 
@@ -5204,13 +5218,17 @@ void main() {
           LibraryEditPage(libraryPath: root, entryEditorService: service),
         ),
       );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
+      await _waitForLibraryProjection(
+        tester,
+        () => find.byType(FileTreeRow).evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
       expect(find.byType(FileTreeRow).evaluate().length, lessThan(40));
       await tester.drag(_libraryListViews.last, const Offset(0, -600));
       await tester.pumpAndSettle();
       expect(find.byType(FileTreeRow).evaluate().length, lessThan(40));
       expect(tester.takeException(), isNull);
+      await finishLibraryTest(tester, fixture);
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,
@@ -5288,6 +5306,10 @@ void main() {
       await tester.enterText(searchField, 'First');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
+      await _waitForLibraryProjection(
+        tester,
+        () => find.text('Second Track', findRichText: true).evaluate().isEmpty,
+      );
 
       expect(find.text('First Song', findRichText: true), findsOneWidget);
       expect(find.text('Second Track', findRichText: true), findsNothing);
@@ -5304,6 +5326,11 @@ void main() {
       await tester.enterText(searchField, 'Nonexistent');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
+      await _waitForLibraryProjection(
+        tester,
+        () => find.text(languageProvider.tr('no_search_results'))
+            .evaluate().isNotEmpty,
+      );
 
       expect(find.text('First Song', findRichText: true), findsNothing);
       expect(find.text('Second Track', findRichText: true), findsNothing);
@@ -5316,11 +5343,15 @@ void main() {
       final clearButton = find.byIcon(Icons.clear_rounded);
       expect(clearButton, findsOneWidget);
       await tester.tap(clearButton);
-      await tester.pump();
+      await _waitForLibraryProjection(
+        tester,
+        () => find.text('Second Track', findRichText: true).evaluate().isNotEmpty,
+      );
 
       expect(find.text('First Song', findRichText: true), findsOneWidget);
       expect(find.text('Second Track', findRichText: true), findsOneWidget);
       expect(find.text(languageProvider.tr('no_search_results')), findsNothing);
+      await finishLibraryTest(tester, fixture);
     },
   );
 

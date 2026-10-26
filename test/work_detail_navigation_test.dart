@@ -1018,10 +1018,12 @@ void main() {
         );
         final list = find.descendant(
           of: _main,
-          matching: find.byType(ListView),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is ScrollView && widget.controller != null,
+          ),
         );
         expect(list, findsOneWidget);
-        final controller = tester.widget<ListView>(list).controller!;
+        final controller = tester.widget<ScrollView>(list).controller!;
         controller.jumpTo(controller.position.maxScrollExtent);
         await _settle(tester);
         final wideExtent = controller.position.maxScrollExtent;

@@ -44,7 +44,8 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   ValueListenable<bool>? _scrollActivity;
-  bool _animationsAllowed = false;
+  bool _tickerEnabled = false;
+  bool _disableAnimations = false;
 
   @override
   void initState() {
@@ -58,9 +59,9 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _animationsAllowed =
-        TickerMode.valuesOf(context).enabled &&
-        !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+    _tickerEnabled = TickerMode.valuesOf(context).enabled;
+    _disableAnimations =
+        MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     final activity = ScrollActivityGate.scrollingListenableOf(context);
     if (!identical(activity, _scrollActivity)) {
       _scrollActivity?.removeListener(_syncAnimation);
@@ -73,7 +74,8 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
   void _syncAnimation() {
     final animate =
         widget.isPlaying &&
-        _animationsAllowed &&
+        _tickerEnabled &&
+        !_disableAnimations &&
         !(_scrollActivity?.value ?? false);
     if (animate && !_controller.isAnimating) {
       _controller.repeat();
@@ -112,7 +114,7 @@ class _PlayingSoundWaveIndicatorState extends State<PlayingSoundWaveIndicator>
           painter: _SoundWavePainter(
             animation: _controller,
             color: effectiveColor,
-            isPlaying: widget.isPlaying && _animationsAllowed,
+            isPlaying: widget.isPlaying && !_disableAnimations,
             barCount: widget.barCount,
             barWidth: widget.barWidth,
             barSpacing: widget.barSpacing,

@@ -276,11 +276,15 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      final categoryTransition = Object();
+      coordinator.beginInteraction(
+        categoryTransition,
+        deferVisualUpdates: true,
+      );
       await tester.tap(find.text('收藏'));
       await tester.pumpAndSettle();
-      if (coordinator.isInteracting) {
-        expect(cache.started, isEmpty);
-      }
+      expect(cache.started, isEmpty);
+      coordinator.cancelInteraction(categoryTransition);
       await tester.pump(coordinator.idleDelay);
       await tester.pumpAndSettle();
 
@@ -1257,7 +1261,7 @@ void main() {
         final retiringRows = tester.widget<SliverList>(
           find.descendant(
             of: find.byKey(const PageStorageKey(AsmrCategoryType.favorites)),
-            matching: find.byType(SliverList),
+            matching: find.byWidgetPredicate((widget) => widget is SliverList),
           ),
         );
         expect(

@@ -56,7 +56,9 @@ void main() {
       tester,
     ) async {
       final tickerEnabled = ValueNotifier(true);
+      final playing = ValueNotifier(true);
       addTearDown(tickerEnabled.dispose);
+      addTearDown(playing.dispose);
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -64,12 +66,16 @@ void main() {
               valueListenable: tickerEnabled,
               builder: (context, enabled, child) =>
                   TickerMode(enabled: enabled, child: child!),
-              child: const Center(
-                child: PlayingSoundWaveIndicator(
-                  color: Colors.white,
-                  size: 100,
-                  barWidth: 8,
-                  barSpacing: 5,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: playing,
+                builder: (context, isPlaying, child) => Center(
+                  child: PlayingSoundWaveIndicator(
+                    color: Colors.white,
+                    size: 100,
+                    barWidth: 8,
+                    barSpacing: 5,
+                    isPlaying: isPlaying,
+                  ),
                 ),
               ),
             ),
@@ -129,6 +135,13 @@ void main() {
           lessThanOrEqualTo(2),
         );
       }
+      playing.value = false;
+      await tester.pump();
+      final idleFrame = await barTops();
+      expect(idleFrame, [55, 20, 40, 65]);
+      await tester.pump(const Duration(seconds: 1));
+      expect(await barTops(), idleFrame);
+      expect(tester.binding.hasScheduledFrame, isFalse);
       await tester.pumpWidget(const SizedBox.shrink());
     });
 

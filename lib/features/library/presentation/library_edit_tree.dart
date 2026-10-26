@@ -2,11 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as path;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
-import '../../../core/media/natural_sort.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -15,8 +14,6 @@ import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/library_entry_editor_service.dart';
-import '../application/library_facade.dart';
-import '../domain/library_entry.dart';
 import 'library_providers.dart';
 
 import 'library_edit_tree_projection.dart';
@@ -28,11 +25,15 @@ class LibraryEditTree extends ConsumerStatefulWidget {
     required this.libraryPath,
     required this.headerBuilder,
     this.entryEditorService,
+    this.projectTree,
   });
 
   final String libraryPath;
   final Widget Function(BuildContext, Widget) headerBuilder;
   final LibraryEntryEditorService? entryEditorService;
+  @visibleForTesting
+  final Future<LibraryEditTreeSnapshot> Function(LibraryEditTreeRequest)?
+  projectTree;
 
   @override
   ConsumerState<LibraryEditTree> createState() => _LibraryEditTreeState();
@@ -41,7 +42,6 @@ class LibraryEditTree extends ConsumerStatefulWidget {
 class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
     with WidgetsBindingObserver {
   late final LibraryEntryEditorService _entryEditorService;
-  late final _projection = LibraryEditTreeProjection(widget.libraryPath);
   final TextEditingController _searchController = TextEditingController();
   List<String> _diskAudioFilePaths = const <String>[];
   Set<String> _diskAudioFilePathSet = const <String>{};
@@ -62,13 +62,14 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
       <String, LibraryEditFolderTreeNode>{};
   int _folderStructureSnapshotRevision = 0;
 
-  // Edit-tree caches: structural work is independent from query filtering.
-  Object? _baseEditTreeCacheKey;
-  List<LibraryEditTreeNode>? _cachedBaseEditTree;
-  Object? _filteredEditTreeCacheKey;
-  List<LibraryEditTreeNode>? _cachedEditTree;
-  int _searchMetadataRevision = -1;
-  final Map<String, String> _trackSearchTextCache = <String, String>{};
+  (Object, String)? _requestedTreeKey;
+  Object? _projectedBaseKey;
+  LibraryEditTreeSnapshot? _treeSnapshot;
+  List<LibraryEditTreeNode> _editTree = const [];
+  bool _treeUpdateRunning = false;
+  bool _treeUpdateScheduled = false;
+  bool _treeReady = false;
+  bool _treeProjectionError = false;
 
   @override
   void initState() {
@@ -76,6 +77,28 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
     _entryEditorService =
         widget.entryEditorService ?? LibraryEntryEditorService();
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didUpdateWidget(covariant LibraryEditTree oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.libraryPath == widget.libraryPath) return;
+    _diskSnapshotGeneration++;
+    _diskAudioFilePaths = const [];
+    _diskAudioFilePathSet = const {};
+    _diskTrackParentPaths = const {};
+    _diskLiveFolderPaths = const {};
+    _folderStructureSnapshots.clear();
+    _diskSnapshotLoaded = false;
+    _initialLoadPending = true;
+    _diskSnapshotError = false;
+    _treeProjectionError = false;
+    _treeReady = false;
+    _editTree = const [];
+    _requestedTreeKey = null;
+    _projectedBaseKey = null;
+    _treeSnapshot = null;
+    _diskRefreshNeeded = true;
   }
 
   @override
@@ -208,98 +231,16 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final libraryService = ref.read(libraryFacadeProvider);
     final cs = Theme.of(context).colorScheme;
-    final localSnapshotPending = _initialLoadPending;
-    final structureRevision = libraryService.structureRevision;
-    if (_searchMetadataRevision != structureRevision) {
-      _searchMetadataRevision = structureRevision;
-      _trackSearchTextCache.clear();
-    }
-    final baseCacheKey = Object.hash(
-      structureRevision,
-      _diskSnapshotRevision,
-      _folderStructureSnapshotRevision,
-      localSnapshotPending,
-      _diskSnapshotError,
+    ref.watch(
+      libraryStateProvider.select(
+        (state) => state.value?.structureRevision ?? 0,
+      ),
     );
-    if (_baseEditTreeCacheKey != baseCacheKey) {
-      _baseEditTreeCacheKey = baseCacheKey;
-      final excludedTracks = localSnapshotPending
-          ? const <String>[]
-          : libraryService
-                .excludedTracksForLibrary(widget.libraryPath)
-                .where(_trackExistsInDiskSnapshot)
-                .toList(growable: false);
-      final excludedFolders = localSnapshotPending
-          ? const <String>[]
-          : libraryService
-                .excludedFoldersForLibrary(widget.libraryPath)
-                .map(_projection.folderPathForLibraryChild)
-                .where(_folderExistsInDiskSnapshot)
-                .toList(growable: false);
-      final persistedEntries = localSnapshotPending
-          ? const <LibraryEntry>[]
-          : libraryService
-                .libraryEntriesForLibrary(widget.libraryPath)
-                .where(_libraryEntryExistsInDiskSnapshot)
-                .toList(growable: false);
-      final childFolders = localSnapshotPending
-          ? const <String>[]
-          : libraryService
-                .childFoldersForLibrary(widget.libraryPath)
-                .map(_projection.folderPathForLibraryChild)
-                .where(_folderExistsInDiskSnapshot)
-                .toList(growable: false);
-      final folderStructureSnapshots = localSnapshotPending
-          ? const <LibraryEditFolderTreeNode>[]
-          : _folderStructureSnapshots.entries
-                .where((entry) => _folderExistsInDiskSnapshot(entry.key))
-                .map((entry) => entry.value)
-                .toList(growable: false);
-      final editTrackPaths = localSnapshotPending
-          ? const <String>[]
-          : _collectLibraryEditTrackPaths(
-              libraryService,
-              _diskAudioFilePaths,
-              excludedTracks,
-              persistedEntries,
-            );
-      final persistentFolderPaths =
-          localSnapshotPending
-                ? <String>[]
-                : <String>{
-                    ...childFolders,
-                    ...excludedFolders,
-                    for (final entry in persistedEntries)
-                      if (entry.isFolder)
-                        _projection.folderPathForLibraryChild(entry.path),
-                  }.toList(growable: false)
-            ..sort(compareNatural);
-      _cachedBaseEditTree = _projection.buildEditTree(
-        editTrackPaths,
-        persistentFolderPaths,
-        folderStructureSnapshots,
-        trackParentPaths: {
-          for (final entry in persistedEntries)
-            if (entry.isTrack)
-              PathMatcher.normalize(entry.path):
-                  entry.parentPath ?? widget.libraryPath,
-          ..._diskTrackParentPaths,
-        },
-      );
-    }
-    final filteredCacheKey = Object.hash(baseCacheKey, _searchQuery);
-    if (_filteredEditTreeCacheKey != filteredCacheKey) {
-      _filteredEditTreeCacheKey = filteredCacheKey;
-      _cachedEditTree = _projection.filterEditTree(
-        _cachedBaseEditTree!,
-        _searchQuery,
-        _trackPathMatchesQuery,
-      );
-    }
-    final editTree = _cachedEditTree!;
-    final snapshotError = _diskSnapshotError;
+    _scheduleTreeUpdate(_treeBaseKey);
+    final localSnapshotPending = _initialLoadPending || !_treeReady;
+    final editTree = _editTree;
+    final snapshotError = _diskSnapshotError || _treeProjectionError;
 
     final headerTopInset = MediaQuery.paddingOf(context).top + 98;
     final content = SearchHighlightScope(
@@ -320,10 +261,11 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
                     children: [
                       LibraryEditTreeSkeleton(
                         key: const ValueKey('library_edit_entries_skeleton'),
-                        viewportHeight: (constraints.maxHeight -
-                                headerTopInset -
-                                24)
-                            .clamp(0.0, double.infinity),
+                        viewportHeight:
+                            (constraints.maxHeight - headerTopInset - 24).clamp(
+                              0.0,
+                              double.infinity,
+                            ),
                       ),
                     ],
                   ),
@@ -458,82 +400,105 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
     );
   }
 
-  bool get _hasAuthoritativeDiskSnapshot => _diskSnapshotLoaded;
-
-  bool _trackExistsInDiskSnapshot(String trackPath) {
-    if (!_hasAuthoritativeDiskSnapshot) return true;
-    return _diskAudioFilePathSet.contains(PathMatcher.normalize(trackPath));
-  }
-
-  bool _folderExistsInDiskSnapshot(String folderPath) {
-    if (!_hasAuthoritativeDiskSnapshot) return true;
-    final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    return PathMatcher.equalsNormalized(
-          normalizedFolderPath,
-          widget.libraryPath,
-        ) ||
-        _diskLiveFolderPaths.contains(normalizedFolderPath);
-  }
-
-  bool _libraryEntryExistsInDiskSnapshot(LibraryEntry entry) {
-    if (entry.isFolder) {
-      return _folderExistsInDiskSnapshot(
-        _projection.folderPathForLibraryChild(entry.path),
-      );
-    }
-    return _trackExistsInDiskSnapshot(entry.path);
-  }
-
-  List<String> _collectLibraryEditTrackPaths(
-    LibraryFacade libraryService,
-    List<String> diskAudioFilePaths,
-    List<String> excludedTracks,
-    List<LibraryEntry> persistedEntries,
-  ) {
-    final tracks = <String>{
-      for (final track in libraryService.library)
-        if (_trackBelongsToLibrary(track.path) &&
-            _trackExistsInDiskSnapshot(track.path))
-          PathMatcher.normalize(track.path),
-      for (final entry in persistedEntries)
-        if (entry.isTrack && _trackBelongsToLibrary(entry.path))
-          PathMatcher.normalize(entry.path),
-      for (final trackPath in diskAudioFilePaths)
-        if (_trackBelongsToLibrary(trackPath)) PathMatcher.normalize(trackPath),
-      for (final trackPath in excludedTracks)
-        if (_trackBelongsToLibrary(trackPath)) PathMatcher.normalize(trackPath),
-    }.toList(growable: false);
-
-    tracks.sort(
-      (a, b) => compareNatural(
-        path.basenameWithoutExtension(a),
-        path.basenameWithoutExtension(b),
-      ),
-    );
-    return tracks;
-  }
-
-  bool _trackPathMatchesQuery(String trackPath, String normalizedQuery) {
-    final searchableText = _trackSearchTextCache.putIfAbsent(trackPath, () {
-      final track = ref.read(libraryFacadeProvider).trackByPath(trackPath);
-      return <String>[
-        path.basenameWithoutExtension(trackPath),
-        trackPath,
-        if (track != null) ...[
-          track.displayName,
-          track.groupTitle,
-          track.groupSubtitle,
-        ],
-      ].join('\u0000').toLowerCase();
+  void _scheduleTreeUpdate(Object baseKey) {
+    if (_initialLoadPending) return;
+    final key = (baseKey, _searchQuery);
+    if (_requestedTreeKey == key) return;
+    _requestedTreeKey = key;
+    if (_treeUpdateRunning || _treeUpdateScheduled) return;
+    _treeUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _treeUpdateScheduled = false;
+      if (mounted) unawaited(_updateTree());
     });
-    return searchableText.contains(normalizedQuery);
   }
 
-  bool _trackBelongsToLibrary(String trackPath) {
-    return _diskTrackParentPaths.containsKey(
-          PathMatcher.normalize(trackPath),
-        ) ||
-        PathMatcher.isWithinOrEqual(trackPath, widget.libraryPath);
+  Object get _treeBaseKey => (
+    widget.libraryPath,
+    ref.read(libraryFacadeProvider).structureRevision,
+    _diskSnapshotRevision,
+    _folderStructureSnapshotRevision,
+    _initialLoadPending,
+    _diskSnapshotError,
+  );
+
+  void _refreshTreeRequest() {
+    // State may change after a worker finishes but before the next build.
+    _requestedTreeKey = _initialLoadPending
+        ? null
+        : (_treeBaseKey, _searchQuery);
+  }
+
+  Future<void> _updateTree() async {
+    _treeUpdateRunning = true;
+    try {
+      // Keep at most one worker alive. Changes during its run are coalesced
+      // into the latest revision and an old result never replaces new input.
+      while (mounted && _requestedTreeKey != null) {
+        final key = _requestedTreeKey!;
+        final (baseKey, query) = key;
+        try {
+          if (_projectedBaseKey != baseKey) {
+            final library = ref.read(libraryFacadeProvider);
+            final request = LibraryEditTreeRequest(
+              libraryPath: widget.libraryPath,
+              tracks: library.library,
+              diskTrackPaths: _diskAudioFilePaths,
+              diskTrackPathSet: _diskAudioFilePathSet,
+              diskTrackParents: _diskTrackParentPaths,
+              liveFolders: _diskLiveFolderPaths,
+              authoritative: _diskSnapshotLoaded,
+              excludedTracks: library.excludedTracksForLibrary(
+                widget.libraryPath,
+              ),
+              excludedFolders: library.excludedFoldersForLibrary(
+                widget.libraryPath,
+              ),
+              entries: library.libraryEntriesForLibrary(widget.libraryPath),
+              childFolders: library.watchedFolders,
+              restoringFolders: _folderStructureSnapshots.values.toList(
+                growable: false,
+              ),
+            );
+            final snapshot =
+                await (widget.projectTree?.call(request) ?? request.project());
+            if (!mounted) return;
+            _refreshTreeRequest();
+            if (_requestedTreeKey == null) return;
+            if (_requestedTreeKey!.$1 != baseKey) continue;
+            _treeSnapshot = snapshot;
+            _projectedBaseKey = baseKey;
+          }
+          if (_requestedTreeKey != key) continue;
+          final nodes = await _treeSnapshot!.filter(query);
+          if (!mounted) return;
+          _refreshTreeRequest();
+          if (_requestedTreeKey != key) continue;
+          setState(() {
+            _editTree = nodes;
+            _treeReady = true;
+            _treeProjectionError = false;
+          });
+          break;
+        } catch (error, stack) {
+          if (!mounted) return;
+          _refreshTreeRequest();
+          if (_requestedTreeKey != key) continue;
+          AppLogService.warning(
+            'library_edit_tree_projection_failed',
+            error: error,
+            stackTrace: stack,
+          );
+          setState(() {
+            _treeProjectionError = true;
+            _treeReady = true;
+          });
+          break;
+        }
+      }
+    } finally {
+      _treeUpdateRunning = false;
+    }
   }
 
   void rememberFolderStructureSnapshot(
@@ -542,8 +507,7 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
   ) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     setState(() {
-      _folderStructureSnapshots[normalizedFolderPath] = _projection
-          .cloneFolderNode(folder);
+      _folderStructureSnapshots[normalizedFolderPath] = folder;
       _folderStructureSnapshotRevision++;
     });
   }

@@ -1,7 +1,158 @@
+import 'dart:isolate';
+
 import 'package:path/path.dart' as path;
+import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';
+import '../domain/library_entry.dart';
+
+// Only immutable models and disk snapshots cross the isolate boundary. Never
+// capture a facade, provider container or Widget State in the worker closure.
+class LibraryEditTreeRequest {
+  const LibraryEditTreeRequest({
+    required this.libraryPath,
+    required this.tracks,
+    required this.diskTrackPaths,
+    required this.diskTrackPathSet,
+    required this.diskTrackParents,
+    required this.liveFolders,
+    required this.authoritative,
+    required this.excludedTracks,
+    required this.excludedFolders,
+    required this.entries,
+    required this.childFolders,
+    required this.restoringFolders,
+  });
+
+  final String libraryPath;
+  final List<MusicTrack> tracks;
+  final List<String> diskTrackPaths;
+  final Set<String> diskTrackPathSet;
+  final Map<String, String> diskTrackParents;
+  final Set<String> liveFolders;
+  final bool authoritative;
+  final List<String> excludedTracks;
+  final List<String> excludedFolders;
+  final List<LibraryEntry> entries;
+  final List<String> childFolders;
+  final List<LibraryEditFolderTreeNode> restoringFolders;
+
+  Future<LibraryEditTreeSnapshot> project() {
+    if (tracks.length + diskTrackPaths.length + entries.length < 512) {
+      return Future.value(_projectLibraryEditTree(this));
+    }
+    return Isolate.run(() => _projectLibraryEditTree(this));
+  }
+}
+
+class LibraryEditTreeSnapshot {
+  const LibraryEditTreeSnapshot(this.libraryPath, this.nodes, this.searchText);
+
+  final String libraryPath;
+  final List<LibraryEditTreeNode> nodes;
+  final Map<String, String> searchText;
+
+  Future<List<LibraryEditTreeNode>> filter(String query) {
+    if (query.isEmpty) return Future.value(nodes);
+    if (searchText.length < 512) {
+      return Future.value(_filter(query));
+    }
+    return Isolate.run(() => _filter(query));
+  }
+
+  List<LibraryEditTreeNode> _filter(String query) =>
+      LibraryEditTreeProjection(libraryPath).filterEditTree(
+        nodes,
+        query,
+        (track, normalizedQuery) =>
+            (searchText[track] ?? '').contains(normalizedQuery),
+      );
+}
+
+LibraryEditTreeSnapshot _projectLibraryEditTree(
+  LibraryEditTreeRequest request,
+) {
+  final projection = LibraryEditTreeProjection(request.libraryPath);
+  bool trackExists(String track) =>
+      !request.authoritative ||
+      request.diskTrackPathSet.contains(PathMatcher.normalize(track));
+  bool belongs(String track) =>
+      request.diskTrackParents.containsKey(PathMatcher.normalize(track)) ||
+      PathMatcher.isWithinOrEqual(track, request.libraryPath);
+  bool folderExists(String folder) =>
+      !request.authoritative ||
+      PathMatcher.equalsNormalized(folder, request.libraryPath) ||
+      request.liveFolders.contains(PathMatcher.normalize(folder));
+  final entries = request.entries
+      .where(
+        (entry) => entry.isFolder
+            ? folderExists(projection.folderPathForLibraryChild(entry.path))
+            : trackExists(entry.path),
+      )
+      .toList(growable: false);
+  final tracksByPath = <String, MusicTrack>{};
+  final paths = <String>{};
+  for (final track in request.tracks) {
+    if (!belongs(track.path) || !trackExists(track.path)) continue;
+    final normalized = PathMatcher.normalize(track.path);
+    paths.add(normalized);
+    tracksByPath[PathMatcher.equivalenceKey(normalized)] = track;
+  }
+  for (final track in <String>[
+    for (final entry in entries)
+      if (entry.isTrack) entry.path,
+    ...request.diskTrackPaths,
+    ...request.excludedTracks.where(trackExists),
+  ]) {
+    if (belongs(track)) paths.add(PathMatcher.normalize(track));
+  }
+  final nodes = projection.buildEditTree(
+    paths.toList(growable: false),
+    <String>{
+      for (final folder in [
+        ...request.childFolders,
+        ...request.excludedFolders,
+      ])
+        if (folderExists(projection.folderPathForLibraryChild(folder)))
+          projection.folderPathForLibraryChild(folder),
+      for (final entry in entries)
+        if (entry.isFolder) projection.folderPathForLibraryChild(entry.path),
+    }.toList(growable: false),
+    request.restoringFolders
+        .where((node) => folderExists(node.folderPath))
+        .toList(growable: false),
+    trackParentPaths: {
+      for (final entry in entries)
+        if (entry.isTrack)
+          PathMatcher.normalize(entry.path):
+              entry.parentPath ?? request.libraryPath,
+      ...request.diskTrackParents,
+    },
+  );
+  final searchText = <String, String>{};
+  void index(List<LibraryEditTreeNode> nodes) {
+    for (final node in nodes) {
+      if (node is LibraryEditFolderTreeNode) {
+        index(node.children);
+      } else {
+        final track = tracksByPath[PathMatcher.equivalenceKey(node.pathValue)];
+        searchText[node.pathValue] = <String>[
+          path.basenameWithoutExtension(node.pathValue),
+          node.pathValue,
+          if (track != null) ...[
+            track.displayName,
+            track.groupTitle,
+            track.groupSubtitle,
+          ],
+        ].join('\u0000').toLowerCase();
+      }
+    }
+  }
+
+  index(nodes);
+  return LibraryEditTreeSnapshot(request.libraryPath, nodes, searchText);
+}
 
 abstract class LibraryEditTreeNode {
   String get name;
@@ -294,22 +445,5 @@ class LibraryEditTreeProjection {
     }
 
     return result;
-  }
-
-  LibraryEditFolderTreeNode cloneFolderNode(LibraryEditFolderTreeNode folder) {
-    return LibraryEditFolderTreeNode(
-      folderPath: folder.folderPath,
-      depth: folder.depth,
-      children: folder.children
-          .map<LibraryEditTreeNode>((child) {
-            if (child is LibraryEditFolderTreeNode) {
-              return cloneFolderNode(child);
-            }
-            return LibraryEditTrackTreeNode(
-              (child as LibraryEditTrackTreeNode).trackPath,
-            );
-          })
-          .toList(growable: false),
-    );
   }
 }

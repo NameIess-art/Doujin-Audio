@@ -1,8 +1,99 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree_projection.dart';
 
 void main() {
+  test(
+    'large projections and metadata filtering yield to the UI isolate',
+    () async {
+      const root = '/library';
+      final tracks = List.generate(
+        2000,
+        (index) => MusicTrack(
+          path: '$root/Work/Disc/${index + 1}.mp3',
+          displayName: 'Track ${index + 1}',
+          groupKey: 'work',
+          groupTitle: index == 1499 ? 'Special voice' : 'Work',
+          groupSubtitle: 'Circle',
+          isSingle: false,
+        ),
+      );
+      final request = LibraryEditTreeRequest(
+        libraryPath: root,
+        tracks: tracks,
+        diskTrackPaths: tracks.map((track) => track.path).toList(),
+        diskTrackPathSet: tracks
+            .map((track) => PathMatcher.normalize(track.path))
+            .toSet(),
+        diskTrackParents: const {},
+        liveFolders: const {'$root/Work', '$root/Work/Disc'},
+        authoritative: true,
+        excludedTracks: const [],
+        excludedFolders: const [],
+        entries: const [],
+        childFolders: const [],
+        restoringFolders: const [],
+      );
+      var eventProcessed = false;
+      Timer.run(() => eventProcessed = true);
+      final snapshot = await request.project();
+      expect(eventProcessed, isTrue);
+      final work = snapshot.nodes.single as LibraryEditFolderTreeNode;
+      final disc = work.children.single as LibraryEditFolderTreeNode;
+      expect(disc.children, hasLength(2000));
+      expect(disc.children.first.name, '1');
+      expect(disc.children.last.name, '2000');
+      final filtered = await snapshot.filter('SPECIAL VOICE');
+      final filteredWork = filtered.single as LibraryEditFolderTreeNode;
+      final filteredDisc =
+          filteredWork.children.single as LibraryEditFolderTreeNode;
+      expect(filteredDisc.children.single.name, '1500');
+      expect(disc.children, hasLength(2000));
+    },
+  );
+
+  test(
+    'snapshot projection preserves confirmed SAF parents and disk pruning',
+    () async {
+      const root = 'content://provider/tree/root';
+      const nested = '$root/document/123';
+      const deleted = '$root/document/456';
+      const foreign = 'content://provider/tree/other/document/789';
+      final request = LibraryEditTreeRequest(
+        libraryPath: root,
+        tracks: const [],
+        diskTrackPaths: const [nested, foreign],
+        diskTrackPathSet: const {nested, foreign},
+        diskTrackParents: const {
+          nested: '$root::Work/Disc',
+          foreign: '$root::Work',
+        },
+        liveFolders: const {'$root::Work', '$root::Work/Disc', '$root::Empty'},
+        authoritative: true,
+        excludedTracks: const [nested, deleted],
+        excludedFolders: const ['$root::Empty', '$root::Deleted'],
+        entries: const [],
+        childFolders: const [],
+        restoringFolders: [
+          LibraryEditFolderTreeNode(
+            folderPath: '$root::Deleted',
+            depth: 0,
+            children: [LibraryEditTrackTreeNode(deleted)],
+          ),
+        ],
+      );
+      final snapshot = await request.project();
+      expect(snapshot.nodes.map((node) => node.name), ['Empty', 'Work']);
+      final work = snapshot.nodes.last as LibraryEditFolderTreeNode;
+      final disc = work.children.single as LibraryEditFolderTreeNode;
+      expect(disc.children.single.pathValue, nested);
+      expect(await snapshot.filter('123'), hasLength(1));
+    },
+  );
+
   test('opaque SAF tracks retain confirmed scan and persisted parents', () {
     const root = 'content://provider/tree/root';
     const projection = LibraryEditTreeProjection(root);
@@ -135,10 +226,9 @@ void main() {
       PathMatcher.normalize('/library/Work/Disc'): 1,
     });
     expect(
-      projection.includedTrackCounts(
-        tree,
-        (_) => true,
-      )[PathMatcher.normalize('/library/Work')],
+      projection.includedTrackCounts(tree, (_) => true)[PathMatcher.normalize(
+        '/library/Work',
+      )],
       3,
     );
   });

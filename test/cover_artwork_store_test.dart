@@ -228,6 +228,8 @@ void main() {
           await index.writeAsString(
             jsonEncode({
               'version': version,
+              // Exercise the worker path with the same migration contract.
+              if (version == 2) 'padding': ' ' * (64 * 1024),
               'bindings': {
                 for (final key in keys)
                   key: path.relative(old.path, from: root.path),

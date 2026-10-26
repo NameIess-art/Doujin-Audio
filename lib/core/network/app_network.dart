@@ -13,14 +13,25 @@ class AppNetwork extends HttpOverrides {
   AppNetwork({
     Future<String> Function(Uri)? resolveSystemProxy,
     Future<void> Function(NetworkRouteSettings, String?)? applyNativeRoute,
+    DnsServerResolver Function(InternetAddress)? createDnsResolver,
+    Future<ConnectionTask<Socket>> Function(InternetAddress, int)?
+    startSocketConnect,
   }) : _resolveSystemProxy =
            resolveSystemProxy ?? NetworkPlatformService().resolveSystemProxy,
        _applyNativeRoute =
-           applyNativeRoute ?? NetworkPlatformService().applyNetworkRoute;
+           applyNativeRoute ?? NetworkPlatformService().applyNetworkRoute,
+       _createDnsResolver = createDnsResolver ?? DnsServerResolver.new,
+       _startSocketConnect = startSocketConnect ?? Socket.startConnect;
 
   static final instance = AppNetwork();
   final Future<String> Function(Uri) _resolveSystemProxy;
   final Future<void> Function(NetworkRouteSettings, String?) _applyNativeRoute;
+  final DnsServerResolver Function(InternetAddress) _createDnsResolver;
+  final Future<ConnectionTask<Socket>> Function(InternetAddress, int)
+  _startSocketConnect;
+  final _connectionAttempts = <ConnectionTask<Socket>>{};
+  final _connecting = <Completer<Socket>>{};
+  DnsServerResolver? _dnsResolver;
   ServerSocket? _server;
   Future<void>? _starting;
   HttpOverrides? _previousOverrides;
@@ -70,6 +81,16 @@ class AppNetwork extends HttpOverrides {
     await ensureStarted();
     // A native failure must not publish a route used only by Flutter.
     await _applyNativeRoute(settings, password);
+    if (_settings != settings ||
+        _password != password ||
+        (_dnsResolver == null && settings.customDnsServer.isNotEmpty)) {
+      // Pending DNS belongs to the old route; established tunnels own their
+      // sockets and remain usable after its resolver is closed.
+      _dnsResolver?.close();
+      _dnsResolver = settings.customDnsServer.isEmpty
+          ? null
+          : _createDnsResolver(InternetAddress(settings.customDnsServer));
+    }
     _settings = settings;
     _password = password;
   }
@@ -101,7 +122,20 @@ class AppNetwork extends HttpOverrides {
       socket.destroy();
     }
     _sockets.clear();
+    for (final connection in _connecting.toList()) {
+      if (!connection.isCompleted) {
+        connection.completeError(
+          const SocketException('Application network is closed'),
+        );
+      }
+    }
+    for (final attempt in _connectionAttempts.toList()) {
+      attempt.cancel();
+    }
+    _connectionAttempts.clear();
     _password = null;
+    _dnsResolver?.close();
+    _dnsResolver = null;
   }
 
   Future<void> _handle(Socket socket) async {
@@ -135,6 +169,7 @@ class AppNetwork extends HttpOverrides {
       }
       final settings = _settings;
       final password = _password;
+      final dnsResolver = _dnsResolver;
       final localTarget =
           uri.host == 'localhost' ||
           InternetAddress.tryParse(uri.host)?.isLoopback == true;
@@ -154,7 +189,14 @@ class AppNetwork extends HttpOverrides {
       _ProxyRoute? chosen;
       for (final route in routes) {
         try {
-          outgoing = await _connect(uri, route, settings, password, connect);
+          outgoing = await _connect(
+            uri,
+            route,
+            settings,
+            password,
+            connect,
+            dnsResolver,
+          );
           chosen = route;
           break;
         } catch (error) {
@@ -229,12 +271,19 @@ class AppNetwork extends HttpOverrides {
     NetworkRouteSettings settings,
     String? password,
     bool tunnel,
+    DnsServerResolver? dnsResolver,
   ) async {
     Socket? socket;
+    Completer<Socket>? pendingConnection;
     var expired = false;
     final timer = Timer(const Duration(seconds: 10), () {
       expired = true;
       socket?.destroy();
+      if (pendingConnection?.isCompleted == false) {
+        pendingConnection!.completeError(
+          TimeoutException('Network route timed out'),
+        );
+      }
     });
     try {
       if (route.type != 'DIRECT' &&
@@ -253,25 +302,107 @@ class AppNetwork extends HttpOverrides {
         );
       } else if (route.type == 'DIRECT' &&
           settings.customDnsServer.isNotEmpty) {
-        final addresses = await DnsServerResolver(
-          InternetAddress(settings.customDnsServer),
-        ).lookup(host);
+        final connected = Completer<Socket>();
+        _connecting.add(connected);
+        pendingConnection = connected;
+        final addresses = <InternetAddress>[];
+        final attempts = <ConnectionTask<Socket>>{};
+        final activeFamilies = <InternetAddressType>{};
         Object? error;
-        for (final address in addresses) {
-          if (expired) throw TimeoutException('Network route timed out');
+        var active = 0;
+        var dnsDone = false;
+        Timer? stagger;
+        late void Function(bool) pump;
+        Future<void> attempt(InternetAddress address) async {
+          ConnectionTask<Socket>? task;
           try {
-            socket = await Socket.connect(
-              address,
-              port,
-              timeout: const Duration(seconds: 8),
+            task = await _startSocketConnect(address, port);
+            if (connected.isCompleted) {
+              task.cancel();
+              final abandoned = await task.socket;
+              abandoned.destroy();
+              return;
+            }
+            attempts.add(task);
+            _connectionAttempts.add(task);
+            final candidate = await task.socket.timeout(
+              const Duration(seconds: 8),
+              onTimeout: () {
+                task!.cancel();
+                throw TimeoutException('Address connection timed out');
+              },
             );
-            break;
+            if (connected.isCompleted) {
+              candidate.destroy();
+            } else {
+              connected.complete(candidate);
+            }
           } catch (failure) {
             error = failure;
+          } finally {
+            attempts.remove(task);
+            _connectionAttempts.remove(task);
+            active--;
+            activeFamilies.remove(address.type);
+            pump(true);
           }
         }
-        if (socket == null) {
-          throw error ?? const SocketException('No DNS addresses');
+
+        // A slow IPv6 connect must not hold an already-resolved IPv4 address
+        // for eight seconds. Keep one cancellable attempt per family so a
+        // batch of slow addresses cannot occupy both available slots.
+        pump = (immediately) {
+          if (connected.isCompleted) return;
+          final next = addresses.indexWhere(
+            (address) => !activeFamilies.contains(address.type),
+          );
+          if (next >= 0 && active < 2) {
+            if (active > 0 && !immediately) {
+              stagger ??= Timer(const Duration(milliseconds: 250), () {
+                stagger = null;
+                pump(true);
+              });
+              return;
+            }
+            stagger?.cancel();
+            stagger = null;
+            active++;
+            final address = addresses.removeAt(next);
+            activeFamilies.add(address.type);
+            unawaited(attempt(address));
+            pump(false);
+          } else if (active == 0 && dnsDone) {
+            connected.completeError(
+              error ?? const SocketException('No DNS addresses'),
+            );
+          }
+        };
+        final subscription = dnsResolver!
+            .lookupAddresses(host)
+            .listen(
+              (address) {
+                addresses.add(address);
+                pump(false);
+              },
+              onError: (Object failure) {
+                error = failure;
+                dnsDone = true;
+                pump(true);
+              },
+              onDone: () {
+                dnsDone = true;
+                pump(false);
+              },
+            );
+        try {
+          socket = await connected.future;
+        } finally {
+          _connecting.remove(connected);
+          stagger?.cancel();
+          for (final task in attempts.toList()) {
+            task.cancel();
+          }
+          await subscription.cancel();
         }
       } else {
         // Proxy bootstrap uses OS DNS. Target names stay unresolved for proxies.
@@ -282,6 +413,9 @@ class AppNetwork extends HttpOverrides {
         );
       }
       if (expired) throw TimeoutException('Network route timed out');
+      if (_server == null) {
+        throw const SocketException('Application network is closed');
+      }
       _sockets.add(socket);
       final connection = NetworkSocket(socket);
       if (route.type == 'SOCKS' || route.type == 'SOCKS5') {

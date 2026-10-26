@@ -132,6 +132,118 @@ void main() {
     }
   });
 
+  for (final android in [false, true]) {
+    test(
+      'large index loads off the caller isolate (Android=$android)',
+      () async {
+        final root = Directory(
+          path.join(directory.path, coverArtworkStoreDirectoryName),
+        );
+        await root.create();
+        final index = File(
+          path.join(root.path, coverArtworkStoreIndexFileName),
+        );
+        const count = 5000;
+        await index.writeAsString(
+          jsonEncode({
+            'version': 2,
+            'androidGeneratedVersion': 2,
+            'bindings': {
+              for (var i = 0; i < count; i++)
+                'track:E:/Library/Work-$i/File.mp3': 'content://covers/$i',
+              'empty': null,
+            },
+            'legacyAliases': {'old': 'remote/old.image', 'empty': ''},
+            'managedArtifacts': {'remote/pinned.image': 0, 'invalid': -1},
+          }),
+        );
+        final io = _RecordingIO(source.path);
+        await IOOverrides.runWithIOOverrides(() async {
+          final store = CoverArtworkStore(
+            persistentDirectory: () async => directory,
+            temporaryDirectory: () async => directory,
+            isAndroid: () => android,
+          );
+          final load = store.initialize();
+          expect(identical(store.initialize(), load), isTrue);
+          await load;
+          for (var i = 0; i < count; i++) {
+            expect(
+              store.resolvedPath('track:e:/library/work-$i/file.mp3'),
+              'content://covers/$i',
+            );
+          }
+          expect(store.resolvedPath('empty'), isNull);
+          expect(io.indexReads, 0);
+        }, io);
+        final persisted = jsonDecode(await index.readAsString()) as Map;
+        expect(persisted['bindings'], hasLength(count));
+        expect(persisted['legacyAliases'], {'old': 'remote/old.image'});
+        expect(persisted['managedArtifacts'], {'remote/pinned.image': 0});
+      },
+    );
+  }
+
+  test(
+    'a malformed large index can be replaced by a durable new binding',
+    () async {
+      final root = Directory(
+        path.join(directory.path, coverArtworkStoreDirectoryName),
+      );
+      await root.create();
+      final index = File(path.join(root.path, coverArtworkStoreIndexFileName));
+      await index.writeAsString('${' ' * (64 * 1024)}{');
+      final store = CoverArtworkStore(
+        persistentDirectory: () async => directory,
+        isAndroid: () => false,
+      );
+      await store.initialize();
+      expect(store.isInitialized, isTrue);
+      await store.bind('recovered', 'content://covers/new');
+      final restarted = CoverArtworkStore(
+        persistentDirectory: () async => directory,
+        isAndroid: () => false,
+      );
+      await restarted.initialize();
+      expect(restarted.resolvedPath('recovered'), 'content://covers/new');
+    },
+  );
+
+  test(
+    'clear during large index initialization leaves the durable index empty',
+    () async {
+      final root = Directory(
+        path.join(directory.path, coverArtworkStoreDirectoryName),
+      );
+      await root.create();
+      await File(
+        path.join(root.path, coverArtworkStoreIndexFileName),
+      ).writeAsString(
+        jsonEncode({
+          'version': 2,
+          'bindings': {
+            for (var i = 0; i < 5000; i++) 'selected:$i': 'content://covers/$i',
+          },
+        }),
+      );
+      final store = CoverArtworkStore(
+        persistentDirectory: () async => directory,
+        isAndroid: () => false,
+      );
+      final load = store.initialize();
+      final clear = store.clear();
+      await load;
+      await clear;
+      expect(store.resolvedPath('selected:4999'), isNull);
+      final restarted = CoverArtworkStore(
+        persistentDirectory: () async => directory,
+        isAndroid: () => false,
+      );
+      await restarted.initialize();
+      expect(restarted.resolvedPath('selected:4999'), isNull);
+    },
+  );
+
   test(
     'small writes and authored pins complete before a slow bulk import',
     () async {
@@ -298,6 +410,7 @@ final class _RecordingIO extends IOOverrides {
   final String sourcePath;
   int indexWrites = 0;
   int sourceReads = 0;
+  int indexReads = 0;
   Completer<void>? sourceStatStarted;
   Completer<void>? sourceStatGate;
   @override
@@ -370,8 +483,11 @@ class _RecordingFile implements File {
   Future<FileSystemEntity> delete({bool recursive = false}) =>
       file.delete(recursive: recursive);
   @override
-  Future<String> readAsString({Encoding encoding = utf8}) =>
-      file.readAsString(encoding: encoding);
+  Future<String> readAsString({Encoding encoding = utf8}) {
+    if (path.endsWith(coverArtworkStoreIndexFileName)) io.indexReads++;
+    return file.readAsString(encoding: encoding);
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

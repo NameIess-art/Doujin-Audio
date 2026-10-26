@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:doujin_audio/core/media/path_matcher.dart';
@@ -47,6 +48,136 @@ class _LoadedSnapshotEditorService extends LibraryEntryEditorService {
 
 void main() {
   AppRuntimeTestFixture.initialize();
+
+  testWidgets(
+    'failed current projection exposes retry without an automatic loop',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      const root = '/library';
+      final service = _LoadedSnapshotEditorService(
+        LibraryEntryDiskSnapshot(
+          audioFilePaths: const ['$root/Work/01.mp3'],
+          scannedFolderPaths: const {'$root/Work'},
+          authoritative: true,
+        ),
+      );
+      final requests = <LibraryEditTreeRequest>[];
+      final results = <Completer<LibraryEditTreeSnapshot>>[];
+      await tester.pumpWidget(
+        fixture.build(
+          Scaffold(
+            body: LibraryEditTree(
+              libraryPath: root,
+              headerBuilder: (_, search) => search,
+              entryEditorService: service,
+              projectTree: (request) {
+                requests.add(request);
+                final result = Completer<LibraryEditTreeSnapshot>();
+                results.add(result);
+                return result.future;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      results.single.completeError(StateError('projection failed'));
+      await tester.pumpAndSettle();
+      final retry = find.widgetWithText(
+        FilledButton,
+        fixture.languageProvider.tr('retry'),
+      );
+      expect(retry, findsOneWidget);
+      expect(requests, hasLength(1));
+      await tester.pump(const Duration(seconds: 1));
+      expect(requests, hasLength(1));
+      await tester.tap(retry);
+      await tester.pump();
+      await tester.pump();
+      expect(requests, hasLength(2));
+      results.last.complete(await requests.last.project());
+      await tester.pumpAndSettle();
+      expect(find.text('Work', findRichText: true), findsOneWidget);
+      expect(retry, findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  for (final staleFailure in [false, true]) {
+    testWidgets(
+      'editor discards a projection after a disk refresh (error=$staleFailure)',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        const root = '/library';
+        final service = _LoadedSnapshotEditorService(
+          LibraryEntryDiskSnapshot(
+            audioFilePaths: const ['$root/Old/01.mp3'],
+            scannedFolderPaths: const {'$root/Old'},
+            authoritative: true,
+          ),
+        );
+        final requests = <LibraryEditTreeRequest>[];
+        final results = <Completer<LibraryEditTreeSnapshot>>[];
+        await tester.pumpWidget(
+          fixture.build(
+            Scaffold(
+              body: LibraryEditTree(
+                libraryPath: root,
+                headerBuilder: (_, search) => search,
+                entryEditorService: service,
+                projectTree: (request) {
+                  requests.add(request);
+                  final result = Completer<LibraryEditTreeSnapshot>();
+                  results.add(result);
+                  return result.future;
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(requests, hasLength(1));
+        expect(
+          find.byKey(const ValueKey('library_edit_entries_skeleton')),
+          findsOneWidget,
+        );
+        service.snapshot = LibraryEntryDiskSnapshot(
+          audioFilePaths: const ['$root/New/02.mp3'],
+          scannedFolderPaths: const {'$root/New'},
+          authoritative: true,
+        );
+        WidgetsBinding.instance.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pump();
+        await tester.pump();
+        if (staleFailure) {
+          results.first.completeError(StateError('stale projection'));
+        } else {
+          results.first.complete(await requests.first.project());
+        }
+        await tester.pump();
+        expect(find.text('Old', findRichText: true), findsNothing);
+        expect(requests, hasLength(2));
+        expect(requests.last.diskTrackPaths, ['$root/New/02.mp3']);
+        expect(
+          find.byKey(const ValueKey('library_edit_entries_skeleton')),
+          findsOneWidget,
+        );
+        results.last.complete(await requests.last.project());
+        await tester.pumpAndSettle();
+        expect(find.text('Old', findRichText: true), findsNothing);
+        expect(find.text('New', findRichText: true), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
 
   testWidgets(
     'editor removes active empty work roots left after media deletion',

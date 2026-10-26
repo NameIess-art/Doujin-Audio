@@ -64,11 +64,11 @@ final class CoverArtworkStore {
   final bool Function() _isAndroid;
   final DateTime Function() _now;
   Directory? _androidTemporaryDirectory;
-  final Map<String, String> _bindings = <String, String>{};
-  final Map<String, String> _legacyAliases = <String, String>{};
+  Map<String, String> _bindings = <String, String>{};
+  Map<String, String> _legacyAliases = <String, String>{};
   // Only new artifacts are eligible. Zero permanently protects authored paths,
   // including references retained by old sidecars or database backups.
-  final Map<String, int> _managedArtifacts = <String, int>{};
+  Map<String, int> _managedArtifacts = <String, int>{};
   final Map<String, int> _pendingReferences = <String, int>{};
   final Set<String> _accessedArtifacts = <String>{};
   Future<void>? _initializeFuture;
@@ -106,74 +106,34 @@ final class CoverArtworkStore {
     _root = Directory(path.join(support.path, coverArtworkStoreDirectoryName));
     _index = File(path.join(_root.path, coverArtworkStoreIndexFileName));
     await _root.create(recursive: true);
-    if (_isAndroid()) _androidTemporaryDirectory = await _temporaryDirectory();
-    var androidGeneratedVersion = 0;
+    final android = _isAndroid();
+    if (android) _androidTemporaryDirectory = await _temporaryDirectory();
+    final indexPath = _index.path;
+    final rootPath = _root.path;
+    var loaded = _decodeCoverIndex(null, rootPath, android);
     try {
       if (await _index.exists()) {
-        final decoded = json.decode(await _index.readAsString());
-        if (decoded is Map &&
-            (decoded['version'] == 1 || decoded['version'] == 2)) {
-          _decodeMap(decoded['bindings'], _bindings);
-          _decodeMap(decoded['legacyAliases'], _legacyAliases);
-          final managed = decoded['managedArtifacts'];
-          if (managed is Map) {
-            for (final entry in managed.entries) {
-              final createdAt = entry.value;
-              if (entry.key is String && createdAt is int && createdAt >= 0) {
-                _managedArtifacts[entry.key as String] = createdAt;
-              }
-            }
-          }
-          final generatedVersion = decoded['androidGeneratedVersion'];
-          androidGeneratedVersion = generatedVersion is num
-              ? generatedVersion.toInt()
-              : 0;
-        }
+        // Reading and migrating a large index must not occupy the UI isolate.
+        loaded = await _index.length() > 64 * 1024
+            ? await Isolate.run(
+                () => _decodeCoverIndex(
+                  File(indexPath).readAsStringSync(),
+                  rootPath,
+                  android,
+                ),
+              )
+            : _decodeCoverIndex(await _index.readAsString(), rootPath, android);
       }
     } catch (_) {
-      _bindings.clear();
-      _legacyAliases.clear();
-      _managedArtifacts.clear();
+      loaded = _decodeCoverIndex(null, rootPath, android);
     }
+    // The worker transfers the maps; copying every entry here defeats offloading.
+    _bindings = loaded.bindings;
+    _legacyAliases = loaded.aliases;
+    _managedArtifacts = loaded.managed;
     _initialized = true;
-    final migrated = <String, String>{
-      for (final entry in _bindings.entries)
-        _canonicalLogicalKey(entry.key): entry.value,
-    };
-    var changed = false;
-    if (_isAndroid() &&
-        androidGeneratedVersion != _androidGeneratedArtworkVersion) {
-      migrated.removeWhere((key, value) {
-        final resolved = _absoluteValue(value);
-        return _isAutomaticKey(key) &&
-            !key.contains('remote-cover:') &&
-            !_isUri(resolved) &&
-            !path.isWithin(path.join(_root.path, 'remote'), resolved) &&
-            !path.isWithin(
-              path.join(_root.parent.path, 'portable_card_covers'),
-              resolved,
-            );
-      });
-      changed = true;
-    }
-    if (changed ||
-        migrated.keys.any((key) => !_bindings.containsKey(key)) ||
-        migrated.length != _bindings.length) {
-      _bindings
-        ..clear()
-        ..addAll(migrated);
-      await _persistIndex(immediate: true);
-    }
+    if (loaded.changed) await _persistIndex(immediate: true);
   }
-
-  bool _isAutomaticKey(String key) => const [
-    'video:',
-    'native:',
-    'embedded:',
-    'track:',
-    'folder:',
-    'source-image:',
-  ].any(key.startsWith);
 
   // Old derived files stay on disk because an explicit selection may own them.
   bool isObsoleteAndroidAutomaticPath(String value) {
@@ -197,15 +157,6 @@ final class CoverArtworkStore {
         RegExp(
           r'^(cover|video_frame)_-?[0-9]{1,10}\.[a-zA-Z]+$',
         ).hasMatch(path.basename(value));
-  }
-
-  void _decodeMap(Object? value, Map<String, String> target) {
-    if (value is! Map) return;
-    for (final entry in value.entries) {
-      final key = entry.key.toString();
-      final stored = entry.value?.toString() ?? '';
-      if (key.isNotEmpty && stored.isNotEmpty) target[key] = stored;
-    }
   }
 
   String? resolvedPath(String logicalKey) {
@@ -900,3 +851,73 @@ final class CoverArtworkStore {
 
 Future<String> _encodeCoverIndex(Map<String, Object> snapshot) =>
     Isolate.run(() => json.encode(snapshot));
+
+typedef _CoverIndex = ({
+  Map<String, String> bindings,
+  Map<String, String> aliases,
+  Map<String, int> managed,
+  bool changed,
+});
+
+_CoverIndex _decodeCoverIndex(String? payload, String rootPath, bool android) {
+  final raw = payload == null ? null : json.decode(payload);
+  final decoded = raw is Map && (raw['version'] == 1 || raw['version'] == 2)
+      ? raw
+      : const <String, Object?>{};
+  Map<String, String> stringMap(Object? value) => value is Map
+      ? <String, String>{
+          for (final entry in value.entries)
+            if (entry.key.toString().isNotEmpty &&
+                (entry.value?.toString() ?? '').isNotEmpty)
+              entry.key.toString(): entry.value.toString(),
+        }
+      : <String, String>{};
+  var changed = false;
+  final bindings = <String, String>{};
+  for (final entry in stringMap(decoded['bindings']).entries) {
+    final key = _canonicalLogicalKey(entry.key);
+    if (key != entry.key) changed = true;
+    bindings[key] = entry.value;
+  }
+  final generatedVersion = decoded['androidGeneratedVersion'];
+  if (android &&
+      (generatedVersion is num ? generatedVersion.toInt() : 0) !=
+          _androidGeneratedArtworkVersion) {
+    bindings.removeWhere((key, value) {
+      final uri = value.contains('://');
+      final resolved = uri || path.isAbsolute(value)
+          ? value
+          : path.join(rootPath, value);
+      return const [
+            'video:',
+            'native:',
+            'embedded:',
+            'track:',
+            'folder:',
+            'source-image:',
+          ].any(key.startsWith) &&
+          !key.contains('remote-cover:') &&
+          !uri &&
+          !path.isWithin(path.join(rootPath, 'remote'), resolved) &&
+          !path.isWithin(
+            path.join(path.dirname(rootPath), 'portable_card_covers'),
+            resolved,
+          );
+    });
+    changed = true;
+  }
+  final managed = decoded['managedArtifacts'];
+  return (
+    bindings: bindings,
+    aliases: stringMap(decoded['legacyAliases']),
+    managed: <String, int>{
+      if (managed is Map)
+        for (final entry in managed.entries)
+          if (entry.key is String &&
+              entry.value is int &&
+              (entry.value as int) >= 0)
+            entry.key as String: entry.value as int,
+    },
+    changed: changed,
+  );
+}

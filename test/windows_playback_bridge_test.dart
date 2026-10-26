@@ -41,6 +41,8 @@ void main() {
         playlistReads++;
         return playlistGetter?.call(player) ?? _playlistJson(player);
       },
+      retainNativeCurrentEntry: (player) =>
+          (player.platform! as _Player).retainCurrentEntry(),
       createPlayer: () {
         final platform = _Player();
         configureNextPlayer?.call(platform);
@@ -596,6 +598,73 @@ void main() {
       expect(players.single.opens, 1);
       expect(players.single.state.position, const Duration(seconds: 12));
       expect(players.single.state.playlistMode, PlaylistMode.loop);
+    },
+  );
+
+  test(
+    'track stop trims a long queue in one native operation before a seek',
+    () async {
+      final queue = [
+        for (var i = 0; i < 2000; i++)
+          <String, Object?>{
+            'uri': 'https://example.com/$i.wav',
+            'path': '$i.wav',
+          },
+      ];
+      await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse(queue[1234]['uri'] as String),
+        title: 'current',
+        queue: queue,
+        queueStartIndex: 1234,
+        autoPlay: true,
+      );
+      final player = players.single;
+      final current = player.state.playlist.medias[1234];
+      player.retainGate = Completer<void>();
+      player.retainStarted = Completer<void>();
+      final stopping = bridge.setStopAfterCurrentTrack('one', true);
+      await player.retainStarted!.future;
+      final seeking = bridge.seek('one', const Duration(seconds: 15));
+      player.retainGate!.complete();
+      expect((await stopping).isOk, isTrue);
+      expect((await seeking).isOk, isTrue);
+      expect(player.retains, 1);
+      expect(player.removes, 0);
+      expect(player.opens, 1);
+      expect(player.state.playlist.medias.single, same(current));
+      expect(player.state.position, const Duration(seconds: 15));
+      final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(snapshot.queueIndex, 1234);
+      expect(snapshot.retainedUris, hasLength(2000));
+      expect(snapshot.playWhenReady, isTrue);
+    },
+  );
+
+  test(
+    'track stop native failure releases the decoder but retains the queue',
+    () async {
+      await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse('https://example.com/a.wav'),
+        title: 'a',
+        queue: [
+          {'uri': 'https://example.com/a.wav', 'path': 'a.wav'},
+          {'uri': 'https://example.com/b.wav', 'path': 'b.wav'},
+        ],
+        autoPlay: true,
+      );
+      final player = players.single;
+      player.retainError = StateError('playlist-clear failed');
+      final result = await bridge.setStopAfterCurrentTrack('one', true);
+      expect(result.errorCodeOrNull, NativeErrorCode.playerError);
+      expect(player.disposed, isTrue);
+      expect(bridge.playerForSession('one'), isNull);
+      final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(snapshot.stopAfterCurrentTrack, isFalse);
+      expect(snapshot.playWhenReady, isFalse);
+      expect(snapshot.retainedUris, hasLength(2));
+      expect(snapshot.error, contains('playlist-clear failed'));
     },
   );
 
@@ -2635,6 +2704,9 @@ class _Player extends PlatformPlayer {
   }
 
   int opens = 0, plays = 0, adds = 0, removes = 0, moves = 0;
+  int retains = 0;
+  Object? retainError;
+  Completer<void>? retainGate, retainStarted;
   int playlistModeWrites = 0;
   Object? playlistModeError;
   int? moveErrorAt;
@@ -2655,6 +2727,18 @@ class _Player extends PlatformPlayer {
   List<Media>? _unshuffledMedias;
   final seeks = <Duration>[];
   final actions = <String>[];
+
+  Future<void> retainCurrentEntry() async {
+    retains++;
+    if (retainStarted?.isCompleted == false) retainStarted!.complete();
+    await retainGate?.future;
+    if (retainError != null) throw retainError!;
+    state = state.copyWith(
+      playlist: Playlist([state.playlist.medias[state.playlist.index]]),
+    );
+    playlistController.add(state.playlist);
+  }
+
   @override
   Future<void> add(Media media) async {
     adds++;

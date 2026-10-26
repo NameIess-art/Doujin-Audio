@@ -196,39 +196,41 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
         child: Stack(
           children: [
             Positioned.fill(
-              child: AppPageContentTransition(
-                child: ListView(
-                  controller: _scrollController,
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    contentTopInset,
-                    16,
-                    bottomInset + AppSpacing.sm,
-                  ),
-                  clipBehavior: Clip.none,
-                  children: [
-                    _SettingsTileTheme.categories(
-                      child: Column(
-                        children: [
-                          for (
-                            var index = 0;
-                            index < _SettingsCategory.values.length;
-                            index++
-                          )
-                            _SettingsCategoryTile(
-                              category: _SettingsCategory.values[index],
-                              i18n: i18n,
-                              isFirst: index == 0,
-                              isLast:
-                                  index == _SettingsCategory.values.length - 1,
-                              onTap: () => _openSettingsCategory(
-                                _SettingsCategory.values[index],
-                              ),
-                            ),
-                        ],
-                      ),
+              child: buildScrollToTopTransition(
+                AppPageContentTransition(
+                  child: ListView(
+                    controller: _scrollController,
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      contentTopInset,
+                      16,
+                      bottomInset + AppSpacing.sm,
                     ),
-                  ],
+                    clipBehavior: Clip.none,
+                    children: [
+                      _SettingsTileTheme.categories(
+                        child: Column(
+                          children: [
+                            for (
+                              var index = 0;
+                              index < _SettingsCategory.values.length;
+                              index++
+                            )
+                              _SettingsCategoryTile(
+                                category: _SettingsCategory.values[index],
+                                i18n: i18n,
+                                isFirst: index == 0,
+                                isLast:
+                                    index == _SettingsCategory.values.length - 1,
+                                onTap: () => _openSettingsCategory(
+                                  _SettingsCategory.values[index],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

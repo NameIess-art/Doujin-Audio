@@ -723,6 +723,15 @@ void main() {
             final skeletonTimeBounds = tester.getRect(
               find.ancestor(of: timeHeader, matching: find.byType(Card)),
             );
+            for (final card in tester.widgetList<Card>(
+              find.descendant(of: skeleton, matching: find.byType(Card)),
+            )) {
+              expect(
+                (card.shape! as RoundedRectangleBorder).side,
+                BorderSide.none,
+              );
+              expect(card.color, isNull);
+            }
             final verticalScroll = find.descendant(
               of: skeleton,
               matching: find.byWidgetPredicate(
@@ -1604,6 +1613,12 @@ void main() {
         final card = find
             .ancestor(of: header, matching: find.byType(Card))
             .first;
+        final cardWidget = tester.widget<Card>(card);
+        expect(
+          (cardWidget.shape! as RoundedRectangleBorder).side,
+          BorderSide.none,
+        );
+        expect(cardWidget.color, isNull);
         expect(bounds.top - tester.getRect(card).top, closeTo(12, .1));
         headerHeights.add(bounds.height);
       }

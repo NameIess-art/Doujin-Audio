@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../state/app_runtime_providers.dart';
 import '../state/listening_activity_provider.dart';
 import '../theme/app_styles.dart';
+import '../theme/app_design_tokens.dart';
 import '../../core/media/music_track.dart';
 import '../../core/media/path_display.dart';
 import '../../core/logging/app_log_service.dart';
@@ -183,6 +184,11 @@ class _MyPageState extends ConsumerState<MyPage>
           Text(title, style: Theme.of(context).textTheme.titleMedium);
       return Card(
         margin: const EdgeInsets.only(bottom: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+            AppDesignTokens.of(context).radiusCard,
+          ),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Column(
@@ -548,33 +554,35 @@ class _MyPageState extends ConsumerState<MyPage>
         child: Stack(
           children: [
             Positioned.fill(
-              child: AppPageContentTransition.deferred(
-                isReady: activityReady,
-                placeholder: skeleton,
-                builder: (_) => pageList([
-                  listeningChart(),
-                  section(
-                    i18n.tr('my_history'),
-                    Consumer(
-                      builder: (context, ref, _) => ref
-                          .watch(listeningActivityProvider)
-                          .when(
-                            data: (view) => view.history.isEmpty
-                                ? Text(i18n.tr('my_no_history'))
-                                : _HistoryStrip(
-                                    view: view,
-                                    onOpen: _openHistory,
-                                  ),
-                            loading: () => const SizedBox.shrink(),
-                            error: (error, stack) => TextButton(
-                              onPressed: _refreshActivity,
-                              child: Text(i18n.tr('my_retry')),
+              child: buildScrollToTopTransition(
+                AppPageContentTransition.deferred(
+                  isReady: activityReady,
+                  placeholder: skeleton,
+                  builder: (_) => pageList([
+                    listeningChart(),
+                    section(
+                      i18n.tr('my_history'),
+                      Consumer(
+                        builder: (context, ref, _) => ref
+                            .watch(listeningActivityProvider)
+                            .when(
+                              data: (view) => view.history.isEmpty
+                                  ? Text(i18n.tr('my_no_history'))
+                                  : _HistoryStrip(
+                                      view: view,
+                                      onOpen: _openHistory,
+                                    ),
+                              loading: () => const SizedBox.shrink(),
+                              error: (error, stack) => TextButton(
+                                onPressed: _refreshActivity,
+                                child: Text(i18n.tr('my_retry')),
+                              ),
                             ),
-                          ),
+                      ),
                     ),
-                  ),
-                  interestSection(),
-                ], controller: _scroll),
+                    interestSection(),
+                  ], controller: _scroll),
+                ),
               ),
             ),
             Positioned(

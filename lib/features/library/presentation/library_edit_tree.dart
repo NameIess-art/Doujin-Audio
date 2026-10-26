@@ -158,6 +158,10 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
       retainedPaths,
     );
     setState(() {
+      // A complete disk scan supersedes exclusion-time copies of the tree.
+      // Reusing those copies would bring deleted descendants back.
+      _folderStructureSnapshots.clear();
+      _folderStructureSnapshotRevision++;
       _diskAudioFilePaths = snapshot.audioFilePaths;
       _diskAudioFilePathSet = audioFilePaths;
       _diskTrackParentPaths = snapshot.trackParentPaths;
@@ -202,6 +206,14 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
   @override
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
+    ref.listen(
+      libraryStateProvider.select((state) => state.value?.isScanning ?? false),
+      (wasScanning, isScanning) async {
+        if (wasScanning != true || isScanning) return;
+        await ref.read(libraryFacadeProvider).scanIdle;
+        if (mounted) _requestDiskSnapshotRefresh();
+      },
+    );
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,

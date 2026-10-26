@@ -24,6 +24,7 @@ import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
+import '../../../core/widgets/scroll_to_top_list.dart';
 import '../../../core/widgets/sort_options_bottom_sheet.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -366,19 +367,21 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            AppPageContentTransition.deferred(
-              isReady: sessionsInitialized,
-              placeholder: PlaylistLoadingSkeleton(
-                key: const ValueKey('playlist_initial_placeholder'),
-                topPadding: topPadding,
-                bottomPadding: bottomPadding,
-              ),
-              builder: (context) => Consumer(
-                builder: (context, contentRef, _) => _buildPlaylistContent(
-                  context,
-                  contentRef,
+            buildScrollToTopTransition(
+              AppPageContentTransition.deferred(
+                isReady: sessionsInitialized,
+                placeholder: PlaylistLoadingSkeleton(
+                  key: const ValueKey('playlist_initial_placeholder'),
                   topPadding: topPadding,
                   bottomPadding: bottomPadding,
+                ),
+                builder: (context) => Consumer(
+                  builder: (context, contentRef, _) => _buildPlaylistContent(
+                    context,
+                    contentRef,
+                    topPadding: topPadding,
+                    bottomPadding: bottomPadding,
+                  ),
                 ),
               ),
             ),
@@ -760,7 +763,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           ),
           content: AnimatedReorder(
             order: visibleEntries.map((entry) => entry.session.id).toList(),
-            child: ListView.builder(
+            child: ScrollToTopListView.builder(
               key: const PageStorageKey<String>('playlist_list'),
               controller: _scrollController,
               physics: const ClampingScrollPhysics(),

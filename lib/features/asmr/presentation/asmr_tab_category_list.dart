@@ -725,7 +725,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                                     LibraryLikeCardMetrics.rootTileHeight,
                                 delegate: rows,
                               )
-                            : SliverList(delegate: rows),
+                            : ScrollToTopSliverList(delegate: rows),
                       ),
                       SliverPadding(
                         padding: EdgeInsets.fromLTRB(

@@ -698,108 +698,109 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            AppPageContentTransition.deferred(
-              prepared:
-                  listStateIsInitialized &&
-                  listStateStructureRevision == libraryFacade.structureRevision,
-              isReady:
-                  listStateIsInitialized &&
-                  listStateStructureRevision == libraryFacade.structureRevision,
-              placeholder: LibraryLoadingSkeleton(
-                bottomInset: listBottomPadding,
-                topInset: listTopPadding,
-              ),
-              builder: (_) => Consumer(
-                builder: (context, ref, _) {
-                  final tree = ref.watch(librarySortedTreeUiProvider);
-                  final sortingError = ref.watch(
-                    librarySortedSnapshotUiProvider.select(
-                      (state) => state.error,
-                    ),
-                  );
-                  final emptyBody = sortingError == null
-                      ? emptyListBody()
-                      : const SizedBox.expand();
-                  return Stack(
-                    children: [
-                      PlaceholderContentTransition(
-                        showPlaceholder:
-                            !listStateIsInitialized ||
-                            (tree.isEmpty &&
-                                libraryFacade.libraryCards.isNotEmpty &&
-                                sortingError == null),
-                        placeholder: LibraryLoadingSkeleton(
-                          bottomInset: listBottomPadding,
-                          topInset: listTopPadding,
-                        ),
-                        content: GlassRefreshIndicator(
-                          key: _refreshIndicatorKey,
-                          lockChildWhileRefreshing: true,
-                          color: Theme.of(context).colorScheme.primary,
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
-                          onRefresh: _runLibraryPullRefresh,
-                          edgeOffset: listTopPadding,
-                          displacement: 32,
-                          triggerMode:
-                              GlassRefreshIndicatorTriggerMode.anywhere,
-                          child: PlaceholderContentTransition(
-                            key: const ValueKey('library_empty_transition'),
-                            showPlaceholder: tree.isEmpty,
-                            placeholder: emptyBody,
-                            content: LibraryTreeList(
-                              tree: tree,
-                              structureRevision: listStateStructureRevision,
-                              selectedPaths: _selectedLibraryPaths,
-                              isSelectionMode: _isSelectionMode,
-                              scrollController: _scrollController,
-                              i18n: i18n,
-                              topPadding: listTopPadding,
-                              bottomPadding: listBottomPadding,
-                              cacheExtent: listCacheExtent,
-                              physics: canPullRefresh
-                                  ? AlwaysScrollableScrollPhysics(
-                                      parent:
-                                          GlassRefreshIndicatorScrollPhysics(
-                                            isIndicatorVisible: () =>
-                                                _refreshIndicatorKey
-                                                    .currentState
-                                                    ?.isIndicatorVisible ??
-                                                false,
-                                          ),
-                                    )
-                                  : null,
-                              loadFolder: libraryFacade.loadLibraryFolderTree,
-                              currentStructureRevision: () =>
-                                  libraryFacade.structureRevision,
-                              onLongPress: _enterSelectionMode,
-                              onToggleSelect: _toggleLibrarySelection,
+            buildScrollToTopTransition(
+              AppPageContentTransition.deferred(
+                prepared:
+                    listStateIsInitialized &&
+                    listStateStructureRevision == libraryFacade.structureRevision,
+                isReady:
+                    listStateIsInitialized &&
+                    listStateStructureRevision == libraryFacade.structureRevision,
+                placeholder: LibraryLoadingSkeleton(
+                  bottomInset: listBottomPadding,
+                  topInset: listTopPadding,
+                ),
+                builder: (_) => Consumer(
+                  builder: (context, ref, _) {
+                    final tree = ref.watch(librarySortedTreeUiProvider);
+                    final sortingError = ref.watch(
+                      librarySortedSnapshotUiProvider.select(
+                        (state) => state.error,
+                      ),
+                    );
+                    final emptyBody = sortingError == null
+                        ? emptyListBody()
+                        : const SizedBox.expand();
+                    return Stack(
+                      children: [
+                        PlaceholderContentTransition(
+                          showPlaceholder:
+                              !listStateIsInitialized ||
+                              (tree.isEmpty &&
+                                  libraryFacade.libraryCards.isNotEmpty &&
+                                  sortingError == null),
+                          placeholder: LibraryLoadingSkeleton(
+                            bottomInset: listBottomPadding,
+                            topInset: listTopPadding,
+                          ),
+                          content: GlassRefreshIndicator(
+                            key: _refreshIndicatorKey,
+                            lockChildWhileRefreshing: true,
+                            color: Theme.of(context).colorScheme.primary,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
+                            onRefresh: _runLibraryPullRefresh,
+                            edgeOffset: listTopPadding,
+                            displacement: 32,
+                            triggerMode:
+                                GlassRefreshIndicatorTriggerMode.anywhere,
+                            child: PlaceholderContentTransition(
+                              key: const ValueKey('library_empty_transition'),
+                              showPlaceholder: tree.isEmpty,
+                              placeholder: emptyBody,
+                              content: LibraryTreeList(
+                                tree: tree,
+                                structureRevision: listStateStructureRevision,
+                                selectedPaths: _selectedLibraryPaths,
+                                isSelectionMode: _isSelectionMode,
+                                scrollController: _scrollController,
+                                i18n: i18n,
+                                topPadding: listTopPadding,
+                                bottomPadding: listBottomPadding,
+                                cacheExtent: listCacheExtent,
+                                physics: canPullRefresh
+                                    ? AlwaysScrollableScrollPhysics(
+                                        parent:
+                                            GlassRefreshIndicatorScrollPhysics(
+                                              isIndicatorVisible: () =>
+                                                  _refreshIndicatorKey
+                                                      .currentState
+                                                      ?.isIndicatorVisible ??
+                                                  false,
+                                            ),
+                                      )
+                                    : null,
+                                loadFolder: libraryFacade.loadLibraryFolderTree,
+                                currentStructureRevision: () =>
+                                    libraryFacade.structureRevision,
+                                onLongPress: _enterSelectionMode,
+                                onToggleSelect: _toggleLibrarySelection,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      Positioned(
-                        top: listTopPadding + 16,
-                        left: 12,
-                        right: 12,
-                        child: AppDeferredFade(
-                          visible: sortingError != null,
-                          child: OperationStatusBanner(
-                            label: i18n.tr('operation_failed_retry'),
-                            error: sortingError,
-                            retryTooltip: i18n.tr('retry'),
-                            onRetry: () =>
-                                ref.invalidate(librarySortedSnapshotUiProvider),
+                        Positioned(
+                          top: listTopPadding + 16,
+                          left: 12,
+                          right: 12,
+                          child: AppDeferredFade(
+                            visible: sortingError != null,
+                            child: OperationStatusBanner(
+                              label: i18n.tr('operation_failed_retry'),
+                              error: sortingError,
+                              retryTooltip: i18n.tr('retry'),
+                              onRetry: () =>
+                                  ref.invalidate(librarySortedSnapshotUiProvider),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  );
-                },
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
-
             // Scan progress card
             Positioned(
               top: headerContentHeight + 10,

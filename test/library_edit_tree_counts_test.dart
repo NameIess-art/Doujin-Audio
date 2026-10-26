@@ -38,7 +38,7 @@ class _CountingLibraryService extends LibraryService {
 class _LoadedSnapshotEditorService extends LibraryEntryEditorService {
   _LoadedSnapshotEditorService(this.snapshot);
 
-  final LibraryEntryDiskSnapshot snapshot;
+  LibraryEntryDiskSnapshot snapshot;
 
   @override
   Future<LibraryEntryDiskSnapshot> loadDiskSnapshot(String libraryPath) async =>
@@ -47,6 +47,176 @@ class _LoadedSnapshotEditorService extends LibraryEntryEditorService {
 
 void main() {
   AppRuntimeTestFixture.initialize();
+
+  testWidgets('reopening editor prunes a work directory deleted from disk', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final library = fixture.runtimeGraph.library;
+    late Directory root;
+    late Directory deleted;
+    late Directory kept;
+    final snapshot = await tester.runAsync(() async {
+      root = await Directory.systemTemp.createTemp('edit_deleted_work_');
+      deleted = await Directory(path.join(root.path, 'Deleted')).create();
+      kept = await Directory(path.join(root.path, 'Kept')).create();
+      library.addWatchedLibrary(root.path, notify: false);
+      library.addWatchedFolder(deleted.path, notify: false);
+      library.addWatchedFolder(kept.path, notify: false);
+      library.recordLibraryEntriesForTracks(
+        root.path,
+        [],
+        folderPaths: [deleted.path, kept.path],
+        persist: false,
+      );
+      await deleted.delete();
+      return LibraryEntryEditorService(
+        isAndroid: () => false,
+      ).loadDiskSnapshot(root.path);
+    });
+    addTearDown(() => root.delete(recursive: true));
+    await tester.pumpWidget(
+      fixture.build(
+        Scaffold(
+          body: LibraryEditTree(
+            libraryPath: root.path,
+            headerBuilder: (_, search) => search,
+            entryEditorService: _LoadedSnapshotEditorService(snapshot!),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Deleted', findRichText: true), findsNothing);
+    expect(find.text('Kept', findRichText: true), findsOneWidget);
+    expect(
+      library
+          .libraryEntriesForLibrary(root.path)
+          .any(
+            (entry) => PathMatcher.equalsNormalized(entry.path, deleted.path),
+          ),
+      isFalse,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'open editor refreshes deleted work after a library scan releases its lease',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final library = fixture.runtimeGraph.library;
+      const root = '/library';
+      const deleted = '$root/Deleted';
+      library.addWatchedLibrary(root, notify: false);
+      library.addWatchedFolder(deleted, notify: false);
+      library.recordLibraryEntriesForTracks(
+        root,
+        [],
+        folderPaths: [deleted],
+        persist: false,
+      );
+      final service = _LoadedSnapshotEditorService(
+        LibraryEntryDiskSnapshot(
+          audioFilePaths: const [],
+          scannedFolderPaths: const {deleted},
+          authoritative: true,
+        ),
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          Scaffold(
+            body: LibraryEditTree(
+              libraryPath: root,
+              headerBuilder: (_, search) => search,
+              entryEditorService: service,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Deleted', findRichText: true), findsOneWidget);
+      final generation = library.tryBeginScan(source: root);
+      await tester.pumpAndSettle();
+      service.snapshot = LibraryEntryDiskSnapshot(
+        audioFilePaths: const [],
+        scannedFolderPaths: const {},
+        authoritative: true,
+      );
+      library.cancelScan();
+      await tester.pumpAndSettle();
+      expect(find.text('Deleted', findRichText: true), findsOneWidget);
+      library.finishScan(generation);
+      await tester.pumpAndSettle();
+      expect(find.text('Deleted', findRichText: true), findsNothing);
+      expect(library.libraryEntriesForLibrary(root), isEmpty);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'editor removes deleted folders retained in exclusion snapshots',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final library = fixture.runtimeGraph.library;
+      const root = '/library';
+      const work = '$root/Work';
+      const deleted = '$work/Deleted';
+      library.addWatchedLibrary(root, notify: false);
+      library.addWatchedFolder(work, notify: false);
+      library.recordLibraryEntriesForTracks(
+        root,
+        [],
+        folderPaths: [work, deleted],
+        persist: false,
+      );
+      final service = _LoadedSnapshotEditorService(
+        LibraryEntryDiskSnapshot(
+          audioFilePaths: const ['$deleted/01.mp3'],
+          scannedFolderPaths: const {work, deleted},
+          authoritative: true,
+        ),
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          Scaffold(
+            body: LibraryEditTree(
+              libraryPath: root,
+              headerBuilder: (_, search) => search,
+              entryEditorService: service,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find
+            .widgetWithText(TextButton, fixture.languageProvider.tr('exclude'))
+            .first,
+      );
+      await tester.pumpAndSettle();
+      service.snapshot = LibraryEntryDiskSnapshot(
+        audioFilePaths: const [],
+        scannedFolderPaths: const {work},
+        authoritative: true,
+      );
+      WidgetsBinding.instance.handleAppLifecycleStateChanged(
+        AppLifecycleState.resumed,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Work', findRichText: true));
+      await tester.pumpAndSettle();
+      expect(find.text('Deleted', findRichText: true), findsNothing);
+      expect(find.text('01', findRichText: true), findsNothing);
+      expect(find.text('Work', findRichText: true), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets('opening editor preserves excluded empty folders', (
     tester,

@@ -77,7 +77,16 @@ void main() {
           final settingsState = tester.state(settings);
           final settingsScroll = _verticalScroll(tester, settings);
           settingsScroll.jumpTo(settingsScroll.maxScrollExtent);
+          await tester.pump();
+          final container = ProviderScope.containerOf(tester.element(settings));
+          container.read(mainScreenControllerProvider).requestScrollToTop(3);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 80));
           final settingsOffset = settingsScroll.pixels;
+          if (!reducedMotion) {
+            expect(settingsOffset, greaterThan(0));
+            expect(settingsScroll.isScrollingNotifier.value, isTrue);
+          }
 
           await tester.tap(find.byKey(const ValueKey('switch-to-my')));
           await pumpAndSettleWithAsync(tester);
@@ -111,9 +120,9 @@ void main() {
           expect(tester.state(settings), same(settingsState));
           expect(settingsScroll.pixels, settingsOffset);
           expect(TickerMode.valuesOf(tester.element(my)).enabled, isFalse);
-          final container = ProviderScope.containerOf(tester.element(settings));
           container.read(mainScreenControllerProvider).requestScrollToTop(3);
           await tester.pump();
+          await tester.pump(const Duration(milliseconds: 350));
           expect(settingsScroll.pixels, 0);
           expect(myScroll.pixels, myOffset);
 
@@ -131,6 +140,7 @@ void main() {
           );
           container.read(mainScreenControllerProvider).requestScrollToTop(3);
           await tester.pump();
+          await tester.pump(const Duration(milliseconds: 350));
           expect(myScroll.pixels, 0);
           expect(tester.takeException(), isNull);
           await tester.pumpWidget(const SizedBox.shrink());

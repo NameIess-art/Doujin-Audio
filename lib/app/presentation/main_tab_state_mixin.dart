@@ -1,16 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/widgets/scroll_to_top_transition.dart';
 import '../theme/app_styles.dart';
 
 mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   final GlobalKey headerKey = GlobalKey();
   late double headerHeight = defaultHeaderHeight;
+  final _scrollTransitionKey = GlobalKey<ScrollToTopTransitionState>();
 
-  ValueListenable<int?> _scrollToTopListenable =
-      ValueNotifier<int?>(null);
-  ValueListenable<int?> _stopScrollListenable =
-      ValueNotifier<int?>(null);
+  ValueListenable<int?> _scrollToTopListenable = ValueNotifier<int?>(null);
+  ValueListenable<int?> _stopScrollListenable = ValueNotifier<int?>(null);
 
   /// The tab index this state responds to for scroll-to-top events.
   int get tabIndex;
@@ -27,9 +29,18 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   /// Whether this tab should respond to the current scroll-to-top signal.
   bool get handlesScrollToTop => true;
 
+  /// Wrap only scrolling content so page headers stay live above the transition.
+  Widget buildScrollToTopTransition(Widget child) => ScrollToTopTransition(
+    key: _scrollTransitionKey,
+    controller: () => mainScrollController,
+    child: child,
+  );
+
   /// Call this in `initState` after getting the listenable.
-  void initTabState(ValueListenable<int?> scrollToTop,
-      [ValueListenable<int?>? stopScroll]) {
+  void initTabState(
+    ValueListenable<int?> scrollToTop, [
+    ValueListenable<int?>? stopScroll,
+  ]) {
     _scrollToTopListenable = scrollToTop;
     _scrollToTopListenable.addListener(handleScrollToTopSignal);
     if (stopScroll != null) {
@@ -66,13 +77,32 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
     final controller = mainScrollController;
     if (!controller.hasClients) return;
     final position = controller.position;
+    if (!position.hasContentDimensions) return;
     final top = position.minScrollExtent;
     if (position.pixels <= top) return;
-    controller.jumpTo(top);
+    if (MediaQuery.disableAnimationsOf(context) ||
+        position.viewportDimension <= 0) {
+      controller.jumpTo(top);
+      return;
+    }
+
+    final animationStart = top + position.viewportDimension * 2;
+    if (position.pixels > animationStart) {
+      unawaited(_scrollTransitionKey.currentState!.scrollToTop());
+      return;
+    }
+    unawaited(
+      controller.animateTo(
+        top,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      ),
+    );
   }
 
   /// Immediately stops any ongoing momentum/animated scroll.
   void stopScroll() {
+    _scrollTransitionKey.currentState?.cancel();
     final controller = mainScrollController;
     if (!controller.hasClients) return;
     controller.jumpTo(controller.offset);

@@ -17,6 +17,7 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/animated_reorder.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/scroll_to_top_list.dart';
 
 import 'library_tab_ui_helpers.dart';
 import 'library_tab_tree_widgets.dart';
@@ -1013,7 +1014,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   }
 }
 
-class _LibraryListView extends ListView {
+class _LibraryListView extends ScrollToTopListView {
   _LibraryListView({
     required this.rowOffsets,
     super.key,

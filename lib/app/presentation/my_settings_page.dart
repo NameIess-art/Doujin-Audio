@@ -31,6 +31,7 @@ class _MySettingsPageState extends ConsumerState<MySettingsPage> {
   }
 
   void _switchTo(MySettingsPageMode mode) {
+    ref.read(mainScreenControllerProvider).requestStopScroll(widget.tabIndex);
     unawaited(
       saveSettingsWithFeedback(
         context,

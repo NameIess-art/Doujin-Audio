@@ -41,7 +41,7 @@ internal class CoverArtworkOperations(
             }
         }
         if (trackPath.startsWith("content://") && !groupKey.isNullOrBlank()) {
-            val root = storage.resolveDocumentFileForFolderPath(groupKey.substringBefore("::"))
+            val root = storage.resolveDocumentFileForFolderPath(groupKey)
             val candidate = root?.let(::preferredDocument)
             if (candidate != null) return cacheDocument(candidate.file, "$trackPath|${candidate.path}")
         }
@@ -52,18 +52,19 @@ internal class CoverArtworkOperations(
         trackPath: String,
         groupKey: String?,
         rootFolder: String?,
-        recursive: Boolean
+        recursive: Boolean,
+        preferredOnly: Boolean = false
     ): List<Map<String, String>> {
         val documentRoot = when {
             !rootFolder.isNullOrBlank() && rootFolder.startsWith("content://") -> rootFolder
-            !groupKey.isNullOrBlank() && groupKey.startsWith("content://") -> groupKey.substringBefore("::")
+            !groupKey.isNullOrBlank() && groupKey.startsWith("content://") -> groupKey
             else -> null
         }
         if (documentRoot != null) {
             val root = storage.resolveDocumentFileForFolderPath(documentRoot)
             if (root != null && root.exists() && root.isDirectory && root.canRead()) {
                 val candidates = documentImages(root, recursive, strict = true)
-                return candidates.map { candidate ->
+                return (if (preferredOnly) candidates.take(1) else candidates).map { candidate ->
                     val cachedPath = cacheDocument(
                         candidate.file,
                         "$trackPath|${candidate.path}"
@@ -76,10 +77,10 @@ internal class CoverArtworkOperations(
                 }
             }
             val localRoot = storage.contentUriToFilePath(documentRoot)
-            if (localRoot != null) return fileImages(localRoot, trackPath, recursive)
+            if (localRoot != null) return fileImages(localRoot, trackPath, recursive, preferredOnly)
             throw IOException("Image directory is unavailable: $documentRoot")
         }
-        if (!rootFolder.isNullOrBlank()) return fileImages(rootFolder, trackPath, recursive)
+        if (!rootFolder.isNullOrBlank()) return fileImages(rootFolder, trackPath, recursive, preferredOnly)
         return emptyList()
     }
 
@@ -157,7 +158,8 @@ internal class CoverArtworkOperations(
     private fun fileImages(
         folderPath: String,
         cacheKey: String,
-        recursive: Boolean
+        recursive: Boolean,
+        preferredOnly: Boolean
     ): List<Map<String, String>> {
         val root = File(folderPath)
         if (!root.isDirectory || !root.canRead()) throw IOException("Image directory is unavailable: $folderPath")
@@ -166,6 +168,7 @@ internal class CoverArtworkOperations(
         return files
             .filter { it.isFile && isImage(it.name, null) }
             .sortedWith(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
+            .let { if (preferredOnly) it.take(1) else it }
             .map { file ->
                 val relative = file.relativeToOrNull(root)?.invariantSeparatorsPath ?: file.name
                 val fileSizeBytes = file.length()
@@ -200,24 +203,15 @@ internal class CoverArtworkOperations(
             pending += Node(root, "")
             while (pending.isNotEmpty()) {
                 val node = pending.removeFirst()
-                if (strict) {
-                    for (entry in listReadableDirectoryDocuments(context, node.folder.uri)) {
-                        val child = DocumentFile.fromSingleUri(context, entry.uri)
-                            ?: throw IOException("Image document is unavailable: ${entry.uri}")
-                        val name = MediaNameMetadata.normalizeDisplayName(entry.name)
-                        val childPath = listOf(node.path, name).filter(String::isNotBlank).joinToString("/")
-                        if (recursive && entry.mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                            pending += Node(child, childPath)
-                        } else if (isImage(name, entry.mime)) {
-                            found += DocumentCandidate(child, childPath, entry.sizeBytes)
-                        }
-                    }
-                } else node.folder.listFiles().forEach { child ->
-                    val name = MediaNameMetadata.normalizeDisplayName(child.name.orEmpty())
+                for (entry in listReadableDirectoryDocuments(context, node.folder.uri)) {
+                    val child = DocumentFile.fromSingleUri(context, entry.uri)
+                        ?: throw IOException("Image document is unavailable: ${entry.uri}")
+                    val name = MediaNameMetadata.normalizeDisplayName(entry.name)
                     val childPath = listOf(node.path, name).filter(String::isNotBlank).joinToString("/")
-                    when {
-                        recursive && child.isDirectory -> pending += Node(child, childPath)
-                        child.isFile && isImage(name, child.type) -> found += DocumentCandidate(child, childPath)
+                    if (recursive && entry.mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        pending += Node(child, childPath)
+                    } else if (isImage(name, entry.mime)) {
+                        found += DocumentCandidate(child, childPath, name, entry.sizeBytes)
                     }
                 }
             }
@@ -225,7 +219,7 @@ internal class CoverArtworkOperations(
             if (strict) throw error
             return emptyList()
         }
-        return found.sortedWith(compareBy<DocumentCandidate>({ priority(it.file.name.orEmpty()) }, { it.path.lowercase(Locale.US) }))
+        return found.sortedWith(compareBy<DocumentCandidate>({ priority(it.name) }, { it.path.lowercase(Locale.US) }))
     }
 
     private fun isImage(name: String, mime: String?): Boolean =
@@ -251,6 +245,7 @@ internal class CoverArtworkOperations(
     private data class DocumentCandidate(
         val file: DocumentFile,
         val path: String,
+        val name: String,
         val sizeBytes: Long? = null
     )
 }

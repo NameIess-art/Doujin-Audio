@@ -7,6 +7,7 @@ import 'package:path/path.dart' as path;
 export 'library_scan_data_source.dart' show scanFileSystemFolderPayloadForTest;
 
 import '../../../core/media/music_track.dart';
+import '../../../core/cache/app_cache_service.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'library_catalog.dart';
 import '../../../core/media/path_matcher.dart';
@@ -40,21 +41,26 @@ class LibraryScannerService {
 
   void _rollbackScanAdditions({
     required LibraryCatalog provider,
-    required Set<String> existingTrackPaths,
-    Map<String, MusicTrack> overwrittenTracks = const <String, MusicTrack>{},
+    required Map<String, ({MusicTrack? before, MusicTrack after})> trackChanges,
     required Map<String, Set<String>> existingEntryPathsByRoot,
   }) {
     provider.removeTracksByPath(
-      provider.library
-          .where(
-            (track) =>
-                !existingTrackPaths.contains(PathMatcher.normalize(track.path)),
-          )
-          .map((track) => track.path),
+      trackChanges.entries
+          .where((entry) => entry.value.before == null)
+          .map((entry) => entry.key),
     );
-    final tracksToRestore = overwrittenTracks.values
-        .where((track) => !identical(provider.trackByPath(track.path), track))
-        .toList(growable: false);
+    final tracksToRestore = <MusicTrack>[];
+    for (final change in trackChanges.values) {
+      final before = change.before;
+      if (before == null) continue;
+      final current = provider.trackByPath(before.path);
+      if (current == null || identical(current, before)) continue;
+      tracksToRestore.add(
+        identical(current, change.after)
+            ? before
+            : _restoreScanChanges(before, change.after, current),
+      );
+    }
     if (tracksToRestore.isNotEmpty) {
       provider.addOrReplaceTracks(tracksToRestore, mergeExistingState: false);
     }
@@ -70,6 +76,64 @@ class LibraryScannerService {
             .map((candidate) => candidate.path),
       );
     }
+  }
+
+  MusicTrack _restoreScanChanges(
+    MusicTrack before,
+    MusicTrack committed,
+    MusicTrack current,
+  ) {
+    // Roll back only values still owned by the scan; playback and metadata can
+    // legitimately change while native scanning yields between chunks.
+    T restore<T>(T oldValue, T writtenValue, T currentValue) =>
+        currentValue == writtenValue ? oldValue : currentValue;
+    return MusicTrack(
+      path: restore(before.path, committed.path, current.path),
+      displayName: restore(
+        before.displayName,
+        committed.displayName,
+        current.displayName,
+      ),
+      groupKey: restore(before.groupKey, committed.groupKey, current.groupKey),
+      groupTitle: restore(
+        before.groupTitle,
+        committed.groupTitle,
+        current.groupTitle,
+      ),
+      groupSubtitle: restore(
+        before.groupSubtitle,
+        committed.groupSubtitle,
+        current.groupSubtitle,
+      ),
+      isSingle: restore(before.isSingle, committed.isSingle, current.isSingle),
+      isVideo: restore(before.isVideo, committed.isVideo, current.isVideo),
+      scannedAt: restore(
+        before.scannedAt,
+        committed.scannedAt,
+        current.scannedAt,
+      ),
+      fileSizeBytes: restore(
+        before.fileSizeBytes,
+        committed.fileSizeBytes,
+        current.fileSizeBytes,
+      ),
+      modifiedAt: restore(
+        before.modifiedAt,
+        committed.modifiedAt,
+        current.modifiedAt,
+      ),
+      lastPlayedPosition: current.lastPlayedPosition,
+      lastPlayedAt: current.lastPlayedAt,
+      isFavorite: current.isFavorite,
+      tags: current.tags,
+      coverCachePath: current.coverCachePath,
+      lyricsPath: current.lyricsPath,
+      manualCoverPath: current.manualCoverPath,
+      remoteCoverUrl: current.remoteCoverUrl,
+      remoteMetadataKind: current.remoteMetadataKind,
+      remoteMetadata: current.remoteMetadata,
+      duration: current.duration,
+    );
   }
 
   Future<bool> _flushRefreshBatch(LibraryCatalogReader provider) async {
@@ -428,11 +492,20 @@ class LibraryScannerService {
         source: 'import_folder',
       );
     }
-    final initialTracksByPath = <String, MusicTrack>{
-      for (final track in provider.library)
-        PathMatcher.normalize(track.path): track,
-    };
-    final existingTrackPaths = initialTracksByPath.keys.toSet();
+    final trackChanges = <String, ({MusicTrack? before, MusicTrack after})>{};
+    void recordTrackChange(MusicTrack? before, MusicTrack after) {
+      final key = PathMatcher.normalize(after.path);
+      final previous = trackChanges[key];
+      var original = previous == null ? before : previous.before;
+      if (previous != null &&
+          original != null &&
+          before != null &&
+          !identical(before, previous.after)) {
+        original = _restoreScanChanges(original, previous.after, before);
+      }
+      trackChanges[key] = (before: original, after: after);
+    }
+
     final existingEntryPaths = provider
         .libraryEntriesForLibrary(normalizedFolderPath)
         .map((entry) => PathMatcher.normalize(entry.path))
@@ -458,6 +531,7 @@ class LibraryScannerService {
           return _flushRefreshBatch(provider);
         },
         generation: generation,
+        onTrackCommitted: recordTrackChange,
       );
       if (chunkedImport != null) {
         added = chunkedImport.added;
@@ -478,6 +552,7 @@ class LibraryScannerService {
               return _flushRefreshBatch(provider);
             },
             generation: generation,
+            onTrackCommitted: recordTrackChange,
           );
           completed =
               provider.isScanGenerationActive(generation) &&
@@ -495,6 +570,7 @@ class LibraryScannerService {
               return _flushRefreshBatch(provider);
             },
             generation: generation,
+            onTrackCommitted: recordTrackChange,
           );
           completed =
               provider.isScanGenerationActive(generation) &&
@@ -518,8 +594,7 @@ class LibraryScannerService {
         if (!completed) {
           _rollbackScanAdditions(
             provider: provider,
-            existingTrackPaths: existingTrackPaths,
-            overwrittenTracks: initialTracksByPath,
+            trackChanges: trackChanges,
             existingEntryPathsByRoot: <String, Set<String>>{
               normalizedFolderPath: existingEntryPaths,
             },
@@ -621,11 +696,20 @@ class LibraryScannerService {
       );
     }
     var childFolders = const <String>[];
-    final initialTracksByPath = <String, MusicTrack>{
-      for (final track in provider.library)
-        PathMatcher.normalize(track.path): track,
-    };
-    final existingTrackPaths = initialTracksByPath.keys.toSet();
+    final trackChanges = <String, ({MusicTrack? before, MusicTrack after})>{};
+    void recordTrackChange(MusicTrack? before, MusicTrack after) {
+      final key = PathMatcher.normalize(after.path);
+      final previous = trackChanges[key];
+      var original = previous == null ? before : previous.before;
+      if (previous != null &&
+          original != null &&
+          before != null &&
+          !identical(before, previous.after)) {
+        original = _restoreScanChanges(original, previous.after, before);
+      }
+      trackChanges[key] = (before: original, after: after);
+    }
+
     final existingEntryPaths = provider
         .libraryEntriesForLibrary(normalizedFolderPath)
         .map((entry) => PathMatcher.normalize(entry.path))
@@ -656,6 +740,7 @@ class LibraryScannerService {
           return _flushRefreshBatch(provider);
         },
         generation: generation,
+        onTrackCommitted: recordTrackChange,
       );
       added = outcome.added;
       completed =
@@ -691,8 +776,7 @@ class LibraryScannerService {
         if (!completed) {
           _rollbackScanAdditions(
             provider: provider,
-            existingTrackPaths: existingTrackPaths,
-            overwrittenTracks: initialTracksByPath,
+            trackChanges: trackChanges,
             existingEntryPathsByRoot: <String, Set<String>>{
               normalizedFolderPath: existingEntryPaths,
             },
@@ -739,11 +823,16 @@ class LibraryScannerService {
     required LibraryCatalog provider,
     required LibraryScanLabels labels,
   }) async {
-    final pickedFiles = await _dataSource.pickAudioFiles(
-      dialogTitle: labels.chooseAudioFiles,
-    );
-    if (pickedFiles == null || pickedFiles.isEmpty) return null;
-    return _addPickedFiles(pickedFiles, provider, labels);
+    final importLease = await AppCacheService.protectPersistentImports();
+    try {
+      final pickedFiles = await _dataSource.pickAudioFiles(
+        dialogTitle: labels.chooseAudioFiles,
+      );
+      if (pickedFiles == null || pickedFiles.isEmpty) return null;
+      return await _addPickedFiles(pickedFiles, provider, labels);
+    } finally {
+      importLease.release();
+    }
   }
 
   Future<LibraryScanOutcome> _addPickedFiles(
@@ -764,6 +853,12 @@ class LibraryScannerService {
     var fileExists = false;
     try {
       final candidates = await _tracksFromPickedAudioFiles(pickedFiles, labels);
+      if (!provider.isScanGenerationActive(generation)) {
+        return LibraryScanOutcome(
+          code: LibraryScanOutcomeCode.cancelled,
+          source: 'import_files',
+        );
+      }
       if (_rules.areAnyTracksAlreadyInLibrary(
         trackPaths: candidates.map((track) => track.path),
         watchedFolders: provider.watchedFolders,

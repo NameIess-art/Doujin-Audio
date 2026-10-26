@@ -7,10 +7,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/logging/app_log_service.dart';
+import '../../../core/cache/app_cache_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import 'library_scan_models.dart';
 import '../../../core/media/media_file_support.dart';
@@ -338,18 +338,13 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
     }
   }
 
-  Future<Directory> _persistentImportDirectory() async {
-    final supportDir = await getApplicationSupportDirectory();
-    return Directory(path.join(supportDir.path, 'doujin_audio_imports'));
-  }
-
   Future<String?> _cachePickedFile(PlatformFile file, int index) async {
     final stream = file.readStream;
     if (stream != null) {
       File? output;
       IOSink? sink;
       try {
-        final cacheDir = await _persistentImportDirectory();
+        final cacheDir = await AppCacheService.persistentImportDirectory();
         if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
         final extension = path.extension(file.name);
         final outPath = path.join(

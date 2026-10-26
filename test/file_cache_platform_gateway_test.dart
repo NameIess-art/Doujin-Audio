@@ -315,6 +315,27 @@ void main() {
     );
   });
 
+  test('preferred image discovery preserves the full SAF scope', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return success(<Object?>[]);
+    });
+    const scope = 'content://library/tree/root::work';
+    await gateway.discoverRootImages(
+      path: scope,
+      rootFolder: scope,
+      recursive: false,
+      preferredOnly: true,
+    );
+    expect(calls.single.arguments, <String, Object?>{
+      'path': scope,
+      'groupKey': null,
+      'rootFolder': scope,
+      'recursive': false,
+      'preferredOnly': true,
+    });
+  });
+
   test(
     'Windows work text discovery includes nested subtitle formats',
     () async {

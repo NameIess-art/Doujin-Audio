@@ -169,8 +169,10 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   _startupMaintenanceCoordinator =
       LibraryStartupMaintenanceCoordinator.forLibrary(
         waitForUiIdle: _waitForContinuousUiIdle,
-        cleanupOrphanedImports: (retainedPaths) =>
-            AppCacheService.cleanupOrphanedPersistentImports(retainedPaths),
+        cleanupOrphanedImports: () =>
+            AppCacheService.cleanupOrphanedPersistentImports(
+              (candidate) => _service.trackByPath(candidate) != null,
+            ),
         libraryService: _service,
         repository: databaseRepository,
         metadataCoordinator: _metadataCoordinator,
@@ -562,6 +564,8 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     String libraryPath,
     String entryPath,
   ) => _service.libraryEntryDisplayNameForPath(libraryPath, entryPath);
+  LibraryEntry? libraryEntryForPath(String libraryPath, String entryPath) =>
+      _service.libraryEntryForPath(libraryPath, entryPath);
   List<String> excludedTracksForLibrary(String libraryPath) =>
       _service.excludedTracksForLibrary(libraryPath);
   List<String> excludedFoldersForLibrary(String libraryPath) =>
@@ -1032,10 +1036,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   }
 
   void schedulePostStartupMaintenance() {
-    final retainedPaths = _service.library
-        .map((track) => track.path)
-        .toList(growable: false);
-    _startupMaintenanceCoordinator.schedule(retainedPaths);
+    _startupMaintenanceCoordinator.schedule();
   }
 
   Future<bool> _waitForContinuousUiIdle(
@@ -1044,7 +1045,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   ) async {
     DateTime? idleSince;
     while (!_disposed && !shouldCancel()) {
-      if (_background || _interactionPaused) {
+      if (_background || _interactionPaused || _scanOperationGeneration != 0) {
         idleSince = null;
       } else {
         idleSince ??= DateTime.now();

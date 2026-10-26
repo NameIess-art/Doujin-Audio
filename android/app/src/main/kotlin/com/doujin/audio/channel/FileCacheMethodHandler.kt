@@ -326,8 +326,9 @@ internal class FileCacheMethodHandler(
                 val groupKey = arguments.optionalString("groupKey")
                 val rootFolder = arguments.optionalString("rootFolder")
                 val recursive = arguments.optionalBoolean("recursive", true)
+                val preferredOnly = arguments.optionalBoolean("preferredOnly", false)
                 runAsync(result, errorCode = { "cover_discover_failed" }) {
-                    operations.discoverRootImages(trackPath, groupKey, rootFolder, recursive)
+                    operations.discoverRootImages(trackPath, groupKey, rootFolder, recursive, preferredOnly)
                 }
             }
             FileCacheMethods.RESOLVE_TRACK_SUBTITLE -> {

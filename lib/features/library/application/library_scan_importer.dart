@@ -43,6 +43,7 @@ class LibraryScanImporter {
     bool promoteRootTracksToSingles = false,
     required LibraryScanLabels labels,
     Future<bool> Function()? onChunkCommitted,
+    void Function(MusicTrack? before, MusicTrack after)? onTrackCommitted,
     int? generation,
     LibraryScanMergeContext? mergeContext,
   }) async {
@@ -105,7 +106,17 @@ class LibraryScanImporter {
       }
       if (result.trackBatch.isNotEmpty) {
         final beforeCount = provider.library.length;
+        final previousTracks = <String, MusicTrack?>{
+          for (final track in result.trackBatch)
+            track.path: provider.trackByPath(track.path),
+        };
         provider.addOrReplaceTracks(result.trackBatch);
+        for (final track in result.trackBatch) {
+          final committed = provider.trackByPath(track.path);
+          if (committed != null) {
+            onTrackCommitted?.call(previousTracks[track.path], committed);
+          }
+        }
         added += provider.library.length - beforeCount;
       }
       duplicates += result.duplicatesCount;
@@ -133,6 +144,7 @@ class LibraryScanImporter {
     bool promoteRootTracksToSingles = false,
     required LibraryScanLabels labels,
     Future<bool> Function()? onChunkCommitted,
+    void Function(MusicTrack? before, MusicTrack after)? onTrackCommitted,
     int? generation,
   }) async {
     bool isActive() => generation == null
@@ -174,6 +186,7 @@ class LibraryScanImporter {
           promoteRootTracksToSingles: promoteRootTracksToSingles,
           labels: labels,
           onChunkCommitted: onChunkCommitted,
+          onTrackCommitted: onTrackCommitted,
           generation: generation,
           mergeContext: mergeContext,
         );
@@ -220,6 +233,7 @@ class LibraryScanImporter {
     required LibraryScanLabels labels,
     bool promoteRootTracksToSingles = false,
     Future<bool> Function()? onChunkCommitted,
+    void Function(MusicTrack? before, MusicTrack after)? onTrackCommitted,
     required int generation,
   }) async {
     var added = 0;
@@ -250,6 +264,7 @@ class LibraryScanImporter {
           promoteRootTracksToSingles: promoteRootTracksToSingles,
           labels: labels,
           onChunkCommitted: onChunkCommitted,
+          onTrackCommitted: onTrackCommitted,
           generation: generation,
           mergeContext: mergeContext,
         );
@@ -305,6 +320,7 @@ class LibraryScanImporter {
     LibraryCatalog provider,
     LibraryScanLabels labels, {
     Future<bool> Function()? onChunkCommitted,
+    void Function(MusicTrack? before, MusicTrack after)? onTrackCommitted,
     required int generation,
   }) async {
     provider.setScanProgress(
@@ -318,6 +334,7 @@ class LibraryScanImporter {
       promoteRootTracksToSingles: true,
       labels: labels,
       onChunkCommitted: onChunkCommitted,
+      onTrackCommitted: onTrackCommitted,
       generation: generation,
     );
     if (chunkedAdded != null) {
@@ -340,6 +357,7 @@ class LibraryScanImporter {
           promoteRootTracksToSingles: true,
           labels: labels,
           onChunkCommitted: onChunkCommitted,
+          onTrackCommitted: onTrackCommitted,
           generation: generation,
         );
         return LibraryFolderImportOutcome(
@@ -369,6 +387,7 @@ class LibraryScanImporter {
       promoteRootTracksToSingles: true,
       labels: labels,
       onChunkCommitted: onChunkCommitted,
+      onTrackCommitted: onTrackCommitted,
       generation: generation,
     );
     final scannedPaths = nativeScan.paths;

@@ -10,8 +10,7 @@ import '../../../core/logging/app_log_service.dart';
 
 typedef LibraryMaintenanceIdleWaiter =
     Future<bool> Function(Duration quietWindow, bool Function() shouldCancel);
-typedef LibraryPersistentImportCleanup =
-    Future<void> Function(List<String> retainedPaths);
+typedef LibraryPersistentImportCleanup = Future<void> Function();
 typedef LibraryEntryMaintenance = Future<void> Function(int epoch);
 typedef LibraryDurationMaintenance =
     Future<void> Function({Future<bool> Function()? waitForIdle});
@@ -80,11 +79,11 @@ final class LibraryStartupMaintenanceCoordinator {
   int _epoch = 0;
   bool _disposed = false;
 
-  void schedule(List<String> retainedPaths) {
+  void schedule() {
     if (_disposed || _task != null) return;
     final epoch = ++_epoch;
     late final Future<void> task;
-    task = _run(epoch, retainedPaths).whenComplete(() {
+    task = _run(epoch).whenComplete(() {
       if (identical(_task, task)) {
         _task = null;
       }
@@ -108,7 +107,7 @@ final class LibraryStartupMaintenanceCoordinator {
 
   bool isCurrent(int epoch) => _isCurrent(epoch);
 
-  Future<void> _run(int epoch, List<String> retainedPaths) async {
+  Future<void> _run(int epoch) async {
     try {
       if (!await _waitForUiIdle(_quietWindow, () => !_isCurrent(epoch)) ||
           !_isCurrent(epoch)) {
@@ -118,7 +117,7 @@ final class LibraryStartupMaintenanceCoordinator {
         'library_post_startup_maintenance',
         () async {
           if (!_isCurrent(epoch)) return;
-          await _cleanupOrphanedImports(retainedPaths);
+          await _cleanupOrphanedImports();
           if (!await _waitForIdle(epoch)) return;
           await _migrateCoverCache?.call(epoch);
           if (!await _waitForIdle(epoch)) return;
@@ -130,7 +129,6 @@ final class LibraryStartupMaintenanceCoordinator {
             waitForIdle: () => _waitForIdle(epoch),
           );
         },
-        details: <String, Object?>{'tracks': retainedPaths.length},
       );
     } catch (error, stackTrace) {
       AppLogService.warning(

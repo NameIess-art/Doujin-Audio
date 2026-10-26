@@ -107,35 +107,49 @@ class LibraryExclusionMatcher {
        _excludedTrackPaths = excludedTrackPaths
            .map(PathMatcher.normalize)
            .toSet(),
-       _excludedFolderPaths = excludedFolderPaths
-           .map(PathMatcher.normalize)
+       _excludedFolderKeys = excludedFolderPaths
+           .map(PathMatcher.equivalenceKey)
            .toSet();
 
   final String libraryPath;
   final Set<String> _excludedTrackPaths;
-  final Set<String> _excludedFolderPaths;
+  final Set<String> _excludedFolderKeys;
 
   bool get hasExclusions =>
-      _excludedTrackPaths.isNotEmpty || _excludedFolderPaths.isNotEmpty;
+      _excludedTrackPaths.isNotEmpty || _excludedFolderKeys.isNotEmpty;
 
   bool isExcluded(String entityPath) {
     final normalizedPath = PathMatcher.normalize(entityPath);
     if (_excludedTrackPaths.contains(normalizedPath)) {
       return true;
     }
-    if (_excludedFolderPaths.isEmpty) {
+    if (_excludedFolderKeys.isEmpty) {
       return false;
     }
     for (final folderPath in _candidateFolderPaths(normalizedPath)) {
-      if (_excludedFolderPaths.contains(folderPath)) {
+      if (_excludedFolderKeys.contains(
+        PathMatcher.equivalenceKey(folderPath),
+      )) {
         return true;
       }
     }
     return false;
   }
 
+  bool isEntryExcluded(LibraryEntry? entry, String entityPath) {
+    if (isExcluded(entityPath)) return true;
+    // Opaque SAF document IDs do not encode their folder. Use the confirmed
+    // scan parent only for tracks belonging to the same permission grant.
+    return entry != null &&
+        entry.isTrack &&
+        PathMatcher.hasSameContentTree(entry.path, entry.libraryPath) &&
+        isExcluded(entry.parentPath ?? entry.libraryPath);
+  }
+
   Iterable<String> _candidateFolderPaths(String normalizedPath) sync* {
-    if (_excludedFolderPaths.contains(normalizedPath)) {
+    if (_excludedFolderKeys.contains(
+      PathMatcher.equivalenceKey(normalizedPath),
+    )) {
       yield normalizedPath;
     }
 
@@ -159,6 +173,7 @@ class LibraryExclusionMatcher {
         }
         current = current.substring(0, slashIndex);
       }
+      yield libraryPath;
       return;
     }
 
@@ -171,6 +186,7 @@ class LibraryExclusionMatcher {
       }
       current = parent;
     }
+    if (PathMatcher.equalsNormalized(current, libraryPath)) yield current;
   }
 }
 

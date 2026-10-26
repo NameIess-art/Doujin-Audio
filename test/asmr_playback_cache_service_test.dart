@@ -308,6 +308,188 @@ void main() {
     expect(requests.keys.skip(2), ['/3.mp3', '/4.mp3']);
   });
 
+  test(
+    'switching one owner preserves another owner of the same track',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('asmr_owners_');
+      final requests = <String, HttpRequest>{};
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) => requests[request.uri.path] = request);
+      final service = _service(directory);
+      addTearDown(() async {
+        await service.dispose();
+        await server.close(force: true);
+        await directory.delete(recursive: true);
+      });
+      final oldTrack = _track(_url(server, '/shared.mp3'));
+      final first = service.cacheTrack(oldTrack, ownerId: 'a');
+      final shared = service.cacheTrack(oldTrack, ownerId: 'b');
+      await _waitUntil(() => requests.length == 1);
+      final next = service.cacheTrack(
+        _track(_url(server, '/next.mp3')),
+        ownerId: 'a',
+      );
+      await _waitUntil(() => requests.length == 2);
+      requests['/shared.mp3']!.response.add([1, 2]);
+      await requests['/shared.mp3']!.response.close();
+      expect(await first, isNotNull);
+      expect(await shared, await first);
+      requests['/next.mp3']!.response.add([3, 4]);
+      await requests['/next.mp3']!.response.close();
+      expect(await next, isNotNull);
+      expect(requests, hasLength(2));
+    },
+  );
+
+  test(
+    'owner switching cancels active and obsolete queued transfers',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('asmr_latest_');
+      final requests = <String, HttpRequest>{};
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        requests[request.uri.path] = request;
+        request.response.add([1]);
+        await request.response.flush();
+      });
+      final service = _service(directory);
+      addTearDown(() async {
+        await service.dispose();
+        await server.close(force: true);
+        await directory.delete(recursive: true);
+      });
+      final first = service.cacheTrack(
+        _track(_url(server, '/first.mp3')),
+        ownerId: 'a',
+      );
+      final other = service.cacheTrack(
+        _track(_url(server, '/other.mp3')),
+        ownerId: 'b',
+      );
+      await _waitUntil(() => requests.length == 2);
+      final obsolete = service.cacheTrack(
+        _track(_url(server, '/obsolete.mp3')),
+        ownerId: 'c',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      final latest = service.cacheTrack(
+        _track(_url(server, '/latest.mp3')),
+        ownerId: 'c',
+      );
+      service.releaseOwner('a');
+      expect(await first.timeout(const Duration(seconds: 1)), isNull);
+      expect(await obsolete.timeout(const Duration(seconds: 1)), isNull);
+      await _waitUntil(() => requests.containsKey('/latest.mp3'));
+      expect(requests.containsKey('/obsolete.mp3'), isFalse);
+      requests['/latest.mp3']!.response.add([2]);
+      await requests['/latest.mp3']!.response.close();
+      expect(await latest, isNotNull);
+      service.releaseOwner('b');
+      expect(await other.timeout(const Duration(seconds: 1)), isNull);
+      final files = await directory
+          .list(recursive: true)
+          .where((e) => e is File)
+          .toList();
+      expect(files, hasLength(1));
+      expect(files.single.path.endsWith('.part'), isFalse);
+    },
+  );
+
+  test('re-entry to a cancelled track waits for partial cleanup', () async {
+    final directory = await Directory.systemTemp.createTemp('asmr_reentry_');
+    final requests = <HttpRequest>[];
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      requests.add(request);
+      request.response.add([1]);
+      await request.response.flush();
+    });
+    final service = _service(directory);
+    addTearDown(() async {
+      await service.dispose();
+      await server.close(force: true);
+      await directory.delete(recursive: true);
+    });
+    final track = _track(_url(server, '/same.mp3'));
+    final first = service.cacheTrack(track, ownerId: 'session');
+    await _waitUntil(() => requests.length == 1);
+    service.releaseOwner('session');
+    final replacement = service.cacheTrack(track, ownerId: 'session');
+    expect(await first, isNull);
+    await _waitUntil(() => requests.length == 2);
+    requests.last.response.add([2, 3]);
+    await requests.last.response.close();
+    final output = await replacement;
+    expect(output, isNotNull);
+    expect(await File(output!).readAsBytes(), [1, 2, 3]);
+    expect(
+      await directory.list(recursive: true)
+          .where((e) => e.path.endsWith('.part')).toList(),
+      isEmpty,
+    );
+  });
+
+  test(
+    'release before root lookup finishes does not start a request',
+    () async {
+      final root = Completer<Directory>();
+      final directory = await Directory.systemTemp.createTemp(
+        'asmr_early_stop_',
+      );
+      var requests = 0;
+      final service = AsmrPlaybackCacheService(
+        temporaryDirectory: () => root.future,
+        httpClientFactory: () {
+          requests++;
+          return _StreamClient(Stream.value([1]));
+        },
+      );
+      addTearDown(() async {
+        await service.dispose();
+        await directory.delete(recursive: true);
+      });
+      final pending = service.cacheTrack(
+        _track('https://example.test/audio.mp3'),
+        ownerId: 'session',
+      );
+      service.releaseOwner('session');
+      root.complete(directory);
+      expect(await pending, isNull);
+      expect(requests, 0);
+    },
+  );
+
+  test(
+    'releasing an HLS owner cancels without committing a partial file',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'asmr_hls_owner_',
+      );
+      final started = Completer<void>();
+      final transfer = _HlsCacheTransfer(started: started);
+      final service = AsmrPlaybackCacheService(
+        temporaryDirectory: () async => directory,
+        hlsAudioTransfer: transfer,
+      );
+      addTearDown(() async {
+        await service.dispose();
+        await directory.delete(recursive: true);
+      });
+      final pending = service.cacheTrack(
+        _track('https://example.test/audio.m3u8'),
+        ownerId: 'session',
+      );
+      await started.future;
+      service.releaseOwner('session');
+      expect(await pending.timeout(const Duration(seconds: 1)), isNull);
+      expect(transfer.cancelled, isTrue);
+      expect(
+        await directory.list(recursive: true).where((e) => e is File).toList(),
+        isEmpty,
+      );
+    },
+  );
+
   test('dispose finishes active and queued cache transfers', () async {
     final directory = await Directory.systemTemp.createTemp('asmr_queue_stop_');
     var requests = 0;

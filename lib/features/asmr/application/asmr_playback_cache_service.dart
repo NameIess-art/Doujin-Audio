@@ -34,49 +34,100 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
   final Future<Directory> Function() _temporaryDirectory;
   final Duration requestTimeout;
   final Duration downloadIdleTimeout;
-  final Map<String, Future<String?>> _inFlight = <String, Future<String?>>{};
-  final Set<HttpClient> _activeClients = <HttpClient>{};
-  final Queue<Completer<bool>> _waitingTransfers = Queue<Completer<bool>>();
+  final Map<String, _PlaybackCacheTransfer> _inFlight = {};
+  final Map<String, _PlaybackCacheTransfer> _owners = {};
+  final Queue<_PlaybackCacheTransfer> _waitingTransfers = Queue();
   int _activeTransfers = 0;
   bool _disposed = false;
 
   @override
-  Future<String?> cacheTrack(MusicTrack track, {String? playedPath}) async {
-    if (_disposed) return null;
-    if (!const {'asmr.one', 'jp-asmr'}.contains(track.remoteMetadataKind)) {
-      return null;
-    }
-
+  Future<String?> cacheTrack(
+    MusicTrack track, {
+    String? playedPath,
+    String? ownerId,
+  }) async {
     try {
-      final source = _cacheableSource(track, playedPath: playedPath);
-      if (source == null) return null;
-      final root = await _cacheRoot();
       if (_disposed) return null;
-      final target = File(path.join(root.path, _fileNameFor(source, track)));
-      final existing = _inFlight[target.path];
-      if (existing != null) return existing;
+      if (!const {'asmr.one', 'jp-asmr'}.contains(track.remoteMetadataKind)) {
+        if (ownerId != null) releaseOwner(ownerId);
+        return null;
+      }
+      final source = _cacheableSource(track, playedPath: playedPath);
+      if (source == null) {
+        if (ownerId != null) releaseOwner(ownerId);
+        return null;
+      }
+      final key = _fileNameFor(source, track);
+      final previous = _inFlight[key];
+      if (ownerId != null && !identical(_owners[ownerId], previous)) {
+        releaseOwner(ownerId);
+      }
+      final transfer = previous != null && !previous.cancelled
+          ? previous
+          : _PlaybackCacheTransfer();
+      if (ownerId == null) {
+        transfer.unowned = true;
+      } else {
+        transfer.owners.add(ownerId);
+        _owners[ownerId] = transfer;
+      }
+      if (identical(transfer, previous)) return transfer.result;
 
-      late final Future<String?> task;
-      task =
-          _cacheTarget(
+      // A replacement for the same file must wait for cancelled .part cleanup.
+      final pendingCleanup = previous?.result;
+      _inFlight[key] = transfer;
+      transfer.result = () async {
+        try {
+          await pendingCleanup;
+          if (transfer.cancelled) return null;
+          final root = await _cacheRoot();
+          if (transfer.cancelled) return null;
+          return await _cacheTarget(
+            transfer: transfer,
             root: root,
-            target: target,
+            target: File(path.join(root.path, key)),
             source: source,
             expectedBytes: _expectedBytes(track, source),
-          ).whenComplete(() {
-            if (identical(_inFlight[target.path], task)) {
-              _inFlight.remove(target.path);
-            }
-          });
-      _inFlight[target.path] = task;
-      return task;
+          );
+        } catch (error, stackTrace) {
+          if (!transfer.cancelled) _logFailure(error, stackTrace);
+          return null;
+        } finally {
+          if (identical(_inFlight[key], transfer)) _inFlight.remove(key);
+          for (final owner in transfer.owners) {
+            if (identical(_owners[owner], transfer)) _owners.remove(owner);
+          }
+        }
+      }();
+      return transfer.result;
     } catch (error, stackTrace) {
+      if (ownerId != null) releaseOwner(ownerId);
       _logFailure(error, stackTrace);
       return null;
     }
   }
 
+  @override
+  void releaseOwner(String ownerId) {
+    final transfer = _owners.remove(ownerId);
+    if (transfer == null) return;
+    transfer.owners.remove(ownerId);
+    if (transfer.owners.isEmpty && !transfer.unowned) _cancel(transfer);
+  }
+
+  void _cancel(_PlaybackCacheTransfer transfer) {
+    transfer.cancelled = true;
+    final waiting = transfer.waiting;
+    if (waiting != null && _waitingTransfers.remove(transfer)) {
+      transfer.waiting = null;
+      waiting.complete(false);
+    }
+    transfer.request?.abort();
+    transfer.client?.close(force: true);
+  }
+
   Future<String?> _cacheTarget({
+    required _PlaybackCacheTransfer transfer,
     required Directory root,
     required File target,
     required String source,
@@ -89,7 +140,7 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
     ]);
     try {
       final reference = PlaybackMediaReference.parse(source);
-      if (_disposed) return null;
+      if (transfer.cancelled) return null;
       await root.create(recursive: true);
       final legacy = File(
         path.join(root.path, path.basename(target.path).substring(3)),
@@ -118,29 +169,30 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
         await temp.delete();
       }
       if (reference.isHls) {
-        if (!await _acquireTransfer()) return null;
+        if (!await _acquireTransfer(transfer)) return null;
         try {
           await _hlsAudioTransfer.save(
             reference: reference,
             output: temp,
-            isCancelled: () => _disposed,
+            isCancelled: () => transfer.cancelled,
           );
         } finally {
           _releaseTransfer();
         }
       } else {
-        await _download(source, temp, expectedBytes: expectedBytes);
+        await _download(transfer, source, temp, expectedBytes: expectedBytes);
       }
-      if (_disposed) return null;
+      if (transfer.cancelled) return null;
       final length = await temp.length();
       if (length <= 0 || (expectedBytes != null && length != expectedBytes)) {
         throw const HttpException('ASMR playback cache length mismatch.');
       }
+      if (transfer.cancelled) return null;
       await temp.rename(target.path);
       AppCacheService.scheduleEnforce();
       return target.path;
     } catch (error, stackTrace) {
-      _logFailure(error, stackTrace);
+      if (!transfer.cancelled) _logFailure(error, stackTrace);
       return null;
     } finally {
       lease.release();
@@ -228,25 +280,31 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
   }
 
   Future<void> _download(
+    _PlaybackCacheTransfer transfer,
     String source,
     File target, {
     required int? expectedBytes,
   }) async {
-    if (!await _acquireTransfer()) return;
+    if (!await _acquireTransfer(transfer)) return;
     HttpClient? client;
     HttpClientRequest? request;
     IOSink? sink;
     try {
-      if (_disposed) return;
+      if (transfer.cancelled) return;
       client = _httpClientFactory();
       client.autoUncompress = false;
-      _activeClients.add(client);
+      transfer.client = client;
       try {
         client.connectionTimeout = requestTimeout;
       } catch (_) {
         // Some injected clients do not expose socket options.
       }
       request = await client.getUrl(Uri.parse(source)).timeout(requestTimeout);
+      transfer.request = request;
+      if (transfer.cancelled) {
+        request.abort();
+        return;
+      }
       request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
       for (final header in PlaybackMediaReference.requestHeadersForUri(
         Uri.parse(source),
@@ -278,7 +336,9 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
       sink = target.openWrite();
       await sink.addStream(
         response.timeout(downloadIdleTimeout).map((chunk) {
-          if (_disposed) throw StateError('ASMR playback cache was disposed.');
+          if (transfer.cancelled) {
+            throw StateError('ASMR playback cache cancelled.');
+          }
           receivedBytes += chunk.length;
           if ((responseBytes >= 0 && receivedBytes > responseBytes) ||
               (expectedBytes != null && receivedBytes > expectedBytes)) {
@@ -303,26 +363,31 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
         await sink?.close();
       } finally {
         client?.close(force: true);
-        _activeClients.remove(client);
+        transfer.client = null;
+        transfer.request = null;
         _releaseTransfer();
       }
     }
   }
 
-  Future<bool> _acquireTransfer() {
-    if (_disposed) return Future<bool>.value(false);
+  Future<bool> _acquireTransfer(_PlaybackCacheTransfer transfer) {
+    if (transfer.cancelled) return Future<bool>.value(false);
     if (_activeTransfers < 2) {
       _activeTransfers++;
       return Future<bool>.value(true);
     }
     final waiting = Completer<bool>();
-    _waitingTransfers.addLast(waiting);
+    transfer.waiting = waiting;
+    _waitingTransfers.addLast(transfer);
     return waiting.future;
   }
 
   void _releaseTransfer() {
     if (_waitingTransfers.isNotEmpty && !_disposed) {
-      _waitingTransfers.removeFirst().complete(true);
+      final next = _waitingTransfers.removeFirst();
+      final waiting = next.waiting!;
+      next.waiting = null;
+      waiting.complete(true);
     } else {
       _activeTransfers--;
     }
@@ -332,14 +397,12 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    while (_waitingTransfers.isNotEmpty) {
-      _waitingTransfers.removeFirst().complete(false);
+    final transfers = _inFlight.values.toList(growable: false);
+    for (final transfer in transfers) {
+      _cancel(transfer);
     }
-    for (final client in _activeClients.toList(growable: false)) {
-      client.close(force: true);
-    }
-    await Future.wait(_inFlight.values.toList(growable: false));
-    _activeClients.clear();
+    await Future.wait(transfers.map((transfer) => transfer.result));
+    _owners.clear();
     _inFlight.clear();
   }
 
@@ -350,4 +413,14 @@ class AsmrPlaybackCacheService implements PlaybackTrackCache {
       stackTrace: stackTrace,
     );
   }
+}
+
+final class _PlaybackCacheTransfer {
+  final Set<String> owners = {};
+  bool unowned = false;
+  bool cancelled = false;
+  late final Future<String?> result;
+  Completer<bool>? waiting;
+  HttpClient? client;
+  HttpClientRequest? request;
 }

@@ -16,6 +16,38 @@ void main() {
   const safRoot =
       'content://com.android.externalstorage.documents/tree/primary%3AMusic';
 
+  test('unknown file sizes follow immutable snapshot replacements', () async {
+    final sizes = <String, int>{for (var i = 0; i < 10000; i++) '$i.mp3': 10};
+    final known = _task(1).copyWith(
+      totalBytes: 100000,
+      totalFiles: sizes.length,
+      fileTotalBytes: sizes,
+    );
+    expect(known.hasUnknownFileSizes, isFalse);
+    sizes['0.mp3'] = 0;
+    expect(known.hasUnknownFileSizes, isFalse);
+    final unknown = known.copyWith(fileTotalBytes: sizes);
+    expect(unknown.hasUnknownFileSizes, isTrue);
+    expect(unknown.copyWith(downloadedBytes: 1).hasUnknownFileSizes, isTrue);
+
+    final store = AsmrDownloadTaskStore(
+      persistTasks: false,
+      persistenceSnapshot: (task) => PersistedDownloadTask(
+        task: task,
+        createdOutputPaths: const {},
+        createdJsonDocuments: const {},
+      ),
+    );
+    addTearDown(store.shutdown);
+    store[_key(1)] = unknown;
+    store.recordDownloadChunk(_key(1), '0.mp3', 100001, 100001);
+    expect(store.liveDownloadedBytes(_key(1)), 100001);
+    store[_key(1)] = known;
+    store.setLiveDownloadedBytes(_key(1), 0);
+    store.recordDownloadChunk(_key(1), '0.mp3', 100001, 100001);
+    expect(store.liveDownloadedBytes(_key(1)), 100000);
+  });
+
   for (final restoreSucceeded in [false, true]) {
     test(
       'store preserves records until restoration succeeds: $restoreSucceeded',

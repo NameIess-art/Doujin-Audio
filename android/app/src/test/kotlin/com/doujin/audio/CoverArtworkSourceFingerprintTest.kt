@@ -22,6 +22,28 @@ class CoverArtworkSourceFingerprintTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
+    fun `preferred discovery copies only the highest priority image and full discovery keeps all candidates`() {
+        val folder = temporaryFolder.newFolder()
+        File(folder, "a.jpg").writeText("other")
+        File(folder, "cover.jpg").writeText("preferred")
+        File(folder, "folder.jpg").writeText("folder")
+        val context = RuntimeEnvironment.getApplication()
+        val storage = DocumentStorageOperations(context)
+        val artwork = CoverArtworkOperations(context, storage, MediaMetadataOperations(context, storage))
+        val cache = File(context.cacheDir, "doujin_audio_covers")
+        val before = cache.listFiles().orEmpty().map { it.name }.toSet()
+
+        val preferred = artwork.discover("first-only", null, folder.absolutePath,
+            recursive = false, preferredOnly = true)
+
+        assertEquals(1, preferred.size)
+        assertEquals("preferred", File(preferred.single().getValue("path")).readText())
+        assertEquals(1, cache.listFiles().orEmpty().count { it.name !in before })
+        val all = artwork.discover("first-only", null, folder.absolutePath, recursive = false)
+        assertEquals(listOf("preferred", "folder", "other"), all.map { File(it.getValue("path")).readText() })
+    }
+
+    @Test
     fun `colliding Java path hashes retain distinct image files and contents`() {
         val folder = temporaryFolder.newFolder()
         File(folder, "Aa.jpg").apply { writeText("first"); setLastModified(100_000L) }

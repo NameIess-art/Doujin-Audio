@@ -54,13 +54,20 @@ final class CoverArtworkSourceResolver {
   bool get _isClearingPersistentCache => _isClearing();
   final Future<List<String>> Function(String rootPath, bool recursive)?
   _filesystemImageScanner;
-  final Map<({String rootPath, bool recursive}), _FolderImageIndex>
+  final Map<
+    ({String rootPath, bool recursive, bool preferredOnly}),
+    _FolderImageIndex
+  >
   _folderImageIndexFutures = LinkedHashMap(
     equals: (first, second) =>
         first.recursive == second.recursive &&
+        first.preferredOnly == second.preferredOnly &&
         PathMatcher.equalsNormalized(first.rootPath, second.rootPath),
-    hashCode: (key) =>
-        Object.hash(PathMatcher.equivalenceKey(key.rootPath), key.recursive),
+    hashCode: (key) => Object.hash(
+      PathMatcher.equivalenceKey(key.rootPath),
+      key.recursive,
+      key.preferredOnly,
+    ),
   );
   final Map<String, Map<String, String>> _folderImageSourceByDisplayKey = {};
   final Map<String, String> _folderImageDisplayBySourceKey = {};
@@ -357,10 +364,23 @@ final class CoverArtworkSourceResolver {
     });
     try {
       try {
+        final scope = rootFolder ?? track.groupKey;
+        final sharedSafFolder =
+            includeGroupCoverFallback &&
+            PathMatcher.isContentUri(track.path) &&
+            PathMatcher.isContentUri(scope);
+        if (sharedSafFolder) {
+          final images = await discoverFolderImages(scope, preferredOnly: true);
+          if (images.isNotEmpty) return images.first;
+        }
         final nativeCover = await _fileCacheGateway.resolveTrackCover(
           path: track.path,
-          groupKey: includeGroupCoverFallback ? track.groupKey : null,
-          rootFolder: rootFolder,
+          // SAF folder discovery is shared by scope above; probing each track
+          // must not repeat that directory walk when the folder has no image.
+          groupKey: includeGroupCoverFallback && !sharedSafFolder
+              ? track.groupKey
+              : null,
+          rootFolder: sharedSafFolder ? null : rootFolder,
         );
         if (nativeCover != null && nativeCover.isNotEmpty) {
           return await persistBridgeCover(
@@ -653,10 +673,18 @@ final class CoverArtworkSourceResolver {
   }
 
   Future<String?> resolvePreferredFolderCover(String folderPath) async {
-    final images = await discoverFolderImages(folderPath, recursive: false);
+    final preferredOnly = PathMatcher.isContentUri(folderPath);
+    final images = await discoverFolderImages(
+      folderPath,
+      recursive: false,
+      preferredOnly: preferredOnly,
+    );
     if (images.isNotEmpty) return images.first;
 
-    final nestedImages = await discoverFolderImages(folderPath);
+    final nestedImages = await discoverFolderImages(
+      folderPath,
+      preferredOnly: preferredOnly,
+    );
     if (nestedImages.isNotEmpty) return nestedImages.first;
 
     for (final track in tracksInCompleteCoverScope(folderPath)) {
@@ -675,11 +703,13 @@ final class CoverArtworkSourceResolver {
     String folderPath, {
     bool recursive = true,
     bool propagateFailure = false,
+    bool preferredOnly = false,
   }) async => List<String>.unmodifiable(
     (await discoverFolderImageReferences(
       folderPath,
       recursive: recursive,
       propagateFailure: propagateFailure,
+      preferredOnly: preferredOnly,
     )).map((image) => image.displayPath),
   );
 
@@ -688,16 +718,33 @@ final class CoverArtworkSourceResolver {
     bool recursive = true,
     bool propagateFailure = false,
     bool refresh = false,
+    bool preferredOnly = false,
   }) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     final isContent = PathMatcher.isContentUri(normalizedFolder);
     final indexRoot = recursive && !isContent
         ? folderImageIndexRoot(normalizedFolder)
         : normalizedFolder;
-    final exactKey = (rootPath: normalizedFolder, recursive: recursive);
+    final exactKey = (
+      rootPath: normalizedFolder,
+      recursive: recursive,
+      preferredOnly: preferredOnly,
+    );
     final key = refresh || _folderImageIndexFutures.containsKey(exactKey)
         ? exactKey
-        : (rootPath: indexRoot, recursive: recursive);
+        : (
+            rootPath: indexRoot,
+            recursive: recursive,
+            preferredOnly: preferredOnly,
+          );
+    if (refresh) {
+      _folderImageIndexFutures.removeWhere(
+        (other, _) =>
+            other.preferredOnly &&
+            (PathMatcher.isWithinOrEqual(other.rootPath, normalizedFolder) ||
+                PathMatcher.isWithinOrEqual(normalizedFolder, other.rootPath)),
+      );
+    }
     final lookup = refresh
         ? _refreshFolderImageIndex(key)
         : _folderImageIndexFutures.putIfAbsent(
@@ -765,13 +812,14 @@ final class CoverArtworkSourceResolver {
   }
 
   _FolderImageIndex _newFolderImageIndex(
-    ({String rootPath, bool recursive}) key,
+    ({String rootPath, bool recursive, bool preferredOnly}) key,
   ) {
     final index = _FolderImageIndex();
     index.result =
         _buildFolderImageIndex(
           key.rootPath,
           recursive: key.recursive,
+          preferredOnly: key.preferredOnly,
           isCurrent: () => identical(_folderImageIndexFutures[key], index),
         ).catchError((Object error, StackTrace stackTrace) {
           if (identical(_folderImageIndexFutures[key], index)) {
@@ -790,7 +838,7 @@ final class CoverArtworkSourceResolver {
   }
 
   _FolderImageIndex _refreshFolderImageIndex(
-    ({String rootPath, bool recursive}) key,
+    ({String rootPath, bool recursive, bool preferredOnly}) key,
   ) {
     final pending = _folderImageIndexFutures[key];
     if (pending?.refreshing == true) return pending!;
@@ -809,6 +857,8 @@ final class CoverArtworkSourceResolver {
     // Each patch captures its predecessor, so concurrent sibling scans merge.
     for (final entry in _folderImageIndexFutures.entries) {
       if (identical(entry.value, refreshed) ||
+          entry.key.preferredOnly ||
+          key.preferredOnly ||
           !entry.key.recursive ||
           !PathMatcher.isWithinOrEqual(key.rootPath, entry.key.rootPath)) {
         continue;
@@ -871,6 +921,7 @@ final class CoverArtworkSourceResolver {
   Future<List<CoverImageReference>> _buildFolderImageIndex(
     String rootPath, {
     required bool recursive,
+    required bool preferredOnly,
     required bool Function() isCurrent,
   }) async {
     if (PathMatcher.isContentUri(rootPath)) {
@@ -882,6 +933,7 @@ final class CoverArtworkSourceResolver {
           path: rootPath,
           rootFolder: rootPath,
           recursive: recursive,
+          preferredOnly: preferredOnly,
         );
         // A retired native discovery must not repopulate the cleared index.
         if (!isCurrent()) return const [];

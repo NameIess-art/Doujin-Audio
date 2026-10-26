@@ -129,9 +129,10 @@ internal class FileCacheOperations(context: Context) {
         path: String,
         groupKey: String?,
         rootFolder: String?,
-        recursive: Boolean
+        recursive: Boolean,
+        preferredOnly: Boolean = false
     ): List<Map<String, String>> =
-        covers.discover(path, groupKey, rootFolder, recursive)
+        covers.discover(path, groupKey, rootFolder, recursive, preferredOnly)
 
     fun storageUsage(): HashMap<String, Long> {
         val stats = StatFs(Environment.getExternalStorageDirectory().absolutePath)

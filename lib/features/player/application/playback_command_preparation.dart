@@ -233,7 +233,6 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           return false;
         }
         if (!_isSessionLoadCurrent(session, generation)) return false;
-        session.markNativePreparation(generation, null);
         _applyPlaybackPreparationTarget(
           session,
           target,
@@ -241,6 +240,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           targetQueueIndex: targetQueueIndex,
         );
         session.loadedPath = target.resolvedPath;
+        session.markNativePreparation(generation, null);
         final snapshot = nativeResult.snapshot;
         if (snapshot != null) {
           _handleNativePlaybackSnapshot(
@@ -253,12 +253,6 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           );
         }
         prepared = true;
-        unawaited(
-          _cacheAsmrPlaybackTrack(
-            target.track,
-            playedPath: target.resolvedPath,
-          ),
-        );
       } else {
         if (forceStartAtZero) {
           await _nativePlaybackRepository.seek(session.id, Duration.zero);
@@ -582,22 +576,49 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   List<Uri>? _candidatePlaybackUrisForTrack(MusicTrack? track) =>
       _candidatePlaybackUris(track);
 
-  Future<void> _cacheAsmrPlaybackTrack(
-    MusicTrack? track, {
-    required String playedPath,
-  }) async {
+  void _syncAutomaticPlaybackCache(PlaybackSession session) {
+    final playedPath = session.loadedPath;
     if (!_asmrPlaybackCacheEnabled() ||
-        track == null ||
-        !track.isRemoteAsmr ||
-        !PathMatcher.isRemoteUri(track.path) ||
-        !PathMatcher.isRemoteUri(playedPath)) {
+        session.pendingNativeTrackPath != null ||
+        playedPath == null ||
+        !PathMatcher.isRemoteUri(playedPath) ||
+        !PathMatcher.isRemoteUri(session.currentTrackPath)) {
+      _automaticPlaybackCacheTracks.remove(session.id);
+      _asmrPlaybackCacheService.releaseOwner(session.id);
       return;
     }
-    final cachedPath = await _asmrPlaybackCacheService.cacheTrack(
-      track,
+    final request = (
+      trackPath: session.currentTrackPath,
       playedPath: playedPath,
     );
-    if (cachedPath == null || cachedPath.isEmpty) return;
+    if (_automaticPlaybackCacheTracks[session.id] == request) return;
+    final track = _sessionTrackForPath(session, session.currentTrackPath);
+    if (track == null || !track.isRemoteAsmr) {
+      _automaticPlaybackCacheTracks.remove(session.id);
+      _asmrPlaybackCacheService.releaseOwner(session.id);
+      return;
+    }
+    _automaticPlaybackCacheTracks[session.id] = request;
+    unawaited(_cacheAsmrPlaybackTrack(session, track, request));
+  }
+
+  Future<void> _cacheAsmrPlaybackTrack(
+    PlaybackSession session,
+    MusicTrack track,
+    ({String trackPath, String playedPath}) request,
+  ) async {
+    final cachedPath = await _asmrPlaybackCacheService.cacheTrack(
+      track,
+      playedPath: request.playedPath,
+      ownerId: session.id,
+    );
+    if (cachedPath == null ||
+        cachedPath.isEmpty ||
+        !_isRegisteredSession(session) ||
+        !_asmrPlaybackCacheEnabled() ||
+        _automaticPlaybackCacheTracks[session.id] != request) {
+      return;
+    }
     _playbackFacade.rememberRetargetedPath(track.path, cachedPath);
   }
 

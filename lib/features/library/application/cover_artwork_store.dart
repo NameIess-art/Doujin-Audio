@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
@@ -72,6 +73,10 @@ final class CoverArtworkStore {
   final Set<String> _accessedArtifacts = <String>{};
   Future<void>? _initializeFuture;
   Future<void> _operations = Future<void>.value();
+  Completer<void>? _pendingCommit;
+  int _pendingBatchSize = 0;
+  int _queuedOperations = 0;
+  bool _indexDirty = false;
   late Directory _root;
   late File _index;
   bool _initialized = false;
@@ -157,7 +162,7 @@ final class CoverArtworkStore {
       _bindings
         ..clear()
         ..addAll(migrated);
-      await _persistIndex();
+      await _persistIndex(immediate: true);
     }
   }
 
@@ -317,7 +322,7 @@ final class CoverArtworkStore {
         await _persistIndex();
       }
       return output.path;
-    });
+    }, coalesce: true);
   }
 
   Future<String?> putFile({
@@ -346,7 +351,7 @@ final class CoverArtworkStore {
         await _persistIndex();
       }
       return output;
-    });
+    }, coalesce: true);
   }
 
   /// A directory discovery commits its bindings with one durable index write.
@@ -456,7 +461,7 @@ final class CoverArtworkStore {
       if (_bindings[key] == stored) return;
       _bindings[key] = stored;
       await _persistIndex();
-    });
+    }, coalesce: true);
   }
 
   Future<void> invalidate(Iterable<String> logicalKeys) {
@@ -500,7 +505,7 @@ final class CoverArtworkStore {
       final previous = _managedArtifacts[key];
       _managedArtifacts[key] = 0;
       try {
-        await _persistIndex();
+        await _persistIndex(immediate: true);
       } catch (_) {
         if (previous == null) {
           _managedArtifacts.remove(key);
@@ -709,8 +714,40 @@ final class CoverArtworkStore {
     });
   }
 
-  Future<T> _enqueue<T>(Future<T> Function() operation) {
-    final result = _operations.then((_) => operation());
+  Future<T> _enqueue<T>(
+    Future<T> Function() operation, {
+    bool coalesce = false,
+  }) {
+    final precedingCommit = coalesce ? null : _pendingCommit;
+    if (!coalesce) {
+      _pendingCommit = null;
+      _pendingBatchSize = 0;
+    }
+    final commit = _pendingCommit ??= Completer<void>();
+    // Bound how long callers wait if other producers keep adding artwork.
+    final closesBatch = !coalesce || ++_pendingBatchSize == 32;
+    if (closesBatch) {
+      _pendingCommit = null;
+      _pendingBatchSize = 0;
+    }
+    _queuedOperations++;
+    final result = _operations.then((_) async {
+      // Bulk import, maintenance and authored references are barriers: earlier
+      // small writes must finish before the potentially long operation starts.
+      if (precedingCommit != null) await _commitIndex(precedingCommit);
+      try {
+        return await operation();
+      } finally {
+        _queuedOperations--;
+        if (closesBatch || _queuedOperations == 0) {
+          if (identical(_pendingCommit, commit)) {
+            _pendingCommit = null;
+            _pendingBatchSize = 0;
+          }
+          await _commitIndex(commit);
+        }
+      }
+    });
     _operations = result.then<void>(
       (_) {},
       onError: (Object error, StackTrace stackTrace) {
@@ -721,7 +758,22 @@ final class CoverArtworkStore {
         );
       },
     );
-    return result;
+    // The operation queue can advance without writing the full index for each
+    // cover, but callers still observe a durable commit before completion.
+    return Future.wait<Object?>([
+      result,
+      commit.future,
+    ]).then((values) => values.first as T);
+  }
+
+  Future<void> _commitIndex(Completer<void> commit) async {
+    if (commit.isCompleted) return;
+    try {
+      if (_indexDirty) await _writeIndex();
+      commit.complete();
+    } catch (error, stackTrace) {
+      commit.completeError(error, stackTrace);
+    }
   }
 
   File _artifactFile(CoverArtworkNamespace namespace, String fileName) => File(
@@ -758,21 +810,32 @@ final class CoverArtworkStore {
     }
   }
 
-  Future<void> _persistIndex() async {
+  Future<void> _persistIndex({bool immediate = false}) async {
+    _indexDirty = true;
+    if (immediate || _queuedOperations == 0) await _writeIndex();
+  }
+
+  Future<void> _writeIndex() async {
     await _root.create(recursive: true);
     final partial = File('${_index.path}.part');
-    final payload = json.encode(<String, Object>{
+    final snapshot = <String, Object>{
       'version': 2,
       if (_isAndroid())
         'androidGeneratedVersion': _androidGeneratedArtworkVersion,
       'bindings': _bindings,
       'legacyAliases': _legacyAliases,
       'managedArtifacts': _managedArtifacts,
-    });
+    };
+    final payload =
+        _bindings.length + _legacyAliases.length + _managedArtifacts.length >
+            256
+        ? await _encodeCoverIndex(snapshot)
+        : json.encode(snapshot);
     try {
       await partial.writeAsString(payload, flush: true);
       if (await _index.exists()) await _index.delete();
       await partial.rename(_index.path);
+      _indexDirty = false;
     } finally {
       if (await partial.exists()) await partial.delete();
     }
@@ -834,3 +897,6 @@ final class CoverArtworkStore {
     return total;
   }
 }
+
+Future<String> _encodeCoverIndex(Map<String, Object> snapshot) =>
+    Isolate.run(() => json.encode(snapshot));

@@ -336,14 +336,82 @@ void main() {
     final retained = await file(imports, 'live.flac', 3);
     final orphan = await file(imports, 'old.flac', 4);
     expect(
-      await AppCacheService.cleanupOrphanedPersistentImports([
-        retained.path,
-      ], importDirectory: imports),
+      await AppCacheService.cleanupOrphanedPersistentImports(
+        (candidate) => PathMatcher.equalsNormalized(candidate, retained.path),
+        importDirectory: imports,
+      ),
       4,
     );
     expect(await retained.exists(), isTrue);
     expect(await orphan.exists(), isFalse);
   });
+
+  test(
+    'persistent cleanup rechecks membership immediately before deletion',
+    () async {
+      final imports = await Directory(
+        path.join(support.path, 'imports'),
+      ).create();
+      final added = await file(imports, 'new.flac', 3);
+      final retained = <String>{};
+      AppCacheService.resetForTest(
+        temporaryDirectories: () async => [],
+        beforeDelete: (candidate) async => retained.add(candidate),
+      );
+      expect(
+        await AppCacheService.cleanupOrphanedPersistentImports(
+          retained.contains,
+          importDirectory: imports,
+        ),
+        0,
+      );
+      expect(await added.exists(), isTrue);
+    },
+  );
+
+  test(
+    'persistent import lease protects copies until their catalog commit',
+    () async {
+      final imports = await Directory(
+        path.join(support.path, 'imports'),
+      ).create();
+      final lease = await AppCacheService.protectPersistentImports(
+        importDirectory: imports,
+      );
+      final added = await file(imports, 'copy.flac', 3);
+      final retained = <String>{};
+      try {
+        expect(
+          await AppCacheService.cleanupOrphanedPersistentImports(
+            retained.contains,
+            importDirectory: imports,
+          ),
+          0,
+        );
+        expect(await added.exists(), isTrue);
+        retained.add(added.path);
+      } finally {
+        lease.release();
+      }
+      expect(
+        await AppCacheService.cleanupOrphanedPersistentImports(
+          retained.contains,
+          importDirectory: imports,
+        ),
+        0,
+      );
+      expect(await added.exists(), isTrue);
+      retained.clear();
+      expect(
+        await AppCacheService.cleanupOrphanedPersistentImports(
+          retained.contains,
+          importDirectory: imports,
+        ),
+        3,
+      );
+      expect(await added.exists(), isFalse);
+    },
+  );
 
   test('directory links are not scanned or followed by cleanup', () async {
     final outside = await Directory(

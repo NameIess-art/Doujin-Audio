@@ -76,6 +76,9 @@ void registerAsmrControllerStateTests({
       final tags = controller.interestTags;
       final voices = controller.voiceActorInterests;
       final circles = controller.circleInterests;
+      final tagCatalog = controller.allTags;
+      final voiceCatalog = controller.allVoiceActors;
+      final circleCatalog = controller.allCircles;
       final initialPublications = publications.length;
       expect(initialPublications, 1);
       await controller.setVisibleCategories([AsmrCategoryType.release]);
@@ -84,6 +87,10 @@ void registerAsmrControllerStateTests({
       expect(controller.interestTags, same(tags));
       expect(controller.voiceActorInterests, same(voices));
       expect(controller.circleInterests, same(circles));
+      expect(controller.allTags, same(tagCatalog));
+      expect(controller.allVoiceActors, same(voiceCatalog));
+      expect(controller.allCircles, same(circleCatalog));
+      expect(() => tagCatalog.clear(), throwsUnsupportedError);
       expect(publications, hasLength(initialPublications));
       expect(() => tags.clear(), throwsUnsupportedError);
       await controller.recordTagListeningBatch(
@@ -97,6 +104,10 @@ void registerAsmrControllerStateTests({
       expect(controller.interestTags.single.tag.name, 'New tag');
       expect(controller.interestTags, isNot(same(tags)));
       expect(controller.voiceActorInterests, same(voices));
+      expect(controller.allTags, isNot(same(tagCatalog)));
+      expect(controller.allTags.single.name, 'New tag');
+      expect(controller.allVoiceActors, same(voiceCatalog));
+      expect(controller.allCircles, same(circleCatalog));
       expect(publications, hasLength(initialPublications + 1));
     },
   );

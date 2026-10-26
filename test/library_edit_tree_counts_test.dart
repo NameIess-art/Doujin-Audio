@@ -5,6 +5,7 @@ import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/library_state_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree_projection.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree.dart';
 import 'package:doujin_audio/features/library/presentation/library_edit_tree_tiles.dart';
@@ -17,6 +18,15 @@ import 'support/app_runtime_test_fixture.dart';
 
 class _CountingLibraryService extends LibraryService {
   int trackExclusionReads = 0;
+  int exclusionSnapshots = 0;
+
+  @override
+  LibraryExclusionMatcher libraryExclusionMatcherForLibrary(
+    String libraryPath,
+  ) {
+    exclusionSnapshots++;
+    return super.libraryExclusionMatcherForLibrary(libraryPath);
+  }
 
   @override
   bool isLibraryPathExcluded(String libraryPath, String entityPath) {
@@ -118,7 +128,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(service.trackExclusionReads, 2);
+      expect(service.trackExclusionReads, 0);
+      expect(service.exclusionSnapshots, 1);
       expect(
         tester.widget<FileTreeRow>(find.byType(FileTreeRow)).subtitle,
         fixture.languageProvider.tr('audio_count', {'count': 2}),
@@ -129,11 +140,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Disc'), findsOneWidget);
       expect(service.trackExclusionReads, 0);
+      expect(service.exclusionSnapshots, 1);
       await tester.tap(find.text('Work'));
       await tester.pumpAndSettle();
       update(() {});
       await tester.pumpAndSettle();
       expect(service.trackExclusionReads, 0);
+      expect(service.exclusionSnapshots, 1);
 
       library.setLibraryTrackExcluded(
         '/library',

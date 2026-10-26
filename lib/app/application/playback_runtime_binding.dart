@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../features/library/application/library_facade.dart';
@@ -54,7 +56,10 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
         syncPlaybackState();
         playback.scheduleSessionOrderPersistence();
       },
-      onSessionStateChanged: syncPlaybackState,
+      onSessionStateChanged: () {
+        playbackCommands.synchronizePlaybackCacheRequests();
+        syncPlaybackState();
+      },
       onRuntimeStateChanged: () {
         keepAlive.sync();
         notifications.syncPlaybackState();
@@ -84,17 +89,23 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
     playback.attachCommandPort(playbackCommands);
     playback.attachLoopModeSynchronizer(playbackCommands.synchronizeLoopMode);
     final binding = PlaybackRuntimeBinding._(playback);
+    binding._cacheSettingSubscription = settings.slice.stream
+        .map((state) => state.asmrPlaybackCacheEnabled)
+        .distinct()
+        .listen((_) => playbackCommands.synchronizePlaybackCacheRequests());
     _attached[playback] = binding;
     return binding;
   }
 
   final PlaybackFacade _playback;
+  late final StreamSubscription<bool> _cacheSettingSubscription;
   bool _disposed = false;
 
   @override
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    await _cacheSettingSubscription.cancel();
     _playback.detachRuntime();
     _attached[_playback] = null;
   }

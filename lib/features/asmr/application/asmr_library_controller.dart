@@ -146,6 +146,13 @@ class AsmrLibraryController extends ChangeNotifier
   AsmrTagPreferences _voiceActorPreferences = AsmrTagPreferences();
   AsmrTagPreferences _circlePreferences = AsmrTagPreferences();
   final _interestSnapshots = Expando<_InterestSnapshot>();
+  final _sortedCatalogs = Expando<List<AsmrTag>>();
+
+  List<AsmrTag> _sortedCatalog(AsmrTagPreferences preferences) =>
+      _sortedCatalogs[preferences] ??= immutableList(
+        preferences.tags.values.toList()
+          ..sort((a, b) => a.name.compareTo(b.name)),
+      );
   _InterestSnapshot _interestSnapshot(AsmrTagPreferences preferences) {
     final cached = _interestSnapshots[preferences];
     if (cached != null) return cached;
@@ -165,9 +172,7 @@ class AsmrLibraryController extends ChangeNotifier
       Set.unmodifiable(_voiceActorPreferences.manualInterests);
   Set<String> get excludedVoiceActorKeys =>
       Set.unmodifiable(_voiceActorPreferences.excluded);
-  List<AsmrTag> get allVoiceActors =>
-      _voiceActorPreferences.tags.values.toList()
-        ..sort((a, b) => a.name.compareTo(b.name));
+  List<AsmrTag> get allVoiceActors => _sortedCatalog(_voiceActorPreferences);
   bool get voiceActorCatalogComplete => _voiceActorPreferences.catalogComplete;
   bool get isLoadingVoiceActorCatalog =>
       _creatorCatalogTasks.containsKey(_CreatorInterest.voiceActor);
@@ -180,9 +185,7 @@ class AsmrLibraryController extends ChangeNotifier
       Set.unmodifiable(_circlePreferences.manualInterests);
   Set<String> get excludedCircleKeys =>
       Set.unmodifiable(_circlePreferences.excluded);
-  List<AsmrTag> get allCircles =>
-      _circlePreferences.tags.values.toList()
-        ..sort((a, b) => a.name.compareTo(b.name));
+  List<AsmrTag> get allCircles => _sortedCatalog(_circlePreferences);
   bool get circleCatalogComplete => _circlePreferences.catalogComplete;
   bool get isLoadingCircleCatalog =>
       _creatorCatalogTasks.containsKey(_CreatorInterest.circle);
@@ -197,11 +200,7 @@ class AsmrLibraryController extends ChangeNotifier
   List<AsmrTagInterest> get listenedTagInterests => interestTags;
   Set<String> get manualInterestTagKeys =>
       Set.unmodifiable(_tagPreferences.manualInterests);
-  List<AsmrTag> get allTags {
-    final tags = _tagPreferences.tags.values.toList();
-    tags.sort((a, b) => a.name.compareTo(b.name));
-    return tags;
-  }
+  List<AsmrTag> get allTags => _sortedCatalog(_tagPreferences);
 
   AsmrSearchSuggestions _searchSuggestions = initialAsmrSearchSuggestions;
   AsmrSearchSuggestions get searchSuggestions => _searchSuggestions;

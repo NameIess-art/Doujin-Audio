@@ -3312,7 +3312,12 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
     String? groupKey,
     String? rootFolder,
     bool recursive = true,
-  }) async => discoveredImages?.call(path) ?? const <CoverImageReference>[];
+    bool preferredOnly = false,
+  }) async {
+    final images =
+        await discoveredImages?.call(path) ?? const <CoverImageReference>[];
+    return preferredOnly ? images.take(1).toList() : images;
+  }
 
   @override
   Future<String?> resolveVideoFrame({required String path, int? modifiedAtMs}) {

@@ -112,8 +112,10 @@ class AsmrDownloadTaskSnapshot {
       status == AsmrDownloadTaskStatus.preparing ||
       status == AsmrDownloadTaskStatus.downloading;
 
-  bool get hasUnknownFileSizes =>
-      fileTotalBytes.values.any((size) => size <= 0);
+  // A snapshot is immutable; receiving chunks must not rescan every file.
+  late final bool hasUnknownFileSizes = fileTotalBytes.values.any(
+    (size) => size <= 0,
+  );
 
   double? get progress {
     if (totalFiles > 0 && fileProgressFractions.isNotEmpty) {

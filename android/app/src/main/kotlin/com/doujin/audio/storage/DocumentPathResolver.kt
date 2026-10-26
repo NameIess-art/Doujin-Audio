@@ -390,7 +390,8 @@ internal class DocumentPathResolver(private val context: Context) {
 
     private fun startDocumentIdForTreeUri(uri: Uri): String? {
         return try {
-            if (DocumentsContract.isTreeUri(uri)) {
+            // A tree document URI also carries the selected directory, apart from the grant root.
+            if (DocumentsContract.isTreeUri(uri) && uri.pathSegments.size == 2) {
                 DocumentsContract.getTreeDocumentId(uri)
             } else {
                 DocumentsContract.getDocumentId(uri)

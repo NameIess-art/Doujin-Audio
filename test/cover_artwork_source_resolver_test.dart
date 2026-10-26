@@ -11,6 +11,147 @@ import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'SAF tracks share only their own complete folder scope until invalidated',
+    () async {
+      const firstScope = 'content://library/tree/root::work-a';
+      const otherScope = 'content://library/tree/root::work-b';
+      final scans = <String>[];
+      final gateway = _ImageGateway((root, recursive) async {
+        expect(recursive, isTrue);
+        scans.add(root);
+        return ['/cache/${root == firstScope ? 'a' : 'b'}.jpg'];
+      });
+      final library = LibraryService();
+      addTearDown(library.dispose);
+      final resolver = CoverArtworkSourceResolver(
+        libraryService: library,
+        fileCacheGateway: gateway,
+        artworkStore: CoverArtworkStore(),
+        isClearingPersistentCache: () => false,
+      );
+      MusicTrack track(String path, String scope) => MusicTrack(
+        path: path,
+        displayName: 'voice',
+        groupKey: scope,
+        groupTitle: 'work',
+        groupSubtitle: '',
+        isSingle: false,
+      );
+      expect(
+        await Future.wait([
+          resolver.resolvePlatformCoverPathForTrack(
+            track('content://media/one', firstScope),
+          ),
+          resolver.resolvePlatformCoverPathForTrack(
+            track('content://media/two', firstScope),
+          ),
+        ]),
+        ['/cache/a.jpg', '/cache/a.jpg'],
+      );
+      expect(
+        await resolver.resolvePlatformCoverPathForTrack(
+          track('content://media/three', firstScope),
+        ),
+        '/cache/a.jpg',
+      );
+      expect(
+        await resolver.resolvePlatformCoverPathForTrack(
+          track('content://media/four', otherScope),
+        ),
+        '/cache/b.jpg',
+      );
+      expect(scans, [firstScope, otherScope]);
+      expect(gateway.coverRequests, 0);
+      resolver.invalidateFolderImageIndexes(firstScope);
+      await resolver.resolvePlatformCoverPathForTrack(
+        track('content://media/five', firstScope),
+      );
+      expect(scans, [firstScope, otherScope, firstScope]);
+    },
+  );
+
+  test(
+    'SAF empty folders are shared before each track embedded probe',
+    () async {
+      const scope = 'content://library/tree/root::work';
+      var scans = 0;
+      final gateway = _ImageGateway((_, _) async {
+        scans++;
+        return [];
+      })..coverResult = Future.value('/cache/embedded.jpg');
+      final library = LibraryService();
+      addTearDown(library.dispose);
+      final resolver = CoverArtworkSourceResolver(
+        libraryService: library,
+        fileCacheGateway: gateway,
+        artworkStore: CoverArtworkStore(),
+        isClearingPersistentCache: () => false,
+      );
+      for (final path in ['content://media/one', 'content://media/two']) {
+        await resolver.resolvePlatformCoverPathForTrack(
+          MusicTrack(
+            path: path,
+            displayName: 'voice',
+            groupKey: scope,
+            groupTitle: 'work',
+            groupSubtitle: '',
+            isSingle: false,
+          ),
+        );
+      }
+      expect(scans, 1);
+      expect(gateway.coverScopes, [(null, null), (null, null)]);
+    },
+  );
+
+  test(
+    'SAF first cover limits copies while the chooser retains every candidate',
+    () async {
+      const scope = 'content://library/tree/root::work';
+      final gateway = _ImageGateway((_, _) async => [])
+        ..referenceOverride = [
+          for (var index = 0; index < 100; index++)
+            CoverImageReference(
+              displayPath: '/cache/$index.jpg',
+              sourcePath: '$scope/$index.jpg',
+            ),
+        ];
+      final library = LibraryService();
+      addTearDown(library.dispose);
+      final resolver = CoverArtworkSourceResolver(
+        libraryService: library,
+        fileCacheGateway: gateway,
+        artworkStore: CoverArtworkStore(),
+        isClearingPersistentCache: () => false,
+      );
+      expect(await resolver.resolvePreferredFolderCover(scope), '/cache/0.jpg');
+      expect(gateway.imageCopies, 1);
+      expect(await resolver.resolvePreferredFolderCover(scope), '/cache/0.jpg');
+      expect(gateway.imageCopies, 1);
+      expect(
+        await resolver.discoverFolderImages(scope, recursive: false),
+        hasLength(100),
+      );
+      expect(gateway.imageCopies, 101);
+      gateway.referenceOverride = const [
+        CoverImageReference(
+          displayPath: '/cache/new.jpg',
+          sourcePath: '$scope/new.jpg',
+        ),
+      ];
+      await resolver.discoverFolderImageReferences(
+        scope,
+        recursive: false,
+        refresh: true,
+      );
+      expect(
+        await resolver.resolvePreferredFolderCover(scope),
+        '/cache/new.jpg',
+      );
+    },
+  );
+
   test('completed work refresh indexes have bounded retention', () async {
     final library = LibraryService()..addWatchedLibrary('/works');
     addTearDown(library.dispose);
@@ -740,6 +881,8 @@ class _ImageGateway extends FileCachePlatformGateway {
   List<CoverImageReference>? referenceOverride;
   Future<String?>? coverResult;
   int coverRequests = 0;
+  final coverScopes = <(String?, String?)>[];
+  int imageCopies = 0;
 
   @override
   Future<String?> resolveTrackCover({
@@ -748,6 +891,7 @@ class _ImageGateway extends FileCachePlatformGateway {
     String? rootFolder,
   }) {
     coverRequests++;
+    coverScopes.add((groupKey, rootFolder));
     return coverResult ?? Future.value();
   }
 
@@ -757,15 +901,21 @@ class _ImageGateway extends FileCachePlatformGateway {
     String? groupKey,
     String? rootFolder,
     bool recursive = true,
-  }) async =>
-      referenceOverride ??
-      [
-        for (final image in await scan(path, recursive))
-          CoverImageReference(
-            displayPath: image,
-            sourcePath: '$path/cover.jpg',
-          ),
-      ];
+    bool preferredOnly = false,
+  }) async {
+    final images =
+        referenceOverride ??
+        [
+          for (final image in await scan(path, recursive))
+            CoverImageReference(
+              displayPath: image,
+              sourcePath: '$path/cover.jpg',
+            ),
+        ];
+    final selected = preferredOnly ? images.take(1).toList() : images;
+    imageCopies += selected.length;
+    return selected;
+  }
 }
 
 class _GeneratingImageGateway extends FileCachePlatformGateway {
@@ -791,6 +941,7 @@ class _GeneratingImageGateway extends FileCachePlatformGateway {
     String? groupKey,
     String? rootFolder,
     bool recursive = true,
+    bool preferredOnly = false,
   }) async => [
     CoverImageReference(
       displayPath: (await generate())!,

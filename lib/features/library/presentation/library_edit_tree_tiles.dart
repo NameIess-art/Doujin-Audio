@@ -294,11 +294,16 @@ class _LibraryEditTreeListState extends ConsumerState<LibraryEditTreeList>
     // projection or exclusion change, including the filtered search projection.
     if (!identical(_countedNodes, widget.nodes) ||
         _countedContentRevision != contentRevision) {
+      final exclusions = library.libraryExclusionMatcherForLibrary(
+        widget.libraryPath,
+      );
       _includedTrackCounts = LibraryEditTreeProjection(widget.libraryPath)
           .includedTrackCounts(
             widget.nodes,
-            (trackPath) =>
-                !library.isLibraryPathExcluded(widget.libraryPath, trackPath),
+            (trackPath) => !exclusions.isEntryExcluded(
+              library.libraryEntryForPath(widget.libraryPath, trackPath),
+              trackPath,
+            ),
           );
       _countedNodes = widget.nodes;
       _countedContentRevision = contentRevision;

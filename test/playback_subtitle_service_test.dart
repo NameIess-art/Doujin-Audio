@@ -343,6 +343,65 @@ void main() {
     expect(await directory.list().isEmpty, isTrue);
   });
 
+  test('offset copies share the time index even before first lookup', () {
+    var comparisons = 0;
+    final track = SubtitleTrack(
+      sourcePath: 'index.srt',
+      cues: [
+        for (var i = 1000; i >= 0; i--)
+          SubtitleCue(
+            start: _CountingDuration(i, () => comparisons++),
+            end: Duration(seconds: i + 1),
+            text: '$i',
+          ),
+      ],
+    );
+    final shifted = track.withOffset(const Duration(seconds: 2));
+    expect(shifted.cueAt(const Duration(seconds: 502))?.text, '500');
+    expect(comparisons, greaterThan(0));
+    final builtComparisons = comparisons;
+    expect(track.cueAt(const Duration(seconds: 500))?.text, '500');
+    for (var i = 0; i < 100; i++) {
+      expect(
+        track
+            .withOffset(Duration(seconds: i))
+            .cueAt(Duration(seconds: 500 + i))
+            ?.text,
+        '500',
+      );
+    }
+    expect(comparisons, builtComparisons);
+    expect(identical(track.cues, shifted.cues), isTrue);
+    expect(track.cues.first.text, '1000');
+  });
+
+  test('equal start cues retain source tie order across offsets', () {
+    final track = SubtitleTrack(
+      sourcePath: 'ties.ass',
+      cues: const [
+        SubtitleCue(
+          start: Duration(seconds: 1),
+          end: Duration(seconds: 8),
+          text: 'long',
+        ),
+        SubtitleCue(
+          start: Duration(seconds: 1),
+          end: Duration(seconds: 3),
+          text: 'short',
+        ),
+      ],
+    );
+    expect(track.cueAt(const Duration(seconds: 2))?.text, 'short');
+    expect(track.cueAt(const Duration(seconds: 4))?.text, 'long');
+    final shifted = track.withOffset(const Duration(seconds: -1));
+    expect(shifted.cueAt(const Duration(seconds: 1))?.text, 'short');
+    expect(shifted.cueAt(const Duration(seconds: 3))?.text, 'long');
+    expect(
+      shifted.cueAt(const Duration(seconds: 9), persistent: true)?.text,
+      'short',
+    );
+  });
+
   test('subtitle time lookup handles out-of-order ASS dialogue', () async {
     final track = await parseSubtitleTrackFromRaw(
       sourcePath: 'unordered.ass',
@@ -604,6 +663,17 @@ MusicTrack _remoteTrack(String path) => MusicTrack(
     'subtitleUrl': 'https://api.asmr.one/subtitle.vtt',
   },
 );
+
+class _CountingDuration extends Duration {
+  _CountingDuration(int seconds, this.onCompare) : super(seconds: seconds);
+  final void Function() onCompare;
+
+  @override
+  int compareTo(Duration other) {
+    onCompare();
+    return super.compareTo(other);
+  }
+}
 
 class _ContentSubtitleGateway extends FileCachePlatformGateway {
   @override

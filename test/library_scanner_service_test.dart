@@ -7,6 +7,7 @@ import 'package:doujin_audio/features/library/application/library_catalog.dart';
 import 'package:doujin_audio/features/library/application/library_scan_data_source.dart';
 import 'package:doujin_audio/features/library/application/library_scanner_service.dart';
 import 'package:doujin_audio/features/library/application/library_state_models.dart';
+import 'package:doujin_audio/features/library/application/library_track_merge.dart';
 import 'package:doujin_audio/features/library/domain/library_entry.dart';
 
 void main() {
@@ -279,6 +280,129 @@ void main() {
       },
     );
   }
+
+  for (final cancelled in <bool>[true, false]) {
+    test(
+      '${cancelled ? 'cancelled' : 'incomplete'} import preserves unrelated playback and metadata updates',
+      () async {
+        final original = _musicTrack('C:/other/playing.mp3');
+        final catalog = _RefreshCatalog(
+          watchedFolders: const <String>[],
+          initialTracks: <MusicTrack>[original],
+        );
+        final source = _ChunkedRefreshDataSource(
+          catalog: catalog,
+          terminalFailureCount: cancelled ? 0 : 1,
+          chunks: <FolderScanChunk>[
+            FolderScanChunk(tracks: [_scannedTrack('C:/music/new.mp3')]),
+          ],
+        );
+        source.onChunkDelivered = () {
+          catalog.library[catalog.library.indexOf(original)] = original
+              .copyWith(
+                lastPlayedPosition: const Duration(seconds: 55),
+                duration: const Duration(minutes: 7),
+                manualCoverPath: 'C:/covers/manual.jpg',
+              );
+          if (cancelled) catalog.isScanning = false;
+        };
+
+        final outcome = await LibraryScannerService(
+          dataSource: source,
+        ).addFolder(provider: catalog, labels: labels);
+
+        expect(
+          outcome?.code,
+          cancelled
+              ? LibraryScanOutcomeCode.cancelled
+              : LibraryScanOutcomeCode.failed,
+        );
+        expect(catalog.library, hasLength(1));
+        final retained = catalog.trackByPath(original.path)!;
+        expect(retained.lastPlayedPosition, const Duration(seconds: 55));
+        expect(retained.duration, const Duration(minutes: 7));
+        expect(retained.manualCoverPath, 'C:/covers/manual.jpg');
+        expect(catalog.rollbackBatchDepth, 0);
+      },
+    );
+
+    test(
+      '${cancelled ? 'cancelled' : 'incomplete'} promotion restores scan fields but retains concurrent changes between chunks',
+      () async {
+        final original = _musicTrack('C:/music/existing.mp3');
+        final catalog = _RefreshCatalog(
+          watchedFolders: <String>['C:/music'],
+          initialTracks: <MusicTrack>[original],
+        );
+        final source = _ChunkedRefreshDataSource(
+          catalog: catalog,
+          terminalFailureCount: cancelled ? 0 : 1,
+          chunks: <FolderScanChunk>[
+            FolderScanChunk(tracks: [_scannedTrack(original.path)]),
+            FolderScanChunk(
+              tracks: [
+                _scannedTrack(original.path, displayName: 'updated scan title'),
+              ],
+            ),
+          ],
+        );
+        var chunks = 0;
+        source.onChunkDelivered = () {
+          final scanned = catalog.trackByPath(original.path)!;
+          if (++chunks == 1) {
+            catalog.library[catalog.library.indexOf(scanned)] = scanned
+                .copyWith(
+                  lastPlayedPosition: const Duration(seconds: 55),
+                  duration: const Duration(minutes: 7),
+                  isFavorite: true,
+                  lyricsPath: 'C:/music/user.lrc',
+                );
+          } else {
+            catalog.library[catalog.library.indexOf(scanned)] = scanned
+                .copyWith(
+                  lastPlayedPosition: const Duration(seconds: 65),
+                  isFavorite: false,
+                );
+            if (cancelled) catalog.isScanning = false;
+          }
+        };
+
+        final outcome = await LibraryScannerService(
+          dataSource: source,
+        ).addLibrary(provider: catalog, labels: labels);
+
+        expect(
+          outcome?.code,
+          cancelled
+              ? LibraryScanOutcomeCode.cancelled
+              : LibraryScanOutcomeCode.failed,
+        );
+        final retained = catalog.library.single;
+        expect(retained.isSingle, original.isSingle);
+        expect(retained.groupKey, original.groupKey);
+        expect(retained.displayName, original.displayName);
+        expect(retained.lastPlayedPosition, const Duration(seconds: 65));
+        expect(retained.duration, const Duration(minutes: 7));
+        expect(retained.isFavorite, isFalse);
+        expect(retained.lyricsPath, 'C:/music/user.lrc');
+        expect(catalog.watchedLibraries, isEmpty);
+      },
+    );
+  }
+
+  test('cancelled file conversion commits no selected files', () async {
+    final catalog = _CancelledFilesCatalog();
+    final outcome = await LibraryScannerService(
+      dataSource: _PickedFilesDataSource(),
+    ).addFiles(provider: catalog, labels: labels);
+
+    expect(catalog.cancelled, isTrue);
+    expect(outcome?.code, LibraryScanOutcomeCode.cancelled);
+    expect(catalog.library, isEmpty);
+    expect(catalog.addTracksCalls, 0);
+    expect(catalog.rollbackBatchDepth, 0);
+    expect(catalog.isScanning, isFalse);
+  });
 
   test(
     'file import always finishes scan when batch finalization fails',
@@ -572,10 +696,11 @@ void main() {
   );
 }
 
-ScannedTrack _scannedTrack(String path) {
+ScannedTrack _scannedTrack(String path, {String? displayName}) {
   final parent = path.substring(0, path.lastIndexOf('/'));
   return ScannedTrack(
     path: path,
+    displayName: displayName,
     groupKey: parent,
     groupTitle: 'music',
     groupSubtitle: parent,
@@ -618,6 +743,7 @@ class _ChunkedRefreshDataSource implements LibraryScanDataSource {
   final bool terminalWasCancelled;
   final bool nativeChunkingSupported;
   final NativeScanResult legacyResult;
+  void Function()? onChunkDelivered;
   var chunkedScanCalls = 0;
   var fullScanCalls = 0;
   var filesystemScanCalls = 0;
@@ -678,6 +804,7 @@ class _ChunkedRefreshDataSource implements LibraryScanDataSource {
     final deliveredPaths = <String>{};
     for (var index = 0; index < chunks.length; index++) {
       final keepGoing = await onChunk(chunks[index]);
+      onChunkDelivered?.call();
       deliveredChunks++;
       deliveredPaths.addAll(chunks[index].paths);
       if (index == 0 && chunks.length > 1) {
@@ -910,10 +1037,14 @@ class _RefreshCatalog implements LibraryCatalog {
     bool mergeExistingState = true,
   }) {
     for (final track in tracks) {
+      final existing = trackByPath(track.path);
+      final next = existing != null && mergeExistingState
+          ? mergeLibraryTrackState(existing, track)
+          : track;
       library.removeWhere(
         (existing) => PathMatcher.equalsNormalized(existing.path, track.path),
       );
-      library.add(track);
+      library.add(next);
     }
     if (mergeExistingState &&
         tracks.isNotEmpty &&
@@ -1104,4 +1235,26 @@ class _FailingBatchCatalog implements LibraryCatalog {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _CancelledFilesCatalog extends _RefreshCatalog {
+  _CancelledFilesCatalog() : super(watchedFolders: const <String>[]);
+
+  var cancelled = false;
+  var addTracksCalls = 0;
+
+  @override
+  void beginLibraryBatch() {
+    super.beginLibraryBatch();
+    scheduleMicrotask(() {
+      cancelled = true;
+      isScanning = false;
+    });
+  }
+
+  @override
+  void addTracks(List<MusicTrack> tracks, {bool persist = true}) {
+    addTracksCalls++;
+    library.addAll(tracks);
+  }
 }

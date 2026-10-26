@@ -122,31 +122,37 @@ class AppCacheService {
     return totalBytes;
   }
 
+  static Future<Directory> persistentImportDirectory() async => Directory(
+    path.join(
+      (await getApplicationSupportDirectory()).path,
+      'doujin_audio_imports',
+    ),
+  );
+
+  static Future<CachePathLease> protectPersistentImports({
+    Directory? importDirectory,
+  }) async {
+    if (!Platform.isAndroid && importDirectory == null) return protectPaths([]);
+    final directory = importDirectory ?? await persistentImportDirectory();
+    return protectPaths([directory.path]);
+  }
+
   static Future<int> cleanupOrphanedPersistentImports(
-    Iterable<String> retainedPaths, {
+    bool Function(String path) isRetained, {
     Directory? importDirectory,
   }) async {
     if (!Platform.isAndroid && importDirectory == null) return 0;
-    final directory =
-        importDirectory ??
-        Directory(
-          path.join(
-            (await getApplicationSupportDirectory()).path,
-            'doujin_audio_imports',
-          ),
-        );
-    final retained = retainedPaths
-        .where((value) => value.isNotEmpty && !value.contains('://'))
-        .map(PathMatcher.equivalenceKey)
-        .toSet();
+    final directory = importDirectory ?? await persistentImportDirectory();
     return _enqueue(() async {
       var deletedBytes = 0;
       if (!await directory.exists()) return 0;
       await for (final entity in directory.list(followLinks: false)) {
-        if (retained.contains(PathMatcher.equivalenceKey(entity.path))) {
-          continue;
-        }
-        deletedBytes += await _deleteEntity(entity);
+        // Recheck after the deletion's async reads: an import may have committed
+        // while this operation was queued or inspecting another file.
+        deletedBytes += await _deleteEntity(
+          entity,
+          canDelete: (candidate) => !isRetained(candidate),
+        );
       }
       return deletedBytes;
     });
@@ -333,21 +339,27 @@ class AppCacheService {
     }
   }
 
-  static Future<int> _deleteEntity(FileSystemEntity entity) async {
+  static Future<int> _deleteEntity(
+    FileSystemEntity entity, {
+    bool Function(String path)? canDelete,
+  }) async {
     var deletedBytes = 0;
     try {
       final type = await FileSystemEntity.type(entity.path, followLinks: false);
       if (type == FileSystemEntityType.file) {
         final length = await File(entity.path).length();
         await _beforeDelete?.call(entity.path);
-        if (_isProtected(entity.path)) return 0;
+        if (_isProtected(entity.path) ||
+            !(canDelete?.call(entity.path) ?? true)) {
+          return 0;
+        }
         await File(entity.path).delete();
         return length;
       }
       if (type == FileSystemEntityType.directory) {
         final directory = Directory(entity.path);
         await for (final child in directory.list(followLinks: false)) {
-          deletedBytes += await _deleteEntity(child);
+          deletedBytes += await _deleteEntity(child, canDelete: canDelete);
         }
         if (!_containsProtectedPath(directory.path) &&
             await directory.list().isEmpty) {

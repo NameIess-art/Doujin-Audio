@@ -84,10 +84,7 @@ void main() {
           groupKey: '/duplicates',
           groupTitle: 'Duplicates',
         );
-        runtimeGraph.library.addTracks(
-          [repeated, other],
-          persist: false,
-        );
+        runtimeGraph.library.addTracks([repeated, other], persist: false);
         final session = runtimeGraph.playback.createPlaybackQueue('Duplicates');
         await queueCoordinator.addTrack(session.id, repeated);
         await queueCoordinator.addTrack(session.id, repeated);
@@ -201,10 +198,7 @@ void main() {
         groupSubtitle: 'Optimistic',
         isSingle: false,
       );
-      runtimeGraph.library.addTracks(
-        <MusicTrack>[track],
-        persist: false,
-      );
+      runtimeGraph.library.addTracks(<MusicTrack>[track], persist: false);
       final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
 
       final addFuture = runtimeGraph.playback.addTrackToPlaybackQueue(
@@ -258,10 +252,7 @@ void main() {
           isSingle: true,
           isVideo: true,
         );
-        runtimeGraph.library.addTracks(
-          <MusicTrack>[track],
-          persist: false,
-        );
+        runtimeGraph.library.addTracks(<MusicTrack>[track], persist: false);
         final queueSession = runtimeGraph.playback.createPlaybackQueue(
           'Queue 1',
         );
@@ -397,10 +388,7 @@ void main() {
               groupTitle: folder,
             ),
         ];
-        runtimeGraph.library.addTracks(
-          nestedOnlyTracks,
-          persist: false,
-        );
+        runtimeGraph.library.addTracks(nestedOnlyTracks, persist: false);
         await runtimeGraph.playback.playDirect(nestedOnlyTracks, startIndex: 2);
         expect(preparations.last['queueStartIndex'], 0);
         await runtimeGraph.playback.playDirect(nestedOnlyTracks, startIndex: 4);
@@ -421,10 +409,7 @@ void main() {
         groupSubtitle: 'Work',
         isSingle: false,
       );
-      runtimeGraph.library.addTracks(
-        <MusicTrack>[track],
-        persist: false,
-      );
+      runtimeGraph.library.addTracks(<MusicTrack>[track], persist: false);
 
       final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
       expect(queueSession.isPlaybackQueue, isTrue);
@@ -496,10 +481,11 @@ void main() {
           groupSubtitle: 'Work',
           isSingle: false,
         );
-        runtimeGraph.library.addTracks(
-          <MusicTrack>[trackA, trackB, trackC],
-          persist: false,
-        );
+        runtimeGraph.library.addTracks(<MusicTrack>[
+          trackA,
+          trackB,
+          trackC,
+        ], persist: false);
 
         final queueSession = runtimeGraph.playback.createPlaybackQueue(
           'Queue 1',
@@ -661,10 +647,10 @@ void main() {
           groupSubtitle: 'Manually selected files',
           isSingle: true,
         );
-        runtimeGraph.library.addTracks(
-          <MusicTrack>[selected, other],
-          persist: false,
-        );
+        runtimeGraph.library.addTracks(<MusicTrack>[
+          selected,
+          other,
+        ], persist: false);
         final queueSession = runtimeGraph.playback.createPlaybackQueue(
           'Queue 1',
         );
@@ -699,10 +685,10 @@ void main() {
         groupSubtitle: 'Work',
         isSingle: false,
       );
-      runtimeGraph.library.addTracks(
-        <MusicTrack>[first, second],
-        persist: false,
-      );
+      runtimeGraph.library.addTracks(<MusicTrack>[
+        first,
+        second,
+      ], persist: false);
       final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
       final sourceTrack = runtimeGraph.library.library.firstWhere(
         (track) => track.displayName == first.displayName,
@@ -898,10 +884,7 @@ void main() {
             persistenceRepository: repository,
           );
           if (mixed) {
-            runtimeGraph.library.addTracks(
-              [first],
-              persist: false,
-            );
+            runtimeGraph.library.addTracks([first], persist: false);
           }
           final preparations = <Map<Object?, Object?>>[];
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -1066,6 +1049,151 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 200));
       await restoredGraph.runtime.dispose();
     });
+
+    test(
+      'automatic cache follows native advancement, settings and removal',
+      () async {
+        await runtimeGraph.runtime.dispose();
+        final cache = _RecordingOwnedPlaybackCache();
+        runtimeGraph = createTestRuntimeGraph(
+          notificationService: notificationService,
+          persistenceRepository: TestPersistenceRepository(
+            database: AppDatabase.test(db),
+          ),
+          asmrPlaybackCacheService: cache,
+        );
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (_) async {
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+        final first = _asmrTrack('01.mp3');
+        final second = _asmrTrack('02.mp3');
+        await runtimeGraph.playback.spawnSessionWithQueue([
+          first,
+          second,
+        ], autoPlay: false);
+        final session = runtimeGraph.playback.activeSessions.single;
+        expect(cache.calls, isEmpty);
+        await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+        expect(cache.calls.single.track.path, first.path);
+        expect(cache.calls.single.ownerId, session.id);
+
+        runtimeGraph.playbackCommands.handleNativeSnapshot(
+          NativePlaybackSnapshot.fromMap({
+            'sessionId': session.id,
+            'transportCommandId': session.transportCommandId,
+            'path': second.path,
+            'queueIndex': 1,
+            'playing': true,
+            'playWhenReady': true,
+            'processingState': 'ready',
+          }),
+        );
+        expect(session.currentTrackPath, second.path);
+        expect(session.loadedPath, second.path);
+        expect(cache.calls.map((call) => call.track.path), [
+          first.path,
+          second.path,
+        ]);
+        expect(cache.active[session.id], second.path);
+        await runtimeGraph.settings.setAsmrPlaybackCacheEnabled(false);
+        await Future<void>.delayed(Duration.zero);
+        expect(cache.active, isEmpty);
+        cache.calls[1].result.complete('/cache/stale.mp3');
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          runtimeGraph.playback.resolveRetargetedPath(second.path),
+          second.path,
+        );
+
+        await runtimeGraph.settings.setAsmrPlaybackCacheEnabled(true);
+        await Future<void>.delayed(Duration.zero);
+        expect(cache.active[session.id], second.path);
+        expect(cache.calls, hasLength(3));
+        runtimeGraph.playbackCommands.handleNativeSnapshot(
+          NativePlaybackSnapshot.fromMap({
+            'sessionId': session.id,
+            'transportCommandId': session.transportCommandId,
+            'path': second.path,
+            'queueIndex': 1,
+            'playing': false,
+            'playWhenReady': false,
+            'processingState': 'idle',
+          }),
+        );
+        expect(session.loadedPath, isNull);
+        expect(cache.active, isEmpty);
+        await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+        expect(cache.active[session.id], second.path);
+        expect(cache.calls, hasLength(4));
+        expect(await runtimeGraph.playback.removeSession(session.id), isTrue);
+        expect(cache.active, isEmpty);
+        expect(cache.released, contains(session.id));
+      },
+    );
+
+    for (final succeeds in [true, false]) {
+      test(
+        'switch preparation releases old automatic cache (success: $succeeds)',
+        () async {
+          await runtimeGraph.runtime.dispose();
+          final cache = _RecordingOwnedPlaybackCache();
+          runtimeGraph = createTestRuntimeGraph(
+            notificationService: notificationService,
+            persistenceRepository: TestPersistenceRepository(
+              database: AppDatabase.test(db),
+            ),
+            asmrPlaybackCacheService: cache,
+          );
+          final first = _asmrTrack('01.mp3');
+          final second = _asmrTrack('02.mp3');
+          final entered = Completer<void>();
+          final preparation = Completer<Object?>();
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(nativePlaybackChannel, (call) {
+                if (call.method == NativePlaybackMethod.prepareSession &&
+                    (call.arguments as Map)['path'] == second.path) {
+                  if (!entered.isCompleted) entered.complete();
+                  return preparation.future;
+                }
+                return Future<Object?>.value({'ok': true, 'value': null});
+              });
+          await runtimeGraph.playback.spawnSessionWithQueue([
+            first,
+            second,
+          ], autoPlay: false);
+          final session = runtimeGraph.playback.activeSessions.single;
+          await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+          expect(cache.active[session.id], first.path);
+          final switching = runtimeGraph.playback.seekSessionToNext(session.id);
+          await entered.future;
+          expect(session.pendingNativeTrackPath, second.path);
+          expect(cache.active, isEmpty);
+          preparation.complete(
+            succeeds
+                ? {'ok': true, 'value': null}
+                : {
+                    'ok': false,
+                    'code': 'prepare_failed',
+                    'message': 'controlled failure',
+                  },
+          );
+          await switching;
+          final expected = succeeds ? second : first;
+          expect(session.currentTrackPath, expected.path);
+          expect(session.loadedPath, expected.path);
+          expect(cache.active[session.id], expected.path);
+          expect(cache.calls.map((call) => call.track.path), [
+            first.path,
+            expected.path,
+          ]);
+          expect(cache.calls.map((call) => call.playedPath), [
+            first.path,
+            expected.path,
+          ]);
+        },
+      );
+    }
 
     test(
       'ASMR playback cache keeps custom queue metadata on cached paths',
@@ -1403,7 +1531,57 @@ class _FakeAsmrPlaybackCacheService extends AsmrPlaybackCacheService {
   final String cachedPath;
 
   @override
-  Future<String?> cacheTrack(MusicTrack track, {String? playedPath}) async {
+  Future<String?> cacheTrack(
+    MusicTrack track, {
+    String? playedPath,
+    String? ownerId,
+  }) async {
     return cachedPath;
+  }
+}
+
+class _RecordingOwnedPlaybackCache extends AsmrPlaybackCacheService {
+  final calls =
+      <
+        ({
+          MusicTrack track,
+          String? ownerId,
+          String? playedPath,
+          Completer<String?> result,
+        })
+      >[];
+  final active = <String, String>{};
+  final released = <String>[];
+
+  @override
+  Future<String?> cacheTrack(
+    MusicTrack track, {
+    String? playedPath,
+    String? ownerId,
+  }) {
+    final result = Completer<String?>();
+    calls.add((
+      track: track,
+      ownerId: ownerId,
+      playedPath: playedPath,
+      result: result,
+    ));
+    if (ownerId != null) active[ownerId] = track.path;
+    return result.future;
+  }
+
+  @override
+  void releaseOwner(String ownerId) {
+    released.add(ownerId);
+    active.remove(ownerId);
+  }
+
+  @override
+  Future<void> dispose() async {
+    active.clear();
+    for (final call in calls) {
+      if (!call.result.isCompleted) call.result.complete(null);
+    }
+    await super.dispose();
   }
 }

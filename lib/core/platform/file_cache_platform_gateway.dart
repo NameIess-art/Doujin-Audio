@@ -278,6 +278,7 @@ class FileCachePlatformGateway {
     String? groupKey,
     required String rootFolder,
     bool recursive = true,
+    bool preferredOnly = false,
   }) async {
     if (_isWindows() && !_isAndroid()) {
       final images = <CoverImageReference>[];
@@ -307,7 +308,7 @@ class FileCachePlatformGateway {
         }
       }
       images.sort((a, b) => a.displayPath.compareTo(b.displayPath));
-      return images;
+      return preferredOnly ? images.take(1).toList(growable: false) : images;
     }
     final result = await _client.invoke<List<Object?>>(
       FileCacheMethod.discoverRootImages,
@@ -316,6 +317,7 @@ class FileCachePlatformGateway {
         'groupKey': groupKey,
         'rootFolder': rootFolder,
         'recursive': recursive,
+        'preferredOnly': preferredOnly,
       },
       decode: (value) => (value as List).cast<Object?>(),
     );

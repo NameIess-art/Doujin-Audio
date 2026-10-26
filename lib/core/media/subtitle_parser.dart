@@ -28,45 +28,36 @@ class SubtitleTrack {
     required this.sourcePath,
     required List<SubtitleCue> cues,
     this.offset = Duration.zero,
-  }) : cues = immutableList(cues);
+  }) : cues = immutableList(cues) {
+    _timeIndex = _SubtitleTimeIndex(this.cues);
+  }
+
+  SubtitleTrack._withOffset(SubtitleTrack source, this.offset)
+    : sourcePath = source.sourcePath,
+      cues = source.cues,
+      _timeIndex = source._timeIndex;
 
   final String sourcePath;
   final List<SubtitleCue> cues;
   final Duration offset;
-
-  // Keep source order for ASS editing while time lookup uses a stable index.
-  late final List<SubtitleCue> _timeOrderedCues = (() {
-    final indexed = cues.indexed.toList()
-      ..sort((a, b) {
-        final byStart = a.$2.start.compareTo(b.$2.start);
-        return byStart != 0 ? byStart : a.$1.compareTo(b.$1);
-      });
-    return indexed.map((entry) => entry.$2).toList(growable: false);
-  })();
-  late final List<Duration> _latestEnds = (() {
-    var latest = Duration.zero;
-    return _timeOrderedCues
-        .map((cue) {
-          if (cue.end > latest) latest = cue.end;
-          return latest;
-        })
-        .toList(growable: false);
-  })();
+  late final _SubtitleTimeIndex _timeIndex;
 
   SubtitleTrack withOffset(Duration newOffset) {
-    return SubtitleTrack(sourcePath: sourcePath, cues: cues, offset: newOffset);
+    if (newOffset == offset) return this;
+    return SubtitleTrack._withOffset(this, newOffset);
   }
 
   SubtitleCue? cueAt(Duration position, {bool persistent = false}) {
     if (cues.isEmpty) return null;
     final effectivePosition = position - offset;
     if (effectivePosition < Duration.zero) return null;
+    final timeOrderedCues = _timeIndex.cues;
     var low = 0;
-    var high = _timeOrderedCues.length - 1;
+    var high = timeOrderedCues.length - 1;
     var result = -1;
     while (low <= high) {
       final mid = low + ((high - low) >> 1);
-      if (_timeOrderedCues[mid].start <= effectivePosition) {
+      if (timeOrderedCues[mid].start <= effectivePosition) {
         result = mid;
         low = mid + 1;
       } else {
@@ -75,15 +66,46 @@ class SubtitleTrack {
     }
 
     if (result < 0) return null;
-    if (persistent) return _timeOrderedCues[result];
+    if (persistent) return timeOrderedCues[result];
 
     // An expired short cue cannot exclude an earlier, longer overlapping cue.
     for (var index = result; index >= 0; index--) {
-      if (_latestEnds[index] <= effectivePosition) break;
-      final cue = _timeOrderedCues[index];
+      if (_timeIndex.latestEnds[index] <= effectivePosition) break;
+      final cue = timeOrderedCues[index];
       if (cue.contains(effectivePosition)) return cue;
     }
     return null;
+  }
+}
+
+// Offsets do not affect cue ordering. Share even a not-yet-built index so
+// editing offsets cannot sort the same source again.
+final class _SubtitleTimeIndex {
+  _SubtitleTimeIndex(this._sourceCues);
+
+  final List<SubtitleCue> _sourceCues;
+  // Keep source order for ASS editing while time lookup uses a stable index.
+  late final List<SubtitleCue> cues = (() {
+    final indexed = _sourceCues.indexed.toList()
+      ..sort((a, b) {
+        final byStart = a.$2.start.compareTo(b.$2.start);
+        return byStart != 0 ? byStart : a.$1.compareTo(b.$1);
+      });
+    return indexed.map((entry) => entry.$2).toList(growable: false);
+  })();
+  late final List<Duration> latestEnds = (() {
+    var latest = Duration.zero;
+    return cues
+        .map((cue) {
+          if (cue.end > latest) latest = cue.end;
+          return latest;
+        })
+        .toList(growable: false);
+  })();
+
+  void prepare() {
+    // Force both lazy fields inside the parsing worker, before UI consumers.
+    latestEnds;
   }
 }
 
@@ -149,7 +171,8 @@ SubtitleTrack? _parseSubtitleTrack({
       ? cues
       : _parseSubtitleTrackByContent(raw);
   if (resolvedCues.isEmpty) return null;
-  return SubtitleTrack(sourcePath: sourcePath, cues: resolvedCues);
+  return SubtitleTrack(sourcePath: sourcePath, cues: resolvedCues)
+    .._timeIndex.prepare();
 }
 
 List<SubtitleCue> _parseSubtitleTrackByContent(String raw) {

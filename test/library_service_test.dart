@@ -25,6 +25,12 @@ void main() {
       service.setLibraryFolderExcluded(root, folder, true);
       expect(service.libraryEntryForPath(root, uri)!.isExcluded, isTrue);
       expect(service.isLibraryPathExcluded(root, uri), isTrue);
+      expect(
+        service
+            .libraryExclusionMatcherForLibrary(root)
+            .isEntryExcluded(service.libraryEntryForPath(root, uri), uri),
+        isTrue,
+      );
       expect(service.isLibraryPathInheritedExcluded(root, uri), isTrue);
       service.setLibraryFolderExcluded(root, folder, false);
       expect(service.libraryEntryForPath(root, uri)!.isActive, isTrue);
@@ -37,6 +43,66 @@ void main() {
         service.removeLibraryEntriesMissingFromFolderScan(root, root, {}),
         contains(uri),
       );
+    },
+  );
+  test(
+    'exclusion snapshots match root, nested and unrelated folder decisions',
+    () {
+      for (final root in [
+        '/library',
+        r'C:\Music',
+        'content://provider/tree/root',
+      ]) {
+        final isSaf = root.startsWith('content:');
+        final child = isSaf ? '$root::Work' : path.join(root, 'Work');
+        final sibling = isSaf ? '$root::Other' : path.join(root, 'Other');
+        final tracks = [
+          for (final (index, folder) in [child, sibling].indexed)
+            MusicTrack(
+              path: isSaf
+                  ? '$root/document/$index'
+                  : root.startsWith('C:')
+                  ? path.join(folder, '$index.mp3').toLowerCase()
+                  : path.join(folder, '$index.mp3'),
+              displayName: '$index',
+              groupKey: folder,
+              groupTitle: folder,
+              groupSubtitle: '',
+              isSingle: false,
+            ),
+        ];
+        final service = LibraryService();
+        addTearDown(service.dispose);
+        service.replaceLibraryEntries(
+          service.buildLibraryEntries(root, tracks),
+        );
+        for (final excluded in [child, root]) {
+          service.setLibraryFolderExcluded(root, excluded, true);
+          final snapshot = service.libraryExclusionMatcherForLibrary(root);
+          for (final track in tracks) {
+            expect(
+              snapshot.isEntryExcluded(
+                service.libraryEntryForPath(root, track.path),
+                track.path,
+              ),
+              service.isLibraryPathExcluded(root, track.path),
+              reason: '$excluded -> ${track.path}',
+            );
+          }
+          if (isSaf) {
+            const foreign = 'content://provider/tree/other/document/1';
+            const entry = LibraryEntry(
+              libraryPath: 'content://provider/tree/root',
+              path: foreign,
+              parentPath: 'content://provider/tree/root::Work',
+              kind: LibraryEntryKind.track,
+              state: LibraryEntryState.active,
+            );
+            expect(snapshot.isEntryExcluded(entry, foreign), isFalse);
+          }
+          service.setLibraryFolderExcluded(root, excluded, false);
+        }
+      }
     },
   );
   for (final state in LibraryEntryState.values) {

@@ -17,6 +17,58 @@ void main() {
     await AppPreferences.init();
   });
 
+  testWidgets('search and draft edits reuse catalog order until it changes', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    final controller = _TagController(createTestAsmrServices());
+    controller._state.mergeTag(
+      AsmrTag(
+        key: 'online:alias',
+        name: 'Other name',
+        aliases: ['Search alias'],
+      ),
+    );
+    addTearDown(fixture.dispose);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        const MyTagManagementPage(excluded: false),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    final reads = controller.catalogReads;
+    await tester.enterText(find.byType(TextField), 'search alias');
+    await tester.pump();
+    expect(find.text('Other name'), findsOneWidget);
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.pump();
+    expect(controller.catalogReads, reads);
+    expect(controller.manualInterestTagKeys, isEmpty);
+    expect(
+      tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+      isTrue,
+    );
+
+    controller._state.mergeTag(
+      AsmrTag(key: 'online:new', name: 'New name', aliases: ['Search alias']),
+    );
+    controller.notifyListeners();
+    await tester.pump();
+    expect(controller.catalogReads, reads + 1);
+    expect(find.text('New name'), findsOneWidget);
+    expect(
+      tester
+          .widget<CheckboxListTile>(find.byKey(const ValueKey('online:alias')))
+          .value,
+      isTrue,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final textScale in [1.0, 1.6]) {
       testWidgets(
@@ -353,6 +405,7 @@ class _TagController extends AsmrLibraryController {
   final _state = AsmrTagPreferences();
   bool failSave = false;
   int saveCalls = 0;
+  int catalogReads = 0;
   @override
   List<AsmrTagInterest> get interestTags => _state.interests;
   @override
@@ -360,7 +413,11 @@ class _TagController extends AsmrLibraryController {
   @override
   Set<String> get manualInterestTagKeys => _state.manualInterests;
   @override
-  List<AsmrTag> get allTags => _state.tags.values.toList();
+  List<AsmrTag> get allTags {
+    catalogReads++;
+    return _state.tags.values.toList();
+  }
+
   @override
   Set<String> get excludedTagKeys => _state.excluded;
   @override

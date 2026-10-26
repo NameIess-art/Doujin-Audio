@@ -106,8 +106,12 @@ final class PlaybackCommandCoordinator
 
   final Map<String, CachePathLease> _activePlaybackCacheLeases = {};
   final Map<String, Set<String>> _activePlaybackCachePaths = {};
+  final Map<String, ({String trackPath, String playedPath})>
+  _automaticPlaybackCacheTracks = {};
 
   void releaseSessionResources(String sessionId) {
+    _automaticPlaybackCacheTracks.remove(sessionId);
+    _asmrPlaybackCacheService.releaseOwner(sessionId);
     unawaited(_timerFacade.clearTimerPauseForManualStop(sessionId));
     _activePlaybackCacheLeases.remove(sessionId)?.release();
     _activePlaybackCachePaths.remove(sessionId);
@@ -119,10 +123,18 @@ final class PlaybackCommandCoordinator
     }
     _activePlaybackCacheLeases.clear();
     _activePlaybackCachePaths.clear();
+    _automaticPlaybackCacheTracks.clear();
     await _asmrPlaybackCacheService.dispose();
   }
 
+  void synchronizePlaybackCacheRequests() {
+    for (final session in _sessions.values) {
+      _syncAutomaticPlaybackCache(session);
+    }
+  }
+
   void _syncActivePlaybackCacheLease(PlaybackSession session) {
+    _syncAutomaticPlaybackCache(session);
     final paths = <String, String>{};
     for (final candidate in <String?>[
       session.loadedPath,

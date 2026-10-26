@@ -82,6 +82,142 @@ void main() {
   );
 
   test(
+    'concurrent single cover calls share bounded durable index commits',
+    () async {
+      final io = _RecordingIO(source.path);
+      await IOOverrides.runWithIOOverrides(() async {
+        final store = CoverArtworkStore(
+          persistentDirectory: () async => directory,
+          isAndroid: () => false,
+        );
+        await store.initialize();
+        final outputs = await Future.wait([
+          for (var i = 0; i < 80; i++)
+            store.putFile(
+              logicalKey: 'single:$i',
+              sourcePath: source.path,
+              namespace: CoverArtworkNamespace.embedded,
+            ),
+        ]);
+        expect(outputs, everyElement(isNotNull));
+        expect(io.indexWrites, 3);
+        final restarted = CoverArtworkStore(
+          persistentDirectory: () async => directory,
+          isAndroid: () => false,
+        );
+        await restarted.initialize();
+        for (var i = 0; i < outputs.length; i++) {
+          expect(restarted.resolvedPath('single:$i'), outputs[i]);
+        }
+      }, io);
+    },
+  );
+
+  test('large queued bindings remain durable after worker encoding', () async {
+    final store = CoverArtworkStore(
+      persistentDirectory: () async => directory,
+      isAndroid: () => false,
+    );
+    await Future.wait([
+      for (var i = 0; i < 300; i++)
+        store.bind('selected:$i', 'content://covers/$i'),
+    ]);
+    final restarted = CoverArtworkStore(
+      persistentDirectory: () async => directory,
+      isAndroid: () => false,
+    );
+    await restarted.initialize();
+    for (var i = 0; i < 300; i++) {
+      expect(restarted.resolvedPath('selected:$i'), 'content://covers/$i');
+    }
+  });
+
+  test(
+    'small writes and authored pins complete before a slow bulk import',
+    () async {
+      final io = _RecordingIO(source.path);
+      await IOOverrides.runWithIOOverrides(() async {
+        final store = CoverArtworkStore(
+          persistentDirectory: () async => directory,
+          isAndroid: () => false,
+        );
+        final authored = (await store.putBytes(
+          logicalKey: 'user',
+          bytes: [1],
+        ))!;
+        final small = store.putBytes(logicalKey: 'small', bytes: [2]);
+        final pin = store.preserveReference(authored);
+        final started = io.sourceStatStarted = Completer<void>();
+        final gate = io.sourceStatGate = Completer<void>();
+        final bulk = store.putFiles([
+          (logicalKey: 'bulk', sourcePath: source.path),
+        ]);
+        try {
+          await started.future;
+          await small.timeout(const Duration(seconds: 3));
+          await pin.timeout(const Duration(seconds: 3));
+          final restarted = CoverArtworkStore(
+            persistentDirectory: () async => directory,
+            isAndroid: () => false,
+          );
+          await restarted.initialize();
+          expect(restarted.resolvedPath('small'), isNotNull);
+          final index =
+              jsonDecode(
+                    await File(
+                      path.join(
+                        store.rootPath!,
+                        coverArtworkStoreIndexFileName,
+                      ),
+                    ).readAsString(),
+                  )
+                  as Map;
+          expect(
+            index['managedArtifacts'][path.relative(
+              authored,
+              from: store.rootPath,
+            )],
+            0,
+          );
+        } finally {
+          gate.complete();
+          await bulk;
+        }
+      }, io);
+    },
+  );
+
+  test(
+    'commit failure reaches every waiter and a later call can retry',
+    () async {
+      final store = CoverArtworkStore(
+        persistentDirectory: () async => directory,
+        isAndroid: () => false,
+      );
+      await store.initialize();
+      final blocker = Directory(
+        path.join(store.rootPath!, '$coverArtworkStoreIndexFileName.part'),
+      );
+      await blocker.create();
+      final first = store.bind('one', 'content://covers/1');
+      final second = store.bind('two', 'content://covers/2');
+      await Future.wait([
+        expectLater(first, throwsA(isA<FileSystemException>())),
+        expectLater(second, throwsA(isA<FileSystemException>())),
+      ]);
+      await blocker.delete();
+      await store.bind('one', 'content://covers/1');
+      final restarted = CoverArtworkStore(
+        persistentDirectory: () async => directory,
+        isAndroid: () => false,
+      );
+      await restarted.initialize();
+      expect(restarted.resolvedPath('one'), 'content://covers/1');
+      expect(restarted.resolvedPath('two'), 'content://covers/2');
+    },
+  );
+
+  test(
     'batch cancellation and clear cannot publish later source bindings',
     () async {
       final store = CoverArtworkStore(
@@ -162,6 +298,8 @@ final class _RecordingIO extends IOOverrides {
   final String sourcePath;
   int indexWrites = 0;
   int sourceReads = 0;
+  Completer<void>? sourceStatStarted;
+  Completer<void>? sourceStatGate;
   @override
   File createFile(String path) => _RecordingFile(super.createFile(path), this);
 }
@@ -179,7 +317,16 @@ class _RecordingFile implements File {
   @override
   Future<int> length() => file.length();
   @override
-  Future<FileStat> stat() => file.stat();
+  Future<FileStat> stat() async {
+    if (path == io.sourcePath && io.sourceStatGate != null) {
+      if (!(io.sourceStatStarted?.isCompleted ?? true)) {
+        io.sourceStatStarted!.complete();
+      }
+      await io.sourceStatGate!.future;
+    }
+    return file.stat();
+  }
+
   @override
   Future<RandomAccessFile> open({FileMode mode = FileMode.read}) =>
       file.open(mode: mode);
@@ -209,6 +356,13 @@ class _RecordingFile implements File {
       flush: flush,
     );
   }
+
+  @override
+  Future<File> writeAsBytes(
+    List<int> bytes, {
+    FileMode mode = FileMode.write,
+    bool flush = false,
+  }) => file.writeAsBytes(bytes, mode: mode, flush: flush);
 
   @override
   Future<File> rename(String newPath) => file.rename(newPath);

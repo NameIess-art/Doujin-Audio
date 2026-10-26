@@ -55,6 +55,88 @@ void main() {
     await fixture.dispose(currentGraph: runtimeGraph);
   });
 
+  for (final root in [
+    '/library',
+    'C:/library',
+    'content://provider/tree/primary%3ALibrary',
+  ]) {
+    test(
+      'empty work reconciliation persists without losing exclusions ($root)',
+      () async {
+        final library = runtimeGraph.library;
+        library.configurePersistence(enabled: true);
+        final prefix = root.startsWith('content://') ? '$root::' : '$root/';
+        final deleted = '${prefix}Deleted';
+        final kept = '${prefix}Kept';
+        final excluded = '${prefix}Excluded';
+        final media = root.startsWith('content://')
+            ? '$root/document/opaque-id'
+            : '$kept/01.mp3';
+        final track = MusicTrack(
+          path: media,
+          displayName: '01',
+          groupKey: kept,
+          groupTitle: 'Kept',
+          groupSubtitle: kept,
+          isSingle: false,
+        );
+        library.addWatchedLibrary(root, notify: false);
+        for (final folder in [deleted, kept, excluded]) {
+          library.addWatchedFolder(folder, notify: false);
+        }
+        library.addTracks([track]);
+        library.recordLibraryEntriesForTracks(
+          root,
+          [track],
+          folderPaths: [deleted, kept, excluded],
+        );
+        library.setLibraryFolderExcluded(root, excluded, true);
+        await library.flushPendingPersistence();
+        library.reconcileLibraryDiskSnapshot(
+          root,
+          LibraryEntryDiskSnapshot(
+            audioFilePaths: [],
+            scannedFolderPaths: {},
+            authoritative: false,
+          ),
+        );
+        expect(library.childFoldersForLibrary(root), contains(deleted));
+        final snapshot = LibraryEntryDiskSnapshot(
+          audioFilePaths: [media],
+          scannedFolderPaths: {deleted, kept, excluded},
+          trackParentPaths: {PathMatcher.normalize(media): kept},
+          authoritative: true,
+        );
+        final generation = library.tryBeginScan(source: root);
+        library.reconcileLibraryDiskSnapshot(root, snapshot);
+        expect(library.childFoldersForLibrary(root), contains(deleted));
+        library.finishScan(generation);
+        final retained = library.reconcileLibraryDiskSnapshot(root, snapshot);
+        expect(retained, isNot(contains(deleted)));
+        expect(
+          retained,
+          containsAll([kept, excluded].map(PathMatcher.normalize)),
+        );
+        await library.flushPendingPersistence();
+        await library.loadPersistedState();
+        expect(library.childFoldersForLibrary(root), isNot(contains(deleted)));
+        expect(library.trackByPath(media), isNotNull);
+        expect(
+          library.isLibraryFolderExplicitlyExcluded(root, excluded),
+          isTrue,
+        );
+        expect(
+          library
+              .libraryEntriesForLibrary(root)
+              .any(
+                (entry) => PathMatcher.equalsNormalized(entry.path, deleted),
+              ),
+          isFalse,
+        );
+      },
+    );
+  }
+
   for (final restore in ['track', 'folder', 'all']) {
     test(
       'recoverable exclusion retains user state with $restore restore',

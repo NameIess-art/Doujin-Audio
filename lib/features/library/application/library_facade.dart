@@ -572,6 +572,80 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       _service.excludedFoldersForLibrary(libraryPath);
   List<String> childFoldersForLibrary(String libraryPath) =>
       _service.childFoldersForLibrary(libraryPath);
+
+  Set<String> reconcileLibraryDiskSnapshot(
+    String libraryPath,
+    LibraryEntryDiskSnapshot snapshot,
+  ) {
+    if (!snapshot.authoritative) return const <String>{};
+    final root = PathMatcher.normalize(libraryPath);
+    const organizer = LibraryService.organizer;
+    final liveFolders = <String>{};
+    void addFolderAndAncestors(String folderPath) {
+      var current = organizer.canonicalLibraryFolderPath(root, folderPath);
+      while (!PathMatcher.equalsNormalized(current, root) &&
+          PathMatcher.isWithinOrEqual(current, root)) {
+        liveFolders.add(current);
+        final parent = organizer.parentLibraryFolderPath(current, root);
+        if (parent == null || PathMatcher.equalsNormalized(parent, current)) {
+          break;
+        }
+        current = parent;
+      }
+    }
+
+    for (final folder in snapshot.scannedFolderPaths) {
+      addFolderAndAncestors(folder);
+    }
+    final populatedWorks = <String>{};
+    void retainWork(String folder) {
+      final work = organizer.workScopeFolderPath(root, folder);
+      if (work != null) populatedWorks.add(PathMatcher.equivalenceKey(work));
+    }
+
+    for (final track in snapshot.audioFilePaths) {
+      final parent =
+          snapshot.trackParentPaths[PathMatcher.normalize(track)] ??
+          PathMatcher.parentPath(track);
+      if (parent == null) continue;
+      addFolderAndAncestors(parent);
+      retainWork(parent);
+    }
+    for (final folder in _service.excludedFoldersForLibrary(root)) {
+      retainWork(organizer.canonicalLibraryFolderPath(root, folder));
+    }
+    // Android file deletion can leave empty directory shells. Keep excluded
+    // works restorable, but do not keep active work records with no disk media.
+    final retainedFolders = liveFolders.where((folder) {
+      final work = organizer.workScopeFolderPath(root, folder);
+      return work != null &&
+          populatedWorks.contains(PathMatcher.equivalenceKey(work));
+    }).toSet();
+    // The editor may open while a scan still owns a staged catalog batch.
+    // Its completion requests another disk snapshot after releasing that lease.
+    if (_scanOperationGeneration != 0 || _pathMutationCount != 0) {
+      return retainedFolders;
+    }
+    final retainedIndex = PathMembershipIndex(retainedFolders);
+    for (final folder in _service.childFoldersForLibrary(root)) {
+      if (PathMatcher.equalsNormalized(folder, root)) continue;
+      final canonical = organizer.canonicalLibraryFolderPath(root, folder);
+      if (!retainedIndex.containsEquivalent(canonical)) {
+        _catalogWrites.removeWatchedFolder(folder, notify: false);
+      }
+    }
+    _catalogWrites.removeTracksDeletedFromFolder(
+      root,
+      snapshot.audioFilePathSet,
+    );
+    _catalogWrites.removeLibraryEntriesDeletedFromFolder(root, root, {
+      ...snapshot.audioFilePaths,
+      ...retainedFolders,
+    });
+    _syncStateSlice();
+    return retainedFolders;
+  }
+
   @override
   List<LibraryEntry> libraryEntriesForLibrary(String libraryPath) =>
       _service.libraryEntriesForLibrary(libraryPath);

@@ -142,20 +142,10 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
 
   void _applyDiskSnapshot(LibraryEntryDiskSnapshot snapshot) {
     final audioFilePaths = snapshot.audioFilePathSet;
-    final liveFolderPaths = _buildLiveDiskFolderPathSet(
-      scannedTrackPaths: audioFilePaths,
-      scannedFolderPaths: snapshot.scannedFolderPaths,
-    );
-    final retainedPaths = <String>{
-      ...snapshot.audioFilePaths,
-      ...liveFolderPaths,
-    };
     final library = ref.read(libraryFacadeProvider);
-    library.removeTracksDeletedFromFolder(widget.libraryPath, audioFilePaths);
-    library.removeLibraryEntriesDeletedFromFolder(
+    final liveFolderPaths = library.reconcileLibraryDiskSnapshot(
       widget.libraryPath,
-      widget.libraryPath,
-      retainedPaths,
+      snapshot,
     );
     setState(() {
       // A complete disk scan supersedes exclusion-time copies of the tree.
@@ -469,38 +459,6 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
   }
 
   bool get _hasAuthoritativeDiskSnapshot => _diskSnapshotLoaded;
-
-  Set<String> _buildLiveDiskFolderPathSet({
-    required Set<String> scannedTrackPaths,
-    Iterable<String> scannedFolderPaths = const <String>[],
-  }) {
-    final rootPath = PathMatcher.normalize(widget.libraryPath);
-    final liveFolders = <String>{};
-
-    void addFolderAndAncestors(String folderPath) {
-      var current = PathMatcher.normalize(folderPath);
-      while (!PathMatcher.equalsNormalized(current, rootPath) &&
-          PathMatcher.isWithinOrEqualNormalized(current, rootPath)) {
-        liveFolders.add(current);
-        final parent = _projection.parentFolderPath(current, rootPath);
-        if (parent == null ||
-            parent == current ||
-            parent == '.' ||
-            parent.isEmpty) {
-          break;
-        }
-        current = parent;
-      }
-    }
-
-    for (final folderPath in scannedFolderPaths) {
-      addFolderAndAncestors(folderPath);
-    }
-    for (final trackPath in scannedTrackPaths) {
-      addFolderAndAncestors(path.dirname(trackPath));
-    }
-    return liveFolders;
-  }
 
   bool _trackExistsInDiskSnapshot(String trackPath) {
     if (!_hasAuthoritativeDiskSnapshot) return true;

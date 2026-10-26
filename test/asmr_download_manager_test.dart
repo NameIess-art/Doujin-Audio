@@ -4759,7 +4759,7 @@ void main() {
       unawaited(
         server.forEach((request) async {
           requests++;
-          if (!manualRetryStarted || requests == 5) {
+          if (!manualRetryStarted || requests < 8) {
             request.response.statusCode = HttpStatus.serviceUnavailable;
           } else {
             request.response.contentLength = 1;
@@ -4781,7 +4781,7 @@ void main() {
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
           saveMetadata: false,
-          automaticFileRetryCount: 1,
+          automaticFileRetryCount: 3,
         );
         await _waitForTaskStatus(
           manager,
@@ -4795,8 +4795,12 @@ void main() {
         });
         manualRetryStarted = true;
         expect(await manager.retryFailedFile(_key(1), 'Track.mp3'), isTrue);
+        expect(manager.getTask(_key(1))?.fileRetryAttempts, isEmpty);
         expect(await manager.retryFailedFile(_key(1), 'Track.mp3'), isFalse);
-        await _waitForFileRetryAttempt(manager, 1, 'Track.mp3', 1);
+        for (var attempt = 1; attempt <= 3; attempt++) {
+          await _waitForFileRetryAttempt(manager, 1, 'Track.mp3', attempt);
+          expect(requests, 4 + attempt);
+        }
         expect(
           manager.getTask(_key(1))?.manuallyRetryingFilePaths,
           contains('Track.mp3'),
@@ -4804,7 +4808,9 @@ void main() {
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
         final completed = manager.getTask(_key(1));
-        expect(requests, 6);
+        expect(requests, 8);
+        expect(completed?.automaticFileRetryCount, 3);
+        expect(completed?.fileRetryAttempts, isEmpty);
         expect(completed?.failedFiles, 0);
         expect(completed?.failedFilePaths, isEmpty);
         expect(completed?.manuallyRetryingFilePaths, isEmpty);
@@ -4818,7 +4824,7 @@ void main() {
   );
 
   test(
-    'manual file retry starts while a sibling is still downloading',
+    'manual file retry resets its full retry budget while a sibling downloads',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'asmr_download_manual_retry_active_',
@@ -4828,12 +4834,13 @@ void main() {
       final releaseRetry = Completer<void>();
       final releaseSlow = Completer<void>();
       var failedRequests = 0;
+      var slowRequests = 0;
       unawaited(
         server.forEach((request) async {
           if (request.uri.path.endsWith('failed.mp3')) {
             failedRequests++;
-            if (failedRequests == 1) {
-              request.response.statusCode = HttpStatus.notFound;
+            if (failedRequests < 8) {
+              request.response.statusCode = HttpStatus.serviceUnavailable;
             } else {
               retryStarted.complete();
               await releaseRetry.future;
@@ -4841,6 +4848,7 @@ void main() {
               request.response.add(const <int>[1]);
             }
           } else {
+            slowRequests++;
             await releaseSlow.future;
             request.response.contentLength = 1;
             request.response.add(const <int>[2]);
@@ -4867,12 +4875,20 @@ void main() {
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
           saveMetadata: false,
+          automaticFileRetryCount: 3,
         );
         await _waitForFailedFilePath(manager, 1, 'Failed.mp3');
 
+        expect(failedRequests, 4);
         expect(manager.getTask(_key(1))?.status, AsmrDownloadTaskStatus.downloading,
         );
         expect(await manager.retryFailedFile(_key(1), 'Failed.mp3'), isTrue);
+        expect(manager.getTask(_key(1))?.fileRetryAttempts, isEmpty);
+        expect(await manager.retryFailedFile(_key(1), 'Failed.mp3'), isFalse);
+        for (var attempt = 1; attempt <= 3; attempt++) {
+          await _waitForFileRetryAttempt(manager, 1, 'Failed.mp3', attempt);
+          expect(failedRequests, 4 + attempt);
+        }
         await retryStarted.future.timeout(const Duration(seconds: 5));
         expect(releaseSlow.isCompleted, isFalse);
         expect(
@@ -4883,7 +4899,13 @@ void main() {
         releaseRetry.complete();
         releaseSlow.complete();
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
-        expect(failedRequests, 2);
+        expect(failedRequests, 8);
+        expect(slowRequests, 1);
+        expect(manager.getTask(_key(1))?.automaticFileRetryCount, 3);
+        expect(manager.getTask(_key(1))?.fileRetryAttempts, isEmpty);
+        expect(manager.getTask(_key(1))?.failedFiles, 0);
+        expect(manager.getTask(_key(1))?.completedFiles, 2);
+        expect(manager.getTask(_key(1))?.manuallyRetryingFilePaths, isEmpty);
       } finally {
         if (!releaseRetry.isCompleted) releaseRetry.complete();
         if (!releaseSlow.isCompleted) releaseSlow.complete();

@@ -420,201 +420,204 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
       // Reparent this same subtree so paging and image zoom survive the toggle.
       key: _viewerKey,
       backgroundColor: cs.surface,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            top: imageTop,
-            bottom: imageBottom,
-            child: AppPageContentTransition(
-              child: ScrollConfiguration(
-                behavior: ScrollConfiguration.of(context).copyWith(
-                  dragDevices: {
-                    PointerDeviceKind.touch,
-                    PointerDeviceKind.mouse,
-                    PointerDeviceKind.trackpad,
-                    PointerDeviceKind.stylus,
-                  },
-                ),
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: _handlePageScroll,
-                  child: PageView.builder(
-                    key: const ValueKey<String>('work_image_viewport'),
-                    controller: _pageController,
-                    physics: _isCurrentZoomed
-                        ? const NeverScrollableScrollPhysics()
-                        : (widget.images.length > 1
-                              ? const PageScrollPhysics()
-                              : const NeverScrollableScrollPhysics()),
-                    onPageChanged: _onPageChanged,
-                    itemCount: widget.images.length > 1
-                        ? null
-                        : widget.images.length,
-                    itemBuilder: (context, page) {
-                      final index = _indexForPage(page, widget.images.length);
-                      final img = widget.images[index];
-                      return _WorkImageViewerItem(
-                        key: ValueKey<String>('image_item_${img.path}_$page'),
-                        isActive: index == _currentIndex,
-                        onZoomChanged: (zoomed) {
-                          setState(() => _isCurrentZoomed = zoomed);
-                        },
-                        child: _buildImage(img, cs),
-                      );
+      body: ClipRect(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              top: imageTop,
+              bottom: imageBottom,
+              child: AppPageContentTransition(
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(
+                    dragDevices: {
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.mouse,
+                      PointerDeviceKind.trackpad,
+                      PointerDeviceKind.stylus,
                     },
+                  ),
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _handlePageScroll,
+                    child: PageView.builder(
+                      key: const ValueKey<String>('work_image_viewport'),
+                      clipBehavior: Clip.none,
+                      controller: _pageController,
+                      physics: _isCurrentZoomed
+                          ? const NeverScrollableScrollPhysics()
+                          : (widget.images.length > 1
+                                ? const PageScrollPhysics()
+                                : const NeverScrollableScrollPhysics()),
+                      onPageChanged: _onPageChanged,
+                      itemCount: widget.images.length > 1
+                          ? null
+                          : widget.images.length,
+                      itemBuilder: (context, page) {
+                        final index = _indexForPage(page, widget.images.length);
+                        final img = widget.images[index];
+                        return _WorkImageViewerItem(
+                          key: ValueKey<String>('image_item_${img.path}_$page'),
+                          isActive: index == _currentIndex,
+                          onZoomChanged: (zoomed) {
+                            setState(() => _isCurrentZoomed = zoomed);
+                          },
+                          child: _buildImage(img, cs),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          // Floating Top Page Header
-          Positioned(
-            key: _headerKey,
-            top: 0,
-            left: 0,
-            right: 0,
-            child: TopPageHeader(
-              key: const ValueKey<String>('work_image_header'),
-              icon: AppDesignTokens.imageFileIcon,
-              iconColor: AppDesignTokens.imageFileIconColor,
-              title: currentImage.name,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_rounded),
-                tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-                onPressed: () => Navigator.of(this.context).maybePop(),
-              ),
-              trailing: widget.onSetAsCover != null
-                  ? HeaderFloatingSurface(
-                      padding: EdgeInsets.zero,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          key: const ValueKey<String>(
-                            'viewer_set_as_cover_button',
-                          ),
-                          borderRadius: BorderRadius.circular(19),
-                          onTap: _isSettingCover ? null : _handleSetAsCover,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (_isSettingCover)
-                                  const SizedBox.square(
-                                    dimension: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                else
-                                  Icon(
-                                    Icons.photo_size_select_actual_outlined,
-                                    size: 18,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
-                                  ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  ref
-                                      .watch(
-                                        appLanguageProviderInstanceProvider,
-                                      )
-                                      .tr('audio_detail_set_cover'),
-                                  style: Theme.of(context).textTheme.labelMedium
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
+            // Floating Top Page Header
+            Positioned(
+              key: _headerKey,
+              top: 0,
+              left: 0,
+              right: 0,
+              child: TopPageHeader(
+                key: const ValueKey<String>('work_image_header'),
+                icon: AppDesignTokens.imageFileIcon,
+                iconColor: AppDesignTokens.imageFileIconColor,
+                title: currentImage.name,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                  onPressed: () => Navigator.of(this.context).maybePop(),
+                ),
+                trailing: widget.onSetAsCover != null
+                    ? HeaderFloatingSurface(
+                        padding: EdgeInsets.zero,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            key: const ValueKey<String>(
+                              'viewer_set_as_cover_button',
+                            ),
+                            borderRadius: BorderRadius.circular(19),
+                            onTap: _isSettingCover ? null : _handleSetAsCover,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_isSettingCover)
+                                    const SizedBox.square(
+                                      dimension: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
                                       ),
-                                ),
-                              ],
+                                    )
+                                  else
+                                    Icon(
+                                      Icons.photo_size_select_actual_outlined,
+                                      size: 18,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                    ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    ref
+                                        .watch(
+                                          appLanguageProviderInstanceProvider,
+                                        )
+                                        .tr('audio_detail_set_cover'),
+                                    style: Theme.of(context).textTheme.labelMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface,
+                                        ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    )
-                  : null,
+                      )
+                    : null,
+              ),
             ),
-          ),
-          if (View.of(context).physicalSize.aspectRatio > 1)
-            Positioned(
-              left: MediaQuery.paddingOf(context).left + 16,
-              bottom: bottomInset + 20,
-              child: AppPageContentTransition(
-                child: HeaderFloatingButton(
-                  child: IconButton(
-                    key: const ValueKey('image_viewer_fullscreen_button'),
-                    icon: Icon(
-                      _fullscreenController.isShowing
-                          ? Icons.fullscreen_exit_rounded
-                          : Icons.fullscreen_rounded,
+            if (View.of(context).physicalSize.aspectRatio > 1)
+              Positioned(
+                left: MediaQuery.paddingOf(context).left + 16,
+                bottom: bottomInset + 20,
+                child: AppPageContentTransition(
+                  child: HeaderFloatingButton(
+                    child: IconButton(
+                      key: const ValueKey('image_viewer_fullscreen_button'),
+                      icon: Icon(
+                        _fullscreenController.isShowing
+                            ? Icons.fullscreen_exit_rounded
+                            : Icons.fullscreen_rounded,
+                      ),
+                      tooltip: i18n.tr(
+                        _fullscreenController.isShowing
+                            ? 'exit_fullscreen'
+                            : 'fullscreen',
+                      ),
+                      onPressed: _toggleFullscreen,
                     ),
-                    tooltip: i18n.tr(
-                      _fullscreenController.isShowing
-                          ? 'exit_fullscreen'
-                          : 'fullscreen',
-                    ),
-                    onPressed: _toggleFullscreen,
                   ),
                 ),
               ),
-            ),
-          // Bottom-right switcher capsule
-          if (widget.images.length > 1)
-            Positioned(
-              key: _switcherKey,
-              right: 16,
-              bottom: MediaQuery.paddingOf(context).bottom + 20,
-              child: AppPageContentTransition(
-                child: HeaderFloatingSurface(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        key: const ValueKey<String>('image_viewer_prev_button'),
-                        iconSize: 18,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 32,
-                          height: 32,
+            // Bottom-right switcher capsule
+            if (widget.images.length > 1)
+              Positioned(
+                key: _switcherKey,
+                right: 16,
+                bottom: MediaQuery.paddingOf(context).bottom + 20,
+                child: AppPageContentTransition(
+                  child: HeaderFloatingSurface(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          key: const ValueKey<String>('image_viewer_prev_button'),
+                          iconSize: 18,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 32,
+                            height: 32,
+                          ),
+                          icon: const Icon(Icons.chevron_left_rounded),
+                          tooltip: i18n.tr('previous'),
+                          onPressed: _goToPrevious,
                         ),
-                        icon: const Icon(Icons.chevron_left_rounded),
-                        tooltip: i18n.tr('previous'),
-                        onPressed: _goToPrevious,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        child: Text(
-                          '${_currentIndex + 1} / ${widget.images.length}',
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.5,
-                                fontSize: 12.5,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Text(
+                            '${_currentIndex + 1} / ${widget.images.length}',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.5,
+                                  fontSize: 12.5,
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                ),
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        key: const ValueKey<String>('image_viewer_next_button'),
-                        iconSize: 18,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 32,
-                          height: 32,
+                        IconButton(
+                          key: const ValueKey<String>('image_viewer_next_button'),
+                          iconSize: 18,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 32,
+                            height: 32,
+                          ),
+                          icon: const Icon(Icons.chevron_right_rounded),
+                          tooltip: i18n.tr('next'),
+                          onPressed: _goToNext,
                         ),
-                        icon: const Icon(Icons.chevron_right_rounded),
-                        tooltip: i18n.tr('next'),
-                        onPressed: _goToNext,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -693,6 +696,8 @@ class _WorkImageViewerItemState extends State<_WorkImageViewerItem> {
       onDoubleTap: _handleDoubleTap,
       child: InteractiveViewer(
         transformationController: _controller,
+        // Keep the initial fit between controls, but paint zoom beneath them.
+        clipBehavior: Clip.none,
         panEnabled: _isZoomed,
         minScale: 1.0,
         maxScale: 4.0,

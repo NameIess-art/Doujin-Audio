@@ -412,8 +412,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
     final retryAttempt = state.retryAttempt;
     final isFileFailed = state.failed;
     final isManualRetrying = state.retrying;
-    final canRetryFile =
-        onRetryFile != null && state.canRetry && !isManualRetrying;
+    final canRetryFile = onRetryFile != null && state.canRetry;
     final cs = Theme.of(context).colorScheme;
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final progress =
@@ -472,7 +471,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
           ),
         ],
       ),
-      trailing: isFileFailed || isManualRetrying
+      trailing: isFileFailed && !isManualRetrying
           ? SizedBox.square(
               dimension: 44,
               child: IconButton(

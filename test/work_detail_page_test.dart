@@ -3367,6 +3367,121 @@ void main() {
   });
 
   group('WorkImageViewerPage', () {
+    _detailTestWidgets(
+      'zoomed image paints beneath floating controls without moving its initial frame',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        _detailFixtures.add(fixture);
+        addTearDown(fixture.dispose);
+        final directory = await tester.runAsync(
+          () => Directory.systemTemp.createTemp('viewer_overflow_'),
+        );
+        addTearDown(() async {
+          if (await directory!.exists()) await directory.delete(recursive: true);
+        });
+        final image = File('${directory!.path}/red.png');
+        await tester.runAsync(
+          () => image.writeAsBytes(
+            base64Decode(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+            ),
+          ),
+        );
+        final boundaryKey = GlobalKey();
+        await tester.pumpWidget(
+          fixture.build(
+            RepaintBoundary(
+              key: boundaryKey,
+              child: WorkImageViewerPage(
+                images: [
+                  WorkImageItem(name: 'red.png', path: image.path),
+                  WorkImageItem(name: 'other.png', path: image.path),
+                ],
+              ),
+            ),
+          ),
+        );
+        await _settleDetail(tester);
+        final provider = FileImage(image);
+        var decoded = false;
+        final decoding = precacheImage(
+          provider,
+          tester.element(find.byType(Image).first),
+        ).then((_) => decoded = true);
+        for (var attempt = 0; attempt < 100 && !decoded; attempt++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump();
+        }
+        expect(decoded, isTrue);
+        await decoding;
+        await _settleDetail(tester);
+        final viewport = find.byKey(const ValueKey('work_image_viewport'));
+        final initialBounds = tester.getRect(viewport);
+        final header = tester.getRect(find.byType(TopPageHeader));
+        final next = find.byKey(const ValueKey('image_viewer_next_button'));
+        final switcher = tester.getRect(
+          find.ancestor(of: next, matching: find.byType(HeaderFloatingSurface)),
+        );
+        expect(initialBounds.top - header.bottom, 24);
+        expect(switcher.top - initialBounds.bottom, 20);
+        final points = [
+          Offset(initialBounds.center.dx, initialBounds.top - 8),
+          Offset(initialBounds.center.dx, initialBounds.bottom + 8),
+          Offset(8, header.center.dy),
+          Offset(8, switcher.center.dy),
+        ];
+        Future<List<bool>> redPixels() async {
+          final boundary =
+              boundaryKey.currentContext!.findRenderObject()!
+                  as RenderRepaintBoundary;
+          return (await tester.runAsync(() async {
+            final bitmap = await boundary.toImage();
+            final data = (await bitmap.toByteData())!;
+            final result = <bool>[];
+            for (final point in points) {
+              final offset =
+                  (point.dy.floor() * bitmap.width + point.dx.floor()) * 4;
+              // The header fade mask tints the image but retains its red hue.
+              result.add(data.getUint8(offset) > data.getUint8(offset + 1) + 40);
+            }
+            bitmap.dispose();
+            return result;
+          }))!;
+        }
+
+        expect(await redPixels(), everyElement(isFalse));
+        final viewer = tester.widget<InteractiveViewer>(
+          find.byType(InteractiveViewer).hitTestable().first,
+        );
+        viewer.transformationController!.value = Matrix4.identity()
+          ..translateByDouble(
+            -initialBounds.width * .75,
+            -initialBounds.height * .75,
+            0,
+            1,
+          )
+          ..scaleByDouble(2.5, 2.5, 1, 1);
+        await tester.pumpAndSettle();
+        expect(tester.getRect(viewport), initialBounds);
+        expect(await redPixels(), everyElement(isTrue));
+        await tester.tap(next);
+        await tester.pumpAndSettle();
+        expect(find.text('2 / 2'), findsOneWidget);
+        expect(tester.getRect(viewport), initialBounds);
+        expect(await redPixels(), everyElement(isFalse));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        releaseRetainedCoverImage(provider);
+        await provider.evict();
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       _detailTestWidgets(
         'fullscreen fills the window and preserves paging and zoom on $platform',

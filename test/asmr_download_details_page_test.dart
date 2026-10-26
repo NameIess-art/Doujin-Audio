@@ -596,7 +596,7 @@ void main() {
     );
   });
 
-  testWidgets('failed file disables its retry button while retrying', (
+  testWidgets('failed file hides its retry button throughout manual retry', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -637,21 +637,43 @@ void main() {
     await tester.tap(retryButton);
     expect(manager.retriedPaths, <String>['Track.mp3']);
 
+    for (final status in [
+      AsmrDownloadTaskStatus.failed,
+      AsmrDownloadTaskStatus.idle,
+      AsmrDownloadTaskStatus.preparing,
+      AsmrDownloadTaskStatus.downloading,
+    ]) {
+      await tester.pumpWidget(
+        _downloadDetailsApp(
+          languageProvider,
+          failedTask.copyWith(
+            status: status,
+            manuallyRetryingFilePaths: const <String>{'Track.mp3'},
+          ),
+          manager: manager,
+        ),
+      );
+      await tester.pump();
+
+      expect(retryButton, findsNothing);
+      expect(find.byTooltip('Retry'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    }
+
     await tester.pumpWidget(
       _downloadDetailsApp(
         languageProvider,
         failedTask.copyWith(
           status: AsmrDownloadTaskStatus.downloading,
           manuallyRetryingFilePaths: const <String>{'Track.mp3'},
+          fileRetryAttempts: const <String, int>{'Track.mp3': 1},
         ),
         manager: manager,
       ),
     );
     await tester.pump();
-
-    expect(retryButton, findsOneWidget);
-    expect(tester.widget<IconButton>(retryButton).onPressed, isNull);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('Retrying (1/7)'), findsOneWidget);
+    expect(retryButton, findsNothing);
 
     await tester.pumpWidget(
       _downloadDetailsApp(
@@ -676,6 +698,8 @@ void main() {
     await tester.pump();
 
     expect(retryButton, findsOneWidget);
+    expect(tester.widget<IconButton>(retryButton).onPressed, isNotNull);
+    expect(find.text('Retrying (1/7)'), findsNothing);
   });
 
   testWidgets('paused failed file keeps its manual retry action disabled', (

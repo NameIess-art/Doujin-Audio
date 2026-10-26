@@ -55,6 +55,241 @@ void main() {
     await fixture.dispose(currentGraph: runtimeGraph);
   });
 
+  for (final restore in ['track', 'folder', 'all']) {
+    test(
+      'recoverable exclusion retains user state with $restore restore',
+      () async {
+        final library = runtimeGraph.library;
+        final repository = library.databaseRepository;
+        const root = '/retained-library';
+        const folder = '$root/work';
+        final original = MusicTrack(
+          path: path.normalize('$folder/01.mp3'),
+          displayName: '01',
+          groupKey: path.normalize(folder),
+          groupTitle: 'work',
+          groupSubtitle: folder,
+          isSingle: false,
+          isFavorite: true,
+          tags: const ['user-tag'],
+          duration: const Duration(minutes: 5),
+          lastPlayedPosition: const Duration(seconds: 42),
+          lastPlayedAt: DateTime(2026, 10, 25),
+          manualCoverPath: '$folder/manual.jpg',
+          lyricsPath: '$folder/01.lrc',
+        );
+        library.configurePersistence(enabled: true);
+        library.addWatchedLibrary(root);
+        library.addTracks([original]);
+        await library.flushPendingPersistence();
+        await repository.insertTracks([original]);
+
+        if (restore == 'track') {
+          library.setLibraryTrackExcluded(root, original.path, true);
+        } else {
+          library.setLibraryFolderExcluded(root, folder, true);
+        }
+        await pumpEventQueue();
+        await library.flushPendingPersistence();
+        expect(library.trackByPath(original.path), isNull);
+        expect(
+          (await repository.loadTrackDetail(original.path))?.isFavorite,
+          true,
+        );
+
+        await library.resetPersistedState();
+        await library.loadPersistedState();
+        expect(library.trackByPath(original.path), isNull);
+        if (restore == 'track') {
+          library.setLibraryTrackExcluded(root, original.path, false);
+        } else if (restore == 'folder') {
+          library.setLibraryFolderExcluded(root, folder, false);
+        } else {
+          await library.clearLibraryExclusions(root);
+        }
+        for (
+          var i = 0;
+          i < 100 && library.trackByPath(original.path) == null;
+          i++
+        ) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        await library.flushPendingPersistence();
+        final restored = library.trackByPath(original.path)!;
+        expect(restored.isFavorite, true);
+        expect(restored.tags, original.tags);
+        expect(restored.lastPlayedPosition, original.lastPlayedPosition);
+        expect(restored.lastPlayedAt, original.lastPlayedAt);
+        expect(restored.duration, original.duration);
+        expect(restored.manualCoverPath, original.manualCoverPath);
+        expect(restored.lyricsPath, original.lyricsPath);
+        expect(
+          (await repository.loadTrackDetail(original.path))?.tags,
+          original.tags,
+        );
+      },
+    );
+  }
+
+  for (final renameFolder in [false, true]) {
+    test(
+      'renaming an excluded ${renameFolder ? 'folder' : 'track'} retains user state',
+      () async {
+        final root = await Directory.systemTemp.createTemp('excluded_rename_');
+        addTearDown(() => root.delete(recursive: true));
+        final folder = await Directory(path.join(root.path, 'work')).create();
+        final file = await File(
+          path.join(folder.path, '01.mp3'),
+        ).writeAsString('audio');
+        final library = runtimeGraph.library;
+        final repository = library.databaseRepository;
+        final original = MusicTrack(
+          path: file.path,
+          displayName: '01',
+          groupKey: folder.path,
+          groupTitle: 'work',
+          groupSubtitle: folder.path,
+          isSingle: false,
+          isFavorite: true,
+          tags: const ['user-tag'],
+          lastPlayedPosition: const Duration(seconds: 42),
+        );
+        library.configurePersistence(enabled: true);
+        library.addWatchedLibrary(root.path);
+        library.addTracks([original]);
+        await library.flushPendingPersistence();
+        await repository.insertTracks([original]);
+        library.setLibraryTrackExcluded(root.path, file.path, true);
+        await pumpEventQueue();
+        await library.flushPendingPersistence();
+        final renamed = await runtimeGraph.audioPaths.renameWorkEntryToName(
+          libraryRootPath: root.path,
+          entryPath: renameFolder ? folder.path : file.path,
+          targetName: 'renamed',
+          isMedia: !renameFolder,
+          isDirectory: renameFolder,
+        );
+        final nextPath = renameFolder ? path.join(renamed, '01.mp3') : renamed;
+        expect(library.trackByPath(nextPath), isNull);
+        expect(await repository.loadTrackDetail(file.path), isNull);
+        library.setLibraryTrackExcluded(root.path, nextPath, false);
+        for (var i = 0; i < 100 && library.trackByPath(nextPath) == null; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        final restored = library.trackByPath(nextPath)!;
+        expect(restored.isFavorite, true);
+        expect(restored.tags, original.tags);
+        expect(restored.lastPlayedPosition, original.lastPlayedPosition);
+      },
+    );
+  }
+
+  for (final cleanup in ['root', 'missing entry', 'missing entry batch']) {
+    test(
+      'permanent $cleanup cleanup deletes retained excluded records',
+      () async {
+        final library = runtimeGraph.library;
+        final repository = library.databaseRepository;
+        const root = '/excluded-cleanup';
+        final audio = MusicTrack(
+          path: path.normalize('$root/work/01.mp3'),
+          displayName: '01',
+          groupKey: path.normalize('$root/work'),
+          groupTitle: 'work',
+          groupSubtitle: root,
+          isSingle: false,
+          isFavorite: true,
+        );
+        library.configurePersistence(enabled: true);
+        library.addWatchedLibrary(root);
+        library.addTracks([audio]);
+        await library.flushPendingPersistence();
+        library.setLibraryTrackExcluded(root, audio.path, true);
+        await pumpEventQueue();
+        await library.flushPendingPersistence();
+        expect(await repository.loadTrackDetail(audio.path), isNotNull);
+        if (cleanup == 'root') {
+          await library.removeFolder(root);
+        } else {
+          if (cleanup.endsWith('batch')) library.beginLibraryBatch();
+          library.removeLibraryEntriesByPaths(root, [audio.path]);
+          if (cleanup.endsWith('batch')) await library.endLibraryBatch();
+        }
+        await pumpEventQueue();
+        await library.flushPendingPersistence();
+        expect(await repository.loadTrackDetail(audio.path), isNull);
+        await library.resetPersistedState();
+        await library.loadPersistedState();
+        expect(library.trackByPath(audio.path), isNull);
+      },
+    );
+  }
+
+  for (final action in [
+    'new exclusions',
+    'root removal',
+    'entry removal',
+    'clear entry removal',
+  ]) {
+    test(
+      'pending folder restore respects $action',
+      () async {
+        final repository = _BlockingRestoreRepository(AppDatabase.test(db));
+        final library = LibraryFacade.create(
+          databaseRepository: repository,
+          jsonDocumentStore: TestJsonDocumentStore(),
+        );
+        addTearDown(library.dispose);
+        addTearDown(() {
+          if (!repository.release.isCompleted) repository.release.complete();
+        });
+        const root = '/pending-restore';
+        const folder = '$root/work';
+        final tracks = [
+          for (final name in ['a', 'b'])
+            MusicTrack(
+              path: path.normalize('$folder/$name.mp3'),
+              displayName: name,
+              groupKey: path.normalize(folder),
+              groupTitle: 'work',
+              groupSubtitle: folder,
+              isSingle: false,
+              isFavorite: true,
+            ),
+        ];
+        library.addWatchedLibrary(root);
+        library.addTracks(tracks);
+        await library.flushPendingPersistence();
+        library.setLibraryFolderExcluded(root, folder, true);
+        await pumpEventQueue();
+        await library.flushPendingPersistence();
+        repository.blockedPath = tracks.last.path;
+        final restoration = action.startsWith('clear')
+            ? library.clearLibraryExclusions(root)
+            : null;
+        if (restoration == null) {
+          library.setLibraryFolderExcluded(root, folder, false);
+        }
+        await repository.started.future;
+        if (action == 'root removal') {
+          await library.removeFolder(root);
+        } else if (action.endsWith('entry removal')) {
+          library.removeLibraryEntriesByPaths(root, [tracks.first.path]);
+          await pumpEventQueue();
+        } else {
+          library.setLibraryTrackExcluded(root, tracks.first.path, true);
+          await pumpEventQueue();
+        }
+        repository.release.complete();
+        await restoration;
+        await pumpEventQueue(times: 100);
+        await library.flushPendingPersistence();
+        expect(library.trackByPath(tracks.first.path), isNull);
+        if (action == 'root removal') expect(library.library, isEmpty);
+      },
+    );
+  }
+
   test('opaque SAF rescan prunes only tracks from the confirmed root', () {
     const root = 'content://provider/tree/root';
     const other = 'content://provider/tree/other';
@@ -990,7 +1225,7 @@ void main() {
           );
           expect(library.trackByPath(excludedPath), isNull);
           library.beginLibraryBatch();
-          library.clearLibraryExclusions(root);
+          await library.clearLibraryExclusions(root);
           await library.endLibraryBatch();
           expect(library.trackByPath(excludedPath), isNotNull);
         }
@@ -3360,7 +3595,7 @@ void main() {
         );
         expect(runtimeGraph.library.trackByPath(audio.path), isNull);
 
-        runtimeGraph.library.clearLibraryExclusions(folderPath);
+        await runtimeGraph.library.clearLibraryExclusions(folderPath);
         await pumpEventQueue();
         expect(runtimeGraph.library.trackByPath(audio.path), isNotNull);
       });
@@ -3970,7 +4205,7 @@ void main() {
 
       expect(runtimeGraph.library.trackByPath(trackPath), isNull);
 
-      runtimeGraph.library.clearLibraryExclusions(folder.path);
+      await runtimeGraph.library.clearLibraryExclusions(folder.path);
 
       expect(runtimeGraph.library.trackByPath(trackPath), isNotNull);
       expect(runtimeGraph.library.hasLibraryExclusions(folder.path), isFalse);
@@ -4309,6 +4544,22 @@ class _BlockingDeletionTestPersistenceRepository
     if (!_libraryEntryDeletionCompleted.isCompleted) {
       _libraryEntryDeletionCompleted.complete();
     }
+  }
+}
+
+class _BlockingRestoreRepository extends TestPersistenceRepository {
+  _BlockingRestoreRepository(AppDatabase database) : super(database: database);
+  String? blockedPath;
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<MusicTrack?> loadTrackDetail(String path) async {
+    if (path == blockedPath) {
+      if (!started.isCompleted) started.complete();
+      await release.future;
+    }
+    return super.loadTrackDetail(path);
   }
 }
 

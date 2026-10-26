@@ -134,13 +134,19 @@ internal fun <T> replaceSafDocument(
     rename: (T, String) -> T?,
     delete: (T) -> Boolean
 ): T? {
-    var current = existing
-    if (current == null && staleBackup != null) {
-        current = runCatching { rename(staleBackup, targetName) }.getOrNull()
-            ?: return null
-    } else if (current != null && staleBackup != null) {
-        return null
-    }
+    val recovery = recoverSafDocument(
+        targetName = targetName,
+        existing = existing,
+        staleBackup = staleBackup,
+        staleTemp = null,
+        // Binary replacements commit by rename before removing their backup.
+        // A surviving target is therefore the committed copy, regardless of format.
+        isValid = { true },
+        rename = rename,
+        delete = delete
+    )
+    if (recovery.failed) return null
+    val current = recovery.document
 
     val temp = runCatching { createTemp() }.getOrNull() ?: return null
     fun cleanupTemp() {

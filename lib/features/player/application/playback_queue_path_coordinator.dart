@@ -254,8 +254,32 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     if (PathMatcher.equalsNormalized(normalizedOldPath, normalizedNewPath)) {
       return;
     }
-    if (_retargetedPathAliases[normalizedOldPath] == normalizedNewPath) return;
-    _retargetedPathAliases[normalizedOldPath] = normalizedNewPath;
+    final aliases = <String, String>{};
+    for (final entry in _retargetedPathAliases.entries) {
+      aliases[entry.key] = PathMatcher.replaceWithinOrEqual(
+        entry.value,
+        normalizedOldPath,
+        normalizedNewPath,
+      );
+      // A directory alias also owns historical paths of children renamed later.
+      if (PathMatcher.isWithinOrEqual(normalizedOldPath, entry.value)) {
+        final historicalPath = PathMatcher.replaceWithinOrEqual(
+          normalizedOldPath,
+          entry.value,
+          entry.key,
+        );
+        aliases[historicalPath] = normalizedNewPath;
+      }
+    }
+    aliases.removeWhere(
+      (source, _) => PathMatcher.isWithinOrEqual(source, normalizedNewPath),
+    );
+    aliases[normalizedOldPath] = normalizedNewPath;
+    // A reused destination must shadow aliases of its former parent directory.
+    aliases[normalizedNewPath] = normalizedNewPath;
+    _retargetedPathAliases
+      ..clear()
+      ..addAll(aliases);
     _retargetRevision++;
   }
 
@@ -263,58 +287,41 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     if (value.isEmpty || _retargetedPathAliases.isEmpty) {
       return PathMatcher.normalize(value);
     }
-    var current = PathMatcher.normalize(value);
-    final seen = <String>{current};
-    while (true) {
-      String? bestMatch;
-      String? nextValue;
-      for (final entry in _retargetedPathAliases.entries) {
-        if (!PathMatcher.isWithinOrEqual(current, entry.key)) continue;
-        if (bestMatch == null || entry.key.length > bestMatch.length) {
-          bestMatch = entry.key;
-          nextValue = entry.value;
-        }
+    final current = PathMatcher.normalize(value);
+    String? bestMatch;
+    String? nextValue;
+    for (final entry in _retargetedPathAliases.entries) {
+      if (!PathMatcher.isWithinOrEqual(current, entry.key)) continue;
+      if (bestMatch == null || entry.key.length > bestMatch.length) {
+        bestMatch = entry.key;
+        nextValue = entry.value;
       }
-      if (bestMatch == null || nextValue == null) return current;
-      final resolved = PathMatcher.normalize(
-        PathMatcher.replaceWithinOrEqual(current, bestMatch, nextValue),
-      );
-      if (PathMatcher.equalsNormalized(resolved, current) ||
-          !seen.add(resolved)) {
-        return resolved;
-      }
-      current = resolved;
     }
+    if (bestMatch == null || nextValue == null) return current;
+    return PathMatcher.normalize(
+      PathMatcher.replaceWithinOrEqual(current, bestMatch, nextValue),
+    );
   }
 
   String? originalPathForRetargeted(String value) {
     if (value.isEmpty || _retargetedPathAliases.isEmpty) return null;
-    var current = PathMatcher.normalize(value);
-    final seen = <String>{current};
-    var matchedAny = false;
-    while (true) {
-      String? bestMatch;
-      String? nextValue;
-      for (final entry in _retargetedPathAliases.entries) {
-        if (!PathMatcher.isWithinOrEqual(current, entry.value)) continue;
-        if (bestMatch == null || entry.value.length > bestMatch.length) {
-          bestMatch = entry.value;
-          nextValue = entry.key;
-        }
+    final current = PathMatcher.normalize(value);
+    String? bestMatch;
+    String? nextValue;
+    for (final entry in _retargetedPathAliases.entries) {
+      if (PathMatcher.equalsNormalized(entry.key, entry.value) ||
+          !PathMatcher.isWithinOrEqual(current, entry.value)) {
+        continue;
       }
-      if (bestMatch == null || nextValue == null) {
-        return matchedAny ? current : null;
+      if (bestMatch == null || entry.value.length > bestMatch.length) {
+        bestMatch = entry.value;
+        nextValue = entry.key;
       }
-      matchedAny = true;
-      final resolved = PathMatcher.normalize(
-        PathMatcher.replaceWithinOrEqual(current, bestMatch, nextValue),
-      );
-      if (PathMatcher.equalsNormalized(resolved, current) ||
-          !seen.add(resolved)) {
-        return resolved;
-      }
-      current = resolved;
     }
+    if (bestMatch == null || nextValue == null) return null;
+    return PathMatcher.normalize(
+      PathMatcher.replaceWithinOrEqual(current, bestMatch, nextValue),
+    );
   }
 
   void clearRetargetedPaths() {

@@ -44,8 +44,6 @@ class AppSettingsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
     final outerRadius = tokens.radiusCard;
     const innerRadius = 6.0;
@@ -56,21 +54,18 @@ class AppSettingsCard extends StatelessWidget {
         bottomLeft: Radius.circular(isLast ? outerRadius : innerRadius),
         bottomRight: Radius.circular(isLast ? outerRadius : innerRadius),
       ),
-      side: BorderSide(
-        color: cs.outlineVariant.withValues(alpha: tokens.subtleBorderAlpha),
-      ),
     );
     return Padding(
       padding: EdgeInsets.only(bottom: bottomSpacing ?? (isLast ? 0 : 3)),
       child: Card(
         clipBehavior: Clip.antiAlias,
-        color: cs.surfaceContainerLow,
+        color: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: shape,
         child: ListTileTheme.merge(
-          // The card owns the border; an ink border would also add tile padding.
-          shape: shape.copyWith(side: BorderSide.none),
+          shape: shape,
           child: child,
         ),
       ),

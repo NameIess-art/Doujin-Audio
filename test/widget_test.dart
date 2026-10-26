@@ -1088,7 +1088,10 @@ void main() {
     for (final icon in tester.widgetList<Icon>(
       find.descendant(of: navigation, matching: find.byType(Icon)),
     )) {
-      expect(icon.size, 28);
+      expect(
+        icon.size,
+        closeTo(icon.icon == Icons.playlist_play_rounded ? 32.2 : 28, 0.001),
+      );
     }
     final focusedDestination = find.byKey(
       const ValueKey<String>('main_destination_music_library'),
@@ -1260,7 +1263,7 @@ void main() {
     const destinations = <String, IconData>{
       'show_asmr_one': Icons.cloud_rounded,
       'music_library': Icons.library_music_rounded,
-      'nav_sessions': Icons.featured_play_list_rounded,
+      'nav_sessions': Icons.playlist_play_rounded,
       'nav_settings': Icons.settings_rounded,
     };
     final navigation = find.byKey(

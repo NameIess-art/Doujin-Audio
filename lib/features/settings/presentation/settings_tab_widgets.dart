@@ -1,6 +1,6 @@
 part of 'settings_tab.dart';
 
-const double _settingsTileHeight = 78;
+const double _settingsTileHeight = 64;
 const double _settingsTileTitleFontSize = 16;
 const double _settingsTileSubtitleFontSize = 13;
 const double _settingsDropdownMaxWidth = 180;
@@ -103,7 +103,7 @@ class _SettingsTileTheme extends StatelessWidget {
       subtitleFontWeight = null;
 
   const _SettingsTileTheme.categories({required this.child})
-    : minTileHeight = 78,
+    : minTileHeight = _settingsTileHeight,
       titleFontSize = 18,
       subtitleFontSize = 14,
       titleFontWeight = FontWeight.bold,
@@ -140,6 +140,7 @@ class _SettingsTileTheme extends StatelessWidget {
         visualDensity: const VisualDensity(horizontal: -1),
         contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         minTileHeight: minTileHeight,
+        iconColor: theme.colorScheme.primary,
         minVerticalPadding: 2,
         titleTextStyle: titleTextStyle,
         subtitleTextStyle: subtitleTextStyle,
@@ -277,7 +278,7 @@ class _UpdateSettingsTile extends StatelessWidget {
 
     return ListTile(
       onTap: busy ? null : onCheck,
-      leading: _settingsIcon(Icons.system_update_alt_rounded, cs.onSurface),
+      leading: _settingsIcon(Icons.system_update_alt_rounded, cs.primary),
       title: _SettingsTitleBlock(
         title: i18n.tr('check_updates'),
         subtitle: _UpdateSubtitle(

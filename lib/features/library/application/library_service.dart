@@ -363,6 +363,7 @@ class LibraryService {
     String newFolderPath,
     String folderName, {
     String? libraryRootPath,
+    Iterable<MusicTrack> retainedTracks = const [],
   }) {
     final oldRoot = PathMatcher.normalize(oldFolderPath);
     final newRoot = PathMatcher.normalize(newFolderPath);
@@ -371,8 +372,11 @@ class LibraryService {
         ? newRoot
         : oldLibraryRoot;
     final retargetedTracks = <String, MusicTrack>{};
-    for (var i = 0; i < library.length; i++) {
-      final track = library[i];
+    final tracks = <String, MusicTrack>{
+      for (final track in retainedTracks) track.path: track,
+      for (final track in library) track.path: track,
+    };
+    for (final track in tracks.values) {
       if (!PathMatcher.isWithinOrEqual(track.path, oldRoot)) continue;
       final nextTrackPath = _replacePathPrefix(track.path, oldRoot, newRoot);
       final nextGroupKey = PathMatcher.isWithinOrEqual(track.groupKey, oldRoot)
@@ -398,7 +402,8 @@ class LibraryService {
           newRoot,
         ),
       );
-      library[i] = updatedTrack;
+      final index = libraryIndexByPath[track.path];
+      if (index != null) library[index] = updatedTrack;
       retargetedTracks[track.path] = updatedTrack;
     }
 
@@ -439,8 +444,9 @@ class LibraryService {
   MusicTrack? retargetSingleTrack(
     String oldTrackPath,
     String newTrackPath,
-    String displayName,
-  ) {
+    String displayName, {
+    MusicTrack? retainedTrack,
+  }) {
     final oldPath = PathMatcher.normalize(oldTrackPath);
     final newPath = PathMatcher.normalize(newTrackPath);
     for (final entries in libraryEntriesByLibrary.values) {
@@ -461,7 +467,7 @@ class LibraryService {
       );
       if (excluded.length != previousLength) excluded.add(newPath);
     }
-    final track = libraryByPath[oldPath];
+    final track = libraryByPath[oldPath] ?? retainedTrack;
     if (track == null) {
       markStructureChanged();
       return null;

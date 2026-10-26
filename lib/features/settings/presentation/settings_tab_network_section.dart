@@ -368,17 +368,11 @@ class _NetworkSettingsControlsState
     String key,
     String title,
     Uri uri,
-  ) => Padding(
-    padding: const EdgeInsets.all(16),
-    child: Row(
-      children: [
-        Expanded(
-          child: Text(title, style: Theme.of(context).textTheme.titleMedium),
-        ),
-        const SizedBox(width: 8),
-        _probeAction(i18n, key, uri),
-      ],
-    ),
+  ) => ListTile(
+    minTileHeight: _settingsTileHeight,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+    title: Text(title, style: Theme.of(context).textTheme.titleMedium),
+    trailing: _probeAction(i18n, key, uri),
   );
 
   Widget _probeAction(AppLanguageProvider i18n, String key, Uri uri) {

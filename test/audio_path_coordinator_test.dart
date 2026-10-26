@@ -47,6 +47,151 @@ class _CountingLibrary extends LibraryService {
 
 void main() {
   AppRuntimeTestFixture.initialize();
+
+  test(
+    'path aliases retain nested moves through consecutive directory renames',
+    () {
+      final graph = createTestRuntimeGraph();
+      addTearDown(graph.runtime.dispose);
+      final playback = graph.playback;
+      playback.rememberRetargetedPath('/a', '/b');
+      playback.rememberRetargetedPath(
+        '/b/disc/first.mp3',
+        '/b/disc/second.mp3',
+      );
+      playback.rememberRetargetedPath('/b', '/c');
+      for (final oldPath in ['/a/disc/first.mp3', '/b/disc/first.mp3']) {
+        expect(
+          playback.resolveRetargetedPath(oldPath),
+          PathMatcher.normalize('/c/disc/second.mp3'),
+        );
+      }
+      expect(
+        playback.resolveRetargetedPath('/a/other.mp3'),
+        PathMatcher.normalize('/c/other.mp3'),
+      );
+      expect(
+        playback.originalPathForRetargeted('/c/disc/second.mp3'),
+        PathMatcher.normalize('/a/disc/first.mp3'),
+      );
+    },
+  );
+
+  test('returning to the original path removes the reverse alias cycle', () {
+    final graph = createTestRuntimeGraph();
+    addTearDown(graph.runtime.dispose);
+    graph.playback.rememberRetargetedPath('/a', '/b');
+    graph.playback.rememberRetargetedPath('/b', '/a');
+    expect(
+      graph.playback.resolveRetargetedPath('/a/track.mp3'),
+      PathMatcher.normalize('/a/track.mp3'),
+    );
+    expect(
+      graph.playback.resolveRetargetedPath('/b/track.mp3'),
+      PathMatcher.normalize('/a/track.mp3'),
+    );
+    expect(
+      graph.playback.originalPathForRetargeted('/a/track.mp3'),
+      PathMatcher.normalize('/b/track.mp3'),
+    );
+  });
+
+  test('a reused child path shadows a former Windows directory alias', () {
+    final graph = createTestRuntimeGraph();
+    addTearDown(graph.runtime.dispose);
+    graph.playback.rememberRetargetedPath(r'E:\Work', r'E:\Moved');
+    graph.playback.rememberRetargetedPath(
+      r'E:\Other\track.mp3',
+      r'e:\work\track.mp3',
+    );
+    expect(
+      graph.playback.resolveRetargetedPath(r'E:\WORK\track.mp3'),
+      r'e:\work\track.mp3',
+    );
+    expect(
+      graph.playback.resolveRetargetedPath(r'E:\Work\sibling.mp3'),
+      r'E:\Moved\sibling.mp3',
+    );
+    expect(
+      graph.playback.resolveRetargetedPath(r'E:\OTHER\track.mp3'),
+      r'e:\work\track.mp3',
+    );
+  });
+
+  for (final isDirectory in [false, true]) {
+    test(
+      'reusing a renamed ${isDirectory ? 'directory' : 'file'} name keeps both owners',
+      () async {
+        final fixture = await AppRuntimeTestFixture.create();
+        addTearDown(fixture.dispose);
+        final root = await Directory.systemTemp.createTemp('path_name_reuse_');
+        addTearDown(() => root.delete(recursive: true));
+        final graph = fixture.runtimeGraph;
+        final tracks = <MusicTrack>[];
+        for (final name in ['a', 'c']) {
+          final folder = isDirectory
+              ? await Directory(path.join(root.path, name)).create()
+              : root;
+          final media = File(
+            path.join(folder.path, isDirectory ? 'track.mp3' : '$name.mp3'),
+          );
+          await media.writeAsString(name);
+          tracks.add(
+            MusicTrack(
+              path: media.path,
+              displayName: name,
+              groupKey: folder.path,
+              groupTitle: name,
+              groupSubtitle: folder.path,
+              isSingle: false,
+            ),
+          );
+        }
+        graph.library.addWatchedFolder(root.path, notify: false);
+        graph.library.addTracks(tracks, persist: false);
+        final sessions = [
+          for (final track in tracks)
+            graph.playback.createTrackSession(
+              track,
+              customQueueTracks: [track],
+            ),
+        ];
+        final oldA = isDirectory
+            ? path.dirname(tracks[0].path)
+            : tracks[0].path;
+        final movedA = await graph.audioPaths.renameWorkEntryToName(
+          libraryRootPath: root.path,
+          entryPath: oldA,
+          targetName: 'b',
+          isMedia: !isDirectory,
+          isDirectory: isDirectory,
+        );
+        await graph.audioPaths.renameWorkEntryToName(
+          libraryRootPath: root.path,
+          entryPath: isDirectory
+              ? path.dirname(tracks[1].path)
+              : tracks[1].path,
+          targetName: 'a',
+          isMedia: !isDirectory,
+          isDirectory: isDirectory,
+        );
+        final firstPath = isDirectory ? path.join(movedA, 'track.mp3') : movedA;
+        final reusedPath = tracks[0].path;
+        expect(await File(firstPath).readAsString(), 'a');
+        expect(await File(reusedPath).readAsString(), 'c');
+        expect(graph.audioPaths.trackByPath(firstPath)!.path, firstPath);
+        expect(graph.audioPaths.trackByPath(reusedPath)!.path, reusedPath);
+        expect(sessions[0].currentTrackPath, firstPath);
+        expect(sessions[1].currentTrackPath, reusedPath);
+        expect(graph.playback.resolveRetargetedPath(reusedPath), reusedPath);
+        expect(
+          graph.playback.resolveRetargetedPath(tracks[1].path),
+          reusedPath,
+        );
+      },
+    );
+  }
+
   test('playlist folder labels reuse known tracks across sixty sessions', () {
     final library = _CountingLibrary();
     final graph = createTestRuntimeGraph(libraryService: library);

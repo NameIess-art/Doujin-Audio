@@ -727,6 +727,129 @@ void main() {
   }
 
   group('WorkDetailPage', () {
+    for (final reducedMotion in [false, true]) {
+      _detailTestWidgets(
+        'directory switches fade out and in within 300ms, reduced=$reducedMotion',
+        (tester) async {
+          final fixture = AppRuntimeWidgetTestFixture();
+          _detailFixtures.add(fixture);
+          addTearDown(fixture.dispose);
+          final tree = [
+            for (final name in ['First', 'Second', 'Empty'])
+              AsmrTrackFile.fromJson({
+                'type': 'folder',
+                'title': name,
+                'children': [
+                  if (name != 'Empty')
+                    {
+                      'type': 'audio',
+                      'title': '$name audio.mp3',
+                      'mediaStreamUrl': 'https://example.test/$name.mp3',
+                    },
+                ],
+              }),
+          ];
+          final controller = _DeferredDetailAsmrController(tree, cached: false);
+          addTearDown(controller.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              MediaQuery(
+                data: MediaQueryData(disableAnimations: reducedMotion),
+                child: WorkDetailPage.forAsmr(
+                  work: AsmrWork.fromJson(const {'id': 42, 'title': 'Work'}),
+                ),
+              ),
+              overrides: [
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+              ],
+            ),
+          );
+          await _settleDetail(tester);
+          double opacity() => tester.widget<SliverFadeTransition>(
+            find.byKey(const ValueKey('work_detail_entries_fade')),
+          ).opacity.value;
+          final breadcrumbs = find.byType(WorkDetailBreadcrumbs);
+          final breadcrumbsTop = tester.getTopLeft(breadcrumbs).dy;
+          final root = find.text(fixture.languageProvider.tr('root_directory'));
+
+          Future<void> finishSwitch() async {
+            if (!reducedMotion) {
+              await tester.pump(const Duration(milliseconds: 75));
+              expect(opacity(), inExclusiveRange(0, 1));
+              expect(
+                find.byKey(const ValueKey('work_detail_entries_skeleton')),
+                findsNothing,
+              );
+              await tester.pump(const Duration(milliseconds: 75));
+              // Ticker completion is reported just after the final timestamp.
+              await tester.pump(const Duration(microseconds: 1));
+              await tester.pump();
+              expect(opacity(), 0);
+              await tester.pump(const Duration(milliseconds: 75));
+              expect(opacity(), inExclusiveRange(0, 1));
+              await tester.pump(const Duration(milliseconds: 75));
+            } else {
+              await tester.pump();
+            }
+            expect(opacity(), 1);
+            expect(tester.getTopLeft(breadcrumbs).dy, breadcrumbsTop);
+          }
+
+          await tester.tap(find.text('First'));
+          await tester.pump();
+          if (!reducedMotion) {
+            expect(find.text('First audio'), findsNothing);
+            expect(opacity(), 1);
+          }
+          await finishSwitch();
+          expect(find.text('First audio'), findsOneWidget);
+          await tester.tap(root);
+          await tester.pump();
+          await finishSwitch();
+          expect(find.text('First audio'), findsNothing);
+
+          // A later tap supersedes a request while the old directory fades.
+          await tester.tap(find.text('First'));
+          await tester.pump();
+          if (!reducedMotion) {
+            await tester.pump(const Duration(milliseconds: 50));
+            await tester.tap(find.text('Second'));
+          }
+          await tester.pumpAndSettle();
+          expect(
+            find.text(reducedMotion ? 'First audio' : 'Second audio'),
+            findsOneWidget,
+          );
+          await tester.tap(root);
+          await tester.pumpAndSettle();
+          if (!reducedMotion) {
+            await tester.tap(find.text('First'));
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 50));
+            await tester.tap(root);
+            await tester.pumpAndSettle();
+            expect(find.text('First audio'), findsNothing);
+            expect(find.text('Second'), findsOneWidget);
+          }
+          await tester.tap(find.text('Empty'));
+          await tester.pump();
+          await finishSwitch();
+          expect(
+            find.text(fixture.languageProvider.tr('empty_folder')),
+            findsOneWidget,
+          );
+          await tester.tap(root);
+          await tester.pump();
+          await tester.pumpWidget(const SizedBox.shrink());
+          expect(tester.takeException(), isNull);
+        },
+        variant: const TargetPlatformVariant({
+          TargetPlatform.android,
+          TargetPlatform.windows,
+        }),
+      );
+    }
+
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       for (final local in [false, true]) {
         _detailTestWidgets(

@@ -223,6 +223,109 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final reducedMotion in [false, true]) {
+      testWidgets(
+        'interest tabs crossfade for 300ms with reduced motion $reducedMotion on $platform',
+        (tester) async {
+          final fixture = AppRuntimeWidgetTestFixture();
+          final controller = _InterestController(createTestAsmrServices());
+          controller.voices.learned[controller.voices.resolve('Voice')] = 10;
+          controller.circles.learned[controller.circles.resolve('Circle')] = 10;
+          addTearDown(fixture.dispose);
+          addTearDown(controller.dispose);
+          tester.view.physicalSize = const Size(960, 1400);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          await tester.pumpWidget(
+            fixture.build(
+              MediaQuery(
+                data: MediaQueryData.fromView(
+                  tester.view,
+                ).copyWith(disableAnimations: reducedMotion),
+                child: Theme(
+                  data: ThemeData(platform: platform),
+                  child: const MyPage(tabIndex: 3),
+                ),
+              ),
+              overrides: [
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+                listeningActivityProvider.overrideWith(
+                  (ref) => Stream.value(const ListeningActivityView()),
+                ),
+              ],
+            ),
+          );
+          await pumpAndSettleWithAsync(tester);
+          final voicesTab = find.byKey(
+            const ValueKey('my-interest-tab-voices'),
+          );
+          await tester.ensureVisible(voicesTab);
+          await pumpUntilUiIdle(tester);
+          await pumpAndSettleWithAsync(tester);
+          final transition = find.byKey(
+            const ValueKey('my-interest-transition'),
+          );
+          Finder panel(MyInterestType type) => find.descendant(
+            of: transition,
+            matching: find.byKey(ValueKey(type)),
+          );
+          double opacity(MyInterestType type) => tester
+              .widget<FadeTransition>(
+                find
+                    .ancestor(
+                      of: panel(type),
+                      matching: find.byType(FadeTransition),
+                    )
+                    .first,
+              )
+              .opacity
+              .value;
+          await tester.tap(voicesTab);
+          await tester.pump();
+          expect(
+            tester.widget<AnimatedSwitcher>(transition).duration,
+            reducedMotion ? Duration.zero : const Duration(milliseconds: 300),
+          );
+          if (!reducedMotion) {
+            expect(opacity(MyInterestType.tags), 1);
+            expect(opacity(MyInterestType.voiceActors), 0);
+            expect(
+              find.ancestor(
+                of: panel(MyInterestType.tags),
+                matching: find.byWidgetPredicate(
+                  (widget) => widget is IgnorePointer && widget.ignoring,
+                ),
+              ),
+              findsWidgets,
+            );
+            await tester.pump(const Duration(milliseconds: 150));
+            expect(opacity(MyInterestType.tags), closeTo(.5, .05));
+            expect(opacity(MyInterestType.voiceActors), closeTo(.5, .05));
+            await tester.pump(const Duration(milliseconds: 149));
+            expect(panel(MyInterestType.tags), findsOneWidget);
+            await tester.pump(const Duration(milliseconds: 1));
+            expect(opacity(MyInterestType.tags), closeTo(0, .001));
+            expect(opacity(MyInterestType.voiceActors), closeTo(1, .001));
+          }
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(panel(MyInterestType.tags), findsNothing);
+          expect(opacity(MyInterestType.voiceActors), 1);
+          await tester.tap(
+            find.byKey(const ValueKey('my-interest-tab-circles')),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 75));
+          await tester.tap(find.byKey(const ValueKey('my-interest-tab-tags')));
+          await tester.pumpAndSettle();
+          expect(panel(MyInterestType.tags), findsOneWidget);
+          expect(panel(MyInterestType.voiceActors), findsNothing);
+          expect(panel(MyInterestType.circles), findsNothing);
+          expect(opacity(MyInterestType.tags), 1);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
     testWidgets(
       'activity updates after scrolling rebuild only dependent My sections on $platform',
       (tester) async {

@@ -44,7 +44,7 @@ List<Widget> _buildSettingsDataSection({
                     softWrap: true,
                   ),
                 ),
-                leading: _settingsIcon(Icons.storage_rounded, cs.onSurface),
+                leading: _settingsIcon(Icons.storage_rounded, cs.primary),
                 trailing: _settingsDropdown<int>(
                   context,
                   value: _settingsCacheLimitOptions.contains(maxCacheBytes)
@@ -85,7 +85,7 @@ List<Widget> _buildSettingsDataSection({
                 title: _settingsTitle(i18n.tr('clear_app_cache')),
                 leading: _settingsIcon(
                   Icons.cleaning_services_rounded,
-                  cs.onSurface,
+                  cs.primary,
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                 trailing: cacheOperation.isBusy

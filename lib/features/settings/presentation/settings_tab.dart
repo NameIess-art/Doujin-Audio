@@ -346,7 +346,7 @@ class _SettingsCategoryTile extends StatelessWidget {
       isLast: isLast,
       child: ListTile(
         onTap: onTap,
-        leading: _settingsIcon(category.icon, cs.onSurface),
+        leading: _settingsIcon(category.icon, cs.primary),
         title: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -359,7 +359,7 @@ class _SettingsCategoryTile extends StatelessWidget {
             ),
             Text(
               i18n.tr(category.subtitleKey),
-              maxLines: 2,
+              maxLines: 1,
               softWrap: true,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodyMedium,
@@ -367,7 +367,7 @@ class _SettingsCategoryTile extends StatelessWidget {
           ],
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-        minTileHeight: 78,
+        minTileHeight: _settingsTileHeight,
         minVerticalPadding: 0,
         titleAlignment: ListTileTitleAlignment.center,
       ),

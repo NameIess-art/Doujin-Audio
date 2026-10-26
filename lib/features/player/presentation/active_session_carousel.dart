@@ -7,6 +7,7 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show OverflowBoxFit;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 
@@ -62,6 +63,7 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
     this.onVisibleSessionChanged,
     this.presentation = ActiveSessionCarouselPresentation.card,
     this.viewportFraction,
+    this.expandedDockWidth,
   });
 
   final List<PlaybackSessionSnapshot>? sessions;
@@ -70,6 +72,9 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
   final ValueChanged<String>? onVisibleSessionChanged;
   final ActiveSessionCarouselPresentation presentation;
   final double? viewportFraction;
+
+  /// Final dock width, so animated clipping does not relayout its text.
+  final double? expandedDockWidth;
 
   @override
   ConsumerState<ActiveSessionCarousel> createState() =>
@@ -396,6 +401,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           coverPathFuture: _sessionCoverFutureForTrack(library, track),
           compact: compact,
           embedded: embedded,
+          expandedDockWidth: embedded ? widget.expandedDockWidth : null,
           dockCollapsed: dockCollapsed,
           circularCover: requestsCircularCover,
           onOpen: () => _openSessionDetail(context, session),

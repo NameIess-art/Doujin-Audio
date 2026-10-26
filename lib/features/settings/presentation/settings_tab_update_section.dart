@@ -51,7 +51,7 @@ List<Widget> _buildSettingsUpdateSection({
                 () => settings.setAutoCheckUpdates(value),
               ),
               title: _settingsTitle(i18n.tr('auto_check_updates')),
-              secondary: _settingsIcon(Icons.update_rounded, cs.onSurface),
+              secondary: _settingsIcon(Icons.update_rounded, cs.primary),
             );
           },
         ),

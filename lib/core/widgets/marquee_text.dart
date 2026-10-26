@@ -30,6 +30,58 @@ class MarqueePauseScope extends StatefulWidget {
 
 class _MarqueePauseScopeState extends State<MarqueePauseScope> {
   bool _hovered = false;
+  bool _pointerInside = false;
+  ValueListenable<bool>? _scrollActivity;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _bindScrollActivity();
+  }
+
+  @override
+  void didUpdateWidget(covariant MarqueePauseScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.hoverToRun != oldWidget.hoverToRun) {
+      _pointerInside = _hovered = false;
+      _bindScrollActivity();
+    }
+  }
+
+  void _bindScrollActivity() {
+    final activity = widget.hoverToRun
+        ? ScrollActivityGate.scrollingListenableOf(context)
+        : null;
+    if (!identical(activity, _scrollActivity)) {
+      _scrollActivity?.removeListener(_syncHover);
+      _scrollActivity = activity;
+      _scrollActivity?.addListener(_syncHover);
+    }
+    _syncHover();
+  }
+
+  void _syncHover() {
+    // Wheel scrolling moves cards beneath a stationary pointer. Keep the
+    // existing text tree until idle instead of mounting horizontal viewports
+    // for every card the pointer crosses; their tickers already pause on scroll.
+    if (!widget.hoverToRun ||
+        (_scrollActivity?.value ?? false) ||
+        _hovered == _pointerInside) {
+      return;
+    }
+    setState(() => _hovered = _pointerInside);
+  }
+
+  void _setPointerInside(bool value) {
+    _pointerInside = value;
+    _syncHover();
+  }
+
+  @override
+  void dispose() {
+    _scrollActivity?.removeListener(_syncHover);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,8 +97,8 @@ class _MarqueePauseScopeState extends State<MarqueePauseScope> {
     );
     return widget.hoverToRun
         ? MouseRegion(
-            onEnter: (_) => setState(() => _hovered = true),
-            onExit: (_) => setState(() => _hovered = false),
+            onEnter: (_) => _setPointerInside(true),
+            onExit: (_) => _setPointerInside(false),
             child: child,
           )
         : child;

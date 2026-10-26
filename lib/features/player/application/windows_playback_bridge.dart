@@ -898,9 +898,11 @@ class WindowsPlaybackBridge
     }
     return _change(sessionId, (session) async {
       if (session.wantsPlay) return;
-      session.stopAfterCurrentTrack = false;
       await session.player?.pause();
       await _releaseIfIdle(session);
+      // Video retains its decoder on pause, so restore its full native queue
+      // before clearing the track-stop intent. Audio has already released it.
+      await _setStopAfterCurrentTrack(session, false);
     });
   }
 
@@ -1065,7 +1067,15 @@ class WindowsPlaybackBridge
   Future<NativeResult<NativePlaybackSnapshot>> setStopAfterCurrentTrack(
     String sessionId,
     bool enabled,
-  ) => _change(sessionId, (session) async {
+  ) => _change(
+    sessionId,
+    (session) => _setStopAfterCurrentTrack(session, enabled),
+  );
+
+  Future<void> _setStopAfterCurrentTrack(
+    _WindowsPlaybackSession session,
+    bool enabled,
+  ) async {
     if (session.stopAfterCurrentTrack == enabled) return;
     session.stopAfterCurrentTrack = enabled;
     final player = session.player;
@@ -1113,7 +1123,8 @@ class WindowsPlaybackBridge
       await session.releasePlayer();
       rethrow;
     }
-  });
+  }
+
   @override
   Future<NativeResult<void>> removeSession(String sessionId) {
     _usage.update(sessionId, null);

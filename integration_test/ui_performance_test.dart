@@ -2610,16 +2610,36 @@ Future<void> _flingPageList<T extends Widget>(
         .evaluate()
         .map((element) => (element as StatefulElement).state)
         .whereType<ScrollableState>()
+        .where(
+          (state) => TickerMode.getValuesNotifier(state.context).value.enabled,
+        )
         .map((state) => state.position)
-        .where((position) => position.axis == Axis.vertical)
+        .where(
+          (position) =>
+              position.axis == Axis.vertical &&
+              position.hasContentDimensions &&
+              position.maxScrollExtent > position.minScrollExtent &&
+              position.physics.shouldAcceptUserOffset(position),
+        )
         .toList(growable: false);
     if (positions.isEmpty) return null;
     positions.sort((a, b) => b.maxScrollExtent.compareTo(a.maxScrollExtent));
     return positions.first;
   }
 
-  final position = currentPosition();
-  expect(position, isNotNull, reason: '$T needs a real vertical Scrollable.');
+  // A settled frame does not wait for the library's asynchronous projection.
+  // Loading placeholders and retained categories must not become the sample.
+  final deadline = DateTime.now().add(const Duration(seconds: 10));
+  var position = currentPosition();
+  while (position == null && DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 16));
+    position = currentPosition();
+  }
+  expect(
+    position,
+    isNotNull,
+    reason: '$T needs a ready, active vertical list.',
+  );
   expect(
     position!.maxScrollExtent,
     greaterThan(position.minScrollExtent),

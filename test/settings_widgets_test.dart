@@ -272,14 +272,14 @@ void main() {
     );
     expect(languageIcon.size, 30);
     final languageTileHeight = tester.getSize(firstLanguageTile).height;
-    expect(languageTileHeight, 78);
+    expect(languageTileHeight, 64);
     final languageTileContext = tester.element(firstLanguageTile);
     final languageTileTheme = ListTileTheme.of(languageTileContext);
     expect(
       languageIcon.color,
-      Theme.of(languageTileContext).colorScheme.onSurface,
+      Theme.of(languageTileContext).colorScheme.primary,
     );
-    expect(languageTileTheme.minTileHeight, 78);
+    expect(languageTileTheme.minTileHeight, 64);
     expect(languageTileTheme.titleTextStyle?.fontSize, closeTo(16, 0.001));
     expect(languageTileTheme.subtitleTextStyle?.fontSize, closeTo(13, 0.001));
     expect(
@@ -298,8 +298,8 @@ void main() {
       ListTile,
       i18n.tr('asmr_page_language'),
     );
-    expect(tester.getSize(dlsiteLanguageTile).height, 78);
-    expect(tester.getSize(asmrLanguageTile).height, 78);
+    expect(tester.getSize(dlsiteLanguageTile).height, 64);
+    expect(tester.getSize(asmrLanguageTile).height, 64);
     final firstLanguageCard = find.ancestor(
       of: firstLanguageTile,
       matching: find.byType(Card),
@@ -425,7 +425,6 @@ void main() {
     final aboutHeaderRect = tester.getRect(find.byType(TopPageHeader));
     expect(aboutHeaderRect.height, greaterThan(0));
     final aboutTitle = find.text(i18n.tr('app_title'));
-    final aboutTitleContext = tester.element(aboutTitle);
     final firstAboutCard = tester
         .widgetList<Container>(
           find.ancestor(of: aboutTitle, matching: find.byType(Container)),
@@ -433,9 +432,14 @@ void main() {
         .firstWhere(
           (container) =>
               container.decoration is BoxDecoration &&
-              (container.decoration! as BoxDecoration).color ==
-                  Theme.of(aboutTitleContext).colorScheme.surfaceContainerLow,
+              (container.decoration! as BoxDecoration).borderRadius != null,
         );
+    final aboutDecoration = firstAboutCard.decoration! as BoxDecoration;
+    expect(
+      aboutDecoration.color,
+      Theme.of(tester.element(aboutTitle)).colorScheme.surfaceContainerLow,
+    );
+    expect(aboutDecoration.border, isNull);
     expect(
       tester.getTopLeft(find.byWidget(firstAboutCard)).dy,
       greaterThan(aboutHeaderRect.bottom),
@@ -445,7 +449,7 @@ void main() {
   testWidgets(
     'settings category headers become sticky floating pills',
     (tester) async {
-      await tester.binding.setSurfaceSize(const Size(800, 400));
+      await tester.binding.setSurfaceSize(const Size(800, 360));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final harness = AppRuntimeWidgetTestFixture();
       addTearDown(harness.dispose);
@@ -1000,7 +1004,7 @@ void main() {
   });
 
   testWidgets(
-    'settings item ink follows each card corner shape',
+    'settings options have no fill or border and retain shaped ink',
     (tester) async {
       final harness = AppRuntimeWidgetTestFixture();
       addTearDown(harness.dispose);
@@ -1015,11 +1019,13 @@ void main() {
           final card = tester.widget<Card>(
             find.descendant(of: settingsCard, matching: find.byType(Card)).first,
           );
+          expect(card.color, Colors.transparent);
+          expect(card.surfaceTintColor, Colors.transparent);
+          expect((card.shape! as RoundedRectangleBorder).side, BorderSide.none);
           final tiles = find.descendant(
             of: settingsCard,
             matching: find.byType(ListTile),
           );
-          expect(tiles, findsWidgets);
           for (final tileElement in tiles.evaluate()) {
             final ink = tester.widget<InkWell>(
               find.descendant(
@@ -1044,6 +1050,8 @@ void main() {
         'section_appearance',
         'section_playback',
         'section_asmr_download',
+        'section_data_storage',
+        'section_network',
         'section_updates_permissions',
       ]) {
         final entry = find.text(i18n.tr(category));
@@ -1051,6 +1059,25 @@ void main() {
         await tester.tap(entry);
         await tester.pumpAndSettle();
         expectMatchingInkCorners();
+        if (category == 'section_data_storage' &&
+            Theme.of(tester.element(find.byType(TopPageHeader))).platform ==
+                TargetPlatform.android) {
+          final cardFinder = find.descendant(
+            of: find.byKey(const ValueKey('data-support-storage-usage')),
+            matching: find.byType(Card),
+          );
+          final card = tester.widget<Card>(cardFinder);
+          final context = tester.element(cardFinder);
+          expect(
+            card.color,
+            Theme.of(context).colorScheme.surfaceContainerHigh.withValues(
+              alpha: 0.6,
+            ),
+          );
+          final shape = (card.shape ?? CardTheme.of(context).shape)!
+              as RoundedRectangleBorder;
+          expect(shape.side, BorderSide.none);
+        }
         await tester.tap(find.byIcon(Icons.arrow_back_rounded));
         await tester.pumpAndSettle();
       }
@@ -1061,7 +1088,80 @@ void main() {
     }),
   );
 
-  testWidgets('settings home uses separated category cards', (tester) async {
+  testWidgets(
+    'settings option rows share 64 dp height and primary icons',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pumpAndSettle();
+      await harness.settingsRepository.setAsmrDownloadDestinationRoot(
+        r'E:\音频下载\Favorite audio library\很长的作品目录名称用于验证设置行保持一致高度',
+      );
+      await tester.pumpAndSettle();
+
+      void expectRows() {
+        for (final element in find.byType(ListTile).evaluate()) {
+          final tile = element.widget as ListTile;
+          final finder = find.byWidget(tile);
+          // Storage usage is an information card, rather than an option row.
+          if (find
+              .ancestor(
+                of: finder,
+                matching: find.byKey(
+                  const ValueKey('data-support-storage-usage'),
+                ),
+              )
+              .evaluate()
+              .isNotEmpty) {
+            continue;
+          }
+          expect(
+            tester.getSize(finder).height,
+            64,
+            reason: 'Settings row: ${tile.title}',
+          );
+          if (tile.leading == null) continue;
+          for (final icon in tester.widgetList<Icon>(
+            find.descendant(of: finder, matching: find.byType(Icon)),
+          )) {
+            // The setting identity icon is 30 dp; arrows and controls retain
+            // their own state colors.
+            if (icon.size == 30) {
+              expect(icon.color, Theme.of(element).colorScheme.primary);
+            }
+          }
+        }
+      }
+
+      expectRows();
+      final i18n = harness.languageProvider;
+      for (final category in [
+        'section_common',
+        'section_appearance',
+        'section_playback',
+        'section_asmr_download',
+        'section_data_storage',
+        'section_updates_permissions',
+      ]) {
+        final entry = find.text(i18n.tr(category));
+        await tester.ensureVisible(entry);
+        await tester.tap(entry);
+        await tester.pumpAndSettle();
+        expectRows();
+        await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+        await tester.pumpAndSettle();
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets('settings home uses transparent separated category rows', (tester) async {
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
     await tester.pumpWidget(harness.build(const SettingsTab()));
@@ -1076,7 +1176,7 @@ void main() {
     final rootIcon = tester.widget<Icon>(
       find.descendant(of: rootTile, matching: find.byIcon(Icons.tune_rounded)),
     );
-    expect(rootIcon.color, Theme.of(rootContext).colorScheme.onSurface);
+    expect(rootIcon.color, Theme.of(rootContext).colorScheme.primary);
     expect(tester.widget<ListTile>(rootTile).trailing, isNull);
     final rootCard = tester.widget<Card>(
       find.ancestor(of: rootTile, matching: find.byType(Card)).first,
@@ -1098,7 +1198,7 @@ void main() {
     );
     expect(
       rootCard.color,
-      Theme.of(rootContext).colorScheme.surfaceContainerLow,
+      Colors.transparent,
     );
     final rootBorderRadius =
         (rootCard.shape! as RoundedRectangleBorder).borderRadius
@@ -1127,7 +1227,7 @@ void main() {
       ),
     );
     final colorScheme = Theme.of(detailContext).colorScheme;
-    expect(detailIcon.color, colorScheme.onSurface);
+    expect(detailIcon.color, colorScheme.primary);
     expect(
       find.ancestor(of: detailTile, matching: find.byType(Card)),
       findsOneWidget,
@@ -1150,7 +1250,7 @@ void main() {
             find.ancestor(of: detailTile, matching: find.byType(Card)).first,
           )
           .color,
-      colorScheme.surfaceContainerLow,
+      Colors.transparent,
     );
     expect(
       find.byWidgetPredicate(
@@ -1733,7 +1833,7 @@ void main() {
       const ValueKey('app_theme_color_tile'),
     );
     await tester.ensureVisible(appThemeColorTile);
-    expect(tester.getSize(appThemeColorTile).height, 78);
+    expect(tester.getSize(appThemeColorTile).height, 64);
 
     await Scrollable.ensureVisible(tester.element(switchTile), alignment: 0.5);
     await tester.pumpAndSettle();

@@ -9,7 +9,6 @@ import 'app_edge_fade_mask.dart';
 import 'app_glass_surface.dart';
 import 'app_transitions.dart';
 import 'page_header_inset.dart';
-import 'top_page_header.dart';
 import 'windows_horizontal_wheel_scroll.dart';
 
 export 'app_search_suggestions.dart';
@@ -334,59 +333,6 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
               ),
             ),
           ),
-          Builder(
-            builder: (context) => Positioned(
-              right: 16 + MediaQuery.paddingOf(context).right,
-              bottom:
-                  MediaQuery.viewInsetsOf(context).bottom +
-                  MediaQuery.paddingOf(context).bottom +
-                  16,
-              child: AppPageContentTransition(
-                child: AppDeferredFade(
-                  visible: widget.showConfirmButton,
-                  child: HeaderFloatingSurface(
-                    key: const ValueKey<String>('app_search_confirm'),
-                    height: 46,
-                    radius: 23,
-                    padding: EdgeInsets.zero,
-                    child: Material(
-                      // An empty draft cannot be submitted; show that instead
-                      // of an accent button that silently ignores taps.
-                      color: confirmEnabled
-                          ? accent
-                          : cs.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(23),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(23),
-                        onTap: widget.onConfirm,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.search_rounded,
-                                size: 18,
-                                color: confirmForeground,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                widget.confirmLabel,
-                                style: TextStyle(
-                                  color: confirmForeground,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
           Positioned(
             key: const ValueKey<String>('app_search_controls_overlay'),
             top: 0,
@@ -474,6 +420,42 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                               const EdgeInsets.only(
                                                 right: 10,
                                               ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              AppDeferredFade(
+                                visible: widget.showConfirmButton,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(left: 8),
+                                  child: SizedBox.square(
+                                    dimension: 38,
+                                    child: Material(
+                                      color: confirmEnabled
+                                          ? accent
+                                          : cs.surfaceContainerHighest,
+                                      shape: const CircleBorder(),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: IconButton(
+                                        key: const ValueKey<String>(
+                                          'app_search_confirm',
+                                        ),
+                                        tooltip: widget.confirmLabel,
+                                        onPressed: widget.onConfirm,
+                                        icon: const Icon(Icons.search_rounded),
+                                        color: confirmForeground,
+                                        disabledColor: confirmForeground,
+                                        iconSize: 20,
+                                        padding: EdgeInsets.zero,
+                                        visualDensity: VisualDensity.compact,
+                                        style: IconButton.styleFrom(
+                                          minimumSize: const Size(38, 38),
+                                          maximumSize: const Size(38, 38),
+                                          padding: EdgeInsets.zero,
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
                                         ),
                                       ),
                                     ),

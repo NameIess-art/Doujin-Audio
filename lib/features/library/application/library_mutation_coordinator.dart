@@ -17,6 +17,7 @@ import 'library_persistence_coordinator.dart';
 import 'library_catalog_write_coordinator.dart';
 import 'library_service.dart';
 import 'library_snapshot_cache_service.dart';
+import 'library_track_merge.dart';
 
 export 'library_entry_editor_service.dart' show AudioDetailRenameException;
 
@@ -81,26 +82,23 @@ final class LibraryMutationCoordinator {
     _syncStateSlice();
   }
 
-  void clearLibraryExclusions(String libraryPath) {
+  Future<void> clearLibraryExclusions(String libraryPath) async {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final result = _service.clearLibraryExclusions(normalizedLibraryPath);
     if (!result.changed) return;
-    if (result.restoredTracks.isNotEmpty) {
-      _catalogWrites.addOrReplaceTracks(result.restoredTracks);
-    } else {
-      _syncStateSlice();
-    }
-    if (!_persistenceCoordinator.enabled) return;
-    if (result.restoredEntryPaths.isNotEmpty) {
-      unawaited(
+    _syncStateSlice();
+    await Future.wait<void>([
+      _addRestoredTracks(normalizedLibraryPath, result.restoredTracks),
+      if (_persistenceCoordinator.enabled &&
+          result.restoredEntryPaths.isNotEmpty)
         databaseRepository.setLibraryEntriesState(
           normalizedLibraryPath,
           result.restoredEntryPaths,
           LibraryEntryState.active,
         ),
-      );
-    }
-    unawaited(_persistenceCoordinator.saveExclusions());
+      if (_persistenceCoordinator.enabled)
+        _persistenceCoordinator.saveExclusions(),
+    ]);
   }
 
   String? _watchedRootForEntity(
@@ -223,12 +221,19 @@ final class LibraryMutationCoordinator {
     final wasWatched = _service.watchedFolders.any(
       (folder) => PathMatcher.equalsNormalized(folder, normalizedFolderPath),
     );
-    final removedPaths = _catalogWrites.removeTracksMatching(
-      (track) =>
-          PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
-          PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
-      persist: false,
-    );
+    final retainedPaths = _service
+        .libraryEntriesForLibrary(normalizedFolderPath)
+        .where((entry) => entry.isTrack)
+        .map((entry) => entry.path);
+    final removedPaths = <String>{
+      ...retainedPaths,
+      ..._catalogWrites.removeTracksMatching(
+        (track) =>
+            PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
+            PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
+        persist: false,
+      ),
+    }.toList();
     if (removedPaths.isEmpty && !wasWatched) return false;
 
     final removedWatchedFolder = _service.removeWatchedFolder(
@@ -261,14 +266,22 @@ final class LibraryMutationCoordinator {
   Future<bool> _removeLibraryPermanently(String libraryPath) async {
     if (_service.isScanning) _cancelScan();
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final retainedPaths = _service
+        .libraryEntriesForLibrary(normalizedLibraryPath)
+        .where((entry) => entry.isTrack)
+        .map((entry) => entry.path)
+        .toList();
     _catalogWrites.beginLibraryBatch();
     final removal = _service.removeLibrary(normalizedLibraryPath);
-    final removedTrackPaths = _catalogWrites.removeTracksMatching(
-      (track) =>
-          PathMatcher.isWithinOrEqual(track.path, normalizedLibraryPath) ||
-          PathMatcher.isWithinOrEqual(track.groupKey, normalizedLibraryPath),
-      persist: false,
-    );
+    final removedTrackPaths = <String>{
+      ...retainedPaths,
+      ..._catalogWrites.removeTracksMatching(
+        (track) =>
+            PathMatcher.isWithinOrEqual(track.path, normalizedLibraryPath) ||
+            PathMatcher.isWithinOrEqual(track.groupKey, normalizedLibraryPath),
+        persist: false,
+      ),
+    }.toList();
     final changed = removal.changed || removedTrackPaths.isNotEmpty;
     if (changed) _syncStateSlice();
 
@@ -464,6 +477,9 @@ final class LibraryMutationCoordinator {
       (track) =>
           PathMatcher.isWithinOrEqual(track.path, folderPath) ||
           PathMatcher.isWithinOrEqual(track.groupKey, folderPath),
+      persist: !_service.watchedLibraries.any(
+        (root) => PathMatcher.equalsNormalized(root, libraryPath),
+      ),
     );
     await _catalogWrites.endLibraryBatch();
   }
@@ -479,6 +495,9 @@ final class LibraryMutationCoordinator {
     _catalogWrites.beginLibraryBatch();
     _catalogWrites.removeTracksMatching(
       (track) => PathMatcher.equalsNormalized(track.path, trackPath),
+      persist: !_service.watchedLibraries.any(
+        (root) => PathMatcher.equalsNormalized(root, libraryPath),
+      ),
     );
     await _catalogWrites.endLibraryBatch();
   }
@@ -492,7 +511,7 @@ final class LibraryMutationCoordinator {
     if (_service.libraryByPath.containsKey(trackPath)) return;
     final entry = _service.libraryEntryForPath(libraryPath, trackPath);
     if (entry != null && entry.isTrack && entry.isActive) {
-      await _addRestoredTracks(<MusicTrack>[entry.toTrack()]);
+      await _addRestoredTracks(libraryPath, <MusicTrack>[entry.toTrack()]);
       return;
     }
     final isContentUri = PathMatcher.isContentUri(trackPath);
@@ -509,7 +528,7 @@ final class LibraryMutationCoordinator {
     final parentFolder = path.dirname(trackPath);
     final folderName = path.basename(parentFolder);
     if (_service.isLibraryPathExcluded(libraryPath, trackPath)) return;
-    await _addRestoredTracks(<MusicTrack>[
+    await _addRestoredTracks(libraryPath, <MusicTrack>[
       MusicTrack(
         path: trackPath,
         displayName: PathDisplay.fileName(trackPath, withoutExtension: true),
@@ -546,7 +565,7 @@ final class LibraryMutationCoordinator {
         .where((track) => !_service.libraryByPath.containsKey(track.path))
         .toList(growable: false);
     if (persistedTracks.isNotEmpty) {
-      await _addRestoredTracks(persistedTracks);
+      await _addRestoredTracks(libraryPath, persistedTracks);
       return;
     }
 
@@ -559,14 +578,50 @@ final class LibraryMutationCoordinator {
         )
         .toList(growable: false);
     if (candidates.isNotEmpty) {
-      await _addRestoredTracks(candidates);
+      await _addRestoredTracks(libraryPath, candidates);
     }
   }
 
-  Future<void> _addRestoredTracks(List<MusicTrack> tracks) async {
+  Future<void> _addRestoredTracks(
+    String libraryPath,
+    List<MusicTrack> tracks,
+  ) async {
     if (tracks.isEmpty) return;
+    final recordedPaths = tracks
+        .where(
+          (track) =>
+              _service.libraryEntryForPath(libraryPath, track.path) != null,
+        )
+        .map((track) => PathMatcher.normalize(track.path))
+        .toSet();
+    // Exclusion removes only the active catalog projection. SQLite keeps the
+    // authored fields and playback state, including across application restarts.
+    final restored = <MusicTrack>[];
+    for (final track in tracks) {
+      final retained = _persistenceCoordinator.enabled
+          ? await databaseRepository.loadTrackDetail(track.path)
+          : null;
+      restored.add(
+        retained == null ? track : mergeLibraryTrackState(retained, track),
+      );
+    }
+    // All reads must finish before checking the current exclusion state.
+    // Another track's read can overlap a new exclusion or removal of the root.
+    if (![
+      ..._service.watchedLibraries,
+      ..._service.watchedFolders,
+    ].any((root) => PathMatcher.equalsNormalized(root, libraryPath))) {
+      return;
+    }
+    final active = restored.where((track) {
+      final entry = _service.libraryEntryForPath(libraryPath, track.path);
+      return (!recordedPaths.contains(PathMatcher.normalize(track.path)) ||
+              entry != null) &&
+          !_service.isLibraryPathExcluded(libraryPath, track.path);
+    }).toList();
+    if (active.isEmpty) return;
     _catalogWrites.beginLibraryBatch();
-    _catalogWrites.addOrReplaceTracks(tracks);
+    _catalogWrites.addOrReplaceTracks(active);
     await _catalogWrites.endLibraryBatch();
   }
 
@@ -711,11 +766,24 @@ final class LibraryMutationCoordinator {
         _syncStateSlice();
       }
     }
+    final retainedTracks = <MusicTrack>[];
+    if (_persistenceCoordinator.enabled) {
+      for (final entry in _service.libraryEntriesForLibrary(libraryRootPath)) {
+        if (!entry.isTrack ||
+            _service.trackByPath(entry.path) != null ||
+            !PathMatcher.isWithinOrEqual(entry.path, oldFolderPath)) {
+          continue;
+        }
+        final track = await databaseRepository.loadTrackDetail(entry.path);
+        if (track != null) retainedTracks.add(track);
+      }
+    }
     final retargetResult = _service.retargetLibraryFolder(
       oldFolderPath,
       newFolderPath,
       folderName,
       libraryRootPath: libraryRootPath,
+      retainedTracks: retainedTracks,
     );
     _coverArtwork().invalidateFolders([oldFolderPath, newFolderPath]);
     snapshotCacheService.markStructureChanged();
@@ -746,10 +814,16 @@ final class LibraryMutationCoordinator {
       oldTrackKey: PathMatcher.normalize(oldTrackPath),
       newTrackKey: PathMatcher.normalize(newTrackPath),
     );
+    final retainedTrack =
+        _persistenceCoordinator.enabled &&
+            _service.trackByPath(oldTrackPath) == null
+        ? await databaseRepository.loadTrackDetail(oldTrackPath)
+        : null;
     final updatedTrack = _service.retargetSingleTrack(
       oldTrackPath,
       newTrackPath,
       displayName,
+      retainedTrack: retainedTrack,
     );
     _coverArtwork().invalidateAll();
     snapshotCacheService.markStructureChanged();

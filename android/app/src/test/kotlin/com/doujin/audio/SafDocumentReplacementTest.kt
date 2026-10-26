@@ -249,6 +249,55 @@ class SafDocumentReplacementTest {
     }
 
     @Test
+    fun `replacement resumes after committed target leaves a stale backup`() {
+        val files = linkedMapOf("track.mp3" to "current", "track.mp3.doujin.bak" to "old")
+
+        assertTrue(replace(files))
+        assertEquals(mapOf("track.mp3" to "new"), files)
+    }
+
+    @Test
+    fun `failed write after stale backup recovery preserves committed target`() {
+        val files = linkedMapOf("track.mp3" to "current", "track.mp3.doujin.bak" to "old")
+
+        assertFalse(replace(files, writeFails = true))
+        assertEquals(mapOf("track.mp3" to "current"), files)
+    }
+
+    @Test
+    fun `failed stale backup cleanup preserves both copies until retry succeeds`() {
+        for (throws in listOf(false, true)) {
+            val files = linkedMapOf("target" to "current", "backup" to "old")
+            var cleanupFails = true
+            var stagingStarted = false
+            fun replaceTarget() = replaceSafDocument(
+                targetName = "target",
+                existing = "target",
+                staleBackup = files.keys.firstOrNull { it == "backup" },
+                createTemp = { stagingStarted = true; "temp".also { files[it] = "" } },
+                writeTemp = { files[it] = "new"; true },
+                rename = { source, destination ->
+                    files.remove(source)?.let { files[destination] = it; destination }
+                },
+                delete = {
+                    if (it == "backup" && cleanupFails) {
+                        if (throws) throw java.io.IOException("Cleanup denied")
+                        false
+                    } else files.remove(it) != null
+                }
+            )
+
+            assertNull(replaceTarget())
+            assertFalse(stagingStarted)
+            assertEquals(mapOf("target" to "current", "backup" to "old"), files)
+
+            cleanupFails = false
+            assertEquals("target", replaceTarget())
+            assertEquals(mapOf("target" to "new"), files)
+        }
+    }
+
+    @Test
     fun `missing target restores valid backup before read`() {
         val files = linkedMapOf("metadata.json.doujin.bak" to "old")
 

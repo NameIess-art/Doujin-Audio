@@ -126,6 +126,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   // Breadcrumb navigation state
   // Path stack: e.g. [] for root, ['EXデータ'] for subfolder
   final List<String> _currentPathSegments = [];
+  List<String>? _pendingDirectoryPath;
 
   @override
   void initState() {
@@ -510,23 +511,46 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   }
 
   void _enterFolder(String folderName) {
-    setState(() {
-      _currentPathSegments.add(folderName);
-    });
+    unawaited(_switchDirectory([..._currentPathSegments, folderName]));
   }
 
   // Navigate back to specific level in breadcrumbs
   void _navigateToBreadcrumbIndex(int index) {
+    unawaited(_switchDirectory(_currentPathSegments.take(index + 1).toList()));
+  }
+
+  Future<void> _switchDirectory(List<String> nextPath) async {
+    if (listEquals(nextPath, _pendingDirectoryPath ?? _currentPathSegments)) {
+      return;
+    }
     setState(() {
-      if (index < 0) {
-        _currentPathSegments.clear();
-      } else if (index < _currentPathSegments.length) {
-        _currentPathSegments.removeRange(
-          index + 1,
-          _currentPathSegments.length,
-        );
-      }
+      _pendingDirectoryPath = nextPath;
+      _departingSkeletonRect = null;
     });
+    final animate = !MediaQuery.disableAnimationsOf(context);
+    final halfDuration = kAppFadeDuration ~/ 2;
+    try {
+      if (animate) {
+        await _directoryFade.animateTo(0, duration: halfDuration).orCancel;
+      } else {
+        _directoryFade.value = 1;
+      }
+      if (!mounted || !identical(_pendingDirectoryPath, nextPath)) return;
+      setState(() {
+        _currentPathSegments
+          ..clear()
+          ..addAll(nextPath);
+      });
+      if (animate) {
+        await _directoryFade.animateTo(1, duration: halfDuration).orCancel;
+      }
+    } on TickerCanceled {
+      // A newer directory request or disposal supersedes the current fade.
+    } finally {
+      if (identical(_pendingDirectoryPath, nextPath)) {
+        _pendingDirectoryPath = null;
+      }
+    }
   }
 
   List<WorkEntryItem> _buildCurrentEntries(Object? visibilityKey) {

@@ -76,6 +76,117 @@ Future<void> _pumpMarqueeFrames(WidgetTester tester, int milliseconds) async {
 }
 
 void main() {
+  for (final singleAudio in [false, true]) {
+    testWidgets(
+      '${singleAudio ? 'audio' : 'work'} hover waits for scroll idle without mounting crossed marquees',
+      (tester) async {
+        final interaction = UiInteractionCoordinator.instance;
+        interaction.resetForTest();
+        addTearDown(interaction.resetForTest);
+        const title = 'A long title extending well beyond the available width';
+        const lines = [
+          LibraryLikeInfoLineData(
+            'Voice',
+            'A long voice actor name extending beyond the metadata row',
+            icon: Icons.record_voice_over_rounded,
+          ),
+        ];
+        await tester.pumpWidget(
+          _buildApp(
+            ScrollActivityGate(
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: Column(
+                  children: [
+                    for (var index = 0; index < 3; index++)
+                      SizedBox(
+                        key: ValueKey('hover-card-$index'),
+                        width: 260,
+                        height: 100,
+                        child: singleAudio
+                            ? const LibraryLikeSingleAudioCardContent(
+                                title: title,
+                                lines: lines,
+                              )
+                            : LibraryLikeWorkCardContent(
+                                title: title,
+                                lines: lines,
+                                coverBuilder: (width) =>
+                                    SizedBox(width: width, height: 90),
+                              ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        final cards = [
+          for (var index = 0; index < 3; index++)
+            find.byKey(ValueKey('hover-card-$index')),
+        ];
+        Finder marquees(Finder card) =>
+            find.descendant(of: card, matching: find.byType(MarqueeText));
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: const Offset(700, 500));
+        await mouse.moveTo(tester.getTopLeft(cards[0]) + const Offset(10, 10));
+        await tester.pump();
+        final count = defaultTargetPlatform == TargetPlatform.windows ? 2 : 0;
+        expect(marquees(cards[0]), findsNWidgets(count));
+        final existing = tester.stateList(marquees(cards[0])).toList();
+        final element = tester.element(cards[0]);
+        final metrics = FixedScrollMetrics(
+          minScrollExtent: 0,
+          maxScrollExtent: 1000,
+          pixels: 100,
+          viewportDimension: 600,
+          axisDirection: AxisDirection.down,
+          devicePixelRatio: 1,
+        );
+        void start() => ScrollStartNotification(
+          metrics: metrics,
+          context: element,
+        ).dispatch(element);
+        Future<void> end() async {
+          ScrollEndNotification(
+            metrics: metrics,
+            context: element,
+          ).dispatch(element);
+          await tester.pump(const Duration(milliseconds: 200));
+          await tester.pump();
+        }
+
+        start();
+        for (final index in [1, 2, 1]) {
+          await mouse.moveTo(
+            tester.getTopLeft(cards[index]) + const Offset(10, 10),
+          );
+          await tester.pump();
+          expect(marquees(cards[index]), findsNothing);
+          expect(tester.stateList(marquees(cards[0])).toList(), existing);
+          expect(find.byType(MarqueeText), findsNWidgets(count));
+        }
+        await end();
+        expect(marquees(cards[0]), findsNothing);
+        expect(marquees(cards[1]), findsNWidgets(count));
+
+        start();
+        await mouse.moveTo(tester.getTopLeft(cards[2]) + const Offset(10, 10));
+        await mouse.moveTo(const Offset(700, 500));
+        await tester.pump();
+        await end();
+        expect(find.byType(MarqueeText), findsNothing);
+        await mouse.removePointer();
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets(
     'scroll boundaries do not rebuild mounted marquee text',
     (tester) async {

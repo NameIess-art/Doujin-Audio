@@ -123,9 +123,12 @@ class SessionDetailLayout extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final coverHorizontalMargin = !isVideo && !segmentPanelExpanded
+            ? 8.0
+            : 0.0;
         final coverHeight = segmentPanelExpanded
             ? 42.0
-            : (constraints.maxWidth * 3 / 4);
+            : ((constraints.maxWidth - coverHorizontalMargin * 2) * 3 / 4);
 
         return Padding(
           padding: EdgeInsets.only(top: padding.top, bottom: padding.bottom),
@@ -137,6 +140,7 @@ class SessionDetailLayout extends StatelessWidget {
                     ? Duration.zero
                     : const Duration(milliseconds: 280),
                 curve: Curves.easeInOutCubic,
+                margin: EdgeInsets.symmetric(horizontal: coverHorizontalMargin),
                 height: coverHeight,
                 width: double.infinity,
                 child: CoverArtworkFrame(

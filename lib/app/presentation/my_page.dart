@@ -258,117 +258,143 @@ class _MyPageState extends ConsumerState<MyPage>
           ),
       ],
     );
-    final interestKeyPrefix = switch (_interestType) {
+    final interestType = _interestType;
+    final interestKeyPrefix = switch (interestType) {
       MyInterestType.tags => '',
       MyInterestType.voiceActors => 'voice-',
       MyInterestType.circles => 'circle-',
     };
     Widget interestSection() => section(
       i18n.tr('my_interests'),
-      controller == null
-          ? Text(i18n.tr(_interestType.emptyKey))
-          : Consumer(
-              builder: (context, ref, _) {
-                final tags = ref.watch(asmrTagInterestsProvider);
-                final voices = ref.watch(asmrVoiceActorInterestsProvider);
-                final circles = ref.watch(asmrCircleInterestsProvider);
-                final state = switch (_interestType) {
-                  MyInterestType.tags => tags,
-                  MyInterestType.voiceActors => voices,
-                  MyInterestType.circles => circles,
-                };
-                if (!state.hasValue) {
-                  if (state.hasError) {
-                    return TextButton(
-                      onPressed: () => ref.invalidate(switch (_interestType) {
-                        MyInterestType.tags => asmrTagInterestsProvider,
-                        MyInterestType.voiceActors =>
-                          asmrVoiceActorInterestsProvider,
-                        MyInterestType.circles => asmrCircleInterestsProvider,
-                      }),
-                      child: Text(i18n.tr('my_retry')),
+      AnimatedSwitcher(
+        key: const ValueKey('my-interest-transition'),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : kAppFadeDuration,
+        switchInCurve: kAppFadeCurve,
+        switchOutCurve: kAppFadeCurve,
+        layoutBuilder: (current, previous) => Stack(
+          alignment: Alignment.topLeft,
+          children: [
+            for (final child in previous)
+              ExcludeFocus(
+                child: ExcludeSemantics(child: IgnorePointer(child: child)),
+              ),
+            ?current,
+          ],
+        ),
+        child: KeyedSubtree(
+          key: ValueKey(interestType),
+          child: controller == null
+              ? Text(i18n.tr(interestType.emptyKey))
+              : Consumer(
+                  builder: (context, ref, _) {
+                    final tags = ref.watch(asmrTagInterestsProvider);
+                    final voices = ref.watch(asmrVoiceActorInterestsProvider);
+                    final circles = ref.watch(asmrCircleInterestsProvider);
+                    final state = switch (interestType) {
+                      MyInterestType.tags => tags,
+                      MyInterestType.voiceActors => voices,
+                      MyInterestType.circles => circles,
+                    };
+                    if (!state.hasValue) {
+                      if (state.hasError) {
+                        return TextButton(
+                          onPressed: () =>
+                              ref.invalidate(switch (interestType) {
+                                MyInterestType.tags => asmrTagInterestsProvider,
+                                MyInterestType.voiceActors =>
+                                  asmrVoiceActorInterestsProvider,
+                                MyInterestType.circles =>
+                                  asmrCircleInterestsProvider,
+                              }),
+                          child: Text(i18n.tr('my_retry')),
+                        );
+                      }
+                      return const ShimmerLoader(
+                        child: ShimmerContainer(
+                          width: 120,
+                          height: 32,
+                          borderRadius: 8,
+                        ),
+                      );
+                    }
+                    final interests = state.requireValue;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (interests.isEmpty)
+                          Text(i18n.tr(interestType.emptyKey)),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final interest in interests.take(20))
+                              InputChip(
+                                key: ValueKey(
+                                  'my-${interestKeyPrefix}interest-${interest.tag.key}',
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 8,
+                                ),
+                                labelPadding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                showCheckmark: false,
+                                side: BorderSide(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outlineVariant,
+                                ),
+                                label: Text(
+                                  interest.tag.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                onPressed: () async {
+                                  final name = interest.tag.name;
+                                  await Clipboard.setData(
+                                    ClipboardData(text: name),
+                                  );
+                                  if (!context.mounted) return;
+                                  showAppSnackBar(
+                                    context,
+                                    i18n.tr('copied_to_clipboard', {
+                                      'value': name,
+                                    }),
+                                    icon: Icons.content_copy_rounded,
+                                  );
+                                },
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => _openTags(false),
+                              icon: const Icon(Icons.add_rounded),
+                              label: Text(i18n.tr(interestType.addKey)),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () => _openTags(true),
+                              icon: const Icon(Icons.block_rounded),
+                              label: Text(i18n.tr(interestType.excludedKey)),
+                            ),
+                          ],
+                        ),
+                      ],
                     );
-                  }
-                  return const ShimmerLoader(
-                    child: ShimmerContainer(
-                      width: 120,
-                      height: 32,
-                      borderRadius: 8,
-                    ),
-                  );
-                }
-                final interests = state.requireValue;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (interests.isEmpty)
-                      Text(i18n.tr(_interestType.emptyKey)),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final interest in interests.take(20))
-                          InputChip(
-                            key: ValueKey(
-                              'my-${interestKeyPrefix}interest-${interest.tag.key}',
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                              vertical: 8,
-                            ),
-                            labelPadding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                            ),
-                            visualDensity: VisualDensity.compact,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                            showCheckmark: false,
-                            side: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.outlineVariant,
-                            ),
-                            label: Text(
-                              interest.tag.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            onPressed: () async {
-                              final name = interest.tag.name;
-                              await Clipboard.setData(
-                                ClipboardData(text: name),
-                              );
-                              if (!context.mounted) return;
-                              showAppSnackBar(
-                                context,
-                                i18n.tr('copied_to_clipboard', {'value': name}),
-                                icon: Icons.content_copy_rounded,
-                              );
-                            },
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: () => _openTags(false),
-                          icon: const Icon(Icons.add_rounded),
-                          label: Text(i18n.tr(_interestType.addKey)),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: () => _openTags(true),
-                          icon: const Icon(Icons.block_rounded),
-                          label: Text(i18n.tr(_interestType.excludedKey)),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            ),
+                  },
+                ),
+        ),
+      ),
       titleWidget: interestTabs(),
       headerSpacing: 12,
     );

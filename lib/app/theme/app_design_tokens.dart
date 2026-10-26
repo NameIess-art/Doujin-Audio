@@ -18,6 +18,10 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     imageFileIcon,
   ];
 
+  // The playlist glyph has more internal whitespace than the other page icons.
+  static double opticalIconSize(IconData? icon, double baseSize) =>
+      icon == Icons.playlist_play_rounded ? baseSize * 1.15 : baseSize;
+
   static const folderIconColor = Color(0xFFF59E0B);
   static const textFileIconColor = Color(0xFF0EA5E9);
   static const imageFileIconColor = Color(0xFFEC4899);

@@ -777,7 +777,7 @@ void main() {
         );
         expect(runtimeGraph.library.trackByPath(newTrackPath), isNull);
 
-        runtimeGraph.library.clearLibraryExclusions(newFolderPath);
+        await runtimeGraph.library.clearLibraryExclusions(newFolderPath);
 
         expect(runtimeGraph.library.trackByPath(newTrackPath), isNotNull);
       },

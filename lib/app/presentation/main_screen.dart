@@ -23,6 +23,7 @@ import '../../core/ui/permission_action_controller.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../theme/app_styles.dart';
+import '../theme/app_design_tokens.dart';
 import '../../features/player/presentation/playlist_tab.dart';
 import '../../features/settings/presentation/app_update_flow.dart';
 import '../../features/player/presentation/timer_tab.dart';

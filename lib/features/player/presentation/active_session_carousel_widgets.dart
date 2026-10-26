@@ -9,6 +9,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     required this.onOpen,
     this.compact = false,
     this.embedded = false,
+    this.expandedDockWidth,
     this.dockCollapsed = false,
     this.circularCover = false,
   });
@@ -20,6 +21,7 @@ class _ActiveSessionCard extends ConsumerWidget {
   final VoidCallback onOpen;
   final bool compact;
   final bool embedded;
+  final double? expandedDockWidth;
   final bool dockCollapsed;
   final bool circularCover;
   @override
@@ -250,6 +252,34 @@ class _ActiveSessionCard extends ConsumerWidget {
         : cs.primary;
     final hasAsmrOnePlaybackError =
         view.error != null && (currentTrack?.isRemoteAsmr ?? false);
+    Widget titleSubtitle = _ActiveSessionTitleSubtitle(
+      key: ValueKey('${session.id}:${view.trackPath}'),
+      session: session,
+      displayName: displayName,
+      playbackError: view.error,
+      isLoading: view.loading,
+      useAsmrOneErrorText: hasAsmrOnePlaybackError,
+    );
+    if (expandedDockWidth case final width?) {
+      final textWidth =
+          (width -
+                  contentPadding.horizontal -
+                  (showCover ? coverDimension + 10 : 0) -
+                  4 -
+                  _ActiveSessionPlayPauseButton.dimension)
+              .clamp(0.0, double.infinity);
+      // Ellipsis and desktop marquee measurement otherwise repeat at every
+      // animated width. Keep text layout stable while controls and progress resize.
+      titleSubtitle = ClipRect(
+        child: OverflowBox(
+          alignment: AlignmentDirectional.centerStart,
+          fit: OverflowBoxFit.deferToChild,
+          minWidth: textWidth,
+          maxWidth: textWidth,
+          child: titleSubtitle,
+        ),
+      );
+    }
 
     return Padding(
       padding: contentPadding,
@@ -277,14 +307,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _ActiveSessionTitleSubtitle(
-                          key: ValueKey('${session.id}:${view.trackPath}'),
-                          session: session,
-                          displayName: displayName,
-                          playbackError: view.error,
-                          isLoading: view.loading,
-                          useAsmrOneErrorText: hasAsmrOnePlaybackError,
-                        ),
+                        titleSubtitle,
                         _ActiveSessionProgressStrip(
                           session: session,
                           activeColor: activeColor,
@@ -336,6 +359,8 @@ class _ActiveSessionCard extends ConsumerWidget {
 }
 
 class _ActiveSessionPlayPauseButton extends StatelessWidget {
+  static const double dimension = 40;
+
   const _ActiveSessionPlayPauseButton({
     required this.showPauseIcon,
     required this.isLoading,
@@ -358,7 +383,7 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final button = SizedBox.square(
-      dimension: 40,
+      dimension: dimension,
       child: Material(
         color: Colors.transparent,
         child: InkResponse(

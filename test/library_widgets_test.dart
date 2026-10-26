@@ -95,6 +95,9 @@ class _NoCoverArtworkCacheService extends CoverArtworkCacheService {
       SynchronousFuture<String?>(null);
 }
 
+Finder get _libraryListViews =>
+    find.byWidgetPredicate((widget) => widget is ListView);
+
 Set<String> _selectedSortControls(WidgetTester tester) {
   final controls =
       tester.widget(
@@ -642,7 +645,7 @@ void main() {
           );
           await tester.pumpAndSettle();
           expect(
-            tester.widget<ListView>(find.byType(ListView)).itemExtent,
+            tester.widget<ListView>(_libraryListViews).itemExtent,
             fixedExtent ? LibraryLikeCardMetrics.rootTileHeight : null,
           );
           scroll.jumpTo(scroll.position.maxScrollExtent / 2 + 17);
@@ -758,7 +761,7 @@ void main() {
           for (final scale in [1.0, 2.0]) {
             await show(width, scale, false);
             expect(
-              tester.widget<ListView>(find.byType(ListView)).itemExtent,
+              tester.widget<ListView>(_libraryListViews).itemExtent,
               LibraryLikeCardMetrics.rootTileHeight,
             );
             final fixed = [
@@ -769,7 +772,7 @@ void main() {
             await tester.pumpWidget(const SizedBox.shrink());
             await show(width, scale, true);
             expect(
-              tester.widget<ListView>(find.byType(ListView)).itemExtent,
+              tester.widget<ListView>(_libraryListViews).itemExtent,
               isNull,
             );
             expect([
@@ -955,7 +958,7 @@ void main() {
         await tester.pump();
         expect(tester.state(transition()), same(state));
         expect(
-          tester.widget<ListView>(find.byType(ListView)).itemExtent,
+          tester.widget<ListView>(_libraryListViews).itemExtent,
           isNull,
         );
       }
@@ -970,12 +973,12 @@ void main() {
       await service.undoPending();
       await tester.pump();
       await tester.pump(kAppFadeDuration + const Duration(milliseconds: 1));
-      expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
+      expect(tester.widget<ListView>(_libraryListViews).itemExtent, isNull);
       rowTickers = true;
       await tester.pumpWidget(page());
       await tester.pump();
       expect(tester.state(transition()), same(state));
-      expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
+      expect(tester.widget<ListView>(_libraryListViews).itemExtent, isNull);
       await tester.pump(kAppFadeDuration ~/ 2);
       expect(
         tester.getSize(libraryRow(nodes.first.path)).height,
@@ -985,14 +988,14 @@ void main() {
       await tester.pump();
       expect(tester.state(transition()), same(state));
       expect(
-        tester.widget<ListView>(find.byType(ListView)).itemExtent,
+        tester.widget<ListView>(_libraryListViews).itemExtent,
         LibraryLikeCardMetrics.rootTileHeight,
       );
       await remove();
       await tester.pump(kAppFadeDuration + const Duration(milliseconds: 1));
       await service.commitPending();
       await tester.pump();
-      expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
+      expect(tester.widget<ListView>(_libraryListViews).itemExtent, isNull);
       expect(find.text('Motion 0', findRichText: true), findsNothing);
       tree = nodes.skip(1).toList();
       revision++;
@@ -1000,11 +1003,11 @@ void main() {
       await _waitForLibraryProjection(
         tester,
         () =>
-            tester.widget<ListView>(find.byType(ListView))
+            tester.widget<ListView>(_libraryListViews)
                 .childrenDelegate.estimatedChildCount == 2,
       );
       expect(
-        tester.widget<ListView>(find.byType(ListView)).itemExtent,
+        tester.widget<ListView>(_libraryListViews).itemExtent,
         LibraryLikeCardMetrics.rootTileHeight,
       );
       tree = nodes;
@@ -1312,7 +1315,7 @@ void main() {
       await tester.pumpWidget(buildList());
       await _waitForLibraryProjection(tester, () => loads == 1);
       expect(loads, 1);
-      expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
+      expect(tester.widget<ListView>(_libraryListViews).itemExtent, isNull);
       expect(find.text('Batch track 0'), findsNothing);
       // Finish route/scroll quiet windows before freezing time to measure the
       // first frame of the loaded rows' fade.
@@ -1322,7 +1325,7 @@ void main() {
         tester,
         () => find.text('Batch track 0').evaluate().isNotEmpty,
       );
-      expect(tester.widget<ListView>(find.byType(ListView)).itemExtent, isNull);
+      expect(tester.widget<ListView>(_libraryListViews).itemExtent, isNull);
       Finder rowFade() => find.descendant(
         of: find.byType(LibraryTreeList, skipOffstage: false),
         matching: find.ancestor(
@@ -2183,7 +2186,7 @@ void main() {
         );
         UiInteractionCoordinator.instance.cancelNavigation(interaction);
         final gesture = await tester.startGesture(
-          tester.getCenter(find.byType(ListView)),
+          tester.getCenter(_libraryListViews),
         );
         await gesture.moveBy(const Offset(0, -40));
         await tester.pump();
@@ -4409,7 +4412,7 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsNothing);
       final skeletonScroll = find.ancestor(
         of: skeleton,
-        matching: find.byType(ListView),
+        matching: _libraryListViews,
       );
       final skeletonPosition = tester
           .state<ScrollableState>(
@@ -5099,10 +5102,10 @@ void main() {
         await tester.tap(find.text('work'));
         await tester.pumpAndSettle();
         expect(find.text(title), findsOneWidget);
-        await tester.drag(find.byType(ListView), const Offset(0, -700));
+        await tester.drag(_libraryListViews, const Offset(0, -700));
         await tester.pumpAndSettle();
         expect(find.text('work'), findsNothing);
-        await tester.drag(find.byType(ListView), const Offset(0, 700));
+        await tester.drag(_libraryListViews, const Offset(0, 700));
         await tester.pumpAndSettle();
         expect(find.text(title), findsOneWidget);
         expect(tester.takeException(), isNull);
@@ -5149,10 +5152,10 @@ void main() {
           await tester.pumpAndSettle();
         }
         expect(find.byType(FileTreeRow).evaluate().length, lessThan(40));
-        await tester.drag(find.byType(ListView), const Offset(0, -600));
+        await tester.drag(_libraryListViews, const Offset(0, -600));
         await tester.pumpAndSettle();
         expect(find.byType(FileTreeRow).evaluate().length, lessThan(40));
-        await tester.drag(find.byType(ListView), const Offset(0, 600));
+        await tester.drag(_libraryListViews, const Offset(0, 600));
         await tester.pumpAndSettle();
         await tester.tap(find.text('work'));
         await tester.pumpAndSettle();
@@ -5204,7 +5207,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.byType(FileTreeRow).evaluate().length, lessThan(40));
-      await tester.drag(find.byType(ListView).last, const Offset(0, -600));
+      await tester.drag(_libraryListViews.last, const Offset(0, -600));
       await tester.pumpAndSettle();
       expect(find.byType(FileTreeRow).evaluate().length, lessThan(40));
       expect(tester.takeException(), isNull);

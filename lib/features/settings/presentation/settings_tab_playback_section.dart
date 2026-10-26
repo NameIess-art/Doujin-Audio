@@ -25,7 +25,7 @@ List<Widget> _buildSettingsPlaybackSection({
                 () => settings.setAllowVideoPlayback(value),
               ),
               title: _settingsTitle(i18n.tr('allow_video_playback')),
-              secondary: _settingsIcon(Icons.videocam_rounded, cs.onSurface),
+              secondary: _settingsIcon(Icons.videocam_rounded, cs.primary),
             );
           },
         ),
@@ -43,7 +43,7 @@ List<Widget> _buildSettingsPlaybackSection({
                 () => settings.setAsmrPlaybackCacheEnabled(value),
               ),
               title: _settingsTitle(i18n.tr('asmr_playback_cache')),
-              secondary: _settingsIcon(Icons.cached_rounded, cs.onSurface),
+              secondary: _settingsIcon(Icons.cached_rounded, cs.primary),
             );
           },
         ),
@@ -61,7 +61,7 @@ List<Widget> _buildSettingsPlaybackSection({
                 () => settings.setRecordPlaybackProgress(value),
               ),
               title: _settingsTitle(i18n.tr('record_playback_progress')),
-              secondary: _settingsIcon(Icons.restore_rounded, cs.onSurface),
+              secondary: _settingsIcon(Icons.restore_rounded, cs.primary),
             );
           },
         ),
@@ -77,7 +77,7 @@ List<Widget> _buildSettingsPlaybackSection({
             );
             return ListTile(
               title: _settingsTitle(i18n.tr('sleep_mode_auto_trigger')),
-              leading: _settingsIcon(Icons.bedtime_outlined, cs.onSurface),
+              leading: _settingsIcon(Icons.bedtime_outlined, cs.primary),
               trailing: _settingsDropdown<SleepModeAutoTrigger>(
                 context,
                 value: trigger,
@@ -124,7 +124,7 @@ List<Widget> _buildSettingsPlaybackSection({
               title: _settingsTitle(
                 i18n.tr('audio_device_disconnect_behavior'),
               ),
-              leading: _settingsIcon(Icons.headset_off_rounded, cs.onSurface),
+              leading: _settingsIcon(Icons.headset_off_rounded, cs.primary),
               trailing: _settingsDropdown<AudioDeviceDisconnectBehavior>(
                 context,
                 value: behavior,
@@ -169,7 +169,7 @@ List<Widget> _buildSettingsPlaybackSection({
                 title: _settingsTitle(i18n.tr('audio_focus_strategy')),
                 leading: _settingsIcon(
                   Icons.multitrack_audio_rounded,
-                  cs.onSurface,
+                  cs.primary,
                 ),
                 trailing: _settingsDropdown<AudioFocusStrategy>(
                   context,
@@ -213,7 +213,7 @@ List<Widget> _buildSettingsPlaybackSection({
                 title: _settingsTitle(
                   i18n.tr('transient_audio_focus_loss_behavior'),
                 ),
-                leading: _settingsIcon(Icons.volume_down_rounded, cs.onSurface),
+                leading: _settingsIcon(Icons.volume_down_rounded, cs.primary),
                 trailing: _settingsDropdown<TransientAudioFocusLossBehavior>(
                   context,
                   value: behavior,
@@ -257,7 +257,7 @@ List<Widget> _buildSettingsPlaybackSection({
             );
             return ListTile(
               title: _settingsTitle(i18n.tr('interruption_resume_behavior')),
-              leading: _settingsIcon(Icons.phone_in_talk_rounded, cs.onSurface),
+              leading: _settingsIcon(Icons.phone_in_talk_rounded, cs.primary),
               trailing: _settingsDropdown<InterruptionResumeBehavior>(
                 context,
                 value: behavior,

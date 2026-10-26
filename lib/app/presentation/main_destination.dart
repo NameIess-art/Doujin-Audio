@@ -42,8 +42,8 @@ List<MainDestination> resolveMainDestinations({
       ),
     const MainDestination(
       type: MainDestinationType.playlist,
-      icon: Icons.featured_play_list_outlined,
-      selectedIcon: Icons.featured_play_list_rounded,
+      icon: Icons.playlist_play_rounded,
+      selectedIcon: Icons.playlist_play_rounded,
       labelKey: 'nav_sessions',
     ),
     MainDestination(

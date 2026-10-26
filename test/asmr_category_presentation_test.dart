@@ -1550,6 +1550,37 @@ void main() {
               'Rounded card clipping belongs to the swipe shell; '
               'each visible row must avoid a second shaped physical surface.',
         );
+        for (final card in cards.evaluate()) {
+          Element? cardHost;
+          card.visitAncestorElements((ancestor) {
+            final key = ancestor.widget.key;
+            if (ancestor.widget is FadeTransition &&
+                key is ValueKey<String> &&
+                key.value.startsWith('asmr-work-')) {
+              cardHost = ancestor;
+              return false;
+            }
+            return true;
+          });
+          expect(cardHost, isNotNull);
+          expect(
+            (cardHost!.widget as FadeTransition).child,
+            isA<RepaintBoundary>(),
+          );
+          var boundaries = 0;
+          cardHost!.visitAncestorElements((ancestor) {
+            if (ancestor.widget is SliverFixedExtentList) return false;
+            if (ancestor.widget is RepaintBoundary) boundaries++;
+            return true;
+          });
+          expect(
+            boundaries,
+            0,
+            reason:
+                'Each card keeps its own paint isolation; the sliver must '
+                'avoid adding a second boundary around the same card row.',
+          );
+        }
         final categoryReads = controller.categoryReads;
         final existingCards = cards.evaluate().toSet();
         var existingCardBuilds = 0;

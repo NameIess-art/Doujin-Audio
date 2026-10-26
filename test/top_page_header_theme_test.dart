@@ -18,6 +18,41 @@ Widget _buildThemedApp({
 }
 
 void main() {
+  testWidgets('playlist header icon is optically enlarged in both capsules', (
+    tester,
+  ) async {
+    for (final topCapsule in [false, true]) {
+      for (final icon in [Icons.playlist_play_rounded, Icons.cloud_rounded]) {
+        await tester.pumpWidget(
+          _buildThemedApp(
+            child: TopPageHeader(
+              icon: icon,
+              title: 'Playlist',
+              topCapsuleTitle: topCapsule ? 'Playlist' : null,
+              useSafeAreaTop: false,
+            ),
+          ),
+        );
+        final iconFinder = topCapsule
+            ? find.descendant(
+                of: find.byType(HeaderTopCapsule),
+                matching: find.byIcon(icon),
+              )
+            : find.byIcon(icon);
+        final size = tester.widget<Icon>(iconFinder).size;
+        final expected = topCapsule ? 16.0 : 18.0;
+        expect(
+          size,
+          closeTo(
+            icon == Icons.playlist_play_rounded ? expected * 1.15 : expected,
+            0.001,
+          ),
+        );
+        expect(tester.takeException(), isNull);
+      }
+    }
+  });
+
   group('TopPageHeader and HeaderSegmentedCategoryBar theme & accent tests', () {
     testWidgets('TopPageHeader uses custom iconColor when provided', (
       tester,

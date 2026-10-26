@@ -34,7 +34,7 @@ List<Widget> _buildSettingsAppearanceSection({
             };
             return ListTile(
               title: _settingsTitle(i18n.tr('dark_mode')),
-              leading: _settingsIcon(Icons.dark_mode_rounded, cs.onSurface),
+              leading: _settingsIcon(Icons.dark_mode_rounded, cs.primary),
               trailing: _settingsDropdown<ThemeMode>(
                 context,
                 value: themeMode,
@@ -78,7 +78,7 @@ List<Widget> _buildSettingsAppearanceSection({
                 ),
               );
             },
-            secondary: _settingsIcon(Icons.contrast_rounded, cs.onSurface),
+            secondary: _settingsIcon(Icons.contrast_rounded, cs.primary),
             contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           ),
         SwitchListTile(
@@ -94,7 +94,7 @@ List<Widget> _buildSettingsAppearanceSection({
               ),
             );
           },
-          secondary: _settingsIcon(Icons.blur_on_rounded, cs.onSurface),
+          secondary: _settingsIcon(Icons.blur_on_rounded, cs.primary),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         ),
         SwitchListTile(
@@ -109,7 +109,7 @@ List<Widget> _buildSettingsAppearanceSection({
               ),
             );
           },
-          secondary: _settingsIcon(Icons.palette_rounded, cs.onSurface),
+          secondary: _settingsIcon(Icons.palette_rounded, cs.primary),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         ),
         _ThemeColorTile(
@@ -119,7 +119,7 @@ List<Widget> _buildSettingsAppearanceSection({
           color: themeProvider.appThemeColor
               .colorScheme(Theme.of(context).brightness)
               .primary,
-          iconColor: cs.onSurface,
+          iconColor: cs.primary,
           onTap: () => _showThemeColorPicker(
             context: context,
             i18n: i18n,
@@ -136,7 +136,7 @@ List<Widget> _buildSettingsAppearanceSection({
             color: themeProvider.asmrThemeColor
                 .colorScheme(Theme.of(context).brightness)
                 .primary,
-            iconColor: cs.onSurface,
+            iconColor: cs.primary,
             onTap: () => _showThemeColorPicker(
               context: context,
               i18n: i18n,
@@ -154,7 +154,7 @@ List<Widget> _buildSettingsAppearanceSection({
           title: _settingsTitle(i18n.tr('cover_image_resolution')),
           leading: _settingsIcon(
             Icons.photo_size_select_large_rounded,
-            cs.onSurface,
+            cs.primary,
           ),
           trailing: Consumer(
             builder: (context, ref, _) =>
@@ -201,7 +201,7 @@ List<Widget> _buildSettingsAppearanceSection({
                 () => settingsController.setPreferEmbeddedCover(value),
               ),
               title: _settingsTitle(i18n.tr('prefer_embedded_cover')),
-              secondary: _settingsIcon(Icons.audio_file_rounded, cs.onSurface),
+              secondary: _settingsIcon(Icons.audio_file_rounded, cs.primary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
@@ -213,7 +213,7 @@ List<Widget> _buildSettingsAppearanceSection({
       children: [
         ListTile(
           title: _settingsTitle(i18n.tr('subtitle_window_settings')),
-          leading: _settingsIcon(Icons.subtitles_rounded, cs.onSurface),
+          leading: _settingsIcon(Icons.subtitles_rounded, cs.primary),
           trailing: Icon(
             Icons.chevron_right_rounded,
             size: 20,

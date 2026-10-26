@@ -710,7 +710,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   ) => _catalogWrites.removeLibraryEntriesByPaths(libraryPath, entryPaths);
 
   @override
-  void clearLibraryExclusions(String libraryPath) =>
+  Future<void> clearLibraryExclusions(String libraryPath) =>
       _mutationCoordinator.clearLibraryExclusions(libraryPath);
 
   Future<LibraryRemovalKind?> removeTrack(String trackPath) =>

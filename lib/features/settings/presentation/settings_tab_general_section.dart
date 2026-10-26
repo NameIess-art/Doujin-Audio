@@ -14,7 +14,7 @@ List<Widget> _buildSettingsLanguageSection({
       children: [
         ListTile(
           title: _settingsTitle(i18n.tr('interface_language')),
-          leading: _settingsIcon(Icons.language_rounded, cs.onSurface),
+          leading: _settingsIcon(Icons.language_rounded, cs.primary),
           trailing: _settingsDropdown<AppLanguagePreference>(
             context,
             value: i18n.preference,
@@ -48,7 +48,7 @@ List<Widget> _buildSettingsLanguageSection({
             );
             return ListTile(
               title: _settingsTitle(i18n.tr('dlsite_metadata_language')),
-              leading: _settingsIcon(Icons.public_rounded, cs.onSurface),
+              leading: _settingsIcon(Icons.public_rounded, cs.primary),
               trailing: _settingsDropdown<ContentLanguagePreference>(
                 context,
                 value: dlsiteLanguage,
@@ -90,7 +90,7 @@ List<Widget> _buildSettingsLanguageSection({
             final controller = ref.read(asmrLibraryControllerProvider);
             return ListTile(
               title: _settingsTitle(i18n.tr('asmr_page_language')),
-              leading: _settingsIcon(Icons.public_rounded, cs.onSurface),
+              leading: _settingsIcon(Icons.public_rounded, cs.primary),
               trailing: _settingsDropdown<ContentLanguagePreference>(
                 context,
                 value: preference,
@@ -160,7 +160,7 @@ List<Widget> _buildSettingsGeneralSection({
                 : availablePages.first;
             return ListTile(
               title: _settingsTitle(i18n.tr('startup_page')),
-              leading: _settingsIcon(Icons.home_rounded, cs.onSurface),
+              leading: _settingsIcon(Icons.home_rounded, cs.primary),
               trailing: _settingsDropdown<StartupPage>(
                 context,
                 value: effectiveStartupPage,
@@ -208,7 +208,7 @@ List<Widget> _buildSettingsGeneralSection({
                 context,
                 () => settings.setReduceAnimations(value),
               ),
-              secondary: _settingsIcon(Icons.animation_rounded, cs.onSurface),
+              secondary: _settingsIcon(Icons.animation_rounded, cs.primary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
@@ -228,7 +228,7 @@ List<Widget> _buildSettingsGeneralSection({
                   context,
                   () => settings.setHapticFeedbackEnabled(value),
                 ),
-                secondary: _settingsIcon(Icons.vibration_rounded, cs.onSurface),
+                secondary: _settingsIcon(Icons.vibration_rounded, cs.primary),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               );
             },
@@ -269,7 +269,7 @@ List<Widget> _buildSettingsPageDisplaySection({
                           ),
                         )
                       : null,
-                  secondary: _settingsIcon(Icons.cloud_outlined, cs.onSurface),
+                  secondary: _settingsIcon(Icons.cloud_outlined, cs.primary),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
                 SwitchListTile(
@@ -288,13 +288,13 @@ List<Widget> _buildSettingsPageDisplaySection({
                       : null,
                   secondary: _settingsIcon(
                     Icons.library_music_rounded,
-                    cs.onSurface,
+                    cs.primary,
                   ),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
                 ListTile(
                   title: _settingsTitle(i18n.tr('work_name_display')),
-                  leading: _settingsIcon(Icons.title_rounded, cs.onSurface),
+                  leading: _settingsIcon(Icons.title_rounded, cs.primary),
                   trailing: _settingsDropdown<WorkNameDisplay>(
                     context,
                     value: displayMode,

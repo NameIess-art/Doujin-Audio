@@ -14,6 +14,76 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 
 void main() {
   testWidgets(
+    'confirmation is a circular header button between input and clear',
+    (tester) async {
+      final controller = TextEditingController(text: 'query');
+      final focus = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focus.dispose);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var confirms = 0;
+      var clears = 0;
+      var enabled = true;
+      late StateSetter update;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (_, setState) {
+              update = setState;
+              return AppSearchPageScaffold<int>(
+                controller: controller,
+                focusNode: focus,
+                hintText: 'Search',
+                showConfirmButton: true,
+                confirmLabel: 'Confirm search',
+                onConfirm: enabled ? () => confirms++ : null,
+                onCloseOrClear: () => clears++,
+                onChanged: (_) {},
+                onSubmitted: (_) => confirms++,
+                body: const SizedBox.expand(),
+              );
+            },
+          ),
+        ),
+      );
+      final confirm = find.byKey(const ValueKey('app_search_confirm'));
+      final field = find.byKey(const ValueKey('app_search_field_shell'));
+      final clear = find.byKey(const ValueKey('app_search_close'));
+      for (final width in [280.0, 400.0, 1280.0]) {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = Size(width, 800);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(confirm), const Size(38, 38));
+        expect(tester.getRect(field).right + 8, tester.getRect(confirm).left);
+        expect(tester.getRect(confirm).right + 8, tester.getRect(clear).left);
+        expect(tester.getCenter(confirm).dy, tester.getCenter(field).dy);
+        expect(tester.getCenter(clear).dy, tester.getCenter(field).dy);
+        expect(find.byTooltip('Confirm search'), findsOneWidget);
+        final material = tester.widget<Material>(
+          find.ancestor(of: confirm, matching: find.byType(Material)).first,
+        );
+        expect(material.shape, const CircleBorder());
+        expect(tester.takeException(), isNull);
+      }
+      await tester.tap(confirm);
+      await tester.tap(clear);
+      expect(confirms, 1);
+      expect(clears, 1);
+      update(() => enabled = false);
+      await tester.pumpAndSettle();
+      expect(tester.widget<IconButton>(confirm).onPressed, isNull);
+      await tester.tap(confirm);
+      expect(confirms, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'vertical result scrolling dismisses keyboard and preserves query',
     (tester) async {
       final controller = TextEditingController(text: 'query');

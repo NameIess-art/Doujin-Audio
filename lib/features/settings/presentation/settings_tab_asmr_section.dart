@@ -30,10 +30,11 @@ List<Widget> _buildSettingsAsmrSection({
                   destinationRoot == null || destinationRoot.trim().isEmpty
                       ? i18n.tr('asmr_download_path_not_set')
                       : PathDisplay.displayPathFor(destinationRoot),
-                  softWrap: true,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              leading: _settingsIcon(Icons.folder_rounded, cs.onSurface),
+              leading: _settingsIcon(Icons.folder_rounded, cs.primary),
               trailing: IconButton(
                 onPressed: asmrDownloadPathOperation.isBusy
                     ? null
@@ -69,7 +70,7 @@ List<Widget> _buildSettingsAsmrSection({
             };
             return ListTile(
               title: _settingsTitle(i18n.tr('asmr_download_conflict_setting')),
-              leading: _settingsIcon(Icons.rule_folder_rounded, cs.onSurface),
+              leading: _settingsIcon(Icons.rule_folder_rounded, cs.primary),
               trailing: _settingsDropdown<AsmrDownloadConflictPolicy>(
                 context,
                 value: conflictPolicy,
@@ -107,7 +108,7 @@ List<Widget> _buildSettingsAsmrSection({
             );
             return ListTile(
               title: _settingsTitle(i18n.tr('asmr_download_retry_count')),
-              leading: _settingsIcon(Icons.refresh_rounded, cs.onSurface),
+              leading: _settingsIcon(Icons.refresh_rounded, cs.primary),
               trailing: _settingsDropdown<int>(
                 context,
                 value: retryCount,
@@ -153,7 +154,7 @@ List<Widget> _buildSettingsAsmrSection({
             );
             return ListTile(
               title: _settingsTitle(i18n.tr('asmr_download_thread_count')),
-              leading: _settingsIcon(Icons.dynamic_feed_rounded, cs.onSurface),
+              leading: _settingsIcon(Icons.dynamic_feed_rounded, cs.primary),
               trailing: _settingsDropdown<int>(
                 context,
                 value: threadCount,
@@ -211,7 +212,7 @@ List<Widget> _buildSettingsAsmrSection({
               ),
               secondary: _settingsIcon(
                 Icons.description_outlined,
-                cs.onSurface,
+                cs.primary,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
@@ -231,7 +232,7 @@ List<Widget> _buildSettingsAsmrSection({
                 () => settings.setAsmrDownloadSaveCover(value),
               ),
               title: _settingsTitle(i18n.tr('asmr_download_save_cover')),
-              secondary: _settingsIcon(Icons.image_outlined, cs.onSurface),
+              secondary: _settingsIcon(Icons.image_outlined, cs.primary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
@@ -264,7 +265,7 @@ List<Widget> _buildSettingsAsmrSection({
               ),
               leading: _settingsIcon(
                 Icons.drive_file_rename_outline,
-                cs.onSurface,
+                cs.primary,
               ),
               trailing: Icon(
                 Icons.chevron_right_rounded,

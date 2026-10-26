@@ -113,6 +113,10 @@ void main() {
       expect(find.byType(Card), findsNWidgets(cardKeys.length));
       expect(find.byType(Divider), findsNothing);
       final cards = find.byType(Card);
+      for (final card in tester.widgetList<Card>(cards)) {
+        expect(card.color, Colors.transparent);
+        expect((card.shape! as RoundedRectangleBorder).side, BorderSide.none);
+      }
       for (var index = 0; index < cardKeys.length - 1; index++) {
         final gap =
             tester.getTopLeft(cards.at(index + 1)).dy -
@@ -137,7 +141,7 @@ void main() {
       );
       expect(
         firstCardIcon.color,
-        Theme.of(firstCardContext).colorScheme.onSurface,
+        Theme.of(firstCardContext).colorScheme.primary,
       );
       for (final key in cardKeys) {
         final tile = find.descendant(
@@ -573,6 +577,13 @@ void main() {
 
     final appCacheSegment = find.byKey(
       const ValueKey('data-support-storage-segment-app-cache'),
+    );
+    final storageCard = tester.widget<Card>(find.byType(Card));
+    expect((storageCard.shape! as RoundedRectangleBorder).side, BorderSide.none);
+    expect(
+      storageCard.color,
+      Theme.of(tester.element(find.byType(Card))).colorScheme.surfaceContainerHigh
+          .withValues(alpha: 0.6),
     );
     expect(appCacheSegment, findsOneWidget);
     final segment = tester.widget<ColoredBox>(

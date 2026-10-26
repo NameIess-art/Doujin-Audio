@@ -217,7 +217,14 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableWidth = constraints.maxWidth;
-        final playbackChild = _buildPlaybackChild(context);
+        const compactWidth = kActiveSessionCarouselDockHeight;
+        final expandedPlaybackWidth =
+            compactWidth +
+            (availableWidth - compactWidth * 2).clamp(0.0, availableWidth);
+        final playbackChild = _buildPlaybackChild(
+          context,
+          expandedPlaybackWidth,
+        );
         final navigationChild = widget.buildBottomBar(
           context,
           isPlaybackExpanded: widget.isPlaybackExpanded,
@@ -235,11 +242,9 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
             final layoutProgress = Curves.easeInOut.transform(
               ((expand - 0.25) / 0.5).clamp(0.0, 1.0),
             );
-            const compactWidth = kActiveSessionCarouselDockHeight;
             final playbackWidth =
                 compactWidth +
-                (availableWidth - compactWidth * 2).clamp(0.0, availableWidth) *
-                    layoutProgress;
+                (expandedPlaybackWidth - compactWidth) * layoutProgress;
             final playbackOffset = playbackWidth * (1 - appearance);
             final navigationWidth =
                 (availableWidth - playbackWidth * appearance).clamp(
@@ -303,13 +308,14 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     );
   }
 
-  Widget? _buildPlaybackChild(BuildContext context) {
+  Widget? _buildPlaybackChild(BuildContext context, double expandedWidth) {
     if (_cachedSessions.isEmpty) return null;
     return ActiveSessionCarousel(
       key: const ValueKey<String>('mobile_dock_carousel'),
       sessions: _cachedSessions,
       i18n: widget.i18n,
       viewportFraction: 1,
+      expandedDockWidth: expandedWidth,
       presentation: ActiveSessionCarouselPresentation.embedded,
       onOpenSession: (sessionId) {
         if (!widget.isPlaybackExpanded) {

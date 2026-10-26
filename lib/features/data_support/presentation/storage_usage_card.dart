@@ -143,6 +143,11 @@ class _StorageUsageUnavailableCard extends StatelessWidget {
       key: const ValueKey('data-support-storage-unavailable'),
       elevation: 0,
       color: cs.surfaceContainerHigh.withValues(alpha: 0.6),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(
+          AppDesignTokens.of(context).radiusCard,
+        ),
+      ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Icon(Icons.sd_storage_outlined, color: cs.onSurface),
@@ -214,6 +219,9 @@ class _StorageUsageCard extends StatelessWidget {
     return Card(
       elevation: 0,
       color: cs.surfaceContainerHigh.withValues(alpha: 0.6),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusCard),
+      ),
       child: Padding(
         key: ValueKey(
           isLoaded

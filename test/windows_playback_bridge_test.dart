@@ -599,6 +599,77 @@ void main() {
     },
   );
 
+  for (final disconnect in [false, true]) {
+    test(
+      '${disconnect ? 'device disconnect' : 'pause all'} cancels video track stop and restores native queue',
+      () async {
+        final queue = [
+          for (final name in ['a', 'b'])
+            <String, Object?>{
+              'uri': 'https://example.com/$name.mp4',
+              'path': '$name.mp4',
+            },
+        ];
+        expect(
+          (await bridge.prepareSession(
+            sessionId: 'one',
+            uri: Uri.parse(queue[0]['uri'] as String),
+            title: 'a',
+            queue: queue,
+            repeatAll: true,
+            autoPlay: true,
+          )).isOk,
+          true,
+        );
+        final decoder = bridge.playerForSession('one');
+        final player = players.single;
+        player.loaded();
+        await bridge.seek('one', const Duration(seconds: 12));
+        expect((await bridge.setStopAfterCurrentTrack('one', true)).isOk, true);
+        expect(player.state.playlist.medias, hasLength(1));
+
+        if (disconnect) {
+          await bridge.handleDeviceDisconnected();
+        } else {
+          expect((await bridge.pauseAll()).isOk, true);
+        }
+        final paused = (await bridge.snapshot()).valueOrNull!.sessions.single;
+        expect(paused.playWhenReady, false);
+        expect(paused.stopAfterCurrentTrack, false);
+        expect(bridge.playerForSession('one'), same(decoder));
+        expect(player.disposed, false);
+        expect(player.state.position, const Duration(seconds: 12));
+        expect(player.state.playlist.medias, hasLength(2));
+        expect(player.state.playlistMode, PlaylistMode.loop);
+
+        // Timer reconciliation repeats cancellation after receiving the pause.
+        expect(
+          (await bridge.setStopAfterCurrentTrack('one', false)).isOk,
+          true,
+        );
+        expect((await bridge.play('one')).isOk, true);
+        expect(
+          (await bridge.setRepeatOne(
+            'one',
+            false,
+            repeatAll: true,
+            shuffle: true,
+          )).isOk,
+          true,
+        );
+        expect(player.state.playlist.medias, hasLength(2));
+        expect(player.state.playlistMode, PlaylistMode.loop);
+        player.advance(1);
+        await Future<void>.delayed(Duration.zero);
+        final next = (await bridge.snapshot()).valueOrNull!.sessions.single;
+        expect(next.path, 'b.mp4');
+        expect(next.queueIndex, 1);
+        expect(next.playWhenReady, true);
+        expect(player.opens, 1);
+      },
+    );
+  }
+
   test(
     'sessions play concurrently and exclusive play pauses only others',
     () async {

@@ -42,7 +42,9 @@ class _AsmrWorkRowsDelegate extends SliverChildBuilderDelegate {
     super.childCount,
     super.findChildIndexCallback,
   }) : selectedWorkIds = Set.of(selectedWorkIds),
-       loadingAnimations = Map.of(loadingAnimations);
+       loadingAnimations = Map.of(loadingAnimations),
+       // Each card already isolates its paint, including cards sharing a row.
+       super(addRepaintBoundaries: false);
 
   final List<AsmrWork> works;
   final int columnCount;

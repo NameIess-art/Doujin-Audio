@@ -85,7 +85,7 @@ abstract interface class LibraryCatalogWriter {
   void addWatchedFolder(String folderPath, {bool notify = true});
   void addWatchedLibrary(String folderPath, {bool notify = true});
   void removeWatchedFolder(String folderPath, {bool notify = true});
-  void clearLibraryExclusions(String libraryPath);
+  Future<void> clearLibraryExclusions(String libraryPath);
   Future<void> prefillAudioDetailRjCodeFromText(
     String folderPath,
     String displayName,

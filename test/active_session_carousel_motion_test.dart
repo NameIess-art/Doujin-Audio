@@ -3,17 +3,20 @@ import 'package:doujin_audio/app/presentation/desktop_main_navigation.dart';
 import 'package:doujin_audio/app/presentation/main_destination.dart';
 import 'package:doujin_audio/app/presentation/mobile_dock_capsule_content.dart';
 import 'package:doujin_audio/core/media/cover_image_resolution.dart';
+import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
+import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/playback_position_ui_gate.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,6 +29,245 @@ void main() {
   final interaction = UiInteractionCoordinator.instance;
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
+
+  for (final desktop in [false, true]) {
+    testWidgets(
+      '${desktop ? 'desktop' : 'mobile'} dock keeps subtitle layout stable while its progress resizes',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = desktop
+            ? TargetPlatform.windows
+            : TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        const title = '播放中的長いタイトル / Long playback title for marquee motion';
+        const firstCue =
+            '字幕の長い文章です。播放卡片收起时仍然保持同一行文字排版，'
+            '途中反向展开也不应每帧重排。Long subtitle with emoji 🎵 and more text.';
+        const nextCue = '字幕更新已恢复 / Subtitle updates resumed';
+        final track = testMusicTrack(
+          name: title,
+          path: '/subtitle-motion/audio.mp3',
+          groupKey: '/subtitle-motion',
+          groupTitle: 'Subtitle motion',
+        );
+        fixture.library.addTracks([track], persist: false);
+        final session =
+            PlaybackSession(
+                id: 'subtitle-motion',
+                currentTrackPath: track.path,
+                customQueueTracks: [track],
+                loopMode: SessionLoopMode.single,
+                nonSingleLoopMode: SessionLoopMode.single,
+                volume: 1,
+                createdAt: DateTime(2026),
+                state: const PlayerState(false, ProcessingState.ready),
+              )
+              ..duration = const Duration(minutes: 4)
+              ..setOptimisticPosition(const Duration(seconds: 30));
+        addTearDown(session.shutdown);
+        final subtitles = PlaybackSubtitleService(
+          trackResolver: (_) => track,
+          subtitleLoader: (_, _) async => SubtitleTrack(
+            sourcePath: '/subtitle-motion/audio.srt',
+            cues: const [
+              SubtitleCue(
+                start: Duration.zero,
+                end: Duration(minutes: 1),
+                text: firstCue,
+              ),
+              SubtitleCue(
+                start: Duration(minutes: 1),
+                end: Duration(minutes: 2),
+                text: nextCue,
+              ),
+            ],
+          ),
+        );
+        addTearDown(subtitles.dispose);
+        await subtitles.load(track.path);
+        final geometryKey = GlobalKey();
+        final activeIndex = ValueNotifier(0);
+        addTearDown(activeIndex.dispose);
+        final iconKeys = List.generate(
+          MainDestinationType.values.length,
+          (_) => GlobalKey(),
+        );
+        final iconLinks = List.generate(
+          MainDestinationType.values.length,
+          (_) => LayerLink(),
+        );
+        var expanded = true;
+        var showPlaybackCalls = 0;
+        Widget shell() => fixture.build(
+          MediaQuery(
+            data: const MediaQueryData(size: Size(1280, 800)),
+            child: Center(
+              child: SizedBox(
+                width: 400,
+                height: 500,
+                child: desktop
+                    ? Align(
+                        alignment: Alignment.topLeft,
+                        child: DesktopMainNavigation(
+                          i18n: fixture.languageProvider,
+                          overlaySessions: [
+                            PlaybackSessionSnapshot.fromRuntime(session),
+                          ],
+                          destinations: resolveMainDestinations(
+                            showLocalLibrary: true,
+                            showAsmrOne: true,
+                          ),
+                          isMenuCollapsed: !expanded,
+                          activePageIndex: activeIndex,
+                          menuIconKeys: iconKeys,
+                          menuIconLinks: iconLinks,
+                          collapseOffset: (_, _) => Offset.zero,
+                          onSwitchPage: (_) {},
+                          onToggleMenu: () {},
+                          playbackGeometryKey: geometryKey,
+                          onReportPlaybackRect:
+                              ({
+                                required dockCollapsed,
+                                required dockAreaWidth,
+                                required expandedDockWidth,
+                              }) {},
+                        ),
+                      )
+                    : MobileDockCapsuleContent(
+                        overlaySessions: [
+                          PlaybackSessionSnapshot.fromRuntime(session),
+                        ],
+                        isPlaybackExpanded: expanded,
+                        i18n: fixture.languageProvider,
+                        mobilePlaybackGeometryKey: geometryKey,
+                        onShowPlayback: () => showPlaybackCalls++,
+                        onShowDestinations: () {},
+                        onReportPlaybackCoverRect: () {},
+                        buildBottomBar:
+                            (
+                              _, {
+                              required isPlaybackExpanded,
+                              required appearance,
+                              required expansion,
+                              required availableWidth,
+                              required onCurrentTap,
+                            }) => const SizedBox.expand(),
+                      ),
+              ),
+            ),
+          ),
+          subtitleService: subtitles,
+        );
+        Finder paragraph(String text) => find.byWidgetPredicate(
+          (widget) => widget is RichText && widget.text.toPlainText() == text,
+        );
+        final progress = find.byWidgetPredicate(
+          (widget) =>
+              widget is ClipRRect &&
+              widget.borderRadius == BorderRadius.circular(2.5),
+        );
+        void expectSettledTextWidth() {
+          final subtitle = tester.renderObject<RenderParagraph>(
+            paragraph(firstCue).first,
+          );
+          expect(
+            subtitle.constraints.maxWidth,
+            closeTo(tester.getSize(progress.first).width, 0.001),
+          );
+          if (desktop) {
+            expect(
+              tester.getSize(find.byType(DesktopMainNavigation)).width,
+              closeTo(260, 0.001),
+            );
+          }
+        }
+
+        await tester.pumpWidget(shell());
+        await tester.pumpAndSettle();
+        expect(paragraph(firstCue), findsWidgets);
+        expectSettledTextWidth();
+        final subtitleWidth = tester
+            .renderObject<RenderParagraph>(paragraph(firstCue).first)
+            .constraints
+            .maxWidth;
+        final titleWidth = tester
+            .renderObject<RenderParagraph>(paragraph(title).first)
+            .constraints
+            .maxWidth;
+        final titlePaintWidth = tester
+            .renderObject<RenderParagraph>(paragraph(title).first)
+            .size
+            .width;
+        final progressWidths = <double>{};
+        var sampledTextFrames = 0;
+        Future<void> sampleFrames(int count) async {
+          for (var frame = 0; frame < count; frame++) {
+            await tester.pump(const Duration(milliseconds: 16));
+            if (paragraph(firstCue).evaluate().isNotEmpty) {
+              sampledTextFrames++;
+              for (final (text, width) in [
+                (firstCue, subtitleWidth),
+                (title, titleWidth),
+              ]) {
+                for (final element in paragraph(text).evaluate()) {
+                  final render = element.renderObject! as RenderParagraph;
+                  expect(
+                    render.constraints.maxWidth,
+                    width.isFinite ? closeTo(width, 0.001) : equals(width),
+                  );
+                  if (text == title) {
+                    expect(render.size.width, closeTo(titlePaintWidth, 0.001));
+                  }
+                  if (text == firstCue) expect(render.maxLines, 1);
+                }
+              }
+              progressWidths.add(tester.getSize(progress.first).width);
+            }
+            expect(tester.takeException(), isNull);
+          }
+        }
+
+        expanded = false;
+        await tester.pumpWidget(shell());
+        await sampleFrames(4);
+        expanded = true;
+        await tester.pumpWidget(shell());
+        await sampleFrames(16);
+        await tester.pumpAndSettle();
+        expanded = false;
+        await tester.pumpWidget(shell());
+        await sampleFrames(24);
+        await tester.pumpAndSettle();
+        expect(paragraph(firstCue), findsNothing);
+        if (!desktop) {
+          await tester.tap(
+            find.byKey(
+              const ValueKey<String>('active_session_card_subtitle-motion'),
+            ),
+          );
+          expect(showPlaybackCalls, 1);
+        }
+        expanded = true;
+        await tester.pumpWidget(shell());
+        await sampleFrames(24);
+        await tester.pumpAndSettle();
+        expect(sampledTextFrames, greaterThan(8));
+        expect(progressWidths.length, greaterThan(3));
+        expect(paragraph(firstCue), findsWidgets);
+        expectSettledTextWidth();
+        await tester.pump(interaction.idleDelay);
+        session.setOptimisticPosition(const Duration(seconds: 90));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(paragraph(firstCue), findsNothing);
+        expect(paragraph(nextCue), findsWidgets);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+  }
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets('dock progress resizing avoids frame rebuilds on $platform', (

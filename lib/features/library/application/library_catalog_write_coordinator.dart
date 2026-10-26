@@ -267,7 +267,14 @@ final class LibraryCatalogWriteCoordinator {
           .addAll(removedPaths);
     } else {
       unawaited(
-        databaseRepository.deleteLibraryEntries(libraryPath, removedPaths),
+        _persistenceCoordinator.commitLibraryBatch(
+          tracks: const [],
+          entries: const [],
+          removedTrackPaths: removedPaths
+              .where((path) => _service.trackByPath(path) == null)
+              .toList(),
+          removedEntryPaths: {libraryPath: removedPaths},
+        ),
       );
     }
   }
@@ -525,12 +532,6 @@ final class LibraryCatalogWriteCoordinator {
           track.path: _service.libraryByPath[track.path]!,
     }.values.toList(growable: false);
     final initialPaths = before.tracks.map((track) => track.path).toSet();
-    final removedTracks = <String>[
-      for (final path in _removedTrackPaths)
-        if (initialPaths.contains(path) &&
-            !_service.libraryByPath.containsKey(path))
-          path,
-    ];
     final removedEntries = <String, List<String>>{
       for (final entry in _removedEntryPaths.entries)
         entry.key: <String>[
@@ -543,6 +544,18 @@ final class LibraryCatalogWriteCoordinator {
               path,
         ],
     };
+    final removedTracks = <String>[
+      for (final path in <String>{
+        ..._removedTrackPaths,
+        ...removedEntries.values.expand((paths) => paths),
+      })
+        if ((initialPaths.contains(path) ||
+                before.entries.values.any(
+                  (entries) => entries[path]?.isTrack == true,
+                )) &&
+            !_service.libraryByPath.containsKey(path))
+          path,
+    ];
     if (didChangeLibrary) _service.syncGroupOrderFromLibrary();
     try {
       if (_persistenceCoordinator.enabled &&

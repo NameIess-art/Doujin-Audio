@@ -410,7 +410,7 @@ class LibraryScannerService {
       if (isExistingStandaloneFolder &&
           !isManagedByWatchedLibrary &&
           provider.hasLibraryExclusions(normalizedFolderPath)) {
-        provider.clearLibraryExclusions(normalizedFolderPath);
+        await provider.clearLibraryExclusions(normalizedFolderPath);
       } else {
         return LibraryScanOutcome(
           code: LibraryScanOutcomeCode.folderExists,

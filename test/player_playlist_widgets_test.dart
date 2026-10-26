@@ -449,6 +449,50 @@ void main() {
     }),
   );
 
+  for (final isVideo in [false, true]) {
+    testWidgets(
+      'portrait detail cover spacing preserves aspect ratio and collapsed width, video=$isVideo',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(390, 820);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        Widget page(bool expanded) => MaterialApp(
+          home: Scaffold(
+            body: SessionDetailLayout(
+              isLandscape: false,
+              padding: EdgeInsets.zero,
+              segmentPanelExpanded: expanded,
+              artwork: const SizedBox(key: ValueKey('portrait_artwork')),
+              isVideo: isVideo,
+              title: 'Test',
+              sessionId: 'Test',
+              progress: const SizedBox(height: 44),
+              transport: const SizedBox(height: 50),
+              subtitle: const SizedBox(),
+              segmentPanelBuilder: (_) => const SizedBox(height: 220),
+            ),
+          ),
+        );
+        await tester.pumpWidget(page(false));
+        final artwork = tester.getRect(
+          find.byKey(const ValueKey('portrait_artwork')),
+        );
+        expect(artwork.left, isVideo ? 0 : 8);
+        expect(390 - artwork.right, isVideo ? 0 : 8);
+        expect(artwork.width / artwork.height, closeTo(4 / 3, 0.001));
+
+        await tester.pumpWidget(page(true));
+        await tester.pumpAndSettle();
+        final frame = tester.getRect(find.byType(CoverArtworkFrame));
+        expect(frame.left, 0);
+        expect(frame.width, 390);
+        expect(frame.height, 42);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets(
     'reduced motion portrait panel opens without an intermediate size',
     (tester) async {
@@ -2883,6 +2927,10 @@ void main() {
 
     const placeholderKey = ValueKey<String>('playlist_initial_placeholder');
     const contentKey = ValueKey<String>('playlist_loaded_content');
+    expect(
+      tester.widget<TopPageHeader>(find.byType(TopPageHeader)).icon,
+      Icons.playlist_play_rounded,
+    );
     expect(
       tester.widget<TopPageHeader>(find.byType(TopPageHeader)).bottomSpacing,
       4,
@@ -8939,6 +8987,10 @@ void main() {
 
       final batchHeader = find.byKey(batchHeaderKey);
       expect(batchHeader, findsOneWidget);
+      expect(
+        tester.widget<TopPageHeader>(batchHeader).icon,
+        Icons.playlist_play_rounded,
+      );
       expect(
         find.text(fixture.languageProvider.tr('multi_select')),
         findsOneWidget,

@@ -80,6 +80,11 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        expect(find.byIcon(Icons.playlist_play_rounded), findsOneWidget);
+        expect(
+          tester.widget<Icon>(find.byIcon(Icons.playlist_play_rounded)).size,
+          closeTo(24.15, 0.001),
+        );
         for (var state = 0; state < 2; state++) {
           final bounds = tester.getRect(find.byType(DesktopMainNavigation));
           final point = bounds.bottomLeft + const Offset(1, -1);
@@ -109,6 +114,10 @@ void main() {
             await tester.pumpAndSettle();
           }
         }
+        expect(
+          tester.widget<Icon>(find.byIcon(Icons.playlist_play_rounded)).size,
+          closeTo(25.3, 0.001),
+        );
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(const Duration(milliseconds: 200));
         expect(tester.takeException(), isNull);

@@ -44,7 +44,11 @@ class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
       resolvedTitle = Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: iconColor ?? cs.primary),
+          Icon(
+            icon,
+            size: AppDesignTokens.opticalIconSize(icon, 18),
+            color: iconColor ?? cs.primary,
+          ),
           const SizedBox(width: 8),
           Flexible(child: title),
         ],
@@ -309,9 +313,12 @@ class _TopPageHeaderState extends State<TopPageHeader> {
               if (widget.icon != null) ...[
                 Icon(
                   widget.icon,
-                  size: AppDesignTokens.fileTypeIcons.contains(widget.icon)
-                      ? AppDesignTokens.fileEntryIconSize
-                      : 18,
+                  size: AppDesignTokens.opticalIconSize(
+                    widget.icon,
+                    AppDesignTokens.fileTypeIcons.contains(widget.icon)
+                        ? AppDesignTokens.fileEntryIconSize
+                        : 18,
+                  ),
                   color: widget.iconColor ?? cs.primary,
                 ),
                 const SizedBox(width: 8),
@@ -418,12 +425,12 @@ class _TopPageHeaderState extends State<TopPageHeader> {
                     (widget.icon != null
                         ? Icon(
                             widget.icon,
-                            size:
-                                AppDesignTokens.fileTypeIcons.contains(
-                                  widget.icon,
-                                )
-                                ? AppDesignTokens.fileEntryIconSize
-                                : 16,
+                            size: AppDesignTokens.opticalIconSize(
+                              widget.icon,
+                              AppDesignTokens.fileTypeIcons.contains(widget.icon)
+                                  ? AppDesignTokens.fileEntryIconSize
+                                  : 16,
+                            ),
                             color: widget.iconColor ?? cs.primary,
                           )
                         : null),

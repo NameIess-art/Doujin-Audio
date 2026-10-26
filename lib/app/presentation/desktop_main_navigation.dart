@@ -4,6 +4,7 @@ import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../localization/app_language_provider.dart';
 import '../theme/app_styles.dart';
+import '../theme/app_design_tokens.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
 import '../../features/player/presentation/playlist/session_detail_page.dart';
@@ -435,7 +436,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                                       ),
                                                       color:
                                                           cs.onSurfaceVariant,
-                                                      size: 21,
+                                                      size: AppDesignTokens.opticalIconSize(
+                                                        entry.value.icon,
+                                                        21,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
@@ -475,7 +479,10 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                                   'main_destination_${destinations[activeIndex].navigationKey}',
                                                 ),
                                                 color: cs.primary,
-                                                size: 22,
+                                                size: AppDesignTokens.opticalIconSize(
+                                                  destinations[activeIndex].selectedIcon,
+                                                  22,
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -567,6 +574,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                               sessions: overlaySessions,
                               i18n: i18n,
                               viewportFraction: 1,
+                              expandedDockWidth: railMinExtendedWidth,
                               presentation:
                                   ActiveSessionCarouselPresentation.embedded,
                               onOpenSession: (sessionId) {

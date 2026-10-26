@@ -23,7 +23,7 @@ class AppSettingsActionTile extends StatelessWidget {
       onTap: onTap,
       leading: SizedBox(
         width: 40,
-        child: Icon(icon, color: cs.onSurface, size: 30),
+        child: Icon(icon, color: cs.primary, size: 30),
       ),
       title: Text(title, softWrap: true, overflow: TextOverflow.visible),
       trailing:

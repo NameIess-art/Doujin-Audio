@@ -43,6 +43,14 @@ void main() {
         await tester.tap(find.text(i18n.tr('section_network')));
         await pumpAndSettleWithAsync(tester);
         expect(find.text(i18n.tr('network_untested')), findsNWidgets(3));
+        for (final site in ['DLsite', 'Japanese ASMR']) {
+          final row = find.widgetWithText(ListTile, site);
+          expect(tester.getSize(row).height, 64);
+          expect(
+            find.descendant(of: row, matching: find.byType(FilledButton)),
+            findsOneWidget,
+          );
+        }
         expect(find.text('资源站点优先级'), findsNothing);
         final inlineTitles = [
           for (var index = 0; index < 3; index++)

@@ -312,7 +312,10 @@ extension _MainScreenLayout on _MainScreenState {
             child: Icon(
               selected ? item.selectedIcon : item.icon,
               key: ValueKey<bool>(selected),
-              size: 28,
+              size: AppDesignTokens.opticalIconSize(
+                selected ? item.selectedIcon : item.icon,
+                28,
+              ),
               color: selected ? activeColor : inactive,
             ),
           ),

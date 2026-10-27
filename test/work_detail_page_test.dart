@@ -159,6 +159,8 @@ class _DeferredDetailAsmrController extends ChangeNotifier
   bool cached;
   int cacheReads = 0;
   int requests = 0;
+  Object? loadError;
+  Completer<void>? pendingLoad;
 
   @override
   List<AsmrTrackFile>? trackTreeFor(String workId) {
@@ -177,6 +179,8 @@ class _DeferredDetailAsmrController extends ChangeNotifier
     bool forceRefresh = false,
   }) async {
     requests++;
+    if (pendingLoad case final pending?) await pending.future;
+    if (loadError case final error?) throw error;
     cached = true;
     return tree;
   }
@@ -718,6 +722,69 @@ void main() {
           controller.tree.single.children.first.relativePath,
           'japaneseasmr.com/Opening.m4a',
         );
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  for (final cached in [false, true]) {
+    _detailTestWidgets(
+      'remote directory failure preserves cache=$cached and retries once',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        _detailFixtures.add(fixture);
+        addTearDown(fixture.dispose);
+        final controller = _DeferredDetailAsmrController([
+          AsmrTrackFile.fromJson(const {
+            'type': 'audio',
+            'title': 'Retained.mp3',
+            'mediaStreamUrl': 'https://example.test/retained.mp3',
+          }),
+        ], cached: cached)..loadError = StateError('directory unavailable');
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            WorkDetailPage.forAsmr(
+              work: AsmrWork.fromJson(const {'id': 80, 'title': 'Remote work'}),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await _settleDetail(tester);
+        final error = find.byKey(const ValueKey('work_detail_directory_error'));
+        expect(error, findsOneWidget);
+        expect(
+          find.text(fixture.languageProvider.tr('empty_folder')),
+          findsNothing,
+        );
+        expect(find.text('Retained'), cached ? findsOneWidget : findsNothing);
+        expect(controller.requests, 1);
+
+        final pending = Completer<void>();
+        controller
+          ..loadError = null
+          ..pendingLoad = pending;
+        final retry = find.descendant(
+          of: error,
+          matching: find.byType(IconButton),
+        );
+        await tester.tap(retry);
+        await tester.tap(retry);
+        await tester.pump();
+        expect(controller.requests, 2);
+        expect(error, findsNothing);
+        expect(find.text('Retained'), cached ? findsOneWidget : findsNothing);
+        pending.complete();
+        await _settleDetail(tester);
+        expect(error, findsNothing);
+        expect(find.text('Retained'), findsOneWidget);
+        expect(controller.requests, 2);
+        expect(tester.takeException(), isNull);
       },
       variant: const TargetPlatformVariant({
         TargetPlatform.android,
@@ -3284,7 +3351,7 @@ void main() {
 
     for (final platform in [TargetPlatform.windows, TargetPlatform.android]) {
       _detailTestWidgets(
-        'WorkDetailPage hides scrollbars on $platform and remains scrollable',
+        'WorkDetailPage uses Windows drag scrollbar on $platform and remains scrollable',
         (tester) async {
           SharedPreferences.setMockInitialValues(const <String, Object>{});
           final fixture = AppRuntimeWidgetTestFixture();
@@ -3337,8 +3404,20 @@ void main() {
               of: find.byType(WorkDetailPage),
               matching: find.byType(DragOnlyScrollbar),
             ),
-            findsNothing,
+            platform == TargetPlatform.windows ? findsOneWidget : findsNothing,
           );
+          if (platform == TargetPlatform.windows) {
+            final scrollbar = tester.widget<DragOnlyScrollbar>(
+              find.byKey(const ValueKey('work_detail_scrollbar')),
+            );
+            final header = find.byKey(
+              const ValueKey('work_detail_page_header'),
+            );
+            expect(
+              scrollbar.padding!.resolve(TextDirection.ltr).top,
+              greaterThanOrEqualTo(tester.getBottomLeft(header).dy),
+            );
+          }
 
           final customScrollView = find.descendant(
             of: find.byType(WorkDetailPage),
@@ -4970,6 +5049,10 @@ void main() {
                     value: WorkEntryAction.play,
                     label: 'Play',
                   ),
+                  UnifiedMenuEntry.action(
+                    value: WorkEntryAction.copy,
+                    label: 'Copy name',
+                  ),
                 ],
                 moreLabel: 'More',
                 onAction: (action) => performedAction = action,
@@ -5002,6 +5085,14 @@ void main() {
         // After menu closes, tile is unhighlighted and action is performed
         expect(tester.widget<ListTile>(listTileFinder).selected, isFalse);
         expect(performedAction, WorkEntryAction.play);
+        await tester.longPress(listTileFinder);
+        await tester.pump();
+        expect(performedAction, isNot(WorkEntryAction.copy));
+        await tester.tap(listTileFinder, buttons: kSecondaryMouseButton);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Copy name'));
+        await tester.pumpAndSettle();
+        expect(performedAction, WorkEntryAction.copy);
       },
       variant: TargetPlatformVariant.only(TargetPlatform.windows),
     );

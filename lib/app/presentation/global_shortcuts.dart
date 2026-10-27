@@ -59,10 +59,18 @@ class GlobalShortcuts extends ConsumerWidget {
           TogglePlayPauseIntent: CallbackAction<TogglePlayPauseIntent>(
             onInvoke: (TogglePlayPauseIntent intent) {
               if (!enabled) return null;
-              final playback = ref.read(playbackFacadeProvider);
-              final state = ref.read(playbackCatalogProvider).value;
-              if (state != null && state.sessions.isNotEmpty) {
-                playback.toggleSessionPlayPause(state.sessions.first.id);
+              final focusContext = FocusManager.instance.primaryFocus?.context;
+              if (focusContext?.findAncestorStateOfType<EditableTextState>() !=
+                  null) {
+                return null;
+              }
+              final session = ref.read(focusedPlaybackSessionProvider);
+              if (session != null) {
+                unawaited(
+                  ref
+                      .read(notificationFacadeProvider)
+                      .toggleSessionPlayback(session.id),
+                );
               }
               return null;
             },

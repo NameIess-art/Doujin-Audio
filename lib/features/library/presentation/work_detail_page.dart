@@ -18,6 +18,7 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/work_detail_navigation.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../app/theme/app_styles.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
@@ -29,6 +30,8 @@ import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../../core/widgets/drag_only_scrollbar.dart';
+import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
@@ -40,6 +43,7 @@ import '../../asmr/application/asmr_library_controller.dart';
 import '../../asmr/domain/asmr_models.dart';
 import '../../asmr/presentation/asmr_download_page.dart';
 import '../../asmr/presentation/asmr_providers.dart';
+import '../../asmr/presentation/asmr_error_text.dart';
 import '../../player/presentation/playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import '../application/work_text_service.dart';
@@ -111,6 +115,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   // ASMR state
   List<AsmrTrackFile>? _asmrTree;
   bool _loadingAsmr = true;
+  bool _requestingAsmr = false;
+  Object? _asmrLoadError;
   int _playRequest = 0;
   Object? _coverRequestKey;
   Future<String?>? _coverFuture;
@@ -475,11 +481,20 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   }
 
   Future<void> _loadAsmrData() async {
+    if (_requestingAsmr) return;
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) {
-      _publishDataUpdate(() => _loadingAsmr = false);
+      _publishDataUpdate(() {
+        _loadingAsmr = false;
+        _asmrLoadError = StateError('asmr_controller_unavailable');
+      });
       return;
     }
+    _requestingAsmr = true;
+    setState(() {
+      _loadingAsmr = true;
+      _asmrLoadError = null;
+    });
     try {
       await controller.initializeForVisiblePage();
       if (!mounted || _route?.isActive == false) return;
@@ -503,10 +518,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       _publishDataUpdate(() {
         _asmrTree = tree;
         _loadingAsmr = false;
+        _asmrLoadError = null;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      _publishDataUpdate(() => _loadingAsmr = false);
+      _publishDataUpdate(() {
+        _loadingAsmr = false;
+        _asmrLoadError = error;
+      });
+    } finally {
+      _requestingAsmr = false;
     }
   }
 
@@ -1310,9 +1331,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           ((widget.isLocal ? _loadingLocal : _loadingAsmr) ||
               _preparingDirectory ||
               _directory == null) &&
-          currentEntries.isEmpty;
+          currentEntries.isEmpty &&
+          _asmrLoadError == null;
       _updateDirectoryMotion(isLoading);
-      return Stack(
+      final body = Stack(
         key: _pageStackKey,
         children: [
           ScrollConfiguration(
@@ -1382,6 +1404,20 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                         const Divider(height: 1),
                         const SizedBox(height: 8),
 
+                        if (_asmrLoadError case final error?)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: OperationStatusBanner(
+                              key: const ValueKey(
+                                'work_detail_directory_error',
+                              ),
+                              label: localizedAsmrCatalogErrorText(i18n, error),
+                              error: error,
+                              retryTooltip: i18n.tr('retry'),
+                              onRetry: () => unawaited(_loadAsmrData()),
+                            ),
+                          ),
+
                         WorkDetailBreadcrumbs(
                           segments: List.of(_currentPathSegments),
                           entryCount: currentEntries.length,
@@ -1419,30 +1455,34 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                         ? const AlwaysStoppedAnimation(1)
                         : _directoryOpacity,
                     sliver: currentEntries.isEmpty
-                        ? SliverFillRemaining(
-                            hasScrollBody: false,
-                            child: Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.folder_open_rounded,
-                                    size: 48,
-                                    color: cs.onSurfaceVariant.withValues(
-                                      alpha: 0.5,
+                        ? _asmrLoadError != null
+                              ? const SliverToBoxAdapter(
+                                  child: SizedBox.shrink(),
+                                )
+                              : SliverFillRemaining(
+                                  hasScrollBody: false,
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.folder_open_rounded,
+                                          size: 48,
+                                          color: cs.onSurfaceVariant.withValues(
+                                            alpha: 0.5,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          i18n.tr('empty_folder'),
+                                          style: TextStyle(
+                                            color: cs.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    i18n.tr('empty_folder'),
-                                    style: TextStyle(
-                                      color: cs.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
+                                )
                         : SliverPadding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
@@ -1520,6 +1560,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                     ),
             ),
         ],
+      );
+      if (defaultTargetPlatform != TargetPlatform.windows) return body;
+      return DragOnlyScrollbar(
+        key: const ValueKey('work_detail_scrollbar'),
+        controller: _scrollController,
+        padding: EdgeInsets.only(
+          top: AppPageHeaderMetrics.contentTopInset(context),
+          bottom: MediaQuery.paddingOf(context).bottom + bottomOverlayInset,
+        ),
+        child: body,
       );
     }
 

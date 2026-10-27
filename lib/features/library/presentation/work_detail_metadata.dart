@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../../../core/widgets/horizontal_edge_fade_scroll.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 
@@ -72,7 +73,12 @@ class WorkDetailMetadata extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           key: ValueKey<String>('work_detail_voice_actor_$voiceActor'),
-          onTap: () => onCopy(voiceActor),
+          onTap: defaultTargetPlatform == TargetPlatform.windows
+              ? null
+              : () => onCopy(voiceActor),
+          onSecondaryTap: defaultTargetPlatform == TargetPlatform.windows
+              ? () => onCopy(voiceActor)
+              : null,
           borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
           child: Container(
             padding: _workMetadataCapsulePadding,
@@ -119,7 +125,12 @@ class WorkDetailMetadata extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         key: ValueKey<String>('work_detail_tag_$displayLabel'),
-        onTap: () => onCopy(tag.startsWith('#') ? tag.substring(1) : tag),
+        onTap: defaultTargetPlatform == TargetPlatform.windows
+            ? null
+            : () => onCopy(tag.startsWith('#') ? tag.substring(1) : tag),
+        onSecondaryTap: defaultTargetPlatform == TargetPlatform.windows
+            ? () => onCopy(tag.startsWith('#') ? tag.substring(1) : tag)
+            : null,
         borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
         child: Container(
           padding: _workMetadataCapsulePadding,

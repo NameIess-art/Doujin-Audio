@@ -594,6 +594,16 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                                             i18n,
                                             state.lastError,
                                           ),
+                                    actionLabel: state.lastError != null
+                                        ? i18n.tr('retry')
+                                        : null,
+                                    actionIcon: Icons.refresh_rounded,
+                                    onAction:
+                                        state.lastError != null &&
+                                            !state.isLoading &&
+                                            !state.isRefreshing
+                                        ? () => unawaited(widget.onRefresh())
+                                        : null,
                                   ),
                                   if (hasLoadMore)
                                     TextButton(

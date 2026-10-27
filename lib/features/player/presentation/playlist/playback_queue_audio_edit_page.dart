@@ -169,10 +169,36 @@ class _PlaybackQueueAudioEditPageState
                                       child,
                                   itemCount: queueEntries.length,
                                   onReorder: (oldIndex, newIndex) {
+                                    if (oldIndex == newIndex ||
+                                        oldIndex + 1 == newIndex) {
+                                      return;
+                                    }
+                                    // Pending removals remain in the queue until
+                                    // committed, so visible indices need mapping.
+                                    final entries = playback
+                                        .sessionById(sessionId)
+                                        ?.playbackQueue
+                                        ?.entries;
+                                    if (entries == null) return;
+                                    final sourceIndex = entries.indexWhere(
+                                      (entry) =>
+                                          entry.id == queueEntries[oldIndex].id,
+                                    );
+                                    final targetIndex =
+                                        newIndex == queueEntries.length
+                                        ? entries.length
+                                        : entries.indexWhere(
+                                            (entry) =>
+                                                entry.id ==
+                                                queueEntries[newIndex].id,
+                                          );
+                                    if (sourceIndex < 0 || targetIndex < 0) {
+                                      return;
+                                    }
                                     playback.reorderPlaybackQueueEntry(
                                       sessionId,
-                                      oldIndex,
-                                      newIndex,
+                                      sourceIndex,
+                                      targetIndex,
                                     );
                                   },
                                   itemBuilder: (context, index) {

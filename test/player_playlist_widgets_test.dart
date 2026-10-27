@@ -24,6 +24,7 @@ import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
+import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
@@ -5753,6 +5754,105 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 100));
   });
+
+  testWidgets(
+    'queue reorder maps visible entries while a removal can still be undone',
+    (tester) async {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        notificationsChannel,
+        (_) async => <String, Object?>{'ok': true, 'value': null},
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+      );
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final playback = fixture.runtimeGraph.playback;
+      final queueSession = playback.createPlaybackQueue('Queue');
+      addTearDown(queueSession.shutdown);
+      for (var index = 0; index < 4; index++) {
+        await playback.addTrackToPlaybackQueue(
+          queueSession.id,
+          testMusicTrack(
+            name: 'Track $index',
+            path: '/library/track$index.mp3',
+            groupKey: '/library',
+            groupTitle: 'Work',
+            isSingle: true,
+          ),
+        );
+      }
+      fixture.playbackService.syncSlice(
+        activeSessions: [queueSession],
+        playingSessionCount: 0,
+        focusedSessionId: queueSession.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpWidget(
+        fixture.build(PlaybackQueueAudioEditPage(sessionId: queueSession.id)),
+      );
+      await tester.pumpAndSettle();
+      final entries = queueSession.playbackQueue!.entries.toList();
+      final removals = ProviderScope.containerOf(
+        tester.element(find.byType(PlaybackQueueAudioEditPage)),
+      ).read(undoableRemovalServiceProvider);
+      await removals.stage(
+        UndoableRemovalAction(
+          key: playbackQueueEntryRemovalKey(queueSession.id, entries[0].id),
+          commit: () =>
+              playback.removePlaybackQueueEntry(queueSession.id, entries[0].id),
+          undo: () {},
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ReorderableListView>(find.byType(ReorderableListView))
+            .itemCount,
+        3,
+      );
+      tester
+          .widget<ReorderableListView>(find.byType(ReorderableListView))
+          .onReorder(0, 3);
+      await tester.pumpAndSettle();
+      expect(queueSession.playbackQueue!.entries.map((entry) => entry.id), [
+        entries[0].id,
+        entries[2].id,
+        entries[3].id,
+        entries[1].id,
+      ]);
+      tester
+          .widget<ReorderableListView>(find.byType(ReorderableListView))
+          .onReorder(2, 0);
+      await tester.pumpAndSettle();
+      expect(queueSession.playbackQueue!.entries.map((entry) => entry.id), [
+        entries[0].id,
+        entries[1].id,
+        entries[2].id,
+        entries[3].id,
+      ]);
+      await removals.undoPending();
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ReorderableListView>(find.byType(ReorderableListView))
+            .itemCount,
+        4,
+      );
+      expect(
+        queueSession.playbackQueue!.entries.map((entry) => entry.id),
+        entries.map((entry) => entry.id),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'queue edit rows arrange 44px actions horizontally and provide haptics',

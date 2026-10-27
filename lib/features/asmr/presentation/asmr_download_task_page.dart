@@ -314,7 +314,8 @@ class _DownloadTaskItem extends ConsumerWidget {
       onTogglePause: !ready
           ? null
           : () {
-              if (task.status == AsmrDownloadTaskStatus.paused) {
+              if (task.status == AsmrDownloadTaskStatus.paused ||
+                  task.status == AsmrDownloadTaskStatus.failed) {
                 manager.resumeTask(workId);
               } else {
                 manager.pauseTask(workId);

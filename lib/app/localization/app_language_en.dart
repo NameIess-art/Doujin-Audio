@@ -932,6 +932,10 @@ const Map<String, String> appLanguageEn = {
   'subtitle_load_failed': 'Could not load subtitles. Try again.',
   'subtitle_save_failed': 'Could not save subtitles. Try again.',
   'subtitle_edit': 'Edit subtitles',
+  'subtitle_unsaved_title': 'Save subtitle changes?',
+  'subtitle_unsaved_message':
+      'These subtitle changes have not been saved. Save before leaving or discard the changes.',
+  'discard_changes': 'Discard changes',
   'subtitle_delete_cue': 'Delete subtitle',
   'subtitle_add_below': 'Add below',
   'subtitle_new_text': 'Enter subtitle text',

@@ -135,6 +135,9 @@ void main() {
           // A long label can be wider than the viewport at large text scales.
           await tester.tapAt(
             tester.getRect(last).intersect(tester.getRect(list)).center,
+            buttons: defaultTargetPlatform == TargetPlatform.windows
+                ? kSecondaryMouseButton
+                : kPrimaryMouseButton,
           );
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
@@ -147,4 +150,32 @@ void main() {
       }),
     );
   }
+
+  testWidgets(
+    'Windows metadata copies on right click and ignores primary clicks',
+    (tester) async {
+      final copied = <String>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: WorkDetailMetadata(
+              voiceActors: const ['Voice'],
+              tags: const ['#Tag'],
+              onCopy: copied.add,
+            ),
+          ),
+        ),
+      );
+      for (final label in ['Voice', '#Tag']) {
+        await tester.tap(find.text(label));
+        await tester.longPress(find.text(label));
+        expect(copied, isEmpty);
+      }
+      for (final label in ['Voice', '#Tag']) {
+        await tester.tap(find.text(label), buttons: kSecondaryMouseButton);
+      }
+      expect(copied, ['Voice', 'Tag']);
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.windows}),
+  );
 }

@@ -256,7 +256,7 @@ void main() {
   );
 
   testWidgets(
-    'Windows space only controls focused audio (detail page or card)',
+    'space only controls focused audio (detail page or card)',
     (tester) async {
       // 1. When no session is focused, space does not control playback
       await tester.pumpWidget(app(const SizedBox()));
@@ -289,7 +289,10 @@ void main() {
       expect(resumed, ['first']);
       await tester.pump(const Duration(milliseconds: 200));
     },
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(
@@ -360,7 +363,10 @@ void main() {
       expect(resumed, isEmpty);
       expect(playback.sessionById('primary')!.volume, 1);
     },
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(

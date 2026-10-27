@@ -203,15 +203,17 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
               ),
             ),
           ),
-          onLongPress: () {
-            unawaited(
-              AppInteractionFeedback.trigger(
-                AppInteractionFeedbackType.selection,
-                context: context,
-              ),
-            );
-            widget.onAction(WorkEntryAction.copy);
-          },
+          onLongPress: defaultTargetPlatform == TargetPlatform.windows
+              ? null
+              : () {
+                  unawaited(
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.selection,
+                      context: context,
+                    ),
+                  );
+                  widget.onAction(WorkEntryAction.copy);
+                },
           onTap: () {
             unawaited(
               AppInteractionFeedback.trigger(

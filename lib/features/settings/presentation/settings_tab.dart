@@ -18,6 +18,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/app_settings_group_card.dart';
 import '../../../core/cache/app_cache_service.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../application/settings_command_controller.dart';
 import '../application/app_update_service.dart';
 import '../application/settings_repository.dart';
@@ -151,28 +152,47 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   }
 
   Future<void> _chooseAsmrDownloadDestination() async {
+    final operations = ref.read(uiOperationServiceProvider);
+    const scope = UiOperationScope.settingsAsmrDownloadPath;
+    if (operations.isBusy(scope)) return;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final folder = await _runSettingsOperation<String?>(
-      scope: UiOperationScope.settingsAsmrDownloadPath,
-      labelKey: 'loading_dot',
-      task: (_) {
-        final manager = ref.read(asmrDownloadManagerProvider);
-        if (manager == null) return Future<String?>.value();
-        return manager.pickDestinationFolder(
-          dialogTitle: i18n.tr('asmr_download_choose_path'),
-        );
-      },
-    );
-    if (!mounted || folder == null || folder.trim().isEmpty) return;
-    await saveSettingsWithFeedback(
-      context,
-      () => ref
-          .read(settingsRepositoryProvider)
-          .setAsmrDownloadDestinationRoot(folder),
-    );
+    try {
+      await operations.run<void>(
+        scope: scope,
+        labelKey: 'loading_dot',
+        cancelPrevious: false,
+        task: (_) async {
+          final manager = ref.read(asmrDownloadManagerProvider);
+          if (manager == null) return;
+          final folder = await manager.pickDestinationFolder(
+            dialogTitle: i18n.tr('asmr_download_choose_path'),
+          );
+          if (!mounted || folder == null || folder.trim().isEmpty) return;
+          await saveSettingsWithFeedback(
+            context,
+            () => ref
+                .read(settingsRepositoryProvider)
+                .setAsmrDownloadDestinationRoot(folder),
+          );
+        },
+      );
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'download_destination_selection_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        i18n.tr('operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+      );
+    }
   }
 
   @override

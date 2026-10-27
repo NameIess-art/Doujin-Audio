@@ -17,12 +17,31 @@ extension _SettingsTabActions on _SettingsTabState {
     );
     if (!confirmed || !mounted) return;
 
-    final deletedBytes = await _runSettingsOperation<int>(
-      scope: UiOperationScope.settingsCache,
-      labelKey: 'loading_dot',
-      task: (_) =>
-          ref.read(settingsCommandControllerProvider).clearApplicationCache(),
-    );
+    final int deletedBytes;
+    try {
+      deletedBytes = await _runSettingsOperation<int>(
+        scope: UiOperationScope.settingsCache,
+        labelKey: 'loading_dot',
+        task: (_) =>
+            ref.read(settingsCommandControllerProvider).clearApplicationCache(),
+      );
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'application_cache_cleanup_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!context.mounted) return;
+      showAppSnackBar(
+        context,
+        i18n.tr('operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+        actionLabel: i18n.tr('retry'),
+        onAction: () => _clearApplicationCache(context),
+      );
+      return;
+    }
     if (!context.mounted) return;
     if (deletedBytes > 0) {
       showAppSnackBar(

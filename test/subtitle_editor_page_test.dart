@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
@@ -23,12 +25,14 @@ class _RecordingSubtitleService extends PlaybackSubtitleService {
 
   List<SubtitleCue>? saved;
   bool failSave = false;
+  Completer<void>? saveGate;
 
   @override
   Future<SubtitleTrack> saveEditedSubtitle(
     String trackPath,
     List<SubtitleCue> cues,
   ) async {
+    await saveGate?.future;
     if (failSave) throw StateError('Save failed');
     saved = List.of(cues);
     return SubtitleTrack(sourcePath: 'edited.srt', cues: cues);
@@ -39,6 +43,7 @@ Future<void> _showEditor(
   WidgetTester tester,
   PlaybackSubtitleService service, {
   bool normalPageTextScale = false,
+  bool pushedRoute = false,
 }) async {
   const trackPath = '/music/test.mp3';
   final language = AppLanguageProvider();
@@ -52,7 +57,19 @@ Future<void> _showEditor(
       ],
       child: MaterialApp(
         home: Builder(
-          builder: (context) => normalPageTextScale
+          builder: (context) => pushedRoute
+              ? Scaffold(
+                  body: TextButton(
+                    onPressed: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            const SubtitleEditorPage(trackPath: trackPath),
+                      ),
+                    ),
+                    child: const Text('Open editor'),
+                  ),
+                )
+              : normalPageTextScale
               ? MediaQuery(
                   data: MediaQuery.of(
                     context,
@@ -64,11 +81,173 @@ Future<void> _showEditor(
       ),
     ),
   );
+  if (pushedRoute) {
+    await tester.tap(find.text('Open editor'));
+    await tester.pumpAndSettle();
+  }
   await tester.pump(const Duration(milliseconds: 250));
+}
+
+Future<void> _editFirstText(WidgetTester tester, String text) async {
+  await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byType(TextField), text);
+  await tester.tap(find.byType(FilledButton).last);
+  await tester.pumpAndSettle();
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  const initialCue = SubtitleCue(
+    start: Duration(seconds: 1),
+    end: Duration(seconds: 3),
+    text: 'Original',
+  );
+
+  testWidgets(
+    'slow save freezes edits and blocks system back until persisted',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final service = _RecordingSubtitleService(const [initialCue]);
+      await _showEditor(tester, service, pushedRoute: true);
+      await _editFirstText(tester, 'Saved');
+      final card = tester.widget<SwipeRevealCard>(find.byType(SwipeRevealCard));
+      service.saveGate = Completer<void>();
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
+      await tester.pump();
+      expect(
+        tester.widget<SwipeRevealCard>(find.byType(SwipeRevealCard)).enabled,
+        isFalse,
+      );
+      expect(
+        tester
+            .widget<InkWell>(find.byKey(const ValueKey('subtitle_text_0')))
+            .onTap,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<InkWell>(find.byKey(const ValueKey('subtitle_time_0')))
+            .onTap,
+        isNull,
+      );
+      card.onRemove();
+      card.onLeadingAction!();
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(find.byType(SubtitleEditorPage), findsOneWidget);
+      expect(find.byType(SwipeRevealCard), findsOneWidget);
+      service.saveGate!.complete();
+      await tester.pumpAndSettle();
+      expect(service.saved!.single.text, 'Saved');
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(SubtitleEditorPage), findsNothing);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'dialog opened before save cannot apply a late edit after save completes',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final service = _RecordingSubtitleService(const [initialCue]);
+      await _showEditor(tester, service);
+      await _editFirstText(tester, 'Saved');
+      final save = tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.save_rounded),
+          )
+          .onPressed!;
+      await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Late edit');
+      service.saveGate = Completer<void>();
+      save();
+      await tester.pump();
+      service.saveGate!.complete();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(FilledButton));
+      await tester.pumpAndSettle();
+      expect(find.text('Saved'), findsOneWidget);
+      expect(find.text('Late edit'), findsNothing);
+      expect(service.saved!.single.text, 'Saved');
+      expect(
+        tester
+            .widget<IconButton>(
+              find.widgetWithIcon(IconButton, Icons.save_rounded),
+            )
+            .onPressed,
+        isNull,
+      );
+    },
+  );
+
+  testWidgets(
+    'dirty back supports cancel, failed save and successful save before exit',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final service = _RecordingSubtitleService(const [initialCue]);
+      await _showEditor(tester, service, pushedRoute: true);
+      await _editFirstText(tester, 'Draft');
+      final language = ProviderScope.containerOf(
+        tester.element(find.byType(SubtitleEditorPage)),
+      ).read(appLanguageProviderInstanceProvider);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text(language.tr('subtitle_unsaved_title')), findsOneWidget);
+      await tester.tap(find.text(language.tr('cancel')));
+      await tester.pumpAndSettle();
+      expect(find.text('Draft'), findsOneWidget);
+      service.failSave = true;
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(FilledButton));
+      await tester.pumpAndSettle();
+      expect(find.byType(SubtitleEditorPage), findsOneWidget);
+      expect(find.text('Draft'), findsOneWidget);
+      service.failSave = false;
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(FilledButton));
+      await tester.pumpAndSettle();
+      expect(find.byType(SubtitleEditorPage), findsNothing);
+      expect(service.saved!.single.text, 'Draft');
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets('incomplete draft disables exit save and can be discarded', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final service = _RecordingSubtitleService(const [initialCue]);
+    await _showEditor(tester, service, pushedRoute: true);
+    tester
+        .widget<SwipeRevealCard>(find.byType(SwipeRevealCard))
+        .onLeadingAction!();
+    await tester.pumpAndSettle();
+    final language = ProviderScope.containerOf(
+      tester.element(find.byType(SubtitleEditorPage)),
+    ).read(appLanguageProviderInstanceProvider);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      isNull,
+    );
+    await tester.tap(find.text(language.tr('discard_changes')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SubtitleEditorPage), findsNothing);
+    expect(service.saved, isNull);
+  });
 
   Finder bilingualField(String key) => find.descendant(
     of: find.byKey(ValueKey(key)),

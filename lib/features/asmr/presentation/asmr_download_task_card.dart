@@ -79,21 +79,24 @@ class _AsmrDownloadTaskCardState extends State<AsmrDownloadTaskCard> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    if (task.status != AsmrDownloadTaskStatus.completed &&
-                        task.status != AsmrDownloadTaskStatus.failed)
+                    if (task.status != AsmrDownloadTaskStatus.completed)
                       SizedBox(
                         width: 32,
                         height: 32,
                         child: IconButton(
                           padding: EdgeInsets.zero,
                           icon: Icon(
-                            task.status == AsmrDownloadTaskStatus.paused
+                            task.status == AsmrDownloadTaskStatus.failed
+                                ? Icons.refresh_rounded
+                                : task.status == AsmrDownloadTaskStatus.paused
                                 ? Icons.play_arrow_rounded
                                 : Icons.pause_rounded,
                           ),
                           iconSize: 22,
                           color: cs.onSurfaceVariant.withValues(alpha: 0.8),
-                          tooltip: task.status == AsmrDownloadTaskStatus.paused
+                          tooltip: task.status == AsmrDownloadTaskStatus.failed
+                              ? i18n.tr('retry')
+                              : task.status == AsmrDownloadTaskStatus.paused
                               ? i18n.tr('resume')
                               : i18n.tr('pause'),
                           onPressed: widget.onTogglePause,

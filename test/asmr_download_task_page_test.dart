@@ -484,6 +484,61 @@ void main() {
     expect(find.text('Retrying (1/7)'), findsNothing);
     expect(find.text('Failed'), findsOneWidget);
   });
+
+  testWidgets(
+    'failed tasks expose retry through the existing resume command',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final language = AppLanguageProvider();
+      final manager = _RecordingResumeDownloadManager()
+        ..debugSetCurrentTaskForTesting(_failedTask());
+      final removals = UndoableRemovalService();
+      addTearDown(language.dispose);
+      addTearDown(manager.dispose);
+      addTearDown(removals.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            coreRuntimeReadyProvider.overrideWithValue(true),
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            asmrDownloadManagerProvider.overrideWithValue(manager),
+            undoableRemovalServiceProvider.overrideWithValue(removals),
+          ],
+          child: const MaterialApp(home: AsmrDownloadTaskPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip(language.tr('retry')));
+      expect(manager.resumedWorkIds, ['code:RJ123456']);
+      expect(manager.pauseCalls, 0);
+
+      manager.debugSetCurrentTaskForTesting(
+        _failedTask(status: AsmrDownloadTaskStatus.completed),
+      );
+      await tester.pump();
+      expect(find.byTooltip(language.tr('retry')), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+}
+
+class _RecordingResumeDownloadManager extends AsmrDownloadManager {
+  _RecordingResumeDownloadManager() : super(persistTasks: false);
+
+  final resumedWorkIds = <String>[];
+  var pauseCalls = 0;
+
+  @override
+  Future<void> resumeTask(String workId) async => resumedWorkIds.add(workId);
+
+  @override
+  Future<void> pauseTask(String workId) async {
+    pauseCalls++;
+  }
 }
 
 AsmrDownloadTaskSnapshot _failedTask({

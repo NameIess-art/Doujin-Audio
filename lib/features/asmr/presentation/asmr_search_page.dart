@@ -123,6 +123,17 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   Future<void> _onSubmitted(String value) async {
     final query = canonicalSearchQuery(value);
     if (query.isEmpty) return;
+    final current = _searchController?.categoryViewState(
+      _category,
+      searchQuery: query,
+      searchSession: true,
+    );
+    if (_query == query &&
+        (_refreshPending ||
+            current?.isLoading == true ||
+            current?.isRefreshing == true)) {
+      return;
+    }
     _controller.value = TextEditingValue(
       text: query,
       selection: TextSelection.collapsed(offset: query.length),
@@ -280,13 +291,16 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     final query = _query;
     if (query.isEmpty) return;
     final category = _category;
-    final requestSerial = ++_requestSerial;
     final controller = ref.read(asmrLibraryControllerProvider);
     final cached = controller?.categoryViewState(
       category,
       searchQuery: query,
       searchSession: true,
     );
+    final requestInProgress =
+        cached?.isLoading == true || cached?.isRefreshing == true;
+    if (requestInProgress && !showSearchPlaceholder) return;
+    final requestSerial = ++_requestSerial;
     final pending =
         showSearchPlaceholder &&
         query.isNotEmpty &&
@@ -294,7 +308,14 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     if (_showSearchPlaceholder != pending) {
       setState(() => _showSearchPlaceholder = pending);
     }
-    if (!force && (cached?.hasAttemptedLoad ?? false)) return;
+    final retryFailedQuery =
+        cached?.hasAttemptedLoad == true && cached?.lastError != null;
+    if (!requestInProgress &&
+        !force &&
+        !retryFailedQuery &&
+        (cached?.hasAttemptedLoad ?? false)) {
+      return;
+    }
     if (controller == null) {
       if (mounted &&
           requestSerial == _requestSerial &&
@@ -318,7 +339,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
         category.name,
       ),
       labelKey: 'loading_dot',
-      task: (_) => force
+      task: (_) => !requestInProgress && (force || retryFailedQuery)
           ? controller.refreshCategory(
               category,
               searchQuery: query,

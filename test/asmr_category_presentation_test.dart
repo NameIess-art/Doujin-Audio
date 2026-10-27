@@ -1171,6 +1171,72 @@ void main() {
       variant: TargetPlatformVariant({platform}),
     );
 
+    for (final retryViaButton in [false, true]) {
+      testWidgets(
+        'ASMR failed search retries via ${retryViaButton ? 'button' : 'same query'} once on $platform',
+        (tester) async {
+          final controller = _PresentationController(createTestAsmrServices());
+          final fixture = AppRuntimeWidgetTestFixture();
+          addTearDown(controller.dispose);
+          addTearDown(fixture.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              const AsmrTab(),
+              overrides: [
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+              ],
+            ),
+          );
+          await pumpUntilFound(tester, find.text('Published work'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
+          await tester.pumpAndSettle();
+          controller
+            ..cacheValid = false
+            ..workCount = 0
+            ..catalogError = StateError('search failed');
+          AppSearchPageScaffold<AsmrCategoryType> search() => tester.widget(
+            find.byType(AppSearchPageScaffold<AsmrCategoryType>),
+          );
+          search().onSubmitted('Failed query');
+          await tester.pumpAndSettle();
+          await tester.pump(interaction.idleDelay);
+          await tester.pumpAndSettle();
+          expect(controller.categoryRequestQueries, contains('Failed query'));
+          expect(controller.refreshCount, 0);
+          final results = find.byKey(const ValueKey('asmr_search_collected'));
+          final retry = find.descendant(
+            of: results,
+            matching: find.text(fixture.languageProvider.tr('retry')),
+          );
+          expect(retry, findsOneWidget);
+
+          final pending = Completer<void>();
+          controller.pendingRefresh = pending;
+          if (retryViaButton) {
+            await tester.tap(retry);
+            await tester.tap(retry);
+          } else {
+            search().onSubmitted('Failed query');
+            search().onSubmitted('Failed query');
+          }
+          await tester.pump(interaction.idleDelay);
+          await tester.pump();
+          expect(controller.refreshCount, 1);
+          search().onSubmitted('Failed query');
+          await tester.pump();
+          expect(controller.refreshCount, 1);
+          pending.complete();
+          await tester.pumpAndSettle();
+          expect(controller.catalogError, isNull);
+          expect(retry, findsNothing);
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
     testWidgets(
       'ASMR submitted search keeps loading until data and hides it when editing on $platform',
       (tester) async {
@@ -2245,6 +2311,8 @@ class _PresentationController extends AsmrLibraryController {
   Completer<void>? pendingInitialization;
   Object? initializationError;
   Completer<void>? pendingCategoryLoad;
+  Completer<void>? pendingRefresh;
+  bool _refreshing = false;
   AppLanguage _presentationLanguage = AppLanguage.zh;
 
   int historyCount = 0;
@@ -2318,7 +2386,7 @@ class _PresentationController extends AsmrLibraryController {
           ],
       isLoading: false,
       isLoadingMore: false,
-      isRefreshing: false,
+      isRefreshing: _refreshing,
       isStale: false,
       hasAttemptedLoad: cacheValid,
       hasMore: hasMore,
@@ -2390,7 +2458,11 @@ class _PresentationController extends AsmrLibraryController {
     bool searchSession = false,
   }) async {
     refreshCount++;
+    _refreshing = true;
+    notifyListeners();
+    if (pendingRefresh case final pending?) await pending.future;
     catalogError = null;
+    _refreshing = false;
     revision++;
     notifyListeners();
   }

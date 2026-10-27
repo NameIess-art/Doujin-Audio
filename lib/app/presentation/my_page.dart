@@ -155,10 +155,23 @@ class _MyPageState extends ConsumerState<MyPage>
     }
   }
 
+  Future<void> _copyInterest(String name) async {
+    await Clipboard.setData(ClipboardData(text: name));
+    if (!mounted) return;
+    showAppSnackBar(
+      context,
+      ref.read(appLanguageProviderInstanceProvider).tr('copied_to_clipboard', {
+        'value': name,
+      }),
+      icon: Icons.content_copy_rounded,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final isWindows = Theme.of(context).platform == TargetPlatform.windows;
     final activityReady = ref.watch(
       listeningActivityProvider.select(
         (state) => state.hasValue || state.hasError,
@@ -336,45 +349,42 @@ class _MyPageState extends ConsumerState<MyPage>
                           runSpacing: 8,
                           children: [
                             for (final interest in interests.take(20))
-                              InputChip(
-                                key: ValueKey(
-                                  'my-${interestKeyPrefix}interest-${interest.tag.key}',
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onSecondaryTap: isWindows
+                                    ? () => _copyInterest(interest.tag.name)
+                                    : null,
+                                child: IgnorePointer(
+                                  ignoring: isWindows,
+                                  child: InputChip(
+                                    key: ValueKey(
+                                      'my-${interestKeyPrefix}interest-${interest.tag.key}',
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 8,
+                                    ),
+                                    labelPadding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    showCheckmark: false,
+                                    side: BorderSide(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.outlineVariant,
+                                    ),
+                                    label: Text(
+                                      interest.tag.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    onPressed: () =>
+                                        _copyInterest(interest.tag.name),
+                                  ),
                                 ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 8,
-                                ),
-                                labelPadding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
-                                visualDensity: VisualDensity.compact,
-                                materialTapTargetSize:
-                                    MaterialTapTargetSize.shrinkWrap,
-                                showCheckmark: false,
-                                side: BorderSide(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.outlineVariant,
-                                ),
-                                label: Text(
-                                  interest.tag.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                onPressed: () async {
-                                  final name = interest.tag.name;
-                                  await Clipboard.setData(
-                                    ClipboardData(text: name),
-                                  );
-                                  if (!context.mounted) return;
-                                  showAppSnackBar(
-                                    context,
-                                    i18n.tr('copied_to_clipboard', {
-                                      'value': name,
-                                    }),
-                                    icon: Icons.content_copy_rounded,
-                                  );
-                                },
                               ),
                           ],
                         ),

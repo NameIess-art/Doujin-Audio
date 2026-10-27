@@ -23,7 +23,10 @@ List<Widget> _buildSettingsAsmrSection({
               ),
             );
             return ListTile(
-              onTap: onChooseAsmrDownloadDestination,
+              enabled: !asmrDownloadPathOperation.isBusy,
+              onTap: asmrDownloadPathOperation.isBusy
+                  ? null
+                  : onChooseAsmrDownloadDestination,
               title: _SettingsTitleBlock(
                 title: i18n.tr('asmr_download_path_setting'),
                 subtitle: Text(

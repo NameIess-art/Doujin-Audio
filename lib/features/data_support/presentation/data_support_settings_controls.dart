@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../player/presentation/playback_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -105,33 +107,61 @@ class _DataSupportSettingsControlsState
       scope: UiOperationScope.dataSupportBackupRestore,
       labelKey: 'restore_backup',
       action: () async {
-        final result = await _fileService.pickAndStageBackup(
-          dialogTitle: i18n.tr('restore_backup'),
-        );
-        if (result == null || !mounted) return;
-        await ref.read(playbackFacadeProvider).nativeRepository.clearAll();
         if (!mounted) return;
-        await showAppDialog<void>(
+        final ready = ValueNotifier(false);
+        final dialogBuilt = Completer<BuildContext>();
+        final dialogClosed = showAppDialog<void>(
           context: context,
           barrierDismissible: false,
-          builder: (dialogContext) => PopScope(
-            canPop: false,
-            child: AppDialog(
-              title: i18n.tr('backup_ready_to_restore'),
-              icon: Icons.restart_alt_rounded,
-              content: Text(i18n.tr('backup_restart_required')),
-              actions: AppDialogActions(
-                children: [
-                  AppPrimaryButton(
-                    onPressed: _terminateForPendingRestore,
-                    icon: Icons.close_rounded,
-                    label: i18n.tr('close_app'),
+          builder: (dialogContext) {
+            if (!dialogBuilt.isCompleted) dialogBuilt.complete(dialogContext);
+            return PopScope(
+              canPop: false,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: ready,
+                builder: (_, isReady, _) => AppDialog(
+                  title: i18n.tr(
+                    isReady ? 'backup_ready_to_restore' : 'restore_backup',
                   ),
-                ],
+                  icon: isReady
+                      ? Icons.restart_alt_rounded
+                      : Icons.restore_rounded,
+                  content: isReady
+                      ? Text(i18n.tr('backup_restart_required'))
+                      : const Center(child: CircularProgressIndicator()),
+                  actions: isReady
+                      ? AppDialogActions(
+                          children: [
+                            AppPrimaryButton(
+                              onPressed: _terminateForPendingRestore,
+                              icon: Icons.close_rounded,
+                              label: i18n.tr('close_app'),
+                            ),
+                          ],
+                        )
+                      : null,
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
+        final dialogContext = await dialogBuilt.future;
+        try {
+          final result = await _fileService.pickAndStageBackup(
+            dialogTitle: i18n.tr('restore_backup'),
+          );
+          if (result == null) return;
+          // Staging has committed a pending restore. Keep the restart prompt
+          // even if clearing the old playback snapshot fails.
+          ready.value = true;
+          await ref.read(playbackFacadeProvider).nativeRepository.clearAll();
+        } finally {
+          if (!ready.value && dialogContext.mounted) {
+            Navigator.of(dialogContext).pop();
+          }
+          await dialogClosed;
+          ready.dispose();
+        }
       },
       retry: _restoreBackup,
     );

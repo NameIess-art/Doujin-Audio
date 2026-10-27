@@ -20,6 +20,7 @@ import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -962,7 +963,23 @@ void main() {
               .defaultBinaryMessenger
               .setMockMethodCallHandler(SystemChannels.platform, null),
         );
-        await tester.tap(chip);
+        final copyTarget = platform == TargetPlatform.windows
+            ? find.ancestor(of: chip, matching: find.byType(GestureDetector)).first
+            : chip;
+        if (platform == TargetPlatform.windows) {
+          await tester.tap(copyTarget);
+          await tester.pump();
+          expect(copied, isNull);
+        }
+        await tester.tap(
+          copyTarget,
+          buttons: platform == TargetPlatform.windows
+              ? kSecondaryMouseButton
+              : kPrimaryButton,
+          kind: platform == TargetPlatform.windows
+              ? PointerDeviceKind.mouse
+              : PointerDeviceKind.touch,
+        );
         await tester.pump();
         expect(copied, 'Tag 24');
         expect(
@@ -1130,7 +1147,23 @@ void main() {
               .setMockMethodCallHandler(SystemChannels.platform, null),
         );
         await tester.ensureVisible(first);
-        await tester.tap(first);
+        final copyTarget = platform == TargetPlatform.windows
+            ? find.ancestor(of: first, matching: find.byType(GestureDetector)).first
+            : first;
+        if (platform == TargetPlatform.windows) {
+          await tester.tap(copyTarget);
+          await tester.pump();
+          expect(copied, isNull);
+        }
+        await tester.tap(
+          copyTarget,
+          buttons: platform == TargetPlatform.windows
+              ? kSecondaryMouseButton
+              : kPrimaryButton,
+          kind: platform == TargetPlatform.windows
+              ? PointerDeviceKind.mouse
+              : PointerDeviceKind.touch,
+        );
         await tester.pump();
         expect(copied, 'Voice 24');
         expect(find.textContaining('（前'), findsNothing);

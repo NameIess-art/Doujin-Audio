@@ -24,6 +24,9 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
   List<SubtitleCue>? _cues;
   bool _saving = false;
   bool _dirty = false;
+  bool _confirmingExit = false;
+  // Ignore dialogs opened before a save, including results after it completes.
+  int _saveGeneration = 0;
   String? _errorKey;
 
   bool get _canSave {
@@ -59,6 +62,8 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
   }
 
   Future<void> _editText(int index) async {
+    if (_saving) return;
+    final generation = _saveGeneration;
     String normalizeLines(String value) => value
         .split(RegExp(r'\r?\n'))
         .map((line) => line.trim())
@@ -147,12 +152,16 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
       ),
     );
     if (!mounted ||
+        _saving ||
+        generation != _saveGeneration ||
         next == null ||
         (next.text == cue.text && next.originalText == cue.originalText)) {
       return;
     }
+    final currentIndex = _cues!.indexOf(cue);
+    if (currentIndex < 0) return;
     setState(() {
-      _cues![index] = SubtitleCue(
+      _cues![currentIndex] = SubtitleCue(
         start: cue.start,
         end: cue.end,
         text: next.text,
@@ -163,6 +172,8 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
   }
 
   Future<void> _editTime(int index) async {
+    if (_saving) return;
+    final generation = _saveGeneration;
     final cue = _cues![index];
     final hasTime = cue.end > cue.start;
     var startText = hasTime ? _formatTime(cue.start) : '';
@@ -204,6 +215,11 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
             ),
             FilledButton(
               onPressed: () {
+                if (_saving ||
+                    generation != _saveGeneration ||
+                    _cues!.indexOf(cue) != index) {
+                  return;
+                }
                 final start = _parseTime(startText);
                 final end = _parseTime(endText);
                 final previousEnd = index == 0
@@ -233,12 +249,16 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
       ),
     );
     if (!mounted ||
+        _saving ||
+        generation != _saveGeneration ||
         next == null ||
         (next.$1 == cue.start && next.$2 == cue.end)) {
       return;
     }
+    final currentIndex = _cues!.indexOf(cue);
+    if (currentIndex < 0) return;
     setState(() {
-      _cues![index] = SubtitleCue(
+      _cues![currentIndex] = SubtitleCue(
         start: next.$1,
         end: next.$2,
         text: cue.text,
@@ -249,6 +269,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
   }
 
   void _insertAfter(SubtitleCue cue) {
+    if (_saving) return;
     final index = _cues?.indexOf(cue) ?? -1;
     if (index < 0) return;
     setState(() {
@@ -261,6 +282,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
   }
 
   void _deleteCue(SubtitleCue cue) {
+    if (_saving) return;
     final index = _cues?.indexOf(cue) ?? -1;
     if (index < 0) return;
     setState(() {
@@ -269,14 +291,17 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     });
   }
 
-  Future<void> _save() async {
-    if (!_canSave) return;
-    setState(() => _saving = true);
+  Future<bool> _save() async {
+    if (!_canSave) return false;
+    setState(() {
+      _saving = true;
+      _saveGeneration++;
+    });
     try {
       await ref
           .read(playbackSubtitleServiceProvider)
-          .saveEditedSubtitle(widget.trackPath, _cues!);
-      if (!mounted) return;
+          .saveEditedSubtitle(widget.trackPath, List.of(_cues!));
+      if (!mounted) return false;
       setState(() => _dirty = false);
       showAppSnackBar(
         context,
@@ -284,6 +309,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         tone: AppFeedbackTone.success,
         icon: Icons.check_circle_rounded,
       );
+      return true;
     } catch (_) {
       if (mounted) {
         showAppSnackBar(
@@ -295,8 +321,53 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
           icon: Icons.error_outline_rounded,
         );
       }
+      return false;
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _requestExit() async {
+    if (_saving || _confirmingExit) return;
+    if (!_dirty) {
+      Navigator.of(context).pop();
+      return;
+    }
+    _confirmingExit = true;
+    try {
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
+      final save = await showAppDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AppAlertDialog(
+          title: Text(i18n.tr('subtitle_unsaved_title')),
+          content: Text(i18n.tr('subtitle_unsaved_message')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(i18n.tr('cancel')),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(i18n.tr('discard_changes')),
+            ),
+            FilledButton(
+              onPressed: _canSave
+                  ? () => Navigator.pop(dialogContext, true)
+                  : null,
+              child: Text(i18n.tr('save')),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || save == null) return;
+      if (save && !await _save()) return;
+      if (!mounted) return;
+      setState(() => _dirty = false);
+      // Let PopScope observe the clean draft before completing navigation.
+      await WidgetsBinding.instance.endOfFrame;
+      if (mounted) Navigator.of(context).pop();
+    } finally {
+      _confirmingExit = false;
     }
   }
 
@@ -327,7 +398,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
-    return Scaffold(
+    final page = Scaffold(
       body: PageHeaderInset(
         topInset: contentTopInset,
         child: Stack(
@@ -357,6 +428,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                         final needsTime = cue.end <= cue.start;
                         return SwipeRevealCard(
                           key: ObjectKey(cue),
+                          enabled: !_saving,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -380,7 +452,9 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                       child: InkWell(
                                         key: ValueKey('subtitle_text_$index'),
                                         borderRadius: BorderRadius.circular(12),
-                                        onTap: () => _editText(index),
+                                        onTap: _saving
+                                            ? null
+                                            : () => _editText(index),
                                         child: Padding(
                                           padding: const EdgeInsets.all(14),
                                           child: Text(
@@ -399,7 +473,9 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                                     InkWell(
                                       key: ValueKey('subtitle_time_$index'),
                                       borderRadius: BorderRadius.circular(12),
-                                      onTap: () => _editTime(index),
+                                      onTap: _saving
+                                          ? null
+                                          : () => _editTime(index),
                                       child: Padding(
                                         padding: const EdgeInsets.all(12),
                                         child: needsTime
@@ -448,7 +524,10 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
               child: TopPageHeader(
                 icon: Icons.edit_note_rounded,
                 title: i18n.tr('subtitle_edit'),
-                leading: BackButton(color: cs.onSurface),
+                leading: BackButton(
+                  color: cs.onSurface,
+                  onPressed: _saving ? null : _requestExit,
+                ),
                 trailing: IconButton(
                   tooltip: i18n.tr('save'),
                   onPressed: _canSave ? _save : null,
@@ -464,6 +543,13 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
           ],
         ),
       ),
+    );
+    return PopScope<void>(
+      canPop: !_dirty && !_saving,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _requestExit();
+      },
+      child: page,
     );
   }
 }

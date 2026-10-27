@@ -14,6 +14,9 @@ import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/core/widgets/subtitle_window_visual.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
+import 'package:doujin_audio/features/settings/application/settings_command_controller.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
 import 'package:doujin_audio/features/settings/presentation/subtitle_window_settings_sheet.dart';
 import 'package:doujin_audio/features/settings/presentation/asmr_download_folder_name_settings_sheet.dart';
@@ -49,6 +52,106 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  testWidgets(
+    'download directory selection blocks row and duplicate commands',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final manager = _DeferredDestinationDownloadManager();
+      addTearDown(fixture.dispose);
+      addTearDown(manager.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const SettingsTab(),
+          overrides: [asmrDownloadManagerProvider.overrideWithValue(manager)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      final i18n = fixture.languageProvider;
+      await tester.tap(find.text(i18n.tr('section_asmr_download')));
+      await tester.pumpAndSettle();
+      final row = find.ancestor(
+        of: find.text(i18n.tr('asmr_download_path_setting')),
+        matching: find.byType(ListTile),
+      );
+      final choose = tester.widget<ListTile>(row).onTap!;
+      choose();
+      choose();
+      expect(manager.pickCalls, 1);
+      await tester.pump();
+      await tester.pump();
+      expect(tester.widget<ListTile>(row).onTap, isNull);
+      expect(tester.widget<ListTile>(row).enabled, isFalse);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.descendant(of: row, matching: find.byType(IconButton)),
+            )
+            .onPressed,
+        isNull,
+      );
+      manager.destination.complete(null);
+      await tester.pumpAndSettle();
+      expect(tester.widget<ListTile>(row).onTap, isNotNull);
+      expect(tester.widget<ListTile>(row).enabled, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'cache clearing failure reports an error and allows retry',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const SettingsTab(),
+          overrides: [
+            settingsCommandControllerProvider.overrideWithValue(
+              SettingsCommandController(
+                settings: fixture.settingsRepository,
+                playback: fixture.playback,
+                clearApplicationCacheFiles: () async =>
+                    throw StateError('cache unavailable'),
+              ),
+            ),
+            dataSupportStorageUsageServiceProvider.overrideWithValue(
+              StorageUsageService(
+                fileCacheGateway: _UnavailableStorageGateway(),
+                libraryTracks: () => const [],
+              ),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      final i18n = fixture.languageProvider;
+      await tester.tap(find.text(i18n.tr('section_data_storage')));
+      await tester.pumpAndSettle();
+      final clear = find.text(i18n.tr('clear_app_cache'));
+      await tester.ensureVisible(clear);
+      await tester.pumpAndSettle();
+      await tester.tap(clear);
+      await tester.pumpAndSettle();
+      await tester.tap(clear.last);
+      await tester.pumpAndSettle();
+      expect(find.text(i18n.tr('operation_failed_retry')), findsOneWidget);
+      expect(find.text(i18n.tr('retry')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      expect(
+        fixture.uiOperationService
+            .operationFor(UiOperationScope.settingsCache)
+            .hasError,
+        isTrue,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
 
   testWidgets(
     'settings display rows immediately without skeletons and retain category scroll',
@@ -2080,6 +2183,19 @@ void main() {
     await download;
     await tester.pump();
   });
+}
+
+class _DeferredDestinationDownloadManager extends AsmrDownloadManager {
+  _DeferredDestinationDownloadManager() : super(persistTasks: false);
+
+  final destination = Completer<String?>();
+  var pickCalls = 0;
+
+  @override
+  Future<String?> pickDestinationFolder({String? dialogTitle}) {
+    pickCalls++;
+    return destination.future;
+  }
 }
 
 void _expectIconCentersAligned(WidgetTester tester, List<IconData> icons) {

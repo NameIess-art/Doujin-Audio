@@ -454,16 +454,19 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                                 16,
                                 listBottomPadding,
                               ),
-                              child: OperationStatusBanner(
-                                label: i18n.tr('asmr_detail_load_failed'),
-                                error: _bootstrapError,
-                                onRetry: () {
-                                  setState(() {
-                                    _loading = true;
-                                    _bootstrapError = null;
-                                  });
-                                  unawaited(_bootstrap());
-                                },
+                              child: Align(
+                                alignment: Alignment.topCenter,
+                                child: OperationStatusBanner(
+                                  label: i18n.tr('asmr_detail_load_failed'),
+                                  error: _bootstrapError,
+                                  onRetry: () {
+                                    setState(() {
+                                      _loading = true;
+                                      _bootstrapError = null;
+                                    });
+                                    unawaited(_bootstrap());
+                                  },
+                                ),
                               ),
                             )
                           : AsmrDownloadSelectionList(

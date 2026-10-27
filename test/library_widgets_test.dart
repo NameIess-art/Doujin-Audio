@@ -6178,7 +6178,6 @@ void main() {
                 )
                 .first,
           );
-          expect(tapSurface.splashFactory, InkSplash.splashFactory);
           expect(tapSurface.highlightColor, Colors.transparent);
           final badgeFade = find
               .ancestor(
@@ -6207,13 +6206,13 @@ void main() {
               ),
             ).first),
           );
-          await tester.tap(trackFinder);
-          await tester.pump();
+          final press = await tester.startGesture(tester.getCenter(trackFinder));
+          await tester.pump(const Duration(milliseconds: 120));
           expect(
             inkController.debugInkFeatures.whereType<InkSplash>(),
             isNotEmpty,
           );
-          await tester.pump(const Duration(milliseconds: 210));
+          await press.up();
           expect(
             inkController.debugInkFeatures.whereType<InkSplash>(),
             isEmpty,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_entry_ink_well.dart';
+
 class AppSettingsActionTile extends StatelessWidget {
   const AppSettingsActionTile({
     super.key,
@@ -19,22 +21,27 @@ class AppSettingsActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return ListTile(
+    return AppEntryInkWell(
       onTap: onTap,
-      leading: SizedBox(
-        width: 40,
-        child: Icon(icon, color: cs.primary, size: 30),
+      child: ListTile(
+        leading: SizedBox(
+          width: 40,
+          child: Icon(icon, color: cs.primary, size: 30),
+        ),
+        title: Text(title, softWrap: true, overflow: TextOverflow.visible),
+        trailing:
+            trailing ??
+            (busy
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2.2),
+                  )
+                : Icon(
+                    Icons.chevron_right_rounded,
+                    color: cs.onSurfaceVariant,
+                  )),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       ),
-      title: Text(title, softWrap: true, overflow: TextOverflow.visible),
-      trailing:
-          trailing ??
-          (busy
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2.2),
-                )
-              : Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
     );
   }
 }

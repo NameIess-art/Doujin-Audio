@@ -67,6 +67,7 @@ Future<WorkDetailNavigation> _pumpApp(
   bool withDownloadTasks = false,
   int libraryWorkCount = 0,
   Widget? home,
+  NotificationListenerCallback<NavigationNotification>? onNavigationNotification,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -173,6 +174,7 @@ Future<WorkDetailNavigation> _pumpApp(
           navigatorKey: root,
           child: MaterialApp(
             navigatorKey: root,
+            onNavigationNotification: onNavigationNotification,
             navigatorObservers: [if (withNavigationLock) rootObserver],
             builder: (_, child) => withNavigationLock
                 ? AppNavigationInputLock(
@@ -303,6 +305,96 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     UiInteractionCoordinator.instance.resetForTest();
   });
+
+  for (final size in [const Size(390, 820), const Size(820, 390)]) {
+    testWidgets(
+      'Android keeps system back in Flutter for nested pages at $size',
+      (tester) async {
+        final handlesBack = <bool>[];
+        var exits = 0;
+        final messenger = tester.binding.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(SystemChannels.platform, (
+          call,
+        ) async {
+          if (call.method == 'SystemNavigator.pop') {
+            exits++;
+          }
+          return null;
+        });
+        addTearDown(() {
+          messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+        });
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        final navigation = await _pumpApp(
+          tester,
+          size: size,
+          withNavigationLock: true,
+          onNavigationNotification: (notification) {
+            handlesBack.add(notification.canHandlePop);
+            return true;
+          },
+        );
+        expect(handlesBack.last, isFalse);
+
+        final content = navigation.contentNavigatorKey.currentState!;
+        unawaited(
+          content.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('Content settings')),
+            ),
+          ),
+        );
+        await _settle(tester);
+        expect(navigation.isContentOpen, isTrue);
+        expect(handlesBack.last, isTrue);
+
+        await _open(tester, navigation, 'A');
+        expect(handlesBack.last, isTrue);
+        await tester.tap(find.text('Open child'));
+        await _settle(tester);
+        expect(handlesBack.last, isTrue);
+        final root = navigation.rootNavigatorKey.currentState!;
+        unawaited(
+          root.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('Root settings')),
+            ),
+          ),
+        );
+        await _settle(tester);
+        expect(handlesBack.last, isTrue);
+        unawaited(
+          showDialog<void>(
+            context: root.overlay!.context,
+            builder: (_) => const AlertDialog(title: Text('Back dialog')),
+          ),
+        );
+        await _settle(tester);
+        expect(handlesBack.last, isTrue);
+        await tester.binding.handlePopRoute();
+        await _settle(tester);
+        expect(find.text('Back dialog'), findsNothing);
+        expect(find.text('Root settings'), findsOneWidget);
+        expect(handlesBack.last, isTrue);
+        await tester.binding.handlePopRoute();
+        await _settle(tester);
+        expect(find.text('Root settings'), findsNothing);
+        expect(find.text('Edit work'), findsOneWidget);
+        expect(handlesBack.last, isTrue);
+        for (var remaining = 2; remaining >= 0; remaining--) {
+          await tester.binding.handlePopRoute();
+          await _settle(tester);
+          expect(exits, 0);
+          expect(handlesBack.last, remaining > 0);
+        }
+        expect(navigation.isOpen, isFalse);
+        expect(navigation.isContentOpen, isFalse);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final withSession in [false, true]) {

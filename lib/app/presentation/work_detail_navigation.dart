@@ -344,46 +344,54 @@ class WorkDetailPane extends StatelessWidget {
               unawaited(navigator?.maybePop());
             }
           },
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              child!,
-              Positioned(
-                right: paneWidth,
-                top: 0,
-                bottom: 0,
-                width: 1,
-                child: Offstage(
-                  offstage: !navigation.isOpen || !isLandscape,
-                  child: ColoredBox(
-                    color: Theme.of(context).colorScheme.outlineVariant,
+          // This PopScope owns both nested stacks. A child returning to its
+          // first route must not tell Android to exit while the other stack
+          // still has a page; only the owning route should publish back state.
+          child: NotificationListener<NavigationNotification>(
+            onNotification: (_) => true,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                child!,
+                Positioned(
+                  right: paneWidth,
+                  top: 0,
+                  bottom: 0,
+                  width: 1,
+                  child: Offstage(
+                    offstage: !navigation.isOpen || !isLandscape,
+                    child: ColoredBox(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
                   ),
                 ),
-              ),
-              Positioned(
-                key: const ValueKey('work_detail_pane_bounds'),
-                right: 0,
-                top: 0,
-                bottom: 0,
-                width: paneWidth,
-                child: Offstage(
-                  offstage: !navigation.isOpen,
-                  child: Builder(
-                    builder: (context) {
-                      final mediaQuery = MediaQuery.of(context);
-                      return MediaQuery(
-                        data: mediaQuery.copyWith(
-                          size: Size(paneWidth, size.height),
-                          padding: mediaQuery.padding.copyWith(left: 0),
-                          viewPadding: mediaQuery.viewPadding.copyWith(left: 0),
-                        ),
-                        child: detailNavigator,
-                      );
-                    },
+                Positioned(
+                  key: const ValueKey('work_detail_pane_bounds'),
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: paneWidth,
+                  child: Offstage(
+                    offstage: !navigation.isOpen,
+                    child: Builder(
+                      builder: (context) {
+                        final mediaQuery = MediaQuery.of(context);
+                        return MediaQuery(
+                          data: mediaQuery.copyWith(
+                            size: Size(paneWidth, size.height),
+                            padding: mediaQuery.padding.copyWith(left: 0),
+                            viewPadding: mediaQuery.viewPadding.copyWith(
+                              left: 0,
+                            ),
+                          ),
+                          child: detailNavigator,
+                        );
+                      },
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

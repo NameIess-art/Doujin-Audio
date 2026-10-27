@@ -1,4 +1,5 @@
 import 'subtitle_window_settings_sheet.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import 'dart:convert';
 import '../application/network_service_probe.dart';
 import '../../../core/network/network_route_settings.dart';
@@ -241,7 +242,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                 i18n: i18n,
                                 isFirst: index == 0,
                                 isLast:
-                                    index == _SettingsCategory.values.length - 1,
+                                    index ==
+                                    _SettingsCategory.values.length - 1,
                                 onTap: () => _openSettingsCategory(
                                   _SettingsCategory.values[index],
                                 ),
@@ -366,32 +368,34 @@ class _SettingsCategoryTile extends StatelessWidget {
     return AppSettingsCard(
       isFirst: isFirst,
       isLast: isLast,
-      child: ListTile(
+      child: AppEntryInkWell(
         onTap: onTap,
-        leading: _settingsIcon(category.icon, cs.primary),
-        title: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              i18n.tr(category.labelKey),
-              softWrap: true,
-              overflow: TextOverflow.visible,
-              style: theme.textTheme.titleMedium,
-            ),
-            Text(
-              i18n.tr(category.subtitleKey),
-              maxLines: 1,
-              softWrap: true,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium,
-            ),
-          ],
+        child: ListTile(
+          leading: _settingsIcon(category.icon, cs.primary),
+          title: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                i18n.tr(category.labelKey),
+                softWrap: true,
+                overflow: TextOverflow.visible,
+                style: theme.textTheme.titleMedium,
+              ),
+              Text(
+                i18n.tr(category.subtitleKey),
+                maxLines: 1,
+                softWrap: true,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+          minTileHeight: _settingsTileHeight,
+          minVerticalPadding: 0,
+          titleAlignment: ListTileTitleAlignment.center,
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-        minTileHeight: _settingsTileHeight,
-        minVerticalPadding: 0,
-        titleAlignment: ListTileTitleAlignment.center,
       ),
     );
   }

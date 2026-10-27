@@ -84,7 +84,7 @@ class _ActiveSessionCard extends ConsumerWidget {
             child: Material(
               type: MaterialType.transparency,
               shape: const CircleBorder(),
-              child: InkWell(
+              child: AppEntryInkWell(
                 customBorder: const CircleBorder(),
                 onTap: onOpen,
                 child: _ActiveSessionCover(
@@ -102,7 +102,7 @@ class _ActiveSessionCard extends ConsumerWidget {
 
     final cardBody = Material(
       color: Colors.transparent,
-      child: InkWell(
+      child: AppEntryInkWell(
         key: embedded
             ? ValueKey<String>(
                 'active_session_ink_${session.id}_${dockCollapsed ? 'collapsed' : 'expanded'}',

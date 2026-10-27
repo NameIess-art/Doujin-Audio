@@ -52,9 +52,11 @@ void main() {
         '已添加 2 个作品至播放列表',
       );
       expect(provider.tr('batch_metadata_completion_title'), '批量补全完成');
+      expect(provider.tr('audio_detail_fetch_info'), '获取信息');
+      expect(provider.tr('batch_metadata'), '批量补全信息');
       expect(
         provider.tr('batch_metadata_completion_saved', {'count': '2'}),
-        '已保存 2 条作品数据',
+        '已保存 2 条作品信息',
       );
       expect(provider.tr('audio_detail_title'), '详细信息');
       expect(provider.tr('asmr_detail_other'), '其他信息');

@@ -14,6 +14,7 @@ import '../../core/media/path_display.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/widgets/app_feedback.dart';
+import '../../core/widgets/app_entry_ink_well.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/async_cover_image.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
@@ -837,7 +838,7 @@ class _WorkCoverCard extends StatelessWidget {
                 key: ValueKey(cardKey),
                 borderRadius: BorderRadius.circular(12),
                 child: Material(
-                  child: InkWell(
+                  child: AppEntryInkWell(
                     onTap: onOpen,
                     child: ExcludeSemantics(
                       child: Stack(

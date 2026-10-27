@@ -29,6 +29,7 @@ import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_search_page.dart';

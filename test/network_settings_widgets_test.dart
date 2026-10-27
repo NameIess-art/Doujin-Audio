@@ -97,6 +97,25 @@ void main() {
         scroll.jumpTo(0);
         await tester.pumpAndSettle();
         final http = find.widgetWithText(ChoiceChip, 'HTTP');
+        void expectPanelBackground(Finder control) {
+          final card = find
+              .ancestor(of: control, matching: find.byType(Card))
+              .first;
+          final fill = find.descendant(
+            of: card,
+            matching: find.byType(ColoredBox),
+          );
+          expect(fill, findsOneWidget);
+          expect(
+            tester.widget<ColoredBox>(fill).color,
+            Theme.of(tester.element(card)).colorScheme.surfaceContainerLow,
+          );
+          expect(
+            (tester.widget<Card>(card).shape! as RoundedRectangleBorder).side,
+            BorderSide.none,
+          );
+        }
+        expectPanelBackground(http);
         await tester.ensureVisible(http);
         await tester.tap(http);
         await tester.pumpAndSettle();
@@ -105,6 +124,7 @@ void main() {
               widget is TextField &&
               widget.decoration?.labelText == i18n.tr(key),
         );
+        expectPanelBackground(field('network_dns_ip'));
         await tester.enterText(field('network_proxy_host'), '127.0.0.1');
         await tester.enterText(field('network_proxy_port'), '8080');
         scroll.jumpTo(

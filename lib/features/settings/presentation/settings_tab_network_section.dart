@@ -156,8 +156,10 @@ class _NetworkSettingsControlsState
         border: const OutlineInputBorder(),
       ),
     );
-    Widget inset(Widget child) =>
-        Padding(padding: const EdgeInsets.all(16), child: child);
+    Widget inset(Widget child) => ColoredBox(
+      color: cs.surfaceContainerLow,
+      child: Padding(padding: const EdgeInsets.all(16), child: child),
+    );
     String modeLabel(AppProxyMode mode) => switch (mode) {
       AppProxyMode.system => i18n.tr('network_system_vpn'),
       AppProxyMode.http => 'HTTP',

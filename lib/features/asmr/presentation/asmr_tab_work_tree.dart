@@ -141,9 +141,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
       surfaceTintColor: Colors.transparent,
       // The tap surface sits inside the card so its ink highlight and ripple
       // paint above the swipe card's closed background.
-      child: InkWell(
-        splashFactory: InkSplash.splashFactory,
-        highlightColor: Colors.transparent,
+      child: AppEntryInkWell(
         canRequestFocus: widget.isSelectionMode,
         onLongPress: widget.onLongPress,
         onTap: widget.isSelectionMode

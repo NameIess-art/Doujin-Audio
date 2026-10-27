@@ -2292,7 +2292,10 @@ void main() {
       expect(
         tester
             .widgetList<InkWell>(
-              find.descendant(of: embeddedCard, matching: find.byType(InkWell)),
+              find.descendant(
+                of: embeddedCard,
+                matching: find.byWidgetPredicate((widget) => widget is InkWell),
+              ),
             )
             .any((inkWell) => inkWell.customBorder is StadiumBorder),
         isTrue,

@@ -18,6 +18,7 @@ import '../domain/library_node.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/animated_reorder.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -623,9 +624,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
             surfaceTintColor: Colors.transparent,
             // The tap surface sits inside the card so its ink highlight and
             // ripple paint above the swipe card's closed background.
-            child: InkWell(
-              splashFactory: InkSplash.splashFactory,
-              highlightColor: Colors.transparent,
+            child: AppEntryInkWell(
               canRequestFocus: widget.isSelectionMode,
               onLongPress: widget.onLongPress,
               onTap: widget.isSelectionMode
@@ -895,9 +894,7 @@ class _TrackNodeWidget extends ConsumerWidget {
           surfaceTintColor: Colors.transparent,
           // The tap surface sits inside the card so its ink highlight and
           // ripple paint above the swipe card's closed background.
-          child: InkWell(
-            splashFactory: InkSplash.splashFactory,
-            highlightColor: Colors.transparent,
+          child: AppEntryInkWell(
             canRequestFocus: isSelectionMode,
             onLongPress: onLongPress,
             onTap: isSelectionMode

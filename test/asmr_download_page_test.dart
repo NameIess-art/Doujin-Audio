@@ -5,6 +5,7 @@ import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
+import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -25,6 +26,64 @@ void main() {
   tearDown(interaction.resetForTest);
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final textScale in [1.0, 1.6]) {
+      testWidgets(
+        'download retry banner fits content at text scale $textScale on $platform',
+        (tester) async {
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = Size(
+            platform == TargetPlatform.android ? 390 : 1000,
+            820,
+          );
+          tester.platformDispatcher.textScaleFactorTestValue = textScale;
+          addTearDown(() {
+            tester.view.resetPhysicalSize();
+            tester.view.resetDevicePixelRatio();
+            tester.platformDispatcher.clearTextScaleFactorTestValue();
+          });
+          final fixture = AppRuntimeWidgetTestFixture();
+          final controller = _DelayedTreeController(createTestAsmrServices());
+          final manager = AsmrDownloadManager(persistTasks: false);
+          addTearDown(fixture.dispose);
+          addTearDown(controller.dispose);
+          addTearDown(manager.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              AsmrDownloadPage(
+                work: AsmrWork.fromJson(const {'id': 1, 'title': 'Retry work'}),
+              ),
+              overrides: [
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+                asmrDownloadManagerProvider.overrideWithValue(manager),
+              ],
+            ),
+          );
+          controller.tree.completeError(StateError('unavailable'));
+          await tester.pumpAndSettle();
+          final banner = find.byType(OperationStatusBanner);
+          expect(banner, findsOneWidget);
+          expect(tester.getSize(banner).height, lessThan(140));
+          final retry = find.descendant(
+            of: banner,
+            matching: find.byType(IconButton),
+          );
+          expect(retry.hitTestable(), findsOneWidget);
+          expect(tester.getSize(retry).shortestSide, greaterThanOrEqualTo(44));
+          controller.tree = Completer<List<AsmrTrackFile>>();
+          await tester.tap(retry);
+          await tester.pump();
+          expect(controller.loads, 2);
+          controller.tree.complete(const []);
+          await tester.pumpAndSettle();
+          expect(banner, findsNothing);
+          expect(find.byType(AsmrDownloadSelectionList), findsOneWidget);
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+
     testWidgets(
       'Japanese download omits the site folder in rows and submitted paths on $platform',
       (tester) async {
@@ -481,7 +540,7 @@ class _DelayedTreeController extends AsmrLibraryController {
         accountSyncService: services.accountSyncService,
       );
 
-  final tree = Completer<List<AsmrTrackFile>>();
+  var tree = Completer<List<AsmrTrackFile>>();
   int loads = 0;
 
   @override

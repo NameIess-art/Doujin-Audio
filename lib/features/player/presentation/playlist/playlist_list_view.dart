@@ -13,6 +13,7 @@ import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/widgets/animated_reorder.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/marquee_text.dart';
 import '../../../../core/widgets/playing_sound_wave_indicator.dart';
@@ -467,9 +468,7 @@ class SessionListCard extends ConsumerWidget {
                 ? cs.primaryContainer.withValues(alpha: 0.15)
                 : Colors.transparent,
             shadowColor: Colors.transparent,
-            child: InkWell(
-              splashFactory: InkSplash.splashFactory,
-              highlightColor: Colors.transparent,
+            child: AppEntryInkWell(
               excludeFromSemantics: true,
               onTap: () {
                 if (isSelectionMode) {

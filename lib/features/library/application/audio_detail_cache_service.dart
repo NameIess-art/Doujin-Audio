@@ -72,8 +72,6 @@ class AudioDetailCacheService {
   int get voiceActorRevision => _voiceActorRevision;
   int get releaseDateRevision => _releaseDateRevision;
   Stream<AudioDetailCacheChange> get changes => _changes.stream;
-  List<AudioDetail> get resolvedDetails =>
-      _resolved.values.map((value) => value.detail).toList(growable: false);
 
   AudioDetail? resolvedDetail(AudioDetailTarget target) {
     return _resolved[AudioLibraryDetailKey.forTarget(target)]?.detail;

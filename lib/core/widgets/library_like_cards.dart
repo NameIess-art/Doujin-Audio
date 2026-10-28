@@ -201,16 +201,12 @@ class LibraryLikeInfoLineData {
     this.label,
     this.text, {
     required this.icon,
-    this.lines = 1,
     this.isSecondary = false,
   });
-
-  static const int maxLines = 5;
 
   final String label;
   final String text;
   final IconData icon;
-  final int lines;
   final bool isSecondary;
 }
 
@@ -721,6 +717,8 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
 }
 
 class LibraryLikeDetailInfoLine extends StatelessWidget {
+  static const int _maxLines = 5;
+
   const LibraryLikeDetailInfoLine({
     super.key,
     required this.label,
@@ -745,7 +743,7 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final lineCount = lines.clamp(1, LibraryLikeInfoLineData.maxLines);
+    final lineCount = lines.clamp(1, _maxLines);
     final fixedStyle = _libraryLikeFixedLineStyle(
       icon == Icons.local_offer_rounded
           ? style.copyWith(

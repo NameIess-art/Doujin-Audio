@@ -490,15 +490,14 @@ void main() {
 
     expect(
       lines.map(
-        (line) =>
-            '${line.label}:${line.text}:${line.lines}:${line.isSecondary}',
+        (line) => '${line.label}:${line.text}:${line.isSecondary}',
       ),
       <String>[
-        '声优:Alice，Bob:1:false',
-        'Circle:Circle:1:false',
-        'Tags:#sleep   #voice:1:false',
-        'Release:2026-07-02:1:true',
-        'Rating:4:1:true',
+        '声优:Alice，Bob:false',
+        'Circle:Circle:false',
+        'Tags:#sleep   #voice:false',
+        'Release:2026-07-02:true',
+        'Rating:4:true',
       ],
     );
   });
@@ -542,15 +541,14 @@ void main() {
 
     expect(
       lines.map(
-        (line) =>
-            '${line.label}:${line.text}:${line.lines}:${line.isSecondary}',
+        (line) => '${line.label}:${line.text}:${line.isSecondary}',
       ),
       <String>[
-        '声優:Voice A、Voice B:1:false',
-        'Circle:Circle:1:false',
-        'Tags:#ASMR   #Sleep:1:false',
-        'Release:2026-06-09:1:true',
-        'Rating:4.5:1:true',
+        '声優:Voice A、Voice B:false',
+        'Circle:Circle:false',
+        'Tags:#ASMR   #Sleep:false',
+        'Release:2026-06-09:true',
+        'Rating:4.5:true',
       ],
     );
   });
@@ -595,7 +593,7 @@ void main() {
         ),
       ),
     );
-    expect(lines.fold<int>(0, (total, line) => total + line.lines), 5);
+    expect(lines, hasLength(5));
     expect(tester.takeException(), isNull);
   });
 

@@ -178,7 +178,9 @@ final class LibraryCoverUiController {
       final requests =
           _deferredLookups.entries
               .where(
-                (entry) => !entry.value.submitted && _canRunLookup(entry.value),
+                (entry) =>
+                    !entry.value.submitted &&
+                    (entry.value.hasUnscopedRequest || !_scrollUpdateScheduled),
               )
               .map(
                 (entry) => (
@@ -187,6 +189,7 @@ final class LibraryCoverUiController {
                   priority: _priorityForRequest(entry.value),
                 ),
               )
+              .where((entry) => entry.priority < 0)
               .toList()
             ..sort((left, right) => left.priority.compareTo(right.priority));
       for (final entry in requests) {

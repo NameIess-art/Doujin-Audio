@@ -18,7 +18,6 @@ final class AppInteractionEffectsController {
        _interaction =
            interactionCoordinator ?? UiInteractionCoordinator.instance {
     _interaction.addListener(_syncInteractionState);
-    _interaction.navigationAllowed.addListener(_syncInteractionState);
     _syncInteractionState();
   }
 
@@ -44,7 +43,6 @@ final class AppInteractionEffectsController {
     if (_disposed) return;
     _disposed = true;
     _interaction.removeListener(_syncInteractionState);
-    _interaction.navigationAllowed.removeListener(_syncInteractionState);
     _library.setInteractionPaused(false);
     _libraryCovers.setInteractionPaused(false);
     _notifications.setSynchronizationPaused(false);

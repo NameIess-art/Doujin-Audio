@@ -5,7 +5,6 @@ import '../../../core/media/list_sorting_utils.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
-import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
 
 class LibrarySortRequest {
@@ -18,7 +17,6 @@ class LibrarySortRequest {
     this.pinnedPaths = const <String>{},
     this.roots = const <String>[],
     this.details = const <AudioDetail>[],
-    this.categorySnapshot,
   });
 
   final List<LibraryNode> nodes;
@@ -29,7 +27,6 @@ class LibrarySortRequest {
   final Set<String> pinnedPaths;
   final List<String> roots;
   final List<AudioDetail> details;
-  final AudioLibraryCategorySnapshot? categorySnapshot;
 
   Future<LibrarySortPayload> toPayload() async {
     final needsDetails =
@@ -89,8 +86,8 @@ typedef LibrarySortItem = ({
   bool pinned,
 });
 
-// Only scalar summaries cross the isolate boundary; folder graphs, tracks and
-// category snapshots remain with their existing owners on the UI isolate.
+// Only scalar summaries cross the isolate boundary; folder graphs and tracks
+// remain with their existing owners on the UI isolate.
 class LibrarySortPayload {
   LibrarySortPayload._({
     required this.criterion,
@@ -194,14 +191,10 @@ LibrarySortValue _librarySortValue(
   AudioDetail? detail;
   if ((needsDetail || needsWorkTitle) && node is FolderNode) {
     final target = AudioDetailTarget.libraryRootFolder(node.path);
-    detail =
-        details[_detailKey(target)] ??
-        request.categorySnapshot?.detailFor(target);
+    detail = details[_detailKey(target)];
   } else if (needsDetail && firstTrack != null) {
     final target = AudioDetailTarget.singleAudioFile(firstTrack.path);
-    detail =
-        details[_detailKey(target)] ??
-        request.categorySnapshot?.detailFor(target);
+    detail = details[_detailKey(target)];
   }
   final voiceActors = criterion == LibrarySortCriterion.voiceActor
       ? detail?.voiceActors ??

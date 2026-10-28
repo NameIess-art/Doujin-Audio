@@ -2,13 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
-import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
-import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
 import 'package:doujin_audio/features/library/application/library_sorting.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
-
-import 'support/app_runtime_test_fixture.dart';
 
 FolderNode _folder(String name, String path) {
   return FolderNode(name, path);
@@ -63,7 +59,6 @@ Future<List<LibraryNode>> sortLibraryNodes({
   required bool groupByLibrary,
   List<String> roots = const <String>[],
   List<AudioDetail> details = const <AudioDetail>[],
-  AudioLibraryCategorySnapshot? categorySnapshot,
   WorkNameDisplay workNameDisplay = WorkNameDisplay.workTitle,
   Set<String> pinnedPaths = const <String>{},
 }) async {
@@ -75,7 +70,6 @@ Future<List<LibraryNode>> sortLibraryNodes({
       groupByLibrary: groupByLibrary,
       roots: roots,
       details: details,
-      categorySnapshot: categorySnapshot,
       workNameDisplay: workNameDisplay,
       pinnedPaths: pinnedPaths,
     ).toPayload(),
@@ -84,15 +78,6 @@ Future<List<LibraryNode>> sortLibraryNodes({
 }
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
-  late LibraryFacade library;
-
-  setUp(() {
-    final graph = createTestRuntimeGraph();
-    library = graph.library;
-  });
-
   test(
     'large sorting preparation lets pending input run before completion',
     () async {
@@ -221,9 +206,6 @@ void main() {
       criterion: LibrarySortCriterion.name,
       ascending: true,
       groupByLibrary: false,
-      roots: [...library.watchedLibraries, ...library.watchedFolders],
-      details: library.detailCacheService.resolvedDetails,
-      categorySnapshot: library.categorySnapshot,
       pinnedPaths: {},
     );
     expect(normal.map((n) => n.name).toList(), ['Alpha', 'Beta', 'Gamma']);
@@ -234,9 +216,6 @@ void main() {
       criterion: LibrarySortCriterion.name,
       ascending: true,
       groupByLibrary: false,
-      roots: [...library.watchedLibraries, ...library.watchedFolders],
-      details: library.detailCacheService.resolvedDetails,
-      categorySnapshot: library.categorySnapshot,
       pinnedPaths: {'/music/gamma'},
     );
     expect(pinned.map((n) => n.name).toList(), ['Gamma', 'Alpha', 'Beta']);
@@ -256,9 +235,6 @@ void main() {
         criterion: LibrarySortCriterion.name,
         ascending: true,
         groupByLibrary: false,
-        roots: [...library.watchedLibraries, ...library.watchedFolders],
-        details: library.detailCacheService.resolvedDetails,
-        categorySnapshot: library.categorySnapshot,
         pinnedPaths: {'/music/b', '/music/d'},
       );
       expect(pinnedAsc.map((n) => n.name).toList(), ['B', 'D', 'A', 'C']);
@@ -268,9 +244,6 @@ void main() {
         criterion: LibrarySortCriterion.name,
         ascending: false,
         groupByLibrary: false,
-        roots: [...library.watchedLibraries, ...library.watchedFolders],
-        details: library.detailCacheService.resolvedDetails,
-        categorySnapshot: library.categorySnapshot,
         pinnedPaths: {'/music/b', '/music/d'},
       );
       expect(pinnedDesc.map((n) => n.name).toList(), ['D', 'B', 'C', 'A']);
@@ -290,9 +263,6 @@ void main() {
         criterion: LibrarySortCriterion.name,
         ascending: true,
         groupByLibrary: false,
-        roots: [...library.watchedLibraries, ...library.watchedFolders],
-        details: library.detailCacheService.resolvedDetails,
-        categorySnapshot: library.categorySnapshot,
         pinnedPaths: {'C:\\Music\\Track1.mp3'},
       );
       expect(pinned.map((n) => n.name).toList(), [
@@ -309,9 +279,6 @@ void main() {
       criterion: LibrarySortCriterion.name,
       ascending: true,
       groupByLibrary: false,
-      roots: [...library.watchedLibraries, ...library.watchedFolders],
-      details: library.detailCacheService.resolvedDetails,
-      categorySnapshot: library.categorySnapshot,
     );
     expect(sortedFolders.map((node) => node.name), ['Alpha', 'Beta']);
 
@@ -323,9 +290,6 @@ void main() {
       criterion: LibrarySortCriterion.name,
       ascending: true,
       groupByLibrary: false,
-      roots: [...library.watchedLibraries, ...library.watchedFolders],
-      details: library.detailCacheService.resolvedDetails,
-      categorySnapshot: library.categorySnapshot,
     );
     expect(sortedTracks.map((node) => node.name), ['Alpha', 'Beta']);
   });
@@ -333,18 +297,13 @@ void main() {
   test('voice actor detail changes reorder library nodes', () async {
     final first = _track('First', '/first.mp3');
     final second = _track('Second', '/second.mp3');
+    final details = <AudioDetailTarget, AudioDetail>{};
 
     void updateDetail(TrackNode node, String voiceActor) {
-      library.detailCacheService.markChanged(
-        AudioDetail(
-          target: library.audioDetailTargetForTrack(node.track),
-          rjCode: '',
-          workTitle: '',
-          circleName: '',
-          voiceActors: [voiceActor],
-          tags: const [],
-        ),
-      );
+      final target = AudioDetailTarget.singleAudioFile(node.track.path);
+      details[target] = AudioDetail.empty(
+        target,
+      ).copyWith(voiceActors: [voiceActor]);
     }
 
     Future<List<String>> sortedNames() async => (await sortLibraryNodes(
@@ -352,9 +311,7 @@ void main() {
       criterion: LibrarySortCriterion.voiceActor,
       ascending: true,
       groupByLibrary: false,
-      roots: [...library.watchedLibraries, ...library.watchedFolders],
-      details: library.detailCacheService.resolvedDetails,
-      categorySnapshot: library.categorySnapshot,
+      details: details.values.toList(),
     )).map((node) => node.name).toList();
 
     updateDetail(first, 'Zeta');
@@ -372,17 +329,16 @@ void main() {
       final first = _LazyFolderNode('RJ100', '/music/RJ100');
       final second = _LazyFolderNode('RJ200', '/music/RJ200');
       final third = _LazyFolderNode('RJ300', '/music/RJ300');
-      for (final (folder, title) in [
-        (first, 'Zulu'),
-        (second, '  Alpha 10  '),
-        (third, 'Alpha 2'),
-      ]) {
-        library.detailCacheService.markChanged(
+      final details = [
+        for (final (folder, title) in [
+          (first, 'Zulu'),
+          (second, '  Alpha 10  '),
+          (third, 'Alpha 2'),
+        ])
           AudioDetail.empty(
             AudioDetailTarget.libraryRootFolder(folder.path),
           ).copyWith(workTitle: title),
-        );
-      }
+      ];
 
       Future<List<LibraryNode>> sorted(
         WorkNameDisplay display,
@@ -392,9 +348,7 @@ void main() {
         criterion: LibrarySortCriterion.name,
         ascending: ascending,
         groupByLibrary: false,
-        roots: [...library.watchedLibraries, ...library.watchedFolders],
-        details: library.detailCacheService.resolvedDetails,
-        categorySnapshot: library.categorySnapshot,
+        details: details,
         workNameDisplay: display,
       );
 
@@ -424,9 +378,7 @@ void main() {
           criterion: LibrarySortCriterion.name,
           ascending: true,
           groupByLibrary: false,
-          roots: [...library.watchedLibraries, ...library.watchedFolders],
-          details: library.detailCacheService.resolvedDetails,
-          categorySnapshot: library.categorySnapshot,
+          details: details,
           pinnedPaths: {first.path},
         ),
         [first, third, second],
@@ -439,26 +391,21 @@ void main() {
     final blank = _folder('Beta', '/blank');
     final nested = FolderNode('Delta', '/nested', depth: 1);
     final track = TrackNode(_NoMetadataTrack('Gamma', '/gamma.mp3'));
-    library.detailCacheService
-      ..markChanged(
-        AudioDetail.empty(
-          AudioDetailTarget.libraryRootFolder(blank.path),
-        ).copyWith(workTitle: '   '),
-      )
-      ..markChanged(
-        AudioDetail.empty(
-          AudioDetailTarget.libraryRootFolder(nested.path),
-        ).copyWith(workTitle: 'A hidden title'),
-      );
+    final details = [
+      AudioDetail.empty(
+        AudioDetailTarget.libraryRootFolder(blank.path),
+      ).copyWith(workTitle: '   '),
+      AudioDetail.empty(
+        AudioDetailTarget.libraryRootFolder(nested.path),
+      ).copyWith(workTitle: 'A hidden title'),
+    ];
     expect(
       await sortLibraryNodes(
         nodes: [track, nested, blank, missing],
+        details: details,
         criterion: LibrarySortCriterion.name,
         ascending: true,
         groupByLibrary: false,
-        roots: [...library.watchedLibraries, ...library.watchedFolders],
-        details: library.detailCacheService.resolvedDetails,
-        categorySnapshot: library.categorySnapshot,
       ),
       [missing, blank, nested, track],
     );

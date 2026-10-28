@@ -737,16 +737,14 @@ void main() {
     await tester.pump();
     final beforeBatch = sorted;
     final buildsBeforeBatch = builds;
-    var snapshotReady = false;
-    final snapshot = fixture.library.audioLibraryCategorySnapshot().then((
-      value,
-    ) {
-      snapshotReady = true;
-      return value;
-    });
+    var detailsReady = false;
+    final details = fixture.library.detailCacheService.loadMany([
+      AudioDetailTarget.libraryRootFolder('/music/RJ100'),
+      AudioDetailTarget.libraryRootFolder('/music/RJ200'),
+    ]).then((_) => detailsReady = true);
     repository.ready.complete();
-    await _waitForSort(tester, () => snapshotReady);
-    await snapshot;
+    await _waitForSort(tester, () => detailsReady);
+    await details;
     await tester.pump();
     expect(identical(sorted, beforeBatch), isTrue);
     expect(builds, buildsBeforeBatch);

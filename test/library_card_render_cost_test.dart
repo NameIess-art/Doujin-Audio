@@ -98,9 +98,6 @@ void main() {
           );
           final root = find.byWidget(content).evaluate().single;
           final cost = _countTree(root);
-          debugPrint(
-            'LIBRARY_CARD_RENDER_COST $platform uncovered=$uncovered $cost',
-          );
           // The previous row mounted 256-258 elements, 144-146 render objects
           // and 42 states, before adding actual artwork or a swipe shell.
           expect(cost.elements, lessThanOrEqualTo(215));

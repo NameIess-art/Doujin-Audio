@@ -1,5 +1,4 @@
 import 'asmr_providers.dart';
-import 'asmr_theme.dart';
 import '../../library/presentation/library_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import '../../../core/widgets/drag_only_scrollbar.dart';
@@ -148,7 +147,7 @@ Future<void> _addAsmrWorksToPlaylist({
     icon: failedIds.isEmpty
         ? Icons.playlist_add_check_rounded
         : Icons.error_outline_rounded,
-    iconColor: AppDesignTokens.of(context).asmrAccent,
+    iconColor: Theme.of(context).colorScheme.primary,
   );
 }
 
@@ -228,7 +227,7 @@ class _AsmrBatchSelectionHeader extends ConsumerWidget {
     return TopPageHeader(
       key: ValueKey<String>('${keyPrefix}_batch_selection_header'),
       icon: Icons.cloud_rounded,
-      iconColor: AppDesignTokens.of(context).asmrAccent,
+      iconColor: Theme.of(context).colorScheme.primary,
       topCapsuleTitle: i18n.tr('multi_select'),
       topCapsuleData: i18n.tr('selected_count', {
         'count': selectedWorks.length.toString(),
@@ -780,12 +779,12 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       selected: _selectedCategory,
       onSelected: _selectCategory,
       labelBuilder: (category) => i18n.tr(_asmrCategoryLabelKey(category)),
-      accentColor: AppDesignTokens.of(context).asmrAccent,
+      accentColor: Theme.of(context).colorScheme.primary,
     );
   }
 
   Future<void> _refreshCategoryWithFeedback({bool showSnackbar = false}) async {
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) return;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
@@ -799,7 +798,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         context,
         i18n.tr('loading_dot'),
         icon: Icons.sync_rounded,
-        iconColor: asmrBlue,
+        iconColor: primaryColor,
       );
     }
 
@@ -816,7 +815,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         i18n.tr('asmr_refresh_failed'),
         tone: AppFeedbackTone.warning,
         icon: Icons.sync_problem_rounded,
-        iconColor: asmrBlue,
+        iconColor: primaryColor,
       );
       return;
     }
@@ -835,7 +834,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       icon: hasUpdates
           ? Icons.sync_rounded
           : Icons.check_circle_outline_rounded,
-      iconColor: asmrBlue,
+      iconColor: primaryColor,
     );
   }
 
@@ -854,7 +853,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     return showAppOverlayPanel<T>(
       context: context,
       barrierLabel: i18n.tr('close'),
-      themeBuilder: _asmrPanelTheme,
       builder: builder,
     );
   }
@@ -1035,50 +1033,78 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                   final selectedWorks = _isSelectionMode
                       ? _selectedWorks()
                       : const <AsmrWork>[];
-                  return Theme(
-                    data: asmrThemeData(context),
-                    child: AppHeaderTransition(
-                      child: _isSelectionMode
-                          ? _AsmrBatchSelectionHeader(
-                              keyPrefix: 'asmr',
-                              i18n: i18n,
-                              selectedWorks: selectedWorks,
-                              onAddToPlaylist:
-                                  selectedWorks.isEmpty ||
-                                      !ref.watch(coreRuntimeReadyProvider)
-                                  ? null
-                                  : _addSelectedWorksToPlaylist,
-                              onDownload: selectedWorks.isEmpty
-                                  ? null
-                                  : _downloadSelectedWorks,
-                              onToggleFavorite: selectedWorks.isEmpty
-                                  ? null
-                                  : _toggleSelectedFavorites,
-                              onExit: _exitSelectionMode,
-                            )
-                          : TopPageHeader(
-                              key: _headerKey,
-                              icon: Icons.cloud_rounded,
-                              iconColor: AppDesignTokens.of(context).asmrAccent,
-                              collapseController: _scrollController,
-                              topCapsuleTitle: i18n.tr('online_audio_library'),
-                              topCapsuleData: asmrStatsText,
-                              title: i18n.tr('online_audio_library'),
-                              titleWidget: _buildCategorySwitcher(i18n),
-                              trailing: SizedBox(
-                                height: 38,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
+                  return AppHeaderTransition(
+                    child: _isSelectionMode
+                        ? _AsmrBatchSelectionHeader(
+                            keyPrefix: 'asmr',
+                            i18n: i18n,
+                            selectedWorks: selectedWorks,
+                            onAddToPlaylist:
+                                selectedWorks.isEmpty ||
+                                    !ref.watch(coreRuntimeReadyProvider)
+                                ? null
+                                : _addSelectedWorksToPlaylist,
+                            onDownload: selectedWorks.isEmpty
+                                ? null
+                                : _downloadSelectedWorks,
+                            onToggleFavorite: selectedWorks.isEmpty
+                                ? null
+                                : _toggleSelectedFavorites,
+                            onExit: _exitSelectionMode,
+                          )
+                        : TopPageHeader(
+                            key: _headerKey,
+                            icon: Icons.cloud_rounded,
+                            iconColor: Theme.of(context).colorScheme.primary,
+                            collapseController: _scrollController,
+                            topCapsuleTitle: i18n.tr('online_audio_library'),
+                            topCapsuleData: asmrStatsText,
+                            title: i18n.tr('online_audio_library'),
+                            titleWidget: _buildCategorySwitcher(i18n),
+                            trailing: SizedBox(
+                              height: 38,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  HeaderFloatingButton(
+                                    child: IconButton(
+                                      key: const ValueKey<String>(
+                                        'asmr_search_button',
+                                      ),
+                                      onPressed: _openSearchPage,
+                                      icon: const Icon(Icons.search_rounded),
+                                      tooltip: i18n.tr('search'),
+                                      iconSize: 20,
+                                      padding: EdgeInsets.zero,
+                                      constraints:
+                                          const BoxConstraints.tightFor(
+                                            width: 38,
+                                            height: 38,
+                                          ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const WorkPageTranslationButton(
+                                    buttonKey: 'asmr_translation',
+                                    compact: true,
+                                  ),
+                                  if (isLandscape) ...[
+                                    const SizedBox(width: 8),
                                     HeaderFloatingButton(
                                       child: IconButton(
-                                        key: const ValueKey<String>(
-                                          'asmr_search_button',
+                                        key: const ValueKey(
+                                          'asmr_refresh_button',
                                         ),
-                                        onPressed: _openSearchPage,
-                                        icon: const Icon(Icons.search_rounded),
-                                        tooltip: i18n.tr('search'),
+                                        onPressed: globalInitialized
+                                            ? () => unawaited(
+                                                _refreshCategoryWithFeedback(
+                                                  showSnackbar: true,
+                                                ),
+                                              )
+                                            : null,
+                                        icon: const Icon(Icons.refresh_rounded),
+                                        tooltip: i18n.tr('refresh'),
                                         iconSize: 20,
                                         padding: EdgeInsets.zero,
                                         constraints:
@@ -1088,52 +1114,19 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                                             ),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    const WorkPageTranslationButton(
-                                      buttonKey: 'asmr_translation',
-                                      compact: true,
-                                    ),
-                                    if (isLandscape) ...[
-                                      const SizedBox(width: 8),
-                                      HeaderFloatingButton(
-                                        child: IconButton(
-                                          key: const ValueKey(
-                                            'asmr_refresh_button',
-                                          ),
-                                          onPressed: globalInitialized
-                                              ? () => unawaited(
-                                                  _refreshCategoryWithFeedback(
-                                                    showSnackbar: true,
-                                                  ),
-                                                )
-                                              : null,
-                                          icon: const Icon(
-                                            Icons.refresh_rounded,
-                                          ),
-                                          tooltip: i18n.tr('refresh'),
-                                          iconSize: 20,
-                                          padding: EdgeInsets.zero,
-                                          constraints:
-                                              const BoxConstraints.tightFor(
-                                                width: 38,
-                                                height: 38,
-                                              ),
-                                        ),
-                                      ),
-                                    ],
-                                    if (hasDownloadManager)
-                                      const _AsmrDownloadProgressInlineButton(),
-                                    const SizedBox(width: 8),
-                                    HeaderFloatingButton(
-                                      child: _AsmrAccountButton(
-                                        onPressed: _showAccountDialog,
-                                      ),
-                                    ),
                                   ],
-                                ),
+                                  if (hasDownloadManager)
+                                    const _AsmrDownloadProgressInlineButton(),
+                                  const SizedBox(width: 8),
+                                  HeaderFloatingButton(
+                                    child: _AsmrAccountButton(
+                                      onPressed: _showAccountDialog,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                    ),
+                          ),
                   );
                 },
               ),

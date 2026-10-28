@@ -38,7 +38,6 @@ Widget _subject({
     epoch: 0,
     revision: 0,
   ),
-  bool asmr = false,
   int? queueColor,
   Brightness brightness = Brightness.light,
   bool disableAnimations = false,
@@ -58,7 +57,6 @@ Widget _subject({
       initialCoverPath: initialPath,
       requestKey: request,
       coverRevision: coverRevision,
-      isAsmr: asmr,
       queueColorValue: queueColor,
       transitionActive: transition,
       child: const SizedBox(key: _probeKey),
@@ -154,16 +152,15 @@ void main() {
   setUp(() => UiInteractionCoordinator.instance.resetForTest());
   tearDown(() => UiInteractionCoordinator.instance.resetForTest());
 
-  testWidgets('fallback precedence is queue, ASMR, then application theme', (
+  testWidgets('fallback precedence is queue then application theme', (
     tester,
   ) async {
-    for (final (asmr, queue, expected) in [
-      (false, null, _base(Brightness.light).colorScheme.primary),
-      (true, null, AppDesignTokens.light.asmrAccent),
-      (true, Colors.orange.toARGB32(), Color(Colors.orange.toARGB32())),
+    for (final (queue, expected) in [
+      (null, _base(Brightness.light).colorScheme.primary),
+      (Colors.orange.toARGB32(), Color(Colors.orange.toARGB32())),
     ]) {
       await tester.pumpWidget(
-        _subject(path: Future<String?>.value(), asmr: asmr, queueColor: queue),
+        _subject(path: Future<String?>.value(), queueColor: queue),
       );
       await tester.pumpAndSettle();
       expect(_theme(tester).colorScheme.primary, expected);
@@ -425,7 +422,7 @@ void main() {
       await tester.runAsync(() => file.writeAsBytes([1, 2, 3], flush: true));
       for (final path in ['${file.path}.missing', file.path]) {
         await tester.pumpWidget(
-          _subject(path: Future.value(path), request: path, asmr: true),
+          _subject(path: Future.value(path), request: path),
         );
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 80)),
@@ -433,22 +430,19 @@ void main() {
         await tester.pumpAndSettle();
         expect(
           _theme(tester).colorScheme.primary,
-          AppDesignTokens.light.asmrAccent,
+          _base(Brightness.light).colorScheme.primary,
         );
         expect(tester.takeException(), isNull);
       }
       await _cover(tester, Colors.green, replace: file);
       await tester.pumpWidget(
-        _subject(
-          path: Future.value(file.path),
-          request: 'recovered',
-          asmr: true,
-        ),
+        _subject(path: Future.value(file.path), request: 'recovered'),
       );
       await _waitForTarget(
         tester,
         (theme) =>
-            theme.colorScheme.primary != AppDesignTokens.light.asmrAccent,
+            theme.colorScheme.primary !=
+            _base(Brightness.light).colorScheme.primary,
       );
       await tester.pumpAndSettle();
       expect(

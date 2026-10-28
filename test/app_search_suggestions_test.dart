@@ -6,6 +6,40 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
 
 void main() {
+  testWidgets('all three search sections have no background', (
+    tester,
+  ) async {
+    for (final brightness in Brightness.values) {
+      final theme = ThemeData(brightness: brightness);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: CustomScrollView(
+              slivers: [
+                for (final title in ['History', 'Voices', 'Tags'])
+                  AppSearchSuggestionSection(
+                    title: title,
+                    items: [title],
+                    isSelected: (_) => false,
+                    onToggle: (_) {},
+                    emptyText: 'Empty',
+                    expandLabel: 'Expand',
+                    collapseLabel: 'Collapse',
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(DecoratedSliver), findsNothing);
+      expect(find.byType(AppSearchSuggestionSection), findsNWidgets(3));
+      expect(find.byType(InputChip), findsNWidgets(3));
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets(
     'folding reacts to width and each section retains its own state',
     (tester) async {

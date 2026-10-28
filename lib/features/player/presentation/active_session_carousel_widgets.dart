@@ -246,10 +246,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     required double coverDimension,
     required EdgeInsets contentPadding,
   }) {
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final activeColor = (currentTrack?.usesAsmrVisualTheme ?? false)
-        ? asmrBlue
-        : cs.primary;
+    final activeColor = cs.primary;
     final hasAsmrOnePlaybackError =
         view.error != null && (currentTrack?.isRemoteAsmr ?? false);
     Widget titleSubtitle = _ActiveSessionTitleSubtitle(

@@ -56,9 +56,6 @@ class MusicTrack {
       remoteMetadataKind == remoteMetadataKindAsmrOne ||
       remoteMetadataKind == remoteMetadataKindJapaneseAsmr;
 
-  /// Whether this track uses specialized ASMR visual styling and accent.
-  bool get usesAsmrVisualTheme => isRemoteAsmr;
-
   String get remoteCircleName {
     final circleName = remoteMetadata?['circleName'];
     if (circleName is String && circleName.trim().isNotEmpty) {

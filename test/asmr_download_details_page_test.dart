@@ -328,7 +328,9 @@ void main() {
       );
       expectEntryIcon(
         AppDesignTokens.audioFileIcon,
-        AppDesignTokens.light.asmrAccent,
+        Theme.of(
+          tester.element(find.byType(AsmrDownloadDetailsPage)),
+        ).colorScheme.primary,
       );
       expectEntryIcon(
         AppDesignTokens.textFileIcon,

@@ -486,7 +486,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final accent = AppDesignTokens.of(context).asmrAccent;
+    final accent = Theme.of(context).colorScheme.primary;
     final categories = kAsmrSelectableCategories
         .map(
           (category) => AppSearchCategory<AsmrCategoryType>(
@@ -561,23 +561,20 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
               ? null
               : () => unawaited(_onSubmitted(_controller.text)),
           controlsOverlay: _isSelectionMode
-              ? Theme(
-                  data: asmrThemeData(context),
-                  child: _AsmrBatchSelectionHeader(
-                    keyPrefix: 'asmr_search',
-                    i18n: i18n,
-                    selectedWorks: selectedWorks,
-                    onAddToPlaylist: selectedWorks.isEmpty
-                        ? null
-                        : _addSelectedWorksToPlaylist,
-                    onDownload: selectedWorks.isEmpty
-                        ? null
-                        : _downloadSelectedWorks,
-                    onToggleFavorite: selectedWorks.isEmpty
-                        ? null
-                        : _toggleSelectedFavorites,
-                    onExit: _exitSelectionMode,
-                  ),
+              ? _AsmrBatchSelectionHeader(
+                  keyPrefix: 'asmr_search',
+                  i18n: i18n,
+                  selectedWorks: selectedWorks,
+                  onAddToPlaylist: selectedWorks.isEmpty
+                      ? null
+                      : _addSelectedWorksToPlaylist,
+                  onDownload: selectedWorks.isEmpty
+                      ? null
+                      : _downloadSelectedWorks,
+                  onToggleFavorite: selectedWorks.isEmpty
+                      ? null
+                      : _toggleSelectedFavorites,
+                  onExit: _exitSelectionMode,
                 )
               : null,
           body: Builder(

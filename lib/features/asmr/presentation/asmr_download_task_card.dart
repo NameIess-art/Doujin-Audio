@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../application/asmr_download_models.dart';
-import '../../../app/theme/app_design_tokens.dart';
 
 import 'asmr_download_format.dart';
 
@@ -34,7 +33,7 @@ class _AsmrDownloadTaskCardState extends State<AsmrDownloadTaskCard> {
     final task = widget.task;
     final i18n = widget.i18n;
     final cs = Theme.of(context).colorScheme;
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     final retryAttempt = task.isActive
         ? task.fileRetryAttempts.values.fold<int?>(
             null,
@@ -126,8 +125,8 @@ class _AsmrDownloadTaskCardState extends State<AsmrDownloadTaskCard> {
                   child: LinearProgressIndicator(
                     value: task.progress,
                     minHeight: 6,
-                    color: asmrBlue,
-                    backgroundColor: asmrBlue.withValues(alpha: 0.2),
+                    color: primaryColor,
+                    backgroundColor: primaryColor.withValues(alpha: 0.2),
                   ),
                 ),
                 const SizedBox(height: 12),

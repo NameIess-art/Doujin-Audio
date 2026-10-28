@@ -467,7 +467,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final theme = Theme.of(context);
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     double? listWidth;
     Widget? workList;
     final content = ScrollActivityGate(
@@ -507,7 +507,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
           child: GlassRefreshIndicator(
             key: _refreshIndicatorKey,
             lockChildWhileRefreshing: true,
-            color: asmrBlue,
+            color: primaryColor,
             backgroundColor: Theme.of(
               context,
             ).colorScheme.surfaceContainerHighest,
@@ -651,7 +651,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                                         height: 22,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2.2,
-                                          color: asmrBlue,
+                                          color: primaryColor,
                                         ),
                                       ),
                               ),
@@ -779,8 +779,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         scrollbarTheme: theme.scrollbarTheme.copyWith(
           // Value equality avoids invalidating every card's Theme on paging.
           thumbColor: WidgetStateProperty.fromMap({
-            WidgetState.dragged: asmrBlue,
-            WidgetState.hovered: asmrBlue.withValues(alpha: 0.7),
+            WidgetState.dragged: primaryColor,
+            WidgetState.hovered: primaryColor.withValues(alpha: 0.7),
             WidgetState.any: theme.colorScheme.outlineVariant.withValues(
               alpha: 0.5,
             ),

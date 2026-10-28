@@ -19,7 +19,6 @@ import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
-import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -5186,6 +5185,103 @@ void main() {
     });
   }
 
+  for (final reducedMotion in [false, true]) {
+    testWidgets(
+      'new playback queues fade in over 300 ms (reduced: $reducedMotion)',
+      (tester) async {
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          notificationsChannel,
+          (_) async => <String, Object?>{'ok': true, 'value': null},
+        );
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+        );
+        tester.view.physicalSize =
+            defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(1280, 800)
+            : const Size(400, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+            FakeAccessibilityFeatures(disableAnimations: reducedMotion);
+        addTearDown(
+          tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+        );
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final playback = fixture.runtimeGraph.playback;
+        final existing = playback.createPlaybackQueue('Existing queue');
+        fixture.playbackService.syncSlice(
+          activeSessions: [existing],
+          playingSessionCount: 0,
+          focusedSessionId: existing.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        await tester.pumpWidget(fixture.build(const PlaylistTab()));
+        await tester.pumpAndSettle();
+
+        double opacityOf(String id) => tester
+            .widget<Opacity>(
+              find
+                  .descendant(
+                    of: find.byKey(ValueKey('playlist_queue_appearance_$id')),
+                    matching: find.byType(Opacity),
+                  )
+                  .first,
+            )
+            .opacity;
+
+        expect(opacityOf(existing.id), 1);
+        await tester.tap(
+          find.byTooltip(fixture.languageProvider.tr('add_playback_queue')),
+        );
+        await tester.pump();
+        final created = playback.activeSessions.singleWhere(
+          (session) => session.id != existing.id,
+        );
+        final card = find.byWidgetPredicate(
+          (widget) =>
+              widget is PlaybackQueueCard && widget.session.id == created.id,
+        );
+        final initialRect = tester.getRect(card);
+        expect(opacityOf(existing.id), 1);
+        expect(opacityOf(created.id), reducedMotion ? 1 : 0);
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(
+          opacityOf(created.id),
+          reducedMotion
+              ? equals(1)
+              : closeTo(kAppFadeCurve.transform(0.5), 0.001),
+        );
+        expect(tester.getRect(card), initialRect);
+        await tester.pump(const Duration(milliseconds: 149));
+        expect(
+          opacityOf(created.id),
+          reducedMotion ? equals(1) : lessThan(1),
+        );
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(opacityOf(created.id), 1);
+
+        // Selection rebuilds the row without replaying its appearance.
+        tester.widget<PlaybackQueueCard>(card).onLongPress!();
+        await tester.pump();
+        expect(opacityOf(created.id), 1);
+        expect(opacityOf(existing.id), 1);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets('playlist more menu and sort button remain available', (
     WidgetTester tester,
   ) async {
@@ -8215,11 +8311,6 @@ void main() {
           .darkTheme;
       final expectedTheme = kind == 'queue'
           ? createPlaybackQueueSessionDetailTheme(base, queueColor)
-          : kind == 'asmr'
-          ? createAsmrSessionDetailTheme(
-              base,
-              base.extension<AppDesignTokens>()!,
-            )
           : base;
       final expectedPrimary = expectedTheme.colorScheme.primary;
       final play = find.byKey(

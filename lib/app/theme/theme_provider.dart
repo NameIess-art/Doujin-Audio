@@ -309,39 +309,29 @@ typedef ThemePreferenceWriter = Future<bool> Function(String key, Object value);
 
 class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   static const _themeModeKey = 'themeMode';
-  static const _differentiateAsmrThemeKey = 'differentiateAsmrTheme';
   static const _pureBlackThemeKey = 'pureBlackTheme';
   static const _barGlassEnabledKey = 'barGlassEnabled';
   static const _appThemeColorKey = 'appThemeColor';
-  static const _asmrThemeColorKey = 'asmrThemeColor';
 
   ThemeMode _themeMode = ThemeMode.system;
-  bool _differentiateAsmrTheme = true;
   bool _pureBlackTheme = false;
   bool _barGlassEnabled = false;
   ThemeAccentPreset _appThemeColor = ThemeAccentPreset.rose;
-  ThemeAccentPreset _asmrThemeColor = ThemeAccentPreset.blue;
   late ThemeMode _persistedThemeMode;
-  late bool _persistedDifferentiateAsmrTheme;
   late bool _persistedPureBlackTheme;
   late bool _persistedBarGlassEnabled;
   late ThemeAccentPreset _persistedAppThemeColor;
-  late ThemeAccentPreset _persistedAsmrThemeColor;
   int _themeModeMutation = 0;
-  int _differentiateAsmrThemeMutation = 0;
   int _pureBlackThemeMutation = 0;
   int _barGlassEnabledMutation = 0;
   int _appThemeColorMutation = 0;
-  int _asmrThemeColorMutation = 0;
   late ThemeData _lightTheme;
   late ThemeData _darkTheme;
 
   ThemeMode get themeMode => _themeMode;
-  bool get differentiateAsmrTheme => _differentiateAsmrTheme;
   bool get pureBlackTheme => _pureBlackTheme;
   bool get barGlassEnabled => _barGlassEnabled;
   ThemeAccentPreset get appThemeColor => _appThemeColor;
-  ThemeAccentPreset get asmrThemeColor => _asmrThemeColor;
   ThemeData get lightTheme => _lightTheme;
   ThemeData get darkTheme => _darkTheme;
 
@@ -405,33 +395,15 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   void _loadThemeSync({bool readPreferences = true}) {
     if (readPreferences) {
       _themeMode = readThemeModeSync();
-      _differentiateAsmrTheme =
-          AppPreferences.getBoolSync(_differentiateAsmrThemeKey) ?? true;
       _pureBlackTheme = AppPreferences.getBoolSync(_pureBlackThemeKey) ?? false;
       _barGlassEnabled =
           AppPreferences.getBoolSync(_barGlassEnabledKey) ?? false;
       _appThemeColor = readAppThemeColorSync();
-      _asmrThemeColor = _readThemeColor(
-        AppPreferences.getStringSync(_asmrThemeColorKey),
-        ThemeAccentPreset.blue,
-      );
     }
     _persistedThemeMode = _themeMode;
-    _persistedDifferentiateAsmrTheme = _differentiateAsmrTheme;
     _persistedPureBlackTheme = _pureBlackTheme;
     _persistedBarGlassEnabled = _barGlassEnabled;
     _persistedAppThemeColor = _appThemeColor;
-    _persistedAsmrThemeColor = _asmrThemeColor;
-  }
-
-  ThemeAccentPreset _readThemeColor(
-    String? storedValue,
-    ThemeAccentPreset fallback,
-  ) {
-    return ThemeAccentPreset.values.firstWhere(
-      (preset) => preset.name == storedValue,
-      orElse: () => fallback,
-    );
   }
 
   Future<bool> setThemeMode(ThemeMode value) async {
@@ -450,37 +422,13 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     return false;
   }
 
-  Future<bool> setDifferentiateAsmrTheme(bool value) async {
-    if (_differentiateAsmrTheme == value) return true;
-    final mutation = ++_differentiateAsmrThemeMutation;
-    _differentiateAsmrTheme = value;
-    _rebuildThemes();
-    notifyListeners();
-    final persisted = await _writePreferenceInOrder(
-      _differentiateAsmrThemeKey,
-      value,
-    );
-    if (persisted) {
-      _persistedDifferentiateAsmrTheme = value;
-      return true;
-    }
-    if (mutation != _differentiateAsmrThemeMutation) return false;
-    _differentiateAsmrTheme = _persistedDifferentiateAsmrTheme;
-    _rebuildThemes();
-    notifyListeners();
-    return false;
-  }
-
   Future<bool> setPureBlackTheme(bool value) async {
     if (_pureBlackTheme == value) return true;
     final mutation = ++_pureBlackThemeMutation;
     _pureBlackTheme = value;
     _rebuildThemes();
     notifyListeners();
-    final persisted = await _writePreferenceInOrder(
-      _pureBlackThemeKey,
-      value,
-    );
+    final persisted = await _writePreferenceInOrder(_pureBlackThemeKey, value);
     if (persisted) {
       _persistedPureBlackTheme = value;
       return true;
@@ -526,27 +474,6 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     }
     if (mutation != _appThemeColorMutation) return false;
     _appThemeColor = _persistedAppThemeColor;
-    _rebuildThemes();
-    notifyListeners();
-    return false;
-  }
-
-  Future<bool> setAsmrThemeColor(ThemeAccentPreset value) async {
-    if (_asmrThemeColor == value) return true;
-    final mutation = ++_asmrThemeColorMutation;
-    _asmrThemeColor = value;
-    _rebuildThemes();
-    notifyListeners();
-    final persisted = await _writePreferenceInOrder(
-      _asmrThemeColorKey,
-      value.name,
-    );
-    if (persisted) {
-      _persistedAsmrThemeColor = value;
-      return true;
-    }
-    if (mutation != _asmrThemeColorMutation) return false;
-    _asmrThemeColor = _persistedAsmrThemeColor;
     _rebuildThemes();
     notifyListeners();
     return false;
@@ -633,32 +560,11 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       ),
     );
 
-    AppDesignTokens tokens = scheme.brightness == Brightness.dark
-        ? AppDesignTokens.dark
-        : AppDesignTokens.light;
-    tokens = tokens.copyWith(barGlassEnabled: _barGlassEnabled);
-
-    if (_differentiateAsmrTheme) {
-      final asmrScheme = _asmrThemeColor.colorScheme(
-        scheme.brightness,
-        pureBlack: _pureBlackTheme && scheme.brightness == Brightness.dark,
-      );
-      tokens = tokens.copyWith(
-        asmrAccent: asmrScheme.primary,
-        asmrContainer: asmrScheme.primaryContainer,
-        onAsmrContainer: asmrScheme.onPrimaryContainer,
-        onAsmrAccent: asmrScheme.onPrimary,
-        asmrSurface: asmrScheme.surfaceContainerLow,
-      );
-    } else {
-      tokens = tokens.copyWith(
-        asmrAccent: scheme.primary,
-        asmrContainer: scheme.primaryContainer,
-        onAsmrContainer: scheme.onPrimaryContainer,
-        onAsmrAccent: scheme.onPrimary,
-        asmrSurface: scheme.surfaceContainerLow,
-      );
-    }
+    final tokens =
+        (scheme.brightness == Brightness.dark
+                ? AppDesignTokens.dark
+                : AppDesignTokens.light)
+            .copyWith(barGlassEnabled: _barGlassEnabled);
 
     const buttonShape = StadiumBorder();
     final bodyColor = Color.alphaBlend(

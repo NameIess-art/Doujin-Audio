@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
-import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../domain/asmr_models.dart';
@@ -46,7 +45,7 @@ Future<bool> _setFavoriteWithFeedback(
   final shouldFavorite =
       favorite ?? works.any((work) => !controller.isFavorite(work.workKey));
   final i18n = container.read(appLanguageProviderInstanceProvider);
-  final accent = AppDesignTokens.of(context).asmrAccent;
+  final accent = Theme.of(context).colorScheme.primary;
 
   // Reserve all selected works before saving so card and batch actions cannot
   // race while the shared controller persists the same favorites.

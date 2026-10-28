@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
-import 'package:doujin_audio/features/asmr/presentation/asmr_theme.dart';
 
 Widget _buildThemedApp({
   required Widget child,
@@ -241,47 +239,18 @@ void main() {
       expect(position.pixels, 0);
     });
 
-    testWidgets('asmrThemeData produces ThemeData with asmrAccent as primary', (
-      tester,
-    ) async {
-      late BuildContext capturedContext;
-      await tester.pumpWidget(
-        _buildThemedApp(
-          child: Builder(
-            builder: (context) {
-              capturedContext = context;
-              return const SizedBox.shrink();
-            },
-          ),
-        ),
-      );
-
-      final tokens = AppDesignTokens.of(capturedContext);
-      final asmrTheme = asmrThemeData(capturedContext);
-
-      expect(asmrTheme.colorScheme.primary, tokens.asmrAccent);
-      expect(asmrTheme.colorScheme.secondary, tokens.asmrAccent);
-      expect(asmrTheme.colorScheme.onPrimary, tokens.onAsmrAccent);
-      expect(asmrTheme.colorScheme.primaryContainer, tokens.asmrContainer);
-      expect(asmrTheme.colorScheme.onPrimaryContainer, tokens.onAsmrContainer);
-    });
-
-    testWidgets('TopPageHeader inherits asmrAccent when wrapped in asmrThemeData', (
+    testWidgets('online library header inherits the application theme', (
       tester,
     ) async {
       await tester.pumpWidget(
         _buildThemedApp(
           child: Builder(
             builder: (context) {
-              final tokens = AppDesignTokens.of(context);
-              return Theme(
-                data: asmrThemeData(context),
-                child: TopPageHeader(
-                  icon: Icons.cloud_rounded,
-                  iconColor: tokens.asmrAccent,
-                  title: 'ASMR.ONE',
-                  useSafeAreaTop: false,
-                ),
+              return TopPageHeader(
+                icon: Icons.cloud_rounded,
+                iconColor: Theme.of(context).colorScheme.primary,
+                title: 'ASMR.ONE',
+                useSafeAreaTop: false,
               );
             },
           ),
@@ -290,8 +259,8 @@ void main() {
 
       final iconFinder = find.byIcon(Icons.cloud_rounded);
       final iconWidget = tester.widget<Icon>(iconFinder);
-      final tokens = AppDesignTokens.of(tester.element(iconFinder));
-      expect(iconWidget.color, tokens.asmrAccent);
+      final scheme = Theme.of(tester.element(iconFinder)).colorScheme;
+      expect(iconWidget.color, scheme.primary);
     });
   });
 }

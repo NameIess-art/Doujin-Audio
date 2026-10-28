@@ -664,7 +664,6 @@ class _SessionVideoFullscreenPageState
           epoch: coverRevision.epoch,
           revision: coverRevision.revision,
         ),
-        isAsmr: track?.usesAsmrVisualTheme == true,
         queueColorValue: activeSession.playbackQueue?.colorValue,
         child: PopScope<void>(
           canPop: _allowPop,

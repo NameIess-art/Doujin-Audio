@@ -8,7 +8,6 @@ import 'package:path/path.dart' as path;
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
-import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/widgets/animated_reorder.dart';
@@ -429,12 +428,7 @@ class SessionListCard extends ConsumerWidget {
         : i18n.tr('imported_files');
     final isPlaying = cardState.isPlaying;
 
-    final isAsmrOne = currentTrack?.isRemoteAsmr ?? false;
-    final tokens = AppDesignTokens.of(context);
-    final asmrBlue = tokens.asmrAccent;
-    final localPlayRose = cs.primary;
-
-    final activeColor = isAsmrOne ? asmrBlue : localPlayRose;
+    final activeColor = cs.primary;
 
     final cardColor = isTemporary
         ? playlistTemporaryCardColor(context)
@@ -517,7 +511,7 @@ class SessionListCard extends ConsumerWidget {
                             isPinned: isPinned,
                             sessionId: sessionId,
                             isSelected: isSelected,
-                            color: isAsmrOne ? asmrBlue : localPlayRose,
+                            color: activeColor,
                           ),
                         ),
                       ],
@@ -595,7 +589,7 @@ class SessionListCard extends ConsumerWidget {
                         audioEffects: cardState.audioEffects,
                         speed: cardState.speed,
                       ),
-                      color: isAsmrOne ? asmrBlue : localPlayRose,
+                      color: activeColor,
                       child: IconButton(
                         tooltip: isPlaying ? i18n.tr('pause') : i18n.tr('play'),
                         onPressed: () {

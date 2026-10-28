@@ -407,7 +407,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         epoch: coverRevision.epoch,
         revision: coverRevision.revision,
       ),
-      isAsmr: detailTrack?.usesAsmrVisualTheme ?? false,
       queueColorValue: session.playbackQueue?.colorValue,
       transitionActive: _transitionActive,
       child: Material(

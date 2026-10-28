@@ -136,7 +136,9 @@ void main() {
     await _pumpList(tester, model);
     final expected = {
       'folder': AppDesignTokens.folderIconColor,
-      'audio.mp3': AppDesignTokens.light.asmrAccent,
+      'audio.mp3': Theme.of(
+        tester.element(find.byType(AsmrDownloadSelectionList)),
+      ).colorScheme.primary,
       'notes.txt': AppDesignTokens.textFileIconColor,
       'cover.jpg': AppDesignTokens.imageFileIconColor,
       'subtitle.srt': AppDesignTokens.textFileIconColor,

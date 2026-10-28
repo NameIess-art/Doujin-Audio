@@ -17,7 +17,6 @@ import 'package:path/path.dart' as path;
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/work_detail_navigation.dart';
 import '../../../app/state/app_runtime_providers.dart';
-import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_display.dart';
@@ -1099,8 +1098,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    final asmrBlue = tokens.asmrAccent;
 
     // Resolve unified display fields
     String displayTitle = '';
@@ -1145,7 +1142,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     final bottomOverlayInset = MobileOverlayInset.of(context);
     const rjBarHeight = 44.0;
 
-    final subtitleAccent = widget.isAsmr ? asmrBlue : cs.primary;
+    final subtitleAccent = cs.primary;
     final subtitleStatus = hasSubtitle == null
         ? null
         : Row(
@@ -1301,7 +1298,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                     circleName: displayCircle,
                     subtitleStatus: subtitleStatus,
                     coverWidget: buildCover(context, ref),
-                    accentColor: widget.isAsmr ? asmrBlue : cs.primary,
+                    accentColor: cs.primary,
                     surfaceColor: cs.surface,
                     onCopyMetadata: (value) => _copyText(context, value),
                   ),
@@ -1335,7 +1332,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                               i18n: i18n,
                               isLocal: widget.isLocal,
                               isFavorite: isFavorite,
-                              accentColor: asmrBlue,
+                              accentColor: cs.primary,
                               onFetchInfo: _handleLocalFetchInfo,
                               onDownload: widget.isLocal
                                   ? _handleLocalDownload
@@ -1451,9 +1448,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                                     child: WorkDetailEntryTile(
                                       key: ValueKey(id),
                                       item: item,
-                                      accentColor: widget.isAsmr
-                                          ? asmrBlue
-                                          : cs.primary,
+                                      accentColor: cs.primary,
                                       menuEntries: entryMenus.putIfAbsent(
                                         (item.type, isLibraryAudio),
                                         () => _entryMenuItems(

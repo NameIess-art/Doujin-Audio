@@ -97,21 +97,6 @@ List<Widget> _buildSettingsAppearanceSection({
           secondary: _settingsIcon(Icons.blur_on_rounded, cs.primary),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         ),
-        SwitchListTile(
-          title: _settingsTitle(i18n.tr('differentiate_asmr_theme')),
-          value: themeProvider.differentiateAsmrTheme,
-          onChanged: (value) {
-            unawaited(
-              _applyThemeChange(
-                context: context,
-                i18n: i18n,
-                change: () => themeProvider.setDifferentiateAsmrTheme(value),
-              ),
-            );
-          },
-          secondary: _settingsIcon(Icons.palette_rounded, cs.primary),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-        ),
         _ThemeColorTile(
           key: const ValueKey<String>('app_theme_color_tile'),
           title: i18n.tr('app_theme_color'),
@@ -128,23 +113,6 @@ List<Widget> _buildSettingsAppearanceSection({
             onSelected: themeProvider.setAppThemeColor,
           ),
         ),
-        if (themeProvider.differentiateAsmrTheme)
-          _ThemeColorTile(
-            key: const ValueKey<String>('asmr_theme_color_tile'),
-            title: i18n.tr('asmr_theme_color'),
-            indicatorKey: const ValueKey<String>('asmr_theme_color_indicator'),
-            color: themeProvider.asmrThemeColor
-                .colorScheme(Theme.of(context).brightness)
-                .primary,
-            iconColor: cs.primary,
-            onTap: () => _showThemeColorPicker(
-              context: context,
-              i18n: i18n,
-              title: i18n.tr('asmr_theme_color'),
-              selected: themeProvider.asmrThemeColor,
-              onSelected: themeProvider.setAsmrThemeColor,
-            ),
-          ),
       ],
     ),
     _SettingsSectionCard(

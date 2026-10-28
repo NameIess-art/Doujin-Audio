@@ -1,6 +1,5 @@
 import 'asmr_download_format.dart';
 import 'asmr_providers.dart';
-import 'asmr_theme.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -110,14 +109,11 @@ class _AsmrDownloadDetailsPageState
               top: 0,
               left: 0,
               right: 0,
-              child: Theme(
-                data: asmrThemeData(context),
-                child: TopPageHeader(
-                  icon: Icons.info_outline_rounded,
-                  iconColor: AppDesignTokens.of(context).asmrAccent,
-                  leading: const BackButton(),
-                  title: i18n.tr('asmr_download_details_title'),
-                ),
+              child: TopPageHeader(
+                icon: Icons.info_outline_rounded,
+                iconColor: Theme.of(context).colorScheme.primary,
+                leading: const BackButton(),
+                title: i18n.tr('asmr_download_details_title'),
               ),
             ),
           ],
@@ -206,9 +202,9 @@ class _AsmrDownloadDetailsPageState
                                 final expanded = !_collapsedPaths.contains(
                                   node.relativePath,
                                 );
-                                final accent = AppDesignTokens.of(
+                                final accent = Theme.of(
                                   context,
-                                ).asmrAccent;
+                                ).colorScheme.primary;
                                 return Semantics(
                                   key: rowKey,
                                   expanded: expanded,
@@ -264,45 +260,42 @@ class _AsmrDownloadDetailsPageState
               top: 0,
               left: 0,
               right: 0,
-              child: Theme(
-                data: asmrThemeData(context),
-                child: TopPageHeader(
-                  key: _headerKey,
-                  icon: Icons.info_outline_rounded,
-                  iconColor: AppDesignTokens.of(context).asmrAccent,
-                  leading: const BackButton(),
-                  title: i18n.tr('asmr_download_details_title'),
-                  additionalChild: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: HeaderFloatingSurface(
-                      key: const ValueKey<String>('asmr_download_work_title'),
-                      height: null,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 9,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            structure.title,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: cs.onSurface,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.25,
-                                ),
-                          ),
-                          const SizedBox(height: 8),
-                          _AsmrDownloadDetailsTotals(
-                            workId: widget.workId,
-                            i18n: i18n,
-                          ),
-                        ],
-                      ),
+              child: TopPageHeader(
+                key: _headerKey,
+                icon: Icons.info_outline_rounded,
+                iconColor: Theme.of(context).colorScheme.primary,
+                leading: const BackButton(),
+                title: i18n.tr('asmr_download_details_title'),
+                additionalChild: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: HeaderFloatingSurface(
+                    key: const ValueKey<String>('asmr_download_work_title'),
+                    height: null,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          structure.title,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: cs.onSurface,
+                                fontWeight: FontWeight.w700,
+                                height: 1.25,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        _AsmrDownloadDetailsTotals(
+                          workId: widget.workId,
+                          i18n: i18n,
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -414,7 +407,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
     final isManualRetrying = state.retrying;
     final canRetryFile = onRetryFile != null && state.canRetry;
     final cs = Theme.of(context).colorScheme;
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     final progress =
         state.fraction ??
         (total > 0 ? (downloaded / total).clamp(0.0, 1.0) : 0.0);
@@ -428,7 +421,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
         size: AppDesignTokens.fileEntryIconSize,
         color: asmrDownloadFileColor(
           node,
-          audioColor: asmrBlue,
+          audioColor: primaryColor,
           fallbackColor: cs.onSurfaceVariant,
         ),
       ),
@@ -440,8 +433,8 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: 4,
-                color: asmrBlue,
-                backgroundColor: asmrBlue.withValues(alpha: 0.2),
+                color: primaryColor,
+                backgroundColor: primaryColor.withValues(alpha: 0.2),
               ),
             ),
           ),
@@ -481,7 +474,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
                 padding: EdgeInsets.zero,
                 icon: const Icon(Icons.refresh_rounded),
                 iconSize: 22,
-                color: asmrBlue,
+                color: primaryColor,
                 tooltip: i18n.tr('retry'),
                 onPressed: canRetryFile
                     ? () => unawaited(onRetryFile!(node.relativePath))

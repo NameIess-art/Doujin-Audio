@@ -8,7 +8,6 @@ import 'package:path/path.dart' as path;
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
-import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/path_matcher.dart';
@@ -193,12 +192,9 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
         ? i18n.tr('empty_playback_queue')
         : currentTrack?.displayName ??
               path.basenameWithoutExtension(cardState.trackPath);
-    final isAsmrOne = currentTrack?.isRemoteAsmr ?? false;
-    final tokens = AppDesignTokens.of(context);
-    final asmrBlue = tokens.asmrAccent;
     final featureIconColor = cardState.queueColorValue != null
         ? activeColor
-        : (isAsmrOne ? asmrBlue : cs.primary);
+        : cs.primary;
     return UndoableRemovalTransition(
       hidden: isHidden,
       child: SwipeRevealCard(

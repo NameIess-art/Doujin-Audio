@@ -35,7 +35,6 @@ Future<T?> showAppOverlayPanel<T>({
   double? maxHeight,
   Alignment mobileAlignment = Alignment.topCenter,
   EdgeInsets? mobileOuterPadding,
-  ThemeData Function(BuildContext context)? themeBuilder,
 }) {
   return showGeneralDialog<T>(
     context: context,
@@ -55,10 +54,6 @@ Future<T?> showAppOverlayPanel<T>({
       final outerPadding = isDesktop
           ? const EdgeInsets.all(28)
           : mobileOuterPadding ?? const EdgeInsets.fromLTRB(16, 176, 16, 132);
-      final panel = Builder(builder: builder);
-      final themedPanel = themeBuilder == null
-          ? panel
-          : Theme(data: themeBuilder(dialogContext), child: panel);
       return _AppOverlayPanelShell(
         animation: animation,
         outerPadding: outerPadding,
@@ -67,7 +62,7 @@ Future<T?> showAppOverlayPanel<T>({
         isDesktop: isDesktop,
         mobileAlignment: mobileAlignment,
         barrierDismissible: barrierDismissible,
-        child: themedPanel,
+        child: Builder(builder: builder),
       );
     },
     transitionBuilder: (context, animation, secondaryAnimation, child) => child,

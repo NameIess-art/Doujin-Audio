@@ -110,8 +110,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    final asmrBlue = tokens.asmrAccent;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     final actionsEnabled =
         !widget.isSelectionMode &&
         !_runningAction &&
@@ -158,7 +157,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                   isSelected: widget.isSelected,
                   rjCode: widget.work.workCode,
                 ),
-                accentColor: asmrBlue,
+                accentColor: primaryColor,
                 trailingActions: LibraryLikeCardActions(
                   addLabel: i18n.tr('add'),
                   playLabel: i18n.tr('play'),
@@ -181,7 +180,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
       enabled: !widget.isSelectionMode,
       closedColor: cs.surface,
       destructive: false,
-      color: asmrBlue,
+      color: primaryColor,
       verticalActions: true,
       actionLabel: i18n.tr(
         widget.work.isFavorite

@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/cache/app_cache_service.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 
@@ -63,7 +62,6 @@ class SessionDetailTheme extends StatefulWidget {
     required this.initialCoverPath,
     required this.requestKey,
     required this.coverRevision,
-    required this.isAsmr,
     required this.queueColorValue,
     required this.child,
     this.transitionActive,
@@ -73,7 +71,6 @@ class SessionDetailTheme extends StatefulWidget {
   final String? initialCoverPath;
   final Object requestKey;
   final ({String scope, int epoch, int revision}) coverRevision;
-  final bool isAsmr;
   final int? queueColorValue;
   final ValueListenable<bool>? transitionActive;
   final Widget child;
@@ -86,7 +83,7 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
     with SingleTickerProviderStateMixin {
   ColorScheme? _scheme;
   (Brightness, double)? _appearance;
-  (ThemeData, ColorScheme?, bool, int?)? _themeInputs;
+  (ThemeData, ColorScheme?, int?)? _themeInputs;
   ThemeDataTween? _themeTween;
   (ThemeDataTween, double, ThemeData)? _displayedTheme;
   late final AnimationController _themeController;
@@ -240,7 +237,7 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
   Widget build(BuildContext context) {
     final base = Theme.of(context);
     final queueColor = widget.queueColorValue;
-    final inputs = (base, _scheme, widget.isAsmr, queueColor);
+    final inputs = (base, _scheme, queueColor);
     final snap = _snap || MediaQuery.disableAnimationsOf(context);
     if (_themeInputs != inputs) {
       _themeInputs = inputs;
@@ -250,8 +247,6 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
           ? _applyDetailColorScheme(base, _scheme!)
           : queueColor != null
           ? createPlaybackQueueSessionDetailTheme(base, Color(queueColor))
-          : widget.isAsmr
-          ? createAsmrSessionDetailTheme(base, AppDesignTokens.of(context))
           : base;
       final current = _themeTween == null ? target : _currentTheme();
       _themeTween = ThemeDataTween(begin: current, end: target);
@@ -457,20 +452,6 @@ BoxDecoration sessionDetailPlayButtonDecoration(
           ]
         : null,
   );
-}
-
-ThemeData createAsmrSessionDetailTheme(ThemeData base, AppDesignTokens tokens) {
-  final scheme = base.colorScheme.copyWith(
-    primary: tokens.asmrAccent,
-    onPrimary: tokens.onAsmrAccent,
-    primaryContainer: tokens.asmrContainer,
-    onPrimaryContainer: tokens.onAsmrContainer,
-    secondary: tokens.asmrAccent,
-    onSecondary: tokens.onAsmrAccent,
-    secondaryContainer: tokens.asmrContainer,
-    onSecondaryContainer: tokens.onAsmrContainer,
-  );
-  return _applyDetailColorScheme(base, scheme);
 }
 
 ThemeData createPlaybackQueueSessionDetailTheme(

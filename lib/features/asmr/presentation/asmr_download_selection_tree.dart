@@ -221,7 +221,7 @@ class AsmrDownloadNodeTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final value = selection.stateForPath(node.track.relativePath);
@@ -245,7 +245,7 @@ class AsmrDownloadNodeTile extends ConsumerWidget {
         size: AppDesignTokens.fileEntryIconSize,
         color: asmrDownloadFileColor(
           node.track,
-          audioColor: asmrBlue,
+          audioColor: primaryColor,
           fallbackColor: cs.onSurfaceVariant,
         ),
       ),
@@ -307,7 +307,7 @@ class _CompactNodeCheckbox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     return SizedBox(
       width: 28,
       height: 28,
@@ -315,7 +315,7 @@ class _CompactNodeCheckbox extends StatelessWidget {
         tristate: true,
         value: value,
         onChanged: onChanged,
-        activeColor: asmrBlue,
+        activeColor: primaryColor,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         visualDensity: VisualDensity.compact,
       ),

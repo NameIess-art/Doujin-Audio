@@ -185,11 +185,11 @@ void main() {
       expect(downloadValues.single, isEmpty);
 
       await language.setLanguage(AppLanguage.en);
-      await theme.setDifferentiateAsmrTheme(false);
+      await theme.setAppThemeColor(ThemeAccentPreset.mint);
       downloads.emit(const <String>['code:RJ000042']);
       await container.pump();
       expect(languageValues.last.language, AppLanguage.en);
-      expect(themeValues.last.differentiateAsmrTheme, isFalse);
+      expect(themeValues.last.appThemeColor, ThemeAccentPreset.mint);
       expect(downloadValues.last, const <String>['code:RJ000042']);
 
       for (final subscription in subscriptions) {

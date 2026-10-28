@@ -60,7 +60,6 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
-import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
@@ -6262,7 +6261,9 @@ void main() {
     debugDefaultTargetPlatformOverride = previousPlatform;
   });
 
-  testWidgets('ASMR session detail uses ASMR accent theme', (tester) async {
+  testWidgets('ASMR session detail follows the global accent theme', (
+    tester,
+  ) async {
     final previousPlatform = debugDefaultTargetPlatformOverride;
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     addTearDown(() {
@@ -6279,6 +6280,14 @@ void main() {
       remoteMetadataKind: 'asmr.one',
     );
     await _pumpAppShell(tester, playbackTrack: track);
+    final appContext = tester.element(find.byType(Scaffold).first);
+    final theme = ProviderScope.containerOf(
+      appContext,
+      listen: false,
+    ).read(themeProviderInstanceProvider);
+    await theme.setAppThemeColor(ThemeAccentPreset.mint);
+    await tester.pumpAndSettle();
+    final expectedAccent = Theme.of(appContext).colorScheme.primary;
     unawaited(
       tester
           .state<NavigatorState>(find.byType(Navigator).first)
@@ -6300,7 +6309,6 @@ void main() {
         matching: find.byType(AsyncLocalCoverImage),
       ),
     );
-    final expectedAccent = AppDesignTokens.of(detailThemeContext).asmrAccent;
     expect(Theme.of(detailThemeContext).colorScheme.primary, expectedAccent);
     expect(artworkCover.duration, kCoverImageTransitionDuration);
     await _settleSessionDetailAsyncWork(tester);

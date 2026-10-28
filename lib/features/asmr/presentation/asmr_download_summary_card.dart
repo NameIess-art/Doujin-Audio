@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../domain/asmr_models.dart';
-import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/top_page_header.dart';
 
@@ -30,8 +29,7 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    final asmrBlue = tokens.asmrAccent;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
@@ -118,7 +116,7 @@ class AsmrDownloadSummaryCard extends ConsumerWidget {
               Icon(
                 Icons.check_circle_outline_rounded,
                 size: 16,
-                color: asmrBlue,
+                color: primaryColor,
               ),
               const SizedBox(width: 6),
               Expanded(

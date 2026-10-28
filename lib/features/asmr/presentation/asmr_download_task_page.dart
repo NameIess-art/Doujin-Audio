@@ -1,5 +1,4 @@
 import 'asmr_providers.dart';
-import 'asmr_theme.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -9,7 +8,6 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../application/asmr_download_models.dart';
 import '../../../core/ui/undoable_removal_service.dart';
-import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -162,14 +160,11 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
               top: 0,
               left: 0,
               right: 0,
-              child: Theme(
-                data: asmrThemeData(context),
-                child: TopPageHeader(
-                  icon: Icons.download_done_rounded,
-                  iconColor: AppDesignTokens.of(context).asmrAccent,
-                  leading: const BackButton(),
-                  title: i18n.tr('asmr_download_task_title'),
-                ),
+              child: TopPageHeader(
+                icon: Icons.download_done_rounded,
+                iconColor: Theme.of(context).colorScheme.primary,
+                leading: const BackButton(),
+                title: i18n.tr('asmr_download_task_title'),
               ),
             ),
           ],

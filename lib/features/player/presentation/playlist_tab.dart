@@ -81,6 +81,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   bool _isSelectionMode = false;
   bool _creatingQueue = false;
   final Set<String> _selectedSessionIds = <String>{};
+  Set<String>? _knownSessionIds;
+  final Set<String> _appearingQueueIds = <String>{};
 
   void _scrollToTopOnQueueAdded() {
     if (_scrollController.hasClients && _scrollController.offset > 0) {
@@ -663,6 +665,25 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     });
     final structureState = ref.watch(playlistStructureUiProvider);
     final visibleEntries = ref.watch(playlistSortedEntriesUiProvider);
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    if (structureState.isInitialized) {
+      final sessionIds = visibleEntries
+          .map((entry) => entry.session.id)
+          .toSet();
+      if (_knownSessionIds case final known?) {
+        _appearingQueueIds.addAll(
+          visibleEntries
+              .where(
+                (entry) =>
+                    entry.isPlaybackQueue && !known.contains(entry.session.id),
+              )
+              .map((entry) => entry.session.id),
+        );
+      }
+      _knownSessionIds = sessionIds;
+      _appearingQueueIds.retainAll(sessionIds);
+      if (disableAnimations) _appearingQueueIds.clear();
+    }
     final pinnedPlaylistSessionIds = ref
         .watch(
           settingsStateProvider.select(
@@ -756,7 +777,26 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       return AnimatedReorderItem(
         key: ValueKey(session.id),
         id: session.id,
-        child: BrowseAnchor(id: session.id, child: card),
+        child: BrowseAnchor(
+          id: session.id,
+          child: structure.isPlaybackQueue
+              ? TweenAnimationBuilder<double>(
+                  key: ValueKey('playlist_queue_appearance_${session.id}'),
+                  tween: Tween<double>(
+                    begin: _appearingQueueIds.contains(session.id) ? 0 : 1,
+                    end: 1,
+                  ),
+                  duration: disableAnimations
+                      ? Duration.zero
+                      : kAppFadeDuration,
+                  curve: kAppFadeCurve,
+                  onEnd: () => _appearingQueueIds.remove(session.id),
+                  builder: (context, opacity, child) =>
+                      Opacity(opacity: opacity, child: child),
+                  child: card,
+                )
+              : card,
+        ),
       );
     }
 

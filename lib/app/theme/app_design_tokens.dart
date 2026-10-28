@@ -27,11 +27,6 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   static const imageFileIconColor = Color(0xFFEC4899);
 
   const AppDesignTokens({
-    required this.asmrAccent,
-    required this.asmrContainer,
-    required this.onAsmrContainer,
-    required this.onAsmrAccent,
-    required this.asmrSurface,
     required this.subtleBorderAlpha,
     required this.standardBorderAlpha,
     required this.success,
@@ -69,11 +64,6 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   });
 
   static const light = AppDesignTokens(
-    asmrAccent: Color(0xFF1D4ED8),
-    asmrContainer: Color(0xFFDBEAFE),
-    onAsmrContainer: Color(0xFF1E40AF),
-    onAsmrAccent: Color(0xFFF8FBFF),
-    asmrSurface: Color(0xFFF4F7FA),
     subtleBorderAlpha: 0.30,
     standardBorderAlpha: 0.50,
     success: Color(0xFF216E39),
@@ -87,11 +77,6 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   );
 
   static const dark = AppDesignTokens(
-    asmrAccent: Color(0xFF60A5FA),
-    asmrContainer: Color(0xFF172554),
-    onAsmrContainer: Color(0xFFDBEAFE),
-    onAsmrAccent: Color(0xFF0F172A),
-    asmrSurface: Color(0xFF181D2B),
     subtleBorderAlpha: 0.15,
     standardBorderAlpha: 0.28,
     success: Color(0xFF8FDBA6),
@@ -110,11 +95,6 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
         (theme.brightness == Brightness.dark ? dark : light);
   }
 
-  final Color asmrAccent;
-  final Color asmrContainer;
-  final Color onAsmrContainer;
-  final Color onAsmrAccent;
-  final Color asmrSurface;
   final double subtleBorderAlpha;
   final double standardBorderAlpha;
   final Color success;
@@ -152,11 +132,6 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
 
   @override
   AppDesignTokens copyWith({
-    Color? asmrAccent,
-    Color? asmrContainer,
-    Color? onAsmrContainer,
-    Color? onAsmrAccent,
-    Color? asmrSurface,
     double? subtleBorderAlpha,
     double? standardBorderAlpha,
     Color? success,
@@ -193,11 +168,6 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     Duration? motionSlow,
   }) {
     return AppDesignTokens(
-      asmrAccent: asmrAccent ?? this.asmrAccent,
-      asmrContainer: asmrContainer ?? this.asmrContainer,
-      onAsmrContainer: onAsmrContainer ?? this.onAsmrContainer,
-      onAsmrAccent: onAsmrAccent ?? this.onAsmrAccent,
-      asmrSurface: asmrSurface ?? this.asmrSurface,
       subtleBorderAlpha: subtleBorderAlpha ?? this.subtleBorderAlpha,
       standardBorderAlpha: standardBorderAlpha ?? this.standardBorderAlpha,
       success: success ?? this.success,
@@ -243,11 +213,6 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     if (other == null) return this;
     return AppDesignTokens(
       barGlassEnabled: other.barGlassEnabled,
-      asmrAccent: Color.lerp(asmrAccent, other.asmrAccent, t)!,
-      asmrContainer: Color.lerp(asmrContainer, other.asmrContainer, t)!,
-      onAsmrContainer: Color.lerp(onAsmrContainer, other.onAsmrContainer, t)!,
-      onAsmrAccent: Color.lerp(onAsmrAccent, other.onAsmrAccent, t)!,
-      asmrSurface: Color.lerp(asmrSurface, other.asmrSurface, t)!,
       subtleBorderAlpha: lerpDouble(
         subtleBorderAlpha,
         other.subtleBorderAlpha,

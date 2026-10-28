@@ -1,43 +1,5 @@
 part of 'asmr_tab.dart';
 
-ThemeData _asmrPanelTheme(BuildContext context) {
-  final base = asmrThemeData(context);
-  final tokens = AppDesignTokens.of(context);
-  final blue = tokens.asmrAccent;
-  return base.copyWith(
-    checkboxTheme: CheckboxThemeData(
-      fillColor: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.selected)) {
-          return blue;
-        }
-        return null;
-      }),
-      checkColor: WidgetStateProperty.all(tokens.onAsmrAccent),
-    ),
-    filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        backgroundColor: blue,
-        foregroundColor: tokens.onAsmrAccent,
-      ),
-    ),
-    textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(foregroundColor: blue),
-    ),
-    iconTheme: base.iconTheme.copyWith(color: blue),
-    textSelectionTheme: base.textSelectionTheme.copyWith(
-      cursorColor: blue,
-      selectionColor: blue.withValues(alpha: 0.3),
-      selectionHandleColor: blue,
-    ),
-    inputDecorationTheme: base.inputDecorationTheme.copyWith(
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: blue, width: 1.5),
-      ),
-    ),
-  );
-}
-
 class _AsmrPanelCard extends StatelessWidget {
   const _AsmrPanelCard({
     required this.icon,
@@ -523,7 +485,7 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
       error != null && AsmrApiException.isAuthenticationError(error);
 
   Color _accountAccentColor(BuildContext context) {
-    return AppDesignTokens.of(context).asmrAccent;
+    return Theme.of(context).colorScheme.primary;
   }
 }
 

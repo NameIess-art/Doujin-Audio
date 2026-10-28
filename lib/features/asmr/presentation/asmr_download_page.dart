@@ -1,5 +1,4 @@
 import 'asmr_providers.dart';
-import 'asmr_theme.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 
@@ -14,7 +13,6 @@ import '../application/asmr_download_planner.dart';
 import '../application/asmr_download_selection.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
-import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/operation_feedback.dart';
@@ -213,7 +211,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
             i18n.tr('asmr_download_path_missing'),
             tone: AppFeedbackTone.warning,
             icon: Icons.folder_off_rounded,
-            iconColor: AppDesignTokens.of(context).asmrAccent,
+            iconColor: Theme.of(context).colorScheme.primary,
           );
         }
       };
@@ -276,7 +274,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     if (_starting || _choosingDestination) return;
     final route = _route;
 
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     final downloadManager = ref.read(asmrDownloadManagerProvider);
     if (downloadManager == null) return;
     final settings = ref.read(settingsRepositoryProvider);
@@ -289,7 +287,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         context,
         i18n.tr('asmr_download_task_running'),
         icon: Icons.downloading_rounded,
-        iconColor: asmrBlue,
+        iconColor: primaryColor,
       );
       return;
     }
@@ -301,7 +299,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         i18n.tr('asmr_download_select_required'),
         tone: AppFeedbackTone.warning,
         icon: Icons.check_box_outline_blank_rounded,
-        iconColor: asmrBlue,
+        iconColor: primaryColor,
       );
       return;
     }
@@ -334,7 +332,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
           i18n.tr('asmr_download_path_missing'),
           tone: AppFeedbackTone.warning,
           icon: Icons.folder_off_rounded,
-          iconColor: asmrBlue,
+          iconColor: primaryColor,
         );
         await _chooseDestination();
         destination = _destinationRoot?.trim();
@@ -372,7 +370,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         i18n.tr('asmr_download_added_to_list'),
         tone: AppFeedbackTone.success,
         icon: Icons.checklist_rounded,
-        iconColor: asmrBlue,
+        iconColor: primaryColor,
       );
       unawaited(Navigator.of(context).maybePop(AsmrDownloadPageResult.added));
     } catch (_) {
@@ -383,7 +381,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         tone: AppFeedbackTone.destructive,
         title: i18n.tr('asmr_download_failed_title'),
         icon: Icons.error_outline_rounded,
-        iconColor: asmrBlue,
+        iconColor: primaryColor,
         actionLabel: i18n.tr('retry'),
         onAction: () => unawaited(_startDownload()),
         duration: const Duration(seconds: 6),
@@ -404,9 +402,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final selectedLeafCount = selection?.selectedLeafCount() ?? 0;
     final selectedTotalSizeBytes = selection?.selectedTotalSizeBytes() ?? 0;
-    final tokens = AppDesignTokens.of(context);
-    final asmrBlue = tokens.asmrAccent;
-    final onAsmrBlue = tokens.onAsmrAccent;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final onPrimaryColor = Theme.of(context).colorScheme.onPrimary;
     final hasDestination = (_destinationRoot?.trim().isNotEmpty ?? false);
     final compactHeader = MediaQuery.sizeOf(context).width < 400;
     final destinationLabel = i18n.tr(
@@ -512,7 +509,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                         radius: 23,
                         padding: EdgeInsets.zero,
                         child: Material(
-                          color: asmrBlue,
+                          color: primaryColor,
                           borderRadius: BorderRadius.circular(23),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(23),
@@ -541,14 +538,14 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                                               strokeWidth: 2,
                                               valueColor:
                                                   AlwaysStoppedAnimation<Color>(
-                                                    onAsmrBlue,
+                                                    onPrimaryColor,
                                                   ),
                                             ),
                                           )
                                         : Icon(
                                             Icons.download_rounded,
                                             size: 18,
-                                            color: onAsmrBlue,
+                                            color: onPrimaryColor,
                                           ),
                                   ),
                                   const SizedBox(width: 8),
@@ -558,7 +555,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                                         .textTheme
                                         .labelLarge
                                         ?.copyWith(
-                                          color: onAsmrBlue,
+                                          color: onPrimaryColor,
                                           fontWeight: FontWeight.w700,
                                         ),
                                   ),
@@ -577,119 +574,114 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
               top: 0,
               left: 0,
               right: 0,
-              child: Theme(
-                data: asmrThemeData(context),
-                child: TopPageHeader(
-                  key: _headerKey,
-                  icon: Icons.download_rounded,
-                  iconColor: AppDesignTokens.of(context).asmrAccent,
-                  leading: BackButton(
-                    onPressed: () => Navigator.of(
-                      context,
-                    ).maybePop(AsmrDownloadPageResult.canceled),
-                  ),
-                  title: i18n.tr('asmr_download_title'),
-                  titleSuffix:
-                      (widget.batchIndex != null &&
-                          widget.batchTotal != null &&
-                          widget.batchTotal! > 1)
-                      ? Text(
-                          '${widget.batchIndex}/${widget.batchTotal}',
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant
-                                    .withValues(alpha: 0.75),
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                        )
-                      : null,
-                  trailing: widget.customWorkFolderName != null
-                      ? null
-                      : compactHeader
-                      ? HeaderFloatingButton(
-                          child: IconButton(
-                            tooltip: destinationLabel,
-                            onPressed: chooseDestination,
-                            icon: Icon(
-                              destinationIcon,
-                              size: 18,
-                              color: asmrBlue,
+              child: TopPageHeader(
+                key: _headerKey,
+                icon: Icons.download_rounded,
+                iconColor: Theme.of(context).colorScheme.primary,
+                leading: BackButton(
+                  onPressed: () => Navigator.of(
+                    context,
+                  ).maybePop(AsmrDownloadPageResult.canceled),
+                ),
+                title: i18n.tr('asmr_download_title'),
+                titleSuffix:
+                    (widget.batchIndex != null &&
+                        widget.batchTotal != null &&
+                        widget.batchTotal! > 1)
+                    ? Text(
+                        '${widget.batchIndex}/${widget.batchTotal}',
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant
+                                  .withValues(alpha: 0.75),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
                             ),
-                          ),
-                        )
-                      : HeaderFloatingSurface(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(19),
-                            onTap: chooseDestination,
-                            child: Center(
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    destinationIcon,
-                                    size: 18,
-                                    color: asmrBlue,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    destinationLabel,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelMedium
-                                        ?.copyWith(
-                                          color: asmrBlue,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                      )
+                    : null,
+                trailing: widget.customWorkFolderName != null
+                    ? null
+                    : compactHeader
+                    ? HeaderFloatingButton(
+                        child: IconButton(
+                          tooltip: destinationLabel,
+                          onPressed: chooseDestination,
+                          icon: Icon(
+                            destinationIcon,
+                            size: 18,
+                            color: primaryColor,
                           ),
                         ),
-                  additionalChild: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if ((widget.batchTotal ?? 0) > 1)
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton.icon(
-                            key: const ValueKey('asmr_download_skip_work'),
-                            onPressed: _starting || _choosingDestination
-                                ? null
-                                : () => Navigator.of(
-                                    context,
-                                  ).pop(AsmrDownloadPageResult.skipped),
-                            icon: const Icon(Icons.skip_next_rounded),
-                            label: Text(i18n.tr('batch_download_skip')),
-                          ),
-                        ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-                        child: AnimatedSwitcher(
-                          duration: MediaQuery.disableAnimationsOf(context)
-                              ? Duration.zero
-                              : kAppFadeDuration,
-                          switchInCurve: kAppFadeCurve,
-                          switchOutCurve: kAppFadeCurve,
-                          child: AsmrDownloadSummaryCard(
-                            key: ValueKey(_work == null),
-                            work: _work,
-                            initialRjCode: widget.initialRjCode,
-                            selectedLeafCount: selectedLeafCount,
-                            selectedTotalSizeBytes: selectedTotalSizeBytes,
-                            selectedHasUnknownSize:
-                                selection?.selectedHasUnknownSize() ?? false,
-
-                            customWorkFolderName: widget.customWorkFolderName,
+                      )
+                    : HeaderFloatingSurface(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(19),
+                          onTap: chooseDestination,
+                          child: Center(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  destinationIcon,
+                                  size: 18,
+                                  color: primaryColor,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  destinationLabel,
+                                  style: Theme.of(context).textTheme.labelMedium
+                                      ?.copyWith(
+                                        color: primaryColor,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                additionalChild: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if ((widget.batchTotal ?? 0) > 1)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          key: const ValueKey('asmr_download_skip_work'),
+                          onPressed: _starting || _choosingDestination
+                              ? null
+                              : () => Navigator.of(
+                                  context,
+                                ).pop(AsmrDownloadPageResult.skipped),
+                          icon: const Icon(Icons.skip_next_rounded),
+                          label: Text(i18n.tr('batch_download_skip')),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+                      child: AnimatedSwitcher(
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : kAppFadeDuration,
+                        switchInCurve: kAppFadeCurve,
+                        switchOutCurve: kAppFadeCurve,
+                        child: AsmrDownloadSummaryCard(
+                          key: ValueKey(_work == null),
+                          work: _work,
+                          initialRjCode: widget.initialRjCode,
+                          selectedLeafCount: selectedLeafCount,
+                          selectedTotalSizeBytes: selectedTotalSizeBytes,
+                          selectedHasUnknownSize:
+                              selection?.selectedHasUnknownSize() ?? false,
+
+                          customWorkFolderName: widget.customWorkFolderName,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

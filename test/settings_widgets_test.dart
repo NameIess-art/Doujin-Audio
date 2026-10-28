@@ -1907,7 +1907,7 @@ void main() {
     );
   });
 
-  testWidgets('appearance selects app and conditional ASMR theme colors', (
+  testWidgets('appearance exposes only app-wide theme color selection', (
     tester,
   ) async {
     await AppPreferences.init();
@@ -1925,7 +1925,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('app_theme_color_tile')), findsOneWidget);
-    expect(find.byKey(const ValueKey('asmr_theme_color_tile')), findsOneWidget);
+    expect(find.byKey(const ValueKey('asmr_theme_color_tile')), findsNothing);
+    expect(find.text('在线作品库独立配色'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('app_theme_color_tile')));
     await tester.pumpAndSettle();
@@ -1962,14 +1963,6 @@ void main() {
       themeProvider.lightTheme.colorScheme.primary,
     );
 
-    final switchTile = find.widgetWithText(
-      SwitchListTile,
-      i18n.tr('differentiate_asmr_theme'),
-    );
-    await Scrollable.ensureVisible(tester.element(switchTile), alignment: 0.5);
-    await tester.pumpAndSettle();
-    await tester.tap(switchTile);
-    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('app_theme_color_tile')), findsOneWidget);
     expect(find.byKey(const ValueKey('asmr_theme_color_tile')), findsNothing);
     final appThemeColorTile = find.byKey(
@@ -1977,25 +1970,6 @@ void main() {
     );
     await tester.ensureVisible(appThemeColorTile);
     expect(tester.getSize(appThemeColorTile).height, 64);
-
-    await Scrollable.ensureVisible(tester.element(switchTile), alignment: 0.5);
-    await tester.pumpAndSettle();
-    await tester.tap(switchTile);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('asmr_theme_color_tile')), findsOneWidget);
-    final asmrThemeColorTile = find.byKey(
-      const ValueKey('asmr_theme_color_tile'),
-    );
-    await Scrollable.ensureVisible(
-      tester.element(asmrThemeColorTile),
-      alignment: 0.5,
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(asmrThemeColorTile);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('theme_color_orange')));
-    await tester.pumpAndSettle();
-    expect(themeProvider.asmrThemeColor, ThemeAccentPreset.orange);
   });
 
   testWidgets('appearance reports a failed theme preference write', (
@@ -2135,9 +2109,7 @@ void main() {
         providedSettingsRepository: repository,
       );
       addTearDown(fixture.dispose);
-      await tester.pumpWidget(
-        fixture.build(const SettingsTab()),
-      );
+      await tester.pumpWidget(fixture.build(const SettingsTab()));
       await tester.pumpAndSettle();
       final i18n = fixture.languageProvider;
       await tester.tap(find.text(i18n.tr('section_asmr_download')));
@@ -2174,7 +2146,10 @@ void main() {
       repository._pendingPersistence.complete();
       await tester.pumpAndSettle();
       expect(find.byType(AsmrDownloadFolderNameSettingsSheet), findsNothing);
-      expect(find.text(i18n.tr('asmr_download_folder_name_setting')), findsOneWidget);
+      expect(
+        find.text(i18n.tr('asmr_download_folder_name_setting')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     },
   );

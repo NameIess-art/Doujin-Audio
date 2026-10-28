@@ -776,6 +776,12 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
                   _scaleController,
                 ]),
                 builder: (BuildContext context, Widget? child) {
+                  // A normal upward drag also prepares refresh state at the
+                  // edge. Mount artwork only once the pull becomes visible.
+                  if (_positionController.value == 0 &&
+                      !showIndeterminateIndicator) {
+                    return const SizedBox.shrink();
+                  }
                   final cs = Theme.of(context).colorScheme;
                   final Widget innerIndicator = RefreshProgressIndicator(
                     semanticsLabel:

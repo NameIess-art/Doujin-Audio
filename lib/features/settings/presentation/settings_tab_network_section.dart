@@ -240,6 +240,7 @@ class _NetworkSettingsControlsState
                   children: [
                     for (final mode in AppProxyMode.values)
                       ChoiceChip(
+                        showCheckmark: false,
                         label: Text(modeLabel(mode)),
                         selected: _mode == mode,
                         onSelected: _saving

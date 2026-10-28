@@ -600,6 +600,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
                   for (final interval in ListeningInterval.values)
                     placeholderFor(
                       ChoiceChip(
+                        showCheckmark: false,
                         visualDensity: VisualDensity.compact,
                         label: Text(i18n.tr('my_interval_${interval.name}')),
                         selected: _interval == interval,

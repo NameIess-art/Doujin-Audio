@@ -901,6 +901,10 @@ class _RetryingImageState extends State<RetryingImage> {
             ? loadingBuilder(context)
             : CoverLoadingArtwork(placeholder: widget.fallbackBuilder(context));
         return PlaceholderContentTransition(
+          // A scroll-time fade would defer the next cover's load globally.
+          duration: ScrollActivityGate.isScrollingWithoutDependencyOf(context)
+              ? Duration.zero
+              : kPlaceholderContentTransitionDuration,
           showPlaceholder: frame == null,
           placeholder: placeholder,
           content: child,

@@ -8,6 +8,72 @@ import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 void main() {
+  testWidgets(
+    'first upward scroll skips refresh artwork and can reverse into a pull',
+    (tester) async {
+      final refresh = Completer<void>();
+      final controller = ScrollController();
+      final indicatorKey = GlobalKey<GlassRefreshIndicatorState>();
+      addTearDown(controller.dispose);
+      var refreshCount = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
+          ),
+          home: Scaffold(
+            body: GlassRefreshIndicator(
+              key: indicatorKey,
+              triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
+              lockChildWhileRefreshing: true,
+              onRefresh: () {
+                refreshCount++;
+                return refresh.future;
+              },
+              child: ListView(
+                controller: controller,
+                physics: AlwaysScrollableScrollPhysics(
+                  parent: GlassRefreshIndicatorScrollPhysics(
+                    isIndicatorVisible: () =>
+                        indicatorKey.currentState?.isIndicatorVisible ?? false,
+                  ),
+                ),
+                children: const [SizedBox(height: 2000)],
+              ),
+            ),
+          ),
+        ),
+      );
+      final gesture = await tester.startGesture(const Offset(200, 300));
+      await gesture.moveBy(const Offset(0, -100));
+      await tester.pump();
+      expect(controller.offset, greaterThan(0));
+      expect(find.byType(RefreshProgressIndicator), findsNothing);
+      expect(find.byType(AppGlassSurface), findsNothing);
+      expect(find.byType(BackdropFilter), findsNothing);
+
+      // The same gesture can return to the edge and become a real refresh.
+      await gesture.moveBy(const Offset(0, 100));
+      await gesture.moveBy(const Offset(0, 60));
+      await tester.pump();
+      expect(controller.offset, 0);
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+      expect(find.byType(BackdropFilter), findsOneWidget);
+      await gesture.moveBy(const Offset(0, 260));
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(refreshCount, 1);
+      refresh.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(AppGlassSurface), findsNothing);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final brightness in Brightness.values) {
     testWidgets(
       'active refresh follows bar glass preference in $brightness',

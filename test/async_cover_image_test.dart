@@ -1589,9 +1589,28 @@ void main() {
         expect(find.text('loading'), findsNothing);
         expect(provider.loadCount, 1);
         provider.complete(await _createTestImage());
+        await tester.pump();
+        await tester.pump();
+        if (scrolling) {
+          expect(find.text('decoding'), findsNothing);
+          expect(
+            UiInteractionCoordinator.instance.isVisualUpdateDeferred,
+            isFalse,
+            reason: 'A decoded cover must not block later scroll cover loads.',
+          );
+          var committed = false;
+          UiInteractionCoordinator.instance.scheduleCommit(
+            key: 'next-scroll-cover',
+            allowDuringScroll: true,
+            structural: true,
+            commit: () => committed = true,
+          );
+          await tester.pump();
+          expect(committed, isTrue);
+          await gesture!.up();
+        }
         await tester.pumpAndSettle();
         expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
-        if (scrolling) await gesture!.up();
         expect(find.text('decoding'), findsNothing);
         expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
         await tester.pumpWidget(const SizedBox.shrink());

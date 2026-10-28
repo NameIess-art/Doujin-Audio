@@ -8,14 +8,17 @@ import '../../../core/media/natural_sort.dart';
 
 enum AsmrCatalogSource { asmrOne, japaneseAsmr }
 
+final _workCodePattern = RegExp(r'^(RJ|UND|UN)[-_ ]?(\d+)$');
+final _dmmCodePattern = RegExp(r'^D_(\d+)$');
+
 String normalizeAsmrWorkCode(String value) {
   final code = value.trim().toUpperCase();
-  final match = RegExp(r'^(RJ|UND|UN)[-_ ]?(\d+)$').firstMatch(code);
+  final match = _workCodePattern.firstMatch(code);
   if (match != null) {
     final digits = match[1] == 'RJ' ? match[2]!.padLeft(6, '0') : match[2]!;
     return '${match[1]}$digits';
   }
-  final dmm = RegExp(r'^D_(\d+)$').firstMatch(code);
+  final dmm = _dmmCodePattern.firstMatch(code);
   return dmm == null ? '' : 'UND${dmm[1]}';
 }
 
@@ -332,18 +335,21 @@ class AsmrWork {
       resources.where((resource) => resource.source == source).firstOrNull;
   AsmrWorkResource get preferredResource =>
       resourceFor(AsmrCatalogSource.asmrOne) ?? resources.first;
-  String get workCode {
-    for (final code in [
-      sourceId,
-      ...resources.map((resource) => resource.code),
-    ]) {
-      final normalized = normalizeAsmrWorkCode(code);
+  // Lazy rows read identity for keys, selection and artwork. Immutable works
+  // share one normalized identity across those reads and subsequent visits.
+  late final String workCode = _resolveWorkCode();
+
+  String _resolveWorkCode() {
+    final sourceCode = normalizeAsmrWorkCode(sourceId);
+    if (sourceCode.isNotEmpty) return sourceCode;
+    for (final resource in resources) {
+      final normalized = normalizeAsmrWorkCode(resource.code);
       if (normalized.isNotEmpty) return normalized;
     }
     return '';
   }
 
-  String get workKey => workCode.isNotEmpty
+  late final String workKey = workCode.isNotEmpty
       ? 'code:$workCode'
       : 'source:${preferredResource.source.name}:${preferredResource.id}';
   String get rjCode => workCode.startsWith('RJ') ? workCode : '';

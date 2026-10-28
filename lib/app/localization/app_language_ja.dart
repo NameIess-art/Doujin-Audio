@@ -218,7 +218,7 @@ const Map<String, String> appLanguageJa = {
   'playback_network_failed_retry': '接続失敗。再生ボタンで再試行',
   'asmr_playback_load_failed_retry': '読み込み失敗。タップで再試行',
   'asmr_playback_network_failed_retry': '接続失敗。タップで再試行',
-  'asmr_network_failed_retry': '接続失敗。下に引いて再試行',
+  'asmr_network_failed_retry': '接続失敗。タップで再試行',
   'asmr_authentication_failed_retry': 'ログイン期限切れ。再ログインしてください。',
   'scan_cancel': 'スキャンをキャンセル',
   'scan_cancelled': 'スキャンを中止しました',

@@ -77,6 +77,39 @@ void main() {
     expect(legacy.workKey, 'code:RJ000123');
   });
 
+  test(
+    'identity remains stable across reads and resolves new resources on copy',
+    () {
+      final original = work(
+        99,
+        'unknown',
+        source: AsmrCatalogSource.japaneseAsmr,
+      );
+      expect(original.workCode, isEmpty);
+      expect(original.workKey, 'source:japaneseAsmr:99');
+      final merged = original.mergeResources(const [
+        AsmrWorkResource(
+          source: AsmrCatalogSource.asmrOne,
+          id: 123,
+          code: 'rj_00123',
+          pageUrl: 'https://example.com/123',
+        ),
+      ]);
+      for (var i = 0; i < 20; i++) {
+        expect(merged.workCode, 'RJ000123');
+        expect(merged.workKey, 'code:RJ000123');
+        expect(merged.rjCode, 'RJ000123');
+        expect(original.workCode, isEmpty);
+        expect(original.workKey, 'source:japaneseAsmr:99');
+      }
+      expect(merged.copyWith(isFavorite: true).workKey, merged.workKey);
+      expect(AsmrWork.fromJson(merged.toJson()).workKey, merged.workKey);
+      final preferred = work(7, 'UND7').mergeResources(merged.resources);
+      expect(preferred.workCode, 'UND7');
+      expect(preferred.workKey, 'code:UND7');
+    },
+  );
+
   test('SQLite preserves equal numeric IDs from different sources', () async {
     final db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
     addTearDown(db.close);

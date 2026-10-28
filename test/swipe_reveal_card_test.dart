@@ -21,6 +21,57 @@ void main() {
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
 
+  testWidgets(
+    'swipe card reuses list paint isolation and retains its content',
+    (tester) async {
+      const boundaryKey = ValueKey('list-card-boundary');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: RepaintBoundary(
+                key: boundaryKey,
+                child: SizedBox(
+                  width: 320,
+                  height: 120,
+                  child: SwipeRevealCard(
+                    shape: LibraryLikeCardMetrics.cardShape,
+                    actionLabel: 'Remove',
+                    removeTooltip: 'Remove',
+                    onRemove: () {},
+                    child: const Center(child: Text('Retained content')),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final content = find.text('Retained content');
+      final original = content.evaluate().single;
+      final position = tester.getTopLeft(content);
+      final boundary = tester.renderObject(find.byKey(boundaryKey));
+      expect(
+        find.descendant(
+          of: find.byType(SwipeRevealCard),
+          matching: find.byType(RepaintBoundary),
+        ),
+        findsNothing,
+      );
+      await tester.drag(content, const Offset(-180, 0));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Remove'), findsOneWidget);
+      expect(content.evaluate().single, same(original));
+      await tester.tapAt(tester.getCenter(content));
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(content), position);
+      expect(content.evaluate().single, same(original));
+      expect(tester.renderObject(find.byKey(boundaryKey)), same(boundary));
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.android}),
+  );
+
   for (final singleAudio in [false, true]) {
     for (final direction in [-1.0, 1.0]) {
       for (final target in ['blank', 'short', 'long']) {

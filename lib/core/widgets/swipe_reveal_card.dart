@@ -547,123 +547,119 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         ),
       );
     }
-    final cardWidget = RepaintBoundary(
-      child: TapRegion(
-        onTapOutside: (_) {
-          if (!_primaryActionPending) _closePane();
-        },
-        child: Padding(
-          padding: widget.margin,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onHorizontalDragStart: _handleHorizontalDragStart,
-            onHorizontalDragUpdate: _handleHorizontalDragUpdate,
-            onHorizontalDragEnd: _handleHorizontalDragEnd,
-            onSecondaryTap: () {
-              if (_actionAfterClose != null) return;
-              _beginMotion();
-              setState(() {
-                final opening = !_isOpen;
-                if (_displayedWidth == 0) _revealedFromStart = false;
-                _actionPaneActive = opening || _actionPaneActive;
-                _revealedWidth = opening ? _activeActionWidth : 0;
-              });
-            },
-            onHorizontalDragCancel: () {
-              // An action tap also cancels the competing drag recognizer.
-              if (_dragAccepted) _closePane();
-              _dragAccepted = false;
-              _dragRejected = false;
-              if (_displayedWidth == _revealedWidth) _finishMotion();
-            },
-            child: Stack(
-              children: [
-                if (_actionPaneActive)
-                  Positioned.fill(
-                    child: ClipRect(
-                      clipper: _SwipeRevealPaneClipper(
-                        fromStart: _revealedFromStart,
-                        actionWidth: actionWidth,
-                      ),
-                      child: SwipeRevealActionPane(
-                        actions: _revealedFromStart
-                            ? leadingActions
-                            : trailingActions,
-                        fromStart: _revealedFromStart,
-                        vertical: widget.verticalActions,
-                        width: actionWidth,
-                        progress: revealProgress,
-                        shape: widget.shape,
-                        color: widget.color,
-                        label: actionLabel,
-                        tooltip: actionTooltip,
-                        onAction: _runActionAfterPaneClose,
-                      ),
+    // Lists own per-card repaint isolation. Adding it here duplicates the
+    // same full-card layer for every visible library and playlist entry.
+    return TapRegion(
+      onTapOutside: (_) {
+        if (!_primaryActionPending) _closePane();
+      },
+      child: Padding(
+        padding: widget.margin,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart: _handleHorizontalDragStart,
+          onHorizontalDragUpdate: _handleHorizontalDragUpdate,
+          onHorizontalDragEnd: _handleHorizontalDragEnd,
+          onSecondaryTap: () {
+            if (_actionAfterClose != null) return;
+            _beginMotion();
+            setState(() {
+              final opening = !_isOpen;
+              if (_displayedWidth == 0) _revealedFromStart = false;
+              _actionPaneActive = opening || _actionPaneActive;
+              _revealedWidth = opening ? _activeActionWidth : 0;
+            });
+          },
+          onHorizontalDragCancel: () {
+            // An action tap also cancels the competing drag recognizer.
+            if (_dragAccepted) _closePane();
+            _dragAccepted = false;
+            _dragRejected = false;
+            if (_displayedWidth == _revealedWidth) _finishMotion();
+          },
+          child: Stack(
+            children: [
+              if (_actionPaneActive)
+                Positioned.fill(
+                  child: ClipRect(
+                    clipper: _SwipeRevealPaneClipper(
+                      fromStart: _revealedFromStart,
+                      actionWidth: actionWidth,
+                    ),
+                    child: SwipeRevealActionPane(
+                      actions: _revealedFromStart
+                          ? leadingActions
+                          : trailingActions,
+                      fromStart: _revealedFromStart,
+                      vertical: widget.verticalActions,
+                      width: actionWidth,
+                      progress: revealProgress,
+                      shape: widget.shape,
+                      color: widget.color,
+                      label: actionLabel,
+                      tooltip: actionTooltip,
+                      onAction: _runActionAfterPaneClose,
                     ),
                   ),
-                if (!_actionPaneActive && _revealedWidth == 0)
-                  closedContent
-                else
-                  TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0, end: _revealedWidth),
-                    duration:
-                        _snapClosed || MediaQuery.disableAnimationsOf(context)
-                        ? Duration.zero
-                        : const Duration(milliseconds: 220),
-                    curve: Curves.easeOutCubic,
-                    onEnd: () {
+                ),
+              if (!_actionPaneActive && _revealedWidth == 0)
+                closedContent
+              else
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0, end: _revealedWidth),
+                  duration:
+                      _snapClosed || MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  onEnd: () {
+                    if (!mounted) return;
+                    _displayedWidth = _revealedWidth;
+                    if (!_dragAccepted) _finishMotion();
+                    if (!_snapClosed &&
+                        (_revealedWidth != 0 || !_actionPaneActive)) {
+                      return;
+                    }
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (!mounted) return;
-                      _displayedWidth = _revealedWidth;
-                      if (!_dragAccepted) _finishMotion();
-                      if (!_snapClosed &&
-                          (_revealedWidth != 0 || !_actionPaneActive)) {
-                        return;
-                      }
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (!mounted) return;
-                        setState(() {
-                          _snapClosed = false;
-                          if (_revealedWidth == 0) {
-                            _actionPaneActive = false;
-                            if (!_dragAccepted) _revealedFromStart = false;
-                          }
-                        });
-                        if (_revealedWidth == 0 && _actionAfterClose != null) {
-                          _runClosedAction();
+                      setState(() {
+                        _snapClosed = false;
+                        if (_revealedWidth == 0) {
+                          _actionPaneActive = false;
+                          if (!_dragAccepted) _revealedFromStart = false;
                         }
                       });
-                    },
-                    builder: (context, value, child) {
-                      _displayedWidth = value.clamp(0.0, actionWidth);
-                      return Transform.translate(
-                        offset: Offset(
-                          _revealedFromStart
-                              ? _displayedWidth
-                              : -_displayedWidth,
-                          0,
-                        ),
-                        child: child,
-                      );
-                    },
-                    child: closedContent,
+                      if (_revealedWidth == 0 && _actionAfterClose != null) {
+                        _runClosedAction();
+                      }
+                    });
+                  },
+                  builder: (context, value, child) {
+                    _displayedWidth = value.clamp(0.0, actionWidth);
+                    return Transform.translate(
+                      offset: Offset(
+                        _revealedFromStart ? _displayedWidth : -_displayedWidth,
+                        0,
+                      ),
+                      child: child,
+                    );
+                  },
+                  child: closedContent,
+                ),
+              if (_isOpen)
+                Positioned.fill(
+                  right: _revealedFromStart ? 0 : actionWidth,
+                  left: _revealedFromStart ? actionWidth : 0,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: _closePane,
                   ),
-                if (_isOpen)
-                  Positioned.fill(
-                    right: _revealedFromStart ? 0 : actionWidth,
-                    left: _revealedFromStart ? actionWidth : 0,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: _closePane,
-                    ),
-                  ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       ),
     );
-
-    return cardWidget;
   }
 }
 

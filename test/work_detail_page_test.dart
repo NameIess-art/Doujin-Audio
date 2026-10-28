@@ -756,7 +756,7 @@ void main() {
             'title': 'Retained.mp3',
             'mediaStreamUrl': 'https://example.test/retained.mp3',
           }),
-        ], cached: cached)..loadError = StateError('directory unavailable');
+        ], cached: cached)..loadError = const SocketException('connection failed');
         addTearDown(controller.dispose);
         await tester.pumpWidget(
           fixture.build(
@@ -771,11 +771,24 @@ void main() {
         await _settleDetail(tester);
         final error = find.byKey(const ValueKey('work_detail_directory_error'));
         expect(error, findsOneWidget);
+        expect(find.text('网络连接失败，请点击重试。'), findsOneWidget);
+        expect(
+          tester.getTopLeft(error).dy,
+          greaterThanOrEqualTo(
+            tester.getBottomLeft(find.byType(WorkDetailBreadcrumbs)).dy,
+          ),
+        );
         expect(
           find.text(fixture.languageProvider.tr('empty_folder')),
           findsNothing,
         );
         expect(find.text('Retained'), cached ? findsOneWidget : findsNothing);
+        if (cached) {
+          expect(
+            tester.getTopLeft(find.text('Retained')).dy,
+            greaterThan(tester.getBottomLeft(error).dy),
+          );
+        }
         expect(controller.requests, 1);
 
         final pending = Completer<void>();

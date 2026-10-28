@@ -216,7 +216,7 @@ const Map<String, String> appLanguageZh = {
   'playback_network_failed_retry': '网络连接失败，点击播放按钮重试',
   'asmr_playback_load_failed_retry': '加载失败，点击重试',
   'asmr_playback_network_failed_retry': '网络连接失败，点击重试',
-  'asmr_network_failed_retry': '网络连接失败，请下拉重试。',
+  'asmr_network_failed_retry': '网络连接失败，请点击重试。',
   'asmr_authentication_failed_retry': '登录状态已失效，请重新登录后重试。',
   'scan_cancel': '取消扫描',
   'scan_cancelled': '扫描已取消。',

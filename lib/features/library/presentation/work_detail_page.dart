@@ -1444,20 +1444,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                         const Divider(height: 1),
                         const SizedBox(height: 8),
 
-                        if (_asmrLoadError case final error?)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: OperationStatusBanner(
-                              key: const ValueKey(
-                                'work_detail_directory_error',
-                              ),
-                              label: localizedAsmrCatalogErrorText(i18n, error),
-                              error: error,
-                              retryTooltip: i18n.tr('retry'),
-                              onRetry: () => unawaited(_loadAsmrData()),
-                            ),
-                          ),
-
                         WorkDetailBreadcrumbs(
                           segments: List.of(_currentPathSegments),
                           entryCount: currentEntries.length,
@@ -1470,6 +1456,19 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                 ),
 
                 // 4. Directory File Tree List
+                if (_asmrLoadError case final error?)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                      child: OperationStatusBanner(
+                        key: const ValueKey('work_detail_directory_error'),
+                        label: localizedAsmrCatalogErrorText(i18n, error),
+                        error: error,
+                        retryTooltip: i18n.tr('retry'),
+                        onRetry: () => unawaited(_loadAsmrData()),
+                      ),
+                    ),
+                  ),
                 if (isLoading)
                   SliverPadding(
                     padding: const EdgeInsets.symmetric(

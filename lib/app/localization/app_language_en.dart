@@ -234,7 +234,7 @@ const Map<String, String> appLanguageEn = {
   'playback_network_failed_retry': 'Connection failed. Press play to retry.',
   'asmr_playback_load_failed_retry': 'Load failed. Tap to retry.',
   'asmr_playback_network_failed_retry': 'Connection failed. Tap to retry.',
-  'asmr_network_failed_retry': 'Connection failed. Pull down to retry.',
+  'asmr_network_failed_retry': 'Connection failed. Tap to retry.',
   'asmr_authentication_failed_retry': 'Session expired. Sign in and retry.',
   'scan_cancel': 'Cancel scan',
   'scan_cancelled': 'Scan cancelled',

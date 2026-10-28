@@ -62,10 +62,12 @@ class StorageUsagePlatformSnapshot {
   const StorageUsagePlatformSnapshot({
     required this.totalBytes,
     required this.availableBytes,
+    this.storageRoots = const <String>[],
   });
 
   final int totalBytes;
   final int availableBytes;
+  final List<String> storageRoots;
 }
 
 class PersistedUriPermissionReconcileResult {
@@ -896,6 +898,11 @@ class FileCachePlatformGateway {
     return StorageUsagePlatformSnapshot(
       totalBytes: totalBytes,
       availableBytes: availableBytes,
+      storageRoots: List<String>.unmodifiable(
+        (raw['storageRoots'] as List? ?? const []).whereType<String>().where(
+          (root) => root.isNotEmpty,
+        ),
+      ),
     );
   }
 

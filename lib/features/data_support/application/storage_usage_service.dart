@@ -38,11 +38,11 @@ class StorageUsageService {
     Future<int> Function()? cacheBytes,
   }) : _fileCacheGateway = fileCacheGateway,
        _libraryTracks = libraryTracks,
-       _cacheBytes = cacheBytes ?? AppCacheService.estimateCacheBytes;
+       _cacheBytes = cacheBytes;
 
   final FileCachePlatformGateway _fileCacheGateway;
   final List<MusicTrack> Function() _libraryTracks;
-  final Future<int> Function() _cacheBytes;
+  final Future<int> Function()? _cacheBytes;
 
   Future<StorageUsageSnapshot> load() async {
     final platformUsage = await _fileCacheGateway.readStorageUsage();
@@ -55,12 +55,16 @@ class StorageUsageService {
     final totalBytes = platformUsage.totalBytes;
     final availableBytes = platformUsage.availableBytes.clamp(0, totalBytes);
     final usedBytes = totalBytes - availableBytes;
-    final audioLibraryBytes = _sumLocalAudioBytes().clamp(0, usedBytes);
+    final audioLibraryBytes = _sumLocalAudioBytes(
+      platformUsage.storageRoots,
+    ).clamp(0, usedBytes);
     final remainingAfterAudio = usedBytes - audioLibraryBytes;
-    final applicationCacheBytes = (await _cacheBytes()).clamp(
-      0,
-      remainingAfterAudio,
-    );
+    final cacheBytes =
+        await (_cacheBytes?.call() ??
+            AppCacheService.estimateCacheBytes(
+              storageRoots: platformUsage.storageRoots,
+            ));
+    final applicationCacheBytes = cacheBytes.clamp(0, remainingAfterAudio);
     final otherUsedBytes =
         usedBytes - audioLibraryBytes - applicationCacheBytes;
 
@@ -73,14 +77,26 @@ class StorageUsageService {
     );
   }
 
-  int _sumLocalAudioBytes() {
+  int _sumLocalAudioBytes(List<String> storageRoots) {
     final seen = <String>{};
     var total = 0;
     for (final track in _libraryTracks()) {
       if (PathMatcher.isRemoteUri(track.path)) continue;
+      // Capacity and categories must describe the same volume. Unknown document
+      // providers may be remote or backed by removable storage.
+      final trackKey = PathMatcher.equivalenceKey(track.path);
+      if (!storageRoots.any((root) {
+        if (PathMatcher.isWithinOrEqual(track.path, root)) return true;
+        if (!PathMatcher.isContentUri(root)) return false;
+        // SAF volume IDs use "primary:Music/...", without a slash after ':'.
+        final rootKey = PathMatcher.equivalenceKey(root);
+        return rootKey.endsWith(':') && trackKey.startsWith(rootKey);
+      })) {
+        continue;
+      }
       final size = track.fileSizeBytes;
       if (size == null || size <= 0) continue;
-      if (!seen.add(PathMatcher.equivalenceKey(track.path))) continue;
+      if (!seen.add(trackKey)) continue;
       total += size;
     }
     return total;

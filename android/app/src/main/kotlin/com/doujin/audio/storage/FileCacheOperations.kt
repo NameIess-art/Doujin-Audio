@@ -8,8 +8,9 @@ import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import android.os.StatFs
+import java.io.File
 
-internal class FileCacheOperations(context: Context) {
+internal class FileCacheOperations(private val context: Context) {
     internal val documentStorage = DocumentStorageOperations(context)
     private val folderScan = FolderScanOperations(context, documentStorage)
     private val mediaMetadata = MediaMetadataOperations(context, documentStorage)
@@ -134,11 +135,26 @@ internal class FileCacheOperations(context: Context) {
     ): List<Map<String, String>> =
         covers.discover(path, groupKey, rootFolder, recursive, preferredOnly)
 
-    fun storageUsage(): HashMap<String, Long> {
-        val stats = StatFs(Environment.getExternalStorageDirectory().absolutePath)
+    fun storageUsage(): Map<String, Any> {
+        val primary = Environment.getExternalStorageDirectory()
+        val stats = StatFs(primary.absolutePath)
+        val canonicalPrimary = primary.canonicalFile
+        val roots = linkedSetOf(primary.absolutePath, canonicalPrimary.path)
+        if (Environment.isExternalStorageEmulated(primary)) {
+            // Emulated shared storage and persistent imports use internal storage.
+            roots.add(context.filesDir.absolutePath)
+            roots.add(context.filesDir.canonicalPath)
+            roots.add(context.cacheDir.absolutePath)
+            roots.add(context.cacheDir.canonicalPath)
+        }
+        for (alias in listOf(File("/sdcard"), File("/storage/self/primary"))) {
+            if (alias.canonicalFile == canonicalPrimary) roots.add(alias.path)
+        }
+        roots.add("content://com.android.externalstorage.documents/tree/primary%3A")
         return hashMapOf(
             "totalBytes" to stats.totalBytes,
             "availableBytes" to stats.availableBytes,
+            "storageRoots" to roots.toList(),
         )
     }
 

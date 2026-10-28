@@ -400,9 +400,9 @@ void main() {
     final requests = <HttpRequest>[];
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
-      requests.add(request);
       request.response.add([1]);
       await request.response.flush();
+      requests.add(request);
     });
     final service = _service(directory);
     addTearDown(() async {

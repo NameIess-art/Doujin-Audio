@@ -38,6 +38,14 @@ part 'playback_command_restore.dart';
 typedef PlaybackNotificationSynchronizer =
     void Function({bool immediateUnifiedSync});
 
+typedef _PlaybackCacheLeaseSignature = ({
+  String? loadedPath,
+  String? pendingPath,
+  String? playRequestedPath,
+  List<Map<String, Object?>>? queue,
+  int retargetRevision,
+});
+
 /// Owns playback command serialization and native preparation coordination.
 ///
 /// Mutable playback state remains owned by [PlaybackFacade].
@@ -105,7 +113,11 @@ final class PlaybackCommandCoordinator
       );
 
   final Map<String, CachePathLease> _activePlaybackCacheLeases = {};
-  final Map<String, Set<String>> _activePlaybackCachePaths = {};
+  final Map<
+    String,
+    ({_PlaybackCacheLeaseSignature signature, Set<String> keys})
+  >
+  _activePlaybackCachePaths = {};
   final Map<String, ({String trackPath, String playedPath})>
   _automaticPlaybackCacheTracks = {};
 
@@ -135,11 +147,25 @@ final class PlaybackCommandCoordinator
 
   void _syncActivePlaybackCacheLease(PlaybackSession session) {
     _syncAutomaticPlaybackCache(session);
+    final signature = (
+      loadedPath: session.loadedPath,
+      pendingPath: session.pendingNativeTrackPath,
+      playRequestedPath: session.playbackRequested
+          ? session.currentTrackPath
+          : null,
+      queue: session.nativePlaybackQueueCache,
+      retargetRevision: _playbackFacade.retargetRevision,
+    );
+    final previous = _activePlaybackCachePaths[session.id];
+    if (previous?.signature == signature) return;
     final paths = <String, String>{};
     for (final candidate in <String?>[
-      session.loadedPath,
-      session.pendingNativeTrackPath,
-      if (session.playbackRequested) session.currentTrackPath,
+      signature.loadedPath,
+      signature.pendingPath,
+      signature.playRequestedPath,
+      // Native queue advancement can open these without another Dart prepare.
+      if (signature.loadedPath != null || signature.pendingPath != null)
+        for (final item in signature.queue ?? const []) item['path'] as String?,
     ]) {
       if (candidate == null || candidate.isEmpty) continue;
       final resolved = _playbackFacade.resolveRetargetedPath(candidate);
@@ -147,14 +173,13 @@ final class PlaybackCommandCoordinator
       paths[PathMatcher.equivalenceKey(resolved)] = resolved;
     }
     final keys = paths.keys.toSet();
-    if (setEquals(_activePlaybackCachePaths[session.id], keys)) return;
+    _activePlaybackCachePaths[session.id] = (signature: signature, keys: keys);
+    if (setEquals(previous?.keys, keys)) return;
     final replacement = paths.isEmpty
         ? null
         : AppCacheService.protectPaths(paths.values);
     _activePlaybackCacheLeases.remove(session.id)?.release();
-    _activePlaybackCachePaths.remove(session.id);
     if (replacement != null) {
-      _activePlaybackCachePaths[session.id] = keys;
       _activePlaybackCacheLeases[session.id] = replacement;
     }
   }

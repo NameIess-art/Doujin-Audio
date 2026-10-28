@@ -98,7 +98,11 @@ class AppCacheService {
     }).whenComplete(() => _clearFuture = null);
   }
 
-  static Future<int> estimateCacheBytes() {
+  static Future<int> estimateCacheBytes({List<String>? storageRoots}) {
+    if (storageRoots != null) {
+      final roots = List<String>.of(storageRoots);
+      return _operations.then((_) => _estimateCacheBytes(storageRoots: roots));
+    }
     final pending = _estimateFuture;
     if (pending != null) return pending;
     late final Future<int> result;
@@ -108,9 +112,15 @@ class AppCacheService {
     return _estimateFuture = result;
   }
 
-  static Future<int> _estimateCacheBytes() async {
+  static Future<int> _estimateCacheBytes({List<String>? storageRoots}) async {
     var totalBytes = 0;
     for (final root in await _cacheRoots(includePersistent: true)) {
+      if (storageRoots != null &&
+          !storageRoots.any(
+            (volumeRoot) => PathMatcher.isWithinOrEqual(root.path, volumeRoot),
+          )) {
+        continue;
+      }
       await for (final file in _files(root)) {
         try {
           totalBytes += await file.length();

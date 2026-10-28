@@ -127,6 +127,23 @@ void main() {
     },
   );
 
+  test('volume estimates exclude cache roots on other storage', () async {
+    await file(temporary, 'exports/local.bin', 7);
+    await file(external, 'exports/sd-card.bin', 11);
+    await file(support, '$coverArtworkStoreDirectoryName/cover.image', 13);
+
+    expect(
+      await AppCacheService.estimateCacheBytes(storageRoots: [temporary.path]),
+      7,
+    );
+    expect(
+      await AppCacheService.estimateCacheBytes(storageRoots: [support.path]),
+      13,
+    );
+    expect(await AppCacheService.estimateCacheBytes(storageRoots: []), 0);
+    expect(await AppCacheService.estimateCacheBytes(), 31);
+  });
+
   test(
     'persistent artwork is counted but never deleted by temporary maintenance',
     () async {

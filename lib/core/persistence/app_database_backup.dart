@@ -85,10 +85,8 @@ extension AppDatabaseBackup on AppDatabase {
         throw const FormatException('unsupported_database_schema');
       }
       // Validate tables present in the source version before migration can
-      // recreate them and hide data loss. Listening tables first exist in v14.
-      if (sourceVersion >= 12) {
-        await _validateRestoreSchema(inspection, version: sourceVersion);
-      }
+      // recreate them and hide data loss.
+      await _validateRestoreSchema(inspection, version: sourceVersion);
     } finally {
       await inspection.close();
     }
@@ -148,12 +146,33 @@ Future<void> _validateRestoreSchema(
     for (final table in requiredTables) {
       final name = table['name']! as String;
       if (version < 14 && name.startsWith('listening_')) continue;
+      if (version < 6 && name.startsWith('audio_detail_')) continue;
       if (!candidateTables.contains(name)) {
         throw const FormatException('missing_database_tables');
       }
       var requiredColumns = await reference.rawQuery(
         'PRAGMA table_info("$name")',
       );
+      requiredColumns = requiredColumns.where((column) {
+        final columnName = column['name'];
+        return switch (name) {
+          'audio_details' =>
+            (version >= 2 || columnName != 'card_cover_path') &&
+                (version >= 3 || columnName != 'duration_ms') &&
+                (version >= 4 || columnName != 'card_cover_selected'),
+          'sessions' => version >= 7 || columnName != 'is_temporary',
+          'time_segment_labels' =>
+            version >= 12 || columnName != 'track_match_key',
+          _ => true,
+        };
+      }).toList();
+      if (version < 6 && name == 'audio_details') {
+        requiredColumns = [
+          ...requiredColumns,
+          for (final column in ['voice_actors_json', 'tags_json'])
+            {'name': column, 'type': 'TEXT', 'notnull': 1, 'pk': 0},
+        ];
+      }
       if (version < 15 && name == 'asmr_works') {
         requiredColumns = requiredColumns
             .where(

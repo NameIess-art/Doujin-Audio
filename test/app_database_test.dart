@@ -749,7 +749,50 @@ void main() {
     },
   );
 
-  for (final version in [12, AppDatabase.schemaVersion]) {
+  for (final version in [1, 3, 5, 7, 8, 11, 12, AppDatabase.schemaVersion]) {
+    test(
+      'schema $version restore preserves durable data while migrating',
+      () async {
+        final directory = await Directory.systemTemp.createTemp(
+          'legacy_restore_',
+        );
+        addTearDown(() => directory.delete(recursive: true));
+        await repository.seedSessions([_playbackSession('kept')]);
+        await appDatabase.saveAppSetting('user_setting', 'keep');
+        final candidate = await appDatabase.createPortableSnapshot(
+          '${directory.path}/candidate.db',
+        );
+        final legacy = await databaseFactoryFfi.openDatabase(candidate.path);
+        await _setRestoreSchemaVersion(legacy, version);
+        await legacy.close();
+
+        expect(
+          await appDatabase.validateAndMigrateRestoreCandidate(candidate.path),
+          version,
+        );
+        final migrated = await databaseFactoryFfi.openDatabase(candidate.path);
+        try {
+          expect(await migrated.getVersion(), AppDatabase.schemaVersion);
+          expect(await migrated.query('sessions'), hasLength(1));
+          expect(await migrated.query('session_eq_bands'), [
+            {'session_id': 'kept', 'frequency_hz': 1000, 'gain_db': 2.5},
+          ]);
+          expect(
+            await migrated.query('playback_queue_entry_tracks'),
+            hasLength(2),
+          );
+          expect(
+            await AppDatabase.test(migrated).loadAppSetting('user_setting'),
+            'keep',
+          );
+        } finally {
+          await migrated.close();
+        }
+      },
+    );
+  }
+
+  for (final version in [5, 8, 11, 12, AppDatabase.schemaVersion]) {
     for (final defect in [
       'missing EQ table',
       'missing queue tracks table',
@@ -769,6 +812,7 @@ void main() {
           '${directory.path}/candidate.db',
         );
         final damaged = await databaseFactoryFfi.openDatabase(candidate.path);
+        await _setRestoreSchemaVersion(damaged, version);
         switch (defect) {
           case 'missing EQ table':
             await damaged.execute('DROP TABLE session_eq_bands');
@@ -796,7 +840,6 @@ void main() {
               ),
             );
         }
-        await damaged.setVersion(version);
         await damaged.close();
         final candidateBefore = await candidate.readAsBytes();
 
@@ -3055,6 +3098,79 @@ void main() {
     expect(indexNames, contains('idx_library_entries_library'));
     expect(indexNames, contains('idx_library_entries_state'));
   });
+}
+
+Future<void> _setRestoreSchemaVersion(Database db, int version) async {
+  if (version < 15) {
+    for (final table in [
+      'asmr_works',
+      'asmr_work_lists',
+      'asmr_work_tags',
+      'asmr_work_voice_actors',
+    ]) {
+      var sql =
+          (await db.rawQuery('SELECT sql FROM sqlite_master WHERE name = ?', [
+                table,
+              ])).single['sql']!
+              as String;
+      if (table == 'asmr_works') {
+        sql = sql
+            .replaceFirst('work_key TEXT PRIMARY KEY,', '')
+            .replaceFirst('resources_json TEXT,', '')
+            .replaceFirst('id INTEGER NOT NULL,', 'id INTEGER PRIMARY KEY,');
+      } else {
+        sql = sql.replaceFirst(
+          'work_id TEXT NOT NULL',
+          'work_id INTEGER NOT NULL',
+        );
+      }
+      await db.execute('DROP TABLE $table');
+      await db.execute(sql);
+    }
+  }
+  if (version < 14) {
+    for (final table in [
+      'listening_days',
+      'listening_work_days',
+      'listening_history',
+      'listening_imports',
+    ]) {
+      await db.execute('DROP TABLE $table');
+    }
+  }
+  if (version < 12) {
+    await db.execute('DROP INDEX idx_time_segment_labels_match');
+    await db.execute(
+      'ALTER TABLE time_segment_labels DROP COLUMN track_match_key',
+    );
+  }
+  if (version < 8 && version >= 7) {
+    await db.execute(
+      'ALTER TABLE sessions ADD COLUMN retain_in_now_playing INTEGER NOT NULL DEFAULT 0',
+    );
+  }
+  if (version < 7) {
+    await db.execute('ALTER TABLE sessions DROP COLUMN is_temporary');
+  }
+  if (version < 6) {
+    await db.execute('DROP TABLE audio_detail_voice_actors');
+    await db.execute('DROP TABLE audio_detail_tags');
+    for (final column in ['voice_actors_json', 'tags_json']) {
+      await db.execute(
+        "ALTER TABLE audio_details ADD COLUMN $column TEXT NOT NULL DEFAULT '[]'",
+      );
+    }
+  }
+  for (final (introduced, column) in [
+    (2, 'card_cover_path'),
+    (3, 'duration_ms'),
+    (4, 'card_cover_selected'),
+  ]) {
+    if (version < introduced) {
+      await db.execute('ALTER TABLE audio_details DROP COLUMN $column');
+    }
+  }
+  await db.setVersion(version);
 }
 
 AsmrWork _asmrWork(

@@ -31,7 +31,11 @@ void main() {
     messenger.setMockMethodCallHandler(channel, (call) async {
       return <String, Object?>{
         'ok': true,
-        'value': <String, Object?>{'totalBytes': 1000, 'availableBytes': 400},
+        'value': <String, Object?>{
+          'totalBytes': 1000,
+          'availableBytes': 400,
+          'storageRoots': <String>['/audio'],
+        },
       };
     });
     final gateway = FileCachePlatformGateway(
@@ -65,6 +69,73 @@ void main() {
           snapshot.availableBytes,
       snapshot.totalBytes,
     );
+  });
+
+  test('counts only documents and files on the reported volume', () async {
+    const primaryDocuments =
+        'content://com.android.externalstorage.documents/tree/primary%3A';
+    messenger.setMockMethodCallHandler(
+      channel,
+      (_) async => {
+        'ok': true,
+        'value': {
+          'totalBytes': 1000,
+          'availableBytes': 400,
+          'storageRoots': ['/storage/emulated/0', '/sdcard', primaryDocuments],
+        },
+      },
+    );
+    final service = StorageUsageService(
+      fileCacheGateway: FileCachePlatformGateway(
+        channel: channel,
+        isAndroid: () => true,
+      ),
+      cacheBytes: () async => 100,
+      libraryTracks: () => [
+        track('/storage/emulated/0/Music/a.mp3', 50),
+        track('/sdcard/Music/b.mp3', 50),
+        track('$primaryDocuments/document/primary%3AMusic%2Fc.mp3', 50),
+        track('$primaryDocuments::Music/d.mp3', 50),
+        track(
+          'content://com.android.externalstorage.documents/tree/1234-ABCD%3AMusic/document/1234-ABCD%3AMusic%2Fa.mp3',
+          800,
+        ),
+        track('/storage/1234-ABCD/Music/a.mp3', 800),
+        track('/storage/emulated/01/Music/a.mp3', 800),
+        track('content://cloud.documents/document/primary%3AMusic', 800),
+        track('https://example.com/a.mp3', 800),
+      ],
+    );
+
+    final snapshot = await service.load();
+
+    expect(snapshot.audioLibraryBytes, 200);
+    expect(snapshot.applicationCacheBytes, 100);
+    expect(snapshot.otherUsedBytes, 300);
+  });
+
+  test('unknown volume roots preserve cache and other used space', () async {
+    messenger.setMockMethodCallHandler(
+      channel,
+      (_) async => {
+        'ok': true,
+        'value': {'totalBytes': 1000, 'availableBytes': 400},
+      },
+    );
+    final service = StorageUsageService(
+      fileCacheGateway: FileCachePlatformGateway(
+        channel: channel,
+        isAndroid: () => true,
+      ),
+      cacheBytes: () async => 100,
+      libraryTracks: () => [track('/unknown/a.mp3', 800)],
+    );
+
+    final snapshot = await service.load();
+
+    expect(snapshot.audioLibraryBytes, 0);
+    expect(snapshot.applicationCacheBytes, 100);
+    expect(snapshot.otherUsedBytes, 500);
   });
 
   test(

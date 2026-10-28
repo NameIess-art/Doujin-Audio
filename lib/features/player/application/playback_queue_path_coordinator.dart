@@ -324,6 +324,36 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     );
   }
 
+  Future<void> validatePlaybackCachePaths(Iterable<String> paths) async {
+    final sources = <String>{};
+    for (final value in paths) {
+      final source = PathMatcher.isRemoteUri(value)
+          ? PathMatcher.normalize(value)
+          : originalPathForRetargeted(value);
+      if (source != null && PathMatcher.isRemoteUri(source)) {
+        sources.add(source);
+      }
+    }
+    for (final source in sources) {
+      final cached = resolveRetargetedPath(source);
+      if (cached.contains('://')) continue;
+      try {
+        if (await File(cached).length() > 0) continue;
+      } on PathNotFoundException {
+        // Temporary playback files may have been evicted since alias creation.
+      }
+      if (_retargetedPathAliases[source] != cached) continue;
+      _retargetedPathAliases.remove(source);
+      if (_retargetedPathAliases[cached] == cached &&
+          !_retargetedPathAliases.entries.any(
+            (entry) => entry.key != cached && entry.value == cached,
+          )) {
+        _retargetedPathAliases.remove(cached);
+      }
+      _retargetRevision++;
+    }
+  }
+
   void clearRetargetedPaths() {
     if (_retargetedPathAliases.isEmpty) return;
     _retargetedPathAliases.clear();

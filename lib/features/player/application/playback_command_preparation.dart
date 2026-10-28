@@ -189,10 +189,17 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     final previousLogicalPath = session.currentTrackPath;
     final previousPosition = session.position;
     final previousWasPlaying = session.effectivePlaying;
+    final requestedSource = _playbackFacade.resolveRetargetedPath(nextPath);
+    final preparationLease = AppCacheService.protectPaths([
+      if (!requestedSource.contains('://')) requestedSource,
+    ]);
     try {
       if (!_isSessionLoadCurrent(session, generation)) {
         return false;
       }
+
+      await _playbackFacade.validatePlaybackCachePaths([nextPath]);
+      if (!_isSessionLoadCurrent(session, generation)) return false;
 
       final target = _resolvePlaybackPreparationTarget(
         session,
@@ -288,6 +295,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         preparationError = e.toString();
       }
     } finally {
+      preparationLease.release();
       if (_isRegisteredSession(session) &&
           session.isPreparationCurrent(generation)) {
         session.finishPreparation(
@@ -524,14 +532,23 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       session.loadedPath = null;
       return false;
     }
+    final previousSource = _playbackFacade.resolveRetargetedPath(
+      previousLogicalPath,
+    );
+    final restoreLease = AppCacheService.protectPaths([
+      if (!previousSource.contains('://')) previousSource,
+    ]);
     try {
+      await _playbackFacade.validatePlaybackCachePaths([previousLogicalPath]);
+      if (!_isSessionLoadCurrent(session, generation)) return false;
       final restoreTarget = _resolvePlaybackPreparationTarget(
         session,
         nextPath: previousLogicalPath,
         forceStartAtZero: false,
         startPositionOverride: previousPosition,
       );
-      session.markNativePreparation(generation, previousLoadedPath);
+      session.markNativePreparation(generation, restoreTarget.resolvedPath);
+      _syncActivePlaybackCacheLease(session);
       final restored = await _prepareNativeTrackWithRetry(
         session,
         restoreTarget,
@@ -544,7 +561,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         session.loadedPath = null;
         return false;
       }
-      session.loadedPath = previousLoadedPath;
+      session.loadedPath = restoreTarget.resolvedPath;
       final snapshot = restored.snapshot;
       if (snapshot != null) {
         _handleNativePlaybackSnapshot(snapshot);
@@ -570,6 +587,8 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         session.loadedPath = null;
       }
       return false;
+    } finally {
+      restoreLease.release();
     }
   }
 
@@ -626,46 +645,66 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     PlaybackSession session, {
     required String currentPath,
   }) async {
-    final cacheKey = Object.hash(
-      _playbackQueueScopeKey(session, currentPath),
-      _libraryFacade.contentRevision,
-      _libraryFacade.coverGeneration,
-    );
-    final cached = session.nativePlaybackQueueCache;
-    if (session.nativePlaybackQueueCacheKey == cacheKey) {
-      if (cached != null) return cached;
-      final pending = session.nativePlaybackQueueFuture;
-      if (pending != null) return pending;
-    }
-    session.nativePlaybackQueueCacheKey = cacheKey;
-    session.nativePlaybackQueueCache = null;
-    final paths = _nativePlaybackQueuePathsFor(
+    final logicalCurrentPath =
+        _playbackFacade.originalPathForRetargeted(currentPath) ?? currentPath;
+    var paths = _nativePlaybackQueuePathsFor(
       session,
-      currentPath: currentPath,
+      currentPath: logicalCurrentPath,
     );
-    final descriptors = <_NativeQueueTrack>[];
-    for (final trackPath in paths) {
-      final track = _sessionTrackForPath(session, trackPath);
-      descriptors.add((
-        path: trackPath,
-        track: track,
-        coverPath: resolvedPlaybackCoverPathForTrack(track),
-      ));
-    }
-    final pending = compute(_buildNativePlaybackQueue, descriptors);
-    session.nativePlaybackQueueFuture = pending;
+    final lease = AppCacheService.protectPaths(
+      paths.where((value) => !value.contains('://')),
+    );
     try {
-      final queue = await pending;
-      if (_isRegisteredSession(session) &&
-          session.nativePlaybackQueueCacheKey == cacheKey &&
-          identical(session.nativePlaybackQueueFuture, pending)) {
-        session.nativePlaybackQueueCache = queue;
+      await _playbackFacade.validatePlaybackCachePaths(paths);
+      paths = _nativePlaybackQueuePathsFor(
+        session,
+        currentPath: logicalCurrentPath,
+      );
+      final cacheKey = Object.hash(
+        _playbackQueueScopeKey(session, logicalCurrentPath),
+        _libraryFacade.contentRevision,
+        _libraryFacade.coverGeneration,
+      );
+      final cached = session.nativePlaybackQueueCache;
+      if (session.nativePlaybackQueueCacheKey == cacheKey) {
+        if (cached != null) {
+          if (_isRegisteredSession(session)) {
+            _syncActivePlaybackCacheLease(session);
+          }
+          return cached;
+        }
+        final pending = session.nativePlaybackQueueFuture;
+        if (pending != null) return pending;
       }
-      return queue;
+      session.nativePlaybackQueueCacheKey = cacheKey;
+      session.nativePlaybackQueueCache = null;
+      final descriptors = <_NativeQueueTrack>[];
+      for (final trackPath in paths) {
+        final track = _sessionTrackForPath(session, trackPath);
+        descriptors.add((
+          path: trackPath,
+          track: track,
+          coverPath: resolvedPlaybackCoverPathForTrack(track),
+        ));
+      }
+      final pending = compute(_buildNativePlaybackQueue, descriptors);
+      session.nativePlaybackQueueFuture = pending;
+      try {
+        final queue = await pending;
+        if (_isRegisteredSession(session) &&
+            session.nativePlaybackQueueCacheKey == cacheKey &&
+            identical(session.nativePlaybackQueueFuture, pending)) {
+          session.nativePlaybackQueueCache = queue;
+          _syncActivePlaybackCacheLease(session);
+        }
+        return queue;
+      } finally {
+        if (identical(session.nativePlaybackQueueFuture, pending)) {
+          session.nativePlaybackQueueFuture = null;
+        }
+      }
     } finally {
-      if (identical(session.nativePlaybackQueueFuture, pending)) {
-        session.nativePlaybackQueueFuture = null;
-      }
+      lease.release();
     }
   }
 

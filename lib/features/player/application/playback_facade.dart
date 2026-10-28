@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:io';
 import 'dart:math';
 
 import '../../../core/errors/native_result.dart';
@@ -1010,6 +1011,8 @@ final class PlaybackFacade {
       ).rememberRetargetedPath(oldPath, newPath);
   String resolveRetargetedPath(String value) =>
       PlaybackQueuePathCoordinator(this).resolveRetargetedPath(value);
+  Future<void> validatePlaybackCachePaths(Iterable<String> paths) =>
+      PlaybackQueuePathCoordinator(this).validatePlaybackCachePaths(paths);
   String? originalPathForRetargeted(String value) =>
       PlaybackQueuePathCoordinator(this).originalPathForRetargeted(value);
   void clearRetargetedPaths() =>

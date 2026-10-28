@@ -122,6 +122,7 @@ void main() {
           return success(<String, Object?>{
             'totalBytes': 1000,
             'availableBytes': 400,
+            if (!windows) 'storageRoots': <String>['/storage/emulated/0'],
           });
         });
 
@@ -129,6 +130,10 @@ void main() {
 
         expect(usage?.totalBytes, 1000);
         expect(usage?.availableBytes, 400);
+        expect(
+          usage?.storageRoots,
+          windows ? isEmpty : ['/storage/emulated/0'],
+        );
         expect(calls.single.method, FileCacheMethod.getStorageUsage);
         expect(calls.single.arguments, isNull);
       },

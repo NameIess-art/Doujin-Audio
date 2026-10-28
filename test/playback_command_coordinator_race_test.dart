@@ -91,7 +91,9 @@ void main() {
         'value': {
           'sessionId': sessionId,
           'path': sourcePath,
-          'uri': Uri.file(sourcePath).toString(),
+          'uri': PathMatcher.isRemoteUri(sourcePath)
+              ? sourcePath
+              : Uri.file(sourcePath).toString(),
           'playing': playing,
           'playWhenReady': playing,
           'processingState': 'ready',
@@ -103,6 +105,78 @@ void main() {
             'transportCommandId': arguments['transportCommandId'],
         },
       };
+    }
+
+    for (final cacheState in ['ready', 'missing', 'empty']) {
+      test(
+        'chapter playback validates $cacheState cache before preparing',
+        () async {
+          await runtimeGraph.settings.setAsmrPlaybackCacheEnabled(false);
+          const stream = 'https://v.weeab0o.xyz/chapters.m3u8';
+          const logicalPath = '$stream#eara-chapter=60000,90000';
+          final cached = await File(
+            PathMatcher.normalize('${cacheDirectory.path}/chapter.m4a'),
+          ).writeAsBytes(cacheState == 'empty' ? [] : [1, 2, 3]);
+          final track =
+              testMusicTrack(
+                name: 'Chapter',
+                path: logicalPath,
+                groupKey: 'chapter-work',
+                groupTitle: 'Chapter work',
+              ).copyWith(
+                remoteMetadataKind: MusicTrack.remoteMetadataKindJapaneseAsmr,
+                remoteMetadata: {
+                  'playbackUrls': [logicalPath],
+                },
+              );
+          runtimeGraph.playback.rememberRetargetedPath(track.path, cached.path);
+          if (cacheState == 'missing') {
+            await AppCacheService.clearTemporaryCaches();
+            expect(await cached.exists(), isFalse);
+          }
+          Map<Object?, Object?>? prepared;
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+                if (call.method == NativePlaybackMethod.prepareSession) {
+                  prepared = call.arguments as Map<Object?, Object?>;
+                }
+                return nativeSuccess(call);
+              });
+          final session = runtimeGraph.playback.createTrackSession(
+            track,
+            customQueueTracks: [track],
+          );
+          expect(
+            await runtimeGraph.playbackCommands.prepareSession(
+              session,
+              nextPath: logicalPath,
+            ),
+            isTrue,
+          );
+          final item = (prepared!['queue'] as List).single as Map;
+          if (cacheState == 'ready') {
+            expect(prepared!['path'], cached.path);
+            expect(item['uri'], Uri.file(cached.path).toString());
+            expect(item['clipStartMs'], isNull);
+            expect(item['clipEndMs'], isNull);
+            await AppCacheService.clearTemporaryCaches();
+            expect(await cached.exists(), isTrue);
+          } else {
+            expect(
+              runtimeGraph.playback.resolveRetargetedPath(logicalPath),
+              logicalPath,
+            );
+            expect(prepared!['path'], logicalPath);
+            expect(item['uri'], stream);
+            expect(item['clipStartMs'], 60000);
+            expect(item['clipEndMs'], 90000);
+            expect(item['httpHeaders'], {
+              'Referer': 'https://japaneseasmr.com/',
+            });
+          }
+          expect(item['candidateUris'], [stream]);
+        },
+      );
     }
 
     test(
@@ -177,7 +251,7 @@ void main() {
     );
 
     test(
-      'failed switch protects both sources and then releases only its target',
+      'failed switch retains cache files referenced by the native queue',
       () async {
         final (oldTrack, oldCache) = await cachedTrack('old');
         final (nextTrack, nextCache) = await cachedTrack('next');
@@ -213,6 +287,8 @@ void main() {
           await runtimeGraph.playbackCommands.pauseSession(session),
           isTrue,
         );
+        await AppCacheService.clearTemporaryCaches();
+        expect(await nextCache.exists(), isTrue);
         final switching = runtimeGraph.playbackCommands.prepareSession(
           session,
           nextPath: nextTrack.path,
@@ -239,12 +315,60 @@ void main() {
         expect(session.playbackRequested, isFalse);
         await AppCacheService.clearTemporaryCaches();
         expect(await oldCache.exists(), isTrue);
-        expect(await nextCache.exists(), isFalse);
+        expect(await nextCache.exists(), isTrue);
         expect(await runtimeGraph.playback.removeSession(session.id), isTrue);
         await AppCacheService.clearTemporaryCaches();
         expect(await oldCache.exists(), isFalse);
+        expect(await nextCache.exists(), isFalse);
       },
     );
+
+    test('progress snapshots retain leases and queue changes refresh them', () async {
+      final (track, current) = await cachedTrack('snapshot-current');
+      final (_, next) = await cachedTrack('snapshot-next');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            return nativeSuccess(call);
+          });
+      final session = runtimeGraph.playback.createTrackSession(
+        track,
+        customQueueTracks: [track],
+      );
+      expect(await runtimeGraph.playbackCommands.prepareSession(
+        session,
+        nextPath: track.path,
+      ), isTrue);
+      void progress(int seconds) {
+        runtimeGraph.playbackCommands.handleNativeSnapshot(
+          NativePlaybackSnapshot(
+            sessionId: session.id,
+            path: current.path,
+            playing: true,
+            playWhenReady: true,
+            processingState: 'ready',
+            position: Duration(seconds: seconds),
+            bufferedPosition: Duration(seconds: seconds + 1),
+            volume: 1,
+            boostGain: 1,
+            channelSwapEnabled: false,
+          ),
+        );
+      }
+      session.nativePlaybackQueueCache = [
+        ...session.nativePlaybackQueueCache!,
+        {'path': next.path},
+      ];
+      progress(1);
+      progress(2);
+      await AppCacheService.clearTemporaryCaches();
+      expect(await current.exists(), isTrue);
+      expect(await next.exists(), isTrue);
+      session.nativePlaybackQueueCache = [session.nativePlaybackQueueCache!.first];
+      progress(3);
+      await AppCacheService.clearTemporaryCaches();
+      expect(await current.exists(), isTrue);
+      expect(await next.exists(), isFalse);
+    });
 
     test('failed cold preparation releases its pending cache lease', () async {
       final (track, cached) = await cachedTrack('failed');

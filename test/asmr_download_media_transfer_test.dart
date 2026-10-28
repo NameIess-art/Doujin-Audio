@@ -434,6 +434,8 @@ void main() {
         reason: 'Known sibling size is not a cap.',
       );
       expect(live.totalBytes, 4);
+      expect(live.estimateFileTotalBytes('Folder/01.flac'), 24);
+      expect(live.estimatedTotalBytes, isNull);
       expect(live.hasUnknownFileSizes, isTrue);
       expect(live.progress, closeTo(1.75 / 3, 0.0001));
       expect(env.store.buttonViewState.progress, live.progress);
@@ -455,6 +457,63 @@ void main() {
       await env.dispose();
     }
   });
+
+  for (final chunked in [false, true]) {
+    test(
+      'Japanese original learns size ${chunked ? "after chunked transfer" : "from headers before completion"}',
+      () async {
+        final env = await _Environment.create();
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final headersRead = Completer<void>();
+        final release = Completer<void>();
+        server.listen((request) async {
+          if (!chunked) request.response.contentLength = _audio.length;
+          request.response.add(_audio.take(4).toList());
+          await request.response.flush();
+          await release.future;
+          request.response.add(_audio.skip(4).toList());
+          await request.response.close();
+        });
+        final key = env.work.workKey;
+        final subscription = env.store.taskStream(key).listen((task) {
+          if (!chunked &&
+              task?.fileTotalBytes['Folder/01.flac'] == _audio.length &&
+              !headersRead.isCompleted) {
+            headersRead.complete();
+          }
+        });
+        try {
+          final download = env.download(
+            PlaybackMediaReference(
+              streamUrl: 'https://media.test/audio.m3u8',
+              downloadUrl: 'http://127.0.0.1:${server.port}/original',
+            ),
+          );
+          if (!chunked) {
+            await headersRead.future.timeout(const Duration(seconds: 5));
+            expect(
+              env.store[key]!.fileTotalBytes['Folder/01.flac'],
+              _audio.length,
+            );
+          }
+          release.complete();
+          expect((await download).saved, isTrue);
+          expect(
+            env.store[key]!.fileTotalBytes['Folder/01.flac'],
+            _audio.length,
+          );
+          expect(env.store[key]!.totalBytes, _audio.length);
+          expect(env.store[key]!.hasUnknownFileSizes, isFalse);
+          expect(env.hls.calls, 0);
+        } finally {
+          if (!release.isCompleted) release.complete();
+          await subscription.cancel();
+          await server.close(force: true);
+          await env.dispose();
+        }
+      },
+    );
+  }
 
   test('resuming skips a saved HLS chapter without losing its size', () async {
     final env = await _Environment.create();

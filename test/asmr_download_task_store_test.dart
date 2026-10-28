@@ -16,6 +16,51 @@ void main() {
   const safRoot =
       'content://com.android.externalstorage.documents/tree/primary%3AMusic';
 
+  test(
+    'HLS size estimates preserve unknown-size accounting and need progress',
+    () {
+      final task = _task(1).copyWith(
+        totalBytes: 100,
+        downloadedBytes: 300,
+        fileTotalBytes: const {'known.mp3': 100, 'chapter.flac': 0},
+        fileDownloadedBytes: const {'known.mp3': 100, 'chapter.flac': 200},
+        fileProgressFractions: const {'chapter.flac': 0.4},
+      );
+      expect(task.estimateFileTotalBytes('chapter.flac'), 500);
+      expect(task.estimatedTotalBytes, 600);
+      expect(task.hasUnknownFileSizes, isTrue);
+      expect(task.totalBytes, 100);
+      for (final fraction in [0.0, double.nan, double.infinity]) {
+        expect(
+          task
+              .copyWith(fileProgressFractions: {'chapter.flac': fraction})
+              .estimatedTotalBytes,
+          isNull,
+        );
+      }
+      expect(
+        task.copyWith(fileProgressFractions: {}).estimatedTotalBytes,
+        isNull,
+      );
+      expect(
+        task.copyWith(fileDownloadedBytes: {}).estimatedTotalBytes,
+        isNull,
+      );
+      expect(
+        task
+            .copyWith(fileTotalBytes: {...task.fileTotalBytes, 'next.flac': 0})
+            .estimatedTotalBytes,
+        isNull,
+      );
+      expect(
+        task
+            .copyWith(fileProgressFractions: {'chapter.flac': 0.8})
+            .estimatedTotalBytes,
+        350,
+      );
+    },
+  );
+
   test('unknown file sizes follow immutable snapshot replacements', () async {
     final sizes = <String, int>{for (var i = 0; i < 10000; i++) '$i.mp3': 10};
     final known = _task(1).copyWith(

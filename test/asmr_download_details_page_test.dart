@@ -49,7 +49,7 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'HLS details update unknown-size bytes and chapter progress on $platform',
+      'HLS details replace unknown size with an estimate then actual size on $platform',
       (tester) async {
         SharedPreferences.setMockInitialValues({});
         final language = AppLanguageProvider();
@@ -67,6 +67,10 @@ void main() {
         manager.debugSetCurrentTaskForTesting(initial);
         await tester.pumpWidget(_downloadStreamApp(language, manager));
         await tester.pumpAndSettle();
+        expect(
+          find.textContaining(language.tr('asmr_download_size_unknown')),
+          findsNWidgets(2),
+        );
         manager.debugSetCurrentTaskForTesting(
           initial.copyWith(
             downloadedBytes: 2048,
@@ -84,11 +88,23 @@ void main() {
               .value,
           0.4,
         );
-        expect(find.textContaining('2.0 KB /'), findsNWidgets(2));
+        expect(find.text('2.0 KB / ≈ 5.0 KB'), findsNWidgets(2));
         expect(
           find.textContaining(language.tr('asmr_download_size_unknown')),
-          findsNWidgets(2),
+          findsNothing,
         );
+        manager.debugSetCurrentTaskForTesting(
+          initial.copyWith(
+            totalBytes: 6144,
+            downloadedBytes: 6144,
+            fileTotalBytes: const {'Track.mp3': 6144},
+            fileDownloadedBytes: const {'Track.mp3': 6144},
+            completedFilePaths: const {'Track.mp3'},
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(find.text('6.0 KB / 6.0 KB'), findsNWidgets(2));
         expect(tester.takeException(), isNull);
       },
       variant: TargetPlatformVariant({platform}),

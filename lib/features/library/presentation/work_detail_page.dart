@@ -18,7 +18,9 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/work_detail_navigation.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
+import '../../../core/app_language.dart';
 import '../../../core/media/audio_detail.dart';
+import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart'
@@ -46,6 +48,7 @@ import '../../asmr/presentation/asmr_error_text.dart';
 import '../../player/presentation/playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import '../application/work_text_service.dart';
+import '../application/dlsite_metadata_service.dart';
 import '../domain/library_node.dart';
 import 'dlsite_metadata_review_page.dart';
 import 'audio_detail_sheet.dart' show showAudioDetailEditor;
@@ -116,6 +119,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   bool _loadingAsmr = true;
   bool _requestingAsmr = false;
   Object? _asmrLoadError;
+  DlsiteMetadata? _dlsiteMetadata;
+  bool _showDlsiteMetadata = false;
+  bool _loadingDlsiteMetadata = false;
+  int _dlsiteRequest = 0;
+  late AppLanguage _dlsiteLanguage;
   int _playRequest = 0;
   Object? _coverRequestKey;
   Future<String?>? _coverFuture;
@@ -136,6 +144,20 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   @override
   void initState() {
     super.initState();
+    _dlsiteLanguage = ref.read(appLanguageProviderInstanceProvider).language;
+    if (widget.isAsmr) {
+      ref.listenManual(appLanguageStateProvider, (_, next) {
+        final language = next.value?.language;
+        if (language == null || language == _dlsiteLanguage) return;
+        setState(() {
+          _dlsiteLanguage = language;
+          _dlsiteRequest++;
+          _dlsiteMetadata = null;
+          _showDlsiteMetadata = false;
+          _loadingDlsiteMetadata = false;
+        });
+      });
+    }
     _directoryFade = AnimationController(
       vsync: this,
       duration: kAppFadeDuration,
@@ -1040,6 +1062,62 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     );
   }
 
+  Future<void> _toggleDlsiteMetadata() async {
+    final rjCode = widget.asmrWork?.rjCode ?? '';
+    if (_loadingDlsiteMetadata ||
+        AudioDetail.findRjCodeInText(rjCode) == null) {
+      return;
+    }
+    if (_showDlsiteMetadata || _dlsiteMetadata != null) {
+      setState(() => _showDlsiteMetadata = !_showDlsiteMetadata);
+      return;
+    }
+    final request = ++_dlsiteRequest;
+    final language = ref.read(appLanguageProviderInstanceProvider).language;
+    setState(() => _loadingDlsiteMetadata = true);
+    bool isCurrent() =>
+        mounted &&
+        request == _dlsiteRequest &&
+        language == ref.read(appLanguageProviderInstanceProvider).language;
+    try {
+      final metadata = await ref
+          .read(libraryFacadeProvider)
+          .metadataService
+          .fetchByRjCode(rjCode, language: language);
+      if (!isCurrent()) return;
+      final normalized = metadata.copyWith(
+        circleName: metadata.circleName.trim(),
+        voiceActors: AudioDetail.normalizeList(metadata.voiceActors),
+        tags: AudioDetail.normalizeList(metadata.tags),
+      );
+      if (normalized.circleName.isEmpty &&
+          normalized.voiceActors.isEmpty &&
+          normalized.tags.isEmpty) {
+        setState(() => _loadingDlsiteMetadata = false);
+        _showDlsiteFailure('work_dlsite_empty');
+        return;
+      }
+      setState(() {
+        _dlsiteMetadata = normalized;
+        _showDlsiteMetadata = true;
+        _loadingDlsiteMetadata = false;
+      });
+    } catch (error) {
+      if (!isCurrent()) return;
+      setState(() => _loadingDlsiteMetadata = false);
+      _showDlsiteFailure(
+        error is DlsiteMetadataException && error.isNotFound
+            ? 'work_dlsite_not_found'
+            : 'work_dlsite_failed',
+      );
+    }
+  }
+
+  void _showDlsiteFailure(String messageKey) {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    showAppSnackBar(context, i18n.tr(messageKey), icon: Icons.info_outline);
+  }
+
   // ASMR actions: Download, Toggle favorite
   Future<void> _handleAsmrDownload() async {
     await Navigator.of(context).push<AsmrDownloadPageResult>(
@@ -1098,6 +1176,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
+    final hasDlsiteRj =
+        AudioDetail.findRjCodeInText(widget.asmrWork?.rjCode ?? '') != null;
+    String dlsiteTooltip = 'work_dlsite_show';
+    if (!hasDlsiteRj) {
+      dlsiteTooltip = 'work_dlsite_unavailable';
+    } else if (_loadingDlsiteMetadata) {
+      dlsiteTooltip = 'work_dlsite_loading';
+    } else if (_showDlsiteMetadata) {
+      dlsiteTooltip = 'work_dlsite_original';
+    }
 
     // Resolve unified display fields
     String displayTitle = '';
@@ -1136,6 +1224,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       displayVoiceActors = work.voiceActors;
       displayTags = work.tags;
       coverPath = work.preferredCoverUrl;
+      final metadata = _showDlsiteMetadata ? _dlsiteMetadata : null;
+      if (metadata != null) {
+        if (metadata.circleName.isNotEmpty) {
+          displayCircle = metadata.circleName;
+        }
+        if (metadata.voiceActors.isNotEmpty) {
+          displayVoiceActors = metadata.voiceActors;
+        }
+        if (metadata.tags.isNotEmpty) displayTags = metadata.tags;
+      }
     }
 
     final topSafeArea = MediaQuery.paddingOf(context).top;
@@ -1556,6 +1654,40 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                         onPressed: _handleLocalEdit,
                         tooltip: i18n.tr('edit'),
                         icon: const Icon(Icons.edit_rounded),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  if (widget.isAsmr) ...[
+                    HeaderFloatingButton(
+                      backgroundOpacity: 0.5,
+                      child: Semantics(
+                        toggled: _showDlsiteMetadata,
+                        child: IconButton(
+                          key: const ValueKey('work_detail_dlsite'),
+                          onPressed: _loadingDlsiteMetadata || !hasDlsiteRj
+                              ? null
+                              : _toggleDlsiteMetadata,
+                          tooltip: i18n.tr(dlsiteTooltip),
+                          icon: _loadingDlsiteMetadata
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    key: ValueKey('work_detail_dlsite_loading'),
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(
+                                  'DL',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: _showDlsiteMetadata
+                                        ? cs.primary
+                                        : null,
+                                  ),
+                                ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 6),

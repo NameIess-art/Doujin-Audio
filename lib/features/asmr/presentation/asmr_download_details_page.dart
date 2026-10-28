@@ -322,6 +322,7 @@ class _AsmrDownloadDetailsTotals extends ConsumerWidget {
           total: task?.totalBytes ?? 0,
           downloaded: task?.downloadedBytes ?? 0,
           unknown: task?.hasUnknownFileSizes ?? false,
+          estimate: task?.estimatedTotalBytes,
         ),
       ),
     );
@@ -336,7 +337,7 @@ class _AsmrDownloadDetailsTotals extends ConsumerWidget {
         const SizedBox(width: 6),
         Expanded(
           child: Text(
-            '${formatAsmrDownloadSize(downloaded)} / ${totals.unknown ? i18n.tr('asmr_download_size_unknown') : formatAsmrDownloadSize(totals.total)}',
+            '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadTotalSize(total: totals.total, unknown: totals.unknown, unknownLabel: i18n.tr('asmr_download_size_unknown'), estimate: totals.estimate)}',
             key: const ValueKey<String>('asmr_download_total_bytes'),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: cs.onSurfaceVariant,
@@ -382,6 +383,9 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
                   .last ??
               node.title,
           total: total,
+          estimate: total <= 0
+              ? task?.estimateFileTotalBytes(node.relativePath)
+              : null,
           downloaded: downloaded,
           fraction: completed
               ? 1.0
@@ -443,7 +447,7 @@ class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
             flex: 2,
             child: Text(
               retryAttempt == null
-                  ? '${formatAsmrDownloadSize(downloaded)} / ${total <= 0 ? i18n.tr('asmr_download_size_unknown') : formatAsmrDownloadSize(total)}'
+                  ? '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadTotalSize(total: total, unknown: total <= 0, unknownLabel: i18n.tr('asmr_download_size_unknown'), estimate: state.estimate)}'
                   : i18n.tr('asmr_download_status_retrying', {
                       'attempt': retryAttempt,
                       'max': state.retryMaximum,

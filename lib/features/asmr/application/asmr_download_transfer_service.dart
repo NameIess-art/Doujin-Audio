@@ -813,6 +813,10 @@ class AsmrDownloadTransferService {
         );
       }
       throwIfCancelled(workId);
+      final responseTotal = rangeTotal ?? response.contentLength;
+      if (responseTotal > 0 && item.size <= 0) {
+        _setFileTotalBytes(workId, item, responseTotal);
+      }
       _setFileEntityTag(workId, item.relativePath, responseTag);
       // A durable identity must precede its bytes; otherwise a restart could
       // append a new entity's suffix to an older staging prefix.
@@ -861,6 +865,7 @@ class AsmrDownloadTransferService {
           stackTrace: StackTrace.current,
         );
       }
+      if (item.size <= 0) _setFileTotalBytes(workId, item, received);
       return _TemporaryDownloadAttempt.success(
         received,
         mimeType: response.headers.contentType?.mimeType,
@@ -899,6 +904,19 @@ class AsmrDownloadTransferService {
     if (item.countsTowardByteProgress) {
       _store.reconcileLiveFileProgress(workId, item.relativePath, 0);
     }
+  }
+
+  void _setFileTotalBytes(String workId, PlannedDownloadFile item, int bytes) {
+    if (!item.countsTowardByteProgress) return;
+    final task = _store[workId];
+    if (task == null) return;
+    final previous = task.fileTotalBytes[item.relativePath] ?? item.size;
+    if (previous == bytes) return;
+    _store[workId] = task.copyWith(
+      totalBytes: task.totalBytes - previous + bytes,
+      fileTotalBytes: {...task.fileTotalBytes, item.relativePath: bytes},
+    );
+    _store.notifyProgressChanged(workId);
   }
 
   void _setFileEntityTag(String workId, String relativePath, String? tag) {

@@ -1,4 +1,11 @@
 const Map<String, String> appLanguageJa = {
+  'work_dlsite_show': 'DLsite の情報を表示',
+  'work_dlsite_original': '元の情報を表示',
+  'work_dlsite_loading': 'DLsite の情報を取得中',
+  'work_dlsite_unavailable': '有効な RJ 番号がないため、DLsite の情報を取得できません',
+  'work_dlsite_empty': 'DLsite にこの作品の声優・サークル・タグ情報がありません。',
+  'work_dlsite_not_found': 'DLsite にこの作品が見つかりませんでした。後でもう一度お試しください。',
+  'work_dlsite_failed': 'DLsite の情報を取得できませんでした。接続を確認して再試行してください。',
   'metadata_invalid_date': '有効な日付を YYYY-MM-DD 形式で入力してください',
   'metadata_invalid_duration': '有効な時間を HH:MM:SS 形式で入力してください',
   'metadata_invalid_rating': '評価は 0 から 5 の有効な数値で入力してください',

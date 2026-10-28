@@ -60,6 +60,7 @@ void main() {
         'value': <String, Object?>{
           'totalBytes': 1024 * 1024 * 1024,
           'availableBytes': 512 * 1024 * 1024,
+          'storageRoots': <String>['/music'],
         },
       };
     });

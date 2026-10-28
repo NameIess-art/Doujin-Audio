@@ -1,6 +1,9 @@
 import '../../../core/media/playback_media_reference.dart';
 import 'dart:io';
 import 'package:path/path.dart' as path;
+import 'package:flutter/foundation.dart';
+import '../../library/data/audio_detail_json_codec.dart';
+import '../domain/asmr_download.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/path_matcher.dart';
@@ -12,6 +15,121 @@ import 'asmr_api_service.dart';
 
 class AsmrDownloadPlanner {
   const AsmrDownloadPlanner();
+
+  Set<String> completedOwnersForOutputRoot(
+    String workId,
+    String workRootPath,
+    Iterable<AsmrDownloadTaskSnapshot> tasks, {
+    required Set<String> retainedWorkIds,
+  }) {
+    String normalizeRoot(String value) => PathMatcher.isContentUri(value)
+        ? PathMatcher.normalize(value)
+        : path.normalize(path.absolute(value));
+    final root = normalizeRoot(workRootPath);
+    final completedOwners = <String>{};
+    for (final other in tasks) {
+      if (other.work.workKey == workId) continue;
+      final otherRoots = {
+        other.workRootPath,
+        joinFolderPath(other.destinationRoot, other.requestedWorkFolderName),
+      };
+      for (final otherRoot in otherRoots) {
+        final normalizedOther = normalizeRoot(otherRoot);
+        if (PathMatcher.isWithinOrEqual(root, normalizedOther) ||
+            PathMatcher.isWithinOrEqual(normalizedOther, root)) {
+          final otherId = other.work.workKey;
+          if (other.status == AsmrDownloadTaskStatus.completed &&
+              !retainedWorkIds.contains(otherId)) {
+            completedOwners.add(otherId);
+            continue;
+          }
+          // Paused tasks retain staging. In-flight removal must also finish
+          // before another task can write into its output directory.
+          throw FileSystemException(
+            'Another download task owns this destination. '
+            'Remove its task entry or choose another folder.',
+            workRootPath,
+          );
+        }
+      }
+    }
+    return completedOwners;
+  }
+
+  bool hasSameConfiguration(
+    AsmrDownloadTaskSnapshot task, {
+    required String workRootPath,
+    required AsmrDownloadConflictPolicy conflictPolicy,
+    required bool saveMetadata,
+    required bool saveCover,
+    required int automaticFileRetryCount,
+    required List<PlannedDownloadFile> plannedFiles,
+  }) =>
+      PathMatcher.equalsNormalized(
+        joinFolderPath(task.destinationRoot, task.requestedWorkFolderName),
+        workRootPath,
+      ) &&
+      task.conflictPolicy == conflictPolicy &&
+      task.saveMetadata == saveMetadata &&
+      task.saveCover == saveCover &&
+      task.automaticFileRetryCount == automaticFileRetryCount &&
+      listEquals(
+        collectTaskFiles(
+          task,
+        ).map((file) => (file.url, file.relativePath, file.size)).toList(),
+        plannedFiles
+            .map((file) => (file.url, file.relativePath, file.size))
+            .toList(),
+      );
+
+  AsmrDownloadTaskSnapshot createQueuedTask({
+    required AsmrWork work,
+    required List<AsmrTrackFile> selectedRoots,
+    required List<PlannedDownloadFile> plannedFiles,
+    required String destinationRoot,
+    required String workFolderName,
+    required AsmrDownloadConflictPolicy conflictPolicy,
+    required bool saveMetadata,
+    required bool saveCover,
+    required int automaticFileRetryCount,
+  }) {
+    final backupBytes = saveMetadata
+        ? const AudioDetailJsonCodec()
+              .encodeNew(
+                buildBackupDetail(
+                  work,
+                  joinFolderPath(destinationRoot, workFolderName),
+                ),
+              )
+              .length
+        : 0;
+    return AsmrDownloadTaskSnapshot(
+      work: work,
+      destinationRoot: destinationRoot,
+      workFolderName: workFolderName,
+      conflictPolicy: conflictPolicy,
+      saveMetadata: saveMetadata,
+      saveCover: saveCover,
+      automaticFileRetryCount: automaticFileRetryCount,
+      status: AsmrDownloadTaskStatus.idle,
+      totalFiles: plannedFiles.length + (saveMetadata ? 1 : 0),
+      completedFiles: 0,
+      skippedFiles: 0,
+      failedFiles: 0,
+      totalBytes: plannedFiles.fold<int>(
+        backupBytes,
+        (sum, item) => sum + item.size,
+      ),
+      downloadedBytes: 0,
+      startedAt: DateTime.now(),
+      message: 'queued',
+      fileTotalBytes: {
+        for (final file in plannedFiles)
+          if (!file.isCover) file.relativePath: file.size,
+      },
+      selectedRoots: selectedRoots,
+    );
+  }
 
   List<AsmrTrackFile> prepareDownloadTree(
     AsmrWork work,

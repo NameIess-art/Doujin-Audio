@@ -5,6 +5,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/core/media/time_text_formatters.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
@@ -73,6 +74,7 @@ void main() {
     late AppRuntimeWidgetTestFixture fixture;
 
     setUp(() {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
       BedtimeCanvasPage.idleDimDelay = const Duration(seconds: 15);
       powerService = _RecordingBedtimePowerPlatformService();
       fixture = AppRuntimeWidgetTestFixture(powerPlatformService: powerService);
@@ -143,7 +145,6 @@ void main() {
         }
         expect(canvasBuilds, 0);
         expect(statusBuilds, 10);
-        addTearDown(() => fixture.languageProvider.setLanguage(AppLanguage.zh));
         await fixture.languageProvider.setLanguage(AppLanguage.en);
         await tester.pump();
         await tester.pump();

@@ -2551,6 +2551,15 @@ void main() {
         of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
         matching: find.byType(RefreshProgressIndicator),
       ),
+      findsNothing,
+    );
+    await pull.moveBy(const Offset(0, 60));
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
+        matching: find.byType(RefreshProgressIndicator),
+      ),
       findsOneWidget,
     );
     await pull.moveBy(const Offset(0, -20));

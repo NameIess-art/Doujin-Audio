@@ -1,4 +1,14 @@
 const Map<String, String> appLanguageEn = {
+  'work_dlsite_show': 'Show DLsite information',
+  'work_dlsite_original': 'Show original information',
+  'work_dlsite_loading': 'Loading DLsite information',
+  'work_dlsite_unavailable': 'DLsite information requires a valid RJ code',
+  'work_dlsite_empty':
+      'DLsite has no voice actor, circle or tag information for this work.',
+  'work_dlsite_not_found':
+      'This work was not found on DLsite. Try again later.',
+  'work_dlsite_failed':
+      'Could not load DLsite information. Check your connection and try again.',
   'metadata_invalid_date': 'Enter a valid date in YYYY-MM-DD format',
   'metadata_invalid_duration': 'Enter a valid duration in HH:MM:SS format',
   'metadata_invalid_rating': 'Rating must be a finite number from 0 to 5',

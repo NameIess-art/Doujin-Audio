@@ -5,6 +5,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/core/media/time_text_formatters.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/player/presentation/timer_tab.dart';
@@ -18,6 +19,7 @@ void main() {
 
   setUp(() {
     UiInteractionCoordinator.instance.resetForTest();
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
   });
   tearDown(() {
     UiInteractionCoordinator.instance.resetForTest();
@@ -93,7 +95,6 @@ void main() {
           find.text(fixture.languageProvider.tr('waiting_for_auto_resume')),
           findsWidgets,
         );
-        addTearDown(() => fixture.languageProvider.setLanguage(AppLanguage.zh));
         await fixture.languageProvider.setLanguage(AppLanguage.en);
         await tester.pump();
         await tester.pump();

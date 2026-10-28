@@ -14,6 +14,18 @@ String formatAsmrDownloadSize(int bytes) {
   return '${value.toStringAsFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}';
 }
 
+String formatAsmrDownloadTotalSize({
+  required int total,
+  required bool unknown,
+  required String unknownLabel,
+  int? estimate,
+}) {
+  if (!unknown) return formatAsmrDownloadSize(total);
+  return estimate == null
+      ? unknownLabel
+      : '≈ ${formatAsmrDownloadSize(estimate)}';
+}
+
 IconData asmrDownloadFileIcon(AsmrTrackFile track) {
   if (track.isFolder) return AppDesignTokens.folderIcon;
   if (track.isVideo) return Icons.videocam_outlined;

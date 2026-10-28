@@ -160,6 +160,12 @@ void main() {
               liveUpdates.any((value) => (value.progress ?? 0) > 0),
               isTrue,
             );
+            expect(
+              liveUpdates.any((value) => value.estimatedTotalBytes != null),
+              isTrue,
+              reason:
+                  'Written bytes and chapter time make a size estimate available.',
+            );
             if (range.$1 == 0) {
               expect(
                 liveUpdates.any(

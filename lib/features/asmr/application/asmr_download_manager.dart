@@ -497,11 +497,6 @@ class AsmrDownloadManager {
       final coverFile = saveCover ? _planner.plannedCoverFile(work) : null;
       if (coverFile != null) plannedFiles.add(coverFile);
       _planner.validateLocalOutputs(plannedFiles, saveMetadata: saveMetadata);
-      for (final file in plannedFiles) {
-        if (!file.isCover) {
-          _planner.validatedDownloadRelativePath(file.relativePath);
-        }
-      }
       final workRootPath = _planner.joinFolderPath(
         normalizedDestination,
         workFolderName,
@@ -509,27 +504,15 @@ class AsmrDownloadManager {
       _claimAvailableOutputRoot(workId, workRootPath);
       final existingTask = _store[workId];
       if (existingTask != null) {
-        final existingFiles = _planner.collectTaskFiles(existingTask);
-        final sameConfiguration =
-            PathMatcher.equalsNormalized(
-              _planner.joinFolderPath(
-                existingTask.destinationRoot,
-                existingTask.requestedWorkFolderName,
-              ),
-              workRootPath,
-            ) &&
-            existingTask.conflictPolicy == conflictPolicy &&
-            existingTask.saveMetadata == saveMetadata &&
-            existingTask.saveCover == (coverFile != null) &&
-            existingTask.automaticFileRetryCount == normalizedRetryCount &&
-            listEquals(
-              existingFiles
-                  .map((file) => (file.url, file.relativePath, file.size))
-                  .toList(),
-              plannedFiles
-                  .map((file) => (file.url, file.relativePath, file.size))
-                  .toList(),
-            );
+        final sameConfiguration = _planner.hasSameConfiguration(
+          existingTask,
+          workRootPath: workRootPath,
+          conflictPolicy: conflictPolicy,
+          saveMetadata: saveMetadata,
+          saveCover: coverFile != null,
+          automaticFileRetryCount: normalizedRetryCount,
+          plannedFiles: plannedFiles,
+        );
         if (sameConfiguration) {
           if (existingTask.isActive ||
               _queue.contains(workId) ||
@@ -548,39 +531,19 @@ class AsmrDownloadManager {
       if (_disposed || _shutdownFuture != null) return;
       // Cancelling a previous configuration yields while its writes drain.
       _claimAvailableOutputRoot(workId, workRootPath);
-      final backupBytes = saveMetadata
-          ? _audioDetailJsonCodec
-                .encodeNew(_planner.buildBackupDetail(work, workRootPath))
-                .length
-          : 0;
-      _plannedFilesMap[workId] = plannedFiles;
-
-      _store[workId] = AsmrDownloadTaskSnapshot(
+      final queuedTask = _planner.createQueuedTask(
         work: work,
+        selectedRoots: selectedRoots,
+        plannedFiles: plannedFiles,
         destinationRoot: normalizedDestination,
         workFolderName: workFolderName,
         conflictPolicy: conflictPolicy,
         saveMetadata: saveMetadata,
         saveCover: coverFile != null,
         automaticFileRetryCount: normalizedRetryCount,
-        status: AsmrDownloadTaskStatus.idle,
-        totalFiles: plannedFiles.length + (saveMetadata ? 1 : 0),
-        completedFiles: 0,
-        skippedFiles: 0,
-        failedFiles: 0,
-        totalBytes: plannedFiles.fold<int>(
-          backupBytes,
-          (sum, item) => sum + item.size,
-        ),
-        downloadedBytes: 0,
-        startedAt: DateTime.now(),
-        message: 'queued',
-        fileTotalBytes: {
-          for (final file in plannedFiles)
-            if (!file.isCover) file.relativePath: file.size,
-        },
-        selectedRoots: selectedRoots,
       );
+      _plannedFilesMap[workId] = plannedFiles;
+      _store[workId] = queuedTask;
 
       if (!_queue.contains(workId) && !_activeTasks.contains(workId)) {
         _queue.add(workId);
@@ -603,42 +566,16 @@ class AsmrDownloadManager {
   }
 
   void _claimAvailableOutputRoot(String workId, String workRootPath) {
-    String normalizeRoot(String value) => PathMatcher.isContentUri(value)
-        ? PathMatcher.normalize(value)
-        : path.normalize(path.absolute(value));
-    final root = normalizeRoot(workRootPath);
-    final completedOwners = <String>{};
-    for (final other in _store.tasks) {
-      if (other.work.workKey == workId) continue;
-      final otherRoots = {
-        other.workRootPath,
-        _planner.joinFolderPath(
-          other.destinationRoot,
-          other.requestedWorkFolderName,
-        ),
-      };
-      for (final otherRoot in otherRoots) {
-        final normalizedOther = normalizeRoot(otherRoot);
-        if (PathMatcher.isWithinOrEqual(root, normalizedOther) ||
-            PathMatcher.isWithinOrEqual(normalizedOther, root)) {
-          final otherId = other.work.workKey;
-          if (other.status == AsmrDownloadTaskStatus.completed &&
-              !_activeTasks.contains(otherId) &&
-              !_taskRemovals.containsKey(otherId) &&
-              !_startingTasks.contains(otherId)) {
-            completedOwners.add(otherId);
-            continue;
-          }
-          // Paused tasks retain staging. In-flight removal must also finish
-          // before another task can write into its output directory.
-          throw FileSystemException(
-            'Another download task owns this destination. '
-            'Remove its task entry or choose another folder.',
-            workRootPath,
-          );
-        }
-      }
-    }
+    final completedOwners = _planner.completedOwnersForOutputRoot(
+      workId,
+      workRootPath,
+      _store.tasks,
+      retainedWorkIds: {
+        ..._activeTasks,
+        ..._taskRemovals.keys,
+        ..._startingTasks,
+      },
+    );
     // Completed records are hidden from the task list. Release their deletion
     // ownership without deleting files; the new task still honors skip/overwrite.
     for (final completedId in completedOwners) {

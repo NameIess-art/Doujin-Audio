@@ -117,6 +117,29 @@ class AsmrDownloadTaskSnapshot {
     (size) => size <= 0,
   );
 
+  // HLS output has no Content-Length. Estimate from written bytes and chapter
+  // time without treating that estimate as a durable size or a byte limit.
+  int? estimateFileTotalBytes(String relativePath) {
+    final fraction = fileProgressFractions[relativePath];
+    final bytes = fileDownloadedBytes[relativePath] ?? 0;
+    if (fraction == null || !fraction.isFinite || fraction <= 0 || bytes <= 0) {
+      return null;
+    }
+    return (bytes / fraction.clamp(0.0, 1.0)).ceil();
+  }
+
+  int? get estimatedTotalBytes {
+    if (!hasUnknownFileSizes) return totalBytes;
+    var total = totalBytes;
+    for (final entry in fileTotalBytes.entries) {
+      if (entry.value > 0) continue;
+      final estimate = estimateFileTotalBytes(entry.key);
+      if (estimate == null) return null;
+      total += estimate - entry.value;
+    }
+    return total;
+  }
+
   double? get progress {
     if (totalFiles > 0 && fileProgressFractions.isNotEmpty) {
       final activeProgress = fileProgressFractions.entries

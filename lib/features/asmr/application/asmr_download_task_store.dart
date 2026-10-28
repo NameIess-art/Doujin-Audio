@@ -236,19 +236,9 @@ final class AsmrDownloadTaskStore {
     if (_shutdown) return;
     final task = this[workId];
     if (task == null || chunkLength <= 0) return;
-    final maxBytes = task.totalBytes > 0 && !task.hasUnknownFileSizes
-        ? task.totalBytes
-        : null;
-    _liveDownloadedBytes.update(
+    setLiveDownloadedBytes(
       workId,
-      (value) {
-        final next = value + chunkLength;
-        return maxBytes != null && next > maxBytes ? maxBytes : next;
-      },
-      ifAbsent: () {
-        final next = task.downloadedBytes + chunkLength;
-        return maxBytes != null && next > maxBytes ? maxBytes : next;
-      },
+      (_liveDownloadedBytes[workId] ?? task.downloadedBytes) + chunkLength,
     );
     final fileProgress = _liveFileDownloadedBytes.putIfAbsent(
       workId,

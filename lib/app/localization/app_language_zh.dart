@@ -1,4 +1,11 @@
 const Map<String, String> appLanguageZh = {
+  'work_dlsite_show': '显示 DL 中信息',
+  'work_dlsite_original': '显示原信息',
+  'work_dlsite_loading': '正在获取 DLsite 信息',
+  'work_dlsite_unavailable': '此作品没有有效 RJ 号，无法获取 DLsite 信息',
+  'work_dlsite_empty': 'DLsite 未提供此作品的声优、社团或标签信息。',
+  'work_dlsite_not_found': 'DLsite 未找到此作品，请稍后重试。',
+  'work_dlsite_failed': '获取 DLsite 信息失败，请检查网络后重试。',
   'metadata_invalid_date': '请输入有效日期，格式为 YYYY-MM-DD',
   'metadata_invalid_duration': '请输入有效时长，格式为 HH:MM:SS',
   'metadata_invalid_rating': '评分必须为 0 到 5 的有效数字',

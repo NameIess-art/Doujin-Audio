@@ -341,6 +341,31 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
+      'subtitle import omits description text on $platform',
+      (tester) async {
+        final language = AppLanguageProvider();
+        addTearDown(language.dispose);
+        final service = _SubtitleSelectionService([]);
+        addTearDown(service.dispose);
+        for (final remote in [false, true]) {
+          await pumpSelectionMenu(
+            tester,
+            service,
+            language,
+            trackPath: remote ? 'https://example.test/audio.mp3' : 'audio.mp3',
+          );
+          final tile = tester.widget<ListTile>(
+            find.byKey(const ValueKey('subtitle_import_tile')),
+          );
+          expect(tile.subtitle, isNull);
+          expect((tile.title! as Text).data, language.tr('import_subtitle'));
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
       'subtitle selection shows full filenames and switches on $platform',
       (tester) async {
         tester.view.physicalSize = platform == TargetPlatform.windows
@@ -1694,7 +1719,7 @@ void main() {
   );
 
   testWidgets(
-    'options in subtitle menu do not have subtitle description texts',
+    'subtitle menu action rows omit description text',
     (tester) async {
       const audioPath = '/path/to/japanese_audio.mp3';
       final service = _RecordingGenerationService(_PendingGenerationEngine());
@@ -1730,7 +1755,6 @@ void main() {
       expect(importTile.subtitle, isNull);
       expect(scriptTile.subtitle, isNull);
       expect(translateTile.subtitle, isNull);
-      expect(find.text(language.tr('import_subtitle_hint')), findsNothing);
       expect(find.text(language.tr('subtitle_script_hint')), findsNothing);
       expect(find.text(language.tr('subtitle_translate_hint')), findsNothing);
     },

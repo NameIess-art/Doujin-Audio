@@ -98,6 +98,17 @@ class _SubtitleWindowSettingsSheetState
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (settings.appearanceSaveFailed)
+                        ListTile(
+                          leading: Icon(Icons.error_outline, color: cs.error),
+                          title: Text(i18n.tr('operation_failed_retry')),
+                          trailing: TextButton(
+                            onPressed: () => unawaited(
+                              notifier.flushAppearancePersistence(),
+                            ),
+                            child: Text(i18n.tr('retry')),
+                          ),
+                        ),
                       AppSettingsGroupCard(
                         children: [
                           Padding(

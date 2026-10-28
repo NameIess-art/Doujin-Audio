@@ -476,10 +476,9 @@ class _QueueSourceAudioTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final library = ref.read(libraryFacadeProvider);
     final paths = ref.read(audioPathCoordinatorProvider);
     final queueCoordinator = ref.read(playbackQueueCoordinatorProvider);
-    final track = library.trackByPath(source.currentTrackPath);
+    final track = paths.sessionTrackForPath(source.id, source.currentTrackPath);
     if (track == null) return const SizedBox.shrink();
     final i18n = ProviderScope.containerOf(
       context,

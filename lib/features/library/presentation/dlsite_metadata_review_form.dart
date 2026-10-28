@@ -3,6 +3,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/dlsite_metadata.dart';
+import '../../../core/media/time_text_formatters.dart';
+
+String? metadataDateErrorKey(String value) =>
+    value.trim().isNotEmpty && parseDateYmd(value) == null
+    ? 'metadata_invalid_date'
+    : null;
+
+String? metadataDurationErrorKey(String value) =>
+    value.trim().isNotEmpty && parseDurationCompact(value) == null
+    ? 'metadata_invalid_duration'
+    : null;
+
+String? metadataRatingErrorKey(String value) {
+  if (value.trim().isEmpty) return null;
+  final rating = double.tryParse(value.trim());
+  return rating == null || !rating.isFinite || rating < 0 || rating > 5
+      ? 'metadata_invalid_rating'
+      : null;
+}
 
 class DlsiteMetadataReviewForm extends StatelessWidget {
   const DlsiteMetadataReviewForm({
@@ -18,6 +37,8 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
     required this.releaseDateController,
     required this.durationController,
     required this.ratingController,
+    this.validate = false,
+    this.enabled = true,
   });
   final bool editing;
   final DlsiteMetadata? metadata;
@@ -30,6 +51,8 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
   final TextEditingController releaseDateController;
   final TextEditingController durationController;
   final TextEditingController ratingController;
+  final bool validate;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +60,7 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    return Column(
+    final fields = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (editing)
@@ -102,6 +125,11 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
           controller: releaseDateController,
           label: i18n.tr('audio_detail_release_date'),
           hint: 'YYYY-MM-DD',
+          errorText:
+              validate &&
+                  metadataDateErrorKey(releaseDateController.text) != null
+              ? i18n.tr('metadata_invalid_date')
+              : null,
         ),
         _ReviewTextField(
           key: editing
@@ -110,6 +138,11 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
           controller: durationController,
           label: i18n.tr('card_info_duration'),
           hint: 'HH:MM:SS',
+          errorText:
+              validate &&
+                  metadataDurationErrorKey(durationController.text) != null
+              ? i18n.tr('metadata_invalid_duration')
+              : null,
         ),
         _ReviewTextField(
           key: editing
@@ -117,8 +150,16 @@ class DlsiteMetadataReviewForm extends StatelessWidget {
               : null,
           controller: ratingController,
           label: i18n.tr('audio_detail_rating'),
+          errorText:
+              validate && metadataRatingErrorKey(ratingController.text) != null
+              ? i18n.tr('metadata_invalid_rating')
+              : null,
         ),
       ],
+    );
+    return ExcludeFocus(
+      excluding: !enabled,
+      child: AbsorbPointer(absorbing: !enabled, child: fields),
     );
   }
 }
@@ -178,11 +219,13 @@ class _ReviewTextField extends StatelessWidget {
     required this.controller,
     required this.label,
     this.hint,
+    this.errorText,
   });
 
   final TextEditingController controller;
   final String label;
   final String? hint;
+  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
@@ -195,6 +238,7 @@ class _ReviewTextField extends StatelessWidget {
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
+          errorText: errorText,
           border: const OutlineInputBorder(),
         ),
       ),

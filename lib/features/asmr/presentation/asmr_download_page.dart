@@ -25,6 +25,8 @@ import 'asmr_download_summary_card.dart';
 import 'asmr_download_selection_tree.dart';
 export 'asmr_download_task_page.dart';
 
+enum AsmrDownloadPageResult { added, skipped, canceled }
+
 class AsmrDownloadPage extends ConsumerStatefulWidget {
   const AsmrDownloadPage({
     super.key,
@@ -58,6 +60,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   AsmrWork? _work;
   bool _loading = true;
   bool _starting = false;
+  bool _choosingDestination = false;
   Object? _bootstrapError;
   VoidCallback? _pendingBootstrapCommit;
   ModalRoute<dynamic>? _route;
@@ -228,25 +231,37 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   }
 
   Future<void> _chooseDestination() async {
+    if (_choosingDestination) return;
     final route = _route;
     final downloadManager = ref.read(asmrDownloadManagerProvider);
     if (downloadManager == null) return;
     final settings = ref.read(settingsRepositoryProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final folder = await downloadManager.pickDestinationFolder(
-      dialogTitle: i18n.tr('asmr_download_choose_path'),
-    );
-    if (!mounted ||
-        route?.isCurrent != true ||
-        folder == null ||
-        folder.trim().isEmpty) {
-      return;
+    setState(() => _choosingDestination = true);
+    try {
+      final folder = await downloadManager.pickDestinationFolder(
+        dialogTitle: i18n.tr('asmr_download_choose_path'),
+      );
+      if (!mounted ||
+          route?.isCurrent != true ||
+          folder == null ||
+          folder.trim().isEmpty) {
+        return;
+      }
+      await settings.setAsmrDownloadDestinationRoot(folder);
+      if (!mounted || route?.isCurrent != true) return;
+      setState(() => _destinationRoot = folder.trim());
+    } catch (_) {
+      if (!mounted || route?.isCurrent != true) return;
+      showAppSnackBar(
+        context,
+        i18n.tr('operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+      );
+    } finally {
+      if (mounted) setState(() => _choosingDestination = false);
     }
-    await settings.setAsmrDownloadDestinationRoot(folder);
-    if (!mounted || route?.isCurrent != true) return;
-    setState(() {
-      _destinationRoot = folder.trim();
-    });
   }
 
   void _refreshSelection() {
@@ -258,7 +273,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final work = _work;
     final selection = _selection;
     if (work == null || selection == null) return;
-    if (_starting) return;
+    if (_starting || _choosingDestination) return;
     final route = _route;
 
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
@@ -359,7 +374,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         icon: Icons.checklist_rounded,
         iconColor: asmrBlue,
       );
-      unawaited(Navigator.of(context).maybePop());
+      unawaited(Navigator.of(context).maybePop(AsmrDownloadPageResult.added));
     } catch (_) {
       if (!mounted || route?.isCurrent != true) return;
       showAppSnackBar(
@@ -402,7 +417,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final destinationIcon = hasDestination
         ? Icons.folder_rounded
         : Icons.folder_open_rounded;
-    final chooseDestination = (_starting || _loading)
+    final chooseDestination = (_starting || _loading || _choosingDestination)
         ? null
         : _chooseDestination;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
@@ -501,7 +516,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                           borderRadius: BorderRadius.circular(23),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(23),
-                            onTap: _starting ? null : _startDownload,
+                            onTap: _starting || _choosingDestination
+                                ? null
+                                : _startDownload,
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
@@ -566,7 +583,11 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                   key: _headerKey,
                   icon: Icons.download_rounded,
                   iconColor: AppDesignTokens.of(context).asmrAccent,
-                  leading: const BackButton(),
+                  leading: BackButton(
+                    onPressed: () => Navigator.of(
+                      context,
+                    ).maybePop(AsmrDownloadPageResult.canceled),
+                  ),
                   title: i18n.tr('asmr_download_title'),
                   titleSuffix:
                       (widget.batchIndex != null &&
@@ -629,26 +650,45 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                             ),
                           ),
                         ),
-                  additionalChild: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-                    child: AnimatedSwitcher(
-                      duration: MediaQuery.disableAnimationsOf(context)
-                          ? Duration.zero
-                          : kAppFadeDuration,
-                      switchInCurve: kAppFadeCurve,
-                      switchOutCurve: kAppFadeCurve,
-                      child: AsmrDownloadSummaryCard(
-                        key: ValueKey(_work == null),
-                        work: _work,
-                        initialRjCode: widget.initialRjCode,
-                        selectedLeafCount: selectedLeafCount,
-                        selectedTotalSizeBytes: selectedTotalSizeBytes,
-                        selectedHasUnknownSize:
-                            selection?.selectedHasUnknownSize() ?? false,
+                  additionalChild: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if ((widget.batchTotal ?? 0) > 1)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            key: const ValueKey('asmr_download_skip_work'),
+                            onPressed: _starting || _choosingDestination
+                                ? null
+                                : () => Navigator.of(
+                                    context,
+                                  ).pop(AsmrDownloadPageResult.skipped),
+                            icon: const Icon(Icons.skip_next_rounded),
+                            label: Text(i18n.tr('batch_download_skip')),
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+                        child: AnimatedSwitcher(
+                          duration: MediaQuery.disableAnimationsOf(context)
+                              ? Duration.zero
+                              : kAppFadeDuration,
+                          switchInCurve: kAppFadeCurve,
+                          switchOutCurve: kAppFadeCurve,
+                          child: AsmrDownloadSummaryCard(
+                            key: ValueKey(_work == null),
+                            work: _work,
+                            initialRjCode: widget.initialRjCode,
+                            selectedLeafCount: selectedLeafCount,
+                            selectedTotalSizeBytes: selectedTotalSizeBytes,
+                            selectedHasUnknownSize:
+                                selection?.selectedHasUnknownSize() ?? false,
 
-                        customWorkFolderName: widget.customWorkFolderName,
+                            customWorkFolderName: widget.customWorkFolderName,
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ),

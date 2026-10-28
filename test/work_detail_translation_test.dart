@@ -12,6 +12,7 @@ import 'package:doujin_audio/features/library/presentation/work_detail_entries.d
 import 'package:doujin_audio/features/library/presentation/work_detail_entry_tile.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -305,6 +306,9 @@ void main() {
         expect(find.text('zh-CN:Original circle'), findsNothing);
         await tester.tap(
           find.byKey(const ValueKey('work_detail_tag_#Original tag')),
+          buttons: platform == TargetPlatform.windows
+              ? kSecondaryMouseButton
+              : kPrimaryMouseButton,
         );
         await tester.pump();
         expect(copied, contains('Original tag'));

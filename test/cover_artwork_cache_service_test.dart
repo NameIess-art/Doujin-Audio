@@ -21,6 +21,92 @@ import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
   test(
+    'missing embedded candidates are reused until source or scope changes',
+    () async {
+      final library = LibraryService();
+      addTearDown(library.dispose);
+      final original = _track(path: '/work/voice.flac', groupKey: '/work');
+      library.library.add(original);
+      final gateway = _FakeFileCachePlatformGateway(coversByPath: {});
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+        filesystemImageScanner: (_, _) async => [],
+      );
+      addTearDown(cache.dispose);
+      expect(await cache.discoverCoverCandidatesInFolder('/work'), isEmpty);
+      expect(await cache.discoverCoverCandidatesInFolder('/work'), isEmpty);
+      expect(gateway.resolveTrackCoverPaths, [original.path]);
+      library.library[0] = MusicTrack.fromJson({
+        ...original.toJson(),
+        'fileSizeBytes': 1024,
+      });
+      await cache.discoverCoverCandidatesInFolder('/work');
+      expect(gateway.resolveTrackCoverPaths.length, 2);
+      cache.invalidateFolder('/work');
+      await cache.discoverCoverCandidatesInFolder('/work');
+      expect(gateway.resolveTrackCoverPaths.length, 3);
+    },
+  );
+
+  test(
+    'failed embedded probes are retried rather than cached as absent',
+    () async {
+      final library = LibraryService()
+        ..library.add(_track(path: '/work/voice.flac', groupKey: '/work'));
+      addTearDown(library.dispose);
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: {},
+        resolveTrackCoverHandler: (_, _) async =>
+            throw const FileSystemException('unavailable'),
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+        filesystemImageScanner: (_, _) async => [],
+      );
+      addTearDown(cache.dispose);
+      await cache.discoverCoverCandidatesInFolder('/work');
+      await cache.discoverCoverCandidatesInFolder('/work');
+      expect(gateway.resolveTrackCoverPaths.length, 2);
+    },
+  );
+
+  test('cancelled candidate discovery stops before the next batch', () async {
+    final library = LibraryService()
+      ..library.addAll([
+        for (var i = 0; i < 12; i++)
+          _track(path: '/work/$i.flac', groupKey: '/work'),
+      ]);
+    addTearDown(library.dispose);
+    final started = Completer<void>();
+    final release = Completer<String?>();
+    final gateway = _FakeFileCachePlatformGateway(
+      coversByPath: {},
+      resolveTrackCoverHandler: (_, _) {
+        if (!started.isCompleted) started.complete();
+        return release.future;
+      },
+    );
+    final cache = CoverArtworkCacheService(
+      libraryService: library,
+      fileCacheGateway: gateway,
+      filesystemImageScanner: (_, _) async => [],
+    );
+    addTearDown(cache.dispose);
+    var cancelled = false;
+    final pending = cache.discoverCoverCandidatesInFolder(
+      '/work',
+      isCancelled: () => cancelled,
+    );
+    await started.future;
+    cancelled = true;
+    release.complete();
+    expect(await pending, isEmpty);
+    expect(gateway.resolveTrackCoverPaths.length, lessThanOrEqualTo(4));
+  });
+
+  test(
     'candidate discovery reads each content once and rereads on the next request',
     () async {
       final directory = await Directory.systemTemp.createTemp(
@@ -3298,6 +3384,7 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
     required String path,
     String? groupKey,
     String? rootFolder,
+    bool propagateFailure = false,
   }) async {
     resolveTrackCoverPaths.add(path);
     resolveTrackCoverGroupKeys.add(groupKey);

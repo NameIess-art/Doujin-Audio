@@ -442,9 +442,14 @@ class FileCachePlatformGateway {
     required String path,
     String? groupKey,
     String? rootFolder,
+    bool propagateFailure = false,
   }) async {
     if (_isWindows() && !_isAndroid()) {
-      return WindowsMediaTools.instance.extractImage(path, videoFrame: false);
+      return WindowsMediaTools.instance.extractImage(
+        path,
+        videoFrame: false,
+        propagateFailure: propagateFailure,
+      );
     }
     final result = await _client.invoke<String?>(
       FileCacheMethod.resolveTrackCover,
@@ -456,6 +461,13 @@ class FileCachePlatformGateway {
       decode: (value) => value as String?,
     );
     if (result is NativeFailure<String?>) {
+      if (propagateFailure) {
+        throw PlatformException(
+          code: result.code,
+          message: result.message,
+          details: result.details,
+        );
+      }
       _logOptionalFailure(FileCacheMethod.resolveTrackCover, result);
     }
     return result.valueOrNull;

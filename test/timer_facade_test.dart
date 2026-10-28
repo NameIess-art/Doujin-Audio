@@ -10,12 +10,95 @@ import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'support/app_runtime_test_fixture.dart';
+
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
   group('TimerFacade', () {
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      for (final countdown in [false, true]) {
+        test(
+          '$platform seek before track end restores ${countdown ? "countdown fade" : "full volume"}',
+          () async {
+            debugDefaultTargetPlatformOverride = platform;
+            addTearDown(() => debugDefaultTargetPlatformOverride = null);
+            final service = TimerService();
+            final graph = createTestRuntimeGraph(
+              timerService: service,
+              powerPlatformService: _RecordingPowerPlatformService(),
+            );
+            addTearDown(graph.runtime.dispose);
+            final track = testMusicTrack(
+              name: 'one',
+              path: '/work/one.mp3',
+              groupKey: 'work',
+              groupTitle: 'work',
+            );
+            final session = graph.playback.createTrackSession(track)
+              ..state = const PlayerState(true, ProcessingState.ready)
+              ..duration = const Duration(minutes: 5)
+              ..loadedPath = track.path;
+            final fades = <double>[];
+            var countdownFade = 1.0;
+            graph.timer.attachRuntime(
+              hasPlayingSession: () => true,
+              sessions: () => [session],
+              pauseSession: (_) async => true,
+              activateAudioSession: () async => true,
+              resumeSession: (_) async => true,
+              onStateChanged: () {},
+              onRuntimeRestored: () {},
+              applyFadeMultiplier: (value) => countdownFade = value,
+              setNativeTrackStop: (_, enabled) async {
+                session.nativeStopAfterCurrentTrack = enabled;
+                return true;
+              },
+              applySessionFadeMultiplier: (_, value) => fades.add(value),
+            );
+            if (countdown) {
+              graph.timer.configureTimer(
+                TimerMode.manual,
+                const Duration(minutes: 5),
+              );
+              graph.timer.startCountdown();
+              service.timerEndsAt = DateTime.now().add(
+                const Duration(seconds: 10),
+              );
+              await Future<void>.delayed(const Duration(milliseconds: 1100));
+              expect(countdownFade, inExclusiveRange(0.2, 1.0));
+            }
+            graph.timer.setStopAfterCurrentTrack(true);
+            await graph.timer.pendingTrackStopSync;
+            expect(graph.timer.stopsAfterCurrentTrack(session.id), isTrue);
+            graph.playbackCommands.handleSessionPositionChanged(
+              session,
+              const Duration(minutes: 4, seconds: 57),
+            );
+            await Future<void>.delayed(Duration.zero);
+            expect(fades.last, closeTo(0.2, 0.00001));
+
+            graph.playbackCommands.handleSessionPositionChanged(
+              session,
+              const Duration(minutes: 1),
+            );
+            await Future<void>.delayed(Duration.zero);
+            expect(fades.last, countdownFade);
+            final updates = fades.length;
+            graph.playbackCommands.handleSessionPositionChanged(
+              session,
+              const Duration(minutes: 2),
+            );
+            await Future<void>.delayed(Duration.zero);
+            expect(fades, hasLength(updates));
+            graph.timer.cancelTimer();
+          },
+        );
+      }
+    }
+
     testWidgets(
       'ordinary countdown only writes fade at transitions and during fade',
       (tester) async {

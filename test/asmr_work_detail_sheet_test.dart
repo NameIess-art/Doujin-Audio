@@ -15,6 +15,7 @@ import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
@@ -1756,6 +1757,177 @@ void main() {
       expect(fixture.playback.sessions, hasLength(1));
     });
 
+    testWidgets(
+      '$page batch add retains empty and failed works and retries only failures',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        await fixture.languageProvider.setLanguage(AppLanguage.zh);
+        final first = _work(id: 401, title: 'Batch first');
+        final failed = _work(id: 402, title: 'Batch failed');
+        final empty = _work(id: 403, title: 'Batch empty');
+        final controller = _BatchAsmrLibraryController(
+          createTestAsmrServices(),
+          [first, failed, empty],
+        );
+        controller.failedWorkIds.add(failed.id);
+        controller.emptyWorkIds.add(empty.id);
+        addTearDown(controller.dispose);
+        final coordinator = AsmrPlaybackCoordinator(
+          source: controller,
+          launcher: PlaybackFacadeSessionLauncher(fixture.playback),
+        );
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+              asmrPlaybackCoordinatorProvider.overrideWithValue(coordinator),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (inSearch) {
+          await tester.tap(
+            find.byKey(const ValueKey<String>('asmr_search_button')),
+          );
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.text('收藏'));
+        await tester.pumpAndSettle();
+        if (inSearch) {
+          await tester.enterText(find.byType(TextField), 'Batch');
+          await tester.testTextInput.receiveAction(TextInputAction.search);
+          await tester.pumpAndSettle();
+        }
+        await tester.longPress(
+          find.byKey(ValueKey('asmr-work-${first.workKey}')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey('asmr-work-${failed.workKey}')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey('asmr-work-${empty.workKey}')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey('${keyPrefix}_batch_add_button')));
+        await tester.pumpAndSettle();
+        expect(controller.loadedWorkIds, [first.id, failed.id, empty.id]);
+        expect(
+          find.text(
+            fixture.languageProvider.tr('batch_added_to_playlist_result', {
+              'success': 1,
+              'failed': 2,
+            }),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(ValueKey('${keyPrefix}_batch_selection_header')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            fixture.languageProvider.tr('selected_count', {'count': '2'}),
+          ),
+          findsOneWidget,
+        );
+        controller.failedWorkIds.clear();
+        controller.emptyWorkIds.clear();
+        expect(fixture.uiOperationService.isBusy(const UiOperationScope('asmr:batch-add')), isFalse);
+        final feedback = find.text(fixture.languageProvider.tr('batch_added_to_playlist_result', {
+          'success': 1,
+          'failed': 2,
+        }));
+        await tester.drag(find.ancestor(of: feedback, matching: find.byType(Dismissible)), const Offset(900, 0));
+        await tester.pumpAndSettle();
+        expect(feedback, findsNothing);
+        final retryButton = find.byKey(ValueKey('${keyPrefix}_batch_add_button'));
+        expect(tester.widget<IconButton>(retryButton).onPressed, isNotNull);
+        await tester.tap(retryButton);
+        await tester.pumpAndSettle();
+        expect(controller.loadedWorkIds, [first.id, failed.id, empty.id, failed.id, empty.id]);
+        expect(
+          find.byKey(ValueKey('${keyPrefix}_batch_selection_header')),
+          findsNothing,
+        );
+        expect(fixture.playback.sessions, hasLength(3));
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      '$page batch download skips explicitly and Back cancels remaining works',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        await fixture.languageProvider.setLanguage(AppLanguage.zh);
+        final works = [
+          for (var id = 501; id <= 503; id++) _work(id: id, title: 'Batch $id'),
+        ];
+        final controller = _BatchAsmrLibraryController(
+          createTestAsmrServices(),
+          works,
+        );
+        final downloads = AsmrDownloadManager(persistTasks: false);
+        addTearDown(controller.dispose);
+        addTearDown(downloads.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+              asmrDownloadManagerProvider.overrideWithValue(downloads),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (inSearch) {
+          await tester.tap(
+            find.byKey(const ValueKey<String>('asmr_search_button')),
+          );
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.text('收藏'));
+        await tester.pumpAndSettle();
+        if (inSearch) {
+          await tester.enterText(find.byType(TextField), 'Batch');
+          await tester.testTextInput.receiveAction(TextInputAction.search);
+          await tester.pumpAndSettle();
+        }
+        await tester.longPress(
+          find.byKey(ValueKey('asmr-work-${works.first.workKey}')),
+        );
+        await tester.pumpAndSettle();
+        for (final work in works.skip(1)) {
+          await tester.tap(find.byKey(ValueKey('asmr-work-${work.workKey}')));
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(
+          find.byKey(ValueKey('${keyPrefix}_batch_download_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<AsmrDownloadPage>(find.byType(AsmrDownloadPage))
+              .work!
+              .id,
+          501,
+        );
+        await tester.tap(find.byKey(const ValueKey('asmr_download_skip_work')));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<AsmrDownloadPage>(find.byType(AsmrDownloadPage))
+              .work!
+              .id,
+          502,
+        );
+        await tester.tap(find.byType(BackButton).last);
+        await tester.pumpAndSettle();
+        expect(find.byType(AsmrDownloadPage), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets('$page batch unfavorite can be undone', (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
@@ -2021,15 +2193,24 @@ class _LoadedTabAsmrController extends _TestFavoritesAsmrLibraryController {
 class _BatchAsmrLibraryController extends _TestFavoritesAsmrLibraryController {
   _BatchAsmrLibraryController(super.services, super.initialWorks);
 
+  final failedWorkIds = <int>{};
+  final emptyWorkIds = <int>{};
+  final loadedWorkIds = <int>[];
+
   @override
-  Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async => [
-    testMusicTrack(
-      name: work.title,
-      path: '/asmr/${work.id}.mp3',
-      groupKey: '/asmr/${work.id}',
-      groupTitle: work.title,
-    ),
-  ];
+  Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async {
+    loadedWorkIds.add(work.id);
+    if (failedWorkIds.contains(work.id)) throw StateError('unavailable work');
+    if (emptyWorkIds.contains(work.id)) return [];
+    return [
+      testMusicTrack(
+        name: work.title,
+        path: '/asmr/${work.id}.mp3',
+        groupKey: '/asmr/${work.id}',
+        groupTitle: work.title,
+      ),
+    ];
+  }
 
   @override
   Future<void> recordHistory(AsmrWork work) async {}

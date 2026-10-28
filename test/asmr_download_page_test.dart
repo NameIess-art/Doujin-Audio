@@ -13,6 +13,7 @@ import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_selection_tree.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
+import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -207,6 +208,79 @@ void main() {
       variant: TargetPlatformVariant({platform}),
     );
 
+    testWidgets(
+      'path save failure reports once, prevents duplicate picker and permits retry on $platform',
+      (tester) async {
+        final settings = _FailingDestinationSettings();
+        final manager = await _openReadyDownload(tester, settings: settings);
+        manager.destinationPicker = Completer<String?>();
+        final i18n = ProviderScope.containerOf(
+          tester.element(find.byType(AsmrDownloadPage)),
+        ).read(appLanguageProviderInstanceProvider);
+        final changePath = find.text(i18n.tr('asmr_download_change_path'));
+        await tester.tap(changePath);
+        await tester.tap(changePath);
+        await tester.pump();
+        expect(manager.pickerCalls, 1);
+        expect(tester.widget<InkWell>(_downloadStartButton()).onTap, isNull);
+        manager.destinationPicker!.complete('new destination');
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(settings.saves, 1);
+        expect(find.textContaining(i18n.tr('operation_failed_retry')), findsOneWidget);
+        expect(settings.asmrDownloadDestinationRoot, 'destination');
+        expect(tester.takeException(), isNull);
+        settings.fail = false;
+        manager.destinationPicker = Completer<String?>();
+        await tester.tap(changePath);
+        await tester.pump();
+        manager.destinationPicker!.complete('new destination');
+        await tester.pumpAndSettle();
+        expect(settings.asmrDownloadDestinationRoot, 'new destination');
+        expect(tester.widget<InkWell>(_downloadStartButton()).onTap, isNotNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'batch page distinguishes skip, cancel and successful add on $platform',
+      (tester) async {
+        AsmrDownloadPageResult? result;
+        final firstManager = await _openReadyDownload(
+          tester,
+          batchTotal: 2,
+          onResult: (value) => result = value,
+        );
+        await tester.tap(find.byKey(const ValueKey('asmr_download_skip_work')));
+        await tester.pumpAndSettle();
+        expect(result, AsmrDownloadPageResult.skipped);
+        firstManager.holdDestinationCheck = false;
+        await tester.tap(find.text('Open download'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+        expect(result, AsmrDownloadPageResult.canceled);
+        await tester.pumpWidget(const SizedBox.shrink());
+        final manager = await _openReadyDownload(
+          tester,
+          batchTotal: 2,
+          onResult: (value) => result = value,
+        );
+        await tester.tap(_downloadStartButton());
+        await tester.pump();
+        manager.destinationCheck.complete(true);
+        await tester.pumpAndSettle();
+        expect(result, AsmrDownloadPageResult.added);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(interaction.idleDelay);
+        await tester.pump();
+        interaction.resetForTest();
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     for (final outcome in [
       'cancelled picker',
       'failed check',
@@ -297,14 +371,17 @@ void main() {
         addTearDown(fixture.dispose);
         addTearDown(controller.dispose);
         addTearDown(manager.dispose);
-        final work = AsmrWork.fromJson(const {'id': 1, 'title': 'Pending work'});
+        final work = AsmrWork.fromJson(const {
+          'id': 1,
+          'title': 'Pending work',
+        });
         await tester.pumpWidget(
           fixture.build(
             Builder(
               builder: (context) => Scaffold(
                 body: TextButton(
                   onPressed: () => Navigator.of(context).push(
-                    buildAppPageRoute<void>(
+                    buildAppPageRoute<AsmrDownloadPageResult>(
                       context: context,
                       child: AsmrDownloadPage(work: work),
                     ),
@@ -404,8 +481,12 @@ Finder _downloadStartProgress() => find.descendant(
 Future<_StartDownloadManager> _openReadyDownload(
   WidgetTester tester, {
   bool japanese = false,
+  SettingsRepository? settings,
+  int? batchTotal,
+  void Function(AsmrDownloadPageResult?)? onResult,
 }) async {
   final fixture = AppRuntimeWidgetTestFixture(
+    providedSettingsRepository: settings,
     configureSettingsRepository: (settings) =>
         settings.asmrDownloadDestinationRoot = 'destination',
   );
@@ -454,12 +535,20 @@ Future<_StartDownloadManager> _openReadyDownload(
       Builder(
         builder: (context) => Scaffold(
           body: TextButton(
-            onPressed: () => Navigator.of(context).push(
-              buildAppPageRoute<void>(
-                context: context,
-                child: AsmrDownloadPage(work: work),
-              ),
-            ),
+            onPressed: () async {
+              final result = await Navigator.of(context)
+                  .push<AsmrDownloadPageResult>(
+                    buildAppPageRoute<AsmrDownloadPageResult>(
+                      context: context,
+                      child: AsmrDownloadPage(
+                        work: work,
+                        batchIndex: batchTotal == null ? null : 1,
+                        batchTotal: batchTotal,
+                      ),
+                    ),
+                  );
+              onResult?.call(result);
+            },
             child: const Text('Open download'),
           ),
         ),
@@ -550,5 +639,17 @@ class _DelayedTreeController extends AsmrLibraryController {
   }) {
     loads++;
     return tree.future;
+  }
+}
+
+class _FailingDestinationSettings extends SettingsRepository {
+  bool fail = true;
+  int saves = 0;
+
+  @override
+  Future<void> setAsmrDownloadDestinationRoot(String? destinationRoot) async {
+    saves++;
+    if (fail) throw StateError('settings_write_failed');
+    asmrDownloadDestinationRoot = destinationRoot;
   }
 }

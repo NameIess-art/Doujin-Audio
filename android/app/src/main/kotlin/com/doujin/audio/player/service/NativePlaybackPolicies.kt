@@ -159,7 +159,8 @@ internal fun shouldClearPlaybackIntentForPlayWhenReadyChange(
     playWhenReady: Boolean,
     reason: Int
 ): Boolean = !playWhenReady &&
-    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
+    (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY ||
+        reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM)
 
 internal fun shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
     transientAudioFocusLossActive: Boolean

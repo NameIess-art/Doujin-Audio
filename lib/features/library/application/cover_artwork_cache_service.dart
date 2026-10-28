@@ -832,6 +832,7 @@ class CoverArtworkCacheService {
     bool includeVideoFrames = true,
     bool includeEmbeddedCovers = true,
     bool propagateFailure = false,
+    bool Function()? isCancelled,
   }) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     if (normalizedFolder.isEmpty) return const <String>[];
@@ -841,6 +842,7 @@ class CoverArtworkCacheService {
       includeVideoFrames: includeVideoFrames,
       includeEmbeddedCovers: includeEmbeddedCovers,
       propagateFailure: propagateFailure,
+      isCancelled: isCancelled,
     );
   }
 

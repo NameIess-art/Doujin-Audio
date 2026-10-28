@@ -472,8 +472,8 @@ void main() {
           expect(navigation.isContentOpen, isFalse);
 
           unawaited(
-            content.push<void>(
-              buildAppPageRoute<void>(
+            content.push<AsmrDownloadPageResult>(
+              buildAppPageRoute<AsmrDownloadPageResult>(
                 context: content.context,
                 child: AsmrDownloadPage(
                   work: AsmrWork.fromJson(const {

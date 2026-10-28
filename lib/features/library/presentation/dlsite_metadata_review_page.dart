@@ -20,6 +20,7 @@ import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/page_header_inset.dart';
@@ -136,6 +137,70 @@ class _DlsiteMetadataReviewPageState
   bool _saving = false;
   bool _saveCover = true;
   bool _durationEdited = false;
+  bool _dirty = false;
+  bool _updatingFields = false;
+  bool _confirmingDiscard = false;
+  bool _validate = false;
+  List<String> _initialFields = const [];
+  bool _initialSaveCover = false;
+
+  List<TextEditingController> get _fields => [
+    _folderNameController,
+    _rjCodeController,
+    _titleController,
+    _circleController,
+    _voiceActorsController,
+    _tagsController,
+    _releaseDateController,
+    _durationController,
+    _ratingController,
+  ];
+
+  void _rememberDraft() {
+    _initialFields = _fields.map((field) => field.text).toList();
+    _initialSaveCover = _saveCover;
+    _dirty = false;
+    _validate = false;
+  }
+
+  void _onDraftChanged() {
+    if (_updatingFields) return;
+    final dirty =
+        _saveCover != _initialSaveCover ||
+        !listEquals(
+          _initialFields,
+          _fields.map((field) => field.text).toList(),
+        );
+    if (_dirty != dirty || _validate) setState(() => _dirty = dirty);
+  }
+
+  Future<bool> _confirmDiscard() async {
+    if (_saving || _confirmingDiscard) return false;
+    if (!_dirty) return true;
+    _confirmingDiscard = true;
+    try {
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
+      final discard = await showConfirmActionDialog(
+        context: context,
+        title: i18n.tr('metadata_unsaved_title'),
+        message: i18n.tr('metadata_unsaved_message'),
+        cancelLabel: i18n.tr('cancel'),
+        confirmLabel: i18n.tr('discard_changes'),
+      );
+      return mounted && discard && readAppRoute(context)?.isCurrent != false;
+    } finally {
+      _confirmingDiscard = false;
+    }
+  }
+
+  Future<void> _requestClose() async {
+    if (await _confirmDiscard() && mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _changeCandidate(int index) async {
+    if (await _confirmDiscard() && mounted) _showCandidate(index);
+  }
+
   int _durationCalculationGeneration = 0;
 
   UiOperationScope get _operationScope => UiOperationScope.metadataReview(
@@ -151,6 +216,10 @@ class _DlsiteMetadataReviewPageState
       _initializeWithCandidates(widget.initialCandidates!);
     } else {
       unawaited(_fetch());
+    }
+    _rememberDraft();
+    for (final field in _fields) {
+      field.addListener(_onDraftChanged);
     }
   }
 
@@ -176,6 +245,7 @@ class _DlsiteMetadataReviewPageState
       } else {
         unawaited(_fetch());
       }
+      _rememberDraft();
       if (_scrollController.hasClients) {
         _scrollController.jumpTo(0);
       }
@@ -185,6 +255,9 @@ class _DlsiteMetadataReviewPageState
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelCommit(_durationCommitKey);
+    for (final field in _fields) {
+      field.removeListener(_onDraftChanged);
+    }
     _scrollController.dispose();
     _titleController.dispose();
     _folderNameController.dispose();
@@ -217,6 +290,7 @@ class _DlsiteMetadataReviewPageState
       _metadata = null;
       _loading = false;
     }
+    _rememberDraft();
   }
 
   void _initializeEditor() {
@@ -246,6 +320,7 @@ class _DlsiteMetadataReviewPageState
     _saveCover = false;
     _durationEdited = false;
     _durationController.addListener(_markDurationEdited);
+    _rememberDraft();
     final generation = ++_durationCalculationGeneration;
     if (detail.duration == null) {
       UiInteractionCoordinator.instance.scheduleCommit(
@@ -282,7 +357,8 @@ class _DlsiteMetadataReviewPageState
       final duration = library.resolvedAudioDetail(target)?.duration;
       if (duration == null) return;
       _durationController.removeListener(_markDurationEdited);
-      _durationController.text = formatDurationHms(duration);
+      _initialFields[7] = formatDurationHms(duration);
+      _durationController.text = _initialFields[7];
       _durationController.addListener(_markDurationEdited);
       setState(() {
         _editingDetail = (_editingDetail ?? widget.detail).copyWith(
@@ -370,10 +446,12 @@ class _DlsiteMetadataReviewPageState
           widget.initialSaveCover &&
           widget.detail.target.isLibraryRootFolder &&
           metadata.coverUrl != null;
+      _rememberDraft();
     });
   }
 
   void _populateFields(DlsiteMetadata metadata) {
+    _updatingFields = true;
     _rjCodeController.text = metadata.rjCode;
     _titleController.text = metadata.workTitle;
     _circleController.text = metadata.circleName;
@@ -386,11 +464,18 @@ class _DlsiteMetadataReviewPageState
         ? ''
         : formatDurationHms(metadata.duration!);
     _ratingController.text = formatLibraryLikeRating(metadata.rating);
+    _updatingFields = false;
   }
 
   Future<void> _apply() async {
     final metadata = _metadata;
     if (metadata == null || _saving) return;
+    setState(() => _validate = true);
+    if (metadataDateErrorKey(_releaseDateController.text) != null ||
+        metadataDurationErrorKey(_durationController.text) != null ||
+        metadataRatingErrorKey(_ratingController.text) != null) {
+      return;
+    }
     setState(() {
       _saving = true;
     });
@@ -549,19 +634,29 @@ class _DlsiteMetadataReviewPageState
         cardCoverSelected: true,
       );
     });
+    showAppSnackBar(
+      context,
+      ref
+          .read(appLanguageProviderInstanceProvider)
+          .tr('audio_detail_cover_saved'),
+      tone: AppFeedbackTone.success,
+    );
   }
 
-  void _skip() {
-    if (_saving) return;
-    _finish(DlsiteMetadataReviewResult.skipped(_saveCover));
+  Future<void> _skip() async {
+    if (await _confirmDiscard() && mounted) {
+      _finish(DlsiteMetadataReviewResult.skipped(_saveCover));
+    }
   }
 
-  void _navigateWork(int offset) {
-    if (_saving) return;
-    widget.onBatchNavigate?.call(offset);
+  Future<void> _navigateWork(int offset) async {
+    if (await _confirmDiscard() && mounted) {
+      widget.onBatchNavigate?.call(offset);
+    }
   }
 
   void _finish(DlsiteMetadataReviewResult result) {
+    _dirty = false;
     final onCompleted = widget.onCompleted;
     if (onCompleted != null) {
       onCompleted(result);
@@ -631,7 +726,7 @@ class _DlsiteMetadataReviewPageState
                 iconSize: 20,
                 onPressed: _candidateIndex <= 0 || _saving
                     ? null
-                    : () => _showCandidate(_candidateIndex - 1),
+                    : () => _changeCandidate(_candidateIndex - 1),
                 tooltip: i18n.tr('previous'),
                 icon: const Icon(Icons.chevron_left_rounded),
               ),
@@ -649,7 +744,7 @@ class _DlsiteMetadataReviewPageState
                 iconSize: 20,
                 onPressed: _candidateIndex >= _candidates.length - 1 || _saving
                     ? null
-                    : () => _showCandidate(_candidateIndex + 1),
+                    : () => _changeCandidate(_candidateIndex + 1),
                 tooltip: i18n.tr('next'),
                 icon: const Icon(Icons.chevron_right_rounded),
               ),
@@ -657,7 +752,7 @@ class _DlsiteMetadataReviewPageState
           )
         : null;
 
-    return Scaffold(
+    final page = Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: PageHeaderInset(
         topInset: listTopPadding,
@@ -736,6 +831,10 @@ class _DlsiteMetadataReviewPageState
                                 showLabel: false,
                                 onCoverSelected: _handleCoverSelected,
                               ),
+                              const SizedBox(height: 8),
+                              Text(
+                                i18n.tr('metadata_cover_saved_independently'),
+                              ),
                               const SizedBox(height: 20),
                             ],
                             if (coverUrl != null) ...[
@@ -759,9 +858,10 @@ class _DlsiteMetadataReviewPageState
                                     cacheWidth: coverCacheWidth,
                                     useDefaultCacheWidth:
                                         coverCacheWidth != null,
-                                    loadingBuilder: (_) => const CoverLoadingArtwork(
-                                      placeholder: CoverFallbackArtwork(),
-                                    ),
+                                    loadingBuilder: (_) =>
+                                        const CoverLoadingArtwork(
+                                          placeholder: CoverFallbackArtwork(),
+                                        ),
                                     fallbackBuilder: (_) =>
                                         const CoverFallbackArtwork(),
                                   ),
@@ -771,6 +871,7 @@ class _DlsiteMetadataReviewPageState
                                 value: _saveCover,
                                 onChanged: (value) => setState(() {
                                   _saveCover = value;
+                                  _onDraftChanged();
                                 }),
                                 contentPadding: EdgeInsets.zero,
                                 title: Text(i18n.tr('dlsite_save_cover')),
@@ -779,6 +880,8 @@ class _DlsiteMetadataReviewPageState
                             ],
                             DlsiteMetadataReviewForm(
                               editing: widget.editing,
+                              validate: _validate,
+                              enabled: !_saving,
                               metadata: metadata,
                               folderNameController: _folderNameController,
                               rjCodeController: _rjCodeController,
@@ -840,7 +943,9 @@ class _DlsiteMetadataReviewPageState
                   icon: widget.editing
                       ? Icons.edit_note_rounded
                       : Icons.rate_review_rounded,
-                  leading: const BackButton(),
+                  leading: BackButton(
+                    onPressed: _saving ? null : _requestClose,
+                  ),
                   title: reviewTitle,
                   trailing: headerTrailing,
                   additionalChild: Padding(
@@ -870,6 +975,13 @@ class _DlsiteMetadataReviewPageState
           ],
         ),
       ),
+    );
+    return PopScope<Object?>(
+      canPop: !_dirty && !_saving,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) unawaited(_requestClose());
+      },
+      child: page,
     );
   }
 }

@@ -72,6 +72,7 @@ class AppLanguageProvider
   late AppLanguage _language;
   int _preferenceRevision = 0;
   bool _disposed = false;
+  Future<void>? _preferenceWrites;
   late Future<void> _loadFuture;
 
   AppLanguageProvider() {
@@ -112,15 +113,39 @@ class AppLanguageProvider
     await setLanguagePreference(AppLanguagePreference.fromLanguage(language));
   }
 
-  Future<void> setLanguagePreference(AppLanguagePreference preference) async {
-    final language = preference.explicitLanguage ?? _resolveSystemLanguage();
+  Future<void> setLanguagePreference(AppLanguagePreference preference) {
     _preferenceRevision++;
-    if (_preference != preference || _language != language) {
-      _preference = preference;
-      _language = language;
-      notifyListeners();
+    final previousWrite = _preferenceWrites;
+    Future<void> persist() async {
+      if (previousWrite != null) await previousWrite;
+      final previousValue = await AppPreferences.getString(
+        _prefsKey,
+        throwOnError: true,
+      );
+      if (!await AppPreferences.setString(_prefsKey, preference.name)) {
+        // SharedPreferences updates its memory cache even when disk rejects a write.
+        if (previousValue == null) {
+          await AppPreferences.remove(_prefsKey);
+        } else {
+          await AppPreferences.setString(_prefsKey, previousValue);
+        }
+        throw StateError('Failed to save interface language');
+      }
+      if (_disposed) return;
+      final language = preference.explicitLanguage ?? _resolveSystemLanguage();
+      if (_preference != preference || _language != language) {
+        _preference = preference;
+        _language = language;
+        notifyListeners();
+      }
     }
-    await AppPreferences.setString(_prefsKey, preference.name);
+
+    final saved = persist();
+    _preferenceWrites = saved.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return saved;
   }
 
   @override

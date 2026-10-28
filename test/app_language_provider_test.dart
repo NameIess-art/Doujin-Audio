@@ -2,10 +2,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   SharedPreferences.setMockInitialValues(const <String, Object>{});
+
+  test(
+    'a failed language save preserves the last successful choice and can retry',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final store = _RejectableLanguagePreferences();
+      SharedPreferencesStorePlatform.instance = store;
+      final provider = AppLanguageProvider();
+      addTearDown(provider.dispose);
+      await provider.initialized;
+      await provider.setLanguage(AppLanguage.en);
+      store.reject = true;
+      await expectLater(provider.setLanguage(AppLanguage.ja), throwsStateError);
+      expect(provider.language, AppLanguage.en);
+      expect(provider.preference, AppLanguagePreference.en);
+      store.reject = false;
+      await provider.setLanguage(AppLanguage.ja);
+      expect(provider.language, AppLanguage.ja);
+    },
+  );
 
   test(
     'background transparency and boosted volume copy are localized',
@@ -21,10 +43,7 @@ void main() {
       await provider.setLanguage(AppLanguage.ja);
       expect(provider.tr('background_transparency'), '背景透明度');
       expect(provider.tr('volume_range_hint'), '0-150');
-      expect(
-        provider.tr('volume_warning_message'),
-        '音量増幅で音割れや歪みが生じる場合があります。',
-      );
+      expect(provider.tr('volume_warning_message'), '音量増幅で音割れや歪みが生じる場合があります。');
 
       await provider.setLanguage(AppLanguage.en);
       expect(provider.tr('background_transparency'), 'Background transparency');
@@ -265,4 +284,14 @@ void main() {
     expect(provider.tr('mute'), 'ミュート');
     expect(provider.tr('unmute'), 'ミュート解除');
   });
+}
+
+class _RejectableLanguagePreferences extends InMemorySharedPreferencesStore {
+  _RejectableLanguagePreferences() : super.empty();
+  bool reject = false;
+  @override
+  Future<bool> setValue(String type, String key, Object value) async {
+    if (reject) return false;
+    return super.setValue(type, key, value);
+  }
 }

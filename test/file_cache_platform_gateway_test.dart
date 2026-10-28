@@ -691,6 +691,13 @@ void main() {
       });
 
       expect(await gateway.resolveTrackCover(path: 'content://track'), isNull);
+      await expectLater(
+        gateway.resolveTrackCover(
+          path: 'content://track',
+          propagateFailure: true,
+        ),
+        throwsA(isA<PlatformException>()),
+      );
       expect(
         await gateway.resolveTrackSubtitle(path: 'content://track'),
         isNull,

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/persistence/json_document_store.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
@@ -107,6 +108,142 @@ void main() {
       expect(second.watchedFolders, ['/new']);
     },
   );
+
+  for (final root in [
+    '/library',
+    r'C:\Library',
+    'content://provider/tree/primary%3ALibrary',
+  ]) {
+    for (final legacy in [false, true]) {
+      test('preference exclusions survive two startup loads '
+          '(legacy=$legacy, root=$root)', () async {
+        final prefix = PathMatcher.isContentUri(root) ? '$root::' : '$root/';
+        final hiddenFolder = '${prefix}Hidden';
+        final hiddenTrack = '${prefix}02.mp3';
+        MusicTrack track(String path) => MusicTrack(
+          path: path,
+          displayName: 'Track',
+          groupKey: path == hiddenTrack ? root : hiddenFolder,
+          groupTitle: 'Work',
+          groupSubtitle: '',
+          isSingle: false,
+        );
+        final repository = _RestoredLibraryRepository(
+          startupTracks: [track('$hiddenFolder/01.mp3'), track(hiddenTrack)],
+        );
+        SharedPreferences.setMockInitialValues({
+          if (legacy)
+            'removed_library_folders_v1': jsonEncode({
+              root: [hiddenFolder],
+            })
+          else
+            'library_exclusions_v1': jsonEncode({
+              'folders': {
+                root: [hiddenFolder],
+              },
+              'tracks': {
+                root: [hiddenTrack],
+              },
+            }),
+        });
+        final service = LibraryService();
+        addTearDown(service.dispose);
+        final persistence = LibraryPersistenceCoordinator(
+          repository: repository,
+          service: service,
+        );
+        for (var load = 0; load < 2; load++) {
+          final state = await persistence.load();
+          expect(state.folderExclusions[PathMatcher.normalize(root)], {
+            PathMatcher.normalize(hiddenFolder),
+          });
+          expect(
+            state.tracks.map((track) => track.path),
+            legacy ? [hiddenTrack] : isEmpty,
+          );
+          if (!legacy) {
+            expect(state.trackExclusions[PathMatcher.normalize(root)], {
+              PathMatcher.normalize(hiddenTrack),
+            });
+          }
+        }
+        final preferences = await SharedPreferences.getInstance();
+        expect(preferences.getString('removed_library_folders_v1'), isNull);
+      });
+    }
+  }
+
+  for (final indexedRoot in ['C:/Library', 'c:/library']) {
+    test('indexed states override stale preferences without clearing '
+        'an unindexed parent exclusion (root=$indexedRoot)', () async {
+      const root = 'C:/Library';
+      const restoredFolder = '$root/Restored';
+      const inheritedFolder = '$root/Unindexed';
+      MusicTrack track(String folder) => MusicTrack(
+        path: '$folder/01.mp3',
+        displayName: '01',
+        groupKey: folder,
+        groupTitle: 'Work',
+        groupSubtitle: '',
+        isSingle: false,
+      );
+      final restored = track(restoredFolder);
+      final inherited = track(inheritedFolder);
+      final excluded = track('$root/Excluded');
+      SharedPreferences.setMockInitialValues({
+        'library_exclusions_v1': jsonEncode({
+          'folders': {
+            root: [restoredFolder, inheritedFolder],
+          },
+          'tracks': {
+            root: [restored.path],
+          },
+        }),
+      });
+      final repository = _RestoredLibraryRepository(
+        startupTracks: [restored, inherited, excluded],
+        indexedEntries: [
+          LibraryEntry.folder(
+            libraryPath: indexedRoot,
+            path: restoredFolder,
+            state: LibraryEntryState.active,
+          ),
+          LibraryEntry.track(
+            libraryPath: indexedRoot,
+            track: restored,
+            state: LibraryEntryState.active,
+          ),
+          LibraryEntry.track(
+            libraryPath: indexedRoot,
+            track: inherited,
+            state: LibraryEntryState.active,
+          ),
+          LibraryEntry.track(
+            libraryPath: indexedRoot,
+            track: excluded,
+            state: LibraryEntryState.excluded,
+          ),
+        ],
+      )..settings['watched_libraries_v1'] = jsonEncode([indexedRoot]);
+      final service = LibraryService();
+      addTearDown(service.dispose);
+      final persistence = LibraryPersistenceCoordinator(
+        repository: repository,
+        service: service,
+      );
+      for (var load = 0; load < 2; load++) {
+        final state = await persistence.load();
+        expect(state.folderExclusions[PathMatcher.normalize(indexedRoot)], {
+          PathMatcher.normalize(inheritedFolder),
+        });
+        expect(state.trackExclusions[PathMatcher.normalize(indexedRoot)], {
+          PathMatcher.normalize(excluded.path),
+        });
+        expect(state.tracks.map((track) => track.path), [restored.path]);
+        expect(state.entriesByLibrary.keys, [PathMatcher.normalize(indexedRoot)]);
+      }
+    });
+  }
 
   test(
     'failed batch restores overwritten and removed tracks and entry tree',
@@ -353,6 +490,13 @@ void main() {
 }
 
 final class _RestoredLibraryRepository extends TestPersistenceRepository {
+  _RestoredLibraryRepository({
+    this.startupTracks,
+    this.indexedEntries = const [],
+  });
+
+  final List<MusicTrack>? startupTracks;
+  final List<LibraryEntry> indexedEntries;
   final settings = <String, String>{};
   int commits = 0;
   bool rejectCommit = false;
@@ -373,21 +517,22 @@ final class _RestoredLibraryRepository extends TestPersistenceRepository {
 
   @override
   Future<List<MusicTrack>> loadStartupTracks() async {
-    return <MusicTrack>[
-      MusicTrack(
-        path: '/music/album/01.wav',
-        displayName: '01.wav',
-        groupKey: '/music/album',
-        groupTitle: 'album',
-        groupSubtitle: '/music/album',
-        isSingle: false,
-      ),
-    ];
+    return startupTracks ??
+        <MusicTrack>[
+          MusicTrack(
+            path: '/music/album/01.wav',
+            displayName: '01.wav',
+            groupKey: '/music/album',
+            groupTitle: 'album',
+            groupSubtitle: '/music/album',
+            isSingle: false,
+          ),
+        ];
   }
 
   @override
   Future<List<LibraryEntry>> loadAllLibraryEntries() async {
-    return const <LibraryEntry>[];
+    return indexedEntries;
   }
 }
 

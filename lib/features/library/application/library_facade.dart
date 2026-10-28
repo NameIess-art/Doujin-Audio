@@ -499,12 +499,14 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     bool includeVideoFrames = true,
     bool includeEmbeddedCovers = true,
     bool propagateFailure = false,
+    bool Function()? isCancelled,
   }) => _metadataCoordinator.discoverCoverCandidates(
     folderPath,
     selectedCoverPath: selectedCoverPath,
     includeVideoFrames: includeVideoFrames,
     includeEmbeddedCovers: includeEmbeddedCovers,
     propagateFailure: propagateFailure,
+    isCancelled: isCancelled,
   );
 
   Future<List<CoverImageReference>> discoverCoverImageReferencesInFolder(

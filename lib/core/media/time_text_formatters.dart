@@ -28,11 +28,14 @@ DateTime? parseDateYmd(String value) {
   final trimmed = value.trim();
   if (trimmed.isEmpty) return null;
   final match = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})$').firstMatch(trimmed);
-  if (match == null) return DateTime.tryParse(trimmed);
+  if (match == null) return null;
   final year = int.parse(match.group(1)!);
   final month = int.parse(match.group(2)!);
   final day = int.parse(match.group(3)!);
-  return DateTime(year, month, day);
+  final date = DateTime(year, month, day);
+  return date.year == year && date.month == month && date.day == day
+      ? date
+      : null;
 }
 
 Duration? parseDurationCompact(String value) {

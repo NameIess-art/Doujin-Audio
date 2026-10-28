@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:isolate';
 
@@ -106,19 +107,12 @@ final class LibraryPersistenceCoordinator {
     final legacyRemovedFolders = <String, Set<String>>{};
     _decodeExclusionMap(preferences[4], legacyRemovedFolders);
     if (legacyRemovedFolders.isNotEmpty) {
-      final migratedFolderExclusions = <String, Set<String>>{
-        for (final entry in folderExclusions.entries)
-          entry.key: Set<String>.of(entry.value),
-      };
       for (final entry in legacyRemovedFolders.entries) {
-        migratedFolderExclusions
+        folderExclusions
             .putIfAbsent(entry.key, () => <String>{})
             .addAll(entry.value);
       }
-      final value = _encodeExclusionSnapshot(
-        migratedFolderExclusions,
-        trackExclusions,
-      );
+      final value = _encodeExclusionSnapshot(folderExclusions, trackExclusions);
       await _queueWrite(
         () async => AppPreferences.setString(_exclusionsKey, value),
         loadGeneration: generation,
@@ -150,7 +144,8 @@ final class LibraryPersistenceCoordinator {
       tracks: tracks,
       entries: entries,
       catalogLists: catalogLists,
-      legacyRemovedFolders: legacyRemovedFolders,
+      folderExclusions: folderExclusions,
+      trackExclusions: trackExclusions,
     ));
   }
 
@@ -308,27 +303,55 @@ LibraryPersistedState _preparePersistedLibrary(
     List<MusicTrack> tracks,
     Iterable<LibraryEntry> entries,
     List<List<String>> catalogLists,
-    Map<String, Set<String>> legacyRemovedFolders,
+    Map<String, Set<String>> folderExclusions,
+    Map<String, Set<String>> trackExclusions,
   })
   payload,
 ) {
-  final (:tracks, :entries, :catalogLists, :legacyRemovedFolders) = payload;
+  final tracks = payload.tracks;
+  final entries = payload.entries;
+  final catalogLists = payload.catalogLists;
+  final roots = LibraryService.createPathIndex<String>({
+    for (final root in [...catalogLists[2], ...catalogLists[1]])
+      PathMatcher.normalize(root): PathMatcher.normalize(root),
+  });
+  String canonicalRoot(String value) {
+    final normalized = PathMatcher.normalize(value);
+    return roots.putIfAbsent(normalized, () => normalized);
+  }
+
   final entriesByLibrary = <String, Map<String, LibraryEntry>>{};
-  final folderExclusions = <String, Set<String>>{};
-  final trackExclusions = <String, Set<String>>{};
+  Set<String> exclusionPaths([Iterable<String> values = const []]) =>
+      HashSet<String>(
+        equals: (first, second) =>
+            PathMatcher.equivalenceKey(first) ==
+            PathMatcher.equivalenceKey(second),
+        hashCode: (value) => PathMatcher.equivalenceKey(value).hashCode,
+      )..addAll(values);
+  Map<String, Set<String>> restoreExclusions(Map<String, Set<String>> source) {
+    final restored = <String, Set<String>>{};
+    for (final entry in source.entries) {
+      restored
+          .putIfAbsent(canonicalRoot(entry.key), exclusionPaths)
+          .addAll(entry.value);
+    }
+    return restored;
+  }
+
+  final folderExclusions = restoreExclusions(payload.folderExclusions);
+  final trackExclusions = restoreExclusions(payload.trackExclusions);
   for (final entry in entries) {
-    final root = PathMatcher.normalize(entry.libraryPath);
+    final root = canonicalRoot(entry.libraryPath);
     final path = PathMatcher.normalize(entry.path);
     entriesByLibrary.putIfAbsent(root, () => <String, LibraryEntry>{})[path] =
         entry;
-    if (!entry.isExcluded) continue;
     final excluded = entry.isFolder ? folderExclusions : trackExclusions;
-    excluded.putIfAbsent(root, () => <String>{}).add(path);
-  }
-  for (final entry in legacyRemovedFolders.entries) {
-    folderExclusions
-        .putIfAbsent(entry.key, () => <String>{})
-        .addAll(entry.value);
+    // Indexed entries carry current state; preference-only paths still belong
+    // to older libraries without a complete entry index.
+    excluded[root]?.remove(path);
+    if (entry.isExcluded) {
+      excluded.putIfAbsent(root, exclusionPaths).add(path);
+    }
   }
   final trackIndex = PathMembershipIndex(
     trackExclusions.values.expand((paths) => paths),

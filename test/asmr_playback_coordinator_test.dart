@@ -196,7 +196,9 @@ void main() {
         launcher: launcher,
       );
 
-      await coordinator.playWork(work);
+      await expectLater(coordinator.playWork(work), throwsStateError);
+      await expectLater(coordinator.playTrack(work, target), throwsStateError);
+      await expectLater(coordinator.playTracks(work, const []), throwsStateError);
 
       expect(source.recordedWorks, isEmpty);
       expect(launcher.launchCount, 0);

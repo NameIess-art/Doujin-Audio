@@ -273,7 +273,7 @@ void main() {
       ).read(appLanguageProviderInstanceProvider);
       addTearDown(language.dispose);
       for (final value in [AppLanguage.en, AppLanguage.ja]) {
-        await language.setLanguage(value);
+        await tester.runAsync(() => language.setLanguage(value));
         await tester.pumpAndSettle();
         expect(find.text(language.tr('subtitle_edit')), findsOneWidget);
         expect(find.byTooltip(language.tr('save')), findsOneWidget);

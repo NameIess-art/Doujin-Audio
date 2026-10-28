@@ -156,7 +156,7 @@ void main() {
   );
 
   test(
-    'queued checkpoints freeze ownership before awaiting an earlier write',
+    'queued checkpoints include ownership added before the shared write starts',
     () async {
       final firstWrite = Completer<void>();
       final firstStarted = Completer<void>();
@@ -181,7 +181,108 @@ void main() {
       firstWrite.complete();
       await Future.wait([first, second]);
       final restored = decodePersistedDownloadTasks(writes[1]!);
-      expect(restored.tasks.single.createdOutputPaths, {'first.mp3'});
+      expect(restored.tasks.single.createdOutputPaths, {
+        'first.mp3',
+        'later.mp3',
+      });
+    },
+  );
+
+  test(
+    'concurrent barriers share one queued snapshot and await its commit',
+    () async {
+      final started = [Completer<void>(), Completer<void>()];
+      final release = [Completer<void>(), Completer<void>()];
+      final writes = <String?>[];
+      final ownedPaths = <String>{};
+      final store = AsmrDownloadTaskStore(
+        persistTasks: true,
+        persistenceSnapshot: (task) => PersistedDownloadTask(
+          task: task,
+          createdOutputPaths: ownedPaths,
+          createdJsonDocuments: const {},
+        ),
+        persistenceWriter: (payload) async {
+          final index = writes.length;
+          writes.add(payload);
+          if (index < 2) {
+            started[index].complete();
+            await release[index].future;
+          }
+        },
+      );
+      addTearDown(store.shutdown);
+      store[_key(1)] = _task(1);
+      final first = store.flushPersistence();
+      await started[0].future;
+      store[_key(1)] = _task(1).copyWith(fileEntityTags: {'a.mp3': '"a"'});
+      ownedPaths.add('a.mp3');
+      var committed = false;
+      final second = store.flushPersistence().then((_) => committed = true);
+      store[_key(1)] = store[_key(1)]!.copyWith(
+        fileEntityTags: {'a.mp3': '"a"', 'b.mp3': '"b"'},
+      );
+      ownedPaths.add('b.mp3');
+      final third = store.flushPersistence();
+      release[0].complete();
+      await first;
+      await started[1].future;
+      expect(committed, isFalse);
+      expect(writes, hasLength(2));
+      final captured = decodePersistedDownloadTasks(writes.last!).tasks.single;
+      expect(captured.task.fileEntityTags, {'a.mp3': '"a"', 'b.mp3': '"b"'});
+      expect(captured.createdOutputPaths, {'a.mp3', 'b.mp3'});
+      // Work added after capture still needs its own committed barrier.
+      ownedPaths.add('c.mp3');
+      final fourth = store.flushPersistence();
+      release[1].complete();
+      await Future.wait([second, third, fourth]);
+      expect(writes, hasLength(3));
+      expect(
+        decodePersistedDownloadTasks(
+          writes.last!,
+        ).tasks.single.createdOutputPaths,
+        {'a.mp3', 'b.mp3', 'c.mp3'},
+      );
+    },
+  );
+
+  test(
+    'shared barrier failures reach every waiter and a later flush retries',
+    () async {
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var fail = true;
+      var writes = 0;
+      final store = AsmrDownloadTaskStore(
+        persistTasks: true,
+        persistenceSnapshot: (task) => PersistedDownloadTask(
+          task: task,
+          createdOutputPaths: const {},
+          createdJsonDocuments: const {},
+        ),
+        persistenceWriter: (_) async {
+          writes++;
+          if (writes == 1) {
+            started.complete();
+            await release.future;
+          } else if (fail) {
+            throw StateError('disk unavailable');
+          }
+        },
+      );
+      addTearDown(store.shutdown);
+      store[_key(1)] = _task(1);
+      final first = store.flushPersistence();
+      await started.future;
+      final second = expectLater(store.flushPersistence(), throwsStateError);
+      final third = expectLater(store.flushPersistence(), throwsStateError);
+      release.complete();
+      await Future.wait([first, second, third]);
+      expect(writes, 2);
+      fail = false;
+      await store.flushPersistence();
+      expect(writes, 3);
     },
   );
 
@@ -507,7 +608,9 @@ Future<void> _waitForStatus(
   int workId,
   AsmrDownloadTaskStatus status,
 ) async {
-  await manager.taskStream(_key(workId)).firstWhere((task) => task?.status == status);
+  await manager
+      .taskStream(_key(workId))
+      .firstWhere((task) => task?.status == status);
 }
 
 String _key(int id) => _work(id).workKey;

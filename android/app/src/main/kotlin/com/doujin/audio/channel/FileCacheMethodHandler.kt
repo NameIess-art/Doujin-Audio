@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -56,14 +57,30 @@ internal class FileCacheTaskExecutor {
             "doujin-file-task-${threadIndex.incrementAndGet()}"
         ).apply { isDaemon = true }
     }
+    // SAF copies can wait on a slow SD card or remote document provider for
+    // minutes. Keep their queue separate from subtitle and artwork requests.
+    private val transferExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "doujin-file-transfer").apply { isDaemon = true }
+    }
 
     fun <T> submit(
+        block: () -> T,
+        completion: (FileCacheTaskResult<T>) -> Unit
+    ): Boolean = submit(executor, block, completion)
+
+    fun <T> submitTransfer(
+        block: () -> T,
+        completion: (FileCacheTaskResult<T>) -> Unit
+    ): Boolean = submit(transferExecutor, block, completion)
+
+    private fun <T> submit(
+        target: ExecutorService,
         block: () -> T,
         completion: (FileCacheTaskResult<T>) -> Unit
     ): Boolean {
         if (closed.get()) return false
         return try {
-            executor.execute {
+            target.execute {
                 val taskResult = try {
                     FileCacheTaskResult.Success(block())
                 } catch (exception: Exception) {
@@ -80,6 +97,7 @@ internal class FileCacheTaskExecutor {
     fun shutdownNow() {
         if (closed.compareAndSet(false, true)) {
             executor.shutdownNow()
+            transferExecutor.shutdownNow()
         }
     }
 }
@@ -125,6 +143,7 @@ internal class FileCacheMethodHandler(
                 val index = arguments.requiredInt("index")
                 runAsync(
                     result = result,
+                    transfer = true,
                     errorCode = { e ->
                         if (e is IllegalStateException) "open_failed" else "cache_failed"
                     }
@@ -255,7 +274,7 @@ internal class FileCacheMethodHandler(
                 val name = arguments.requiredString("name")
                 val bytes = arguments.requiredByteArray("bytes")
                 val mimeType = arguments.optionalString("mimeType")
-                runAsync(result, errorCode = { "folder_file_write_failed" }) {
+                runAsync(result, errorCode = { "folder_file_write_failed" }, transfer = true) {
                     operations.writeFileBytesToFolder(folder, name, bytes, mimeType)
                 }
             }
@@ -290,7 +309,7 @@ internal class FileCacheMethodHandler(
                 val folder = arguments.requiredString("folder")
                 val relativePath = arguments.requiredString("relativePath")
                 val overwrite = arguments.requiredBoolean("overwrite")
-                runAsync(result, errorCode = { "copy_file_failed" }) {
+                runAsync(result, errorCode = { "copy_file_failed" }, transfer = true) {
                     operations.copyFileToFolder(sourcePath, folder, relativePath, overwrite)
                 }
             }
@@ -374,14 +393,20 @@ internal class FileCacheMethodHandler(
     private fun runAsync(
         result: MethodChannel.Result,
         errorCode: (Exception) -> String = { "operation_failed" },
+        transfer: Boolean = false,
         block: () -> Any?
     ) {
         if (closed.get()) {
             result.error("operation_failed", "file operations are unavailable", null)
             return
         }
-        val accepted = taskExecutor.submit(block) { taskResult ->
+        val completion: (FileCacheTaskResult<Any?>) -> Unit = { taskResult ->
             deliver(result, errorCode, taskResult)
+        }
+        val accepted = if (transfer) {
+            taskExecutor.submitTransfer(block, completion)
+        } else {
+            taskExecutor.submit(block, completion)
         }
         if (!accepted) {
             result.error("operation_failed", "file operations are unavailable", null)

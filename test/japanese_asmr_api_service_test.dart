@@ -400,6 +400,83 @@ void main() {
         refreshSeed: 3,
       );
       expect(ranked.map((work) => work.workKey).toSet(), hasLength(80));
+      expect(jp.calls, [1]);
+    },
+  );
+
+  test(
+    'recommendation categories share source pages only within each refresh',
+    () async {
+      final one = _OneApi({});
+      final jp = _JapaneseApi({
+        1: [for (var i = 1; i <= 40; i++) _work(i, japanese: true)],
+        2: [for (var i = 41; i <= 80; i++) _work(i, japanese: true)],
+      });
+      final service = _catalog(one, jp);
+      for (var seed = 1; seed <= 2; seed++) {
+        final ranked = await service.loadRecommendations(
+          searchQuery: ' sleep ',
+          language: AsmrContentLanguage.zh,
+          token: null,
+          favoriteWorks: [],
+          historyWorks: [],
+          refreshSeed: seed,
+        );
+        expect(ranked.map((work) => work.workKey).toSet(), hasLength(80));
+        expect(jp.calls, [
+          for (var i = 0; i < seed; i++) ...[1, 2],
+        ]);
+        expect(
+          jp.queries.every((query) => query.$1 == 'sleep' && query.$3 == 40),
+          isTrue,
+        );
+      }
+    },
+  );
+
+  test(
+    'cancelled shared recommendation pages cannot poison the next refresh',
+    () async {
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final jp =
+          _JapaneseApi({
+              1: [_work(1, japanese: true)],
+            })
+            ..beforeResponse = () async {
+              if (!started.isCompleted) started.complete();
+              await release.future;
+            };
+      final service = _catalog(_OneApi({}), jp);
+      final token = AsmrRequestCancellationToken();
+      final cancelled = expectLater(
+        service.loadRecommendations(
+          searchQuery: '',
+          language: AsmrContentLanguage.zh,
+          token: null,
+          favoriteWorks: [],
+          historyWorks: [],
+          refreshSeed: 1,
+          cancellationToken: token,
+        ),
+        throwsA(isA<AsmrRequestCancelled>()),
+      );
+      await started.future;
+      token.cancel();
+      await cancelled;
+      jp.beforeResponse = null;
+      final ranked = await service.loadRecommendations(
+        searchQuery: '',
+        language: AsmrContentLanguage.zh,
+        token: null,
+        favoriteWorks: [],
+        historyWorks: [],
+        refreshSeed: 2,
+      );
+      release.complete();
+      expect(ranked.map((work) => work.workKey), [
+        _work(1, japanese: true).workKey,
+      ]);
       expect(jp.calls, [1, 1]);
     },
   );
@@ -591,6 +668,7 @@ class _JapaneseApi extends JapaneseAsmrApiService {
   _JapaneseApi(this.pages);
   final Map<int, List<AsmrWork>> pages;
   final List<int> calls = [];
+  final List<(String, int, int)> queries = [];
   bool failure = false;
   Future<void> Function()? beforeResponse;
   int treeCalls = 0;
@@ -617,6 +695,7 @@ class _JapaneseApi extends JapaneseAsmrApiService {
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
     calls.add(page);
+    queries.add((keyword, page, pageSize));
     await beforeResponse?.call();
     if (failure) throw const FormatException('Unavailable');
     return AsmrWorkPage(

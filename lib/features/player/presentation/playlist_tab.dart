@@ -79,6 +79,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     with MainTabStateMixin<PlaylistTab> {
   final ScrollController _scrollController = ScrollController();
   bool _isSelectionMode = false;
+  bool _creatingQueue = false;
   final Set<String> _selectedSessionIds = <String>{};
 
   void _scrollToTopOnQueueAdded() {
@@ -88,6 +89,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   }
 
   void _enterSelectionMode(String initialSessionId) {
+    if (_creatingQueue) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
       _isSelectionMode = true;
@@ -97,6 +99,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   }
 
   void _exitSelectionMode() {
+    if (_creatingQueue) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
     setState(() {
       _isSelectionMode = false;
@@ -105,6 +108,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   }
 
   void _toggleSessionSelection(String sessionId) {
+    if (_creatingQueue) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
       if (_selectedSessionIds.contains(sessionId)) {
@@ -144,6 +148,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   );
 
   Future<void> _handleBatchPin() async {
+    if (_creatingQueue) return;
     final sessionIds = _selectedSessionIds.toList(growable: false);
     _exitSelectionMode();
     await PlaylistBatchActions.pinSelected(
@@ -154,6 +159,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   }
 
   Future<void> _handleBatchRemove() async {
+    if (_creatingQueue) return;
     final toRemove = _selectedSessionIds.toList(growable: false);
     _exitSelectionMode();
     await PlaylistBatchActions.removeSelected(
@@ -168,15 +174,34 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     PlaybackFacade playback,
     AudioPathCoordinator paths,
   ) async {
-    await PlaylistBatchActions.createPlaybackQueue(
-      ref: ref,
-      visibleEntries: visibleEntries,
-      selectedSessionIds: _selectedSessionIds,
-      playback: playback,
-      paths: paths,
-      onQueueAdded: _scrollToTopOnQueueAdded,
-    );
-    if (mounted) _exitSelectionMode();
+    if (_creatingQueue) return;
+    final selectedIds = Set<String>.of(_selectedSessionIds);
+    setState(() => _creatingQueue = true);
+    try {
+      await PlaylistBatchActions.createPlaybackQueue(
+        ref: ref,
+        visibleEntries: visibleEntries,
+        selectedSessionIds: selectedIds,
+        playback: playback,
+        paths: paths,
+        onQueueAdded: _scrollToTopOnQueueAdded,
+      );
+      if (!mounted) return;
+      setState(() => _creatingQueue = false);
+      _exitSelectionMode();
+    } catch (_) {
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          ref
+              .read(appLanguageProviderInstanceProvider)
+              .tr('operation_failed_retry'),
+          tone: AppFeedbackTone.warning,
+        );
+      }
+    } finally {
+      if (mounted && _creatingQueue) setState(() => _creatingQueue = false);
+    }
   }
 
   bool _hasSelectedPlaybackQueueSource(
@@ -408,19 +433,18 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     final paths = ref.read(audioPathCoordinatorProvider);
                     final playback = ref.read(playbackFacadeProvider);
                     final count = _selectedSessionIds.length;
-                    final isPlayEnabled = count > 0;
-                    final isPauseEnabled = count > 0;
-                    final isPinEnabled = count > 0;
+                    final isPlayEnabled = count > 0 && !_creatingQueue;
+                    final isPauseEnabled = count > 0 && !_creatingQueue;
+                    final isPinEnabled = count > 0 && !_creatingQueue;
                     final isAllPinned =
                         count > 0 &&
                         _selectedSessionIds.every(
                           pinnedPlaylistSessionIds.contains,
                         );
-                    final isRemoveEnabled = count > 0;
-                    final canCreateQueue = _hasSelectedPlaybackQueueSource(
-                      visibleEntries,
-                      paths,
-                    );
+                    final isRemoveEnabled = count > 0 && !_creatingQueue;
+                    final canCreateQueue =
+                        !_creatingQueue &&
+                        _hasSelectedPlaybackQueueSource(visibleEntries, paths);
 
                     return TopPageHeader(
                       key: const ValueKey('playlist_batch_selection_header'),
@@ -496,7 +520,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       trailing: HeaderFloatingButton(
                         child: IconButton(
                           key: const ValueKey('exit_selection_button'),
-                          onPressed: _exitSelectionMode,
+                          onPressed: _creatingQueue ? null : _exitSelectionMode,
                           icon: const Icon(Icons.close_rounded),
                           tooltip: i18n.tr('cancel'),
                         ),

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:doujin_audio/core/network/network_route_settings.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
@@ -43,6 +45,35 @@ void main() {
         await tester.tap(find.text(i18n.tr('section_network')));
         await pumpAndSettleWithAsync(tester);
         expect(find.text(i18n.tr('network_untested')), findsNWidgets(3));
+        final statusFontSize = tester.widget<RichText>(
+          find.descendant(
+            of: find.text(i18n.tr('network_untested')).first,
+            matching: find.byType(RichText),
+          ),
+        ).text.style!.fontSize;
+        void expectStatusFont(Finder labels) {
+          expect(labels, findsNWidgets(3));
+          final renderedLabels = tester.widgetList<RichText>(
+            find.descendant(of: labels, matching: find.byType(RichText)),
+          );
+          expect(
+            renderedLabels.map((label) => label.text.style?.fontSize).toList(),
+            everyElement(statusFontSize),
+          );
+        }
+        expectStatusFont(find.text(i18n.tr('network_untested')));
+        HttpOverrides.runZoned(
+          () {
+            for (final button in tester.widgetList<FilledButton>(
+              find.widgetWithText(FilledButton, i18n.tr('network_test')),
+            )) {
+              button.onPressed!();
+            }
+          },
+          createHttpClient: (_) => _ProbeClient(),
+        );
+        await tester.pumpAndSettle();
+        expectStatusFont(find.textContaining(RegExp(r'^\d+ ms$')));
         for (final site in ['DLsite', 'Japanese ASMR']) {
           final row = find.widgetWithText(ListTile, site);
           expect(tester.getSize(row).height, 64);
@@ -174,4 +205,33 @@ void main() {
       },
     );
   }
+}
+
+class _ProbeClient extends Fake implements HttpClient {
+  @override
+  set connectionTimeout(Duration? value) {}
+
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async => _ProbeRequest();
+
+  @override
+  void close({bool force = false}) {}
+}
+
+class _ProbeRequest extends Fake implements HttpClientRequest {
+  @override
+  HttpHeaders get headers => _ProbeHeaders();
+
+  @override
+  Future<HttpClientResponse> close() async => _ProbeResponse();
+}
+
+class _ProbeHeaders extends Fake implements HttpHeaders {
+  @override
+  void set(String name, Object value, {bool preserveHeaderCase = false}) {}
+}
+
+class _ProbeResponse extends Fake implements HttpClientResponse {
+  @override
+  int get statusCode => HttpStatus.noContent;
 }

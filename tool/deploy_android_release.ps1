@@ -1,6 +1,7 @@
 param(
     [switch]$ReplaceSignature,
-    [switch]$PromptReplaceSignature
+    [switch]$PromptReplaceSignature,
+    [switch]$CheckDevice
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,6 +10,36 @@ $appId = 'com.doujin.audio'
 $mainActivity = 'com.doujin.audio.MainActivity'
 $apkPath = Join-Path $repoRoot 'build\app\outputs\flutter-apk\app-arm64-v8a-release.apk'
 $arm64SplitVersionCodeOffset = 2000
+$previousAdbServerSocket = $env:ADB_SERVER_SOCKET
+
+function Initialize-AdbServer {
+    $previousErrorAction = $ErrorActionPreference
+    try {
+        # Windows PowerShell treats native stderr as errors even when captured.
+        $ErrorActionPreference = 'Continue'
+        $output = & adb start-server 2>&1
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0) { return }
+
+        $details = ($output | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+        if ($env:ADB_SERVER_SOCKET -or $env:ANDROID_ADB_SERVER_PORT) {
+            throw "Could not start the configured ADB server.`n$details"
+        }
+
+        Write-Warning "Default ADB server failed. Trying local port 15037.`n$details"
+        # Some Windows dynamic-port configurations allow other connections to
+        # claim 5037. Scope the alternate server to this deployment and children.
+        $env:ADB_SERVER_SOCKET = 'tcp:127.0.0.1:15037'
+        $output = & adb start-server 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $details = ($output | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+            throw "Could not start ADB on alternate port 15037.`n$details"
+        }
+        Write-Host '[OK] Using ADB server on local port 15037.'
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+}
 
 function Run-Command {
     param(
@@ -22,12 +53,24 @@ function Run-Command {
 }
 
 function Find-AuthorizedDevice {
-    $line = adb devices |
+    $previousErrorAction = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = & adb devices 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+    $details = ($output | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+    if ($exitCode -ne 0) {
+        throw "Could not query Android devices.`n$details"
+    }
+    $line = $output |
         Select-Object -Skip 1 |
         Where-Object { $_ -match '\sdevice\s*$' } |
         Select-Object -First 1
     if (-not $line) {
-        throw 'No authorized Android device is connected.'
+        throw "No authorized Android device is connected.`n$details"
     }
     return ($line -split '\s+')[0]
 }
@@ -83,8 +126,16 @@ function Confirm-SignatureReplacement {
 
 Set-Location $repoRoot
 try {
-    Get-Command flutter -ErrorAction Stop | Out-Null
     Get-Command adb -ErrorAction Stop | Out-Null
+    Initialize-AdbServer
+    $device = Find-AuthorizedDevice
+    Write-Host "[OK] Android device: $device"
+    Run-Command 'adb' @('-s', $device, 'shell', 'getprop', 'ro.product.model')
+    if ($CheckDevice) {
+        Write-Host '[OK] Device connection check completed; no build or installation performed.'
+        exit 0
+    }
+    Get-Command flutter -ErrorAction Stop | Out-Null
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File `
         (Join-Path $PSScriptRoot 'setup_local_release_signing.ps1')
@@ -95,10 +146,6 @@ try {
     Run-Command 'android\gradlew.bat' @(
         '-p', 'android', ':app:validateReleaseSigning'
     )
-
-    $device = Find-AuthorizedDevice
-    Write-Host "[OK] Deploying to device: $device"
-    adb -s $device shell getprop ro.product.model
 
     $projectBuildNumber = Get-ProjectBuildNumber
     $installedVersionCode = Get-InstalledVersionCode $device
@@ -165,5 +212,6 @@ That one-time migration uninstalls the old app and deletes its local data.
     Write-Host "[ERROR] $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 } finally {
+    $env:ADB_SERVER_SOCKET = $previousAdbServerSocket
     Set-Location $repoRoot
 }

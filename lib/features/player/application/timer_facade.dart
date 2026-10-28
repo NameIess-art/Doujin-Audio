@@ -335,6 +335,11 @@ final class TimerFacade {
 
   void applyTrackEndFade(String sessionId, double multiplier) {
     if (!stopsAfterCurrentTrack(sessionId)) return;
+    if (multiplier >= 1) {
+      _restoreTrackEndFade(sessionId);
+      return;
+    }
+    if (_trackEndFades[sessionId] == multiplier) return;
     _trackEndFades[sessionId] = multiplier;
     _trackEndFadeTimer ??= Timer(Duration.zero, () {
       _trackEndFadeTimer = null;

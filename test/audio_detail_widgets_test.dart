@@ -336,6 +336,7 @@ class _DetailCoverCacheService extends CoverArtworkCacheService {
     bool includeVideoFrames = true,
     bool includeEmbeddedCovers = true,
     bool propagateFailure = false,
+    bool Function()? isCancelled,
   }) async {
     candidateQueries++;
     return candidatesFuture ?? candidates;
@@ -367,6 +368,160 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  testWidgets('metadata batch cannot start an empty queue', (tester) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    await tester.pumpWidget(
+      fixture.build(const DlsiteMetadataBatchPage(entries: [])),
+    );
+    await tester.pumpAndSettle();
+    final start = find.descendant(
+      of: find.byKey(const ValueKey('batch_metadata_start')),
+      matching: find.byType(InkWell),
+    );
+    expect(tester.widget<InkWell>(start).onTap, isNull);
+  });
+
+  testWidgets('metadata invalid fields stay editable and cannot confirm', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    DlsiteMetadataReviewResult? completed;
+    await tester.pumpWidget(
+      fixture.build(
+        StatefulBuilder(
+          builder: (context, setHostState) {
+            if (completed != null) return const Text('Review confirmed');
+            return DlsiteMetadataReviewPage(
+              detail: AudioDetail.empty(
+                AudioDetailTarget.singleAudioFile('/track.mp3'),
+              ),
+              initialCandidates: [
+                DlsiteMetadata(
+                  rjCode: 'RJ123456',
+                  workTitle: 'Original',
+                  circleName: '',
+                  voiceActors: const [],
+                  tags: const [],
+                  releaseDate: DateTime(2024, 2, 29),
+                  duration: const Duration(minutes: 2),
+                  rating: 4,
+                ),
+              ],
+              onCompleted: (result) => setHostState(() => completed = result),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Finder field(String label) => find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.labelText == fixture.languageProvider.tr(label),
+    );
+    await tester.enterText(field('audio_detail_release_date'), '2026-13-01');
+    await tester.enterText(field('card_info_duration'), '01:99:00');
+    await tester.enterText(field('audio_detail_rating'), 'NaN');
+    await tester.tap(find.byKey(const ValueKey('dlsite_review_confirm')));
+    await tester.pumpAndSettle();
+    expect(completed, isNull);
+    for (final key in [
+      'metadata_invalid_date',
+      'metadata_invalid_duration',
+      'metadata_invalid_rating',
+    ]) {
+      expect(find.text(fixture.languageProvider.tr(key)), findsOneWidget);
+    }
+    await tester.enterText(field('audio_detail_release_date'), '2024-02-29');
+    await tester.enterText(field('card_info_duration'), '01:02:03');
+    await tester.enterText(field('audio_detail_rating'), '5');
+    await tester.tap(find.byKey(const ValueKey('dlsite_review_confirm')));
+    await tester.pumpAndSettle();
+    expect(completed?.metadata?.releaseDate, DateTime(2024, 2, 29));
+    expect(
+      completed?.metadata?.duration,
+      const Duration(hours: 1, minutes: 2, seconds: 3),
+    );
+    expect(completed?.metadata?.rating, 5);
+    expect(find.text('Review confirmed'), findsOneWidget);
+  });
+
+  testWidgets(
+    'metadata back and candidate switches confirm before discarding edits',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => DlsiteMetadataReviewPage(
+                    detail: AudioDetail.empty(
+                      AudioDetailTarget.singleAudioFile('/track.mp3'),
+                    ),
+                    initialCandidates: [
+                      for (final title in ['First', 'Second'])
+                        DlsiteMetadata(
+                          rjCode: 'RJ123456',
+                          workTitle: title,
+                          circleName: '',
+                          voiceActors: const [],
+                          tags: const [],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              child: const Text('Open review'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open review'));
+      await tester.pumpAndSettle();
+      final title = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText ==
+                fixture.languageProvider.tr('audio_detail_work_title'),
+      );
+      await tester.enterText(title, 'Draft');
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(fixture.languageProvider.tr('metadata_unsaved_title')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(fixture.languageProvider.tr('cancel')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(title).controller!.text, 'Draft');
+      await tester.tap(find.byTooltip(fixture.languageProvider.tr('next')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text(fixture.languageProvider.tr('discard_changes')),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(title).controller!.text, 'Second');
+      await tester.enterText(title, 'Another draft');
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text(fixture.languageProvider.tr('discard_changes')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Open review'), findsOneWidget);
+      expect(find.byType(DlsiteMetadataReviewPage), findsNothing);
+    },
+  );
 
   testWidgets(
     'audio detail skeleton blocks scrolling until data arrives',
@@ -484,8 +639,10 @@ void main() {
       downloads: downloads,
     );
     unawaited(
-      navigation.navigatorKey.currentState!.push<void>(
-        MaterialPageRoute(builder: (_) => AsmrDownloadPage(work: work)),
+      navigation.navigatorKey.currentState!.push<AsmrDownloadPageResult>(
+        MaterialPageRoute<AsmrDownloadPageResult>(
+          builder: (_) => AsmrDownloadPage(work: work),
+        ),
       ),
     );
     await tester.pumpAndSettle();

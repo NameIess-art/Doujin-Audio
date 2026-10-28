@@ -258,6 +258,145 @@ void main() {
     },
   );
 
+  for (final descriptor in ['complete', 'missing', 'partial']) {
+    test('cold catalog imports complete usage metadata '
+        '(descriptor: $descriptor)', () async {
+      final database = AppDatabase.test(db);
+      final complete = _track().copyWith(
+        remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+        remoteMetadata: {
+          'voiceActors': ['Voice'],
+          'circleName': 'Circle',
+        },
+      );
+      await database.upsertTracks([complete]);
+      final projection = (await database.loadStartupTracks()).single;
+      expect(projection.tags, isEmpty);
+      expect(projection.remoteMetadata, isNull);
+      final live = MusicTrack.fromJson({
+        ...projection.toJson(),
+        'displayName': 'Current name',
+      });
+      final batch = PlaybackUsageBatch(
+        id: 'cold:$descriptor:1',
+        days: [
+          PlaybackUsageDay(
+            date: '2026-10-28',
+            totalMs: 60000,
+            works: [
+              PlaybackUsageWork(
+                key: 'work',
+                path: complete.path,
+                milliseconds: 60000,
+                lastPlayedAtMs: 1000,
+                descriptor: switch (descriptor) {
+                  'complete' => complete.toJson(),
+                  'partial' => {
+                    ...projection.toJson(),
+                    'remoteMetadata': {
+                      'playbackUrls': ['https://example.com/audio'],
+                    },
+                  },
+                  _ => null,
+                },
+              ),
+            ],
+          ),
+        ],
+      );
+      final recordedTags = <String>[];
+      final recordedVoices = <String>[];
+      final recordedCircles = <String>[];
+      final acknowledgements = <String>[];
+      final service = ListeningActivityService(
+        repository: repository,
+        readUsage: () async => [batch],
+        acknowledgeUsage: (ids) async => acknowledgements.addAll(ids),
+        resolveTrack: (path) async => descriptor == 'complete'
+            ? live
+            : await database.loadTrackDetail(path),
+        recordInterests: ({required batchId, required contributions}) async {
+          recordedTags.addAll(contributions.expand((item) => item.tags));
+        },
+        recordVoiceActorInterests:
+            ({required batchId, required contributions}) async {
+              recordedVoices.addAll(contributions.expand((item) => item.tags));
+            },
+        recordCircleInterests:
+            ({required batchId, required contributions}) async {
+              recordedCircles.addAll(contributions.expand((item) => item.tags));
+            },
+      );
+      addTearDown(service.dispose);
+      await service.refresh();
+      expect(recordedTags, ['ASMR']);
+      expect(recordedVoices, ['Voice']);
+      expect(recordedCircles, ['Circle']);
+      expect(acknowledgements, [batch.id]);
+      final history = (await repository.loadHistory()).single.track;
+      expect(history.tags, ['ASMR']);
+      expect(history.remoteMetadata, {
+        ...complete.remoteMetadata!,
+        if (descriptor == 'partial')
+          'playbackUrls': ['https://example.com/audio'],
+      });
+      expect(
+        history.displayName,
+        descriptor == 'complete' ? 'Current name' : 'Track',
+      );
+    });
+  }
+
+  test('failed track hydration keeps usage available for retry', () async {
+    final acknowledgements = <String>[];
+    var failRead = true;
+    final service = ListeningActivityService(
+      repository: repository,
+      readUsage: () async => [_batch('hydrate:1', 60000)],
+      acknowledgeUsage: (ids) async => acknowledgements.addAll(ids),
+      resolveTrack: (_) async {
+        if (failRead) throw StateError('database read failed');
+        return _track();
+      },
+      recordInterests: ({required batchId, required contributions}) async {},
+    );
+    addTearDown(service.dispose);
+    await expectLater(service.refresh(), throwsStateError);
+    expect(acknowledgements, isEmpty);
+    expect(await repository.loadDays(), isEmpty);
+    failRead = false;
+    await service.refresh();
+    expect(acknowledgements, ['hydrate:1']);
+    expect(
+      (await repository.loadDays()).single.duration,
+      const Duration(minutes: 1),
+    );
+  });
+
+  test('local detail tags contribute before usage acknowledgement', () async {
+    final tags = <String>[];
+    var detailReads = 0;
+    final service = ListeningActivityService(
+      repository: repository,
+      readUsage: () async => [_batch('local-detail:1', 60000)],
+      acknowledgeUsage: (_) async => expect(tags, ['Local tag']),
+      resolveTrack: (_) => _track().copyWith(tags: []),
+      resolveLocalAudioDetail: (_) async {
+        detailReads++;
+        return AudioDetail.empty(
+          AudioDetailTarget.libraryRootFolder('/work'),
+        ).copyWith(tags: ['Local tag']);
+      },
+      recordInterests: ({required batchId, required contributions}) async {
+        tags.addAll(contributions.expand((item) => item.tags));
+      },
+    );
+    addTearDown(service.dispose);
+    await service.refresh();
+    expect(detailReads, 1);
+    expect(tags, ['Local tag']);
+  });
+
   test(
     'voice interests import tagless local metadata before acknowledgement and retry independently',
     () async {

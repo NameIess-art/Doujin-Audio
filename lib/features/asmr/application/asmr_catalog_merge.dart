@@ -3,6 +3,9 @@ part of 'asmr_remote_catalog_service.dart';
 /// One cursor per category/query snapshot. Failed or cancelled requests never
 /// advance another source's offset or discard its unconsumed results.
 class AsmrCatalogCursor {
+  // Recommendation categories keep separate offsets, but share identical source
+  // requests only within their refresh; cancellation cannot affect later loads.
+  Map<(String, int, int), Future<AsmrWorkPage>>? _japanesePages;
   Map<AsmrCatalogSource, int> _pages = {
     for (final source in AsmrCatalogSource.values) source: 1,
   };
@@ -16,6 +19,7 @@ class AsmrCatalogCursor {
   Map<AsmrCatalogSource, int> _totals = {};
 
   AsmrCatalogCursor _copy() => AsmrCatalogCursor()
+    .._japanesePages = _japanesePages
     .._pages = Map.of(_pages)
     .._more = Map.of(_more)
     .._totals = Map.of(_totals)
@@ -96,6 +100,18 @@ extension on AsmrRemoteCatalogService {
           var duplicatePages = 0;
           do {
             final sourcePage = next._pages[source]!;
+            final query = normalizeSearchQuery(searchQuery);
+            Future<AsmrWorkPage> loadJapanese() => _retryTransientLoad(
+              category: category,
+              page: sourcePage,
+              cancellationToken: cancellationToken,
+              load: () => _japaneseApiService!.searchWorks(
+                keyword: query,
+                page: sourcePage,
+                pageSize: pageSize,
+                cancellationToken: cancellationToken,
+              ),
+            );
             final loaded = source == AsmrCatalogSource.asmrOne
                 ? await _loadOnePage(
                     category,
@@ -105,17 +121,12 @@ extension on AsmrRemoteCatalogService {
                     token: token,
                     cancellationToken: cancellationToken,
                   )
-                : await _retryTransientLoad(
-                    category: category,
-                    page: sourcePage,
-                    cancellationToken: cancellationToken,
-                    load: () => _japaneseApiService!.searchWorks(
-                      keyword: normalizeSearchQuery(searchQuery),
-                      page: sourcePage,
-                      pageSize: pageSize,
-                      cancellationToken: cancellationToken,
-                    ),
-                  );
+                : await (next._japanesePages?.putIfAbsent((
+                        query,
+                        sourcePage,
+                        pageSize,
+                      ), loadJapanese) ??
+                      loadJapanese());
             cancellationToken?.throwIfCancelled();
             successfulSources++;
             next._pages[source] = sourcePage + 1;

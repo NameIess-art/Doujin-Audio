@@ -73,6 +73,7 @@ final class AsmrDownloadTaskStore {
   double _aggregateProgressUnits = 0;
   int _persistedUriReferenceRevision = 0;
   Future<void> _persistenceTail = Future<void>.value();
+  Future<void>? _queuedPersistence;
   Future<void>? _shutdownFuture;
   Timer? _deferredPersistenceTimer;
   Timer? _progressCheckpointTimer;
@@ -309,11 +310,15 @@ final class AsmrDownloadTaskStore {
     _liveFileDownloadedBytes.remove(workId);
   }
 
-  List<String> retainOnlyLatestCompletedTask(String workId) {
+  List<String> retainOnlyLatestCompletedTask(
+    String workId, {
+    Set<String> retainedWorkIds = const {},
+  }) {
     final obsoleteTaskIds = _tasks.entries
         .where(
           (entry) =>
               entry.key != workId &&
+              !retainedWorkIds.contains(entry.key) &&
               entry.value.status == AsmrDownloadTaskStatus.completed,
         )
         .map((entry) => entry.key)
@@ -542,23 +547,31 @@ final class AsmrDownloadTaskStore {
 
   Future<void>? _persistCurrentTasks() {
     if (!_persistTasks || !_persistenceReady || !_persistenceDirty) return null;
-    _persistenceDirty = false;
-    _operationObserver?.call(AsmrDownloadStoreOperation.persistenceSnapshot);
-    final tasks = _tasks.values
-        .where((task) => task.status != AsmrDownloadTaskStatus.completed)
-        .map(_persistenceSnapshot)
-        .toList(growable: false);
-    final write = _persistenceTail.then((_) async {
+    final queued = _queuedPersistence;
+    if (queued != null) return queued;
+    late final Future<void> write;
+    write = _persistenceTail.then((_) async {
+      _queuedPersistence = null;
+      _persistenceDirty = false;
+      // Capture when this write starts so concurrent entity/ownership barriers
+      // queued behind the previous write share one complete, durable snapshot.
+      _operationObserver?.call(AsmrDownloadStoreOperation.persistenceSnapshot);
+      final tasks = _tasks.values
+          .where((task) => task.status != AsmrDownloadTaskStatus.completed)
+          .map(_persistenceSnapshot)
+          .toList(growable: false);
       final payload = tasks.isEmpty
           ? null
           : await compute(encodePersistedDownloadTasks, tasks);
       await _writePersistedTasks(payload);
     });
+    _queuedPersistence = write;
     // Keep background writes and later retries usable after a failed write;
     // explicit flush callers still await the original result.
     _persistenceTail = write.then<void>(
       (_) {},
       onError: (Object error, StackTrace stackTrace) {
+        _persistenceDirty = true;
         AppLogService.warning(
           'asmr_download_persist_failed',
           error: error,

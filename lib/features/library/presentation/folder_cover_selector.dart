@@ -110,6 +110,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
       final images = await library.discoverCoverCandidatesInFolder(
         widget.folderPath,
         selectedCoverPath: currentCover ?? widget.initialCoverPath,
+        isCancelled: () => !mounted,
       );
       if (!mounted) return;
       if (images.isEmpty) {
@@ -160,7 +161,8 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
     if (_saving || _images.length <= 1) return;
     final controller = _pageController;
     if (controller == null || !controller.hasClients) return;
-    final current = controller.page ??
+    final current =
+        controller.page ??
         _pageForIndex(_currentIndex, _images.length).toDouble();
     final basePage = _targetVirtualPage ?? current.round();
     final targetPage = basePage + delta;

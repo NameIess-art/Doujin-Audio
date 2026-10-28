@@ -494,6 +494,9 @@ void main() {
       });
       final copying = Completer<void>();
       final releaseCopy = Completer<void>();
+      final cleaningStaging = Completer<void>();
+      final releaseCleanup = Completer<void>();
+      var blockStagingCleanup = false;
       final gateway = _StatefulSafGateway(
         beforeCopy: (relativePath) async {
           if (relativePath == 'Old.mp3') {
@@ -505,7 +508,13 @@ void main() {
       final manager = AsmrDownloadManager(
         persistTasks: false,
         fileCacheGateway: gateway,
-        stagingDirectoryProvider: () async => temp,
+        stagingDirectoryProvider: () async {
+          if (blockStagingCleanup) {
+            if (!cleaningStaging.isCompleted) cleaningStaging.complete();
+            await releaseCleanup.future;
+          }
+          return temp;
+        },
       );
       final base = 'http://${server.address.host}:${server.port}';
       try {
@@ -531,7 +540,20 @@ void main() {
             .then((_) => restarted = true);
         await Future<void>.delayed(const Duration(milliseconds: 30));
         expect(restarted, isFalse);
+        blockStagingCleanup = true;
         releaseCopy.complete();
+        await cleaningStaging.future.timeout(const Duration(seconds: 5));
+        await expectLater(
+          manager.startDownload(
+            work: _work(id: 2, title: 'Work'),
+            selectedRoots: [_file(downloadUrl: '$base/other', title: 'Old.mp3')],
+            destinationRoot: 'content://downloads/old',
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+            saveMetadata: false,
+          ),
+          throwsA(isA<FileSystemException>()),
+        );
+        releaseCleanup.complete();
         await replacement;
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
         await manager.deleteTask(_key(1));
@@ -552,6 +574,7 @@ void main() {
         );
       } finally {
         if (!releaseCopy.isCompleted) releaseCopy.complete();
+        if (!releaseCleanup.isCompleted) releaseCleanup.complete();
         await manager.shutdown();
         await server.close(force: true);
         await temp.delete(recursive: true);
@@ -2147,6 +2170,314 @@ void main() {
       await server.close(force: true);
     }
   });
+
+  test('completed tasks retain their roots while persistence drains', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'download_completion_owner_',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final releaseFirst = Completer<void>();
+    final releaseSecond = Completer<void>();
+    final secondCopyStarted = Completer<void>();
+    final persistenceStarted = Completer<void>();
+    final releasePersistence = Completer<void>();
+    server.listen((request) async {
+      if (request.uri.path == '/1') await releaseFirst.future;
+      request.response.add([7]);
+      await request.response.close();
+    });
+    final gateway = _StatefulSafGateway(
+      beforeCopy: (relativePath) async {
+        if (relativePath == 'Second.mp3') {
+          secondCopyStarted.complete();
+          await releaseSecond.future;
+        }
+      },
+    );
+    late final AsmrDownloadManager manager;
+    manager = AsmrDownloadManager(
+      maxConcurrentDownloads: 2,
+      fileCacheGateway: gateway,
+      stagingDirectoryProvider: () async => root,
+      persistenceReader: () async => null,
+      persistenceWriter: (_) async {
+        if (manager.getTask(_key(1))?.status == AsmrDownloadTaskStatus.completed) {
+          if (!persistenceStarted.isCompleted) persistenceStarted.complete();
+          await releasePersistence.future;
+        }
+      },
+    );
+    Future<void> start(int id, String title) => manager.startDownload(
+      work: _work(id: id, title: title),
+      selectedRoots: [
+        _file(
+          downloadUrl: 'http://127.0.0.1:${server.port}/$id',
+          title: '$title.mp3',
+        ),
+      ],
+      destinationRoot: 'content://downloads/root',
+      conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+      saveMetadata: false,
+      saveCover: false,
+    );
+    try {
+      await start(1, 'First');
+      await start(2, 'Second');
+      await secondCopyStarted.future.timeout(const Duration(seconds: 5));
+      releaseFirst.complete();
+      await persistenceStarted.future.timeout(const Duration(seconds: 5));
+      releaseSecond.complete();
+      await _waitForTaskStatus(manager, 2, AsmrDownloadTaskStatus.completed);
+      expect(manager.getTask(_key(1)), isNotNull);
+      await expectLater(
+        start(3, 'First').timeout(const Duration(seconds: 5)),
+        throwsA(isA<FileSystemException>()),
+      );
+    } finally {
+      if (!releaseFirst.isCompleted) releaseFirst.complete();
+      if (!releaseSecond.isCompleted) releaseSecond.complete();
+      if (!releasePersistence.isCompleted) releasePersistence.complete();
+      await manager.shutdown();
+      await server.close(force: true);
+      await root.delete(recursive: true);
+    }
+  });
+
+  for (final conflictPolicy in AsmrDownloadConflictPolicy.values) {
+    test(
+      'different works cannot share an owned output root ($conflictPolicy)',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'download_root_owner_',
+        );
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final started = Completer<void>();
+        final release = Completer<void>();
+        var requests = 0;
+        final payload = List<int>.filled(131072, 65);
+        unawaited(
+          server.forEach((request) async {
+            requests++;
+            request.response.contentLength = payload.length;
+            request.response.headers.set(HttpHeaders.etagHeader, '"original"');
+            request.response.add(payload.sublist(0, 65536));
+            await request.response.flush();
+            if (!started.isCompleted) started.complete();
+            await release.future;
+            request.response.add(payload.sublist(65536));
+            await request.response.close().catchError((_) {});
+          }),
+        );
+        final manager = AsmrDownloadManager(
+          persistTasks: false,
+          maxConcurrentDownloads: 2,
+          stagingDirectoryProvider: () async => root,
+        );
+        Future<void> start(int id) => manager.startDownload(
+          work: _work(id: id, title: 'Same title'),
+          selectedRoots: [
+            _file(
+              downloadUrl: 'http://127.0.0.1:${server.port}/$id',
+              size: payload.length,
+            ),
+          ],
+          destinationRoot: root.path,
+          conflictPolicy: conflictPolicy,
+          saveMetadata: false,
+          saveCover: false,
+        );
+        try {
+          await start(1);
+          await started.future.timeout(const Duration(seconds: 5));
+          await expectLater(start(2), throwsA(isA<FileSystemException>()));
+          expect(manager.getTask(_key(2)), isNull);
+          expect(requests, 1);
+          release.complete();
+          await _waitForTaskStatus(
+            manager,
+            1,
+            AsmrDownloadTaskStatus.completed,
+          );
+          final output = File(path.join(root.path, 'Same title', 'Track.mp3'));
+          expect(await output.readAsBytes(), payload);
+          // Completed records are hidden; a new task releases the old record
+          // while preserving the files and their ordinary conflict policy.
+          while (manager.hasLiveTask) {
+            await Future<void>.delayed(Duration.zero);
+          }
+          await start(2);
+          expect(manager.getTask(_key(1)), isNull);
+          await _waitForTaskStatus(
+            manager,
+            2,
+            AsmrDownloadTaskStatus.completed,
+          );
+          expect(
+            requests,
+            conflictPolicy == AsmrDownloadConflictPolicy.skip ? 1 : 2,
+          );
+          expect(await output.readAsBytes(), payload);
+        } finally {
+          if (!release.isCompleted) release.complete();
+          await manager.shutdown();
+          await server.close(force: true);
+          await root.delete(recursive: true);
+        }
+      },
+    );
+  }
+
+  for (final paths in [
+    (
+      root: Directory.systemTemp.path,
+      folder: 'Work',
+      candidate: path.join(Directory.systemTemp.path, 'Work'),
+      name: 'Child',
+    ),
+    (
+      root: path.join(Directory.systemTemp.path, 'Work'),
+      folder: 'Child',
+      candidate: Directory.systemTemp.path,
+      name: 'Work',
+    ),
+    if (Platform.isWindows)
+      (
+        root: r'C:\downloads',
+        folder: 'Work',
+        candidate: r'C:\downloads\work',
+        name: 'Child',
+      ),
+    if (Platform.isWindows)
+      (
+        root: r'C:\downloads\Work',
+        folder: 'Child',
+        candidate: r'C:\downloads',
+        name: 'WORK',
+      ),
+    (
+      root: 'content://provider/tree/primary%3ADownload',
+      folder: 'Work',
+      candidate: 'content://provider/tree/primary%3ADownload%2FWork',
+      name: 'Child',
+    ),
+    (
+      root: 'content://provider/tree/primary%3ADownload%2FWork',
+      folder: 'Child',
+      candidate: 'content://provider/tree/primary%3ADownload',
+      name: 'Work',
+    ),
+  ]) {
+    test(
+      'download ownership rejects overlapping roots ${paths.candidate}/${paths.name}',
+      () async {
+        final manager = AsmrDownloadManager(persistTasks: false);
+        manager.debugSetCurrentTaskForTesting(
+          AsmrDownloadTaskSnapshot(
+            work: _work(),
+            destinationRoot: paths.root,
+            workFolderName: paths.folder,
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+            status: AsmrDownloadTaskStatus.paused,
+            totalFiles: 1,
+            completedFiles: 0,
+            skippedFiles: 0,
+            failedFiles: 0,
+            totalBytes: 1,
+            downloadedBytes: 0,
+            startedAt: DateTime(2026),
+          ),
+        );
+        try {
+          await expectLater(
+            manager.startDownload(
+              work: _work(id: 2),
+              selectedRoots: [
+                _file(downloadUrl: 'https://example.invalid/track'),
+              ],
+              destinationRoot: paths.candidate,
+              customWorkFolderName: paths.name,
+              conflictPolicy: AsmrDownloadConflictPolicy.skip,
+              saveMetadata: false,
+              saveCover: false,
+            ),
+            throwsA(isA<FileSystemException>()),
+          );
+          expect(manager.taskIds, [_key(1)]);
+        } finally {
+          await manager.shutdown();
+        }
+      },
+    );
+  }
+
+  for (final retry in [false, true]) {
+    test(
+      'restored overlapping output reports a task failure (retry=$retry)',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'restored_output_owner_',
+        );
+        final partial = File(
+          path.join(root.path, 'Work', 'Track.mp3.doujin.part'),
+        );
+        await partial.parent.create();
+        await partial.writeAsString('retained partial');
+        final manager = AsmrDownloadManager(persistTasks: false);
+        for (var id = 1; id <= 2; id++) {
+          manager.debugSetCurrentTaskForTesting(
+            AsmrDownloadTaskSnapshot(
+              work: _work(id: id),
+              destinationRoot: root.path,
+              workFolderName: 'Work',
+              conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+              status: retry
+                  ? AsmrDownloadTaskStatus.failed
+                  : AsmrDownloadTaskStatus.paused,
+              totalFiles: 1,
+              completedFiles: 0,
+              skippedFiles: 0,
+              failedFiles: retry ? 1 : 0,
+              totalBytes: 1,
+              downloadedBytes: 0,
+              startedAt: DateTime(2026),
+              selectedRoots: [
+                _file(downloadUrl: 'https://example.invalid/track'),
+              ],
+              failedFilePaths: retry ? {'Track.mp3'} : {},
+              saveMetadata: false,
+            ),
+          );
+        }
+        try {
+          if (retry) {
+            expect(await manager.retryFailedFile(_key(2), 'Track.mp3'), isTrue);
+          } else {
+            await manager.resumeTask(_key(2));
+          }
+          await _waitForTaskStatus(
+            manager,
+            2,
+            AsmrDownloadTaskStatus.failed,
+            allowFailure: true,
+          );
+          expect(
+            manager.getTask(_key(2))!.error,
+            contains('Another download task owns'),
+          );
+          expect(await partial.readAsString(), 'retained partial');
+          expect(
+            manager.getTask(_key(1))!.status,
+            retry
+                ? AsmrDownloadTaskStatus.failed
+                : AsmrDownloadTaskStatus.paused,
+          );
+        } finally {
+          await manager.shutdown();
+          await root.delete(recursive: true);
+        }
+      },
+    );
+  }
 
   test(
     'updates concurrent work scheduling without canceling active tasks',

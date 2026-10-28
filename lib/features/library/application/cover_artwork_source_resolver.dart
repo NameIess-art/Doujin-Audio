@@ -76,6 +76,9 @@ final class CoverArtworkSourceResolver {
   int get folderImageIndexCount => _folderImageIndexFutures.length;
 
   final Map<String, Future<String?>> _platformCoverFutures = {};
+  final _missingPlatformCovers = <String, String>{};
+  int _sourceEpoch = 0;
+  static const _maxMissingPlatformCovers = 2048;
   Iterable<Future<String?>> get pendingPlatformCovers =>
       _platformCoverFutures.values;
 
@@ -223,6 +226,8 @@ final class CoverArtworkSourceResolver {
   String? displayPathForSource(String value) =>
       _folderImageDisplayBySourceKey[PathMatcher.equivalenceKey(value)];
   void invalidateAll() {
+    _sourceEpoch++;
+    _missingPlatformCovers.clear();
     _folderImageIndexFutures.clear();
     _platformCoverFutures.clear();
     _folderImageSourceByDisplayKey.clear();
@@ -230,6 +235,8 @@ final class CoverArtworkSourceResolver {
   }
 
   void trimMemory() {
+    _sourceEpoch++;
+    _missingPlatformCovers.clear();
     _folderImageIndexFutures.clear();
     _folderImageSourceByDisplayKey.clear();
     _folderImageDisplayBySourceKey.clear();
@@ -327,7 +334,12 @@ final class CoverArtworkSourceResolver {
         'native:${_trackSourceFingerprint(track)}${grouped ? '|group' : ''}';
     final requestKey =
         '${PathMatcher.equivalenceKey(track.path)}|${track.fileSizeBytes ?? 0}|${track.modifiedAt?.millisecondsSinceEpoch ?? 0}|$grouped|${rootFolder == null ? '' : PathMatcher.equivalenceKey(rootFolder)}';
+    if (_missingPlatformCovers.remove(requestKey) case final missingPath?) {
+      _missingPlatformCovers[requestKey] = missingPath;
+      return Future.value();
+    }
     return _platformCoverFutures.putIfAbsent(requestKey, () {
+      final epoch = _sourceEpoch;
       late final Future<String?> task;
       task =
           (() async {
@@ -337,12 +349,24 @@ final class CoverArtworkSourceResolver {
                   'embedded:${_trackSourceFingerprint(track)}',
                 );
             if (stored != null) return stored;
-            return _loadPlatformCoverPathForTrack(
+            var failed = false;
+            final resolved = await _loadPlatformCoverPathForTrack(
               track,
               nativeKey: nativeKey,
               rootFolder: rootFolder,
               includeGroupCoverFallback: grouped,
+              onFailure: () => failed = true,
             );
+            if (resolved == null && !failed && epoch == _sourceEpoch) {
+              _missingPlatformCovers[requestKey] = track.path;
+              while (_missingPlatformCovers.length >
+                  _maxMissingPlatformCovers) {
+                _missingPlatformCovers.remove(
+                  _missingPlatformCovers.keys.first,
+                );
+              }
+            }
+            return resolved;
           })().whenComplete(() {
             if (identical(_platformCoverFutures[requestKey], task)) {
               _platformCoverFutures.remove(requestKey);
@@ -357,6 +381,7 @@ final class CoverArtworkSourceResolver {
     required String nativeKey,
     String? rootFolder,
     required bool includeGroupCoverFallback,
+    required void Function() onFailure,
   }) async {
     final lease = await AppCacheService.protectTemporaryDirectories({
       'embedded_covers',
@@ -381,6 +406,7 @@ final class CoverArtworkSourceResolver {
               ? track.groupKey
               : null,
           rootFolder: sharedSafFolder ? null : rootFolder,
+          propagateFailure: true,
         );
         if (nativeCover != null && nativeCover.isNotEmpty) {
           return await persistBridgeCover(
@@ -392,8 +418,10 @@ final class CoverArtworkSourceResolver {
           );
         }
       } on MissingPluginException {
+        onFailure();
         // Continue with the Dart fallback below.
       } catch (e, stackTrace) {
+        onFailure();
         AppLogService.warning(
           'CoverArtworkCacheService.resolvePlatformCoverPathForTrack error',
           error: e,
@@ -416,6 +444,7 @@ final class CoverArtworkSourceResolver {
           }
         }
       } catch (e, stackTrace) {
+        onFailure();
         AppLogService.warning(
           'CoverArtworkCacheService.resolvePlatformCoverPathForTrack embedded cover error',
           error: e,
@@ -548,7 +577,9 @@ final class CoverArtworkSourceResolver {
     bool includeVideoFrames = true,
     bool includeEmbeddedCovers = true,
     bool propagateFailure = false,
+    bool Function()? isCancelled,
   }) async {
+    if (isCancelled?.call() == true) return const [];
     final candidates = <String>[];
     final seenPaths = <String>{};
     final seenContentKeys = <String>{};
@@ -570,6 +601,7 @@ final class CoverArtworkSourceResolver {
       folderPath,
       propagateFailure: propagateFailure,
     )) {
+      if (isCancelled?.call() == true) return const [];
       final candidate = imagePath.trim();
       if (candidate.isEmpty) continue;
       final pathKey = PathMatcher.equivalenceKey(candidate);
@@ -605,6 +637,7 @@ final class CoverArtworkSourceResolver {
       start < tracks.length;
       start += _maxConcurrentFolderCandidateResolutions
     ) {
+      if (isCancelled?.call() == true) return const [];
       final nextEnd = start + _maxConcurrentFolderCandidateResolutions;
       final end = nextEnd < tracks.length ? nextEnd : tracks.length;
       final batch = tracks.sublist(start, end);
@@ -620,6 +653,7 @@ final class CoverArtworkSourceResolver {
                 ),
         ),
       );
+      if (isCancelled?.call() == true) return const [];
       for (final candidate in resolved) {
         await addEmbeddedCandidate(candidate);
       }
@@ -633,12 +667,14 @@ final class CoverArtworkSourceResolver {
         start < audioFiles.length;
         start += _maxConcurrentFolderCandidateResolutions
       ) {
+        if (isCancelled?.call() == true) return const [];
         final nextEnd = start + _maxConcurrentFolderCandidateResolutions;
         final end = nextEnd < audioFiles.length ? nextEnd : audioFiles.length;
         final batch = audioFiles.sublist(start, end);
         final resolved = await Future.wait(
           batch.map(resolveEmbeddedCoverForPath),
         );
+        if (isCancelled?.call() == true) return const [];
         for (final candidate in resolved) {
           await addEmbeddedCandidate(candidate);
         }
@@ -1042,6 +1078,10 @@ final class CoverArtworkSourceResolver {
   }
 
   void invalidateFolderImageIndexes(String normalizedScope) {
+    _sourceEpoch++;
+    _missingPlatformCovers.removeWhere(
+      (_, trackPath) => PathMatcher.isWithinOrEqual(trackPath, normalizedScope),
+    );
     final roots = _folderImageIndexFutures.keys.toList(growable: false);
     for (final key in roots) {
       final root = key.rootPath;

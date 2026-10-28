@@ -303,11 +303,22 @@ class AsmrDownloadManager {
     }
 
     if (_activeTasks.contains(workId)) {
+      final ownedPaths = _outputs.createdOutputPaths.putIfAbsent(
+        workId,
+        () => <String>{},
+      );
       _transfers.cancel(workId);
       _deleteDownloadedOnCancel[workId] = deleteDownloaded;
       _store[workId] = task.copyWith(message: 'canceling');
       _store.notifyTaskChanged();
       await _transfers.waitFor(workId);
+      // Keep the old directory claimed until its staging is gone. The live set
+      // also includes writes that committed while cancellation was draining.
+      await _outputs.discardTaskStaging(
+        _store[workId] ?? task,
+        _planner.collectTaskFiles(task),
+        ownedPaths,
+      );
       _removeTask(workId);
       await flushPersistence();
       return;
@@ -495,6 +506,7 @@ class AsmrDownloadManager {
         normalizedDestination,
         workFolderName,
       );
+      _claimAvailableOutputRoot(workId, workRootPath);
       final existingTask = _store[workId];
       if (existingTask != null) {
         final existingFiles = _planner.collectTaskFiles(existingTask);
@@ -531,17 +543,11 @@ class AsmrDownloadManager {
             return;
           }
         }
-        // Keep the live ownership set until cancellation drains in-flight commits.
-        // Completed files remain in place; only this task's staging is discarded.
-        final ownedPaths = _outputs.createdOutputPaths[workId];
         await cancelTask(workId, deleteDownloaded: false);
-        await _outputs.discardTaskStaging(
-          existingTask,
-          existingFiles,
-          ownedPaths ?? const <String>{},
-        );
       }
       if (_disposed || _shutdownFuture != null) return;
+      // Cancelling a previous configuration yields while its writes drain.
+      _claimAvailableOutputRoot(workId, workRootPath);
       final backupBytes = saveMetadata
           ? _audioDetailJsonCodec
                 .encodeNew(_planner.buildBackupDetail(work, workRootPath))
@@ -596,6 +602,50 @@ class AsmrDownloadManager {
     }
   }
 
+  void _claimAvailableOutputRoot(String workId, String workRootPath) {
+    String normalizeRoot(String value) => PathMatcher.isContentUri(value)
+        ? PathMatcher.normalize(value)
+        : path.normalize(path.absolute(value));
+    final root = normalizeRoot(workRootPath);
+    final completedOwners = <String>{};
+    for (final other in _store.tasks) {
+      if (other.work.workKey == workId) continue;
+      final otherRoots = {
+        other.workRootPath,
+        _planner.joinFolderPath(
+          other.destinationRoot,
+          other.requestedWorkFolderName,
+        ),
+      };
+      for (final otherRoot in otherRoots) {
+        final normalizedOther = normalizeRoot(otherRoot);
+        if (PathMatcher.isWithinOrEqual(root, normalizedOther) ||
+            PathMatcher.isWithinOrEqual(normalizedOther, root)) {
+          final otherId = other.work.workKey;
+          if (other.status == AsmrDownloadTaskStatus.completed &&
+              !_activeTasks.contains(otherId) &&
+              !_taskRemovals.containsKey(otherId) &&
+              !_startingTasks.contains(otherId)) {
+            completedOwners.add(otherId);
+            continue;
+          }
+          // Paused tasks retain staging. In-flight removal must also finish
+          // before another task can write into its output directory.
+          throw FileSystemException(
+            'Another download task owns this destination. '
+            'Remove its task entry or choose another folder.',
+            workRootPath,
+          );
+        }
+      }
+    }
+    // Completed records are hidden from the task list. Release their deletion
+    // ownership without deleting files; the new task still honors skip/overwrite.
+    for (final completedId in completedOwners) {
+      _removeTask(completedId);
+    }
+  }
+
   Future<void> _runTask(String workId) async {
     if (_disposed) {
       _activeTasks.remove(workId);
@@ -625,6 +675,7 @@ class AsmrDownloadManager {
         taskSnapshot.completedFilePaths.length;
 
     try {
+      _claimAvailableOutputRoot(workId, taskSnapshot.workRootPath);
       final plannedFiles = _plannedFilesMap.putIfAbsent(
         workId,
         () => _planner.collectTaskFiles(taskSnapshot),
@@ -640,6 +691,7 @@ class AsmrDownloadManager {
         taskSnapshot = _store[workId]!.copyWith(
           workFolderName: actualFolderName,
         );
+        _claimAvailableOutputRoot(workId, taskSnapshot.workRootPath);
         _store[workId] = taskSnapshot;
         _store.notifyTaskChanged();
         await flushPersistence();
@@ -1068,7 +1120,15 @@ class AsmrDownloadManager {
   }
 
   void _retainOnlyLatestCompletedTask(String workId) {
-    for (final obsoleteWorkId in _store.retainOnlyLatestCompletedTask(workId)) {
+    final obsoleteWorkIds = _store.retainOnlyLatestCompletedTask(
+      workId,
+      retainedWorkIds: {
+        ..._activeTasks,
+        ..._taskRemovals.keys,
+        ..._startingTasks,
+      },
+    );
+    for (final obsoleteWorkId in obsoleteWorkIds) {
       _outputs.createdOutputPaths.remove(obsoleteWorkId);
       _outputs.createdJsonDocuments.remove(obsoleteWorkId);
     }

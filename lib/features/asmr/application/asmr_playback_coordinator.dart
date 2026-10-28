@@ -76,7 +76,7 @@ class AsmrPlaybackCoordinator {
     bool? autoPlay,
   }) async {
     if (tracks.isEmpty) {
-      return;
+      throw StateError('No playable media is available.');
     }
     await _source.recordHistory(work);
     await _launcher.launchQueue(

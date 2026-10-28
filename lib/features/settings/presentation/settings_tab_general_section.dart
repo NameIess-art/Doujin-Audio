@@ -20,7 +20,14 @@ List<Widget> _buildSettingsLanguageSection({
             value: i18n.preference,
             maxWidth: _interfaceLanguageDropdownMaxWidth,
             onChanged: (value) {
-              if (value != null) i18n.setLanguagePreference(value);
+              if (value != null) {
+                unawaited(
+                  saveSettingsWithFeedback(
+                    context,
+                    () => i18n.setLanguagePreference(value),
+                  ),
+                );
+              }
             },
             items: AppLanguagePreference.values
                 .map(

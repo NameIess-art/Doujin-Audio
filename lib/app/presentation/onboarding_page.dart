@@ -8,32 +8,50 @@ import '../state/app_runtime_providers.dart';
 import '../theme/app_styles.dart';
 import '../../core/persistence/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/top_page_header.dart';
 
-class OnboardingGate extends StatefulWidget {
+class OnboardingGate extends ConsumerStatefulWidget {
   const OnboardingGate({super.key, required this.child, this.initiallyVisible});
 
   final Widget child;
   final bool? initiallyVisible;
 
   @override
-  State<OnboardingGate> createState() => _OnboardingGateState();
+  ConsumerState<OnboardingGate> createState() => _OnboardingGateState();
 }
 
-class _OnboardingGateState extends State<OnboardingGate> {
+class _OnboardingGateState extends ConsumerState<OnboardingGate> {
   late bool _showOnboarding =
       widget.initiallyVisible ?? AppPreferences.shouldShowOnboardingSync();
 
+  bool _completing = false;
+
   Future<void> _complete() async {
-    await AppPreferences.completeOnboarding();
-    if (mounted) setState(() => _showOnboarding = false);
+    if (_completing) return;
+    setState(() => _completing = true);
+    final saved = await AppPreferences.completeOnboarding();
+    if (!mounted) return;
+    setState(() {
+      _completing = false;
+      if (saved) _showOnboarding = false;
+    });
+    if (!saved) {
+      showAppSnackBar(
+        context,
+        ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr('operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_showOnboarding) return widget.child;
-    return OnboardingPage(onComplete: _complete);
+    return OnboardingPage(onComplete: _complete, isCompleting: _completing);
   }
 }
 
@@ -78,9 +96,14 @@ class _OnboardingRuntimeGateState extends State<OnboardingRuntimeGate> {
 }
 
 class OnboardingPage extends ConsumerWidget {
-  const OnboardingPage({super.key, required this.onComplete});
+  const OnboardingPage({
+    super.key,
+    required this.onComplete,
+    this.isCompleting = false,
+  });
 
   final Future<void> Function() onComplete;
+  final bool isCompleting;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -153,7 +176,7 @@ class OnboardingPage extends ConsumerWidget {
                           const Spacer(flex: 2),
                           const SizedBox(height: 16),
                           FilledButton(
-                            onPressed: onComplete,
+                            onPressed: isCompleting ? null : onComplete,
                             child: Text(i18n.tr('onboarding_start')),
                           ),
                           const SizedBox(height: 8),
@@ -232,30 +255,25 @@ class PrivacySummaryPage extends ConsumerWidget {
           children: [
             AppPageContentTransition(
               child: ListView(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                topInset,
-                16,
-                32,
+                padding: EdgeInsets.fromLTRB(16, topInset, 16, 32),
+                children: [
+                  _PrivacySection(
+                    icon: Icons.storage_rounded,
+                    title: i18n.tr('privacy_summary_local_title'),
+                    body: i18n.tr('privacy_summary_local_body'),
+                  ),
+                  _PrivacySection(
+                    icon: Icons.public_rounded,
+                    title: i18n.tr('privacy_summary_network_title'),
+                    body: i18n.tr('privacy_summary_network_body'),
+                  ),
+                  _PrivacySection(
+                    icon: Icons.support_agent_rounded,
+                    title: i18n.tr('privacy_summary_diagnostics_title'),
+                    body: i18n.tr('privacy_summary_diagnostics_body'),
+                  ),
+                ],
               ),
-              children: [
-                _PrivacySection(
-                  icon: Icons.storage_rounded,
-                  title: i18n.tr('privacy_summary_local_title'),
-                  body: i18n.tr('privacy_summary_local_body'),
-                ),
-                _PrivacySection(
-                  icon: Icons.public_rounded,
-                  title: i18n.tr('privacy_summary_network_title'),
-                  body: i18n.tr('privacy_summary_network_body'),
-                ),
-                _PrivacySection(
-                  icon: Icons.support_agent_rounded,
-                  title: i18n.tr('privacy_summary_diagnostics_title'),
-                  body: i18n.tr('privacy_summary_diagnostics_body'),
-                ),
-              ],
-            ),
             ),
             Positioned(
               top: 0,
@@ -267,7 +285,9 @@ class PrivacySummaryPage extends ConsumerWidget {
                 leading: HeaderFloatingButton(
                   child: IconButton(
                     icon: const Icon(Icons.arrow_back_rounded),
-                    tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).backButtonTooltip,
                     onPressed: () => Navigator.of(context).maybePop(),
                   ),
                 ),

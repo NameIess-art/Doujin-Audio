@@ -18,7 +18,7 @@ final class ListeningActivityService {
     required ListeningActivityRepository repository,
     required Future<List<PlaybackUsageBatch>> Function() readUsage,
     required Future<void> Function(List<String>) acknowledgeUsage,
-    required MusicTrack? Function(String) resolveTrack,
+    required FutureOr<MusicTrack?> Function(String) resolveTrack,
     required ListeningInterestRecorder recordInterests,
     ListeningInterestRecorder? recordVoiceActorInterests,
     ListeningInterestRecorder? recordCircleInterests,
@@ -37,7 +37,7 @@ final class ListeningActivityService {
   final ListeningActivityRepository _repository;
   final Future<List<PlaybackUsageBatch>> Function() _readUsage;
   final Future<void> Function(List<String>) _acknowledgeUsage;
-  final MusicTrack? Function(String) _resolveTrack;
+  final FutureOr<MusicTrack?> Function(String) _resolveTrack;
   final ListeningInterestRecorder _recordInterests;
   final ListeningInterestRecorder? _recordVoiceActorInterests;
   final ListeningInterestRecorder? _recordCircleInterests;
@@ -135,16 +135,6 @@ final class ListeningActivityService {
               lastPlayedAtMs: work.lastPlayedAtMs,
             ),
           );
-          final tags = <String>{
-            ...track.tags,
-            ..._metadataTags(track.remoteMetadata?['tags']),
-          }.toList();
-          if (tags.isNotEmpty) {
-            interests.add((
-              tags: tags,
-              duration: Duration(milliseconds: work.milliseconds),
-            ));
-          }
           AudioDetail? detail;
           final resolveLocalAudioDetail = _resolveLocalAudioDetail;
           if (!track.isRemoteAsmr && resolveLocalAudioDetail != null) {
@@ -152,6 +142,17 @@ final class ListeningActivityService {
                 localDetails[track.path] ??
                 await resolveLocalAudioDetail(track);
             localDetails[track.path] = detail;
+          }
+          final tags = <String>{
+            ...track.tags,
+            ..._metadataTags(track.remoteMetadata?['tags']),
+            ...?detail?.tags,
+          }.toList();
+          if (tags.isNotEmpty) {
+            interests.add((
+              tags: tags,
+              duration: Duration(milliseconds: work.milliseconds),
+            ));
           }
           final voiceActors = <String>{
             ..._metadataTags(track.remoteMetadata?['voiceActors']),
@@ -234,11 +235,24 @@ final class ListeningActivityService {
 
   Future<MusicTrack> _resolveUsageTrack(PlaybackUsageWork work) async {
     final path = work.path ?? work.uri ?? work.key;
-    final live = _resolveTrack(path);
-    if (live != null) return live;
-    if (work.descriptor != null) {
-      return MusicTrack.fromJson(Map<String, dynamic>.from(work.descriptor!));
+    final live = await _resolveTrack(path);
+    final descriptor = work.descriptor;
+    if (descriptor != null) {
+      final recorded = MusicTrack.fromJson(
+        Map<String, dynamic>.from(descriptor),
+      );
+      // Native batches describe what was heard. Startup catalog projections can
+      // omit these fields; keep their current name/path without losing metadata.
+      return (live ?? recorded).copyWith(
+        tags: recorded.tags.isNotEmpty ? recorded.tags : live?.tags,
+        remoteMetadataKind:
+            recorded.remoteMetadataKind ?? live?.remoteMetadataKind,
+        remoteMetadata: recorded.remoteMetadata == null
+            ? live?.remoteMetadata
+            : {...?live?.remoteMetadata, ...recorded.remoteMetadata!},
+      );
     }
+    if (live != null) return live;
     final previous = await _repository.findTrack(work.key);
     if (previous != null) return previous;
     return MusicTrack(

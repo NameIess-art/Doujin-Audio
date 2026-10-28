@@ -14,16 +14,42 @@ class _CountingPreferences extends InMemorySharedPreferencesStore {
 
   final writes = <(String, Object)>[];
   Future<void> Function()? beforeWrite;
+  bool rejectWrites = false;
 
   @override
   Future<bool> setValue(String valueType, String key, Object value) async {
     writes.add((key, value));
     await beforeWrite?.call();
+    if (rejectWrites) return false;
     return super.setValue(valueType, key, value);
   }
 }
 
 void main() {
+  test(
+    'failed appearance writes keep the latest preview available for retry',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final store = _CountingPreferences()..rejectWrites = true;
+      SharedPreferencesStorePlatform.instance = store;
+      await AppPreferences.init();
+      final notifier = SubtitleSettingsNotifier();
+      addTearDown(notifier.dispose);
+      await Future<void>.delayed(Duration.zero);
+      notifier.setFontSize(24);
+      await notifier.flushAppearancePersistence();
+      expect(notifier.state.fontSize, 24);
+      expect(notifier.state.appearanceSaveFailed, isTrue);
+      notifier.beginAppearanceEdit();
+      notifier.setFontSize(28);
+      store.rejectWrites = false;
+      await notifier.endAppearanceEdit();
+      expect(notifier.state.appearanceSaveFailed, isFalse);
+      expect(store.writes.last, ('flutter.subtitle_font_size', '28.0'));
+      expect((await store.getAll())['flutter.subtitle_font_size'], '28.0');
+    },
+  );
+
   test(
     'slider preview stays live while persistence keeps only final values',
     () async {

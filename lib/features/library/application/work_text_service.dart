@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:characters/characters.dart';
 import 'package:charset/charset.dart';
 import 'package:flutter/foundation.dart';
 import 'package:markdown/markdown.dart' as md;
@@ -74,8 +75,18 @@ PreparedWorkText _prepareWorkText(
     if (end >= text.length) {
       end = text.length;
     } else {
-      final newline = text.indexOf('\n', end);
-      end = newline < 0 ? text.length : newline + 1;
+      // Prefer a nearby line ending, but bound single-line layout and searching
+      // as well. A missing newline must not turn a whole script into one Text.
+      final lookaheadEnd = (end + 1024).clamp(0, text.length);
+      final newline = text.substring(end, lookaheadEnd).indexOf('\n');
+      if (newline >= 0) end += newline + 1;
+      if (end < text.length) {
+        final boundary = CharacterRange.at(text, end);
+        end = boundary.stringBeforeLength;
+        // An exceptionally large single grapheme stays intact even when it
+        // exceeds the normal block limit (for example, many combining marks).
+        if (end <= start) end = text.length - boundary.stringAfterLength;
+      }
     }
     blocks.add(text.substring(start, end));
     start = end;

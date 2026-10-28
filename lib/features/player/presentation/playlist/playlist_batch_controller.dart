@@ -91,10 +91,11 @@ abstract final class PlaylistBatchActions {
     required AudioPathCoordinator paths,
     required VoidCallback onQueueAdded,
   }) async {
+    final selectedIds = Set<String>.of(selectedSessionIds);
     if (!hasSelectedPlaybackQueueSource(
       visibleEntries: visibleEntries,
       paths: paths,
-      selectedSessionIds: selectedSessionIds,
+      selectedSessionIds: selectedIds,
     )) {
       return;
     }
@@ -110,8 +111,9 @@ abstract final class PlaylistBatchActions {
     );
     onQueueAdded();
     final coordinator = ref.read(playbackQueueCoordinatorProvider);
+    final library = ref.read(libraryFacadeProvider);
     for (final entry in visibleEntries) {
-      if (!selectedSessionIds.contains(entry.sessionId)) continue;
+      if (!selectedIds.contains(entry.sessionId)) continue;
       if (entry.isPlaybackQueue) {
         for (final sourceEntry
             in entry.session.playbackQueue?.entries ??
@@ -120,9 +122,7 @@ abstract final class PlaylistBatchActions {
           if (sourceEntry.kind == PlaybackQueueEntryKind.work) {
             for (final track in sourceEntry.tracks.take(4)) {
               unawaited(
-                ref
-                    .read(libraryFacadeProvider)
-                    .playbackCoverPathFutureForTrack(track),
+                library.playbackCoverPathFutureForTrack(track),
               );
             }
             await playback.addWorkToPlaybackQueue(

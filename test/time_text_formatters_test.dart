@@ -43,6 +43,10 @@ void main() {
     expect(parseDateYmd('2026-9-4'), DateTime(2026, 9, 4));
     expect(parseDateYmd(''), isNull);
     expect(parseDateYmd('invalid'), isNull);
+    expect(parseDateYmd('2026-13-01'), isNull);
+    expect(parseDateYmd('2026-02-29'), isNull);
+    expect(parseDateYmd('2026-04-31'), isNull);
+    expect(parseDateYmd('2024-02-29'), DateTime(2024, 2, 29));
   });
 
   test('parseDurationCompact parses mm:ss and hh:mm:ss strings', () {

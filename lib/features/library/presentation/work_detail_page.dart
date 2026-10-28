@@ -24,7 +24,6 @@ import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart'
     show CoverImageReference;
-import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -42,6 +41,7 @@ import '../../../core/widgets/top_page_header.dart';
 import '../../asmr/application/asmr_library_controller.dart';
 import '../../asmr/domain/asmr_models.dart';
 import '../../asmr/presentation/asmr_download_page.dart';
+import '../../asmr/presentation/asmr_favorite_action.dart';
 import '../../asmr/presentation/asmr_providers.dart';
 import '../../asmr/presentation/asmr_error_text.dart';
 import '../../player/presentation/playback_providers.dart';
@@ -438,8 +438,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   }
 
   void _updateDirectoryMotion(bool isLoading) {
-    if (MediaQuery.disableAnimationsOf(context) ||
-        _route?.isCurrent == false) {
+    if (MediaQuery.disableAnimationsOf(context) || _route?.isCurrent == false) {
       _directoryFade.value = 1;
       _departingSkeletonRect = null;
       for (final controller in _entryLoadBatches.keys) {
@@ -608,26 +607,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   Future<void> _setLocalImageAsCover(String imagePath) async {
     final folderPath = _localTarget!.targetPath;
     final library = ref.read(libraryFacadeProvider);
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    try {
-      await library.setFolderManualCover(folderPath, imagePath);
-      if (!mounted) return;
-      setState(() {
-        _localManualCover = imagePath;
-      });
-      showAppSnackBar(
-        context,
-        i18n.tr('audio_detail_cover_saved'),
-        tone: AppFeedbackTone.success,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      showAppSnackBar(
-        context,
-        i18n.tr('audio_detail_save_failed'),
-        tone: AppFeedbackTone.warning,
-      );
-    }
+    await library.setFolderManualCover(folderPath, imagePath);
+    if (!mounted) return;
+    setState(() => _localManualCover = imagePath);
   }
 
   Future<bool> _playAudioItem(WorkEntryItem item) async {
@@ -713,6 +695,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           await _renameLocalEntry(item);
         case WorkEntryAction.setCover:
           await _setLocalImageAsCover(item.fullPathOrUrl);
+          if (mounted) {
+            showAppSnackBar(
+              context,
+              i18n.tr('audio_detail_cover_saved'),
+              tone: AppFeedbackTone.success,
+            );
+          }
         case WorkEntryAction.openContainingFolder:
           if (widget.isLocal &&
               defaultTargetPlatform == TargetPlatform.windows) {
@@ -1054,8 +1043,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
 
   // ASMR actions: Download, Toggle favorite
   Future<void> _handleAsmrDownload() async {
-    await Navigator.of(context).push<void>(
-      buildAppPageRoute(
+    await Navigator.of(context).push<AsmrDownloadPageResult>(
+      buildAppPageRoute<AsmrDownloadPageResult>(
         context: context,
         child: AsmrDownloadPage(work: widget.asmrWork!),
       ),
@@ -1063,58 +1052,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   }
 
   Future<void> _handleAsmrToggleFavorite() async {
-    final controller = ref.read(asmrLibraryControllerProvider);
-    if (controller == null) return;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final work = widget.asmrWork!;
-    final isFav = controller.isFavorite(work.workKey);
-    final shouldFavorite = !isFav;
-    final scope = UiOperationScope.asmrWork(
-      AsmrOperationKind.favorite,
-      work.workKey,
-    );
-    final operations = ref.read(uiOperationServiceProvider);
-    if (operations.isBusy(scope)) return;
-    try {
-      await operations.run<void>(
-        scope: scope,
-        labelKey: 'loading_dot',
-        task: (_) => controller.toggleFavorite(work),
-        cancelPrevious: false,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      showAppSnackBar(
-        context,
-        i18n.tr('operation_failed_retry'),
-        tone: AppFeedbackTone.warning,
-        icon: Icons.error_outline_rounded,
-      );
-      return;
-    }
-    if (!mounted) return;
-    if (!shouldFavorite) {
-      showAppSnackBar(
-        context,
-        i18n.tr('asmr_favorite_removed'),
-        actionLabel: i18n.tr('undo'),
-        onAction: () => unawaited(controller.toggleFavorite(work)),
-        isUndoAction: true,
-        tone: AppFeedbackTone.warning,
-        icon: Icons.favorite_border_rounded,
-        iconColor: asmrBlue,
-      );
-    } else {
-      showAppSnackBar(
-        context,
-        i18n.tr('asmr_favorite_added'),
-        tone: AppFeedbackTone.success,
-        icon: Icons.favorite_rounded,
-        iconColor: asmrBlue,
-      );
-    }
-    if (mounted) setState(() {});
+    final work = widget.asmrWork;
+    if (work == null) return;
+    final changed = await setAsmrWorksFavoriteWithFeedback(context, ref, [
+      work,
+    ]);
+    if (changed && mounted) setState(() {});
   }
 
   @override
@@ -1383,7 +1326,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                             final isFavorite = widget.isAsmr
                                 ? ref
                                           .watch(asmrLibraryControllerProvider)
-                                          ?.isFavorite(widget.asmrWork!.workKey) ??
+                                          ?.isFavorite(
+                                            widget.asmrWork!.workKey,
+                                          ) ??
                                       widget.asmrWork!.isFavorite
                                 : false;
                             return WorkDetailActions(

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -103,6 +104,7 @@ class TextTranslationService {
        _endpoint =
            endpoint ?? Uri.https('translate.googleapis.com', '/translate_a/t'),
        _documentStore = documentStore,
+       _cacheStoreIdentity = documentStore,
        _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
        _now = now ?? DateTime.now,
        _requestInterval = requestInterval,
@@ -113,6 +115,7 @@ class TextTranslationService {
   final HttpClient Function() _clientFactory;
   final Uri _endpoint;
   JsonDocumentStore? _documentStore;
+  final JsonDocumentStore? _cacheStoreIdentity;
   final Future<Directory> Function() _temporaryDirectory;
   final DateTime Function() _now;
   final Duration _requestInterval;
@@ -121,8 +124,13 @@ class TextTranslationService {
   final int _diskCapacity;
   final _memory = <_TranslationKey, String>{};
   final _requests = <TextTranslationRequest>{};
+  // Pages and subtitle jobs share the same file even when they own different
+  // service instances. Serialize read/modify/write and clearing as one operation.
+  static Future<void> _diskTail = Future<void>.value();
+  static final _cacheUsers = <TextTranslationService>{};
+  ({String path, JsonDocumentStore? store})? _cacheKey;
+  Future<Map<_TranslationKey, String>>? _diskEntries;
   Future<void> _operations = Future<void>.value();
-  Future<void> _writes = Future<void>.value();
   Future<JsonDocumentLocation?>? _location;
   DateTime? _lastRequestAt;
   DateTime? _cooldownUntil;
@@ -177,6 +185,8 @@ class TextTranslationService {
     required TextTranslationRequest request,
   }) async {
     final result = <String, String>{};
+    final additions = <_TranslationKey, String>{};
+    final epoch = _cacheEpoch;
     try {
       if (request.cancelled || _disposed) return TextTranslationResult();
       final unique = texts.where(canTranslateText).toSet();
@@ -187,7 +197,6 @@ class TextTranslationService {
       if (result.length == unique.length) {
         return TextTranslationResult(translations: result);
       }
-      await request._active(_writes);
       final entries = await request._active(_readDisk());
       for (final text in unique.where((text) => !result.containsKey(text))) {
         final key = (text, source, target);
@@ -200,7 +209,6 @@ class TextTranslationService {
       final missing = unique
           .where((text) => !result.containsKey(text))
           .toList();
-      if (missing.isEmpty) _saveDisk(entries);
       for (final batch in textTranslationBatches(missing)) {
         final cooldown = _cooldownUntil;
         if (cooldown != null && _now().isBefore(cooldown)) {
@@ -223,8 +231,11 @@ class TextTranslationService {
           _remember(key, translated[index]);
           entries.remove(key);
           entries[key] = translated[index];
+          additions[key] = translated[index];
         }
-        _saveDisk(entries);
+        while (entries.length > _diskCapacity) {
+          entries.remove(entries.keys.first);
+        }
       }
       return TextTranslationResult(translations: result);
     } on _TranslationCancelled {
@@ -244,6 +255,10 @@ class TextTranslationService {
         translations: result,
         failure: TextTranslationFailure.unavailable,
       );
+    } finally {
+      if (additions.isNotEmpty && epoch == _cacheEpoch) {
+        _saveDisk(additions);
+      }
     }
   }
 
@@ -339,117 +354,125 @@ class TextTranslationService {
   Future<JsonDocumentLocation?> _cacheLocation() => _location ??= (() async {
     try {
       final root = await _temporaryDirectory();
-      return JsonDocumentLocation.folderChild(
+      final location = JsonDocumentLocation.folderChild(
         folder: path.join(root.path, textTranslationCacheDirectoryName),
         name: 'cache.json',
       );
+      _cacheKey = (path: location.lockKey, store: _cacheStoreIdentity);
+      if (!_disposed) _cacheUsers.add(this);
+      return location;
     } on Object {
       AppLogService.warning('page_translation_cache_directory_unavailable');
       return null;
     }
   })();
 
-  Future<Map<_TranslationKey, String>> _readDisk() async {
-    final entries = <_TranslationKey, String>{};
+  static Future<T> _serializeDisk<T>(Future<T> Function() operation) {
+    final task = _diskTail.then((_) => operation());
+    _diskTail = task.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return task;
+  }
+
+  Future<Map<_TranslationKey, String>> _readDisk() =>
+      _diskEntries ??= _loadDisk();
+
+  Future<Map<_TranslationKey, String>> _loadDisk() async {
     try {
       final location = await _cacheLocation();
-      if (location == null) return entries;
-      final snapshot = (await _store.read(location)).snapshot;
-      if (snapshot == null) return entries;
-      final decoded = jsonDecode(snapshot.text);
-      if (decoded is! Map || decoded['version'] != 2) return entries;
-      final rows = decoded['entries'];
-      if (rows is! List) return entries;
-      for (final row in rows) {
-        if (row is List &&
-            row.length == 4 &&
-            row.every((value) => value is String)) {
-          final original = row[2] as String;
-          final translated = row[3] as String;
-          if (!canTranslateText(original) || translated.trim().isEmpty) {
-            continue;
-          }
-          entries[(original, row[1] as String, row[0] as String)] = translated;
-        }
-      }
-      while (entries.length > _diskCapacity) {
-        entries.remove(entries.keys.first);
-      }
+      if (location == null) return {};
+      final snapshot = await _serializeDisk(() => _store.read(location));
+      final bytes = snapshot.snapshot?.bytes;
+      final capacity = _diskCapacity;
+      return await compute(_decodeTranslationCache, (bytes, capacity));
     } on Object {
       AppLogService.warning('page_translation_cache_read_failed');
+      return {};
     }
-    return entries;
   }
 
-  void _saveDisk(Map<_TranslationKey, String> entries) {
+  void _saveDisk(Map<_TranslationKey, String> additions) {
+    final changes = Map<_TranslationKey, String>.of(additions);
     for (final entry in _memory.entries) {
-      entries.remove(entry.key);
-      entries[entry.key] = entry.value;
+      changes.remove(entry.key);
+      changes[entry.key] = entry.value;
     }
-    while (entries.length > _diskCapacity) {
-      entries.remove(entries.keys.first);
-    }
-    final bytes = Uint8List.fromList(
-      utf8.encode(
-        jsonEncode({
-          'version': 2,
-          'entries': [
-            for (final entry in entries.entries)
-              [entry.key.$3, entry.key.$2, entry.key.$1, entry.value],
-          ],
-        }),
-      ),
-    );
     final epoch = _cacheEpoch;
-    _writes = _writes.then((_) async {
-      try {
-        if (epoch != _cacheEpoch) return;
-        final location = await _cacheLocation();
-        if (location == null || epoch != _cacheEpoch) return;
-        final previous = await _store.read(location);
-        if (previous.status == JsonDocumentReadStatus.unreadable) return;
-        final snapshot = previous.snapshot;
-        final written = await _store.write(
-          location: location,
-          bytes: bytes,
-          mode: snapshot == null
-              ? JsonDocumentWriteMode.createIfAbsent
-              : JsonDocumentWriteMode.replaceIfRevision,
-          expectedRevision: snapshot?.revision,
-        );
-        if (!written.committed) {
+    unawaited(
+      _serializeDisk(() async {
+        try {
+          if (epoch != _cacheEpoch) return;
+          final location = await _cacheLocation();
+          if (location == null || epoch != _cacheEpoch) return;
+          final previous = await _store.read(location);
+          if (previous.status == JsonDocumentReadStatus.unreadable) return;
+          final snapshot = previous.snapshot;
+          final previousBytes = snapshot?.bytes;
+          final capacity = _diskCapacity;
+          final bytes = await compute(_mergeTranslationCache, (
+            previousBytes,
+            changes,
+            capacity,
+          ));
+          if (epoch != _cacheEpoch) return;
+          final written = await _store.write(
+            location: location,
+            bytes: bytes,
+            mode: snapshot == null
+                ? JsonDocumentWriteMode.createIfAbsent
+                : JsonDocumentWriteMode.replaceIfRevision,
+            expectedRevision: snapshot?.revision,
+          );
+          if (!written.committed) {
+            AppLogService.warning('page_translation_cache_write_failed');
+          } else {
+            _invalidatePeerCaches();
+          }
+        } on Object {
+          // Cache I/O must not discard a successfully translated batch.
           AppLogService.warning('page_translation_cache_write_failed');
         }
-      } on Object {
-        // Cache I/O must not discard a successfully translated batch.
-        AppLogService.warning('page_translation_cache_write_failed');
-      }
-    });
+      }),
+    );
   }
 
-  Future<void> clearCache() {
+  void _invalidatePeerCaches({bool clearing = false}) {
+    for (final peer in _cacheUsers) {
+      if (peer._cacheKey != _cacheKey || identical(peer, this)) continue;
+      peer._diskEntries = null;
+      peer._memory.clear();
+      if (clearing) peer._cancelCacheRequests();
+    }
+  }
+
+  void _cancelCacheRequests() {
     _cacheEpoch++;
+    _diskEntries = null;
+    _memory.clear();
     for (final request in _requests.toList()) {
       request.cancel();
     }
-    _memory.clear();
-    final clearing = _operations.then((_) async {
-      _memory.clear();
-      await _writes;
+  }
+
+  Future<void> clearCache() {
+    _cancelCacheRequests();
+    final clearing = (() async {
       final location = await _cacheLocation();
       if (location == null) return;
-      final snapshot = (await _store.read(location)).snapshot;
-      if (snapshot != null) {
-        await _store.delete(
-          location: location,
-          expectedRevision: snapshot.revision,
-        );
-      }
-    });
-    _operations = clearing.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace _) {},
-    );
+      _invalidatePeerCaches(clearing: true);
+      await _serializeDisk(() async {
+        final snapshot = (await _store.read(location)).snapshot;
+        if (snapshot != null) {
+          await _store.delete(
+            location: location,
+            expectedRevision: snapshot.revision,
+          );
+        }
+      });
+    })();
+    _operations = Future.wait([
+      _operations,
+      clearing,
+    ]).then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return clearing;
   }
 
@@ -459,7 +482,67 @@ class TextTranslationService {
       request.cancel();
     }
     _memory.clear();
+    _diskEntries = null;
+    _cacheUsers.remove(this);
   }
+}
+
+Map<_TranslationKey, String> _decodeTranslationCache(
+  (Uint8List?, int) request,
+) {
+  final (bytes, capacity) = request;
+  final entries = <_TranslationKey, String>{};
+  if (bytes == null) return entries;
+  final decoded = jsonDecode(utf8.decode(bytes));
+  if (decoded is! Map || decoded['version'] != 2) return entries;
+  final rows = decoded['entries'];
+  if (rows is! List) return entries;
+  for (final row in rows) {
+    if (row is! List ||
+        row.length != 4 ||
+        !row.every((value) => value is String)) {
+      continue;
+    }
+    final original = row[2] as String;
+    final translated = row[3] as String;
+    if (canTranslateText(original) && translated.trim().isNotEmpty) {
+      entries[(original, row[1] as String, row[0] as String)] = translated;
+    }
+  }
+  while (entries.length > capacity) {
+    entries.remove(entries.keys.first);
+  }
+  return entries;
+}
+
+Uint8List _mergeTranslationCache(
+  (Uint8List?, Map<_TranslationKey, String>, int) request,
+) {
+  final (previous, changes, capacity) = request;
+  Map<_TranslationKey, String> entries;
+  try {
+    entries = _decodeTranslationCache((previous, capacity));
+  } on FormatException {
+    entries = {};
+  }
+  for (final entry in changes.entries) {
+    entries.remove(entry.key);
+    entries[entry.key] = entry.value;
+  }
+  while (entries.length > capacity) {
+    entries.remove(entries.keys.first);
+  }
+  return Uint8List.fromList(
+    utf8.encode(
+      jsonEncode({
+        'version': 2,
+        'entries': [
+          for (final entry in entries.entries)
+            [entry.key.$3, entry.key.$2, entry.key.$1, entry.value],
+        ],
+      }),
+    ),
+  );
 }
 
 List<List<String>> textTranslationBatches(List<String> texts) {

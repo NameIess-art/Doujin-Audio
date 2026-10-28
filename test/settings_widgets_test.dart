@@ -283,9 +283,7 @@ void main() {
           'max_cache_size',
           'clear_app_cache',
         ],
-        'section_updates_permissions': [
-          'settings_group_permissions',
-        ],
+        'section_updates_permissions': ['settings_group_permissions'],
       }.entries) {
         await tester.ensureVisible(find.text(i18n.tr(entry.key)));
         await tester.tap(find.text(i18n.tr(entry.key)));
@@ -502,9 +500,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(updatesCategory);
     await tester.pumpAndSettle();
-    final backgroundRunTile = find.text(
-      i18n.tr('allow_background_run'),
-    );
+    final backgroundRunTile = find.text(i18n.tr('allow_background_run'));
     expect(backgroundRunTile, findsOneWidget);
     expect(
       find.ancestor(of: backgroundRunTile, matching: find.byType(Card)),
@@ -995,6 +991,46 @@ void main() {
     ]);
   });
 
+  testWidgets(
+    'folder name drawer swipes closed without saving draft choices',
+    (tester) async {
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      final original = harness.settingsRepository.asmrDownloadFolderNameFields.toList();
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pumpAndSettle();
+      final i18n = harness.languageProvider;
+      await tester.tap(find.text(i18n.tr('section_asmr_download')));
+      await tester.pumpAndSettle();
+      final entry = find.text(i18n.tr('asmr_download_folder_name_setting'));
+      await tester.ensureVisible(entry);
+      await tester.tap(entry);
+      await tester.pumpAndSettle();
+      final rjCode = find.widgetWithText(
+        CheckboxListTile,
+        i18n.tr('asmr_download_folder_field_rj_code'),
+      );
+      await tester.tap(rjCode);
+      await tester.pumpAndSettle();
+      expect(tester.widget<CheckboxListTile>(rjCode).value, isTrue);
+      final bounds = tester.getRect(find.byType(BottomSheet));
+      await tester.dragFrom(
+        Offset(bounds.center.dx, bounds.top + 24),
+        Offset(0, bounds.height),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(AsmrDownloadFolderNameSettingsSheet), findsNothing);
+      expect(harness.settingsRepository.asmrDownloadFolderNameFields, original);
+      expect(entry, findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('ASMR folder name reorder keeps tap identity', (tester) async {
     final settingsRepository = _DeferredFolderNameSettingsRepository();
     final harness = AppRuntimeWidgetTestFixture(
@@ -1067,44 +1103,45 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('ASMR folder name cancellation leaves repository state unchanged', (
-    tester,
-  ) async {
-    final settingsRepository = _DeferredFolderNameSettingsRepository();
-    final harness = AppRuntimeWidgetTestFixture(
-      providedSettingsRepository: settingsRepository,
-    );
-    addTearDown(harness.dispose);
-    await tester.pumpWidget(
-      harness.build(const AsmrDownloadFolderNameSettingsSheet()),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'ASMR folder name cancellation leaves repository state unchanged',
+    (tester) async {
+      final settingsRepository = _DeferredFolderNameSettingsRepository();
+      final harness = AppRuntimeWidgetTestFixture(
+        providedSettingsRepository: settingsRepository,
+      );
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(
+        harness.build(const AsmrDownloadFolderNameSettingsSheet()),
+      );
+      await tester.pumpAndSettle();
 
-    final workTitle = harness.languageProvider.tr(
-      'asmr_download_folder_field_work_title',
-    );
-    await tester.tap(find.widgetWithText(CheckboxListTile, workTitle));
-    await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<CheckboxListTile>(
-            find.widgetWithText(CheckboxListTile, workTitle),
-          )
-          .value,
-      isFalse,
-    );
+      final workTitle = harness.languageProvider.tr(
+        'asmr_download_folder_field_work_title',
+      );
+      await tester.tap(find.widgetWithText(CheckboxListTile, workTitle));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.widgetWithText(CheckboxListTile, workTitle),
+            )
+            .value,
+        isFalse,
+      );
 
-    await tester.tap(
-      find.byKey(const ValueKey('asmr_download_folder_name_cancel')),
-    );
-    await tester.pumpAndSettle();
-    expect(settingsRepository.folderNameFieldUpdates, isEmpty);
-    expect(settingsRepository.asmrDownloadFolderNameFields, const [
-      AsmrDownloadFolderNameField.workTitle,
-      AsmrDownloadFolderNameField.rjCode,
-    ]);
-    await tester.pumpWidget(const SizedBox());
-  });
+      await tester.tap(
+        find.byKey(const ValueKey('asmr_download_folder_name_cancel')),
+      );
+      await tester.pumpAndSettle();
+      expect(settingsRepository.folderNameFieldUpdates, isEmpty);
+      expect(settingsRepository.asmrDownloadFolderNameFields, const [
+        AsmrDownloadFolderNameField.workTitle,
+        AsmrDownloadFolderNameField.rjCode,
+      ]);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   testWidgets(
     'settings options have no fill or border and retain shaped ink',
@@ -1173,12 +1210,13 @@ void main() {
           final context = tester.element(cardFinder);
           expect(
             card.color,
-            Theme.of(context).colorScheme.surfaceContainerHigh.withValues(
-              alpha: 0.6,
-            ),
+            Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHigh.withValues(alpha: 0.6),
           );
-          final shape = (card.shape ?? CardTheme.of(context).shape)!
-              as RoundedRectangleBorder;
+          final shape =
+              (card.shape ?? CardTheme.of(context).shape)!
+                  as RoundedRectangleBorder;
           expect(shape.side, BorderSide.none);
         }
         await tester.tap(find.byIcon(Icons.arrow_back_rounded));
@@ -1264,7 +1302,9 @@ void main() {
     }),
   );
 
-  testWidgets('settings home uses transparent separated category rows', (tester) async {
+  testWidgets('settings home uses transparent separated category rows', (
+    tester,
+  ) async {
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
     await tester.pumpWidget(harness.build(const SettingsTab()));
@@ -1299,10 +1339,7 @@ void main() {
         0.001,
       ),
     );
-    expect(
-      rootCard.color,
-      Colors.transparent,
-    );
+    expect(rootCard.color, Colors.transparent);
     final rootBorderRadius =
         (rootCard.shape! as RoundedRectangleBorder).borderRadius
             as BorderRadius;
@@ -1577,7 +1614,9 @@ void main() {
     expect(tester.getSize(startupTileFinder).height, greaterThan(58));
 
     final dropdownFinder = find.byType(UnifiedDropdownButton<StartupPage>);
-    final dropdown = tester.widget<UnifiedDropdownButton<StartupPage>>(dropdownFinder);
+    final dropdown = tester.widget<UnifiedDropdownButton<StartupPage>>(
+      dropdownFinder,
+    );
     expect(dropdown.isExpanded, isTrue);
     expect(dropdown.multilineItems, isTrue);
 
@@ -1826,7 +1865,10 @@ void main() {
       final title = find.text(i18n.tr('cover_image_resolution'));
       await Scrollable.ensureVisible(tester.element(title), alignment: 0.5);
       await tester.pumpAndSettle();
-      expect(find.byType(UnifiedDropdownButton<CoverImageResolution>), findsOneWidget);
+      expect(
+        find.byType(UnifiedDropdownButton<CoverImageResolution>),
+        findsOneWidget,
+      );
       expect(find.text('封面图片显示'), findsNothing);
       expect(find.byIcon(Icons.aspect_ratio_rounded), findsNothing);
     },
@@ -1836,9 +1878,7 @@ void main() {
     }),
   );
 
-  testWidgets('appearance toggles own cover preference', (
-    tester,
-  ) async {
+  testWidgets('appearance toggles own cover preference', (tester) async {
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
     await tester.pumpWidget(harness.build(const SettingsTab()));
@@ -2086,6 +2126,58 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets(
+    'folder naming saves once and finishes safely after swipe dismissal',
+    (tester) async {
+      final repository = _DeferredFolderNameSettingsRepository();
+      final fixture = AppRuntimeWidgetTestFixture(
+        providedSettingsRepository: repository,
+      );
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(const SettingsTab()),
+      );
+      await tester.pumpAndSettle();
+      final i18n = fixture.languageProvider;
+      await tester.tap(find.text(i18n.tr('section_asmr_download')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(i18n.tr('asmr_download_folder_name_setting')));
+      await tester.pumpAndSettle();
+      final sheet = find.byType(BottomSheet);
+      expect(tester.widget<BottomSheet>(sheet).enableDrag, isTrue);
+      expect(tester.widget<BottomSheet>(sheet).showDragHandle, isTrue);
+      final sheetBounds = tester.getRect(sheet);
+      final confirm = find.byKey(
+        const ValueKey('asmr_download_folder_name_confirm'),
+      );
+      final save = tester.widget<TextButton>(confirm).onPressed!;
+      save();
+      save();
+      await tester.pump();
+      expect(repository.folderNameFieldUpdates, hasLength(1));
+      expect(tester.widget<TextButton>(confirm).onPressed, isNull);
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(const ValueKey('asmr_download_folder_name_cancel')),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.dragFrom(
+        Offset(sheetBounds.center.dx, sheetBounds.top + 24),
+        const Offset(0, 500),
+      );
+      await tester.pumpAndSettle();
+      expect(confirm, findsNothing);
+      repository._pendingPersistence.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(AsmrDownloadFolderNameSettingsSheet), findsNothing);
+      expect(find.text(i18n.tr('asmr_download_folder_name_setting')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'folder name selection restores repository state after save failure',

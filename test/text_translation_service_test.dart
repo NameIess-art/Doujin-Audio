@@ -385,6 +385,108 @@ void main() {
     },
   );
 
+  test('disk hits reuse the decoded index without rewriting it', () async {
+    documents.bytes = Uint8List.fromList(
+      utf8.encode(
+        jsonEncode({
+          'version': 2,
+          'entries': [
+            for (var i = 0; i < 6; i++)
+              ['zh-CN', 'auto', 'title $i', 'saved $i'],
+          ],
+        }),
+      ),
+    );
+    service.dispose();
+    service = createService(memoryCapacity: 2, diskCapacity: 6);
+    for (var i = 0; i < 12; i++) {
+      final index = i % 6;
+      expect((await translate(['title $index'])).translations, {
+        'title $index': 'saved $index',
+      });
+    }
+    expect(requests, 0);
+    expect(documents.reads, 1);
+    expect(documents.writes, 0);
+  });
+
+  test('a multi-batch translation persists successful results once', () async {
+    final result = await translate(List.generate(101, (i) => 'title $i'));
+    expect(result.translations.length, 101);
+    expect(requests, 3);
+    await documents.waitForWrites(1);
+    expect(documents.writes, 1);
+    final saved = jsonDecode(utf8.decode(documents.bytes!)) as Map;
+    expect((saved['entries'] as List).length, 101);
+  });
+
+  test(
+    'coexisting services merge new translations and observe peer writes',
+    () async {
+      final other = createService();
+      addTearDown(other.dispose);
+      final first = translate(['first']);
+      final secondRequest = other.newRequest();
+      final second = other.translate(
+        ['second'],
+        target: 'zh-CN',
+        request: secondRequest,
+      );
+      expect((await first).translations['first'], 'translated first');
+      expect((await second).translations['second'], 'translated second');
+      await documents.waitForWrites(2);
+      expect(
+        (await translate(['second'])).translations['second'],
+        'translated second',
+      );
+      expect(requests, 2);
+      final saved = jsonDecode(utf8.decode(documents.bytes!)) as Map;
+      expect(
+        (saved['entries'] as List).map((row) => (row as List)[2]),
+        containsAll(['first', 'second']),
+      );
+    },
+  );
+
+  test(
+    'clearing one service invalidates a peer and cancels its pending write',
+    () async {
+      await translate(['saved']);
+      await documents.waitForWrites(1);
+      final other = createService();
+      addTearDown(other.dispose);
+      final peerRequest = other.newRequest();
+      expect(
+        (await other.translate(
+          ['saved'],
+          target: 'zh-CN',
+          request: peerRequest,
+        )).translations['saved'],
+        'translated saved',
+      );
+      final received = Completer<void>();
+      final release = Completer<void>();
+      handler = (request) async {
+        await sources(request);
+        received.complete();
+        await release.future;
+        await respond(request, ['late']);
+      };
+      final pending = other.translate(
+        ['pending'],
+        target: 'zh-CN',
+        request: peerRequest,
+      );
+      await received.future;
+      await service.clearCache();
+      expect(peerRequest.cancelled, isTrue);
+      expect((await pending).translations, isEmpty);
+      expect(other.cached('saved', 'zh-CN'), isNull);
+      expect(documents.bytes, isNull);
+      release.complete();
+    },
+  );
+
   for (final status in [429, 403]) {
     test(
       'HTTP $status cools down for at least a minute and respects Retry-After',
@@ -726,6 +828,7 @@ class _Documents implements JsonDocumentStore {
   Uint8List? bytes;
   JsonDocumentLocation? lastLocation;
   var writes = 0;
+  var reads = 0;
   var failWrites = false;
   Completer<void>? writeStarted;
   Future<void>? writeDelay;
@@ -739,6 +842,7 @@ class _Documents implements JsonDocumentStore {
 
   @override
   Future<JsonDocumentReadResult> read(JsonDocumentLocation location) async {
+    reads++;
     lastLocation = location;
     final value = bytes;
     return value == null

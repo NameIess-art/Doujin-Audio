@@ -11,7 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
-    show ProviderContainer, ProviderScope;
+    show Consumer, ProviderContainer, ProviderScope;
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
@@ -4112,6 +4112,123 @@ void main() {
     },
   );
 
+  for (final boundary in ['collapse', 'selection', 'track', 'dispose']) {
+    testWidgets(
+      'segment pending name saves retain their identity on $boundary',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(430, 900);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final tracks = List.generate(
+          2,
+          (index) => testMusicTrack(
+            name: 'Boundary $index',
+            path: '/segments/boundary-$index.mp3',
+            groupKey: '/segments',
+            groupTitle: 'Boundary work',
+          ),
+        );
+        fixture.library.addTracks(tracks, persist: false);
+        final session = fixture.playback.createTrackSession(tracks.first);
+        final trackKey = TimeSegmentLabel.trackKeyFor(tracks.first);
+        final labels = List.generate(
+          2,
+          (index) => TimeSegmentLabel(
+            id: 'boundary-$index',
+            trackKey: trackKey,
+            name: 'Label $index',
+            start: Duration(seconds: index * 10),
+            end: Duration(seconds: index * 10 + 5),
+            colorValue: kTimeSegmentLabelPalette[index],
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          ),
+        );
+        await tester.runAsync(() async {
+          for (final label in labels) {
+            await fixture.persistenceRepository.upsertTimeSegmentLabel(label);
+          }
+        });
+        final key = GlobalKey<SessionDetailContentState>();
+        Widget detail() => fixture.build(
+          Scaffold(
+            body: SessionDetailContent(
+              key: key,
+              session: PlaybackSessionSnapshot.fromRuntime(session),
+              artworkWidget: const SizedBox.shrink(),
+            ),
+          ),
+        );
+        await tester.pumpWidget(detail());
+        await tester.pumpAndSettle();
+        key.currentState!.expandSegmentPanel();
+        await tester.pump(const Duration(milliseconds: 250));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 300)),
+        );
+        await tester.pumpAndSettle();
+        var panel = tester.widget<TimeSegmentPanel>(
+          find.byType(TimeSegmentPanel),
+        );
+        panel.onSelect(labels.first);
+        await tester.pump();
+        panel = tester.widget<TimeSegmentPanel>(find.byType(TimeSegmentPanel));
+        final firstSave = Completer<void>();
+        var saveStarted = false;
+        fixture.persistenceRepository.beforeTimeSegmentLabelUpsert = () {
+          saveStarted = true;
+          return firstSave.future;
+        };
+        addTearDown(() {
+          if (!firstSave.isCompleted) firstSave.complete();
+        });
+        panel.nameController.text = 'Intermediate';
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(saveStarted, isTrue);
+        panel.nameController.text = 'Final name';
+        switch (boundary) {
+          case 'collapse':
+            key.currentState!.collapseSegmentPanel();
+          case 'selection':
+            panel.onSelect(labels.last);
+          case 'track':
+            session.currentTrackPath = tracks.last.path;
+            await tester.pumpWidget(detail());
+          case 'dispose':
+            await tester.pumpWidget(const SizedBox.shrink());
+        }
+        fixture.persistenceRepository.beforeTimeSegmentLabelUpsert = null;
+        firstSave.complete();
+        List<TimeSegmentLabel>? stored;
+        for (var attempt = 0; attempt < 100; attempt++) {
+          await tester.pump();
+          stored = await tester.runAsync(
+            () => fixture.persistenceRepository.loadTimeSegmentLabels(trackKey),
+          );
+          if (stored!.any((label) => label.name == 'Final name')) break;
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+        }
+        final saved = stored!.singleWhere(
+          (label) => label.id == labels.first.id,
+        );
+        expect(saved.name, 'Final name');
+        expect(saved.createdAt, labels.first.createdAt);
+        expect(saved.start, labels.first.start);
+        expect(saved.end, labels.first.end);
+        expect(
+          stored.singleWhere((label) => label.id == labels.last.id).name,
+          labels.last.name,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets(
     'deleting a segment survives a pending name save and supports undo',
     (tester) async {
@@ -5856,6 +5973,215 @@ void main() {
       TargetPlatform.windows,
     }),
   );
+
+  testWidgets('queue editor adds a remote session absent from the library', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final track = MusicTrack(
+      path: 'https://example.test/audio.mp3',
+      displayName: 'Remote source',
+      groupKey: 'remote-work',
+      groupTitle: 'Remote work',
+      groupSubtitle: '',
+      isSingle: false,
+      remoteMetadataKind: 'asmr.one',
+    );
+    final source = fixture.playback.createTrackSession(
+      track,
+      customQueueTracks: [track],
+    );
+    final queue = fixture.playback.createPlaybackQueue('Remote queue');
+    fixture.playbackService.syncSlice(
+      activeSessions: [source, queue],
+      playingSessionCount: 0,
+      focusedSessionId: source.id,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    expect(fixture.library.trackByPath(track.path), isNull);
+    await tester.pumpWidget(
+      fixture.build(PlaybackQueueAudioEditPage(sessionId: queue.id)),
+    );
+    await tester.pumpAndSettle();
+    final add = find.byTooltip(
+      fixture.languageProvider.tr('add_audio_to_queue'),
+    );
+    expect(add, findsOneWidget);
+    await tester.tap(add);
+    await tester.pumpAndSettle();
+    expect(queue.playbackQueue!.expandedTracks.single.path, track.path);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'batch queue creation freezes sources before announcing its queue',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final tracks = List.generate(
+        2,
+        (index) => testMusicTrack(
+          name: 'Snapshot $index',
+          path: '/snapshot/$index.mp3',
+          groupKey: '/snapshot/$index',
+          groupTitle: 'Snapshot work $index',
+        ),
+      );
+      fixture.library.addTracks(tracks, persist: false);
+      final sources = tracks
+          .map((track) => fixture.playback.createTrackSession(track))
+          .toList();
+      fixture.playbackService.syncSlice(
+        activeSessions: sources,
+        playingSessionCount: 0,
+        focusedSessionId: sources.first.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      final selection = sources.map((session) => session.id).toSet();
+      Future<void>? pending;
+      await tester.pumpWidget(
+        fixture.build(
+          Consumer(
+            builder: (context, ref, _) => TextButton(
+              onPressed: () {
+                pending = PlaylistBatchActions.createPlaybackQueue(
+                  ref: ref,
+                  visibleEntries: ref.read(playlistStructureUiProvider).entries,
+                  selectedSessionIds: selection,
+                  playback: fixture.playback,
+                  paths: ref.read(audioPathCoordinatorProvider),
+                  onQueueAdded: selection.clear,
+                );
+              },
+              child: const Text('Create snapshot queue'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create snapshot queue'));
+      await tester.pumpAndSettle();
+      await pending;
+      expect(selection, isEmpty);
+      final queue = fixture.playback.sessions.values
+          .where((session) => session.isPlaybackQueue)
+          .single;
+      expect(
+        queue.playbackQueue!.expandedTracks.map((track) => track.path).toSet(),
+        tracks.map((track) => track.path).toSet(),
+      );
+    },
+  );
+
+  for (final fail in [false, true]) {
+    testWidgets(
+      'batch queue creation snapshots selection and rejects reentry, fail=$fail',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final tracks = List.generate(
+          2,
+          (index) => testMusicTrack(
+            name: 'Batch source $index',
+            path: '/batch/$index.mp3',
+            groupKey: '/batch/$index',
+            groupTitle: 'Batch work $index',
+          ),
+        );
+        fixture.library.addTracks(tracks, persist: false);
+        final sources = tracks
+            .map((track) => fixture.playback.createTrackSession(track))
+            .toList();
+        fixture.playbackService.syncSlice(
+          activeSessions: sources,
+          playingSessionCount: 0,
+          focusedSessionId: sources.first.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        await tester.pumpWidget(fixture.build(const PlaylistTab()));
+        await tester.pumpAndSettle();
+        await tester.longPress(find.text(tracks.first.displayName));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(tracks.last.displayName));
+        await tester.pumpAndSettle();
+        fixture.playback.detachRuntime();
+        final sync = Completer<void>();
+        addTearDown(() {
+          if (!sync.isCompleted) sync.complete();
+        });
+        fixture.playback.attachPlaybackQueueSynchronizer((
+          session, {
+          bool selectFirst = false,
+        }) async {
+          await sync.future;
+          if (fail) throw StateError('Queue synchronization failed');
+        });
+        final create = tester
+            .widget<IconButton>(
+              find.byKey(const ValueKey('batch_create_queue_button')),
+            )
+            .onPressed!;
+        create();
+        create();
+        // The old close callback cannot clear a pending operation's selection.
+        tester
+            .widget<IconButton>(
+              find.byKey(const ValueKey('exit_selection_button')),
+            )
+            .onPressed!();
+        await tester.pump();
+        expect(
+          tester
+              .widget<IconButton>(
+                find.byKey(const ValueKey('batch_create_queue_button')),
+              )
+              .onPressed,
+          isNull,
+        );
+        sync.complete();
+        await tester.pumpAndSettle();
+        final queue = fixture.playback.sessions.values
+            .where((session) => session.isPlaybackQueue)
+            .single;
+        if (fail) {
+          expect(
+            find.byKey(const ValueKey('playlist_batch_selection_header')),
+            findsOneWidget,
+          );
+          expect(
+            find.text(fixture.languageProvider.tr('operation_failed_retry')),
+            findsOneWidget,
+          );
+          expect(
+            tester
+                .widget<IconButton>(
+                  find.byKey(const ValueKey('batch_create_queue_button')),
+                )
+                .onPressed,
+            isNotNull,
+          );
+          for (final source in sources) {
+            expect(
+              find.byKey(ValueKey('playlist_selection_indicator_${source.id}')),
+              findsOneWidget,
+            );
+          }
+        } else {
+          expect(
+            queue.playbackQueue!.expandedTracks
+                .map((track) => track.path)
+                .toSet(),
+            tracks.map((track) => track.path).toSet(),
+          );
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets(
     'queue edit rows arrange 44px actions horizontally and provide haptics',

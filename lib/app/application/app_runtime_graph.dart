@@ -376,7 +376,9 @@ ProductionAppRuntime createProductionAppRuntime({
     repository: SqliteListeningActivityRepository(database: database),
     readUsage: nativePlaybackRepository.readUsage,
     acknowledgeUsage: nativePlaybackRepository.acknowledgeUsage,
-    resolveTrack: (path) => runtimeGraph.audioPaths.trackByPath(path),
+    resolveTrack: (path) async =>
+        await libraryFacade.databaseRepository.loadTrackDetail(path) ??
+        runtimeGraph.audioPaths.trackByPath(path),
     resolveLocalAudioDetail: (track) async {
       final target = libraryFacade.audioDetailTargetForTrack(track);
       final cached =

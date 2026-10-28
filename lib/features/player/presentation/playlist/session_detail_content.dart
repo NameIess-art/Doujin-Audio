@@ -91,17 +91,15 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   VoidCallback? _pendingSegmentResult;
   bool _segmentLabelsLoaded = false;
   bool _syncingSegmentText = false;
-  bool _savingSegment = false;
   Completer<void>? _segmentSaveCompletion;
-  bool _segmentSaveQueued = false;
+  (int, TimeSegmentLabel)? _capturedSegmentDraft;
   bool _deletingSegment = false;
   int _segmentDraftGeneration = 0;
   final Set<(String, String)> _pendingNewSegmentNames = <(String, String)>{};
 
   PlaybackFacade get _playback => ref.read(playbackFacadeProvider);
   AudioPathCoordinator get _paths => ref.read(audioPathCoordinatorProvider);
-  PlaybackTimeSegmentService get _timeSegments =>
-      ref.read(playbackTimeSegmentServiceProvider);
+  late final PlaybackTimeSegmentService _timeSegments;
 
   bool get isSegmentPanelExpanded => _segmentPanelExpanded;
 
@@ -116,6 +114,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
 
   void collapseSegmentPanel() {
     if (!_segmentPanelExpanded) return;
+    _flushSegmentNameDraft();
     setState(() {
       _segmentPanelExpanded = false;
       _clearSegmentDraft();
@@ -126,6 +125,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   @override
   void initState() {
     super.initState();
+    _timeSegments = ref.read(playbackTimeSegmentServiceProvider);
     widget.segmentPanelExpandedNotifier?.value = _segmentPanelExpanded;
     widget.transitionActive?.addListener(_scheduleSegmentResult);
     widget.transitionActive?.addListener(_scheduleSiblingQuery);
@@ -150,14 +150,17 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       _scheduleSegmentResult();
       _scheduleSiblingQuery();
     }
-    if (oldWidget.session.id != widget.session.id) _segmentTrackKey = null;
+    if (oldWidget.session.id != widget.session.id) {
+      _flushSegmentNameDraft();
+      _segmentTrackKey = null;
+    }
     _syncSegmentTrack();
     _syncSiblingQuery();
   }
 
   @override
   void dispose() {
-    _segmentNameDebounce?.cancel();
+    _flushSegmentNameDraft();
     _segmentLoadGeneration++;
     widget.transitionActive?.removeListener(_scheduleSegmentResult);
     widget.transitionActive?.removeListener(_scheduleSiblingQuery);
@@ -174,6 +177,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         ? PathMatcher.normalize(widget.session.currentTrackPath)
         : _timeSegments.trackKeyForTrack(track);
     if (nextKey == _segmentTrackKey) return;
+    _flushSegmentNameDraft();
     _segmentLoadGeneration++;
     UiInteractionCoordinator.instance.cancelCommit(_segmentCommitKey);
     _pendingSegmentResult = null;
@@ -342,6 +346,13 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     );
   }
 
+  void _flushSegmentNameDraft() {
+    if (_segmentNameDebounce?.isActive != true) return;
+    _segmentNameDebounce!.cancel();
+    // Capture the old draft before a track, selection or page replaces it.
+    unawaited(_trySaveSegmentDraft());
+  }
+
   void _setSegmentNameText(String value) {
     _syncingSegmentText = true;
     _segmentNameController.text = value;
@@ -376,6 +387,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   }
 
   void _selectSegment(TimeSegmentLabel label) {
+    _flushSegmentNameDraft();
     setState(() {
       _segmentDraftGeneration++;
       _applySelectedSegment(label);
@@ -385,6 +397,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   }
 
   void _startNewSegment() {
+    _flushSegmentNameDraft();
     final defaultName = _nextSegmentDefaultName();
     setState(() {
       _segmentDraftGeneration++;
@@ -465,8 +478,15 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
 
   Future<void> _editDraftTime({required bool isStart}) async {
     final current = isStart ? _draftStart : _draftEnd;
+    final generation = _segmentDraftGeneration;
+    final trackKey = _segmentTrackKey;
     final next = await showSegmentTimeInputDialog(context, initial: current);
-    if (next == null || !mounted) return;
+    if (next == null ||
+        !mounted ||
+        generation != _segmentDraftGeneration ||
+        trackKey != _segmentTrackKey) {
+      return;
+    }
     setState(() {
       if (isStart) {
         _draftStart = _clampToDuration(next);
@@ -480,10 +500,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
 
   Future<void> _trySaveSegmentDraft() async {
     if (_deletingSegment) return;
-    if (_savingSegment) {
-      _segmentSaveQueued = true;
-      return;
-    }
     final trackKey = _segmentTrackKey;
     final name = _segmentNameController.text.trim();
     final start = _draftStart;
@@ -496,21 +512,20 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         end <= start) {
       return;
     }
-    _savingSegment = true;
+    final timeSegments = _timeSegments;
+    final previousSave = _segmentSaveCompletion;
     final saveCompletion = Completer<void>();
     _segmentSaveCompletion = saveCompletion;
     (String, String)? pendingReservation;
     try {
-      final existing = _selectedSegmentId == null
-          ? null
-          : _segmentLabels
-                .where((label) => label.id == _selectedSegmentId)
-                .firstOrNull;
+      final existing = _capturedSegmentDraft?.$1 == draftGeneration
+          ? _capturedSegmentDraft!.$2
+          : _selectedSegment;
       if (existing == null) {
         pendingReservation = (trackKey, name);
         _pendingNewSegmentNames.add(pendingReservation);
       }
-      final label = _timeSegments.buildLabel(
+      final label = timeSegments.buildLabel(
         trackKey: trackKey,
         name: name,
         start: start,
@@ -518,10 +533,12 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         colorValue:
             existing?.colorValue ??
             _draftColorValue ??
-            _timeSegments.nextColor(_segmentLabels),
+            timeSegments.nextColor(_segmentLabels),
         existing: existing,
       );
-      final backupSucceeded = await _timeSegments.saveLabel(label);
+      _capturedSegmentDraft = (draftGeneration, label);
+      await previousSave?.future;
+      final backupSucceeded = await timeSegments.saveLabel(label);
       if (!mounted || _segmentTrackKey != trackKey) return;
       setState(() {
         if (_segmentDraftGeneration == draftGeneration) {
@@ -550,17 +567,29 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
           tone: AppFeedbackTone.warning,
         );
       }
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'Time segment label failed to save',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          ref
+              .read(appLanguageProviderInstanceProvider)
+              .tr('operation_failed_retry'),
+          tone: AppFeedbackTone.warning,
+        );
+      }
     } finally {
       if (pendingReservation != null) {
         _pendingNewSegmentNames.remove(pendingReservation);
       }
-      _savingSegment = false;
-      _segmentSaveCompletion = null;
-      saveCompletion.complete();
-      if (_segmentSaveQueued && mounted) {
-        _segmentSaveQueued = false;
-        unawaited(_trySaveSegmentDraft());
+      if (identical(_segmentSaveCompletion, saveCompletion)) {
+        _segmentSaveCompletion = null;
       }
+      saveCompletion.complete();
     }
   }
 
@@ -572,7 +601,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     if (selected == null) return;
     _deletingSegment = true;
     _segmentNameDebounce?.cancel();
-    _segmentSaveQueued = false;
     final timeSegments = _timeSegments;
     try {
       await _segmentSaveCompletion?.future;

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
@@ -577,6 +578,46 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'Windows metadata exclusions use visible actions and right click',
+    (tester) async {
+      final session = DlsiteMetadataBatchSession(
+        entries: [resultEntry('001')],
+        lookup: (_) async => [resultMetadata('001')],
+        apply: (_) async {},
+      );
+      final language = AppLanguageProvider();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: MaterialApp(
+            home: DlsiteMetadataBatchResultsPage(session: session),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(Dismissible), findsNothing);
+      final action = find.byKey(const ValueKey('batch_metadata_exclude_0'));
+      await tester.tap(action);
+      await tester.pumpAndSettle();
+      expect(session.items.single.isExcluded, isTrue);
+      final row = find.byKey(const ValueKey('batch_metadata_result_0'));
+      final mouse = await tester.startGesture(
+        tester.getCenter(row),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      await mouse.up();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(language.tr('batch_metadata_action_restore')));
+      await tester.pumpAndSettle();
+      expect(session.items.single.isExcluded, isFalse);
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.windows}),
+  );
 
   testWidgets('swiping left excludes item and swiping left again restores it', (
     tester,

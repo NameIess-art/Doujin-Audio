@@ -4,13 +4,27 @@ import 'dart:io';
 
 import 'package:doujin_audio/core/platform/windows_media_tools.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late Directory directory;
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('windows_media_test_');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (_) async => directory.path,
+        );
   });
-  tearDown(() async => directory.delete(recursive: true));
+  tearDown(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
+    await directory.delete(recursive: true);
+  });
 
   test(
     'missing bundled tool fails explicitly without searching PATH',
@@ -41,6 +55,27 @@ void main() {
       tools.readDuration('broken.mp3'),
       throwsA(isA<ProcessException>()),
     );
+  });
+
+  test('missing artwork stream is distinct from an unreadable input', () async {
+    final input = File('${directory.path}/voice.wav');
+    await input.writeAsBytes([1, 2, 3]);
+    var diagnostic = "Stream map '0:v:0' matches no streams.";
+    final tools = _Tools((_, _) async => _Process(code: 1, error: diagnostic));
+    expect(
+      await tools.extractImage(
+        input.path,
+        videoFrame: false,
+        propagateFailure: true,
+      ),
+      isNull,
+    );
+    diagnostic = 'Error opening input: Permission denied';
+    await expectLater(
+      tools.extractImage(input.path, videoFrame: false, propagateFailure: true),
+      throwsA(isA<ProcessException>()),
+    );
+    expect(await tools.extractImage(input.path, videoFrame: false), isNull);
   });
 }
 

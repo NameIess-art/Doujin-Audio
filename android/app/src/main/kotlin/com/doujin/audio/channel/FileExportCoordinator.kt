@@ -74,7 +74,7 @@ internal class FileExportCoordinator(
         }
 
         val targetUri = data.data!!.toString()
-        val accepted = taskExecutor.submit(
+        val accepted = taskExecutor.submitTransfer(
             block = { storage.copyFileToUri(request.sourcePath, targetUri) },
             completion = { taskResult ->
                 mainHandler.post {

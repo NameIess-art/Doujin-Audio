@@ -7,6 +7,8 @@ import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +30,43 @@ void main() {
 
     expect(AppPreferences.shouldShowOnboardingSync(), isFalse);
   });
+
+  testWidgets(
+    'onboarding remains visible after failed completion and permits retry',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final store = _OnboardingPreferences()..reject = true;
+      SharedPreferencesStorePlatform.instance = store;
+      await AppPreferences.init();
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: const MaterialApp(
+            home: OnboardingGate(
+              initiallyVisible: true,
+              child: Scaffold(body: Text('Home')),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(language.tr('onboarding_start')));
+      await tester.pumpAndSettle();
+      expect(find.text(language.tr('onboarding_title')), findsOneWidget);
+      expect(
+        find.textContaining(language.tr('operation_failed_retry')),
+        findsOneWidget,
+      );
+      store.reject = false;
+      await tester.tap(find.text(language.tr('onboarding_start')));
+      await tester.pumpAndSettle();
+      expect(find.text('Home'), findsOneWidget);
+    },
+  );
 
   testWidgets('onboarding explains trust and opens privacy summary', (
     tester,
@@ -128,4 +167,14 @@ void main() {
       );
     },
   );
+}
+
+class _OnboardingPreferences extends InMemorySharedPreferencesStore {
+  _OnboardingPreferences() : super.empty();
+  bool reject = false;
+  @override
+  Future<bool> setValue(String type, String key, Object value) async {
+    if (reject && key == 'flutter.onboarding_completed_v1') return false;
+    return super.setValue(type, key, value);
+  }
 }

@@ -406,7 +406,10 @@ class _NetworkSettingsControlsState
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
         if (testing) const SizedBox(width: 6),
-        Text(text, style: TextStyle(color: color)),
+        Text(
+          text,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
+        ),
         const SizedBox(width: 8),
         FilledButton.tonal(
           style: FilledButton.styleFrom(

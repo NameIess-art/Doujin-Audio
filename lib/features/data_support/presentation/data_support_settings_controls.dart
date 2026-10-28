@@ -205,20 +205,26 @@ class _DataSupportSettingsControlsState
         stackTrace: stackTrace,
       );
       if (!mounted) return;
+      final incompatible =
+          error is FormatException && error.message == 'incompatible_backup';
       showAppSnackBar(
         context,
         ref
             .read(appLanguageProviderInstanceProvider)
-            .tr('operation_failed_diagnostics_hint'),
+            .tr(
+              incompatible
+                  ? 'backup_incompatible'
+                  : 'operation_failed_diagnostics_hint',
+            ),
         tone: AppFeedbackTone.destructive,
         title: ref
             .read(appLanguageProviderInstanceProvider)
             .tr('operation_failed'),
         icon: Icons.error_outline_rounded,
-        actionLabel: retry == null
+        actionLabel: incompatible || retry == null
             ? null
             : ref.read(appLanguageProviderInstanceProvider).tr('retry'),
-        onAction: retry,
+        onAction: incompatible ? null : retry,
         duration: const Duration(seconds: 6),
       );
     }

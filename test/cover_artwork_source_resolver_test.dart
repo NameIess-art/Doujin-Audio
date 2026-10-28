@@ -889,6 +889,7 @@ class _ImageGateway extends FileCachePlatformGateway {
     required String path,
     String? groupKey,
     String? rootFolder,
+    bool propagateFailure = false,
   }) {
     coverRequests++;
     coverScopes.add((groupKey, rootFolder));
@@ -927,6 +928,7 @@ class _GeneratingImageGateway extends FileCachePlatformGateway {
     required String path,
     String? groupKey,
     String? rootFolder,
+    bool propagateFailure = false,
   }) => generate();
 
   @override

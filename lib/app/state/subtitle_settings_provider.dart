@@ -21,6 +21,7 @@ class SubtitleSettingsState {
   final Color? backgroundColor;
   final double borderDepth;
   final double fontSize;
+  final bool appearanceSaveFailed;
 
   SubtitleSettingsState({
     Map<String, bool> showSubtitlesMap = const {},
@@ -32,6 +33,7 @@ class SubtitleSettingsState {
     this.backgroundColor,
     this.borderDepth = 0.5,
     this.fontSize = 16,
+    this.appearanceSaveFailed = false,
   }) : showSubtitlesMap = immutableMap(showSubtitlesMap),
        globalSubtitlesMap = immutableMap(globalSubtitlesMap),
        positions = immutableMap(positions);
@@ -50,6 +52,7 @@ class SubtitleSettingsState {
     Color? backgroundColor,
     double? borderDepth,
     double? fontSize,
+    bool? appearanceSaveFailed,
     bool clearFontColor = false,
     bool clearBackgroundColor = false,
   }) {
@@ -65,6 +68,7 @@ class SubtitleSettingsState {
           : (backgroundColor ?? this.backgroundColor),
       borderDepth: borderDepth ?? this.borderDepth,
       fontSize: fontSize ?? this.fontSize,
+      appearanceSaveFailed: appearanceSaveFailed ?? this.appearanceSaveFailed,
     );
   }
 }
@@ -224,18 +228,24 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
 
   Future<void> flushAppearancePersistence() {
     if (_pendingAppearanceWrites.isEmpty) return _appearancePersistence;
-    final pending = Map<String, String?>.of(_pendingAppearanceWrites);
-    _pendingAppearanceWrites.clear();
-    // Keep live preview synchronous. Only the final value of each slider is
-    // written, in order with any earlier preference write still in flight.
+    // Keep failed values for retry, without overwriting newer live edits.
     return _appearancePersistence = _appearancePersistence.then((_) async {
+      final pending = Map<String, String?>.of(_pendingAppearanceWrites);
+      var failed = false;
       for (final entry in pending.entries) {
         final value = entry.value;
-        if (value == null) {
-          await AppPreferences.remove(entry.key);
-        } else {
-          await AppPreferences.setString(entry.key, value);
+        final saved = value == null
+            ? await AppPreferences.remove(entry.key)
+            : await AppPreferences.setString(entry.key, value);
+        failed = failed || !saved;
+        if (saved &&
+            _pendingAppearanceWrites.containsKey(entry.key) &&
+            _pendingAppearanceWrites[entry.key] == value) {
+          _pendingAppearanceWrites.remove(entry.key);
         }
+      }
+      if (!_disposed && state.appearanceSaveFailed != failed) {
+        state = state.copyWith(appearanceSaveFailed: failed);
       }
     });
   }

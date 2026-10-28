@@ -2,6 +2,7 @@ package com.doujin.audio
 
 import com.doujin.audio.player.recovery.*
 import com.doujin.audio.player.session.*
+import com.doujin.audio.player.service.shouldClearPlaybackIntentForPlayWhenReadyChange
 
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -12,6 +13,27 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativePlaybackRecoveryControllerTest {
+    @Test
+    fun `track boundary pause cannot be resumed by a later watchdog trigger`() {
+        val environment = FakeRecoveryEnvironment()
+        val host = FakeRecoveryHost(recoverySession(environment))
+        val controller = NativePlaybackRecoveryController(host, environment)
+        controller.markIntended("player")
+
+        if (shouldClearPlaybackIntentForPlayWhenReadyChange(
+                playWhenReady = false,
+                reason = Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM
+            )) {
+            controller.clear("player")
+        }
+        controller.trigger("foreground_watchdog")
+
+        assertFalse(controller.isIntended("player"))
+        assertFalse(controller.shouldKeepAlive())
+        assertEquals(0, host.requestAudioFocusCalls)
+        assertTrue(environment.tasks.isEmpty())
+    }
+
     @Test
     fun `explicit retry can reprepare an intended session without a pending error`() {
         val environment = FakeRecoveryEnvironment()

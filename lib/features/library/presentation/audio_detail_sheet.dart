@@ -28,6 +28,7 @@ import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import 'dlsite_metadata_review_page.dart';
+import 'dlsite_metadata_review_form.dart';
 import 'folder_cover_selector.dart';
 import 'work_text_viewer_page.dart';
 import 'work_detail_page.dart';
@@ -42,13 +43,14 @@ const _multiValueSeparator = '\uFF0C';
 ({String destinationRoot, String workFolderName}) resolveWorkFolderDestination(
   AudioDetailTarget target,
 ) {
-  final isWindows = RegExp(r'^(?:[A-Za-z]:[\\/]|\\\\)').hasMatch(target.targetPath) ||
+  final isWindows =
+      RegExp(r'^(?:[A-Za-z]:[\\/]|\\\\)').hasMatch(target.targetPath) ||
       target.targetPath.contains(r'\');
   final pContext = isWindows ? path.windows : path.context;
   final folderPath = target.isLibraryRootFolder
       ? target.targetPath
       : (PathMatcher.parentPath(target.targetPath) ??
-          pContext.dirname(target.targetPath));
+            pContext.dirname(target.targetPath));
 
   if (PathMatcher.isContentUri(folderPath)) {
     if (folderPath.contains('::')) {
@@ -319,6 +321,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
         field == _AudioDetailField.rjCode && initialValue.trim().isEmpty
         ? 'RJ'
         : initialValue;
+    final formKey = GlobalKey<FormState>();
     final value = await showAppDialog<String>(
       context: context,
       builder: (dialogContext) {
@@ -327,19 +330,30 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
             'name': field.label(i18n, detail),
           }),
           icon: Icons.edit_rounded,
-          content: TextFormField(
-            initialValue: editedValue,
-            autofocus: true,
-            minLines: 1,
-            maxLines: field.isMulti ? 3 : 1,
-            textInputAction: TextInputAction.done,
-            decoration: InputDecoration(
-              hintText: field.isMulti
-                  ? i18n.tr('audio_detail_multi_hint')
-                  : null,
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              initialValue: editedValue,
+              autofocus: true,
+              minLines: 1,
+              maxLines: field.isMulti ? 3 : 1,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                hintText: field.isMulti
+                    ? i18n.tr('audio_detail_multi_hint')
+                    : null,
+              ),
+              validator: (value) {
+                final error = field.validationErrorKey(value ?? '');
+                return error == null ? null : i18n.tr(error);
+              },
+              onChanged: (value) => editedValue = value,
+              onFieldSubmitted: (value) {
+                if (formKey.currentState!.validate()) {
+                  Navigator.of(dialogContext).pop(value);
+                }
+              },
             ),
-            onChanged: (value) => editedValue = value,
-            onFieldSubmitted: (value) => Navigator.of(dialogContext).pop(value),
           ),
           actions: AppDialogActions(
             children: [
@@ -348,7 +362,11 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                 label: i18n.tr('cancel'),
               ),
               AppPrimaryButton(
-                onPressed: () => Navigator.of(dialogContext).pop(editedValue),
+                onPressed: () {
+                  if (formKey.currentState!.validate()) {
+                    Navigator.of(dialogContext).pop(editedValue);
+                  }
+                },
                 label: MaterialLocalizations.of(dialogContext).saveButtonLabel,
               ),
             ],
@@ -445,7 +463,8 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
         ProviderScope.containerOf(context, listen: false)
             .read(appLanguageProviderInstanceProvider)
             .tr(
-              error is AudioDetailRenameException && error.reason == 'nameConflict'
+              error is AudioDetailRenameException &&
+                      error.reason == 'nameConflict'
                   ? 'audio_detail_rename_conflict'
                   : 'audio_detail_rename_failed',
             ),
@@ -458,15 +477,17 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     final folderPath = _target.isLibraryRootFolder
         ? _target.targetPath
         : (PathMatcher.parentPath(_target.targetPath) ??
-            path.dirname(_target.targetPath));
+              path.dirname(_target.targetPath));
     final service = ref.read(workTextServiceProvider);
     final files = (await service.findWorkTextFiles(
       folderPath,
     )).where((file) => !file.isSubtitle).toList(growable: false);
     if (!mounted) return;
     if (files.isEmpty) {
-      final i18n = ProviderScope.containerOf(context, listen: false)
-          .read(appLanguageProviderInstanceProvider);
+      final i18n = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appLanguageProviderInstanceProvider);
       showAppSnackBar(
         context,
         i18n.tr('script_text_not_found'),

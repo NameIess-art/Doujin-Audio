@@ -1,4 +1,17 @@
 const Map<String, String> appLanguageEn = {
+  'metadata_invalid_date': 'Enter a valid date in YYYY-MM-DD format',
+  'metadata_invalid_duration': 'Enter a valid duration in HH:MM:SS format',
+  'metadata_invalid_rating': 'Rating must be a finite number from 0 to 5',
+  'metadata_unsaved_title': 'Discard unsaved changes?',
+  'metadata_unsaved_message':
+      'These metadata changes have not been saved. Discard them and continue?',
+  'metadata_cover_saved_independently':
+      'Cover changes are saved immediately and separately from this form.',
+  'batch_added_to_playlist_result':
+      'Added {success} works; {failed} failed. Failed items remain selected for retry.',
+  'batch_download_skip': 'Skip this work',
+  'backup_incompatible':
+      'This backup is incompatible with the current platform or app version and cannot be restored.',
   'search_history': 'Search history',
   'search_history_empty': 'No recent searches',
   'search_history_cleared': 'Search history cleared',
@@ -919,8 +932,6 @@ const Map<String, String> appLanguageEn = {
   'subtitle_model_download_failed': 'Model download failed. Try again.',
   'subtitle_download_in_background': 'Download in background',
   'subtitle_model_space_unknown': 'Unknown',
-  'import_subtitle_hint':
-      'Select subtitles to rename and move to the audio folder',
   'subtitle_imported': 'Subtitles imported',
   'subtitle_loaded_file': 'Loaded: {file}',
   'subtitle_import_failed':

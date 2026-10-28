@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:characters/characters.dart';
 
 import 'package:charset/charset.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -176,8 +177,40 @@ void main() {
       },
     );
 
-    test('a long single line remains one Unicode-safe block', () async {
-      final text = '😀' * 40000;
+    test('a long single line has bounded Unicode-safe blocks', () async {
+      final text = '${'a' * 16383}${'😀' * 40000}';
+      final prepared = await WorkTextService().prepareDocument(
+        Uint8List.fromList(utf8.encode(text)),
+        type: WorkDocType.text,
+      );
+      expect(prepared.textBlocks.join(), text);
+      expect(prepared.textBlocks.length, greaterThan(1));
+      for (final block in prepared.textBlocks) {
+        expect(block.length, lessThanOrEqualTo(17 * 1024));
+        expect(utf8.decode(utf8.encode(block)), block);
+      }
+    });
+
+    test('long-line chunks preserve graphemes and CRLF boundaries', () async {
+      final text =
+          '${'x' * 16383}e\u0301👨‍👩‍👧‍👦\r\n${'👩🏽‍💻e\u0301' * 4000}';
+      final prepared = await WorkTextService().prepareDocument(
+        Uint8List.fromList(utf8.encode(text)),
+        type: WorkDocType.text,
+      );
+      expect(prepared.textBlocks.join(), text);
+      expect(
+        prepared.textBlocks.expand((block) => block.characters),
+        text.characters,
+      );
+      expect(
+        prepared.textBlocks.every((block) => block.length <= 17 * 1024),
+        isTrue,
+      );
+    });
+
+    test('a single oversized grapheme is retained whole', () async {
+      final text = 'a${'\u0301' * 20000}';
       final prepared = await WorkTextService().prepareDocument(
         Uint8List.fromList(utf8.encode(text)),
         type: WorkDocType.text,

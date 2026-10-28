@@ -234,7 +234,12 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       context: context,
       ref: ref,
       works: _selectedWorks(),
-      exitSelectionMode: _exitSelectionMode,
+      onFinished: (failedIds) => setState(() {
+        _selectedWorkIds
+          ..clear()
+          ..addAll(failedIds);
+        _isSelectionMode = failedIds.isNotEmpty;
+      }),
     );
   }
 

@@ -118,6 +118,13 @@ enum _AudioDetailField {
         : [readText(detail, fallbackDuration: fallbackDuration)];
   }
 
+  String? validationErrorKey(String value) => switch (this) {
+    _AudioDetailField.releaseDate => metadataDateErrorKey(value),
+    _AudioDetailField.duration => metadataDurationErrorKey(value),
+    _AudioDetailField.rating => metadataRatingErrorKey(value),
+    _ => null,
+  };
+
   AudioDetail apply(AudioDetail detail, String rawValue) {
     final trimmed = rawValue.trim();
     return switch (this) {

@@ -56,8 +56,8 @@ Future<void> downloadAudioTargetFromAsmr({
   final effectiveRjCode = rjCode;
   final destination = resolveWorkFolderDestination(target);
 
-  await Navigator.of(context).push<void>(
-    buildAppPageRoute<void>(
+  await Navigator.of(context).push<AsmrDownloadPageResult>(
+    buildAppPageRoute<AsmrDownloadPageResult>(
       context: context,
       child: AsmrDownloadPage(
         initialRjCode: effectiveRjCode,

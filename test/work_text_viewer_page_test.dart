@@ -400,81 +400,90 @@ void main() {
       variant: TargetPlatformVariant({platform}),
     );
 
-    testWidgets(
-      'TXT block boundary adds no empty line and remains copied on $platform',
-      (tester) async {
-        SharedPreferences.setMockInitialValues({});
-        final language = AppLanguageProvider();
-        addTearDown(language.dispose);
-        const first = 'First😀\n';
-        const second = 'Second line';
-        final copied = <String>[];
-        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          SystemChannels.platform,
-          (call) async {
-            if (call.method == 'Clipboard.setData') {
-              copied.add((call.arguments as Map)['text'] as String);
-            }
-            return null;
-          },
-        );
-        addTearDown(
-          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    for (final newline in [true, false]) {
+      testWidgets(
+        'TXT block boundary adds no empty line and remains copied on $platform (newline: $newline)',
+        (tester) async {
+          SharedPreferences.setMockInitialValues({});
+          final language = AppLanguageProvider();
+          addTearDown(language.dispose);
+          final first = 'First😀${newline ? '\n' : ''}';
+          const second = 'Second line';
+          final copied = <String>[];
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
             SystemChannels.platform,
-            null,
-          ),
-        );
-        final service = _PreparedTextService(
-          PreparedWorkText(
-            encoding: WorkTextEncoding.utf8,
-            textBlocks: const [first, second],
-            markdownNodes: const [],
-          ),
-        );
-        addTearDown(service.dispose);
-        await tester.pumpWidget(
-          ProviderScope(
-            overrides: [
-              appLanguageProviderInstanceProvider.overrideWithValue(language),
-              workTextServiceProvider.overrideWithValue(service),
-            ],
-            child: const MaterialApp(home: WorkTextViewerPage(files: [file1])),
-          ),
-        );
-        await tester.pumpAndSettle();
-        final firstFinder = find.text(first);
-        final secondFinder = find.text(second);
-        expect(firstFinder, findsOneWidget);
-        final richText = tester.widget<RichText>(
-          find.descendant(of: firstFinder, matching: find.byType(RichText)),
-        );
-        final painter = TextPainter(
-          text: TextSpan(
-            text: '$first$second',
-            style: tester.widget<Text>(secondFinder).style,
-          ),
-          textDirection: TextDirection.ltr,
-          textScaler: richText.textScaler,
-        )..layout(maxWidth: tester.getSize(firstFinder).width);
-        expect(
-          tester.getBottomRight(secondFinder).dy -
-              tester.getTopLeft(firstFinder).dy,
-          closeTo(painter.height, 0.01),
-        );
-        painter.dispose();
-        final region = tester.state<SelectableRegionState>(
-          find.byType(SelectableRegion),
-        );
-        region.selectAll();
-        await tester.pump();
-        region.contextMenuButtonItems
-            .firstWhere((item) => item.type == ContextMenuButtonType.copy)
-            .onPressed!();
-        await tester.pump();
-        expect(copied, ['$first$second']);
-      },
-      variant: TargetPlatformVariant({platform}),
-    );
+            (call) async {
+              if (call.method == 'Clipboard.setData') {
+                copied.add((call.arguments as Map)['text'] as String);
+              }
+              return null;
+            },
+          );
+          addTearDown(
+            () => tester.binding.defaultBinaryMessenger
+                .setMockMethodCallHandler(SystemChannels.platform, null),
+          );
+          final service = _PreparedTextService(
+            PreparedWorkText(
+              encoding: WorkTextEncoding.utf8,
+              textBlocks: [first, second],
+              markdownNodes: const [],
+            ),
+          );
+          addTearDown(service.dispose);
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [
+                appLanguageProviderInstanceProvider.overrideWithValue(language),
+                workTextServiceProvider.overrideWithValue(service),
+              ],
+              child: const MaterialApp(
+                home: WorkTextViewerPage(files: [file1]),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          final firstFinder = find.text(first);
+          final secondFinder = find.text(second);
+          expect(firstFinder, findsOneWidget);
+          final richText = tester.widget<RichText>(
+            find.descendant(of: firstFinder, matching: find.byType(RichText)),
+          );
+          final painter = TextPainter(
+            text: TextSpan(
+              text: '$first$second',
+              style: tester.widget<Text>(secondFinder).style,
+            ),
+            textDirection: TextDirection.ltr,
+            textScaler: richText.textScaler,
+          )..layout(maxWidth: tester.getSize(firstFinder).width);
+          if (newline) {
+            expect(
+              tester.getBottomRight(secondFinder).dy -
+                  tester.getTopLeft(firstFinder).dy,
+              closeTo(painter.height, 0.01),
+            );
+          } else {
+            expect(
+              tester.getTopLeft(secondFinder).dy,
+              closeTo(tester.getBottomLeft(firstFinder).dy, 0.01),
+            );
+          }
+          painter.dispose();
+          final region = tester.state<SelectableRegionState>(
+            find.byType(SelectableRegion),
+          );
+          region.selectAll();
+          await tester.pump();
+          region.contextMenuButtonItems
+              .firstWhere((item) => item.type == ContextMenuButtonType.copy)
+              .onPressed!();
+          await tester.pump();
+          expect(copied, ['$first$second']);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
 
     for (final exitPage in [false, true]) {
       testWidgets(

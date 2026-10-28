@@ -305,11 +305,24 @@ class _ControlledWorkDetailCoverService extends CoverArtworkCacheService {
     bool includeVideoFrames = true,
     bool includeEmbeddedCovers = true,
     bool propagateFailure = false,
+    bool Function()? isCancelled,
   }) {
     expect(includeVideoFrames, isFalse);
     expect(includeEmbeddedCovers, isFalse);
     imageRequests++;
     return images.future;
+  }
+}
+
+class _FailingWorkDetailCoverService extends _ControlledWorkDetailCoverService {
+  @override
+  Future<String?> setFolderCoverSelection(
+    String folderPath,
+    String coverPath, {
+    bool newlySaved = false,
+    String? sourcePath,
+  }) async {
+    throw StateError('Cover storage unavailable');
   }
 }
 
@@ -3446,6 +3459,76 @@ void main() {
   });
 
   group('WorkImageViewerPage', () {
+    _detailTestWidgets(
+      'local image cover persistence failure never reports success',
+      (tester) async {
+        final root = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('cover_failure_'),
+        ))!;
+        addTearDown(() => root.delete(recursive: true));
+        final image = File('${root.path}/cover.png');
+        await tester.runAsync(
+          () => image.writeAsBytes(
+            base64Decode(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+            ),
+          ),
+        );
+        final covers = _FailingWorkDetailCoverService()
+          ..images.complete([image.path])
+          ..cover.complete(null);
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: covers,
+        );
+        _detailFixtures.add(fixture);
+        addTearDown(fixture.dispose);
+        fixture.library.addWatchedFolder(root.path, notify: false);
+        final texts = WorkTextService(
+          discoverImages: fixture.library.discoverCoverImageReferencesInFolder,
+        );
+        await tester.pumpWidget(
+          fixture.build(
+            WorkDetailPage.forLocal(
+              target: AudioDetailTarget.libraryRootFolder(root.path),
+            ),
+            overrides: [workTextServiceProvider.overrideWithValue(texts)],
+          ),
+        );
+        await _settleDetail(tester);
+        // Decode real file I/O before opening the viewer: its image fallback
+        // intentionally keeps animating and is unrelated to cover persistence.
+        await tester.runAsync(
+          () => precacheImage(
+            FileImage(image),
+            tester.element(find.byType(WorkDetailPage)),
+          ),
+        );
+        final imageRow = find.byKey(
+          const ValueKey('work_entry_more_cover.png'),
+        );
+        await tester.ensureVisible(imageRow);
+        final tile = find.ancestor(
+          of: imageRow,
+          matching: find.byType(ListTile),
+        );
+        await tester.tap(tile);
+        await _settleDetail(tester);
+        await tester.tap(
+          find.byKey(const ValueKey('viewer_set_as_cover_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text(fixture.languageProvider.tr('audio_detail_save_failed')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('audio_detail_cover_saved')),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     _detailTestWidgets(
       'zoomed image paints beneath floating controls without moving its initial frame',
       (tester) async {

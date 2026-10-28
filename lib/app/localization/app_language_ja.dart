@@ -1,4 +1,14 @@
 const Map<String, String> appLanguageJa = {
+  'metadata_invalid_date': '有効な日付を YYYY-MM-DD 形式で入力してください',
+  'metadata_invalid_duration': '有効な時間を HH:MM:SS 形式で入力してください',
+  'metadata_invalid_rating': '評価は 0 から 5 の有効な数値で入力してください',
+  'metadata_unsaved_title': '未保存の変更を破棄しますか？',
+  'metadata_unsaved_message': 'この情報はまだ保存されていません。変更を破棄して続行しますか？',
+  'metadata_cover_saved_independently': 'カバーの変更はこのフォームとは別に即時保存されます。',
+  'batch_added_to_playlist_result':
+      '{success} 件を追加、{failed} 件は失敗しました。失敗した項目を選択したまま再試行できます。',
+  'batch_download_skip': 'この作品をスキップ',
+  'backup_incompatible': 'このバックアップは現在のプラットフォームまたはアプリのバージョンと互換性がないため、復元できません。',
   'search_history': '検索履歴',
   'search_history_empty': '検索履歴はありません',
   'search_history_cleared': '検索履歴を消去しました',
@@ -858,7 +868,6 @@ const Map<String, String> appLanguageJa = {
   'subtitle_model_download_failed': 'モデル取得に失敗。再試行してください。',
   'subtitle_download_in_background': 'バックグラウンドでダウンロード',
   'subtitle_model_space_unknown': '不明',
-  'import_subtitle_hint': '字幕を音声と同名に変更し、音声フォルダへ移動',
   'subtitle_imported': '字幕をインポートしました',
   'subtitle_loaded_file': '読み込み済み：{file}',
   'subtitle_import_failed': '字幕を取り込めません。ファイルとフォルダのアクセス権を確認してください。',

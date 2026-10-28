@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
@@ -13,6 +14,7 @@ import '../domain/audio_library_category.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 
 import 'dlsite_metadata_batch_review_page.dart';
 
@@ -125,11 +127,130 @@ class _DlsiteMetadataBatchResultsPageState
                             : entry.title;
                         final isExcluded = item.isExcluded;
                         final cs = Theme.of(context).colorScheme;
+                        final isWindows =
+                            defaultTargetPlatform == TargetPlatform.windows;
+                        void toggleExcluded() {
+                          if (!_savingAll) widget.session.toggleExcluded(index);
+                        }
+
+                        Widget row = ColorFiltered(
+                          colorFilter: isExcluded
+                              ? const ColorFilter.matrix(<double>[
+                                  0.2126,
+                                  0.7152,
+                                  0.0722,
+                                  0,
+                                  0,
+                                  0.2126,
+                                  0.7152,
+                                  0.0722,
+                                  0,
+                                  0,
+                                  0.2126,
+                                  0.7152,
+                                  0.0722,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  1,
+                                  0,
+                                ])
+                              : const ColorFilter.mode(
+                                  Colors.transparent,
+                                  BlendMode.dst,
+                                ),
+                          child: Opacity(
+                            opacity: isExcluded ? 0.38 : 1.0,
+                            child: FileTreeRow(
+                              key: ValueKey<String>(
+                                'batch_metadata_result_$index',
+                              ),
+                              minHeight: 48,
+                              verticalPadding: 2,
+                              reserveSubtitleSpace: true,
+                              title: title,
+                              titleColor: isExcluded
+                                  ? cs.onSurface.withValues(alpha: 0.38)
+                                  : null,
+                              subtitle: entry.detail.rjCode.isEmpty
+                                  ? null
+                                  : entry.detail.rjCode,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _BatchMetadataStatusIcon(
+                                    key: ValueKey<String>(
+                                      'batch_metadata_status_$index',
+                                    ),
+                                    status: item.status,
+                                    isExcluded: isExcluded,
+                                  ),
+                                  if (isWindows)
+                                    IconButton(
+                                      key: ValueKey<String>(
+                                        'batch_metadata_exclude_$index',
+                                      ),
+                                      tooltip: i18n.tr(
+                                        isExcluded
+                                            ? 'batch_metadata_action_restore'
+                                            : 'batch_metadata_action_exclude',
+                                      ),
+                                      onPressed: _savingAll
+                                          ? null
+                                          : toggleExcluded,
+                                      icon: Icon(
+                                        isExcluded
+                                            ? Icons.undo_rounded
+                                            : Icons.block_rounded,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              onTap: isExcluded
+                                  ? null
+                                  : () => _handleItemTap(index),
+                            ),
+                          ),
+                        );
+                        if (isWindows) {
+                          row = GestureDetector(
+                            onSecondaryTapDown: _savingAll
+                                ? null
+                                : (details) async {
+                                    final selected = await showUnifiedContextMenu<bool>(
+                                      context: context,
+                                      globalPosition: details.globalPosition,
+                                      entries: [
+                                        UnifiedMenuEntry<bool>.action(
+                                          value: true,
+                                          icon: isExcluded
+                                              ? Icons.undo_rounded
+                                              : Icons.block_rounded,
+                                          label: i18n.tr(
+                                            isExcluded
+                                                ? 'batch_metadata_action_restore'
+                                                : 'batch_metadata_action_exclude',
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                    if (mounted && selected == true) {
+                                      toggleExcluded();
+                                    }
+                                  },
+                            child: row,
+                          );
+                          return row;
+                        }
                         return Dismissible(
                           key: ValueKey<String>(
                             'batch_metadata_dismissible_${AudioLibraryCategorySnapshot.targetKey(entry.target)}',
                           ),
-                          direction: DismissDirection.endToStart,
+                          direction: _savingAll
+                              ? DismissDirection.none
+                              : DismissDirection.endToStart,
                           confirmDismiss: (direction) async {
                             if (direction == DismissDirection.endToStart) {
                               late final Timer timer;
@@ -137,9 +258,7 @@ class _DlsiteMetadataBatchResultsPageState
                                 const Duration(milliseconds: 220),
                                 () {
                                   _pendingTimers.remove(timer);
-                                  if (mounted) {
-                                    widget.session.toggleExcluded(index);
-                                  }
+                                  if (mounted) toggleExcluded();
                                 },
                               );
                               _pendingTimers.add(timer);
@@ -187,63 +306,7 @@ class _DlsiteMetadataBatchResultsPageState
                               ],
                             ),
                           ),
-                          child: ColorFiltered(
-                            colorFilter: isExcluded
-                                ? const ColorFilter.matrix(<double>[
-                                    0.2126,
-                                    0.7152,
-                                    0.0722,
-                                    0,
-                                    0,
-                                    0.2126,
-                                    0.7152,
-                                    0.0722,
-                                    0,
-                                    0,
-                                    0.2126,
-                                    0.7152,
-                                    0.0722,
-                                    0,
-                                    0,
-                                    0,
-                                    0,
-                                    0,
-                                    1,
-                                    0,
-                                  ])
-                                : const ColorFilter.mode(
-                                    Colors.transparent,
-                                    BlendMode.dst,
-                                  ),
-                            child: Opacity(
-                              opacity: isExcluded ? 0.38 : 1.0,
-                              child: FileTreeRow(
-                                key: ValueKey<String>(
-                                  'batch_metadata_result_$index',
-                                ),
-                                minHeight: 48,
-                                verticalPadding: 2,
-                                reserveSubtitleSpace: true,
-                                title: title,
-                                titleColor: isExcluded
-                                    ? cs.onSurface.withValues(alpha: 0.38)
-                                    : null,
-                                subtitle: entry.detail.rjCode.isEmpty
-                                    ? null
-                                    : entry.detail.rjCode,
-                                trailing: _BatchMetadataStatusIcon(
-                                  key: ValueKey<String>(
-                                    'batch_metadata_status_$index',
-                                  ),
-                                  status: item.status,
-                                  isExcluded: isExcluded,
-                                ),
-                                onTap: isExcluded
-                                    ? null
-                                    : () => _handleItemTap(index),
-                              ),
-                            ),
-                          ),
+                          child: row,
                         );
                       },
                     );

@@ -73,11 +73,108 @@ class FileCacheTaskExecutorTest {
     }
 
     @Test
+    fun `blocked transfers do not delay interactive tasks and remain serialized`() {
+        val executor = FileCacheTaskExecutor()
+        val transferStarted = CountDownLatch(1)
+        val releaseTransfer = CountDownLatch(1)
+        val transferFinished = CountDownLatch(2)
+        val interactiveFinished = CountDownLatch(1)
+        val queuedTransferStarted = CountDownLatch(1)
+        try {
+            assertTrue(executor.submitTransfer(
+                block = {
+                    transferStarted.countDown()
+                    releaseTransfer.await()
+                },
+                completion = { transferFinished.countDown() }
+            ))
+            assertTrue(transferStarted.await(5, TimeUnit.SECONDS))
+            assertTrue(executor.submitTransfer(
+                block = { queuedTransferStarted.countDown() },
+                completion = { transferFinished.countDown() }
+            ))
+            assertTrue(executor.submit(
+                block = { "subtitle" },
+                completion = { interactiveFinished.countDown() }
+            ))
+
+            assertTrue(interactiveFinished.await(5, TimeUnit.SECONDS))
+            assertEquals(1L, releaseTransfer.count)
+            assertEquals(1L, queuedTransferStarted.count)
+            releaseTransfer.countDown()
+            assertTrue(transferFinished.await(5, TimeUnit.SECONDS))
+            assertEquals(0L, queuedTransferStarted.count)
+        } finally {
+            releaseTransfer.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `transfer failures reach completion and do not poison the queue`() {
+        val executor = FileCacheTaskExecutor()
+        val failed = CountDownLatch(1)
+        val nextFinished = CountDownLatch(1)
+        var failure: Exception? = null
+        try {
+            assertTrue(executor.submitTransfer(
+                block = { throw IllegalStateException("copy failed") },
+                completion = {
+                    failure = (it as FileCacheTaskResult.Failure).exception
+                    failed.countDown()
+                }
+            ))
+            assertTrue(executor.submitTransfer(
+                block = { true },
+                completion = { nextFinished.countDown() }
+            ))
+            assertTrue(failed.await(5, TimeUnit.SECONDS))
+            assertEquals("copy failed", failure?.message)
+            assertTrue(nextFinished.await(5, TimeUnit.SECONDS))
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `shutdown interrupts running tasks in both queues and discards queued transfers`() {
+        val executor = FileCacheTaskExecutor()
+        val started = CountDownLatch(2)
+        val interrupted = CountDownLatch(2)
+        val queuedTransferRuns = AtomicInteger()
+        val block = {
+            started.countDown()
+            try {
+                CountDownLatch(1).await()
+            } catch (exception: InterruptedException) {
+                interrupted.countDown()
+                throw exception
+            }
+        }
+        try {
+            assertTrue(executor.submit(block, completion = {}))
+            assertTrue(executor.submitTransfer(block, completion = {}))
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            assertTrue(executor.submitTransfer(
+                block = { queuedTransferRuns.incrementAndGet() },
+                completion = {}
+            ))
+            executor.shutdownNow()
+            assertTrue(interrupted.await(5, TimeUnit.SECONDS))
+            assertEquals(0, queuedTransferRuns.get())
+            assertFalse(executor.submitTransfer(block = { true }, completion = {}))
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `shutdown is idempotent and rejects new tasks`() {
         val executor = FileCacheTaskExecutor()
         executor.shutdownNow()
         executor.shutdownNow()
 
         assertFalse(executor.submit(block = { true }, completion = {}))
+        assertFalse(executor.submitTransfer(block = { true }, completion = {}))
     }
 }

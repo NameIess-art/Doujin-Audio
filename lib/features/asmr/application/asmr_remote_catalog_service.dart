@@ -159,6 +159,7 @@ class AsmrRemoteCatalogService {
     void Function(int?)? onSourceTotalCount,
   }) async {
     cancellationToken?.throwIfCancelled();
+    final japanesePages = <(String, int, int), Future<AsmrWorkPage>>{};
     final localTracksFuture = (() async {
       final loading = _loadLocalTracks();
       final tracks = await (cancellationToken?.waitFor(loading) ?? loading);
@@ -181,6 +182,7 @@ class AsmrRemoteCatalogService {
         language: language,
         token: token,
         refreshSeed: refreshSeed,
+        japanesePages: japanesePages,
         cancellationToken: cancellationToken,
       ),
       (() async {
@@ -220,6 +222,7 @@ class AsmrRemoteCatalogService {
           language: language,
           token: token,
           refreshSeed: refreshSeed,
+          japanesePages: japanesePages,
           firstPageOnly: true,
           cancellationToken: cancellationToken,
         );
@@ -384,6 +387,7 @@ class AsmrRemoteCatalogService {
     required AsmrContentLanguage language,
     required String? token,
     required int refreshSeed,
+    required Map<(String, int, int), Future<AsmrWorkPage>> japanesePages,
     bool firstPageOnly = false,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
@@ -403,6 +407,7 @@ class AsmrRemoteCatalogService {
                   language: language,
                   token: token,
                   refreshSeed: refreshSeed,
+                  japanesePages: japanesePages,
                   firstPageOnly: firstPageOnly,
                   cancellationToken: cancellationToken,
                 ),
@@ -419,11 +424,12 @@ class AsmrRemoteCatalogService {
     required AsmrContentLanguage language,
     required String? token,
     required int refreshSeed,
+    required Map<(String, int, int), Future<AsmrWorkPage>> japanesePages,
     bool firstPageOnly = false,
     AsmrRequestCancellationToken? cancellationToken,
   }) async {
     final pages = <AsmrWorkPage>[];
-    final cursor = AsmrCatalogCursor();
+    final cursor = AsmrCatalogCursor().._japanesePages = japanesePages;
     try {
       final firstPage = await loadPage(
         category,

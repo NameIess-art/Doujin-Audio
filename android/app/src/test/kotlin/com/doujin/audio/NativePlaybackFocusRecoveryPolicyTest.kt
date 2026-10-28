@@ -112,6 +112,22 @@ class NativePlaybackFocusRecoveryPolicyTest {
     }
 
     @Test
+    fun `track boundary pause clears playback intent without suppressing later play`() {
+        assertTrue(
+            shouldClearPlaybackIntentForPlayWhenReadyChange(
+                playWhenReady = false,
+                reason = Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM
+            )
+        )
+        assertFalse(
+            shouldClearPlaybackIntentForPlayWhenReadyChange(
+                playWhenReady = true,
+                reason = Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM
+            )
+        )
+    }
+
+    @Test
     fun `keeps native transient focus pause pending through player callback`() {
         assertTrue(
             shouldPreservePendingAudioFocusResume(

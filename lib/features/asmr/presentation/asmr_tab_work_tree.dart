@@ -85,7 +85,6 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
           context: context,
           ref: ref,
           works: [widget.work],
-          exitSelectionMode: () {},
         );
       }
     } catch (_) {
@@ -103,18 +102,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   }
 
   Future<void> _toggleFavorite(BuildContext context) async {
-    final wasFavorite = widget.work.isFavorite;
-    await _toggleAsmrWorksFavorite(ref, [widget.work]);
-    if (!context.mounted) return;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    showAppSnackBar(
-      context,
-      i18n.tr(wasFavorite ? 'asmr_favorite_removed' : 'asmr_favorite_added'),
-      tone: wasFavorite ? AppFeedbackTone.info : AppFeedbackTone.success,
-      icon: wasFavorite
-          ? Icons.favorite_border_rounded
-          : Icons.favorite_rounded,
-    );
+    await setAsmrWorksFavoriteWithFeedback(context, ref, [widget.work]);
   }
 
   @override

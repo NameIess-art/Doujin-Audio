@@ -52,6 +52,7 @@ class _DlsiteMetadataBatchPageState
       const <AudioLibraryCategoryEntry>[];
   late DlsiteMetadataBatchScope _scope;
   Object? _error;
+  bool _loading = false;
 
   List<AudioLibraryCategoryEntry> get _anyMissingEntries => _entries
       .where((entry) => entry.detail.hasMissingMetadata)
@@ -80,14 +81,15 @@ class _DlsiteMetadataBatchPageState
     if (entries != null) {
       _entries = entries;
     } else {
+      _loading = true;
       final cachedSnapshot = ref.read(libraryFacadeProvider).categorySnapshot;
       if (cachedSnapshot != null) {
         final initialTargets = widget.initialTargets;
         _entries = initialTargets == null
             ? cachedSnapshot.entries
             : cachedSnapshot.entries
-                .where((entry) => initialTargets.contains(entry.target))
-                .toList(growable: false);
+                  .where((entry) => initialTargets.contains(entry.target))
+                  .toList(growable: false);
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_load());
@@ -118,6 +120,7 @@ class _DlsiteMetadataBatchPageState
   Future<void> _load() async {
     setState(() {
       _error = null;
+      _loading = true;
     });
     try {
       final snapshot = await ref
@@ -137,11 +140,13 @@ class _DlsiteMetadataBatchPageState
                 .toList(growable: false);
       setState(() {
         _entries = loadedEntries;
+        _loading = false;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = error;
+        _loading = false;
       });
     }
   }
@@ -182,6 +187,10 @@ class _DlsiteMetadataBatchPageState
     ).read(appLanguageProviderInstanceProvider);
     final topInset = AppPageHeaderMetrics.contentTopInset(context);
     final cs = Theme.of(context).colorScheme;
+    final canStart = !_loading && _selectedEntries.isNotEmpty;
+    final startForeground = canStart
+        ? cs.onPrimary
+        : cs.onSurface.withValues(alpha: 0.38);
     return Scaffold(
       backgroundColor: cs.surface,
       body: PageHeaderInset(
@@ -223,11 +232,13 @@ class _DlsiteMetadataBatchPageState
                     radius: 23,
                     padding: EdgeInsets.zero,
                     child: Material(
-                      color: cs.primary,
+                      color: canStart
+                          ? cs.primary
+                          : cs.onSurface.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(23),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(23),
-                        onTap: _run,
+                        onTap: canStart ? _run : null,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 18),
                           child: Row(
@@ -236,13 +247,13 @@ class _DlsiteMetadataBatchPageState
                               Icon(
                                 Icons.play_arrow_rounded,
                                 size: 18,
-                                color: cs.onPrimary,
+                                color: startForeground,
                               ),
                               const SizedBox(width: 6),
                               Text(
                                 i18n.tr('batch_metadata_start'),
                                 style: TextStyle(
-                                  color: cs.onPrimary,
+                                  color: startForeground,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),

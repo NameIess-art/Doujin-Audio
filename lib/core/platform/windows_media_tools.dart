@@ -79,6 +79,7 @@ class WindowsMediaTools {
   Future<String?> extractImage(
     String mediaPath, {
     required bool videoFrame,
+    bool propagateFailure = false,
   }) async {
     final stat = await File(mediaPath).stat();
     if (stat.type != FileSystemEntityType.file) return null;
@@ -116,8 +117,20 @@ class WindowsMediaTools {
         '3',
         temporary.path,
       ]);
-      // Audio without an embedded image legitimately has no video stream.
-      if (result.exitCode != 0 || !await temporary.exists()) return null;
+      // A missing stream is an authoritative absence; I/O and decoder failures
+      // must remain retryable instead of entering a caller's negative cache.
+      if (result.exitCode != 0) {
+        if (propagateFailure && !result.error.contains('matches no streams')) {
+          throw ProcessException(
+            'ffmpeg',
+            [mediaPath],
+            result.error,
+            result.exitCode,
+          );
+        }
+        return null;
+      }
+      if (!await temporary.exists()) return null;
       if (await output.exists()) return output.path;
       await temporary.rename(output.path);
       return output.path;

@@ -16,7 +16,7 @@ import 'support/app_runtime_test_fixture.dart';
 void main() {
   AppRuntimeTestFixture.initialize();
 
-  for (final outcome in ['success', 'cancel', 'failure']) {
+  for (final outcome in ['success', 'cancel', 'failure', 'incompatible']) {
     testWidgets(
       'restore staging protects navigation and handles $outcome',
       (tester) async {
@@ -74,6 +74,10 @@ void main() {
 
         if (outcome == 'failure') {
           files.pending.completeError(StateError('invalid backup'));
+        } else if (outcome == 'incompatible') {
+          files.pending.completeError(
+            const FormatException('incompatible_backup'),
+          );
         } else if (outcome == 'cancel') {
           files.pending.complete(null);
         } else {
@@ -106,9 +110,20 @@ void main() {
           navigator.pop();
           await tester.pumpAndSettle();
         } else {
-          await tester.pumpAndSettle();
+          if (outcome == 'incompatible') {
+            // Feedback without an action animates until timeout.
+            for (var i = 0; i < 8; i++) {
+              await tester.pump(const Duration(milliseconds: 100));
+            }
+          } else {
+            await tester.pumpAndSettle();
+          }
           expect(find.text(i18n.tr('backup_ready_to_restore')), findsNothing);
           expect(playback.clearCalls, 0);
+          if (outcome == 'incompatible') {
+            expect(find.textContaining(i18n.tr('backup_incompatible')), findsOneWidget);
+            expect(find.text(i18n.tr('retry')), findsNothing);
+          }
           if (outcome == 'failure') {
             expect(find.text(i18n.tr('operation_failed')), findsOneWidget);
           }

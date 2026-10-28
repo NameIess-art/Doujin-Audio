@@ -66,7 +66,6 @@ class _RoutedPlaybackDockHostState
       _routeRevision,
       (route) => widget.onTopPageChanged?.call(route),
     );
-    // Keep the dock below newly pushed routes before their first frame.
     _routeRevision.addListener(_syncRoutedPlaybackDock);
     _playbackDockGeometry = widget.geometry ?? PlaybackDockGeometryController();
   }
@@ -85,8 +84,7 @@ class _RoutedPlaybackDockHostState
 
   @override
   void dispose() {
-    _routedPlaybackDockEntry?.remove();
-    _routedPlaybackDockEntry?.dispose();
+    _removeRoutedPlaybackDock();
     _routeObserver.dispose();
     if (widget.geometry == null) _playbackDockGeometry.dispose();
     _routeRevision.removeListener(_syncRoutedPlaybackDock);
@@ -117,55 +115,13 @@ class _RoutedPlaybackDockHostState
       _removeRoutedPlaybackDock();
       return;
     }
-    if (_routeObserver.suppressDockForSessionDetail) return;
     final workDetailRoute = _routeObserver.lastRouteNamed(workDetailRouteName);
     if (workDetailRoute == null) {
-      final departingRoute = _routedPlaybackDockRoute;
-      if (departingRoute != null) {
-        final isDismissed =
-            departingRoute.animation?.status == AnimationStatus.dismissed ||
-            !_routeObserver.isWorkDetailDeparting;
-        if (isDismissed) {
-          _removeRoutedPlaybackDock();
-          return;
-        }
-        _routedPlaybackDockEntry?.markNeedsBuild();
-        unawaited(
-          departingRoute.completed.then((_) {
-            if (!mounted ||
-                _routedPlaybackDockRoute != departingRoute ||
-                _routeObserver.containsRouteNamed(workDetailRouteName)) {
-              return;
-            }
-            _removeRoutedPlaybackDock();
-            setState(() {});
-          }),
-        );
-      } else {
-        _removeRoutedPlaybackDock();
-      }
+      _removeRoutedPlaybackDock();
       return;
     }
     if (_routedPlaybackDockRoute == workDetailRoute &&
         _routedPlaybackDockEntry != null) {
-      final overlay = widget.navigatorKey.currentState?.overlay;
-      final entry = _routedPlaybackDockEntry!;
-      if (overlay != null && entry.mounted) {
-        if (_routeObserver.isWorkDetailDeparting) {
-          return;
-        }
-        final orderedEntries = <OverlayEntry>[];
-        // Popup barriers and contents must keep their place in route order.
-        for (final route in _routeObserver.routes) {
-          orderedEntries.addAll(route.overlayEntries);
-          if (identical(route, workDetailRoute)) orderedEntries.add(entry);
-        }
-        for (final route in _routeObserver._departingWorkDetailRoutes) {
-          orderedEntries.addAll(route.overlayEntries);
-          if (identical(route, workDetailRoute)) orderedEntries.add(entry);
-        }
-        overlay.rearrange(orderedEntries);
-      }
       return;
     }
 
@@ -179,26 +135,48 @@ class _RoutedPlaybackDockHostState
       maintainState: true,
       builder: _buildRoutedPlaybackDockOverlay,
     );
+    final pageEntry = workDetailRoute.overlayEntries.last;
+    // Navigator keeps a route's entries together during rebuilds and pops.
+    // Owning the dock here leaves every covering page above it until disposal.
+    workDetailRoute.overlayEntries.add(entry);
     _routedPlaybackDockRoute = workDetailRoute;
     _routedPlaybackDockEntry = entry;
-    overlay.insert(entry, above: workDetailRoute.overlayEntries.last);
+    overlay.insert(entry, above: pageEntry);
   }
 
   void _removeRoutedPlaybackDock() {
     final entry = _routedPlaybackDockEntry;
+    final route = _routedPlaybackDockRoute;
     _routedPlaybackDockEntry = null;
     _routedPlaybackDockRoute = null;
-    entry?.remove();
-    entry?.dispose();
+    // Popped/removed routes let Navigator remove and dispose their entries.
+    if (entry == null || route == null || !route.isActive) return;
+    if (route.overlayEntries.remove(entry)) {
+      entry.remove();
+      entry.dispose();
+    }
   }
 
   Widget _buildRoutedPlaybackDockOverlay(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final supportsRoutedDock = size.width >= 300 && size.height >= 300;
+    final isLandscapeDock =
+        defaultTargetPlatform == TargetPlatform.windows ||
+        MediaQuery.orientationOf(context) == Orientation.landscape ||
+        size.width >= 980;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
     return Positioned(
       left: 0,
       right: 0,
       bottom: 0,
+      // Tight bounds keep this retained entry's layout independent while
+      // Overlay skips it underneath an opaque page.
+      height: isLandscapeDock
+          ? size.height
+          : kActiveSessionCarouselDockHeight +
+                (bottomPadding > kMobileDockBottomMargin
+                    ? bottomPadding
+                    : kMobileDockBottomMargin),
       child: RepaintBoundary(
         child: ValueListenableBuilder<int>(
           valueListenable: _routeRevision,
@@ -211,28 +189,21 @@ class _RoutedPlaybackDockHostState
             );
             final routeDeparting = _routeObserver.isWorkDetailDeparting;
             return Consumer(
-              builder: (context, ref, _) => AnimatedOpacity(
-                duration: MediaQuery.disableAnimationsOf(context)
-                    ? Duration.zero
-                    : kAppFadeDuration,
-                curve: kAppFadeCurve,
-                opacity: _routeObserver.suppressDockForSessionDetail ? 0 : 1,
-                child: _RoutedPlaybackDock(
-                  active:
-                      routeActive &&
-                      supportsRoutedDock &&
-                      ref.watch(
-                        mainOverlayUiProvider.select(
-                          (state) => state.overlaySessions.isNotEmpty,
-                        ),
+              builder: (context, ref, _) => _RoutedPlaybackDock(
+                active:
+                    routeActive &&
+                    supportsRoutedDock &&
+                    ref.watch(
+                      mainOverlayUiProvider.select(
+                        (state) => state.overlaySessions.isNotEmpty,
                       ),
-                  covered: routeAboveWorkDetail,
-                  departing: routeDeparting,
-                  navigatorKey:
-                      widget.playbackNavigatorKey ?? widget.navigatorKey,
-                  currentRoute: _routeObserver.topRoute,
-                  geometry: _playbackDockGeometry,
-                ),
+                    ),
+                covered: routeAboveWorkDetail,
+                departing: routeDeparting,
+                navigatorKey:
+                    widget.playbackNavigatorKey ?? widget.navigatorKey,
+                currentRoute: _routeObserver.topRoute,
+                geometry: _playbackDockGeometry,
               ),
             );
           },
@@ -301,16 +272,12 @@ class _RootPageRouteObserver extends NavigatorObserver {
   _routeAnimationListeners = {};
   final Set<PageRoute<dynamic>> _departingRoutes = {};
   final Set<PageRoute<dynamic>> _departingWorkDetailRoutes = {};
-  // Nested dialogs must not restore dock ordering while their menu is open.
-  final Set<PopupRoute<dynamic>> _sessionDetailPopups = {};
   bool get hasPopups => _routes.any((route) => route is PopupRoute<dynamic>);
   bool _syncScheduled = false;
   bool _disposed = false;
 
   PageRoute<dynamic>? get topRoute =>
       _routes.whereType<PageRoute<dynamic>>().lastOrNull;
-  List<Route<dynamic>> get routes => List.unmodifiable(_routes);
-  bool get suppressDockForSessionDetail => _sessionDetailPopups.isNotEmpty;
   bool get isWorkDetailDeparting => _departingWorkDetailRoutes.isNotEmpty;
 
   PageRoute<dynamic>? lastRouteNamed(String name) {
@@ -364,7 +331,6 @@ class _RootPageRouteObserver extends NavigatorObserver {
       listener.$1.removeStatusListener(listener.$2);
     }
     _routeAnimationListeners.clear();
-    _sessionDetailPopups.clear();
     _departingRoutes.clear();
     _departingWorkDetailRoutes.clear();
   }
@@ -381,8 +347,8 @@ class _RootPageRouteObserver extends NavigatorObserver {
           _departingRoutes.remove(route);
           _departingWorkDetailRoutes.remove(route);
           if (route is PopupRoute<dynamic> && !route.isActive) {
-            // completed waits for overlay disposal; stop reordering these
-            // entries as soon as Navigator finalizes the popup instead.
+            // completed waits for overlay disposal; stop tracking the popup
+            // as soon as Navigator finalizes it instead.
             _routes.remove(route);
           }
         }
@@ -405,12 +371,6 @@ class _RootPageRouteObserver extends NavigatorObserver {
       _routes.add(route);
       _trackAnimation(route);
       _sync();
-      // Navigator reorders its entries after observers run, including when a
-      // popup finishes entering. Restore the dock below it after the first
-      // layout as well as at the normal animation-status synchronization.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_disposed && _routes.contains(route)) _syncImmediately();
-      });
       unawaited(
         route.completed.then((_) {
           if (_disposed) return;
@@ -424,19 +384,6 @@ class _RootPageRouteObserver extends NavigatorObserver {
       _routes.add(pageRoute);
       _trackAnimation(pageRoute);
       _sync();
-    } else if (route is PopupRoute<dynamic> &&
-        topRoute is SessionDetailRoute &&
-        containsRouteNamed(workDetailRouteName)) {
-      _sessionDetailPopups.add(route);
-      unawaited(
-        route.completed.then((_) {
-          if (_disposed || !_sessionDetailPopups.remove(route)) return;
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _syncImmediately(),
-          );
-        }),
-      );
-      _sync();
     }
   }
 
@@ -449,9 +396,6 @@ class _RootPageRouteObserver extends NavigatorObserver {
       _sync();
     }
     if (route is PageRoute<dynamic>) {
-      if (route is SessionDetailRoute) {
-        _sessionDetailPopups.clear();
-      }
       final isWorkDetail = route.settings.name == workDetailRouteName;
       final workDetailIndex = _routes.lastIndexWhere(
         (candidate) => candidate.settings.name == workDetailRouteName,
@@ -480,14 +424,10 @@ class _RootPageRouteObserver extends NavigatorObserver {
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
     if (route is PopupRoute<dynamic>) {
       _routes.remove(route);
-      _sessionDetailPopups.remove(route);
       _untrackAnimation(route);
       _sync();
     }
     if (route is PageRoute<dynamic>) {
-      if (route is SessionDetailRoute) {
-        _sessionDetailPopups.clear();
-      }
       _routes.remove(route);
       _departingRoutes.remove(route);
       _departingWorkDetailRoutes.remove(route);
@@ -498,9 +438,6 @@ class _RootPageRouteObserver extends NavigatorObserver {
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    if (oldRoute is SessionDetailRoute) {
-      _sessionDetailPopups.clear();
-    }
     if (oldRoute is TransitionRoute<dynamic>) {
       _untrackAnimation(oldRoute);
       _departingRoutes.remove(oldRoute);

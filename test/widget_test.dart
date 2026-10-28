@@ -1965,15 +1965,11 @@ void main() {
         await pumpAndSettleWithAsync(tester);
         expect(find.byType(BottomSheet), findsOneWidget);
         expect(dock, findsOneWidget);
-        final opacity = find.ancestor(
-          of: dock,
-          matching: find.byType(AnimatedOpacity, skipOffstage: false),
-        );
-        expect(tester.widget<AnimatedOpacity>(opacity.first).opacity, 0);
+        expect(dock.hitTestable(), findsNothing);
         navigator.pop();
         await tester.pumpAndSettle();
         expect(dock, findsOneWidget);
-        expect(tester.widget<AnimatedOpacity>(opacity.first).opacity, 1);
+        expect(dock.hitTestable(), findsNothing);
         final paintOrder = tester.allWidgets.toList(growable: false);
         expect(
           paintOrder.indexOf(tester.widget(dock)),
@@ -1984,11 +1980,7 @@ void main() {
       navigator.pop();
       await tester.pumpAndSettle();
       expect(dock, findsOneWidget);
-      final opacity = find.ancestor(
-        of: dock,
-        matching: find.byType(AnimatedOpacity, skipOffstage: false),
-      );
-      expect(tester.widget<AnimatedOpacity>(opacity.first).opacity, 1);
+      expect(dock.hitTestable(), findsOneWidget);
       navigator.pop();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));

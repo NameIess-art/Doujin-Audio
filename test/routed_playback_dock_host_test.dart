@@ -55,6 +55,7 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
   Size? viewportSize,
   EdgeInsets padding = EdgeInsets.zero,
   Widget? home,
+  ValueNotifier<int>? navigatorRevision,
 }) async {
   debugDefaultTargetPlatformOverride = platform;
   tester.view.devicePixelRatio = 1;
@@ -100,8 +101,10 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
             dockCollapsed: dockCollapsed,
           );
           return MaterialApp(
-            navigatorKey: navigator,
-            navigatorObservers: [observer, interactionObserver],
+            navigatorKey: navigatorRevision == null ? navigator : null,
+            navigatorObservers: navigatorRevision == null
+                ? [observer, interactionObserver]
+                : [],
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(
                 context,
@@ -110,7 +113,21 @@ Future<GlobalKey<NavigatorState>> _pumpHost(
                 builder: (context) => wrapNavigator(context, child!),
               ),
             ),
-            home: home ?? const Scaffold(body: Text('Home')),
+            home: navigatorRevision == null
+                ? home ?? const Scaffold(body: Text('Home'))
+                : ValueListenableBuilder<int>(
+                    valueListenable: navigatorRevision,
+                    builder: (_, _, _) => Navigator(
+                      key: navigator,
+                      observers: [observer, interactionObserver],
+                      pages: [
+                        MaterialPage<void>(
+                          child: home ?? const Scaffold(body: Text('Home')),
+                        ),
+                      ],
+                      onDidRemovePage: (_) {},
+                    ),
+                  ),
           );
         },
       ),
@@ -299,6 +316,106 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'pages cover the retained dock throughout entry and exit on $platform',
+      (tester) async {
+        final revision = ValueNotifier(0);
+        addTearDown(revision.dispose);
+        final navigator = await _pumpHost(
+          tester,
+          platform,
+          navigatorRevision: revision,
+        );
+        final page = find.byKey(
+          const ValueKey('covering_page'),
+          skipOffstage: false,
+        );
+        unawaited(
+          navigator.currentState!.push(
+            _detailRoute(
+              navigator,
+              child: Scaffold(
+                body: Builder(
+                  builder: (context) => TextButton(
+                    onPressed: () => Navigator.of(context).push<void>(
+                      buildAppPageRoute<void>(
+                        context: context,
+                        child: const ColoredBox(
+                          key: ValueKey('covering_page'),
+                          color: Colors.white,
+                          child: SizedBox.expand(),
+                        ),
+                      ),
+                    ),
+                    child: const Text('Open page'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+        final contentState = tester.state(_content);
+        final point = tester.getRect(_dock).centerRight - const Offset(8, 0);
+        await tester.tap(find.text('Open page'));
+        revision.value++;
+        Future<bool> expectCoveredPixel(String phase, int frame) async {
+          final route = ModalRoute.of(tester.element(page))!;
+          if (route.offstage || route.animation!.value == 0) return false;
+          if (!tester.getRect(page).contains(point)) return false;
+          final pixel = await tester.runAsync(() async {
+            final boundary = tester.renderObject<RenderRepaintBoundary>(
+              find
+                  .ancestor(of: page, matching: find.byType(RepaintBoundary))
+                  .last,
+            );
+            final image = await boundary.toImage();
+            try {
+              final pixels = (await image.toByteData())!;
+              final local = boundary.globalToLocal(point);
+              final offset =
+                  (local.dy.floor() * image.width + local.dx.floor()) * 4;
+              return pixels.getUint32(offset);
+            } finally {
+              image.dispose();
+            }
+          });
+          expect(
+            pixel,
+            0xffffffff,
+            reason: 'The $phase page must cover the dock on frame $frame.',
+          );
+          expect(tester.state(_content), same(contentState));
+          return true;
+        }
+
+        var coveredFrames = 0;
+        for (var frame = 0; frame < 24; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          if (await expectCoveredPixel('entering', frame)) coveredFrames++;
+        }
+        expect(coveredFrames, greaterThan(2));
+        navigator.currentState!.pop();
+        revision.value++;
+        coveredFrames = 0;
+        for (var frame = 0; frame < 16; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          if (await expectCoveredPixel('exiting', frame)) coveredFrames++;
+        }
+        expect(coveredFrames, greaterThan(2));
+        await tester.pumpAndSettle();
+        expect(_dock.hitTestable(), findsOneWidget);
+        expect(tester.state(_content), same(contentState));
+        navigator.currentState!.pop();
+        await pumpAndSettleWithAsync(tester);
+        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(tester.takeException(), isNull);
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+
     testWidgets('landscape dock blocks its rectangle only on $platform', (
       tester,
     ) async {
@@ -347,20 +464,21 @@ void main() {
       'page opened from playback menu stays above it after a dialog on $platform',
       (tester) async {
         final navigator = await _pumpHost(tester, platform);
-        double dockOpacity() => tester
-            .renderObject<RenderAnimatedOpacity>(
-              find
-                  .ancestor(
-                    of: _dock,
-                    matching: find.byType(AnimatedOpacity, skipOffstage: false),
-                  )
-                  .first,
-            )
-            .opacity
-            .value;
+        void expectRetainedDock() {
+          expect(_dock, findsOneWidget);
+          expect(_dock.hitTestable(), findsNothing);
+          expect(
+            find.ancestor(
+              of: _dock,
+              matching: find.byType(AnimatedOpacity, skipOffstage: false),
+            ),
+            findsNothing,
+          );
+        }
+
         unawaited(navigator.currentState!.push(_detailRoute(navigator)));
         await tester.pumpAndSettle();
-        expect(dockOpacity(), 1);
+        expect(_dock.hitTestable(), findsOneWidget);
         unawaited(navigator.currentState!.push(_MenuSessionDetailRoute()));
         await tester.pumpAndSettle();
         unawaited(
@@ -375,7 +493,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(dockOpacity(), 0);
+        expectRetainedDock();
         unawaited(
           showDialog<void>(
             context: tester.element(find.text('Subtitle menu')),
@@ -386,7 +504,7 @@ void main() {
         await tester.pumpAndSettle();
         navigator.currentState!.pop();
         await tester.pumpAndSettle();
-        expect(dockOpacity(), 0);
+        expectRetainedDock();
         final editor = buildAppPageRoute<void>(
           context: tester.element(find.text('Subtitle menu')),
           child: const Scaffold(body: Center(child: Text('Subtitle editor'))),
@@ -395,36 +513,19 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Subtitle editor').hitTestable(), findsOneWidget);
         expect(find.text('Subtitle menu').hitTestable(), findsNothing);
-        expect(dockOpacity(), 0);
+        expectRetainedDock();
         expect(tester.takeException(), isNull);
         navigator.currentState!.pop();
         await tester.pumpAndSettle();
         expect(find.text('Subtitle menu').hitTestable(), findsOneWidget);
-        expect(dockOpacity(), 0);
+        expectRetainedDock();
         navigator.currentState!.pop();
         await tester.pumpAndSettle();
-        // The opaque playback page keeps this retained dock offstage and
-        // mutes its fade ticker. It finishes fading when playback is closed.
+        // The opaque playback page keeps the retained dock below it.
         expect(TickerMode.valuesOf(tester.element(_dock)).enabled, isFalse);
-        expect(
-          tester
-              .widget<AnimatedOpacity>(
-                find
-                    .ancestor(
-                      of: _dock,
-                      matching: find.byType(
-                        AnimatedOpacity,
-                        skipOffstage: false,
-                      ),
-                    )
-                    .first,
-              )
-              .opacity,
-          1,
-        );
+        expectRetainedDock();
         navigator.currentState!.pop();
         await tester.pumpAndSettle();
-        expect(dockOpacity(), 1);
         expect(_dock.hitTestable(), findsOneWidget);
         navigator.currentState!.pop();
         await tester.pumpAndSettle();

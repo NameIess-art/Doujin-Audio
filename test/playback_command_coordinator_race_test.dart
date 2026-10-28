@@ -36,6 +36,175 @@ void main() {
     await fixture.dispose(currentGraph: runtimeGraph);
   });
 
+  MusicTrack queueTrack(String name, {String group = '/work'}) =>
+      testMusicTrack(
+        name: name,
+        path: PathMatcher.normalize('$group/$name.mp3'),
+        groupKey: PathMatcher.normalize(group),
+        groupTitle: group,
+      );
+
+  for (final failUpdate in [false, true]) {
+    test(
+      'direct playback synchronizes the same source queue (retry: $failUpdate)',
+      () async {
+        final playback = runtimeGraph.playback;
+        var nativeQueue = <Map<Object?, Object?>>[];
+        var nativeIndex = 0;
+        var preparations = 0;
+        var queueUpdates = 0;
+        var failNextUpdate = failUpdate;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (
+              MethodCall call,
+            ) async {
+              final args = call.arguments is Map
+                  ? call.arguments as Map<Object?, Object?>
+                  : const <Object?, Object?>{};
+              if (call.method == NativePlaybackMethod.prepareSession ||
+                  call.method == NativePlaybackMethod.updateQueue) {
+                if (call.method == NativePlaybackMethod.prepareSession) {
+                  preparations++;
+                } else {
+                  queueUpdates++;
+                  if (failNextUpdate) {
+                    failNextUpdate = false;
+                    return {
+                      'ok': false,
+                      'error': 'Injected queue update failure',
+                      'errorCode': 'player_error',
+                    };
+                  }
+                }
+                nativeQueue = (args['queue'] as List)
+                    .cast<Map<Object?, Object?>>();
+                nativeIndex = args['queueStartIndex'] as int? ?? 0;
+              }
+              if (call.method == NativePlaybackMethod.play ||
+                  call.method == NativePlaybackMethod.prepareSession) {
+                final current = nativeQueue[nativeIndex];
+                final playing = call.method == NativePlaybackMethod.play;
+                return {
+                  'ok': true,
+                  'value': {
+                    'sessionId': args['sessionId'],
+                    'path': current['path'],
+                    'uri': current['uri'],
+                    'playing': playing,
+                    'playWhenReady': playing,
+                    'processingState': 'ready',
+                    'positionMs': 7000,
+                    'queueIndex': nativeIndex,
+                    'transportCommandId': args['transportCommandId'],
+                  },
+                };
+              }
+              return {'ok': true, 'value': null};
+            });
+        final a = queueTrack('a');
+        final b = queueTrack('b');
+        final c = queueTrack('c');
+        expect(await playback.playDirect([a, b]), isTrue);
+        final first = playback.sessions.values.single;
+        expect(first.state.processingState, ProcessingState.ready);
+        expect(first.loadedPath, PathMatcher.normalize(a.path));
+        expect(first.currentTrackPath, a.path);
+        expect(
+          nativeQueue.map(
+            (item) => PathMatcher.normalize(item['path'] as String),
+          ),
+          [a.path, b.path].map(PathMatcher.normalize),
+        );
+        if (failUpdate) {
+          expect(await playback.playDirect([a, c]), isFalse);
+          expect(nativeQueue.last['path'], b.path);
+          expect(first.playbackError, isNotNull);
+          await playback.toggleSessionPlayPause(first.id);
+          expect(nativeQueue.last['path'], c.path);
+          expect(first.playbackError, isNull);
+        }
+        expect(await playback.playDirect([a, c]), isTrue);
+        expect(
+          playback.sessions.values.single.customQueueTracks!.map((t) => t.path),
+          [a.path, c.path],
+        );
+        expect(
+          nativeQueue.map(
+            (item) => PathMatcher.normalize(item['path'] as String),
+          ),
+          [a.path, c.path].map(PathMatcher.normalize),
+          reason:
+              'Native queue must match UI; prepares=$preparations, updates=$queueUpdates',
+        );
+        expect(await playback.playDirect([a]), isTrue);
+        expect(nativeQueue.map((item) => item['path']), [a.path]);
+        expect(preparations, 1);
+        expect(queueUpdates, failUpdate ? 4 : 2);
+        expect(first.position, const Duration(seconds: 7));
+      },
+    );
+  }
+
+  for (final scenario in ['scoped index', 'cached path']) {
+    test('failed seek corrects actual position with $scenario', () async {
+      final playback = runtimeGraph.playback;
+      final current = scenario == 'cached path'
+          ? testMusicTrack(
+              name: 'current',
+              path: 'https://example.com/current.mp3',
+              groupKey: 'remote',
+              groupTitle: 'Remote',
+            )
+          : queueTrack('current');
+      final session =
+          playback.createTrackSession(
+              current,
+              customQueueTracks: scenario == 'scoped index'
+                  ? [queueTrack('other', group: '/another'), current]
+                  : [current],
+            )
+            ..loadedPath = current.path
+            ..lastKnownPosition = const Duration(seconds: 7);
+      if (scenario == 'scoped index') session.currentQueueIndex = 1;
+      final nativePath = scenario == 'cached path'
+          ? 'C:/cache/current.mp3'
+          : current.path;
+      if (scenario == 'cached path') {
+        playback.rememberRetargetedPath(current.path, nativePath);
+      }
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == NativePlaybackMethod.seek) {
+              return {
+                'ok': false,
+                'error': 'Injected seek failure',
+                'code': 'player_error',
+              };
+            }
+            if (call.method == NativePlaybackMethod.snapshot) {
+              return {
+                'ok': true,
+                'value': {
+                  'sessions': [
+                    {
+                      'sessionId': session.id,
+                      'path': nativePath,
+                      'playing': false,
+                      'processingState': 'ready',
+                      'positionMs': 7000,
+                      'queueIndex': 0,
+                    },
+                  ],
+                },
+              };
+            }
+            return {'ok': true, 'value': null};
+          });
+      await playback.seekSession(session.id, const Duration(seconds: 20));
+      expect(session.position, const Duration(seconds: 7));
+    });
+  }
+
   group('playback cache leases', () {
     late Directory temporaryDirectory;
     late Directory cacheDirectory;

@@ -53,14 +53,12 @@ final class LibraryMutationCoordinator {
     required LibraryPersistenceCoordinator persistenceCoordinator,
     required CoverArtworkCacheService Function() coverArtwork,
     required LibraryCatalogWriteCoordinator catalogWrites,
-    required void Function() cancelScan,
     required Future<void> Function(AudioDetailTarget target) deleteAudioDetail,
     required void Function() syncState,
   }) : _service = service,
        _persistenceCoordinator = persistenceCoordinator,
        _coverArtwork = coverArtwork,
        _catalogWrites = catalogWrites,
-       _cancelScan = cancelScan,
        _deleteAudioDetail = deleteAudioDetail,
        _syncStateSlice = syncState;
 
@@ -72,7 +70,6 @@ final class LibraryMutationCoordinator {
   final LibraryPersistenceCoordinator _persistenceCoordinator;
   final CoverArtworkCacheService Function() _coverArtwork;
   final LibraryCatalogWriteCoordinator _catalogWrites;
-  final void Function() _cancelScan;
   final Future<void> Function(AudioDetailTarget target) _deleteAudioDetail;
   final void Function() _syncStateSlice;
   void _markStructureChanged() {
@@ -264,7 +261,6 @@ final class LibraryMutationCoordinator {
   }
 
   Future<bool> _removeLibraryPermanently(String libraryPath) async {
-    if (_service.isScanning) _cancelScan();
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final retainedPaths = _service
         .libraryEntriesForLibrary(normalizedLibraryPath)

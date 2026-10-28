@@ -22,6 +22,7 @@ final class PlaybackSeekDispatcher {
     PlaybackSession session,
     Duration position,
     int generation, {
+    required int nativeQueueIndex,
     required bool Function(NativePlaybackSnapshot) correctPosition,
   }) {
     var run = _runs[session.id];
@@ -38,6 +39,8 @@ final class PlaybackSeekDispatcher {
       generation: generation,
       path: session.currentTrackPath,
       queueIndex: session.currentQueueIndex,
+      queueVersion: session.queueVersion,
+      nativeQueueIndex: nativeQueueIndex,
       revision: ++run.revision,
       correctPosition: correctPosition,
       completer: completer,
@@ -53,6 +56,7 @@ final class PlaybackSeekDispatcher {
       run.session.loadGeneration == request.generation &&
       run.session.currentTrackPath == request.path &&
       run.session.currentQueueIndex == request.queueIndex &&
+      run.session.queueVersion == request.queueVersion &&
       run.revision == request.revision;
 
   Future<void> _drain(_SeekRun run) async {
@@ -80,10 +84,7 @@ final class PlaybackSeekDispatcher {
     try {
       response = await nativeRepository.seek(run.session.id, request.position);
     } catch (error, stackTrace) {
-      response = NativeFailure(
-        error.toString(),
-        details: stackTrace,
-      );
+      response = NativeFailure(error.toString(), details: stackTrace);
     }
     // Normal native events own successful seek state.
     if (response.isOk) return;
@@ -110,7 +111,7 @@ final class PlaybackSeekDispatcher {
         }
       }
       if (snapshot == null ||
-          snapshot.queueIndex != request.queueIndex ||
+          snapshot.queueIndex != request.nativeQueueIndex ||
           !request.correctPosition(snapshot)) {
         AppLogService.warning(
           'PlaybackSeekDispatcher.seek correction unavailable '
@@ -158,6 +159,8 @@ final class _SeekRequest {
     required this.generation,
     required this.path,
     required this.queueIndex,
+    required this.queueVersion,
+    required this.nativeQueueIndex,
     required this.revision,
     required this.correctPosition,
     required this.completer,
@@ -166,6 +169,8 @@ final class _SeekRequest {
   final int generation;
   final String path;
   final int queueIndex;
+  final int queueVersion;
+  final int nativeQueueIndex;
   final int revision;
   final bool Function(NativePlaybackSnapshot) correctPosition;
   final Completer<void> completer;

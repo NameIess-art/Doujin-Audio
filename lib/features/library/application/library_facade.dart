@@ -152,7 +152,6 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
         persistenceCoordinator: _persistenceCoordinator,
         coverArtwork: () => coverArtworkCacheService,
         catalogWrites: _catalogWrites,
-        cancelScan: cancelScan,
         deleteAudioDetail: _metadataCoordinator.deleteAudioDetail,
         syncState: _syncStateSlice,
       );
@@ -797,7 +796,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       _mutationCoordinator.removeTrack(trackPath);
 
   Future<LibraryRemovalKind?> removeFolder(String folderPath) =>
-      _mutationCoordinator.removeFolder(folderPath);
+      _withScanPaused(() => _mutationCoordinator.removeFolder(folderPath));
 
   void excludeLibraryFolder(String libraryPath, String folderPath) =>
       _mutationCoordinator.excludeLibraryFolder(libraryPath, folderPath);

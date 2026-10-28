@@ -1352,6 +1352,7 @@ void main() {
       'generation',
       'track',
       'queue index',
+      'queue definition',
       'replacement',
       'remove',
       'clear',
@@ -1373,6 +1374,8 @@ void main() {
             session.currentTrackPath = '/tracks/new.mp3';
           case 'queue index':
             session.currentQueueIndex = 1;
+          case 'queue definition':
+            session.customQueueTracks = const [];
           case 'replacement':
             playback.registerSession(_session(session.id));
           case 'remove':
@@ -1607,60 +1610,67 @@ void main() {
     );
   }
 
-  test(
-    'playback error retries an existing native source through transport',
-    () async {
-      final library = _createLibraryFacade();
-      final playback = PlaybackFacade.create(
-        databaseRepository:
-            library.databaseRepository as PlaybackPersistenceRepository,
-      )..configurePersistence(enabled: false);
-      final session = _session('failed-native-source')
-        ..loadedPath = '/tracks/failed.mp3'
-        ..finishPreparation(
-          0,
-          prepared: false,
-          autoPlay: false,
-          error: 'network failed',
-        )
-        ..state = const PlayerState(false, ProcessingState.idle);
-      var prepareCount = 0;
-      var startCount = 0;
-      addTearDown(() async {
-        await playback.dispose();
-        await library.dispose();
-      });
-      playback
-        ..attachPlaybackCommands(
-          prepareSession:
-              (
-                session, {
-                required nextPath,
-                autoPlay = true,
-                forceStartAtZero = false,
-                showLoading = true,
-                targetQueueIndex,
-              }) async {
-                prepareCount++;
-                return true;
-              },
-          pauseSession: (_) async {},
-          startSession: (_, {required shouldStartTriggerCountdown}) async {
-            startCount++;
-            return true;
-          },
-          resolveAdvance: (_, {required forward}) => null,
-          hasAdjacent: (_, {required forward}) => false,
-        )
-        ..registerSession(session);
+  for (final synchronized in [true, false]) {
+    test(
+      'playback error retries a loaded source (queue synchronized: $synchronized)',
+      () async {
+        final library = _createLibraryFacade();
+        final playback = PlaybackFacade.create(
+          databaseRepository:
+              library.databaseRepository as PlaybackPersistenceRepository,
+        )..configurePersistence(enabled: false);
+        final session = _session('failed-native-source')
+          ..loadedPath = '/tracks/failed.mp3'
+          ..finishPreparation(
+            0,
+            prepared: false,
+            autoPlay: false,
+            error: 'network failed',
+          )
+          ..state = const PlayerState(false, ProcessingState.idle);
+        if (synchronized) {
+          session.nativePlaybackQueueCache = [
+            {'path': session.currentTrackPath},
+          ];
+        }
+        var prepareCount = 0;
+        var startCount = 0;
+        addTearDown(() async {
+          await playback.dispose();
+          await library.dispose();
+        });
+        playback
+          ..attachPlaybackCommands(
+            prepareSession:
+                (
+                  session, {
+                  required nextPath,
+                  autoPlay = true,
+                  forceStartAtZero = false,
+                  showLoading = true,
+                  targetQueueIndex,
+                }) async {
+                  prepareCount++;
+                  return true;
+                },
+            pauseSession: (_) async {},
+            startSession: (_, {required shouldStartTriggerCountdown}) async {
+              startCount++;
+              return true;
+            },
+            resolveAdvance: (_, {required forward}) => null,
+            hasAdjacent: (_, {required forward}) => false,
+          )
+          ..registerSession(session);
 
-      await playback.toggleSessionPlayPause(session.id);
+        await playback.toggleSessionPlayPause(session.id);
 
-      expect(session.lastPlayedAt, isNotNull);
-      expect(prepareCount, 0);
-      expect(startCount, 1);
-    },
-  );
+        expect(session.lastPlayedAt, isNotNull);
+        expect(prepareCount, synchronized ? 0 : 1);
+        expect(startCount, synchronized ? 1 : 0);
+      },
+    );
+  }
 
   test('track changes preserve the session playback intent', () async {
     final library = _createLibraryFacade();

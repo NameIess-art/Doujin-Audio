@@ -77,6 +77,12 @@ final class _DelegatePlaybackCommandPort implements PlaybackCommandPort {
       _handleNativeSnapshot(snapshot);
 
   @override
+  int? nativePlaybackQueueStartIndexFor(
+    PlaybackSession session, {
+    required String currentPath,
+  }) => session.currentQueueIndex;
+
+  @override
   Future<bool> prepareSession(
     PlaybackSession session, {
     required String nextPath,

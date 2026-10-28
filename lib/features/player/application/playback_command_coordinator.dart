@@ -316,6 +316,7 @@ final class PlaybackCommandCoordinator
     required String currentPath,
   }) => _nativePlaybackQueueFor(session, currentPath: currentPath);
 
+  @override
   int? nativePlaybackQueueStartIndexFor(
     PlaybackSession session, {
     required String currentPath,

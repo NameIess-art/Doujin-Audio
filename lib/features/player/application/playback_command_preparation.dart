@@ -261,6 +261,16 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         }
         prepared = true;
       } else {
+        // Direct playback can replace the queue while keeping the loaded media.
+        // Reuse the existing scope/repeat synchronization before playing it.
+        if (session.nativePlaybackQueueCache == null &&
+            !await synchronizeLoopMode(session, session.loopMode)) {
+          if (_isSessionLoadCurrent(session, generation)) {
+            preparationError = 'Failed to synchronize the playback queue.';
+          }
+          return false;
+        }
+        if (!_isSessionLoadCurrent(session, generation)) return false;
         if (forceStartAtZero) {
           await _nativePlaybackRepository.seek(session.id, Duration.zero);
         }

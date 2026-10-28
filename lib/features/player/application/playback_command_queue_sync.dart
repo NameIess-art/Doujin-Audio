@@ -1,11 +1,13 @@
 part of 'playback_command_coordinator.dart';
 
 extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
-  Future<void> synchronizeLoopMode(
+  Future<bool> synchronizeLoopMode(
     PlaybackSession session,
     SessionLoopMode mode,
   ) async {
-    if (!_isRegisteredSession(session) || session.loadedPath == null) return;
+    if (!_isRegisteredSession(session) || session.loadedPath == null) {
+      return false;
+    }
     final generation = session.loadGeneration;
     final queueRevision = session.queueVersion;
     final previousQueue = session.nativePlaybackQueueCache;
@@ -17,7 +19,7 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
         session.loadGeneration != generation ||
         session.queueVersion != queueRevision ||
         session.loopMode != mode) {
-      return;
+      return false;
     }
     final scopeChanged =
         previousQueue == null ||
@@ -44,12 +46,17 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
             repeatAll: mode != SessionLoopMode.single && !mode.isOneShot,
             shuffle: mode.isShuffle,
           );
-    if (!result.isOk ||
-        !_isRegisteredSession(session) ||
+    if (!_isRegisteredSession(session) ||
         session.loadGeneration != generation ||
         session.queueVersion != queueRevision ||
         session.loopMode != mode) {
-      return;
+      return false;
+    }
+    if (!result.isOk) {
+      // A failed update must not make the locally built queue look native.
+      session.nativePlaybackQueueCacheKey = null;
+      session.nativePlaybackQueueCache = null;
+      return false;
     }
     _playbackFacade.updateNativeSessionRetainedContentUris(
       session.id,
@@ -62,6 +69,7 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
         ],
       ].whereType<String>(),
     );
+    return true;
   }
 
   Future<void> _syncPlaybackQueueSession(

@@ -21,6 +21,11 @@ abstract interface class PlaybackCommandPort {
 
   void handleNativeSnapshot(NativePlaybackSnapshot snapshot);
 
+  int? nativePlaybackQueueStartIndexFor(
+    PlaybackSession session, {
+    required String currentPath,
+  });
+
   PlaybackAdvanceResult? resolveAdvance(
     PlaybackSession session, {
     required bool forward,

@@ -50,9 +50,15 @@ class SubtitleModelStore extends ChangeNotifier {
     FileCachePlatformGateway? storage,
     Future<Directory> Function()? directoryResolver,
     HttpClient Function()? clientFactory,
+    Duration connectionTimeout = const Duration(seconds: 30),
+    Duration responseTimeout = const Duration(seconds: 30),
+    Duration idleTimeout = const Duration(seconds: 30),
   }) : _storage = storage ?? FileCachePlatformGateway.instance,
        _directoryResolver = directoryResolver ?? _defaultDirectory,
-       _clientFactory = clientFactory ?? HttpClient.new;
+       _clientFactory = clientFactory ?? HttpClient.new,
+       _connectionTimeout = connectionTimeout,
+       _responseTimeout = responseTimeout,
+       _idleTimeout = idleTimeout;
 
   static const japaneseCtc = SubtitleModelSpec(
     'wav2vec2-large-xlsr-53-japanese-q8_0.gguf',
@@ -64,6 +70,9 @@ class SubtitleModelStore extends ChangeNotifier {
   final FileCachePlatformGateway _storage;
   final Future<Directory> Function() _directoryResolver;
   final HttpClient Function() _clientFactory;
+  final Duration _connectionTimeout;
+  final Duration _responseTimeout;
+  final Duration _idleTimeout;
   final Map<String, Future<String>> _activeDownloads = {};
   final Map<String, SubtitleModelDownloadSnapshot> _snapshots = {};
   final Map<String, ({DateTime modified, DateTime changed, String sha256})>
@@ -190,13 +199,58 @@ class SubtitleModelStore extends ChangeNotifier {
       );
     }
 
+    if (isCancelled?.call() == true) {
+      throw const SubtitleModelDownloadCancelled();
+    }
     final client = _clientFactory();
+    var cancelled = false;
+    void Function()? cancelWait;
+    // Cancellation must wake connection/header/body waits even when the peer
+    // sends no more bytes. The existing callback remains shared by this task.
+    final cancellationTimer = isCancelled == null
+        ? null
+        : Timer.periodic(const Duration(milliseconds: 100), (_) {
+            if (!cancelled && isCancelled()) {
+              cancelled = true;
+              cancelWait?.call();
+            }
+          });
+    Future<T> wait<T>(Future<T> operation, Duration timeout) async {
+      if (cancelled) {
+        operation.ignore();
+        throw const SubtitleModelDownloadCancelled();
+      }
+      final expired = Completer<T>();
+      cancelWait = () {
+        if (!expired.isCompleted) {
+          expired.completeError(const SubtitleModelDownloadCancelled());
+        }
+      };
+      final timer = Timer(timeout, () {
+        if (!expired.isCompleted) {
+          expired.completeError(
+            TimeoutException('Subtitle model download stalled', timeout),
+          );
+        }
+      });
+      try {
+        return await Future.any<T>([operation, expired.future]);
+      } finally {
+        timer.cancel();
+        cancelWait = null;
+      }
+    }
+
     try {
-      final request = await client.getUrl(Uri.parse(spec.url));
+      client.connectionTimeout = _connectionTimeout;
+      final request = await wait(
+        client.getUrl(Uri.parse(spec.url)),
+        _connectionTimeout,
+      );
       if (received > 0) {
         request.headers.set(HttpHeaders.rangeHeader, 'bytes=$received-');
       }
-      final response = await request.close();
+      final response = await wait(request.close(), _responseTimeout);
       if (response.statusCode != HttpStatus.ok &&
           response.statusCode != HttpStatus.partialContent) {
         throw HttpException(
@@ -222,11 +276,13 @@ class SubtitleModelStore extends ChangeNotifier {
       final sink = partial.openWrite(
         mode: received == 0 ? FileMode.write : FileMode.append,
       );
+      final chunks = StreamIterator(response);
       try {
-        await for (final chunk in response) {
+        while (await wait(chunks.moveNext(), _idleTimeout)) {
           if (isCancelled?.call() == true) {
             throw const SubtitleModelDownloadCancelled();
           }
+          final chunk = chunks.current;
           sink.add(chunk);
           received += chunk.length;
           if (received > spec.bytes) {
@@ -236,9 +292,17 @@ class SubtitleModelStore extends ChangeNotifier {
         }
         await sink.flush();
       } finally {
-        await sink.close();
+        try {
+          await chunks.cancel();
+        } finally {
+          await sink.close();
+        }
       }
-      if (!await _valid(partial, spec)) {
+      final valid = await _valid(partial, spec);
+      if (cancelled || isCancelled?.call() == true) {
+        throw const SubtitleModelDownloadCancelled();
+      }
+      if (!valid) {
         await partial.delete();
         throw const FormatException('Subtitle model checksum mismatch');
       }
@@ -247,6 +311,7 @@ class SubtitleModelStore extends ChangeNotifier {
       _verifiedFiles.remove(partial.path);
       return target.path;
     } finally {
+      cancellationTimer?.cancel();
       client.close(force: true);
     }
   }

@@ -576,12 +576,18 @@ final class PlaybackFacade {
       session,
       clamped,
       session.loadGeneration,
+      nativeQueueIndex:
+          _commandPort?.nativePlaybackQueueStartIndexFor(
+            session,
+            currentPath: session.currentTrackPath,
+          ) ??
+          session.currentQueueIndex,
       correctPosition: (snapshot) {
         final path = snapshot.path ?? _pathFromSnapshotUri(snapshot.uri);
         if (path == null ||
             !PathMatcher.equalsNormalized(
               resolveRetargetedPath(path),
-              session.currentTrackPath,
+              resolveRetargetedPath(session.currentTrackPath),
             )) {
           return false;
         }
@@ -625,9 +631,10 @@ final class PlaybackFacade {
       // A native player can keep the failed media item while ExoPlayer is in
       // an error/idle state. Re-preparing the unchanged path is a no-op in the
       // preparation coordinator, so route retries through native recovery when
-      // the session still has a loaded source. Preparation is only needed when
-      // the original native session was never created.
-      if (session.loadedPath != null) {
+      // the session still has a loaded source and its queue is synchronized.
+      // A replaced queue must pass through preparation before native recovery.
+      if (session.loadedPath != null &&
+          session.nativePlaybackQueueCache != null) {
         session.beginLoadingIndicatorThreshold();
         await _commandPort?.startSession(
           session,

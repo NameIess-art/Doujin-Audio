@@ -474,6 +474,76 @@ void main() {
     },
   );
 
+  for (final chunkApplied in [false, true]) {
+    test(
+      'folder removal waits for refresh rollback (chunkApplied=$chunkApplied)',
+      () async {
+        final root = await Directory.systemTemp.createTemp('scan_remove_');
+        addTearDown(() => root.delete(recursive: true));
+        final library = runtimeGraph.library;
+        library.configurePersistence(enabled: true);
+        final original = _localDurationTrack(root.path, filename: 'old.mp3');
+        final discoveredPath = path.join(root.path, 'new.mp3');
+        library.addWatchedFolder(root.path);
+        library.addTracks([original]);
+        await library.flushPendingPersistence();
+        final started = Completer<void>();
+        final release = Completer<void>();
+        Future<void> blockScan() async {
+          started.complete();
+          await release.future;
+        }
+
+        final source = _JsonPreservationScanDataSource()
+          ..configure(
+            selectedPath: root.path,
+            tracks: [_scannedTrackForPath(discoveredPath)],
+            beforeChunk: chunkApplied ? null : blockScan,
+            afterChunk: chunkApplied ? blockScan : null,
+          );
+        final scan = LibraryScannerService(dataSource: source)
+            .refreshWatchedFolders(
+              provider: library,
+              labels: const LibraryScanLabels(
+                chooseMusicFolder: '',
+                chooseLibraryFolder: '',
+                chooseAudioFiles: '',
+                importedFiles: '',
+                manuallySelectedFiles: '',
+              ),
+            );
+        await started.future;
+        expect(
+          library.trackByPath(discoveredPath),
+          chunkApplied ? isNotNull : isNull,
+        );
+        final removal = library.removeFolder(root.path);
+        var removed = false;
+        unawaited(removal.then((_) => removed = true));
+        await Future<void>.delayed(Duration.zero);
+        expect(library.isScanning, isFalse);
+        expect(removed, isFalse);
+        expect(library.tryBeginScan(source: root.path), 0);
+
+        release.complete();
+        expect((await scan).code, LibraryScanOutcomeCode.cancelled);
+        expect(await removal, LibraryRemovalKind.standaloneFolderPermanent);
+        await library.flushPendingPersistence();
+        expect(library.library, isEmpty);
+        expect(library.watchedFolders, isEmpty);
+        expect(library.libraryEntriesForLibrary(root.path), isEmpty);
+        expect(await library.databaseRepository.loadAllTracks(), isEmpty);
+        await library.loadPersistedState();
+        expect(library.library, isEmpty);
+        expect(library.watchedFolders, isEmpty);
+        expect(library.libraryEntriesForLibrary(root.path), isEmpty);
+        final nextGeneration = library.tryBeginScan(source: root.path);
+        expect(nextGeneration, greaterThan(0));
+        library.finishScan(nextGeneration);
+      },
+    );
+  }
+
   for (final kind in ['media', 'folder', 'detail']) {
     test('rename $kind waits for a captured scan to retire', () async {
       final root = await Directory.systemTemp.createTemp('scan_rename_');
@@ -4323,14 +4393,14 @@ class _JsonPreservationScanDataSource implements LibraryScanDataSource {
   String _selectedPath = '';
   List<String> _childFolders = const <String>[];
   List<ScannedTrack> _tracks = const <ScannedTrack>[];
-  void Function()? _afterChunk;
+  FutureOr<void> Function()? _afterChunk;
   Future<void> Function()? _beforeChunk;
 
   void configure({
     required String selectedPath,
     List<String> childFolders = const <String>[],
     required List<ScannedTrack> tracks,
-    void Function()? afterChunk,
+    FutureOr<void> Function()? afterChunk,
     Future<void> Function()? beforeChunk,
   }) {
     _selectedPath = selectedPath;
@@ -4380,7 +4450,8 @@ class _JsonPreservationScanDataSource implements LibraryScanDataSource {
     final paths = _tracks.map((track) => track.path).toSet();
     await _beforeChunk?.call();
     await onChunk(FolderScanChunk(tracks: _tracks, paths: paths));
-    _afterChunk?.call();
+    final afterChunk = _afterChunk?.call();
+    if (afterChunk is Future<void>) await afterChunk;
     return _resultForCurrentTracks();
   }
 

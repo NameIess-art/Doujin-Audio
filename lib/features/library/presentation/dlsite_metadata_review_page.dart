@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_styles.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
@@ -713,7 +714,8 @@ class _DlsiteMetadataReviewPageState
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
         : defaultHeaderHeight;
-    final listTopPadding = effectiveHeaderHeight + 8;
+    final listTopPadding =
+        effectiveHeaderHeight + AppPageHeaderMetrics.firstContentSpacing;
 
     final hasCandidateNavigation = _candidates.length > 1 && !_loading;
 
@@ -949,7 +951,7 @@ class _DlsiteMetadataReviewPageState
                   title: reviewTitle,
                   trailing: headerTrailing,
                   additionalChild: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                     child: HeaderFloatingSurface(
                       key: const ValueKey<String>('dlsite_review_target_name'),
                       height: null,

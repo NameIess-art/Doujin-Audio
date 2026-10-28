@@ -3599,7 +3599,7 @@ void main() {
         final switcher = tester.getRect(
           find.ancestor(of: next, matching: find.byType(HeaderFloatingSurface)),
         );
-        expect(initialBounds.top - header.bottom, 24);
+        expect(initialBounds.top - header.bottom, 8);
         expect(switcher.top - initialBounds.bottom, 20);
         final points = [
           Offset(initialBounds.center.dx, initialBounds.top - 8),
@@ -4186,13 +4186,14 @@ void main() {
                 find.byKey(const ValueKey<String>('work_image_viewport')),
               )
               .dy,
-          greaterThanOrEqualTo(
+          closeTo(
             tester
                     .getBottomLeft(
                       find.byKey(const ValueKey<String>('work_image_header')),
                     )
                     .dy +
-                20,
+                8,
+            0.01,
           ),
         );
 
@@ -4718,6 +4719,7 @@ void main() {
                       accentColor: Colors.deepPurple,
                       menuEntries: const [],
                       moreLabel: 'More',
+                      unknownSizeLabel: '大小未知',
                       onAction: (_) {},
                     ),
                 ],
@@ -4747,8 +4749,8 @@ void main() {
             );
           } else {
             final info = item.extension.isEmpty
-                ? '0 B'
-                : '0 B · ${item.extension.substring(1)}';
+                ? '大小未知'
+                : '大小未知 · ${item.extension.substring(1)}';
             expect(
               find.descendant(of: row, matching: find.text(info)),
               findsOneWidget,
@@ -4757,6 +4759,65 @@ void main() {
           expect(item.name, sample.name);
           expect(item.relativePath, sample.path);
         }
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+
+    _detailTestWidgets(
+      'WorkDetailEntryTile shows unknown sizes and durations with units',
+      (tester) async {
+        const samples = [
+          (size: null, duration: null, info: '大小未知 · m4a'),
+          (
+            size: 0,
+            duration: Duration(minutes: 3, seconds: 48),
+            info: '大小未知 · 3 min 48 s · m4a',
+          ),
+          (size: -1, duration: Duration.zero, info: '大小未知 · 0 s · m4a'),
+          (
+            size: 2048,
+            duration: Duration(seconds: 48),
+            info: '2.0 KB · 48 s · m4a',
+          ),
+          (
+            size: 2048,
+            duration: Duration(hours: 1, minutes: 2, seconds: 3),
+            info: '2.0 KB · 1 h 2 min 3 s · m4a',
+          ),
+        ];
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  for (final sample in samples)
+                    WorkDetailEntryTile(
+                      item: WorkEntryItem(
+                        name: 'Track.m4a',
+                        relativePath: 'Track.m4a',
+                        type: WorkEntryType.audio,
+                        fileSizeBytes: sample.size,
+                        duration: sample.duration,
+                      ),
+                      accentColor: Colors.deepPurple,
+                      menuEntries: const [],
+                      moreLabel: 'More',
+                      unknownSizeLabel: '大小未知',
+                      onAction: (_) {},
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+        for (final sample in samples) {
+          expect(find.text(sample.info), findsOneWidget);
+        }
+        expect(find.textContaining('0 B'), findsNothing);
         expect(tester.takeException(), isNull);
       },
       variant: const TargetPlatformVariant({
@@ -4788,6 +4849,7 @@ void main() {
                           accentColor: Colors.deepPurple,
                           menuEntries: const [],
                           moreLabel: 'More',
+                          unknownSizeLabel: '大小未知',
                           onAction: (_) {},
                         ),
                       ],
@@ -4861,6 +4923,7 @@ void main() {
                           accentColor: Colors.deepPurple,
                           menuEntries: const [],
                           moreLabel: 'More',
+                          unknownSizeLabel: '大小未知',
                           onAction: actions.add,
                         ),
                     ],
@@ -4887,7 +4950,7 @@ void main() {
             } else {
               final info = find.text(
                 type == WorkEntryType.audio
-                    ? '1.0 KB · 01:05 · mp3'
+                    ? '1.0 KB · 1 min 5 s · mp3'
                     : '1.0 KB · mp3',
               );
               final infoInRow = find.descendant(of: row, matching: info);
@@ -4983,6 +5046,7 @@ void main() {
                                 accentColor: Colors.deepPurple,
                                 menuEntries: const [],
                                 moreLabel: 'More',
+                                unknownSizeLabel: '大小未知',
                                 onAction: (_) {},
                               ),
                           ],
@@ -5008,7 +5072,7 @@ void main() {
               var contentHeight = nameRect.height;
               if (index == 1) {
                 final infoRect = tester.getRect(
-                  find.text('1.0 KB · 01:05 · mp3'),
+                  find.text('1.0 KB · 1 min 5 s · mp3'),
                 );
                 expect(infoRect.top - nameRect.bottom, closeTo(2, 0.01));
                 contentHeight += 2 + infoRect.height;
@@ -5069,6 +5133,7 @@ void main() {
                   accentColor: Colors.blue,
                   menuEntries: const [],
                   moreLabel: 'More',
+                  unknownSizeLabel: '大小未知',
                   onAction: (action) => performedAction = action,
                 ),
               ),
@@ -5151,6 +5216,7 @@ void main() {
                   ),
                 ],
                 moreLabel: 'More',
+                unknownSizeLabel: '大小未知',
                 onAction: (action) => performedAction = action,
               ),
             ),

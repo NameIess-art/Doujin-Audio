@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_styles.dart';
 import '../domain/asmr_models.dart';
 import '../application/asmr_download_models.dart';
 import '../application/asmr_download_planner.dart';
@@ -435,7 +436,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
         : defaultHeaderHeight;
-    final listTopPadding = effectiveHeaderHeight + 8;
+    final listTopPadding =
+        effectiveHeaderHeight + AppPageHeaderMetrics.firstContentSpacing;
 
     final page = Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -661,7 +663,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                         ),
                       ),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                       child: AnimatedSwitcher(
                         duration: MediaQuery.disableAnimationsOf(context)
                             ? Duration.zero

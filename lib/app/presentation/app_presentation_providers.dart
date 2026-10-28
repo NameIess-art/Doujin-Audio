@@ -395,7 +395,7 @@ final libraryCoverForTrackProvider = FutureProvider.autoDispose
     .family<String?, ({String trackPath, BuildContext context})>((
       ref,
       request,
-    ) async {
+    ) {
       final facade = ref.read(libraryFacadeProvider);
       final track = facade.trackByPath(request.trackPath);
       if (track == null || track.isVideo) return null;

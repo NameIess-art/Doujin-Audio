@@ -1,4 +1,5 @@
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/core/widgets/app_glass_surface.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -8,6 +9,82 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets(
+    'page content stays eight pixels below single and multi row headers',
+    (tester) async {
+      for (final safeTop in [0.0, 24.0]) {
+        for (final layout in ['title', 'capsule', 'two rows', 'search']) {
+          await tester.pumpWidget(
+            MaterialApp(
+              home: MediaQuery(
+                data: MediaQueryData(padding: EdgeInsets.only(top: safeTop)),
+                child: Scaffold(
+                  body: Builder(
+                    builder: (context) => Stack(
+                      children: [
+                        ListView(
+                          padding: EdgeInsets.only(
+                            top: AppPageHeaderMetrics.contentTopInset(
+                              context,
+                              additionalHeight:
+                                  layout == 'two rows' || layout == 'search'
+                                  ? 44
+                                  : 0,
+                            ),
+                          ),
+                          children: const [
+                            SizedBox(
+                              key: ValueKey('first-content'),
+                              height: 50,
+                            ),
+                          ],
+                        ),
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: TopPageHeader(
+                            title: layout == 'capsule' ? '' : 'Title',
+                            topCapsuleTitle: layout == 'two rows'
+                                ? 'Page'
+                                : null,
+                            titleWidget: layout == 'capsule'
+                                ? const HeaderTopCapsule(title: 'Page')
+                                : null,
+                            additionalChild: layout == 'search'
+                                ? const Padding(
+                                    padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
+                                    child: HeaderFloatingSurface(
+                                      child: Text('Search'),
+                                    ),
+                                  )
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            tester.getTopLeft(find.byKey(const ValueKey('first-content'))).dy -
+                tester.getBottomLeft(find.byType(TopPageHeader)).dy,
+            8,
+            reason: '$layout with safe top $safeTop',
+          );
+          expect(tester.takeException(), isNull);
+        }
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets(
     'unmasked header keeps Android fades independent of grouped backdrops',
     (tester) async {

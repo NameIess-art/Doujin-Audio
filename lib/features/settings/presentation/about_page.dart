@@ -90,16 +90,12 @@ class AboutPage extends ConsumerWidget {
     final tokens = AppDesignTokens.of(context);
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
-    final headerHeight =
-        MediaQuery.paddingOf(context).top +
-        AppPageHeaderMetrics.padding.top +
-        38 +
-        AppPageHeaderMetrics.bottomSpacing;
+    final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: PageHeaderInset(
-        topInset: headerHeight,
+        topInset: contentTopInset,
         child: Stack(
           children: [
             Positioned.fill(
@@ -107,7 +103,7 @@ class AboutPage extends ConsumerWidget {
                 child: ListView(
                   padding: EdgeInsets.fromLTRB(
                     tokens.pageHorizontalPadding,
-                    headerHeight + AppPageHeaderMetrics.firstContentSpacing,
+                    contentTopInset,
                     tokens.pageHorizontalPadding,
                     bottomInset + AppSpacing.xl,
                   ),

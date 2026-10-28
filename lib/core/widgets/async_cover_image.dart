@@ -259,6 +259,8 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
               key: _commitKey,
               priority: 20,
               allowDuringScroll: true,
+              structural:
+                  path != null && path.isNotEmpty && _resolvedPath != path,
               commit: applyPath,
             );
           }
@@ -714,17 +716,15 @@ class _RetryingImageState extends State<RetryingImage> {
       !widget.deferLoadDuringInteraction ||
       !_interaction.isVisualUpdateDeferred;
 
-  // Newly exposed rows share the existing frame budget during a scroll.
-  // Decoded covers still bypass the queue in build; cold covers keep loading
-  // progressively without waiting for the gesture to end.
-  bool get _canLoadImmediately =>
-      !widget.deferLoadDuringInteraction || !_interaction.isInteracting;
+  // Budget cold images even before the first gesture. Otherwise the initial
+  // cache extent can start every decode together just as scrolling begins.
+  // Decoded covers still bypass this queue in build.
+  bool get _canLoadImmediately => !widget.deferLoadDuringInteraction;
 
   @override
   void initState() {
     super.initState();
     _loadEnabled = _canLoadImmediately;
-    _interaction.navigationAllowed.addListener(_scheduleLoadWhenAllowed);
     _interaction.addListener(_scheduleLoadWhenAllowed);
   }
 
@@ -754,7 +754,6 @@ class _RetryingImageState extends State<RetryingImage> {
   @override
   void dispose() {
     _retryTimer?.cancel();
-    _interaction.navigationAllowed.removeListener(_scheduleLoadWhenAllowed);
     _interaction.removeListener(_scheduleLoadWhenAllowed);
     _interaction.cancelCommit(_retryCommitKey);
     _interaction.cancelCommit(_loadCommitKey);
@@ -869,6 +868,7 @@ class _RetryingImageState extends State<RetryingImage> {
         _scheduleLoadWhenAllowed();
       }
     }
+    if (_loadEnabled) _interaction.cancelCommit(_loadCommitKey);
     if (!_loadEnabled) provider ??= _previewProvider;
     if (!_loadEnabled && provider == null) {
       final loadingBuilder = widget.loadingBuilder;

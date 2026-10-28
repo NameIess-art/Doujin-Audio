@@ -655,7 +655,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final bottomInset = MobileOverlayInset.of(context);
 
     final headerControlsFullHeight = this.headerControlsFullHeight;
-    final topTotalHeight = headerHeight + 4;
+    final topTotalHeight =
+        headerHeight + AppPageHeaderMetrics.firstContentSpacing;
     final headerContentHeight = topTotalHeight + headerControlsFullHeight;
     // Remove the extra 96px to make content flush with the bottom dock.
     final listBottomInset = bottomInset;

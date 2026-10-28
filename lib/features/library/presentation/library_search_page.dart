@@ -213,9 +213,10 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     final structureRevision = libraryFacade.structureRevision;
     final detailRevision = libraryFacade.detailCacheService.revision;
     final topInset = _isSelectionMode
-        ? AppPageHeaderMetrics.expandedToolbarHeight +
-              MediaQuery.paddingOf(context).top +
-              AppPageHeaderMetrics.bottomSpacing
+        ? AppPageHeaderMetrics.contentTopInset(
+            context,
+            additionalHeight: 6 + AppPageHeaderMetrics.buttonSize,
+          )
         : AppSearchPageScaffold.controlsTopInset(context, hasCategories: false);
     final query = _submittedQuery;
     return AppSearchPageScaffold<AudioLibraryCategoryType>(

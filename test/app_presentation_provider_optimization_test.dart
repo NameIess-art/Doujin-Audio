@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
@@ -18,6 +21,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 import 'support/test_persistence_repository.dart';
+
+class _KnownTrackCovers extends CoverArtworkCacheService {
+  _KnownTrackCovers({required super.libraryService});
+
+  @override
+  String? resolvedForTrack(MusicTrack? track, {String? trackPath}) =>
+      '/cover/cached.png';
+}
 
 class _WorkDetailRepository extends TestPersistenceRepository {
   final ready = Completer<void>();
@@ -91,6 +102,40 @@ void main() {
     expect(container.read(provider).isLoading, false);
     expect(container.read(provider).requireValue.workTitle, 'Cached work');
   });
+
+  testWidgets(
+    'cached single-file cover is available on the first synchronous read',
+    (tester) async {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _KnownTrackCovers(libraryService: service),
+      );
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'Cached',
+        path: '/single.mp3',
+        groupKey: '/single.mp3',
+        groupTitle: 'Cached',
+        isSingle: true,
+      );
+      fixture.library.addTracks([track], persist: false);
+      await tester.pumpWidget(
+        fixture.build(
+          Consumer(builder: (context, ref, _) {
+            final cover = ref.watch(libraryCoverForTrackProvider((
+              trackPath: track.path,
+              context: context,
+            )));
+            expect(cover.isLoading, isFalse);
+            expect(cover.requireValue, '/cover/cached.png');
+            return const SizedBox.shrink();
+          }),
+        ),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets(
     'a thousand local works keep cards stable while scrolling in both directions',

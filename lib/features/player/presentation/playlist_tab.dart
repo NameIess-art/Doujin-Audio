@@ -225,7 +225,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   double get defaultHeaderHeight => AppPageHeaderMetrics.expandedToolbarHeight;
 
   double _minimumExpandedHeaderHeight(BuildContext context) {
-    return defaultHeaderHeight + MediaQuery.paddingOf(context).top;
+    return AppPageHeaderMetrics.headerHeight(
+      context,
+      contentHeight: AppPageHeaderMetrics.expandedContentHeight,
+    );
   }
 
   Orientation? _lastOrientation;
@@ -382,7 +385,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final effectiveHeaderHeight = headerHeight > defaultHeaderHeight
         ? headerHeight
         : _minimumExpandedHeaderHeight(context);
-    final topPadding = effectiveHeaderHeight + 4.0;
+    final topPadding =
+        effectiveHeaderHeight + AppPageHeaderMetrics.firstContentSpacing;
     final bottomPadding = listBottomInset + 16.0;
     final sessionsInitialized = ref.watch(
       playbackCatalogProvider.select((s) => s.value?.isInitialized),

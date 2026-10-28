@@ -352,8 +352,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   UiOperationService get _operations => ref.read(uiOperationServiceProvider);
 
   double _minimumExpandedHeaderHeight(BuildContext context) {
-    return AppPageHeaderMetrics.expandedToolbarHeight +
-        MediaQuery.paddingOf(context).top;
+    return AppPageHeaderMetrics.headerHeight(
+      context,
+      additionalHeight: 6 + AppPageHeaderMetrics.buttonSize,
+    );
   }
 
   Future<T> _runAsmrOperation<T>({
@@ -902,7 +904,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
         : _minimumExpandedHeaderHeight(context);
-    final headerContentHeight = effectiveHeaderHeight + 4.0;
+    final headerContentHeight =
+        effectiveHeaderHeight + AppPageHeaderMetrics.firstContentSpacing;
 
     final page = PageHeaderInset(
       topInset: headerContentHeight,

@@ -147,7 +147,7 @@ void main() {
           );
           expect(
             firstEntry.top - tester.getRect(header).bottom,
-            closeTo(4, .1),
+            closeTo(8, .1),
           );
           expect(firstEntry.left, closeTo(16, .1));
           expect(

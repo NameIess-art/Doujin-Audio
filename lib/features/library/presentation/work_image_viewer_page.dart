@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_styles.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_glass_surface.dart';
@@ -58,7 +59,6 @@ class WorkImageViewerPage extends ConsumerStatefulWidget {
 class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   static const int _loopPageSeed = 100000;
-  static const double _imageHeaderGap = 24;
   static const double _imageSwitcherGap = 20;
   final GlobalKey _headerKey = GlobalKey();
   final GlobalKey _switcherKey = GlobalKey();
@@ -408,8 +408,8 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
     final imageTop =
         (_headerHeight > 0
             ? _headerHeight
-            : MediaQuery.paddingOf(context).top + 96) +
-        _imageHeaderGap;
+            : AppPageHeaderMetrics.headerHeight(context)) +
+        AppPageHeaderMetrics.firstContentSpacing;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final switcherHeight = _switcherHeight > 0 ? _switcherHeight : 38.0;
     final imageBottom = widget.images.length > 1

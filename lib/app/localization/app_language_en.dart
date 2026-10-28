@@ -198,7 +198,7 @@ const Map<String, String> appLanguageEn = {
   'sort_group_by_library': 'Group by library',
   'batch_metadata': 'Batch metadata',
   'batch_metadata_hint':
-      'Fetch from Online Audio Library, or DLsite if it fails, from top to bottom. Confirm each work to continue.',
+      'Look up metadata for the selected works in batches. DLsite takes priority; ASMR.ONE, then Japanese ASMR, are tried when metadata is unavailable or fields are missing.\nReview, edit, or exclude works from the results list. After confirming individual works, return to the results list and tap Confirm to save confirmed, non-excluded works together. Saving updates existing fields.',
   'batch_metadata_no_metadata': 'Works with no metadata',
   'batch_metadata_any_missing': 'Works missing data',
   'batch_metadata_has_rj_code': 'Works with an RJ code',

@@ -316,8 +316,9 @@ extension _TimerTabBody on _TimerTabState {
       },
     );
 
-    final topPadding = MediaQuery.paddingOf(context).top;
-    final timerTopInset = widget.showHeader ? 82.0 + topPadding : 0.0;
+    final timerTopInset = widget.showHeader
+        ? AppPageHeaderMetrics.contentTopInset(context)
+        : 0.0;
 
     final content = showCompactOnly
         ? compactContent
@@ -329,7 +330,7 @@ extension _TimerTabBody on _TimerTabState {
                   child: ListView(
                     padding: EdgeInsets.fromLTRB(
                       16,
-                      widget.showHeader ? 82 + topPadding : 6,
+                      widget.showHeader ? timerTopInset : 6,
                       16,
                       24,
                     ),
@@ -603,7 +604,10 @@ extension _TimerTabBody on _TimerTabState {
           );
 
     if (widget.useSafeArea) {
-      return SafeArea(child: content);
+      return SafeArea(
+        top: !widget.showHeader || showCompactOnly,
+        child: content,
+      );
     }
     return content;
   }

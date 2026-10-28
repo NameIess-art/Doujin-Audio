@@ -380,6 +380,9 @@ void main() {
       expect(service.saved!.single.text, 'New source\nline');
       expect(service.saved!.single.originalText, 'New source\nline');
 
+      // Let the save feedback above the first cue finish before editing again.
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
       await tester.pumpAndSettle();
       expect(find.byType(TextField), findsNWidgets(2));

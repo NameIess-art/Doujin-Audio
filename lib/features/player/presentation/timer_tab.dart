@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../app/theme/app_styles.dart';
 import '../application/timer_facade.dart';
 import '../domain/playback_mode.dart';
 import '../../settings/application/permission_status_service.dart';

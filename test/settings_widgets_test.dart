@@ -351,10 +351,6 @@ void main() {
       findsNothing,
     );
     expect(categoryHeaderWidget.padding, AppPageHeaderMetrics.padding);
-    expect(
-      categoryHeaderWidget.bottomSpacing,
-      AppPageHeaderMetrics.bottomSpacing,
-    );
     final firstLanguageTile = find.widgetWithText(
       ListTile,
       i18n.tr('interface_language'),
@@ -573,11 +569,10 @@ void main() {
       // Width is determined by text length rather than stretching to full width
       expect(tester.getSize(startupSurface).width, lessThan(300));
       expect(tester.getTopLeft(startupSurface).dx, equals(16.0));
-      // Initial distance between title bar capsule bottom and category pill top is 14.0px
       final initialAppearanceGap =
           tester.getTopLeft(startupPill).dy -
           tester.getRect(categoryHeader).bottom;
-      expect(initialAppearanceGap, closeTo(14.0, 0.5));
+      expect(initialAppearanceGap, closeTo(8.0, 0.5));
       expect(
         find.byKey(const ValueKey<String>('settings_sticky_section_pill')),
         findsNothing,
@@ -604,11 +599,10 @@ void main() {
       );
       expect(tester.getSize(stickySurface).width, lessThan(300));
       expect(tester.getTopLeft(stickySurface).dx, equals(16.0));
-      // Pinned gap between title bar capsule bottom and sticky pill top is 6.0px (consistent with main header two rows)
       expect(
         tester.getTopLeft(stickyPill).dy -
             tester.getRect(categoryHeader).bottom,
-        closeTo(6.0, 0.5),
+        closeTo(8.0, 0.5),
       );
       // When section is pinned, its inline pill is hidden to avoid duplicate pills on screen
       final inlineVisibility = tester.widget<Visibility>(
@@ -702,7 +696,7 @@ void main() {
       final mainPageGap =
           tester.getTopLeft(firstMainCard).dy -
           tester.getRect(mainSettingsHeader).bottom;
-      expect(mainPageGap, closeTo(14.0, 0.5));
+      expect(mainPageGap, closeTo(8.0, 0.5));
 
       expect(find.text(i18n.tr('section_language')), findsNothing);
     },
@@ -1327,17 +1321,10 @@ void main() {
     final firstCardFinder = find
         .ancestor(of: rootTile, matching: find.byType(Card))
         .first;
-    final headerWidget = tester.widget<HeaderTopCapsule>(headerCapsule);
     expect(
       tester.getTopLeft(firstCardFinder).dy -
           tester.getBottomLeft(headerCapsule).dy,
-      closeTo(
-        AppPageHeaderMetrics.contentHeight -
-            headerWidget.height +
-            AppPageHeaderMetrics.bottomSpacing +
-            AppPageHeaderMetrics.firstContentSpacing,
-        0.001,
-      ),
+      closeTo(8, 0.001),
     );
     expect(rootCard.color, Colors.transparent);
     final rootBorderRadius =

@@ -14,6 +14,18 @@ String formatDurationCompact(Duration value) {
   return '${_twoDigits(minutes)}:${_twoDigits(seconds)}';
 }
 
+String formatDurationWithUnits(Duration value) {
+  final normalized = _nonNegative(value);
+  final hours = normalized.inHours;
+  final minutes = normalized.inMinutes.remainder(60);
+  final seconds = normalized.inSeconds.remainder(60);
+  return [
+    if (hours > 0) '$hours h',
+    if (minutes > 0) '$minutes min',
+    if (seconds > 0 || normalized.inSeconds == 0) '$seconds s',
+  ].join(' ');
+}
+
 String formatClockTime(int hour, int minute) {
   return '${_twoDigits(hour)}:${_twoDigits(minute)}';
 }

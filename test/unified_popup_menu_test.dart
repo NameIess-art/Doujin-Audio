@@ -662,6 +662,7 @@ void main() {
                         ),
                         accentColor: Colors.blue,
                         moreLabel: 'Menu',
+                        unknownSizeLabel: 'Size unknown',
                         menuEntries: const [
                           UnifiedMenuEntry.action(
                             value: WorkEntryAction.play,

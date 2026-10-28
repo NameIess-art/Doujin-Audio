@@ -89,7 +89,6 @@ class TopPageHeader extends StatefulWidget {
     this.subtitleFontSize,
     this.fitSubtitleToWidth = false,
     this.padding = AppPageHeaderMetrics.padding,
-    this.bottomSpacing = AppPageHeaderMetrics.bottomSpacing,
     this.useSafeAreaTop = true,
     this.additionalChild,
     this.marqueeTitle = false,
@@ -105,7 +104,6 @@ class TopPageHeader extends StatefulWidget {
       AppSpacing.sm,
       0,
     ),
-    this.collapsedBottomSpacing = AppSpacing.xs,
     this.floating = true,
     this.showFadeMask = true,
     this.topCapsuleTitle,
@@ -127,7 +125,6 @@ class TopPageHeader extends StatefulWidget {
   final double? subtitleFontSize;
   final bool fitSubtitleToWidth;
   final EdgeInsetsGeometry padding;
-  final double bottomSpacing;
   final bool useSafeAreaTop;
   final Widget? additionalChild;
   final bool marqueeTitle;
@@ -138,7 +135,6 @@ class TopPageHeader extends StatefulWidget {
   final double floatingRevealDistance;
   final double floatingRevealTriggerDistance;
   final EdgeInsetsGeometry collapsedPadding;
-  final double collapsedBottomSpacing;
   final bool floating;
   final bool showFadeMask;
   final String? topCapsuleTitle;
@@ -473,9 +469,9 @@ class _TopPageHeaderState extends State<TopPageHeader> {
       final topCapsuleOpacity = (1.0 - Curves.easeIn.transform(collapseT))
           .clamp(0.0, 1.0);
 
-      const topCapsuleHeight = 38.0;
-      const rowGap = 6.0;
-      const secondRowHeight = 38.0;
+      const topCapsuleHeight = AppPageHeaderMetrics.contentHeight;
+      const rowGap = AppPageHeaderMetrics.rowSpacing;
+      const secondRowHeight = AppPageHeaderMetrics.contentHeight;
       const expandedHeight = topCapsuleHeight + rowGap + secondRowHeight;
       const collapsedHeight = secondRowHeight;
 

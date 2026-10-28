@@ -112,11 +112,7 @@ class _PlaybackQueueAudioEditPageState
         ? cs.surfaceContainerLowest
         : cs.surfaceContainer;
 
-    final headerHeight =
-        MediaQuery.paddingOf(context).top +
-        AppPageHeaderMetrics.padding.top +
-        38 +
-        AppPageHeaderMetrics.bottomSpacing;
+    final headerHeight = AppPageHeaderMetrics.contentTopInset(context);
 
     return Scaffold(
       backgroundColor: cs.surface,
@@ -280,7 +276,7 @@ class _PlaybackQueueAudioEditPageState
                             child: Padding(
                               padding: const EdgeInsets.fromLTRB(
                                 AppSpacing.xs,
-                                AppSpacing.sm,
+                                0,
                                 AppSpacing.xs,
                                 AppSpacing.xs,
                               ),
@@ -365,7 +361,7 @@ class _PlaybackQueueAudioEditPageState
                               child: Padding(
                                 padding: const EdgeInsets.fromLTRB(
                                   AppSpacing.xs,
-                                  AppSpacing.sm,
+                                  0,
                                   AppSpacing.xs,
                                   AppSpacing.xs,
                                 ),

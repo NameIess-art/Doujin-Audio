@@ -179,12 +179,7 @@ class _MyPageState extends ConsumerState<MyPage>
       ),
     );
     final controller = ref.watch(asmrLibraryControllerProvider);
-    final top =
-        MediaQuery.paddingOf(context).top +
-        AppPageHeaderMetrics.padding.vertical +
-        AppPageHeaderMetrics.contentHeight +
-        AppPageHeaderMetrics.bottomSpacing +
-        AppPageHeaderMetrics.firstContentSpacing;
+    final top = AppPageHeaderMetrics.contentTopInset(context);
     Widget section(
       String title,
       Widget child, {

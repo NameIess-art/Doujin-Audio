@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_styles.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
@@ -242,7 +243,10 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
     final editTree = _editTree;
     final snapshotError = _diskSnapshotError || _treeProjectionError;
 
-    final headerTopInset = MediaQuery.paddingOf(context).top + 98;
+    final headerTopInset = AppPageHeaderMetrics.contentTopInset(
+      context,
+      additionalHeight: 6 + AppPageHeaderMetrics.buttonSize,
+    );
     final content = SearchHighlightScope(
       query: _searchQuery,
       child: PageHeaderInset(

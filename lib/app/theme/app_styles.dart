@@ -32,8 +32,10 @@ class AppRadius {
 }
 
 abstract final class AppPageHeaderMetrics {
-  static const double contentHeight = 44;
   static const double buttonSize = 38;
+  static const double contentHeight = buttonSize;
+  static const double rowSpacing = 6;
+  static const double expandedContentHeight = contentHeight * 2 + rowSpacing;
   static const EdgeInsets padding = EdgeInsets.fromLTRB(
     AppSpacing.md,
     6,
@@ -46,15 +48,29 @@ abstract final class AppPageHeaderMetrics {
     AppSpacing.md,
     0,
   );
-  static const double firstContentSpacing = AppSpacing.xxs;
-  static const double bottomSpacing = AppSpacing.xxs;
+  static const double firstContentSpacing = AppSpacing.xs;
   static const double toolbarHeight = 62;
   static const double expandedToolbarHeight = 88;
 
-  static double contentTopInset(BuildContext context) =>
+  static double headerHeight(
+    BuildContext context, {
+    double? contentHeight,
+    double additionalHeight = 0,
+  }) =>
       MediaQuery.paddingOf(context).top +
       padding.vertical +
-      contentHeight +
-      bottomSpacing +
+      (contentHeight ?? AppPageHeaderMetrics.contentHeight) +
+      additionalHeight;
+
+  static double contentTopInset(
+    BuildContext context, {
+    double? contentHeight,
+    double additionalHeight = 0,
+  }) =>
+      headerHeight(
+        context,
+        contentHeight: contentHeight,
+        additionalHeight: additionalHeight,
+      ) +
       firstContentSpacing;
 }

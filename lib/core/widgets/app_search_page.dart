@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../app/theme/app_design_tokens.dart';
+import '../../app/theme/app_styles.dart';
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_edge_fade_mask.dart';
 import 'app_glass_surface.dart';
@@ -62,7 +63,12 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
   static double controlsTopInset(
     BuildContext context, {
     bool hasCategories = true,
-  }) => MediaQuery.paddingOf(context).top + (hasCategories ? 100 : 56);
+  }) => AppPageHeaderMetrics.contentTopInset(
+    context,
+    contentHeight: hasCategories
+        ? AppPageHeaderMetrics.expandedContentHeight
+        : AppPageHeaderMetrics.contentHeight,
+  );
 
   @override
   State<AppSearchPageScaffold<T>> createState() =>

@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/player/presentation/timer_tab.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/settings/application/permission_status_service.dart';
@@ -25,6 +26,44 @@ void main() {
     UiInteractionCoordinator.instance.resetForTest();
     UiInteractionNavigatorObserver.instance.resetForTest();
   });
+
+  testWidgets(
+    'full timer content starts eight pixels below its title bar',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                padding: const EdgeInsets.only(top: 24),
+              ),
+              child: const TimerTab(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final summary = find
+          .descendant(
+            of: find.byType(ListView).first,
+            matching: find.byType(Wrap),
+          )
+          .first;
+      expect(
+        tester.getTopLeft(summary).dy -
+            tester.getBottomLeft(find.byType(TopPageHeader)).dy,
+        8,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   for (final compact in [false, true]) {
     testWidgets(

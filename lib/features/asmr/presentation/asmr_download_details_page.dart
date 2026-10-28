@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_styles.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../domain/asmr_models.dart';
 import '../application/asmr_download_models.dart';
@@ -138,7 +139,8 @@ class _AsmrDownloadDetailsPageState
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
         : defaultHeaderHeight;
-    final listTopPadding = effectiveHeaderHeight + 8;
+    final listTopPadding =
+        effectiveHeaderHeight + AppPageHeaderMetrics.firstContentSpacing;
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -267,7 +269,7 @@ class _AsmrDownloadDetailsPageState
                 leading: const BackButton(),
                 title: i18n.tr('asmr_download_details_title'),
                 additionalChild: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: HeaderFloatingSurface(
                     key: const ValueKey<String>('asmr_download_work_title'),
                     height: null,

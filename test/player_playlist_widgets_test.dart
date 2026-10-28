@@ -2935,10 +2935,6 @@ void main() {
       Icons.playlist_play_rounded,
     );
     expect(
-      tester.widget<TopPageHeader>(find.byType(TopPageHeader)).bottomSpacing,
-      4,
-    );
-    expect(
       tester
           .widget<TopPageHeader>(find.byType(TopPageHeader))
           .collapseController,
@@ -2988,8 +2984,9 @@ void main() {
     expect(tester.getSize(skeletonTrailingCircles), const Size.square(36));
     final initialSkeletonCardTop = tester.getTopLeft(skeletonCards.first).dy;
     expect(
-      initialSkeletonCardTop,
-      greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TopPageHeader)).dy),
+      initialSkeletonCardTop -
+          tester.getBottomLeft(find.byType(TopPageHeader)).dy,
+      closeTo(8, 0.001),
     );
     expect(
       tester.getBottomLeft(skeletonCards.last).dy,
@@ -5338,7 +5335,7 @@ void main() {
     final topGap = emptyCardRect.top - headerBottom;
     final bottomGap = viewportHeight - 16 - emptyCardRect.bottom;
     expect(topGap, greaterThanOrEqualTo(0));
-    expect(topGap, closeTo(bottomGap, 5));
+    expect(topGap - 8, closeTo(bottomGap, 5));
 
     expect(find.byTooltip(languageProvider.tr('sort_by')), findsOneWidget);
     await tester.tap(find.byTooltip(languageProvider.tr('sort_by')));

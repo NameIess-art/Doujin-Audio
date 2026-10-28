@@ -214,7 +214,7 @@ void main() {
     );
     expect(
       tester.widget<ListView>(find.byType(ListView)).padding,
-      const EdgeInsets.fromLTRB(16, 58, 16, 78),
+      const EdgeInsets.fromLTRB(16, 52, 16, 78),
     );
     expect(
       find.byKey(const ValueKey<String>('batch_metadata_picker_done')),
@@ -510,7 +510,7 @@ void main() {
 
     expect(
       tester.widget<ListView>(find.byType(ListView)).padding,
-      const EdgeInsets.fromLTRB(16, 58, 16, 88),
+      const EdgeInsets.fromLTRB(16, 52, 16, 88),
     );
     final start = find.byKey(const ValueKey<String>('batch_metadata_start'));
     expect(start, findsOneWidget);

@@ -1364,6 +1364,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       final entryMenus =
           <(WorkEntryType, bool), List<UnifiedMenuEntry<WorkEntryAction>>>{};
       final moreLabel = i18n.tr('more_actions');
+      final unknownSizeLabel = i18n.tr('asmr_download_size_unknown');
       final currentEntries = _buildCurrentEntries(_directoryVisibilityKey(ref));
       final isLoading =
           ((widget.isLocal ? _loadingLocal : _loadingAsmr) ||
@@ -1554,6 +1555,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                                         ),
                                       ),
                                       moreLabel: moreLabel,
+                                      unknownSizeLabel: unknownSizeLabel,
                                       onAction: (action) =>
                                           _handleEntryAction(item, action),
                                     ),

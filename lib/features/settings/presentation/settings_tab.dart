@@ -204,12 +204,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final bottomInset = MobileOverlayInset.of(context);
-    final contentTopInset =
-        MediaQuery.paddingOf(context).top +
-        AppPageHeaderMetrics.padding.vertical +
-        AppPageHeaderMetrics.contentHeight +
-        AppPageHeaderMetrics.bottomSpacing +
-        AppPageHeaderMetrics.firstContentSpacing;
+    final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
 
     return ScrollActivityGate(
       child: PageHeaderInset(
@@ -451,17 +446,10 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
   }
 
   double _contentTopInset(BuildContext context) =>
-      MediaQuery.paddingOf(context).top +
-      AppPageHeaderMetrics.padding.vertical +
-      AppPageHeaderMetrics.contentHeight +
-      AppPageHeaderMetrics.bottomSpacing +
-      AppPageHeaderMetrics.firstContentSpacing;
+      AppPageHeaderMetrics.contentTopInset(context);
 
   double _pinnedTop(BuildContext context) =>
-      MediaQuery.paddingOf(context).top +
-      AppPageHeaderMetrics.padding.top +
-      38.0 +
-      6.0;
+      AppPageHeaderMetrics.contentTopInset(context);
 
   List<Widget> _withStickySectionTitles(List<Widget> sections) {
     final stickySections = <_SettingsStickySection>[];

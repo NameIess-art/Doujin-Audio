@@ -124,6 +124,100 @@ void main() {
 
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
+  testWidgets(
+    'cold initial covers enter decoding one per frame before first scroll',
+    (tester) async {
+      final providers = List.generate(8, (_) => _ControlledImageProvider());
+      addTearDown(() {
+        PaintingBinding.instance.imageCache
+          ..clear()
+          ..clearLiveImages();
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Column(
+            children: [
+              for (final provider in providers)
+                SizedBox.square(
+                  dimension: 50,
+                  child: RetryingImage(
+                    retryKey: provider,
+                    imageProviderBuilder: () => provider,
+                    fallbackBuilder: (_) => const SizedBox.shrink(),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+      int started() =>
+          providers.fold(0, (sum, provider) => sum + provider.loadCount);
+      expect(started(), 0);
+      final scroll = Object();
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.beginInteraction(scroll);
+      for (var frame = 0; frame < providers.length; frame++) {
+        final previous = started();
+        await tester.pump();
+        expect(started(), previous + 1);
+      }
+      interaction.cancelInteraction(scroll);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'simultaneous cold paths mount at most one image subtree per frame',
+    (tester) async {
+      final paths = List.generate(8, (_) => Completer<String?>());
+      final built = <int>{};
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Column(
+            children: [
+              for (var index = 0; index < paths.length; index++)
+                SizedBox.square(
+                  dimension: 50,
+                  child: AsyncCoverImage(
+                    future: paths[index].future,
+                    imageBuilder: (_, _) {
+                      built.add(index);
+                      return const SizedBox.shrink();
+                    },
+                    fallbackBuilder: (_) => const SizedBox.shrink(),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+      for (var index = 0; index < paths.length; index++) {
+        paths[index].complete('/cover/$index.png');
+      }
+      await tester.pump();
+      expect(built.length, lessThanOrEqualTo(1));
+      for (
+        var frame = 0;
+        frame < paths.length && built.length < paths.length;
+        frame++
+      ) {
+        final previous = built.length;
+        await tester.pump();
+        expect(built.length, previous + 1);
+      }
+      expect(built, hasLength(paths.length));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('fallback cover uses the theme-colored brand at every size', (
     tester,
   ) async {
@@ -1919,6 +2013,8 @@ void main() {
         }
 
         await tester.pumpWidget(buildCover());
+        expect(provider.loadCount, 0);
+        await tester.pump();
         expect(provider.loadCount, 1);
 
         final image = await _createTestImage();
@@ -1981,9 +2077,13 @@ void main() {
       findsOneWidget,
     );
 
+    await tester.pump();
+    expect(provider.loadCount, 1);
+
     final image = await _createTestImage();
     addTearDown(image.dispose);
     provider.complete(image);
+    await tester.pump();
     await tester.pump();
     await tester.pump();
 
@@ -2081,10 +2181,12 @@ void main() {
       }
 
       await tester.pumpWidget(subject());
+      await tester.pump();
       expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.cover);
       expect(find.byType(ImageFiltered), findsNothing);
 
       await tester.pumpWidget(subject(fit: BoxFit.contain));
+      await tester.pump();
       expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.contain);
     },
     variant: const TargetPlatformVariant({

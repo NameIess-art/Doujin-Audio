@@ -19,6 +19,7 @@ class WorkDetailEntryTile extends StatefulWidget {
     required this.accentColor,
     required this.menuEntries,
     required this.moreLabel,
+    required this.unknownSizeLabel,
     required this.onAction,
   });
 
@@ -26,6 +27,7 @@ class WorkDetailEntryTile extends StatefulWidget {
   final Color accentColor;
   final List<UnifiedMenuEntry<WorkEntryAction>> menuEntries;
   final String moreLabel;
+  final String unknownSizeLabel;
   final ValueChanged<WorkEntryAction> onAction;
 
   @override
@@ -94,11 +96,13 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
       height: 1.2,
       color: cs.onSurfaceVariant.withValues(alpha: 0.6),
     );
+    final fileSize = item.fileSizeBytes;
     final info = <String>[
-      if (item.fileSizeBytes != null)
-        formatAsmrDownloadSize(item.fileSizeBytes!),
+      fileSize != null && fileSize > 0
+          ? formatAsmrDownloadSize(fileSize)
+          : widget.unknownSizeLabel,
       if (item.type == WorkEntryType.audio && item.duration != null)
-        formatDurationCompact(item.duration!),
+        formatDurationWithUnits(item.duration!),
       if (item.extension.isNotEmpty) item.extension.substring(1),
     ].join(' · ');
     final icon = switch (item.type) {

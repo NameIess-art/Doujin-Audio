@@ -14,6 +14,74 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 
 void main() {
   testWidgets(
+    'search content starts eight pixels below the last control row',
+    (tester) async {
+      final controller = TextEditingController();
+      final focus = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focus.dispose);
+      for (final hasCategories in [false, true]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(padding: EdgeInsets.only(top: 24)),
+              child: Builder(
+                builder: (context) => AppSearchPageScaffold<int>(
+                  controller: controller,
+                  focusNode: focus,
+                  hintText: 'Search',
+                  categories: hasCategories
+                      ? const [AppSearchCategory(value: 0, label: 'All')]
+                      : const [],
+                  selectedCategory: 0,
+                  onChanged: (_) {},
+                  onSubmitted: (_) {},
+                  onCloseOrClear: () {},
+                  body: ListView(
+                    padding: EdgeInsets.only(
+                      top: AppSearchPageScaffold.controlsTopInset(
+                        context,
+                        hasCategories: hasCategories,
+                      ),
+                    ),
+                    children: const [
+                      SizedBox(
+                        key: ValueKey('first-search-result'),
+                        height: 50,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final lastControl = find.byKey(
+          ValueKey(
+            hasCategories
+                ? 'app_search_category_shell'
+                : 'app_search_field_shell',
+          ),
+        );
+        expect(
+          tester
+                  .getTopLeft(find.byKey(const ValueKey('first-search-result')))
+                  .dy -
+              tester.getBottomLeft(lastControl).dy,
+          8,
+        );
+        expect(tester.takeException(), isNull);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'confirmation is a circular header button between input and clear',
     (tester) async {
       final controller = TextEditingController(text: 'query');
@@ -827,7 +895,7 @@ void main() {
       );
       final fadeMask = tester.widget<AppEdgeFadeMask>(fadeMaskFinder);
       expect(fadeMask.direction, AppEdgeFadeDirection.towardTop);
-      expect(tester.getSize(fadeMaskFinder).height, 136);
+      expect(tester.getSize(fadeMaskFinder).height, 132);
       final fadeDecoration = tester.widget<DecoratedBox>(
         find.descendant(
           of: fadeMaskFinder,

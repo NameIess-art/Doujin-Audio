@@ -496,9 +496,10 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
         )
         .toList(growable: false);
     final topInset = _isSelectionMode
-        ? AppPageHeaderMetrics.expandedToolbarHeight +
-              MediaQuery.paddingOf(context).top +
-              AppPageHeaderMetrics.bottomSpacing
+        ? AppPageHeaderMetrics.contentTopInset(
+            context,
+            additionalHeight: 6 + AppPageHeaderMetrics.buttonSize,
+          )
         : AppSearchPageScaffold.controlsTopInset(context);
     final bottomInset = MediaQuery.paddingOf(context).bottom + 96;
     final resultsBody = _query.isEmpty

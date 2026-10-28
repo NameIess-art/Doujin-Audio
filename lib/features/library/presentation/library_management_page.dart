@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_styles.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -53,7 +54,10 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
               ).toLowerCase().contains(query),
         )
         .toList(growable: false);
-    final headerTopInset = MediaQuery.paddingOf(context).top + 98;
+    final headerTopInset = AppPageHeaderMetrics.contentTopInset(
+      context,
+      additionalHeight: 6 + AppPageHeaderMetrics.buttonSize,
+    );
     return Scaffold(
       backgroundColor: cs.surface,
       body: SearchHighlightScope(

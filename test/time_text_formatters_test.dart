@@ -27,6 +27,27 @@ void main() {
   test('formatters clamp negative durations to zero', () {
     expect(formatDurationHms(const Duration(seconds: -1)), '00:00:00');
     expect(formatDurationCompact(const Duration(seconds: -1)), '00:00');
+    expect(formatDurationWithUnits(const Duration(seconds: -1)), '0 s');
+  });
+
+  test('formatDurationWithUnits labels seconds, minutes and hours', () {
+    expect(formatDurationWithUnits(Duration.zero), '0 s');
+    expect(formatDurationWithUnits(const Duration(milliseconds: 500)), '0 s');
+    expect(formatDurationWithUnits(const Duration(seconds: 59)), '59 s');
+    expect(formatDurationWithUnits(const Duration(minutes: 1)), '1 min');
+    expect(
+      formatDurationWithUnits(const Duration(minutes: 3, seconds: 48)),
+      '3 min 48 s',
+    );
+    expect(formatDurationWithUnits(const Duration(hours: 1)), '1 h');
+    expect(
+      formatDurationWithUnits(const Duration(hours: 1, seconds: 5)),
+      '1 h 5 s',
+    );
+    expect(
+      formatDurationWithUnits(const Duration(hours: 25, minutes: 2, seconds: 3)),
+      '25 h 2 min 3 s',
+    );
   });
 
   test('formatClockTime pads hour and minute', () {

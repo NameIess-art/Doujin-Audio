@@ -41,7 +41,7 @@ void main() {
           addTearDown(() => debugDefaultTargetPlatformOverride = null);
           tester.view.devicePixelRatio = 1;
           tester.view.physicalSize = platform == TargetPlatform.windows
-              ? const Size(960, 600)
+              ? const Size(960, 560)
               : const Size(390, 600);
           addTearDown(tester.view.resetPhysicalSize);
           addTearDown(tester.view.resetDevicePixelRatio);

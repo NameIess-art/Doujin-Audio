@@ -1066,7 +1066,10 @@ void main() {
         final scrollableContext = tester.element(scrollableFinder);
 
         // The custom desktop scrollbar reads the shared page-header inset.
-        expect(PageHeaderInset.of(scrollableContext), greaterThanOrEqualTo(58));
+        expect(
+          PageHeaderInset.of(scrollableContext),
+          closeTo(tester.getBottomLeft(find.byType(TopPageHeader)).dy + 8, 0.01),
+        );
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }

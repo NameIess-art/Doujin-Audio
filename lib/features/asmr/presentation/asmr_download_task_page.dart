@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_styles.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../application/asmr_download_models.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
@@ -64,17 +65,17 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
     ref.watch(appLanguageStateProvider);
     final isCurrent = ModalRoute.isCurrentOf(context) ?? true;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final headerHeight = MediaQuery.paddingOf(context).top + 56;
+    final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
     final listPadding = EdgeInsets.fromLTRB(
       16,
-      headerHeight + 16,
+      contentTopInset,
       16,
       MediaQuery.paddingOf(context).bottom + 16,
     );
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: PageHeaderInset(
-        topInset: headerHeight + 16,
+        topInset: contentTopInset,
         child: Stack(
           children: [
             FutureBuilder<void>(

@@ -233,14 +233,11 @@ class _MyTagManagementPageState extends ConsumerState<MyTagManagementPage> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     const searchHeight = 38.0;
-    const searchPadding = EdgeInsets.fromLTRB(16, 6, 16, 6);
-    final headerTopInset =
-        MediaQuery.paddingOf(context).top +
-        AppPageHeaderMetrics.padding.vertical +
-        AppPageHeaderMetrics.buttonSize +
-        searchHeight +
-        searchPadding.vertical +
-        AppPageHeaderMetrics.firstContentSpacing;
+    const searchPadding = EdgeInsets.fromLTRB(16, 6, 16, 0);
+    final headerTopInset = AppPageHeaderMetrics.contentTopInset(
+      context,
+      additionalHeight: searchHeight + searchPadding.top,
+    );
     final content = controller == null
         ? Center(child: Text(i18n.tr('${widget.type.catalogKey}_incomplete')))
         : ListenableBuilder(

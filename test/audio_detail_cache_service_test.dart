@@ -203,6 +203,99 @@ void main() {
   );
 
   test(
+    'recycled card reads skip the blocked DB queue and can load on return',
+    () async {
+      final blocker = AudioDetailTarget.libraryRootFolder('/library/blocker');
+      final target = AudioDetailTarget.libraryRootFolder('/library/recycled');
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final repository = _FakeAudioDetailRepository(AudioDetail.empty(blocker))
+        ..beforeBatchLoad = (_) async {
+          if (started.isCompleted) return;
+          started.complete();
+          await release.future;
+        };
+      final cache = AudioDetailCacheService(repository: repository);
+      addTearDown(cache.dispose);
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      final first = cache.load(blocker);
+      await started.future;
+      var mounted = true;
+      final recycled = cache.load(target, isActive: () => mounted);
+      expect(cache.load(target, isActive: () => mounted), same(recycled));
+      final cancelled = expectLater(
+        recycled,
+        throwsA(isA<AudioDetailOperationCancelled>()),
+      );
+      await Future<void>.delayed(Duration.zero);
+      mounted = false;
+      release.complete();
+      await first;
+      await cancelled;
+
+      expect(repository.batchRequests, [
+        [blocker],
+      ]);
+      expect(cache.resolvedDetail(target), isNull);
+      mounted = true;
+      expect(
+        (await cache.load(target, isActive: () => mounted)).detail.target,
+        target,
+      );
+      expect(repository.batchRequests, [
+        [blocker],
+        [target],
+      ]);
+    },
+  );
+
+  for (final unscoped in [false, true]) {
+    test(
+      'recycling one card retains a shared ${unscoped ? 'unscoped' : 'mounted'} read',
+      () async {
+        final blocker = AudioDetailTarget.libraryRootFolder('/library/blocker');
+        final target = AudioDetailTarget.libraryRootFolder('/library/shared');
+        final started = Completer<void>();
+        final release = Completer<void>();
+        final repository =
+            _FakeAudioDetailRepository(AudioDetail.empty(blocker))
+              ..beforeBatchLoad = (_) async {
+                if (started.isCompleted) return;
+                started.complete();
+                await release.future;
+              };
+        final cache = AudioDetailCacheService(repository: repository);
+        addTearDown(cache.dispose);
+        addTearDown(() {
+          if (!release.isCompleted) release.complete();
+        });
+        final first = cache.load(blocker);
+        await started.future;
+        var mounted = true;
+        final card = cache.load(target, isActive: () => mounted);
+        final shared = unscoped
+            ? cache.load(target)
+            : cache.load(target, isActive: () => true);
+        expect(shared, same(card));
+        await Future<void>.delayed(Duration.zero);
+        mounted = false;
+        release.complete();
+        await first;
+        final results = await Future.wait([card, shared]);
+
+        expect(results.map((result) => result.detail.target), [target, target]);
+        expect(repository.batchRequests, [
+          [blocker],
+          [target],
+        ]);
+        expect(cache.resolvedDetail(target), isNotNull);
+      },
+    );
+  }
+
+  test(
     'visible single requests share bounded batches and keep request order',
     () async {
       final targets = [

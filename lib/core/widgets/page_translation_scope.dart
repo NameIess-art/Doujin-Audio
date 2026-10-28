@@ -390,12 +390,6 @@ class _WorkPageTranslationBuilderState
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final notifier = TickerMode.getValuesNotifier(context);
-    if (!identical(notifier, _tickerModeNotifier)) {
-      _tickerModeNotifier?.removeListener(_activityChanged);
-      _tickerModeNotifier = notifier;
-      notifier.addListener(_activityChanged);
-    }
     _bind();
   }
 
@@ -422,6 +416,16 @@ class _WorkPageTranslationBuilderState
     if (host != _host) {
       _host?._enabled.removeListener(_translationModeChanged);
       host?._enabled.addListener(_translationModeChanged);
+    }
+    // Ordinary list cards need no per-row activity listener until translation
+    // is enabled. The host's mode listener still activates retained cards.
+    final notifier = host?._enabled.value == true
+        ? TickerMode.getValuesNotifier(context)
+        : null;
+    if (!identical(notifier, _tickerModeNotifier)) {
+      _tickerModeNotifier?.removeListener(_activityChanged);
+      _tickerModeNotifier = notifier;
+      notifier?.addListener(_activityChanged);
     }
     final active =
         host?._enabled.value == true &&

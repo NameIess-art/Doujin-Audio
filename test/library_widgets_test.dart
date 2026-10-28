@@ -6376,7 +6376,7 @@ void main() {
         expect(actions.onPlay, isNotNull);
         await tester.tap(find.descendant(
           of: actionsFinder,
-          matching: find.widgetWithIcon(IconButton, Icons.play_arrow_rounded),
+          matching: find.byTooltip(fixture.languageProvider.tr('play')),
         ));
         for (var attempt = 0;
             attempt < 50 && fixture.playback.activeSessions.isEmpty;
@@ -6392,7 +6392,7 @@ void main() {
         expect(find.byType(WorkDetailPage), findsNothing);
         await tester.tap(find.descendant(
           of: actionsFinder,
-          matching: find.widgetWithIcon(IconButton, Icons.add_circle_rounded),
+          matching: find.byTooltip(fixture.languageProvider.tr('add')),
         ));
         await tester.pump();
         expect(fixture.playback.activeSessions, hasLength(2));

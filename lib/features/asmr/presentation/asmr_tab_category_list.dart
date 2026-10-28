@@ -471,6 +471,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     double? listWidth;
     Widget? workList;
     final content = ScrollActivityGate(
+      onMetricsChanged: ref
+          .read(libraryCoverUiControllerProvider)
+          .viewportChanged,
       child: MediaQuery(
         data: MediaQuery.of(context).copyWith(
           padding: EdgeInsets.only(

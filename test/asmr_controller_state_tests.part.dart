@@ -304,9 +304,22 @@ void registerAsmrControllerStateTests({
           isEmpty,
         );
         await select({'online:creator': true});
+        final filtered = controller.categoryViewState(AsmrCategoryType.release);
+        expect(filtered.works.map((work) => work.id), [101]);
         expect(
-          controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
-          [101],
+          controller.categoryViewState(AsmrCategoryType.release).works,
+          same(filtered.works),
+        );
+        expect(
+          controller.worksFor(AsmrCategoryType.release),
+          same(filtered.works),
+        );
+        expect(() => filtered.works.clear(), throwsUnsupportedError);
+        await controller.refreshCategory(AsmrCategoryType.history);
+        expect(
+          controller.categoryViewState(AsmrCategoryType.release),
+          filtered,
+          reason: 'An unrelated category must not republish filtered works.',
         );
         await controller.reloadPersistedState();
         expect(
@@ -321,6 +334,10 @@ void registerAsmrControllerStateTests({
           [101],
         );
         await select({'online:creator': false});
+        expect(
+          controller.categoryViewState(AsmrCategoryType.release).works,
+          isNot(same(filtered.works)),
+        );
         expect(
           controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
           original.map((work) => work.id),

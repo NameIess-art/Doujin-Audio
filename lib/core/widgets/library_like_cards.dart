@@ -335,6 +335,54 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const coverWidth =
+        LibraryLikeCardMetrics.coverHeight *
+        LibraryLikeCardMetrics.coverAspectRatio;
+    final content = SizedBox(
+      height: LibraryLikeCardMetrics.contentHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          coverBuilder(coverWidth),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _LibraryLikeCardInfo(
+              title: title,
+              lines: lines,
+              accentColor: accentColor,
+              trailingActions: trailingActions,
+            ),
+          ),
+        ],
+      ),
+    );
+    return defaultTargetPlatform == TargetPlatform.android
+        ? content
+        : MarqueePauseScope(
+            isPaused: false,
+            hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
+            child: content,
+          );
+  }
+}
+
+class _LibraryLikeCardInfo extends StatelessWidget {
+  const _LibraryLikeCardInfo({
+    required this.title,
+    required this.lines,
+    this.accentColor,
+    this.trailingActions,
+    this.titleLeading,
+  });
+
+  final String title;
+  final List<LibraryLikeInfoLineData> lines;
+  final Color? accentColor;
+  final Widget? trailingActions;
+  final Widget? titleLeading;
+
+  @override
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final titleStyle = Theme.of(context).textTheme.titleMedium!.copyWith(
       fontWeight: FontWeight.w800,
@@ -358,10 +406,23 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
           constraints: const BoxConstraints(
             minHeight: _libraryLikeInfoLineHeight,
           ),
-          child: LibraryLikeCardText(
-            text: title,
-            style: _libraryLikeFixedLineStyle(titleStyle),
-          ),
+          child: titleLeading == null
+              ? LibraryLikeCardText(
+                  text: title,
+                  style: _libraryLikeFixedLineStyle(titleStyle),
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    titleLeading!,
+                    Expanded(
+                      child: LibraryLikeCardText(
+                        text: title,
+                        style: _libraryLikeFixedLineStyle(titleStyle),
+                      ),
+                    ),
+                  ],
+                ),
         ),
         for (final line in primaryLines)
           LibraryLikeDetailInfoLine(
@@ -385,44 +446,22 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
         primaryLines.length <= 3 &&
         textScaler.scale(14) <= 14 &&
         textScaler.scale(11) <= 11;
-    const coverWidth =
-        LibraryLikeCardMetrics.coverHeight *
-        LibraryLikeCardMetrics.coverAspectRatio;
-    return MarqueePauseScope(
-      isPaused: false,
-      hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
-      child: SizedBox(
-        height: LibraryLikeCardMetrics.contentHeight,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            coverBuilder(coverWidth),
-            const SizedBox(width: 10),
-            Expanded(
-              child: fitsWithoutScaling
-                  ? SizedBox(
-                      height: LibraryLikeCardMetrics.contentHeight,
-                      child: info,
-                    )
-                  : LayoutBuilder(
-                      builder: (context, constraints) => FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.topLeft,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            minHeight: LibraryLikeCardMetrics.contentHeight,
-                          ),
-                          child: SizedBox(
-                            width: constraints.maxWidth,
-                            child: info,
-                          ),
-                        ),
-                      ),
-                    ),
+    return SizedBox(
+      height: LibraryLikeCardMetrics.contentHeight,
+      child: fitsWithoutScaling
+          ? info
+          : LayoutBuilder(
+              builder: (context, constraints) => FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topLeft,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minHeight: LibraryLikeCardMetrics.contentHeight,
+                  ),
+                  child: SizedBox(width: constraints.maxWidth, child: info),
+                ),
+              ),
             ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -498,34 +537,44 @@ class LibraryLikeCardActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = IconButton.styleFrom(
-      minimumSize: Size.zero,
-      fixedSize: const Size(22, _libraryLikeInfoLineHeight),
-      padding: EdgeInsets.zero,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      visualDensity: VisualDensity.standard,
+    final colors = Theme.of(context).colorScheme;
+    // The card already owns an ink surface. A full Material button adds an
+    // independent surface and style-state machinery for each tiny action.
+    Widget action(IconData icon, String label, VoidCallback? onTap) => Tooltip(
+      message: label,
+      excludeFromSemantics: true,
+      child: Semantics(
+        container: true,
+        button: true,
+        enabled: onTap != null,
+        label: label,
+        child: InkResponse(
+          onTap: onTap,
+          canRequestFocus: onTap != null,
+          containedInkWell: true,
+          customBorder: const CircleBorder(),
+          radius: 12,
+          child: SizedBox(
+            width: 22,
+            height: _libraryLikeInfoLineHeight,
+            child: Center(
+              child: Icon(
+                icon,
+                size: _libraryLikeInfoLineHeight,
+                color: onTap == null
+                    ? colors.onSurface.withValues(alpha: 0.38)
+                    : colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
-          onPressed: onAdd,
-          style: style,
-          tooltip: addLabel,
-          icon: const Icon(
-            Icons.add_circle_rounded,
-            size: _libraryLikeInfoLineHeight,
-          ),
-        ),
-        IconButton(
-          onPressed: onPlay,
-          style: style,
-          tooltip: playLabel,
-          icon: const Icon(
-            Icons.play_arrow_rounded,
-            size: _libraryLikeInfoLineHeight,
-          ),
-        ),
+        action(Icons.add_circle_rounded, addLabel, onAdd),
+        action(Icons.play_arrow_rounded, playLabel, onPlay),
       ],
     );
   }
@@ -654,85 +703,20 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final titleStyle =
-        Theme.of(context).textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w800,
-          fontSize: 14,
-          color: cs.onSurface,
-        ) ??
-        const TextStyle();
-    final infoStyle =
-        Theme.of(context).textTheme.labelSmall?.copyWith(
-          fontWeight: FontWeight.w700,
-          fontSize: 11,
-          color: cs.onSurface.withValues(alpha: 0.82),
-        ) ??
-        TextStyle(
-          fontWeight: FontWeight.w700,
-          fontSize: 11,
-          color: cs.onSurface.withValues(alpha: 0.82),
-        );
-
-    return MarqueePauseScope(
-      isPaused: false,
-      hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
-      child: SizedBox(
-        height: LibraryLikeCardMetrics.contentHeight,
-        child: LayoutBuilder(
-          builder: (context, constraints) => FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.topLeft,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                minHeight: LibraryLikeCardMetrics.contentHeight,
-              ),
-              child: SizedBox(
-                width: constraints.maxWidth,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        minHeight: _libraryLikeInfoLineHeight,
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ?titleLeading,
-                          Expanded(
-                            child: LibraryLikeCardText(
-                              text: title,
-                              style: _libraryLikeFixedLineStyle(titleStyle),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    for (final line in lines.where((line) => !line.isSecondary))
-                      LibraryLikeDetailInfoLine(
-                        label: line.label,
-                        icon: line.icon,
-                        text: line.text,
-                        style: infoStyle,
-                        loading: false,
-                        accentColor: accentColor,
-                      ),
-                    _libraryLikeSecondaryInfo(
-                      context,
-                      lines.where((line) => line.isSecondary).toList(),
-                      trailingActions: trailingActions,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+    final content = _LibraryLikeCardInfo(
+      title: title,
+      lines: lines,
+      accentColor: accentColor,
+      trailingActions: trailingActions,
+      titleLeading: titleLeading,
     );
+    return defaultTargetPlatform == TargetPlatform.android
+        ? content
+        : MarqueePauseScope(
+            isPaused: false,
+            hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
+            child: content,
+          );
   }
 }
 
@@ -773,14 +757,6 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
             )
           : style,
     );
-    Widget buildLabel(String label, IconData icon) => Align(
-      alignment: Alignment.centerLeft,
-      child: Tooltip(
-        message: label,
-        child: Icon(icon, size: 11, color: accentColor ?? cs.primary),
-      ),
-    );
-
     Widget buildValue(String value) => loading
         ? Align(
             alignment: Alignment.centerLeft,
@@ -799,24 +775,22 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
           )
         : LibraryLikeCardText(text: value, style: fixedStyle);
 
-    final content = Row(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
           width: 11,
-          child: SizedBox(
-            height: _libraryLikeInfoLineHeight,
-            child: buildLabel(label, icon),
+          height: _libraryLikeInfoLineHeight,
+          child: Tooltip(
+            message: label,
+            child: Center(
+              child: Icon(icon, size: 11, color: accentColor ?? cs.primary),
+            ),
           ),
         ),
         const SizedBox(width: 8),
         Expanded(child: buildValue(text)),
       ],
-    );
-
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: _libraryLikeInfoLineHeight),
-      child: content,
     );
   }
 }

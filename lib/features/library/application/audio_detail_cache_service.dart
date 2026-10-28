@@ -19,6 +19,30 @@ class AudioDetailCacheChange {
       targetKeys?.contains(AudioLibraryDetailKey.forTarget(target)) ?? true;
 }
 
+final class _AudioDetailReadRequest {
+  _AudioDetailReadRequest({required this.target, required this.epoch});
+
+  final AudioDetailTarget target;
+  final int epoch;
+  final result = Completer<AudioDetailLoadResult>();
+  late final Future<AudioDetailLoadResult> future;
+  late final Future<void> tail;
+  final _requesters = <bool Function()>[];
+  bool _hasUnscopedRequester = false;
+  bool cancelled = false;
+
+  bool get isActive =>
+      _hasUnscopedRequester || _requesters.any((isActive) => isActive());
+
+  void addRequester(bool Function()? isActive) {
+    if (isActive == null) {
+      _hasUnscopedRequester = true;
+    } else {
+      _requesters.add(isActive);
+    }
+  }
+}
+
 class AudioDetailCacheService {
   AudioDetailCacheService({
     required AudioDetailRepository repository,
@@ -29,16 +53,8 @@ class AudioDetailCacheService {
 
   final AudioDetailRepository _repository;
   final int _maxResolvedEntries;
-  final Map<String, ({Future<AudioDetailLoadResult> result, Future<void> tail})>
-  _loadFutures = {};
-  final _pendingReads =
-      Queue<
-        ({
-          AudioDetailTarget target,
-          int epoch,
-          Completer<AudioDetailLoadResult> result,
-        })
-      >();
+  final Map<String, _AudioDetailReadRequest> _loadFutures = {};
+  final _pendingReads = Queue<_AudioDetailReadRequest>();
   bool _reading = false;
   final _changes = StreamController<AudioDetailCacheChange>.broadcast();
   final LinkedHashMap<String, AudioDetailLoadResult> _resolved =
@@ -63,7 +79,10 @@ class AudioDetailCacheService {
     return _resolved[AudioLibraryDetailKey.forTarget(target)]?.detail;
   }
 
-  Future<AudioDetailLoadResult> load(AudioDetailTarget target) {
+  Future<AudioDetailLoadResult> load(
+    AudioDetailTarget target, {
+    bool Function()? isActive,
+  }) {
     if (_suspended) {
       return Future<AudioDetailLoadResult>.error(
         const AudioDetailOperationCancelled(),
@@ -74,23 +93,27 @@ class AudioDetailCacheService {
     final cached = predecessor == null ? _takeResolved(key) : null;
     if (cached != null) return Future<AudioDetailLoadResult>.value(cached);
     final existing = _loadFutures[key];
-    if (existing != null && identical(existing.tail, predecessor)) {
-      return existing.result;
+    if (existing != null &&
+        !existing.cancelled &&
+        identical(existing.tail, predecessor)) {
+      existing.addRequester(isActive);
+      return existing.future;
     }
     final epoch = _cacheEpoch;
-    late final Future<AudioDetailLoadResult> future;
-    future = _runSerialized<AudioDetailLoadResult>(
+    final request = _AudioDetailReadRequest(target: target, epoch: epoch)
+      ..addRequester(isActive);
+    final future = request.future = _runSerialized<AudioDetailLoadResult>(
       <AudioDetailTarget>[target],
       () async {
-        if (epoch != _cacheEpoch) {
+        if (epoch != _cacheEpoch || !request.isActive) {
+          request.cancelled = true;
           throw const AudioDetailOperationCancelled();
         }
         final resolved = _takeResolved(key);
         if (resolved != null) return resolved;
-        final result = Completer<AudioDetailLoadResult>();
-        _pendingReads.add((target: target, epoch: epoch, result: result));
+        _pendingReads.add(request);
         _scheduleReads();
-        final loaded = await result.future;
+        final loaded = await request.result.future;
         if (epoch == _cacheEpoch) {
           final resultKey = AudioLibraryDetailKey.forTarget(
             loaded.detail.target,
@@ -103,16 +126,17 @@ class AudioDetailCacheService {
         return loaded;
       },
     );
-    _loadFutures[key] = (result: future, tail: _operationTails[key]!);
+    request.tail = _operationTails[key]!;
+    _loadFutures[key] = request;
     unawaited(
       future.then<void>(
         (_) {
-          if (identical(_loadFutures[key]?.result, future)) {
+          if (identical(_loadFutures[key], request)) {
             _loadFutures.remove(key);
           }
         },
         onError: (Object error, StackTrace stackTrace) {
-          if (identical(_loadFutures[key]?.result, future)) {
+          if (identical(_loadFutures[key], request)) {
             _loadFutures.remove(key);
           }
         },
@@ -139,14 +163,17 @@ class AudioDetailCacheService {
               (_) => _pendingReads.removeFirst(),
               growable: false,
             );
-            final active = batch
-                .where((read) => read.epoch == _cacheEpoch)
-                .toList();
+            final active = <_AudioDetailReadRequest>[];
             for (final read in batch) {
-              if (read.epoch != _cacheEpoch) {
+              // A fling can recycle rows while the preceding DB batch is busy.
+              // Keep shared or unscoped callers, but skip abandoned card reads.
+              if (read.epoch != _cacheEpoch || !read.isActive) {
+                read.cancelled = true;
                 read.result.completeError(
                   const AudioDetailOperationCancelled(),
                 );
+              } else {
+                active.add(read);
               }
             }
             if (active.isNotEmpty) {

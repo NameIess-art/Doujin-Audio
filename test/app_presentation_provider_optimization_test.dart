@@ -5,7 +5,6 @@ import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
-import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
@@ -23,6 +22,7 @@ import 'support/test_persistence_repository.dart';
 class _WorkDetailRepository extends TestPersistenceRepository {
   final ready = Completer<void>();
   final details = <String, AudioDetail>{};
+  final requestedTargets = <AudioDetailTarget>[];
   int singleReads = 0;
   int batchReads = 0;
   int batchFailuresRemaining = 0;
@@ -41,13 +41,15 @@ class _WorkDetailRepository extends TestPersistenceRepository {
     Iterable<AudioDetailTarget> targets,
   ) async {
     batchReads++;
+    final requested = targets.toList(growable: false);
+    requestedTargets.addAll(requested);
     await ready.future;
     if (batchFailuresRemaining > 0) {
       batchFailuresRemaining--;
       throw StateError('Temporary detail query failure');
     }
     return [
-      for (final target in targets)
+      for (final target in requested)
         if (details[PathMatcher.normalize(target.targetPath)]
             case final detail?)
           detail.copyWith(target: target),
@@ -242,6 +244,105 @@ void main() {
     );
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  for (final criterion in [
+    LibrarySortCriterion.name,
+    LibrarySortCriterion.voiceActor,
+    LibrarySortCriterion.releaseDate,
+  ]) {
+    testWidgets(
+      'library $criterion sorting reads only required card metadata without categories',
+      (tester) async {
+        final repository = _WorkDetailRepository()..ready.complete();
+        final fixture = AppRuntimeWidgetTestFixture(
+          providedPersistenceRepository: repository,
+        );
+        addTearDown(fixture.dispose);
+        fixture.settingsRepository
+          ..librarySortCriterion = criterion
+          ..syncSlice(isInitialized: true);
+        for (final (name, title, voice, year) in [
+          ('RJ100', 'Zulu', 'Beta', 2025),
+          ('RJ200', 'Alpha', 'Alpha', 2026),
+        ]) {
+          final root = '/music/$name';
+          repository.details[PathMatcher.normalize(
+            root,
+          )] = AudioDetail.empty(AudioDetailTarget.libraryRootFolder(root))
+              .copyWith(
+                workTitle: title,
+                voiceActors: [voice],
+                releaseDate: DateTime(year),
+              );
+          fixture.library.addWatchedFolder(root, notify: false);
+          fixture.library.addTracks([
+            testMusicTrack(
+              name: 'Track',
+              path: '$root/track.mp3',
+              groupKey: root,
+              groupTitle: name,
+            ),
+          ], persist: false);
+        }
+        const singlePath = '/single.mp3';
+        repository.details[PathMatcher.normalize(
+          singlePath,
+        )] = AudioDetail.empty(AudioDetailTarget.singleAudioFile(singlePath))
+            .copyWith(
+              workTitle: 'A title unused by single-file name sorting',
+              voiceActors: ['Zulu'],
+              releaseDate: DateTime(2024),
+            );
+        fixture.library.addTracks([
+          testMusicTrack(
+            name: 'Single',
+            path: singlePath,
+            groupKey: singlePath,
+            groupTitle: 'Single',
+            isSingle: true,
+          ),
+        ], persist: false);
+        fixture.libraryService.syncSlice(
+          isInitialized: true,
+          detailRevision: 0,
+        );
+        await tester.runAsync(fixture.library.ensureCardSnapshot);
+        List<LibraryNode> sorted = const [];
+        await tester.pumpWidget(
+          fixture.build(
+            Consumer(
+              builder: (context, ref, _) {
+                sorted = ref.watch(librarySortedTreeUiProvider);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        );
+        await _waitForSort(tester, () => sorted.length == 3);
+        expect(sorted.map((node) => node.name), switch (criterion) {
+          LibrarySortCriterion.name => ['RJ200', 'Single', 'RJ100'],
+          LibrarySortCriterion.voiceActor => ['RJ200', 'RJ100', 'Single'],
+          _ => ['Single', 'RJ100', 'RJ200'],
+        });
+        expect(repository.singleReads, 0);
+        expect(repository.batchReads, 1);
+        expect(
+          repository.requestedTargets.map((target) => target.targetPath),
+          unorderedEquals(
+            [
+              '/music/RJ100',
+              '/music/RJ200',
+              if (criterion != LibrarySortCriterion.name) singlePath,
+            ].map(PathMatcher.normalize),
+          ),
+        );
+        expect(fixture.library.categorySnapshot, isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets(
     'detail changes refresh only their target and reset refreshes all',
     (tester) async {
@@ -690,7 +791,7 @@ void main() {
     await _waitForSort(tester, () => sorted?.firstOrNull?.name == 'RJ200');
     expect(sorted!.map((node) => node.name), ['RJ200', 'RJ100']);
 
-    // The shared category snapshot retains titles after detail cache eviction.
+    // Sorting reloads its metadata after the detail cache is cleared.
     fixture.library.detailCacheService.clear();
     fixture.settingsRepository
       ..librarySortAscending = false
@@ -763,27 +864,17 @@ void main() {
         if (!disposeWhileHidden) {
           active.value = 0;
           await tester.pump();
-          await pumpUntilLibraryTreeReady(
+          await _waitForSort(
             tester,
-            fixture.library,
-            waitForCategorySnapshot: true,
+            () =>
+                ProviderScope.containerOf(
+                  tester.element(find.byType(LibraryTab)),
+                ).read(librarySortedSnapshotUiProvider).nodes.length ==
+                24,
           );
-          // Startup refresh on Windows waits for real file-system futures.
-          // Finish it before settling frames; fake time alone cannot do that.
-          await tester.pump(const Duration(seconds: 2));
-          bool refreshBusy() =>
-              fixture.uiOperationService.isBusy(
-                UiOperationScope.libraryRefresh,
-              ) ||
-              fixture.library.state.isScanning;
-          for (var i = 0; i < 100 && refreshBusy(); i++) {
-            await tester.runAsync(
-              () => Future<void>.delayed(const Duration(milliseconds: 10)),
-            );
-            await tester.pump(const Duration(milliseconds: 50));
-          }
-          expect(refreshBusy(), isFalse);
-          await tester.pumpAndSettle();
+          expect(fixture.library.categorySnapshot, isNull);
+          // Check the sorting commit directly; cover discovery and startup
+          // refresh can wait on I/O while widget fake time keeps advancing.
           expect(repository.batchReads, 1);
           await tester.pump();
           expect(repository.batchReads, 1);

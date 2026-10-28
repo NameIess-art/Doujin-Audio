@@ -693,6 +693,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
 
     final page = ScrollActivityGate(
+      onMetricsChanged: ref.read(libraryCoverUiControllerProvider).viewportChanged,
       child: PageHeaderInset(
         topInset: listTopPadding,
         child: Stack(

@@ -337,8 +337,10 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     },
   );
 
-  Future<AudioDetailLoadResult> loadAudioDetail(AudioDetailTarget target) =>
-      _metadataCoordinator.loadAudioDetail(target);
+  Future<AudioDetailLoadResult> loadAudioDetail(
+    AudioDetailTarget target, {
+    bool Function()? isActive,
+  }) => _metadataCoordinator.loadAudioDetail(target, isActive: isActive);
 
   Future<AudioDetailSaveResult> saveAudioDetail(
     AudioDetail detail, {

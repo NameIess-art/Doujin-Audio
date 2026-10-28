@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/screen_view_models.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
@@ -360,13 +361,19 @@ class _LibrarySearchAllResultsState
         ),
       );
     }
-    return PlaceholderContentTransition(
-      showPlaceholder: result == null && !hasCurrentError,
-      placeholder: LibraryLoadingSkeleton(
-        bottomInset: 16,
-        topInset: topPadding,
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (_) {
+        ref.read(libraryCoverUiControllerProvider).viewportChanged();
+        return false;
+      },
+      child: PlaceholderContentTransition(
+        showPlaceholder: result == null && !hasCurrentError,
+        placeholder: LibraryLoadingSkeleton(
+          bottomInset: 16,
+          topInset: topPadding,
+        ),
+        content: content,
       ),
-      content: content,
     );
   }
 }

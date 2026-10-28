@@ -389,6 +389,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     ) ?? ref.read(playbackFacadeProvider).catalogState.isInitialized;
 
     final page = ScrollActivityGate(
+      onMetricsChanged: ref.read(libraryCoverUiControllerProvider).viewportChanged,
       child: PageHeaderInset(
         topInset: topPadding,
         child: Stack(

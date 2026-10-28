@@ -561,7 +561,10 @@ void main() {
         }
         final actions = find.byType(LibraryLikeCardActions).first;
         await tester.tap(
-          find.descendant(of: actions, matching: find.byType(IconButton)).last,
+          find.descendant(
+            of: actions,
+            matching: find.byTooltip(fixture.languageProvider.tr('play')),
+          ),
         );
         await tester.pump();
         await tester.runAsync(

@@ -126,10 +126,8 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
                 initialPath: libraryFacade.resolvedCoverPathForFolder(
                   widget.folderPath,
                 ),
-                retryFutureBuilder: () => coverUi.deferredFolderCover(
-                  widget.folderPath,
-                  context: context,
-                ),
+                // Discovery caches a missing cover too. Imports, selection and
+                // repair publish scope revisions; no per-card polling is needed.
                 cacheWidth: coverCacheWidth,
                 useDefaultCacheWidth: false,
                 fit: BoxFit.cover,
@@ -233,8 +231,6 @@ class _LibraryTrackCoverThumbnailState
               future: coverPathFuture,
               requestKey: track.path,
               initialPath: libraryFacade.resolvedCoverPathForTrack(track),
-              retryFutureBuilder: () =>
-                  coverUi.deferredTrackCover(track, context: context),
               cacheWidth: coverCacheWidth,
               useDefaultCacheWidth: false,
               fit: BoxFit.cover,

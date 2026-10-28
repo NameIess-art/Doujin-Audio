@@ -60,6 +60,13 @@ void main() {
     );
     await _drainCoverFrames(tester);
     expect(covers.folderLookups, [work]);
+    await tester.pump(const Duration(seconds: 30));
+    await _drainCoverFrames(tester);
+    expect(
+      covers.folderLookups,
+      [work],
+      reason: 'Missing artwork must not poll once per mounted card.',
+    );
 
     await tester.runAsync(() async {
       covers.invalidateFolder('E:/library/other');

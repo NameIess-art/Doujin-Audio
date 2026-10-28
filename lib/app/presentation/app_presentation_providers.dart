@@ -13,6 +13,7 @@ import '../../core/media/audio_detail.dart';
 import '../../core/media/music_track.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../../features/library/application/library_state_models.dart';
+import '../../features/library/application/audio_detail_cache_service.dart';
 import '../../features/library/presentation/library_cover_ui_controller.dart';
 import '../../features/library/domain/library_node.dart';
 import '../../features/library/application/library_sorting.dart';
@@ -260,9 +261,41 @@ class LibrarySortedSnapshotNotifier
       commit: () async {
         if (!ref.mounted || request != _request) return;
         try {
-          final categorySnapshot = needsDetails
-              ? await libraryFacade.audioLibraryCategorySnapshot()
-              : null;
+          final details = <AudioDetail>[];
+          if (needsDetails) {
+            final targets = <String, AudioDetailTarget>{};
+            final preparation = Stopwatch()..start();
+            for (final node in sortedInput.nodes) {
+              final AudioDetailTarget target;
+              if (node is FolderNode) {
+                if (criterion == LibrarySortCriterion.name &&
+                    !node.isModuleNode) {
+                  continue;
+                }
+                target = AudioDetailTarget.libraryRootFolder(node.path);
+              } else if (node is TrackNode &&
+                  criterion != LibrarySortCriterion.name) {
+                target = AudioDetailTarget.singleAudioFile(node.track.path);
+              } else {
+                continue;
+              }
+              final canonical = libraryFacade.canonicalAudioDetailTarget(
+                target,
+              );
+              targets[AudioLibraryDetailKey.forTarget(canonical)] = canonical;
+              if (preparation.elapsedMicroseconds >= 1000) {
+                await Future<void>.delayed(Duration.zero);
+                if (!ref.mounted || request != _request) return;
+                preparation.reset();
+              }
+            }
+            // Sorting needs scalar metadata, not category term indexes or the
+            // complete track lists carried by the category snapshot.
+            final loaded = await libraryFacade.detailCacheService.loadMany(
+              targets.values,
+            );
+            details.addAll(loaded.map((result) => result.detail));
+          }
           if (!ref.mounted || request != _request) return;
           final input = LibrarySortRequest(
             nodes: sortedInput.nodes,
@@ -273,8 +306,7 @@ class LibrarySortedSnapshotNotifier
               ...libraryFacade.watchedLibraries,
               ...libraryFacade.watchedFolders,
             ],
-            details: libraryFacade.detailCacheService.resolvedDetails,
-            categorySnapshot: categorySnapshot,
+            details: details,
             workNameDisplay: workNameDisplay,
             pinnedPaths: pinnedPaths,
           );
@@ -355,7 +387,7 @@ final libraryDetailForTargetProvider = FutureProvider.autoDispose
           snapshot?.detailFor(canonicalTarget);
       if (detail != null) return detail;
       return facade
-          .loadAudioDetail(canonicalTarget)
+          .loadAudioDetail(canonicalTarget, isActive: () => ref.mounted)
           .then((result) => result.detail);
     });
 

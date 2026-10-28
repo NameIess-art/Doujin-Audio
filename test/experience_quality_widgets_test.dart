@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show Tristate;
 
 import 'package:flutter/material.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
@@ -760,12 +761,8 @@ void main() {
         final cover = tester.getRect(
           find.byKey(const ValueKey('actions-cover')),
         );
-        final add = tester.getRect(
-          find.widgetWithIcon(IconButton, Icons.add_circle_rounded),
-        );
-        final play = tester.getRect(
-          find.widgetWithIcon(IconButton, Icons.play_arrow_rounded),
-        );
+        final add = tester.getRect(find.byTooltip('Add'));
+        final play = tester.getRect(find.byTooltip('Play'));
         final rating = tester.getRect(find.text('4.5'));
         expect(find.text('Add'), findsNothing);
         expect(find.text('Play'), findsNothing);
@@ -789,12 +786,8 @@ void main() {
         expect(play.bottom, lessThanOrEqualTo(content.bottom + 0.001));
         expect(add.center.dy, closeTo(play.center.dy, 0.001));
         expect(add.center.dy, closeTo(rating.center.dy, 0.001));
-        await tester.tap(
-          find.widgetWithIcon(IconButton, Icons.add_circle_rounded),
-        );
-        await tester.tap(
-          find.widgetWithIcon(IconButton, Icons.play_arrow_rounded),
-        );
+        await tester.tap(find.byTooltip('Add'));
+        await tester.tap(find.byTooltip('Play'));
         await tester.pump();
         expect(additions, 1);
         expect(plays, 1);
@@ -809,14 +802,22 @@ void main() {
   }
 
   testWidgets('card actions disable unavailable callbacks', (tester) async {
-    await tester.pumpWidget(
-      _buildSurface(
-        const LibraryLikeCardActions(addLabel: 'Add', playLabel: 'Play'),
-      ),
-    );
-    final buttons = tester.widgetList<IconButton>(find.byType(IconButton));
-    expect(buttons, hasLength(2));
-    expect(buttons.map((button) => button.onPressed), everyElement(isNull));
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(
+        _buildSurface(
+          const LibraryLikeCardActions(addLabel: 'Add', playLabel: 'Play'),
+        ),
+      );
+      for (final label in ['Add', 'Play']) {
+        final node = tester.getSemantics(find.bySemanticsLabel(label));
+        final flags = node.getSemanticsData().flagsCollection;
+        expect(flags.isButton, isTrue);
+        expect(flags.isEnabled, Tristate.isFalse);
+      }
+    } finally {
+      semantics.dispose();
+    }
   });
 
   testWidgets('library card retains cover dimensions without action buttons', (

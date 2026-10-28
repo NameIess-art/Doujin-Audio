@@ -86,8 +86,10 @@ final class LibraryMetadataCoordinator {
     prepareForReset();
   }
 
-  Future<AudioDetailLoadResult> loadAudioDetail(AudioDetailTarget target) =>
-      _detailCacheService.load(canonicalTarget(target));
+  Future<AudioDetailLoadResult> loadAudioDetail(
+    AudioDetailTarget target, {
+    bool Function()? isActive,
+  }) => _detailCacheService.load(canonicalTarget(target), isActive: isActive);
 
   Future<AudioDetailSaveResult> saveAudioDetail(
     AudioDetail detail, {

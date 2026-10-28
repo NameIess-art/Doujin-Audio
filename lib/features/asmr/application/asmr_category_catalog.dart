@@ -208,9 +208,9 @@ final class AsmrCategoryCatalog {
 
   List<AsmrWork> _visible(List<AsmrWork> works) {
     if (!_hasExclusions()) return works;
-    return _visibleCache[works] ??= works
-        .where(_isWorkAllowed)
-        .toList(growable: false);
+    // View states preserve immutable snapshots. Cache that same snapshot so
+    // unrelated controller notifications cannot copy and republish the catalog.
+    return _visibleCache[works] ??= immutableList(works.where(_isWorkAllowed));
   }
 
   List<AsmrWork> worksFor(AsmrCategoryType category) => _visible(

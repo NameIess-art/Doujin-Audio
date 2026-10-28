@@ -113,5 +113,6 @@ class _AsmrWorkCover extends ConsumerWidget {
 }
 
 String _asmrWorkListCoverUrl(AsmrWork work) {
-  return work.preferredCoverUrl;
+  final thumbnail = work.thumbnailUrl.trim();
+  return thumbnail.isNotEmpty ? thumbnail : work.preferredCoverUrl;
 }

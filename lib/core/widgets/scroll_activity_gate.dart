@@ -12,11 +12,13 @@ class ScrollActivityGate extends StatefulWidget {
     required this.child,
     this.idleDelay = const Duration(milliseconds: 160),
     this.maxNotificationDepth = 0,
+    this.onMetricsChanged,
   }) : assert(maxNotificationDepth >= 0);
 
   final Widget child;
   final Duration idleDelay;
   final int maxNotificationDepth;
+  final VoidCallback? onMetricsChanged;
 
   static bool isScrollingOf(BuildContext context) {
     final scope = context
@@ -127,7 +129,17 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
       notifier: _isScrolling,
       child: NotificationListener<ScrollNotification>(
         onNotification: _handleScrollNotification,
-        child: widget.child,
+        child: widget.onMetricsChanged == null
+            ? widget.child
+            : NotificationListener<ScrollMetricsNotification>(
+                onNotification: (notification) {
+                  if (notification.depth <= widget.maxNotificationDepth) {
+                    widget.onMetricsChanged?.call();
+                  }
+                  return false;
+                },
+                child: widget.child,
+              ),
       ),
     );
   }

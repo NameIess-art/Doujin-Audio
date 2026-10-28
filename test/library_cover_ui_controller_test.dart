@@ -5,6 +5,7 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/ui/warmup_scheduler.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/presentation/library_card_artwork.dart';
@@ -18,6 +19,143 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  testWidgets(
+    'resizing admits cached rows without changing scroll offset',
+    (tester) async {
+      final cache = _RecordingCovers();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      final covers = LibraryCoverUiController(library: fixture.library);
+      final height = ValueNotifier<double>(300);
+      final scroll = ScrollController();
+      final futures = <int, Future<String?>>{};
+      addTearDown(fixture.dispose);
+      addTearDown(covers.dispose);
+      addTearDown(height.dispose);
+      addTearDown(scroll.dispose);
+      final list = ScrollActivityGate(
+        onMetricsChanged: covers.viewportChanged,
+        child: ListView.builder(
+          controller: scroll,
+          itemExtent: 100,
+          cacheExtent: 1000,
+          itemCount: 20,
+          itemBuilder: (_, index) => Builder(
+            builder: (context) {
+              futures[index] = covers.deferredRemoteCover(
+                'https://cover/$index',
+                context: context,
+              );
+              return const SizedBox(height: 100);
+            },
+          ),
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: ValueListenableBuilder<double>(
+              valueListenable: height,
+              child: list,
+              builder: (_, value, child) =>
+                  SizedBox(width: 300, height: value, child: child),
+            ),
+          ),
+        ),
+      );
+      cache.release.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(cache.requests.toSet(), {'remote:0', 'remote:1', 'remote:2'});
+      final pending = futures[5];
+      expect(pending, isNotNull);
+      height.value = 600;
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      expect(scroll.offset, 0);
+      expect(futures[5], same(pending));
+      expect(cache.requests.toSet(), {for (var i = 0; i < 6; i++) 'remote:$i'});
+      await tester.pumpWidget(const SizedBox.shrink());
+      await covers.dispose();
+      await Future.wait(futures.values);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'cold covers wait outside the viewport and start when scrolling exposes them',
+    (tester) async {
+      final cache = _RecordingCovers();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      final covers = LibraryCoverUiController(library: fixture.library);
+      final scroll = ScrollController();
+      final futures = <int, Future<String?>>{};
+      addTearDown(fixture.dispose);
+      addTearDown(covers.dispose);
+      addTearDown(scroll.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 300,
+              height: 300,
+              child: ListView.builder(
+                controller: scroll,
+                itemExtent: 100,
+                cacheExtent: 1000,
+                itemCount: 20,
+                itemBuilder: (_, index) => Builder(
+                  builder: (context) {
+                    futures[index] = covers.deferredRemoteCover(
+                      'https://cover/$index',
+                      context: context,
+                    );
+                    return const SizedBox(height: 100);
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      cache.release.complete();
+      await tester.pump();
+      expect(futures.keys, contains(8));
+      final pending = futures[8];
+      expect(cache.requests.toSet(), {'remote:0', 'remote:1', 'remote:2'});
+      scroll.jumpTo(600);
+      await tester.pump();
+      await tester.pump();
+      expect(futures[8], same(pending));
+      expect(cache.requests.toSet(), {
+        'remote:0',
+        'remote:1',
+        'remote:2',
+        'remote:6',
+        'remote:7',
+        'remote:8',
+      });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await covers.dispose();
+      await Future.wait(futures.values);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('paused cover discovery does not sort or submit new requests', (
     tester,
   ) async {
@@ -679,6 +817,16 @@ void main() {
         cache.release.complete();
         await tester.pump();
         expect(cache.requests.take(3), everyElement(isNot('remote:0')));
+        expect(
+          cache.requests.toSet(),
+          {
+            for (var row = 3; row < 6; row++)
+              for (var column = 0; column < columns; column++)
+                'remote:${row * columns + column}',
+          },
+          reason: 'Cache-extent rows must not start artwork discovery.',
+        );
+        await covers.dispose();
         await Future.wait(futures.values);
       },
       variant: TargetPlatformVariant({platform}),
@@ -740,6 +888,12 @@ void main() {
       covers.setInteractionPaused(false);
       await tester.pump();
       expect(cache.requests[1], 'remote:7');
+      expect(cache.requests.skip(1).toSet(), {
+        'remote:6',
+        'remote:7',
+        'remote:8',
+      });
+      await covers.dispose();
       await Future.wait(futures.values);
       expect(scheduler.isIdle, true);
       expect(cache.requests.toSet(), hasLength(cache.requests.length));

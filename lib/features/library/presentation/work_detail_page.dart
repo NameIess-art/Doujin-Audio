@@ -1617,6 +1617,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           AppPageContentTransition(
             backgroundColor: cs.surface,
             child: ScrollActivityGate(
+              onMetricsChanged: ref
+                  .read(libraryCoverUiControllerProvider)
+                  .viewportChanged,
               child: LayoutBuilder(
                 builder: (context, constraints) => Consumer(
                   builder: (context, ref, _) =>

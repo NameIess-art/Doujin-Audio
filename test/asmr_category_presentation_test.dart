@@ -6,6 +6,7 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
+import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
@@ -15,6 +16,8 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_coordinator.dart';
 import 'package:doujin_audio/features/player/application/playback_session_launcher.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +34,68 @@ void main() {
   final interaction = UiInteractionCoordinator.instance;
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
+
+  testWidgets(
+    'online cards request thumbnails while detail artwork keeps full size',
+    (tester) async {
+      final works = [
+        AsmrWork.fromJson(const {
+          'id': 1,
+          'title': 'Thumbnail available',
+          'thumbnailUrl': 'https://cover/thumbnail',
+          'coverUrl': 'https://cover/normal',
+          'mainCoverUrl': 'https://cover/main',
+        }),
+        AsmrWork.fromJson(const {
+          'id': 2,
+          'title': 'Main cover only',
+          'thumbnailUrl': ' ',
+          'mainCoverUrl': 'https://cover/main-only',
+        }),
+        AsmrWork.fromJson(const {
+          'id': 3,
+          'title': 'Normal cover only',
+          'coverUrl': 'https://cover/normal-only',
+        }),
+      ];
+      final controller = _PresentationController(createTestAsmrServices())
+        ..publishedWorks = works;
+      final service = LibraryService();
+      final cache = CoverArtworkCacheService(
+        libraryService: service,
+        remoteCoverDownloader: (_) async => null,
+      );
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      addTearDown(service.dispose);
+      addTearDown(controller.dispose);
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await pumpUntilFound(tester, find.byType(AsyncRemoteCoverImage));
+      expect(
+        tester
+            .widgetList<AsyncRemoteCoverImage>(
+              find.byType(AsyncRemoteCoverImage),
+            )
+            .map((cover) => cover.url),
+        [
+          'https://cover/thumbnail',
+          'https://cover/main-only',
+          'https://cover/normal-only',
+        ],
+      );
+      expect(works.first.preferredCoverUrl, 'https://cover/main');
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   Widget pageStack(ValueNotifier<int> activeTab) =>
       AppFadeThroughIndexedStack.lazy(
@@ -574,11 +639,15 @@ void main() {
           hasAdjacent: (_, {required forward}) => false,
         );
         final actions = find.byType(LibraryLikeCardActions);
-        final buttons = find.descendant(
+        final playButton = find.descendant(
           of: actions,
-          matching: find.byType(IconButton),
+          matching: find.byTooltip(fixture.languageProvider.tr('play')),
         );
-        await tester.tap(buttons.at(1));
+        final addButton = find.descendant(
+          of: actions,
+          matching: find.byTooltip(fixture.languageProvider.tr('add')),
+        );
+        await tester.tap(playButton);
         await tester.pump();
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 30)),
@@ -592,14 +661,14 @@ void main() {
         ]);
         expect(controller.historyCount, 1);
         expect(find.byType(WorkDetailPage), findsNothing);
-        await tester.tap(buttons.at(1));
+        await tester.tap(playButton);
         await tester.pump();
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 30)),
         );
         await tester.pump(const Duration(milliseconds: 350));
         expect(fixture.playback.activeSessions.single, same(temporary));
-        await tester.tap(buttons.first);
+        await tester.tap(addButton);
         await tester.pumpAndSettle();
         expect(
           fixture.playback.activeSessions.where(
@@ -651,10 +720,15 @@ void main() {
           matching: find.byType(LibraryLikeCardActions),
         );
         expect(actions, findsOneWidget);
-        expect(
-          find.descendant(of: actions, matching: find.byType(IconButton)),
-          findsNWidgets(2),
-        );
+        for (final action in ['add', 'play']) {
+          expect(
+            find.descendant(
+              of: actions,
+              matching: find.byTooltip(fixture.languageProvider.tr(action)),
+            ),
+            findsOneWidget,
+          );
+        }
         expect(contentRect.height, LibraryLikeCardMetrics.coverHeight);
         final titleRect = tester.getRect(find.text('Published work'));
         expect(

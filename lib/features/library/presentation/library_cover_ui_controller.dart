@@ -26,7 +26,9 @@ final class LibraryCoverUiController {
   final LibraryFacade _library;
   final WarmupScheduler _scheduler;
   final Map<String, _DeferredCoverLookup> _deferredLookups = {};
+  final Set<ScrollPosition> _scrollPositions = {};
   bool _scheduleBatchPending = false;
+  bool _scrollUpdateScheduled = false;
   bool _waitingForCapacity = false;
   bool _interactionPaused;
   bool _disposed = false;
@@ -114,9 +116,38 @@ final class LibraryCoverUiController {
       request.hasUnscopedRequest = true;
     } else {
       request.contexts.add(context);
+      final position = Scrollable.maybeOf(context)?.position;
+      if (position != null && _scrollPositions.add(position)) {
+        position.addListener(viewportChanged);
+      }
     }
     _schedulePendingLookups();
     return request.result.future;
+  }
+
+  void viewportChanged() {
+    if (_disposed || _scrollUpdateScheduled || _deferredLookups.isEmpty) return;
+    _scrollUpdateScheduled = true;
+    // Scroll offsets change before rows lay out. Admit requests once the new
+    // viewport is known, sharing one listener/frame across all its cards.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollUpdateScheduled = false;
+      _schedulePendingLookups();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _pruneScrollPositions() {
+    final active = <ScrollPosition>{
+      for (final request in _deferredLookups.values)
+        for (final context in request.contexts)
+          if (context.mounted) ?Scrollable.maybeOf(context)?.position,
+    };
+    _scrollPositions.removeWhere((position) {
+      if (active.contains(position)) return false;
+      position.removeListener(viewportChanged);
+      return true;
+    });
   }
 
   void _schedulePendingLookups() {
@@ -140,6 +171,7 @@ final class LibraryCoverUiController {
         request.result.complete(null);
         return true;
       });
+      _pruneScrollPositions();
       // Admit this frame's cards together after layout, so the first built
       // cache-extent item cannot start before the viewport's center is known.
       _scheduler.setPaused(true);
@@ -209,17 +241,14 @@ final class LibraryCoverUiController {
       if (identical(_deferredLookups[key], request)) {
         _deferredLookups.remove(key);
       }
+      _pruneScrollPositions();
     }
   }
 
   bool _canRunLookup(_DeferredCoverLookup request) =>
       request.hasUnscopedRequest ||
       !request.contexts.any((context) => context.mounted) ||
-      request.contexts.any(
-        (context) =>
-            context.mounted &&
-            TickerMode.getValuesNotifier(context).value.enabled,
-      );
+      (!_scrollUpdateScheduled && _priorityForRequest(request) < 0);
 
   int _priorityForRequest(_DeferredCoverLookup request) {
     var priority = request.hasUnscopedRequest ? -2000 : 1 << 30;
@@ -246,7 +275,7 @@ final class LibraryCoverUiController {
       if (extent <= 0 || !distance.isFinite) continue;
       final candidate =
           (bounds.overlaps(viewportBounds) ? -2000 : 1000) +
-          (distance * 1000 / extent).round();
+          (distance * 1000 / extent).round().clamp(0, 999);
       if (candidate < priority) priority = candidate;
     }
     return priority;
@@ -261,6 +290,10 @@ final class LibraryCoverUiController {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    for (final position in _scrollPositions) {
+      position.removeListener(viewportChanged);
+    }
+    _scrollPositions.clear();
     for (final request in _deferredLookups.values) {
       final completer = request.result;
       if (!completer.isCompleted) completer.complete(null);

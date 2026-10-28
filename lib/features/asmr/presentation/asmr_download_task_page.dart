@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../application/asmr_download_models.dart';
-import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -55,12 +54,7 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
           ref.read(asmrDownloadTaskIdsProvider).value ??
           manager?.taskIds ??
           const <String>[];
-      final removals = ref.read(undoableRemovalStateProvider);
-      if (taskIds.any(
-        (id) => !removals.isHidden(_asmrDownloadTaskRemovalKey(id)),
-      )) {
-        return;
-      }
+      if (taskIds.isNotEmpty) return;
       unawaited(Navigator.of(context).maybePop());
     });
   }
@@ -111,22 +105,14 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
                       final state = ref
                           .watch(asmrDownloadTaskIdsProvider)
                           .value;
-                      final removalState = ref.watch(
-                        undoableRemovalStateProvider,
-                      );
                       final taskIds =
-                          (state ??
-                                  ref
-                                      .read(asmrDownloadManagerProvider)
-                                      ?.taskIds ??
-                                  const <String>[])
-                              .where(
-                                (workId) => !removalState.isHidden(
-                                  _asmrDownloadTaskRemovalKey(workId),
-                                ),
-                              )
-                              .toList(growable: false);
-                      if (taskIds.isEmpty && !recovering && !failed && isCurrent) {
+                          state ??
+                          ref.read(asmrDownloadManagerProvider)?.taskIds ??
+                          const <String>[];
+                      if (taskIds.isEmpty &&
+                          !recovering &&
+                          !failed &&
+                          isCurrent) {
                         _exitWhenEmpty();
                       }
                       return taskIds.isEmpty
@@ -175,59 +161,6 @@ class _AsmrDownloadTaskPageState extends ConsumerState<AsmrDownloadTaskPage> {
 }
 
 enum _TaskRemovalAction { removeEntry, deleteDownloaded }
-
-UndoableRemovalKey _asmrDownloadTaskRemovalKey(String workId) =>
-    UndoableRemovalKey('asmr-download-task', workId);
-
-Future<void> _stageAsmrDownloadTaskRemoval(
-  BuildContext context,
-  WidgetRef ref, {
-  required AsmrDownloadTaskSnapshot task,
-  required _TaskRemovalAction removalAction,
-}) async {
-  final manager = ref.read(asmrDownloadManagerProvider);
-  if (manager == null) return;
-  final service = ref.read(undoableRemovalServiceProvider);
-  final wasRunning =
-      task.status == AsmrDownloadTaskStatus.idle || task.isActive;
-  await showUndoableRemovalFeedback(
-    context,
-    service: service,
-    action: UndoableRemovalAction(
-      key: _asmrDownloadTaskRemovalKey(task.work.workKey),
-      prepare: () async {
-        if (wasRunning) await manager.pauseTask(task.work.workKey);
-        return manager.getTask(task.work.workKey) != null;
-      },
-      undo: () async {
-        if (wasRunning && manager.getTask(task.work.workKey) != null) {
-          await manager.resumeTask(task.work.workKey);
-        }
-      },
-      commit: () => removalAction == _TaskRemovalAction.removeEntry
-          ? manager.cancelTask(task.work.workKey, deleteDownloaded: false)
-          : manager.deleteTask(task.work.workKey),
-    ),
-    message: ref
-        .read(appLanguageProviderInstanceProvider)
-        .tr(
-          removalAction == _TaskRemovalAction.removeEntry
-              ? 'asmr_download_task_removed'
-              : 'asmr_download_task_removed_and_deleted',
-        ),
-    batchMessage: (count) => ref.read(appLanguageProviderInstanceProvider).tr(
-      'items_removed_count',
-      {'count': count},
-    ),
-    undoLabel: ref.read(appLanguageProviderInstanceProvider).tr('undo'),
-    failureMessage: ref
-        .read(appLanguageProviderInstanceProvider)
-        .tr('removal_failed'),
-    icon: removalAction == _TaskRemovalAction.removeEntry
-        ? Icons.remove_circle_outline_rounded
-        : Icons.delete_sweep_rounded,
-  );
-}
 
 Future<_TaskRemovalAction?> _showTaskRemovalMenu(
   BuildContext context, {
@@ -328,11 +261,34 @@ class _DownloadTaskItem extends ConsumerWidget {
                 ),
               );
               if (!context.mounted || action == null) return;
-              await _stageAsmrDownloadTaskRemoval(
+              try {
+                if (action == _TaskRemovalAction.removeEntry) {
+                  await manager.cancelTask(workId, deleteDownloaded: false);
+                } else {
+                  await manager.deleteTask(workId);
+                }
+              } catch (_) {
+                if (!context.mounted) return;
+                showAppSnackBar(
+                  context,
+                  language.tr('removal_failed'),
+                  tone: AppFeedbackTone.destructive,
+                  icon: Icons.error_outline_rounded,
+                );
+                return;
+              }
+              if (!context.mounted) return;
+              showAppSnackBar(
                 context,
-                ref,
-                task: task,
-                removalAction: action,
+                language.tr(
+                  action == _TaskRemovalAction.removeEntry
+                      ? 'asmr_download_task_removed'
+                      : 'asmr_download_task_removed_and_deleted',
+                ),
+                tone: AppFeedbackTone.destructive,
+                icon: action == _TaskRemovalAction.removeEntry
+                    ? Icons.remove_circle_outline_rounded
+                    : Icons.delete_sweep_rounded,
               );
             },
     );

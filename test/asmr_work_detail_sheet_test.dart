@@ -1656,11 +1656,11 @@ void main() {
       // InkWell outside of it paints its highlight and ripple below the opaque
       // closed background, so presses looked different from playlist rows.
       expect(
-        find.ancestor(of: swipeCard, matching: find.byType(InkWell)),
+        find.ancestor(of: swipeCard, matching: find.bySubtype<InkWell>()),
         findsNothing,
       );
       expect(
-        find.descendant(of: swipeCard, matching: find.byType(InkWell)),
+        find.descendant(of: swipeCard, matching: find.bySubtype<InkWell>()),
         findsWidgets,
       );
 

@@ -627,7 +627,6 @@ void main() {
                       title: 'Original single.mp3',
                       path: audioPath,
                       detail: detail,
-                      detailLoading: false,
                     ),
                   ),
                 ],

@@ -703,7 +703,6 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
           folderName: entry.title,
           folderDuration: folder?.totalDuration ?? Duration.zero,
           detail: entry.detail,
-          detailLoading: false,
           trailingActions: trailingActions,
           isSelected: isSelected,
           isPinned: isPinned,
@@ -720,7 +719,6 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
             track: firstTrack,
             title: entry.title,
             detail: entry.detail,
-            detailLoading: false,
             trailingActions: trailingActions,
             isSelected: isSelected,
             isPinned: isPinned,
@@ -736,7 +734,6 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
           isPinned: isPinned,
           title: entry.title,
           detail: entry.detail,
-          detailLoading: false,
           trailingActions: trailingActions,
         ),
       );

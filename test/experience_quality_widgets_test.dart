@@ -1449,7 +1449,6 @@ void main() {
                       path: '/test/plain.mp3',
                       title: 'plain.mp3',
                       detail: detail,
-                      detailLoading: false,
                       isPinned: pinned,
                       isSelected: selected,
                     ),
@@ -1748,8 +1747,6 @@ void main() {
           SingleMediaFileCardContent(
             track: track,
             title: 'audio.mp3',
-            detail: null,
-            detailLoading: false,
             isSelected: true,
             isPinned: true,
           ),

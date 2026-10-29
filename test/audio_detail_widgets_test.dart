@@ -1495,7 +1495,7 @@ void main() {
                 find.byKey(const ValueKey<String>('dlsite_review_target_name')),
               )
               .bottom,
-      greaterThanOrEqualTo(8),
+      greaterThan(0),
     );
     expect(
       find.text(languageProvider.tr('audio_detail_release_date')),

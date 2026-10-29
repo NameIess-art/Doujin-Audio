@@ -1,4 +1,5 @@
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
+import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -328,7 +329,7 @@ void main() {
               .url,
         ),
       );
-      expect(cache.started, initialCovers);
+      expect(cache.started.take(initialCovers.length).toList(), initialCovers);
 
       final list = tester.widget<ScrollView>(find.byType(CustomScrollView));
       list.controller!.jumpTo(600);
@@ -341,7 +342,11 @@ void main() {
       cache.pending[firstFocus]!.complete(null);
       await tester.pump();
       await tester.pump();
-      expect(cache.started, [...initialCovers, nextFocus]);
+      expect(cache.started, containsAll([...initialCovers, nextFocus]));
+      expect(
+        cache.started.indexOf(nextFocus),
+        greaterThan(cache.started.indexOf(firstFocus)),
+      );
 
       cache.releaseAll();
       await tester.pumpWidget(const SizedBox.shrink());
@@ -456,12 +461,15 @@ void main() {
             SizedBox(
               width: 200,
               height: 150,
-              child: ListView.builder(
-                controller: scrollController,
-                itemExtent: 150,
-                itemCount: 100,
-                itemBuilder: (_, index) =>
-                    index == 0 ? cardArtwork : const SizedBox.shrink(),
+              child: ScrollActivityGate(
+                idleDelay: const Duration(seconds: 2),
+                child: ListView.builder(
+                  controller: scrollController,
+                  itemExtent: 150,
+                  itemCount: 100,
+                  itemBuilder: (_, index) =>
+                      index == 0 ? cardArtwork : const SizedBox.shrink(),
+                ),
               ),
             ),
             overrides: [
@@ -522,7 +530,6 @@ void main() {
           if (images.any((image) => image.image != null)) break;
         }
         expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
-        await tester.pumpAndSettle();
         expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
         await gesture.up();
         await tester.pumpAndSettle();

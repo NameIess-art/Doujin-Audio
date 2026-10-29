@@ -132,15 +132,24 @@ final class LibraryCoverUiController {
     request.timer = null;
   }
 
-  bool _canPrefetch(Object owner, _BrowseCoverPrefetch request) =>
-      !_disposed &&
-      identical(_browsePrefetches[owner], request) &&
-      request.context.mounted &&
-      request.isActive() &&
-      TickerMode.getValuesNotifier(request.context).value.enabled &&
-      !_interactionPaused &&
-      request.position?.hasContentDimensions == true &&
-      request.position?.isScrollingNotifier.value == false;
+  bool _canPrefetch(Object owner, _BrowseCoverPrefetch request) {
+    if (_disposed ||
+        !identical(_browsePrefetches[owner], request) ||
+        !request.context.mounted ||
+        !request.isActive()) {
+      return false;
+    }
+    try {
+      if (!TickerMode.getValuesNotifier(request.context).value.enabled) {
+        return false;
+      }
+    } catch (_) {
+      return false;
+    }
+    return !_interactionPaused &&
+        request.position?.hasContentDimensions == true &&
+        request.position?.isScrollingNotifier.value == false;
+  }
 
   void _scheduleBrowsePrefetch(Object owner, _BrowseCoverPrefetch request) {
     if (!_canPrefetch(owner, request) ||

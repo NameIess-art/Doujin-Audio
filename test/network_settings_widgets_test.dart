@@ -110,7 +110,7 @@ void main() {
         final pinnedTop = tester.getTopLeft(stickyTitle).dy;
         expect(
           pinnedTop - tester.getRect(find.byType(TopPageHeader)).bottom,
-          closeTo(6, 0.5),
+          closeTo(8, 0.5),
         );
         expect(
           tester

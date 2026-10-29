@@ -6,7 +6,9 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/warmup_scheduler.dart';
+import '../../../core/widgets/async_cover_image.dart';
 import '../application/library_facade.dart';
 
 final class LibraryCoverUiController {
@@ -27,11 +29,210 @@ final class LibraryCoverUiController {
   final WarmupScheduler _scheduler;
   final Map<String, _DeferredCoverLookup> _deferredLookups = {};
   final Set<ScrollPosition> _scrollPositions = {};
+  final Map<Object, _BrowseCoverPrefetch> _browsePrefetches = {};
   bool _scheduleBatchPending = false;
   bool _scrollUpdateScheduled = false;
   bool _waitingForCapacity = false;
   bool _interactionPaused;
   bool _disposed = false;
+
+  /// The list supplies source snapshots; no offscreen card needs to be mounted.
+  void updateBrowsePrefetch({
+    required Object owner,
+    required BuildContext context,
+    required ScrollController scrollController,
+    required Object source,
+    required int itemCount,
+    required int columnCount,
+    required double topPadding,
+    required double rowExtent,
+    List<double>? rowOffsets,
+    required int cacheWidth,
+    required Future<String?>? Function(int index) coverAt,
+    required bool Function() isActive,
+  }) {
+    if (_disposed) return;
+    final request = _browsePrefetches.putIfAbsent(
+      owner,
+      _BrowseCoverPrefetch.new,
+    );
+    final changed =
+        !identical(request.source, source) ||
+        request.itemCount != itemCount ||
+        request.columnCount != columnCount ||
+        request.rowExtent != rowExtent ||
+        request.cacheWidth != cacheWidth ||
+        request.topPadding != topPadding ||
+        !identical(request.rowOffsets, rowOffsets);
+    request
+      ..context = context
+      ..scrollController = scrollController
+      ..source = source
+      ..itemCount = itemCount
+      ..columnCount = columnCount
+      ..topPadding = topPadding
+      ..rowExtent = rowExtent
+      ..rowOffsets = rowOffsets
+      ..cacheWidth = cacheWidth
+      ..coverAt = coverAt
+      ..isActive = isActive;
+    if (changed) _invalidateBrowsePrefetch(request);
+    if (request.attachScheduled) return;
+    request.attachScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      request.attachScheduled = false;
+      if (_disposed || !identical(_browsePrefetches[owner], request)) return;
+      if (!request.context.mounted || !request.scrollController.hasClients) {
+        return;
+      }
+      final position = request.scrollController.position;
+      if (!identical(request.position, position)) {
+        request.detach();
+        request.position = position;
+        request.offset = position.pixels;
+        request.listener = () {
+          final delta = position.pixels - request.offset;
+          if (delta != 0) request.direction = delta.sign.toInt();
+          request.offset = position.pixels;
+          _invalidateBrowsePrefetch(request);
+          _scheduleBrowsePrefetch(owner, request);
+        };
+        position.addListener(request.listener!);
+        position.isScrollingNotifier.addListener(request.listener!);
+      }
+      _scheduleBrowsePrefetch(owner, request);
+    });
+  }
+
+  void cancelBrowsePrefetch(Object owner) {
+    final request = _browsePrefetches.remove(owner);
+    if (request == null) return;
+    _invalidateBrowsePrefetch(request);
+    request.detach();
+  }
+
+  void refreshBrowsePrefetch(Object owner) {
+    final request = _browsePrefetches[owner];
+    if (request == null) return;
+    if (!_canPrefetch(owner, request)) {
+      _invalidateBrowsePrefetch(request);
+      request.suspended = true;
+      return;
+    }
+    if (request.suspended) {
+      request.suspended = false;
+      _invalidateBrowsePrefetch(request);
+    }
+    _scheduleBrowsePrefetch(owner, request);
+  }
+
+  void _invalidateBrowsePrefetch(_BrowseCoverPrefetch request) {
+    request.generation++;
+    request.timer?.cancel();
+    request.timer = null;
+  }
+
+  bool _canPrefetch(Object owner, _BrowseCoverPrefetch request) =>
+      !_disposed &&
+      identical(_browsePrefetches[owner], request) &&
+      request.context.mounted &&
+      request.isActive() &&
+      TickerMode.getValuesNotifier(request.context).value.enabled &&
+      !_interactionPaused &&
+      request.position?.hasContentDimensions == true &&
+      request.position?.isScrollingNotifier.value == false;
+
+  void _scheduleBrowsePrefetch(Object owner, _BrowseCoverPrefetch request) {
+    if (!_canPrefetch(owner, request) ||
+        request.timer != null ||
+        request.completedGeneration == request.generation) {
+      return;
+    }
+    request.timer = Timer(const Duration(milliseconds: 160), () {
+      request.timer = null;
+      if (!request.running) unawaited(_runBrowsePrefetch(owner, request));
+    });
+  }
+
+  Future<void> _runBrowsePrefetch(
+    Object owner,
+    _BrowseCoverPrefetch request,
+  ) async {
+    if (!_canPrefetch(owner, request)) return;
+    final generation = request.generation;
+    bool isCurrent() =>
+        generation == request.generation && _canPrefetch(owner, request);
+    final position = request.position!;
+    final viewport = position.viewportDimension;
+    if (viewport <= 0 || request.itemCount == 0) return;
+    final rowCount = (request.itemCount / request.columnCount).ceil();
+    int rowAt(double offset) {
+      final offsets = request.rowOffsets;
+      if (offsets == null) {
+        return (offset / request.rowExtent).floor().clamp(0, rowCount - 1);
+      }
+      var low = 0;
+      var high = offsets.length - 1;
+      while (low < high) {
+        final middle = (low + high + 1) ~/ 2;
+        if (offsets[middle] <= offset) {
+          low = middle;
+        } else {
+          high = middle - 1;
+        }
+      }
+      return low.clamp(0, rowCount - 1);
+    }
+
+    final first = rowAt(position.pixels - request.topPadding);
+    final last = rowAt(position.pixels + viewport - request.topPadding - 0.01);
+    final rowsAhead = last - first + 1;
+    final start = request.direction > 0
+        ? (last + 1) * request.columnCount
+        : first * request.columnCount - 1;
+    final count = (rowsAhead * request.columnCount).clamp(0, 24);
+    final configuration = createLocalImageConfiguration(request.context);
+    final cacheWidth = request.cacheWidth;
+    final coverAt = request.coverAt;
+    request.running = true;
+    try {
+      for (var step = 0; step < count && isCurrent(); step++) {
+        final index = start + step * request.direction;
+        if (index < 0 || index >= request.itemCount) break;
+        try {
+          final future = coverAt(index);
+          if (future == null) continue;
+          final path = await future;
+          if (!isCurrent()) break;
+          if (path == null || path.isEmpty) continue;
+          await warmBrowseThumbnail(
+            resizeFileImageIfNeeded(
+              path: path,
+              cacheWidth: cacheWidth,
+              useDefaultCacheWidth: false,
+            ),
+            configuration,
+            isActive: isCurrent,
+          );
+        } catch (error, stackTrace) {
+          // Optional lookahead must never turn a missing/corrupt cover into a
+          // list error; ordinary visible requests retain their own retry path.
+          AppLogService.warning(
+            'Browse cover prefetch failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }
+    } finally {
+      request.running = false;
+      if (generation == request.generation) {
+        request.completedGeneration = generation;
+      } else {
+        _scheduleBrowsePrefetch(owner, request);
+      }
+    }
+  }
 
   Future<String?> deferredFolderCover(
     String folderPath, {
@@ -126,6 +327,16 @@ final class LibraryCoverUiController {
   }
 
   void viewportChanged() {
+    for (final entry in _browsePrefetches.entries) {
+      final request = entry.value;
+      final position = request.position;
+      if (position == null || !position.hasContentDimensions) continue;
+      final dimensions = (position.viewportDimension, position.maxScrollExtent);
+      if (dimensions == request.dimensions) continue;
+      request.dimensions = dimensions;
+      _invalidateBrowsePrefetch(request);
+      _scheduleBrowsePrefetch(entry.key, request);
+    }
     if (_disposed || _scrollUpdateScheduled || _deferredLookups.isEmpty) return;
     _scrollUpdateScheduled = true;
     // Scroll offsets change before rows lay out. Admit requests once the new
@@ -288,11 +499,21 @@ final class LibraryCoverUiController {
     _interactionPaused = paused;
     if (!paused && _deferredLookups.isNotEmpty) _schedulePendingLookups();
     _scheduler.setPaused(paused || _scheduleBatchPending);
+    for (final entry in _browsePrefetches.entries) {
+      if (paused) {
+        _invalidateBrowsePrefetch(entry.value);
+      } else {
+        _scheduleBrowsePrefetch(entry.key, entry.value);
+      }
+    }
   }
 
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    for (final owner in _browsePrefetches.keys.toList()) {
+      cancelBrowsePrefetch(owner);
+    }
     for (final position in _scrollPositions) {
       position.removeListener(viewportChanged);
     }
@@ -303,6 +524,41 @@ final class LibraryCoverUiController {
     }
     _deferredLookups.clear();
     await _scheduler.shutdown();
+  }
+}
+
+final class _BrowseCoverPrefetch {
+  late BuildContext context;
+  late ScrollController scrollController;
+  Object? source;
+  int itemCount = 0;
+  int columnCount = 1;
+  double topPadding = 0;
+  double rowExtent = 1;
+  List<double>? rowOffsets;
+  int cacheWidth = 0;
+  late Future<String?>? Function(int) coverAt;
+  late bool Function() isActive;
+  ScrollPosition? position;
+  VoidCallback? listener;
+  double offset = 0;
+  (double, double)? dimensions;
+  int direction = 1;
+  int generation = 0;
+  int completedGeneration = -1;
+  bool running = false;
+  bool attachScheduled = false;
+  bool suspended = false;
+  Timer? timer;
+
+  void detach() {
+    final callback = listener;
+    if (callback != null) {
+      position?.removeListener(callback);
+      position?.isScrollingNotifier.removeListener(callback);
+    }
+    position = null;
+    listener = null;
   }
 }
 

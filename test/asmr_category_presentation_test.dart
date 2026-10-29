@@ -7,6 +7,7 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
@@ -146,6 +147,21 @@ void main() {
         await tester.pumpAndSettle();
         expect(controller.hasMore, isFalse);
         expect(cardBuilds, 0);
+        expect(cards.evaluate().toSet(), mountedCards);
+
+        controller
+          ..publishedWorks = [
+            ...controller.publishedWorks!,
+            AsmrWork.fromJson(const {'id': 1001, 'title': 'Appended work'}),
+          ]
+          ..publish('Appended page');
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
+        expect(
+          cardBuilds,
+          0,
+          reason: 'Appending a page must preserve unchanged card contents',
+        );
         expect(cards.evaluate().toSet(), mountedCards);
 
         // Data commits still update the same mounted rows.
@@ -2228,6 +2244,110 @@ void main() {
         await tester.pump(interaction.idleDelay);
         await tester.pump();
         expect(controller.loadMoreCount, 1);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'ASMR fast scroll presents appended cards without fading on $platform',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(450, 800);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final controller = _PresentationController(createTestAsmrServices())
+          ..publishedWorks = immutableList([
+            for (var index = 0; index < 4; index++)
+              AsmrWork.fromJson({'id': index + 1, 'title': 'Work $index'}),
+          ])
+          ..hasMore = true
+          ..needsRetry = true;
+        final fixture = AppRuntimeWidgetTestFixture();
+        final snapshots = StreamController<AsmrCategoryViewState?>.broadcast(
+          sync: true,
+        );
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        addTearDown(snapshots.close);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+              // Isolate presentation of an admitted page result from the
+              // provider's separate interaction deferral contract.
+              asmrCategoryStateProvider.overrideWith(
+                (ref, request) => Stream<AsmrCategoryViewState?>.multi((
+                  events,
+                ) {
+                  events.addSync(
+                    controller.categoryViewState(request.category),
+                  );
+                  final subscription = snapshots.stream.listen(events.addSync);
+                  events.onCancel = subscription.cancel;
+                }),
+              ),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Work 0'));
+        await tester.pumpAndSettle();
+        final cards = find.byType(LibraryLikeMetadataWorkCardContent);
+        final mountedCards = cards.evaluate().toSet();
+        final listContext = tester.element(
+          find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
+        );
+        FixedScrollMetrics metrics(double pixels) => FixedScrollMetrics(
+          minScrollExtent: 0,
+          maxScrollExtent: 1000,
+          pixels: pixels,
+          viewportDimension: 500,
+          axisDirection: AxisDirection.down,
+          devicePixelRatio: 1,
+        );
+        ScrollStartNotification(
+          metrics: metrics(0),
+          context: listContext,
+        ).dispatch(listContext);
+        tester.binding.scheduleFrame();
+        await tester.pump(const Duration(milliseconds: 16));
+        ScrollUpdateNotification(
+          metrics: metrics(200),
+          context: listContext,
+          scrollDelta: 200,
+        ).dispatch(listContext);
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(
+          ScrollActivityGate.isFastScrollingWithoutDependencyOf(listContext),
+          isTrue,
+        );
+        controller.publishedWorks = immutableList([
+          ...controller.publishedWorks!,
+          AsmrWork.fromJson(const {
+            'id': 5,
+            'title': 'Appended during fast scroll',
+          }),
+        ]);
+        snapshots.add(controller.categoryViewState(AsmrCategoryType.collected));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 16));
+        final appended = find.byKey(
+          const ValueKey<String>('asmr-work-source:asmrOne:5'),
+        );
+        expect(appended, findsOneWidget);
+        expect(tester.widget<FadeTransition>(appended).opacity.value, 1);
+        expect(cards.evaluate().toSet(), containsAll(mountedCards));
+        expect(
+          ScrollActivityGate.isFastScrollingWithoutDependencyOf(listContext),
+          isTrue,
+        );
+        ScrollEndNotification(
+          metrics: metrics(200),
+          context: listContext,
+        ).dispatch(listContext);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       },
       variant: TargetPlatformVariant({platform}),

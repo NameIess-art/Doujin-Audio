@@ -118,6 +118,7 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
               ),
               child: AsyncLocalCoverImage(
                 deferLoadDuringInteraction: true,
+                browseThumbnail: true,
                 onImageError: libraryFacade
                     .coverArtworkCacheService
                     .reportArtworkReadFailure,
@@ -225,6 +226,7 @@ class _LibraryTrackCoverThumbnailState
             ),
             child: AsyncLocalCoverImage(
               deferLoadDuringInteraction: true,
+              browseThumbnail: true,
               onImageError: libraryFacade
                   .coverArtworkCacheService
                   .reportArtworkReadFailure,
@@ -248,14 +250,15 @@ class _LibraryTrackCoverThumbnailState
   }
 }
 
-class RootFolderCardContent extends ConsumerWidget {
+class RootFolderCardContent extends StatelessWidget {
   const RootFolderCardContent({
     super.key,
     required this.folderPath,
     required this.folderName,
     required this.folderDuration,
-    required this.detail,
-    required this.detailLoading,
+    this.detail,
+    this.detailLoading = false,
+    this.detailTarget,
     this.isSelected = false,
     this.isPinned = false,
     this.index,
@@ -267,28 +270,29 @@ class RootFolderCardContent extends ConsumerWidget {
   final Duration folderDuration;
   final AudioDetail? detail;
   final bool detailLoading;
+  final AudioDetailTarget? detailTarget;
   final bool isSelected;
   final bool isPinned;
   final int? index;
   final Widget? trailingActions;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final displayMode = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.workNameDisplay ?? WorkNameDisplay.workTitle,
-      ),
+  Widget build(BuildContext context) {
+    final cover = LibraryCoverThumbnail(
+      folderPath: folderPath,
+      width:
+          LibraryLikeCardMetrics.coverHeight *
+          LibraryLikeCardMetrics.coverAspectRatio,
     );
-    final workTitle = detail?.workTitle.trim() ?? '';
     return AudioDetailWorkCardContent(
-      title: displayMode == WorkNameDisplay.workTitle && workTitle.isNotEmpty
-          ? workTitle
-          : folderName,
+      title: folderName,
+      useWorkTitle: true,
+      detailTarget: detailTarget,
       detail: detail,
       detailLoading: detailLoading,
       index: index,
       trailingActions: trailingActions,
-      coverBuilder: (coverWidth) {
+      coverBuilder: (coverWidth, detail) {
         final rj = detail?.rjCode.trim() ?? '';
         final rjCode = rj.isNotEmpty
             ? rj
@@ -298,11 +302,15 @@ class RootFolderCardContent extends ConsumerWidget {
         return Stack(
           clipBehavior: Clip.none,
           children: [
-            LibraryCoverThumbnail(
-              folderPath: folderPath,
-              width: coverWidth,
-              duration: detail?.duration ?? folderDuration,
-            ),
+            cover,
+            if ((detail?.duration ?? folderDuration) > Duration.zero)
+              Positioned(
+                right: 4,
+                bottom: 4,
+                child: DurationOverlay(
+                  duration: detail?.duration ?? folderDuration,
+                ),
+              ),
             if (rjCode.isNotEmpty)
               Positioned(
                 left: 4,
@@ -341,6 +349,8 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
     super.key,
     required this.title,
     this.titleFileName = false,
+    this.useWorkTitle = false,
+    this.detailTarget,
     required this.detail,
     required this.detailLoading,
     required this.coverBuilder,
@@ -350,21 +360,43 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
 
   final String title;
   final bool titleFileName;
+  final bool useWorkTitle;
+  final AudioDetailTarget? detailTarget;
   final AudioDetail? detail;
   final bool detailLoading;
-  final Widget Function(double coverWidth) coverBuilder;
+  final Widget Function(double coverWidth, AudioDetail? detail) coverBuilder;
   final int? index;
   final Widget? trailingActions;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(appLanguageStateProvider);
+    final detailState = detailTarget == null
+        ? null
+        : ref.watch(libraryDetailForTargetProvider(detailTarget!));
+    final detail = detailState?.value ?? this.detail;
+    final detailLoading = detailState?.isLoading ?? this.detailLoading;
+    final displayMode = useWorkTitle
+        ? ref.watch(
+            settingsStateProvider.select(
+              (state) =>
+                  state.value?.workNameDisplay ?? WorkNameDisplay.workTitle,
+            ),
+          )
+        : WorkNameDisplay.folderName;
+    final workTitle = detail?.workTitle.trim() ?? '';
+
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     return LibraryLikeMetadataWorkCardContent(
-      title: title,
+      title:
+          useWorkTitle &&
+              displayMode == WorkNameDisplay.workTitle &&
+              workTitle.isNotEmpty
+          ? workTitle
+          : title,
       titleFileName: titleFileName,
       metadata: _audioDetailMetadata(detail),
       voiceActorLabel: i18n.tr('card_info_voice_actors'),
@@ -374,7 +406,7 @@ class AudioDetailWorkCardContent extends ConsumerWidget {
       ratingLabel: i18n.tr('card_info_rating'),
       loading: detailLoading || detail == null,
       trailingActions: trailingActions,
-      coverBuilder: coverBuilder,
+      coverBuilder: (width) => coverBuilder(width, detail),
     );
   }
 }
@@ -386,8 +418,9 @@ class SingleAudioFileCardContent extends ConsumerWidget {
     required this.path,
     this.isPinned = false,
     this.isSelected = false,
-    required this.detail,
-    required this.detailLoading,
+    this.detail,
+    this.detailLoading = false,
+    this.detailTarget,
     this.trailingActions,
   });
 
@@ -397,6 +430,7 @@ class SingleAudioFileCardContent extends ConsumerWidget {
   final bool isSelected;
   final AudioDetail? detail;
   final bool detailLoading;
+  final AudioDetailTarget? detailTarget;
   final Widget? trailingActions;
 
   @override
@@ -406,6 +440,11 @@ class SingleAudioFileCardContent extends ConsumerWidget {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
+    final detailState = detailTarget == null
+        ? null
+        : ref.watch(libraryDetailForTargetProvider(detailTarget!));
+    final detail = detailState?.value ?? this.detail;
+    final detailLoading = detailState?.isLoading ?? this.detailLoading;
     final metadata = _audioDetailMetadata(detail);
     final parts = textTranslationText(title, fileName: true);
     return WorkPageTranslationBuilder(
@@ -478,8 +517,9 @@ class SingleMediaFileCardContent extends StatelessWidget {
     super.key,
     required this.track,
     required this.title,
-    required this.detail,
-    required this.detailLoading,
+    this.detail,
+    this.detailLoading = false,
+    this.detailTarget,
     this.isSelected = false,
     this.isPinned = false,
     this.index,
@@ -490,6 +530,7 @@ class SingleMediaFileCardContent extends StatelessWidget {
   final String title;
   final AudioDetail? detail;
   final bool detailLoading;
+  final AudioDetailTarget? detailTarget;
   final bool isSelected;
   final bool isPinned;
   final int? index;
@@ -497,14 +538,21 @@ class SingleMediaFileCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cover = LibraryTrackCoverThumbnail(
+      track: track,
+      width:
+          LibraryLikeCardMetrics.coverHeight *
+          LibraryLikeCardMetrics.coverAspectRatio,
+    );
     return AudioDetailWorkCardContent(
       title: title,
       titleFileName: true,
+      detailTarget: detailTarget,
       detail: detail,
       detailLoading: detailLoading,
       index: index,
       trailingActions: trailingActions,
-      coverBuilder: (coverWidth) {
+      coverBuilder: (coverWidth, detail) {
         final rj = detail?.rjCode.trim() ?? '';
         final rjCode = rj.isNotEmpty
             ? rj
@@ -514,11 +562,15 @@ class SingleMediaFileCardContent extends StatelessWidget {
         return Stack(
           clipBehavior: Clip.none,
           children: [
-            LibraryTrackCoverThumbnail(
-              track: track,
-              width: coverWidth,
-              duration: detail?.duration ?? track.duration,
-            ),
+            cover,
+            if ((detail?.duration ?? track.duration) > Duration.zero)
+              Positioned(
+                right: 4,
+                bottom: 4,
+                child: DurationOverlay(
+                  duration: detail?.duration ?? track.duration,
+                ),
+              ),
             if (rjCode.isNotEmpty)
               Positioned(
                 left: 4,

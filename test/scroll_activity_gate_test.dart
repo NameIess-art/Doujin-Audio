@@ -11,6 +11,91 @@ void main() {
   tearDown(interaction.resetForTest);
 
   testWidgets(
+    'fast scroll hysteresis ignores horizontal updates without rebuilding content',
+    (tester) async {
+      late BuildContext scope;
+      var builds = 0;
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: ScrollActivityGate(
+            child: Builder(
+              builder: (context) {
+                scope = context;
+                builds++;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+      FixedScrollMetrics metrics(
+        double pixels, {
+        AxisDirection direction = AxisDirection.down,
+      }) => FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: 10000,
+        pixels: pixels,
+        viewportDimension: 100,
+        axisDirection: direction,
+        devicePixelRatio: 1,
+      );
+      void update(
+        double pixels, {
+        AxisDirection direction = AxisDirection.down,
+      }) => ScrollUpdateNotification(
+        metrics: metrics(pixels, direction: direction),
+        context: scope,
+        scrollDelta: 1,
+      ).dispatch(scope);
+      ScrollStartNotification(
+        metrics: metrics(0),
+        context: scope,
+      ).dispatch(scope);
+      tester.binding.scheduleFrame();
+      await tester.pump(const Duration(milliseconds: 20));
+      update(5, direction: AxisDirection.right);
+      expect(
+        ScrollActivityGate.isFastScrollingWithoutDependencyOf(scope),
+        isFalse,
+      );
+      update(5);
+      expect(
+        ScrollActivityGate.isFastScrollingWithoutDependencyOf(scope),
+        isTrue,
+      );
+      tester.binding.scheduleFrame();
+      await tester.pump(const Duration(milliseconds: 20));
+      update(5.1);
+      tester.binding.scheduleFrame();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        ScrollActivityGate.isFastScrollingWithoutDependencyOf(scope),
+        isTrue,
+      );
+      // A renewed fast fling cancels the slow-release window.
+      update(30);
+      tester.binding.scheduleFrame();
+      await tester.pump(const Duration(milliseconds: 30));
+      expect(
+        ScrollActivityGate.isFastScrollingWithoutDependencyOf(scope),
+        isTrue,
+      );
+      update(30.1);
+      tester.binding.scheduleFrame();
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(
+        ScrollActivityGate.isFastScrollingWithoutDependencyOf(scope),
+        isFalse,
+      );
+      expect(builds, 1);
+      await tester.pumpWidget(const SizedBox());
+      tester.binding.scheduleFrame();
+      await tester.pump(const Duration(seconds: 1));
+    },
+  );
+
+  testWidgets(
     'layout scroll notifications defer UI updates until after the frame',
     (tester) async {
       final notificationPhases = <SchedulerPhase>[];

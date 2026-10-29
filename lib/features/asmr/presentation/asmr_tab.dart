@@ -1,5 +1,6 @@
 import 'asmr_providers.dart';
 import '../../library/presentation/library_providers.dart';
+import '../../library/presentation/library_cover_ui_controller.dart';
 import '../../settings/presentation/settings_providers.dart';
 import '../../../core/widgets/drag_only_scrollbar.dart';
 import 'dart:async';

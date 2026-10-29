@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_all_results.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_category_widgets.dart';
@@ -1747,7 +1749,10 @@ void main() {
     final topGap = emptyCardRect.top - headerBottom;
     final bottomGap = viewportHeight - 16 - emptyCardRect.bottom;
     expect(topGap, greaterThanOrEqualTo(0));
-    expect(topGap, closeTo(bottomGap + 4, 1));
+    expect(
+      topGap,
+      closeTo(bottomGap + AppPageHeaderMetrics.firstContentSpacing, 1),
+    );
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
@@ -2141,15 +2146,17 @@ void main() {
         final scrollController = ScrollController();
         addTearDown(scrollController.dispose);
         Widget page() => fixture.build(
-          SizedBox(
-            width: 240,
-            height: 180,
-            child: ListView.builder(
-              controller: scrollController,
-              itemExtent: 180,
-              itemCount: 100,
-              itemBuilder: (_, index) =>
-                  index == 0 ? surface : const SizedBox.shrink(),
+          ScrollActivityGate(
+            child: SizedBox(
+              width: 240,
+              height: 180,
+              child: ListView.builder(
+                controller: scrollController,
+                itemExtent: 180,
+                itemCount: 100,
+                itemBuilder: (_, index) =>
+                    index == 0 ? surface : const SizedBox.shrink(),
+              ),
             ),
           ),
         );

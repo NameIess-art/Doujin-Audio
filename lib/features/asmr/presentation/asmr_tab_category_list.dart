@@ -129,12 +129,15 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   final Map<String, Animation<double>> _loadingWorkAnimations = {};
   final Set<AnimationController> _loadingBatchControllers = {};
   final Map<String, GlobalKey> _itemKeys = {};
+  final Map<String, _AsmrWorkTreeCard> _workCardCache = {};
   List<AsmrWork>? _visibleWorksSource;
   List<AsmrWork> _visibleWorksCache = const [];
   Map<String, _CollapsingAsmrWork> _visibleCollapsing = const {};
   List<String> _anchorIds = const [];
   Map<String, int> _workIndexById = {};
   Map<Key, int> _workKeyIndices = {};
+  LibraryCoverUiController? _coverUi;
+  BuildContext? _coverContext;
 
   List<AsmrWork> _prepareVisibleWorks(List<AsmrWork> works) {
     if (identical(_visibleWorksSource, works) &&
@@ -169,6 +172,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       if (key != null) _workKeyIndices[key] = index;
     }
     _itemKeys.removeWhere((id, _) => !_workIndexById.containsKey(id));
+    _workCardCache.removeWhere((id, _) => !_workIndexById.containsKey(id));
     _anchorIds = immutableList(anchors);
     return visible;
   }
@@ -194,6 +198,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   }
 
   void _handleActivityChanged() {
+    _coverUi?.refreshBrowsePrefetch(this);
     if (!_isActive) {
       UiInteractionCoordinator.instance.cancelCommit(
         _automaticLoadMoreCommitKey,
@@ -231,6 +236,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
 
   @override
   void dispose() {
+    _coverUi?.cancelBrowsePrefetch(this);
     _tickerModeNotifier?.removeListener(_handleActivityChanged);
     UiInteractionCoordinator.instance.cancelCommit(_automaticLoadMoreCommitKey);
     for (final entry in _collapsingWorks.values) {
@@ -260,7 +266,13 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     }
     final previous = _lastLoadState;
     _lastLoadState = state;
-    if (reduceMotion || state.isLoading || state.isRefreshing) {
+    if (reduceMotion ||
+        (_coverContext?.mounted == true &&
+            ScrollActivityGate.isFastScrollingWithoutDependencyOf(
+              _coverContext!,
+            )) ||
+        state.isLoading ||
+        state.isRefreshing) {
       _clearLoadAnimations();
       return;
     }
@@ -298,6 +310,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
 
   @override
   Widget build(BuildContext context) {
+    _coverUi = ref.read(libraryCoverUiControllerProvider);
+    final coverResolution = ref.watch(coverImageResolutionProvider);
     final normalizedSearchQuery = canonicalSearchQuery(widget.searchQuery);
     final request = (
       category: widget.category,
@@ -414,14 +428,30 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final workKeyIndices = _workKeyIndices;
 
     Widget buildWorkCard(AsmrWork work) {
-      final card = _AsmrWorkTreeCard(
-        work: work,
-        searchQuery: widget.searchQuery,
-        isSelectionMode: widget.isSelectionMode,
-        isSelected: widget.selectedWorkIds.contains(work.workKey),
-        onLongPress: () => widget.onEnterSelectionMode(work),
-        onToggleSelect: () => widget.onToggleSelection(work),
-      );
+      final selected = widget.selectedWorkIds.contains(work.workKey);
+      var card = _workCardCache[work.workKey];
+      if (card == null ||
+          !identical(card.work, work) ||
+          card.searchQuery != widget.searchQuery ||
+          card.isSelectionMode != widget.isSelectionMode ||
+          card.isSelected != selected) {
+        if (_workCardCache.length >= 128) {
+          _workCardCache.removeWhere(
+            (id, _) => _itemKeys[id]?.currentContext == null,
+          );
+        }
+        // Paging changes the row delegate, but unchanged mounted cards can
+        // reuse their complete widget instead of rebuilding text and artwork.
+        card = _AsmrWorkTreeCard(
+          work: work,
+          searchQuery: widget.searchQuery,
+          isSelectionMode: widget.isSelectionMode,
+          isSelected: selected,
+          onLongPress: () => widget.onEnterSelectionMode(work),
+          onToggleSelect: () => widget.onToggleSelection(work),
+        );
+        _workCardCache[work.workKey] = card;
+      }
       Widget workCard = FadeTransition(
         key: ValueKey<String>('asmr-work-${work.workKey}'),
         opacity:
@@ -464,6 +494,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
             (widget.isLoadPending ||
                 state.isLoading ||
                 !state.hasAttemptedLoad));
+    if (showPlaceholder || visibleWorks.isEmpty) {
+      _coverUi!.cancelBrowsePrefetch(this);
+    }
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final theme = Theme.of(context);
@@ -527,6 +560,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               ),
               content: LayoutBuilder(
                 builder: (context, constraints) {
+                  _coverContext = context;
                   // Keyboard height changes only resize the viewport. New
                   // data or a width change still rebuilds the row delegates.
                   if (listWidth == constraints.maxWidth && workList != null) {
@@ -536,6 +570,39 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   final columnCount = responsiveLibraryCardColumnCount(
                     constraints.maxWidth,
                   );
+                  if (!showPlaceholder &&
+                      visibleWorks.isNotEmpty &&
+                      _collapsingWorks.isEmpty) {
+                    final library = ref.read(libraryFacadeProvider);
+                    _coverUi!.updateBrowsePrefetch(
+                      owner: this,
+                      context: context,
+                      scrollController: widget.scrollController,
+                      source: visibleWorks,
+                      itemCount: visibleWorks.length,
+                      columnCount: columnCount,
+                      topPadding: widget.topInset,
+                      rowExtent: LibraryLikeCardMetrics.rootTileHeight,
+                      cacheWidth: coverThumbnailCacheWidth(
+                        logicalWidth:
+                            LibraryLikeCardMetrics.coverHeight *
+                            LibraryLikeCardMetrics.coverAspectRatio,
+                        devicePixelRatio: MediaQuery.devicePixelRatioOf(
+                          context,
+                        ),
+                        resolution: coverResolution,
+                      ),
+                      coverAt: (index) {
+                        final url = _asmrWorkListCoverUrl(visibleWorks[index]);
+                        return url.isEmpty
+                            ? null
+                            : library.coverPathFutureForRemoteCover(url);
+                      },
+                      isActive: () => mounted && _isActive,
+                    );
+                  } else {
+                    _coverUi!.cancelBrowsePrefetch(this);
+                  }
                   if (!widget.searchSession) {
                     BrowsePageScroll.setAnchorIds(
                       context,

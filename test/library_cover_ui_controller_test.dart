@@ -20,6 +20,154 @@ import 'support/app_runtime_test_fixture.dart';
 
 void main() {
   testWidgets(
+    'browse prefetch follows the idle viewport and reverses direction',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final covers = LibraryCoverUiController(library: fixture.library);
+      final scroll = ScrollController();
+      final owner = Object();
+      final source = Object();
+      final requests = <int>[];
+      addTearDown(fixture.dispose);
+      addTearDown(covers.dispose);
+      addTearDown(scroll.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 300,
+              height: 300,
+              child: Builder(
+                builder: (context) {
+                  covers.updateBrowsePrefetch(
+                    owner: owner,
+                    context: context,
+                    scrollController: scroll,
+                    source: source,
+                    itemCount: 1000,
+                    columnCount: 1,
+                    topPadding: 0,
+                    rowExtent: 100,
+                    cacheWidth: 128,
+                    coverAt: (index) {
+                      requests.add(index);
+                      return Future<String?>.value();
+                    },
+                    isActive: () => true,
+                  );
+                  return ListView.builder(
+                    controller: scroll,
+                    itemExtent: 100,
+                    itemCount: 1000,
+                    itemBuilder: (_, index) => Text('$index'),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(requests, isEmpty);
+      await tester.pump(const Duration(milliseconds: 160));
+      expect(requests, [3, 4, 5]);
+      requests.clear();
+      scroll.jumpTo(600);
+      await tester.pump(const Duration(milliseconds: 159));
+      expect(requests, isEmpty);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(requests, [9, 10, 11]);
+      requests.clear();
+      scroll.jumpTo(300);
+      await tester.pump(const Duration(milliseconds: 160));
+      expect(requests, [2, 1, 0]);
+      await tester.pumpWidget(const SizedBox.shrink());
+      covers.cancelBrowsePrefetch(owner);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'slow browse prefetch drops old candidates and caps the next viewport at 24',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final covers = LibraryCoverUiController(library: fixture.library);
+      final scroll = ScrollController();
+      final owner = Object();
+      final source = Object();
+      final first = Completer<String?>();
+      final requests = <int>[];
+      var active = true;
+      addTearDown(fixture.dispose);
+      addTearDown(covers.dispose);
+      addTearDown(scroll.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 300,
+              height: 300,
+              child: Builder(
+                builder: (context) {
+                  covers.updateBrowsePrefetch(
+                    owner: owner,
+                    context: context,
+                    scrollController: scroll,
+                    source: source,
+                    itemCount: 1000,
+                    columnCount: 10,
+                    topPadding: 0,
+                    rowExtent: 100,
+                    cacheWidth: 128,
+                    coverAt: (index) {
+                      requests.add(index);
+                      return requests.length == 1
+                          ? first.future
+                          : Future<String?>.value();
+                    },
+                    isActive: () => active,
+                  );
+                  return ListView.builder(
+                    controller: scroll,
+                    itemExtent: 100,
+                    itemCount: 100,
+                    itemBuilder: (_, index) => Text('$index'),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 160));
+      expect(requests, [30]);
+      scroll.jumpTo(600);
+      first.complete();
+      await tester.pump();
+      expect(requests, [30]);
+      await tester.pump(const Duration(milliseconds: 160));
+      expect(
+        requests.skip(1).toList(),
+        List.generate(24, (index) => 90 + index),
+      );
+      requests.clear();
+      scroll.jumpTo(900);
+      active = false;
+      covers.refreshBrowsePrefetch(owner);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(requests, isEmpty);
+      active = true;
+      covers.refreshBrowsePrefetch(owner);
+      covers.cancelBrowsePrefetch(owner);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(requests, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'resizing admits cached rows without changing scroll offset',
     (tester) async {
       final cache = _RecordingCovers();

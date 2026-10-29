@@ -387,18 +387,9 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
                     false,
               ),
             ));
-    final rootDetailState = isRootFolder
-        ? ref.watch(
-            libraryDetailForTargetProvider(
-              AudioDetailTarget.libraryRootFolder(folder.path),
-            ),
-          )
-        : null;
     final hasChildren =
         folder.children.isNotEmpty || folder.totalTrackCount > 0;
     const cardShape = LibraryLikeCardMetrics.cardShape;
-    final rootDetail = rootDetailState?.value;
-    final isRootDetailLoading = rootDetailState?.isLoading ?? false;
     final tokens = AppDesignTokens.of(context);
     final folderRadius = BorderRadius.circular(tokens.radiusSmall);
 
@@ -442,8 +433,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
           folderPath: folder.path,
           folderName: folder.name,
           folderDuration: folder.totalDuration,
-          detail: rootDetail,
-          detailLoading: isRootDetailLoading,
+          detailTarget: AudioDetailTarget.libraryRootFolder(folder.path),
           trailingActions: actions,
           index: widget.index,
           isSelected: widget.isSelected,
@@ -633,7 +623,11 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
                       showAudioDetailSheet(
                         context,
                         AudioDetailTarget.libraryRootFolder(folder.path),
-                        initialDetail: rootDetail,
+                        initialDetail: ref
+                            .read(libraryFacadeProvider)
+                            .resolvedAudioDetail(
+                              AudioDetailTarget.libraryRootFolder(folder.path),
+                            ),
                         initialCoverPath: ref
                             .read(libraryFacadeProvider)
                             .resolvedCoverPathForFolder(folder.path),
@@ -777,31 +771,24 @@ class _TrackNodeWidget extends ConsumerWidget {
                     false,
               ),
             ));
-    final singleDetailState = track.isSingle
-        ? ref.watch(
-            libraryDetailForTargetProvider(
-              AudioDetailTarget.singleAudioFile(track.path),
-            ),
-          )
-        : null;
-    final visibleCoverPath = track.isSingle && !track.isVideo
-        ? ref
-              .watch(
-                libraryCoverForTrackProvider((
-                  trackPath: track.path,
-                  context: context,
-                )),
-              )
-              .value
-        : null;
+    // A changed cover path only updates the thumbnail. The shell participates
+    // when artwork availability changes the covered/uncovered card layout.
+    final useFeaturedSingleCard =
+        track.isVideo ||
+        (track.isSingle &&
+            ref.watch(
+              libraryCoverForTrackProvider((
+                trackPath: track.path,
+                context: context,
+              )).select(
+                (state) => hasDisplayableCoverArtwork(
+                  track,
+                  state.value ?? library.resolvedCoverPathForTrack(track),
+                ),
+              ),
+            ));
     final isAlreadyPlaying = ref.watch(isTrackActiveProvider(track.path));
     const cardShape = LibraryLikeCardMetrics.cardShape;
-    final singleDetail = singleDetailState?.value;
-    final isSingleDetailLoading = singleDetailState?.isLoading ?? false;
-    final resolvedCoverPath =
-        visibleCoverPath ?? library.resolvedCoverPathForTrack(track);
-    final useFeaturedSingleCard =
-        track.isVideo || hasDisplayableCoverArtwork(track, resolvedCoverPath);
 
     Future<void> playSingleTrack() async {
       unawaited(
@@ -907,8 +894,9 @@ class _TrackNodeWidget extends ConsumerWidget {
                     title: SingleMediaFileCardContent(
                       track: track,
                       title: track.displayName,
-                      detail: singleDetail,
-                      detailLoading: isSingleDetailLoading,
+                      detailTarget: AudioDetailTarget.singleAudioFile(
+                        track.path,
+                      ),
                       trailingActions: actions,
                       index: index,
                       isSelected: isSelected,
@@ -924,8 +912,9 @@ class _TrackNodeWidget extends ConsumerWidget {
                       isSelected: isSelected,
                       isPinned: isPinned,
                       title: track.displayName,
-                      detail: singleDetail,
-                      detailLoading: isSingleDetailLoading,
+                      detailTarget: AudioDetailTarget.singleAudioFile(
+                        track.path,
+                      ),
                       trailingActions: actions,
                     ),
                   ),

@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/browse_page_scroll.dart';
+import '../../../app/presentation/app_presentation_providers.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../domain/library_node.dart';
@@ -13,14 +14,18 @@ import '../../../core/immutable_collections.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/animated_reorder.dart';
+import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/scroll_to_top_list.dart';
 
 import 'library_tab_ui_helpers.dart';
+import 'library_providers.dart';
 import 'library_tab_tree_widgets.dart';
+import 'library_cover_ui_controller.dart';
 import '../../settings/presentation/settings_providers.dart';
 
 class _LoadedLibraryFolder {
@@ -219,6 +224,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
   final Set<UndoableRemovalKey> _removalKeys = {};
   bool _removalMotionActive = false;
   Timer? _removalMotionTimer;
+  LibraryCoverUiController? _coverUi;
 
   @override
   void initState() {
@@ -257,6 +263,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
 
   void _handleActivityChanged() {
     _tickerModeEnabled = _tickerModeNotifier?.value.enabled ?? true;
+    _coverUi?.refreshBrowsePrefetch(this);
     _scheduleFolderCommit();
     _scheduleProjectionCommit();
     _prepareVisibleItems();
@@ -273,6 +280,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
 
   @override
   void dispose() {
+    _coverUi?.cancelBrowsePrefetch(this);
     _tickerModeNotifier?.removeListener(_handleActivityChanged);
     UiInteractionCoordinator.instance.cancelCommit(_projectionCommitKey);
     UiInteractionCoordinator.instance.cancelCommit(_folderCommitKey);
@@ -744,9 +752,12 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
 
   @override
   Widget build(BuildContext context) {
+    final coverResolution = ref.watch(coverImageResolutionProvider);
+    _coverUi = ref.read(libraryCoverUiControllerProvider);
     ref.listen(undoableRemovalStateProvider, _handleRemovalChanged);
     _prepareVisibleItems();
     final visibleItems = _visibleItemsCache;
+    if (visibleItems.isEmpty) _coverUi!.cancelBrowsePrefetch(this);
     final errorBanner = _projectionError == null
         ? null
         : OperationStatusBanner(
@@ -943,6 +954,43 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
           _rowOffsets = const [0];
         }
         final rowOffsets = useKnownRowExtents ? _rowOffsets : null;
+        if (useFixedExtent || useKnownRowExtents) {
+          final library = ref.read(libraryFacadeProvider);
+          _coverUi!.updateBrowsePrefetch(
+            owner: this,
+            context: context,
+            scrollController: widget.scrollController,
+            source: visibleItems,
+            itemCount: visibleItems.length,
+            columnCount: columnCount,
+            topPadding: widget.topPadding,
+            rowExtent: LibraryLikeCardMetrics.rootTileHeight,
+            rowOffsets: rowOffsets,
+            cacheWidth: coverThumbnailCacheWidth(
+              logicalWidth:
+                  LibraryLikeCardMetrics.coverHeight *
+                  LibraryLikeCardMetrics.coverAspectRatio,
+              devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+              resolution: coverResolution,
+            ),
+            coverAt: (index) {
+              final item = visibleItems[index];
+              if (item.depth != 0 || item.isFolderError) return null;
+              return switch (item.node) {
+                FolderNode(:final path) => library.coverPathFutureForFolder(
+                  path,
+                ),
+                TrackNode(:final track) when track.isSingle && !track.isVideo =>
+                  library.coverPathFutureForTrack(track),
+                _ => null,
+              };
+            },
+            isActive: () =>
+                mounted && _tickerModeEnabled && _route?.isCurrent != false,
+          );
+        } else {
+          _coverUi!.cancelBrowsePrefetch(this);
+        }
         return AnimatedReorder(
           order: itemIds,
           child: _LibraryListView(

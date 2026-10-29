@@ -4,6 +4,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../media/music_track.dart' show MusicTrack;
@@ -11,6 +13,7 @@ import '../media/cover_image_resolution.dart';
 import '../ui/visual_settings_providers.dart';
 import '../ui/cover_image_retention.dart';
 import '../ui/ui_interaction_coordinator.dart';
+import '../ui/warmup_scheduler.dart';
 import 'app_brand_icon.dart';
 import 'app_transitions.dart';
 import 'scroll_activity_gate.dart';
@@ -18,6 +21,106 @@ import 'scroll_activity_gate.dart';
 // Path resolution swaps immediately; the decoded frame owns the visible fade.
 const Duration kCoverImageTransitionDuration = Duration.zero;
 const double kStandardCoverAspectRatio = 4 / 3;
+
+final _browseDecodes = WarmupScheduler(maxQueueSize: 64);
+final _browseLoads = <ImageProvider<Object>, _BrowseThumbnailLoad>{};
+int _browseLoadId = 0;
+
+/// Visible thumbnails and idle prefetch share one first-frame decode budget.
+Future<void> warmBrowseThumbnail(
+  ImageProvider<Object> provider,
+  ImageConfiguration configuration, {
+  required bool Function() isActive,
+  int priority = 1000,
+}) {
+  final existing = _browseLoads[provider];
+  if (existing != null) {
+    existing.requesters[isActive] = priority;
+    return existing.result.future;
+  }
+  final load = _BrowseThumbnailLoad(provider, configuration, ++_browseLoadId);
+  load.requesters[isActive] = priority;
+  _browseLoads[provider] = load;
+  unawaited(load.enqueue());
+  return load.result.future;
+}
+
+class _BrowseThumbnailLoad {
+  _BrowseThumbnailLoad(this.provider, this.configuration, this.id);
+
+  final ImageProvider<Object> provider;
+  final ImageConfiguration configuration;
+  final int id;
+  final result = Completer<void>();
+  final requesters = <bool Function(), int>{};
+
+  bool get active => requesters.keys.any((requester) => requester());
+  int get priority => requesters.entries
+      .where((entry) => entry.key())
+      .fold(1 << 30, (value, entry) => math.min(value, entry.value));
+
+  Future<void> enqueue() async {
+    while (active) {
+      final admitted = _browseDecodes.schedule(
+        key: 'browse_decode_$id',
+        priority: priority,
+        priorityResolver: () => priority,
+        generation: _browseDecodes.currentGeneration,
+        onDiscard: finish,
+        task: decode,
+      );
+      if (admitted) return;
+      await _browseDecodes.capacityAvailable;
+    }
+    finish();
+  }
+
+  void finish() {
+    if (identical(_browseLoads[provider], this)) _browseLoads.remove(provider);
+    if (!result.isCompleted) result.complete();
+  }
+
+  Future<void> decode() async {
+    if (!active) {
+      finish();
+      return;
+    }
+    final started = Completer<void>();
+    // A completed decode can release its slot in a microtask. Admit the next
+    // image through the frame budget rather than starting a burst of decodes.
+    SchedulerBinding.instance.scheduleFrameCallback((_) => started.complete());
+    SchedulerBinding.instance.scheduleFrame();
+    await started.future;
+    if (!active) {
+      finish();
+      return;
+    }
+    final ready = Completer<void>();
+    ImageStream? stream;
+    ImageStreamListener? listener;
+    try {
+      restoreRetainedCoverImage(provider);
+      stream = provider.resolve(configuration);
+      listener = ImageStreamListener(
+        (info, _) {
+          info.dispose();
+          if (!ready.isCompleted) ready.complete();
+        },
+        onError: (Object error, StackTrace? stack) {
+          if (!ready.isCompleted) ready.completeError(error, stack);
+        },
+      );
+      stream.addListener(listener);
+      await ready.future;
+      retainCoverImage(provider, configuration);
+    } catch (error, stack) {
+      if (!result.isCompleted) result.completeError(error, stack);
+    } finally {
+      if (stream != null && listener != null) stream.removeListener(listener);
+      finish();
+    }
+  }
+}
 
 /// Keeps the cover's shadow outside its rounded image clip.
 class CoverArtworkFrame extends StatelessWidget {
@@ -131,6 +234,7 @@ class AsyncCoverImage extends StatefulWidget {
     this.duration = kCoverImageTransitionDuration,
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
+    this.browseThumbnail = false,
   });
 
   final Future<String?> future;
@@ -143,6 +247,7 @@ class AsyncCoverImage extends StatefulWidget {
   final Duration duration;
   final Duration retryDelay;
   final int maxRetryAttempts;
+  final bool browseThumbnail;
 
   @override
   State<AsyncCoverImage> createState() => _AsyncCoverImageState();
@@ -300,6 +405,12 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       if (!mounted || token != _token) return;
       void retry() {
         if (!mounted || token != _token) return;
+        if (widget.browseThumbnail &&
+            ScrollActivityGate.isFastScrollingWithoutDependencyOf(context)) {
+          _retryTimer = null;
+          _scheduleRetry(token);
+          return;
+        }
         _retryAttempt = nextAttempt;
         _bindFuture(retryFutureBuilder(), keepState: true, resetRetry: false);
       }
@@ -368,6 +479,7 @@ class LocalCoverImage extends StatelessWidget {
     this.cacheWidth,
     this.cacheHeight,
     this.useDefaultCacheWidth = true,
+    this.browseThumbnail = false,
     this.deferLoadDuringInteraction = false,
     this.fit,
     this.alignment = Alignment.center,
@@ -380,6 +492,7 @@ class LocalCoverImage extends StatelessWidget {
   final int? cacheWidth;
   final int? cacheHeight;
   final bool useDefaultCacheWidth;
+  final bool browseThumbnail;
   final bool deferLoadDuringInteraction;
   final BoxFit? fit;
   final AlignmentGeometry alignment;
@@ -401,6 +514,7 @@ class LocalCoverImage extends StatelessWidget {
       cacheWidth: cacheWidth,
       cacheHeight: cacheHeight,
       useDefaultCacheWidth: useDefaultCacheWidth,
+      browseThumbnail: browseThumbnail,
       deferLoadDuringInteraction: deferLoadDuringInteraction,
       fit: fit,
       alignment: alignment,
@@ -423,6 +537,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
     this.cacheWidth,
     this.cacheHeight,
     this.useDefaultCacheWidth = true,
+    this.browseThumbnail = false,
     this.deferLoadDuringInteraction = false,
     this.fit,
     this.alignment = Alignment.center,
@@ -439,6 +554,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
   final int? cacheWidth;
   final int? cacheHeight;
   final bool useDefaultCacheWidth;
+  final bool browseThumbnail;
   final bool deferLoadDuringInteraction;
   final BoxFit? fit;
   final AlignmentGeometry alignment;
@@ -454,6 +570,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
       cacheWidth: cacheWidth,
       cacheHeight: cacheHeight,
       useDefaultCacheWidth: useDefaultCacheWidth,
+      browseThumbnail: browseThumbnail,
       deferLoadDuringInteraction: deferLoadDuringInteraction,
       fit: fit,
       alignment: alignment,
@@ -469,6 +586,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
   Widget build(BuildContext context) {
     return AsyncCoverImage(
       future: future,
+      browseThumbnail: browseThumbnail,
       requestKey: requestKey,
       initialPath: initialPath,
       retryFutureBuilder: retryFutureBuilder,
@@ -518,6 +636,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
     this.color,
     this.colorBlendMode,
     this.useDefaultCacheWidth = true,
+    this.browseThumbnail = false,
     this.deferLoadDuringInteraction = false,
     this.filterQuality = FilterQuality.medium,
     this.duration = kCoverImageTransitionDuration,
@@ -538,6 +657,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
   final Color? color;
   final BlendMode? colorBlendMode;
   final bool useDefaultCacheWidth;
+  final bool browseThumbnail;
   final bool deferLoadDuringInteraction;
   final FilterQuality filterQuality;
   final Duration duration;
@@ -554,6 +674,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
     }
     return AsyncCoverImage(
       future: future,
+      browseThumbnail: browseThumbnail,
       requestKey: trimmedUrl,
       initialPath: initialPath,
       retryFutureBuilder: retryFutureBuilder,
@@ -573,6 +694,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
           color: color,
           colorBlendMode: colorBlendMode,
           useDefaultCacheWidth: useDefaultCacheWidth,
+          browseThumbnail: browseThumbnail,
           deferLoadDuringInteraction: deferLoadDuringInteraction,
           filterQuality: filterQuality,
           loadingBuilder: loadingBuilder,
@@ -597,6 +719,7 @@ class RetryingFileImage extends ConsumerWidget {
     this.color,
     this.colorBlendMode,
     this.useDefaultCacheWidth = true,
+    this.browseThumbnail = false,
     this.deferLoadDuringInteraction = false,
     this.filterQuality = FilterQuality.medium,
     this.gaplessPlayback = true,
@@ -614,6 +737,7 @@ class RetryingFileImage extends ConsumerWidget {
   final Color? color;
   final BlendMode? colorBlendMode;
   final bool useDefaultCacheWidth;
+  final bool browseThumbnail;
   final bool deferLoadDuringInteraction;
   final FilterQuality filterQuality;
   final bool gaplessPlayback;
@@ -651,6 +775,7 @@ class RetryingFileImage extends ConsumerWidget {
       gaplessPlayback: gaplessPlayback,
       retryDelay: retryDelay,
       maxRetryAttempts: maxRetryAttempts,
+      browseThumbnail: browseThumbnail,
       deferLoadDuringInteraction: deferLoadDuringInteraction,
       retainInImageCache:
           defaultTargetPlatform == TargetPlatform.windows ||
@@ -675,6 +800,7 @@ class RetryingImage extends StatefulWidget {
     this.gaplessPlayback = true,
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
+    this.browseThumbnail = false,
     this.deferLoadDuringInteraction = true,
     this.retainInImageCache = false,
   });
@@ -692,6 +818,7 @@ class RetryingImage extends StatefulWidget {
   final bool gaplessPlayback;
   final Duration retryDelay;
   final int maxRetryAttempts;
+  final bool browseThumbnail;
   final bool deferLoadDuringInteraction;
   final bool retainInImageCache;
 
@@ -708,18 +835,29 @@ class _RetryingImageState extends State<RetryingImage> {
   Object? _cacheCheckKey;
   ImageProvider<Object>? _previewProvider;
   bool _hasDisplayedFrame = false;
+  ValueListenable<bool>? _fastScrolling;
+  ValueListenable<TickerModeData>? _tickerMode;
+  ScrollPosition? _scrollPosition;
+  Object _decodeToken = Object();
+  bool _decodeQueued = false;
+  bool _admissionScheduled = false;
+  Object? _decodeError;
   String get _retryCommitKey =>
       'retrying_image_${identityHashCode(this)}_retry';
   String get _loadCommitKey => 'retrying_image_${identityHashCode(this)}_load';
 
   bool get _canStartLoad =>
-      !widget.deferLoadDuringInteraction ||
-      !_interaction.isVisualUpdateDeferred;
+      (!widget.deferLoadDuringInteraction ||
+          !_interaction.isVisualUpdateDeferred) &&
+      (!widget.browseThumbnail ||
+          (!(_fastScrolling?.value ?? false) &&
+              (_tickerMode?.value.enabled ?? true)));
 
   // Budget cold images even before the first gesture. Otherwise the initial
   // cache extent can start every decode together just as scrolling begins.
   // Decoded covers still bypass this queue in build.
-  bool get _canLoadImmediately => !widget.deferLoadDuringInteraction;
+  bool get _canLoadImmediately =>
+      !widget.deferLoadDuringInteraction && !widget.browseThumbnail;
 
   @override
   void initState() {
@@ -731,6 +869,30 @@ class _RetryingImageState extends State<RetryingImage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final fastScrolling = widget.browseThumbnail
+        ? ScrollActivityGate.fastScrollingListenableOf(context)
+        : null;
+    if (!identical(fastScrolling, _fastScrolling)) {
+      _fastScrolling?.removeListener(_scheduleLoadWhenAllowed);
+      _fastScrolling = fastScrolling;
+      _fastScrolling?.addListener(_scheduleLoadWhenAllowed);
+    }
+    final tickerMode = widget.browseThumbnail
+        ? TickerMode.getValuesNotifier(context)
+        : null;
+    if (!identical(tickerMode, _tickerMode)) {
+      _tickerMode?.removeListener(_scheduleLoadWhenAllowed);
+      _tickerMode = tickerMode;
+      _tickerMode?.addListener(_scheduleLoadWhenAllowed);
+    }
+    final position = widget.browseThumbnail
+        ? Scrollable.maybeOf(context)?.position
+        : null;
+    if (!identical(position, _scrollPosition)) {
+      _scrollPosition?.removeListener(_scheduleLoadWhenAllowed);
+      _scrollPosition = position;
+      _scrollPosition?.addListener(_scheduleLoadWhenAllowed);
+    }
     if (!_loadEnabled) _scheduleLoadWhenAllowed();
   }
 
@@ -746,8 +908,11 @@ class _RetryingImageState extends State<RetryingImage> {
       _cacheCheckKey = null;
       _previewProvider = null;
       _hasDisplayedFrame = false;
+      _decodeToken = Object();
+      _decodeQueued = false;
+      _decodeError = null;
     }
-    if (!widget.deferLoadDuringInteraction) _loadEnabled = true;
+    if (_canLoadImmediately) _loadEnabled = true;
     if (!_loadEnabled) _scheduleLoadWhenAllowed();
   }
 
@@ -757,11 +922,18 @@ class _RetryingImageState extends State<RetryingImage> {
     _interaction.removeListener(_scheduleLoadWhenAllowed);
     _interaction.cancelCommit(_retryCommitKey);
     _interaction.cancelCommit(_loadCommitKey);
+    _fastScrolling?.removeListener(_scheduleLoadWhenAllowed);
+    _tickerMode?.removeListener(_scheduleLoadWhenAllowed);
+    _scrollPosition?.removeListener(_scheduleLoadWhenAllowed);
     super.dispose();
   }
 
   void _scheduleLoadWhenAllowed() {
     if (!mounted || !_canStartLoad || _loadEnabled) {
+      return;
+    }
+    if (widget.browseThumbnail) {
+      _scheduleBrowseDecode();
       return;
     }
     // Starting Image builds/decodes can exceed a short notification's budget.
@@ -777,6 +949,66 @@ class _RetryingImageState extends State<RetryingImage> {
         }
       },
     );
+  }
+
+  int? _visiblePriority() {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+    final ancestor = RenderAbstractViewport.maybeOf(box);
+    final viewport = ancestor is RenderBox ? ancestor as RenderBox : null;
+    if (viewport == null || !viewport.hasSize) return -2000;
+    final bounds = MatrixUtils.transformRect(
+      box.getTransformTo(viewport),
+      Offset.zero & box.size,
+    );
+    if (!bounds.overlaps(viewport.paintBounds)) return null;
+    final distance = (bounds.center - viewport.paintBounds.center).distance;
+    return -2000 +
+        (distance * 1000 / viewport.paintBounds.longestSide).round().clamp(
+          0,
+          999,
+        );
+  }
+
+  void _scheduleBrowseDecode() {
+    if (_decodeQueued || _admissionScheduled || _decodeError != null) return;
+    _admissionScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _admissionScheduled = false;
+      if (!mounted || _loadEnabled || !_canStartLoad) return;
+      final priority = _visiblePriority();
+      if (priority == null) return;
+      final token = _decodeToken;
+      final provider = widget.imageProviderBuilder();
+      _decodeQueued = true;
+      unawaited(
+        warmBrowseThumbnail(
+          provider,
+          createLocalImageConfiguration(context),
+          priority: priority,
+          isActive: () =>
+              mounted &&
+              identical(token, _decodeToken) &&
+              _canStartLoad &&
+              _visiblePriority() != null,
+        ).then(
+          (_) {
+            if (!mounted || !identical(token, _decodeToken)) return;
+            _decodeQueued = false;
+            // A request may have been discarded while its row left the view.
+            _cacheCheckKey = null;
+            setState(() {});
+            _scheduleLoadWhenAllowed();
+          },
+          onError: (Object error, StackTrace stack) {
+            if (!mounted || !identical(token, _decodeToken)) return;
+            _decodeQueued = false;
+            setState(() => _decodeError = error);
+          },
+        ),
+      );
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   ImageProvider<Object>? _cachedProviderForBuild(
@@ -826,6 +1058,11 @@ class _RetryingImageState extends State<RetryingImage> {
       if (!mounted) return;
       void retry() {
         if (!mounted) return;
+        if (widget.browseThumbnail && !_canStartLoad) {
+          _retryTimer = null;
+          _scheduleRetry(provider);
+          return;
+        }
         if (widget.retainInImageCache) {
           releaseRetainedCoverImage(provider);
         }
@@ -833,9 +1070,17 @@ class _RetryingImageState extends State<RetryingImage> {
         setState(() {
           _retryAttempt = nextAttempt;
           _hasDisplayedFrame = false;
-          if (_previewProvider != null) _loadEnabled = false;
+          if (_previewProvider != null || widget.browseThumbnail) {
+            _loadEnabled = false;
+          }
+          _decodeError = null;
+          _decodeToken = Object();
+          _decodeQueued = false;
+          _cacheCheckKey = null;
         });
-        if (_previewProvider != null) _scheduleLoadWhenAllowed();
+        if (_previewProvider != null || widget.browseThumbnail) {
+          _scheduleLoadWhenAllowed();
+        }
       }
 
       _interaction.scheduleCommit(
@@ -850,6 +1095,19 @@ class _RetryingImageState extends State<RetryingImage> {
   @override
   Widget build(BuildContext context) {
     final requested = widget.imageProviderBuilder();
+    if (_decodeError != null) {
+      if (_retryAttempt == 0 && _retryTimer?.isActive != true) {
+        widget.onImageError?.call();
+      }
+      _scheduleRetry(requested);
+      final preview = _previewProvider;
+      return preview == null
+          ? widget.fallbackBuilder(context)
+          : _image(
+              preview,
+              errorBuilder: (_, _, _) => widget.fallbackBuilder(context),
+            );
+    }
     ImageProvider<Object>? provider;
     if (!_loadEnabled) {
       provider = _cachedProviderForBuild(context, requested);

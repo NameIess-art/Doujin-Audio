@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:doujin_audio/app/presentation/listening_time_chart.dart';
 import 'package:doujin_audio/app/presentation/main_destination.dart';
@@ -8,6 +10,9 @@ import 'package:doujin_audio/app/presentation/my_tag_management_page.dart';
 import 'package:doujin_audio/app/state/listening_activity_provider.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/core/media/path_display.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/interaction_deferred_stream.dart';
@@ -224,6 +229,99 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'history displays downloaded work folder artwork without embedded audio art on $platform',
+      (tester) async {
+        final directory = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('my_history_download_cover_'),
+        ))!;
+        final work = Directory('${directory.path}/RJ123456');
+        final cover = File('${work.path}/cover/cover.png');
+        await tester.runAsync(() async {
+          await cover.parent.create(recursive: true);
+          await cover.writeAsBytes(
+            base64Decode(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            ),
+          );
+        });
+        final track = MusicTrack(
+          path: '${work.path}/chapter.m4a',
+          displayName: 'Downloaded chapter',
+          groupKey: work.path,
+          groupTitle: 'Downloaded Japanese ASMR work',
+          groupSubtitle: 'RJ123456',
+          isSingle: false,
+        );
+        final catalog = LibraryService()
+          ..watchedFolders.add(work.path)
+          ..library.add(track);
+        final cache = (await tester.runAsync(() async {
+          final cache = CoverArtworkCacheService(
+            libraryService: catalog,
+            fileCacheGateway: _HistoryCoverGateway(),
+            persistentDirectory: () async =>
+                Directory('${directory.path}/artwork'),
+            temporaryDirectory: () async => directory,
+            filesystemImageScanner: (_, recursive) async =>
+                recursive ? [cover.path] : [],
+          );
+          // The library/detail pages already found the downloaded work artwork.
+          expect(await cache.futureForFolder(work.path), cover.path);
+          return cache;
+        }))!;
+        expect(cache.resolvedForTrack(track), isNull);
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: cache,
+        );
+        addTearDown(fixture.dispose);
+        addTearDown(catalog.dispose);
+        addTearDown(() => directory.delete(recursive: true));
+        fixture.libraryService.watchedFolders.add(work.path);
+        fixture.libraryService.library.add(track);
+        tester.view.physicalSize = const Size(960, 1400);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          fixture.build(
+            Theme(
+              data: ThemeData(platform: platform),
+              child: const MyPage(tabIndex: 3),
+            ),
+            overrides: [
+              listeningActivityProvider.overrideWith(
+                (ref) => Stream.value(
+                  ListeningActivityView(
+                    history: [
+                      ListeningHistoryEntry(
+                        workKey: 'rj:RJ123456',
+                        track: track,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+        await pumpAndSettleWithAsync(tester);
+        final card = find.byKey(const ValueKey('my-history-card-rj:RJ123456'));
+        expect(card, findsOneWidget);
+        await tester.ensureVisible(card);
+        await pumpAndSettleWithAsync(tester);
+        final artwork = find.descendant(
+          of: card,
+          matching: find.byType(LocalCoverImage),
+        );
+        expect(artwork, findsOneWidget);
+        expect(tester.widget<LocalCoverImage>(artwork).path, cover.path);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.runAsync(cache.dispose);
+      },
+    );
+
     for (final reducedMotion in [false, true]) {
       testWidgets(
         'interest tabs crossfade for 300ms with reduced motion $reducedMotion on $platform',
@@ -1875,4 +1973,14 @@ class _ListeningRepository implements ListeningActivityRepository {
   ) async => false;
   @override
   Future<void> seedHistory(List<ListeningHistoryEntry> entries) async {}
+}
+
+class _HistoryCoverGateway extends FileCachePlatformGateway {
+  @override
+  Future<String?> resolveTrackCover({
+    required String path,
+    String? groupKey,
+    String? rootFolder,
+    bool propagateFailure = false,
+  }) async => null;
 }

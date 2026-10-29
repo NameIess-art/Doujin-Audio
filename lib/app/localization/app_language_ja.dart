@@ -183,7 +183,7 @@ const Map<String, String> appLanguageJa = {
   'sort_group_by_library': 'ライブラリ別',
   'batch_metadata': '作品情報を一括補完',
   'batch_metadata_hint':
-      '選択した範囲の作品情報を一括検索します。DLsite を優先し、情報を取得できない場合や項目が不足する場合は、ASMR.ONE、Japanese ASMR の順に取得を試みます。\n結果一覧から各作品を確認・編集・除外できます。個別に確認した後、結果一覧に戻って「確認」を押すと、確認済みで除外されていない作品をまとめて保存します。保存時は既存の項目も更新されます。',
+      'DLsite を優先し、不足情報を ASMR.ONE、Japanese ASMR の順に補完します。\n各作品を確認後、結果一覧の「確認」で、確認済みかつ除外されていない作品を保存し、既存の項目も更新します。',
   'batch_metadata_no_metadata': '作品情報なし',
   'batch_metadata_any_missing': '作品情報に空欄あり',
   'batch_metadata_has_rj_code': 'RJ番号あり',

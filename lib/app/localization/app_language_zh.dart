@@ -181,7 +181,7 @@ const Map<String, String> appLanguageZh = {
   'sort_group_by_library': '曲库分组',
   'batch_metadata': '批量补全信息',
   'batch_metadata_hint':
-      '按所选范围批量检索作品信息：优先使用 DLsite，未获取到信息或字段缺失时依次尝试 ASMR.ONE、Japanese ASMR。\n可在结果列表中核对、编辑或排除作品。逐项确认后，返回结果列表点击“确认”，统一保存已确认且未排除的作品信息。保存会更新已有字段。',
+      '优先使用 DLsite，缺失信息依次从 ASMR.ONE、Japanese ASMR 补充。\n逐项核对后，返回列表点击“确认”，保存已确认且未排除的作品，并更新已有字段。',
   'batch_metadata_no_metadata': '缺少全部信息的作品',
   'batch_metadata_any_missing': '有缺少信息的作品',
   'batch_metadata_has_rj_code': '填写了RJ号的作品',

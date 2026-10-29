@@ -15,6 +15,7 @@ import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_task_card.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_details_page.dart';
@@ -108,8 +109,10 @@ void main() {
 
   for (final option in ['remove_entry', 'delete_downloaded']) {
     testWidgets(
-      'removing last download commits and returns immediately: $option',
+      'removing last download offers undo before committing and returning: $option',
       (tester) async {
+        final removals = UndoableRemovalService();
+        addTearDown(removals.dispose);
         SharedPreferences.setMockInitialValues({});
         final language = AppLanguageProvider();
         await language.setLanguage(AppLanguage.en);
@@ -124,6 +127,7 @@ void main() {
               coreRuntimeReadyProvider.overrideWithValue(true),
               appLanguageProviderInstanceProvider.overrideWithValue(language),
               asmrDownloadManagerProvider.overrideWithValue(manager),
+              undoableRemovalServiceProvider.overrideWithValue(removals),
             ],
             child: MaterialApp(
               navigatorKey: navigator,
@@ -156,6 +160,13 @@ void main() {
           find.byKey(ValueKey('asmr_download_${option}_option')),
         );
         await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.text('Undo (5s)'), findsOneWidget);
+        expect(find.byType(AsmrDownloadTaskCard), findsNothing);
+        expect(find.byType(AsmrDownloadTaskPage), findsOneWidget);
+        expect(manager.getTask('code:RJ123456'), isNotNull);
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pump(const Duration(milliseconds: 400));
         // Let filesystem cleanup progress alongside the simulated route frames.
         for (var frame = 0; frame < 10; frame++) {
           await tester.runAsync(
@@ -181,8 +192,10 @@ void main() {
 
   for (final option in ['remove_entry', 'delete_downloaded']) {
     testWidgets(
-      'failed removal keeps the task visible without undo: $option',
+      'failed deferred removal restores the task and shows failure: $option',
       (tester) async {
+        final removals = UndoableRemovalService();
+        addTearDown(removals.dispose);
         SharedPreferences.setMockInitialValues({});
         final language = AppLanguageProvider();
         await language.setLanguage(AppLanguage.en);
@@ -196,6 +209,7 @@ void main() {
               coreRuntimeReadyProvider.overrideWithValue(true),
               appLanguageProviderInstanceProvider.overrideWithValue(language),
               asmrDownloadManagerProvider.overrideWithValue(manager),
+              undoableRemovalServiceProvider.overrideWithValue(removals),
             ],
             child: const MaterialApp(home: AsmrDownloadTaskPage()),
           ),
@@ -209,6 +223,11 @@ void main() {
           find.byKey(ValueKey('asmr_download_${option}_option')),
         );
         await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.text('Undo (5s)'), findsOneWidget);
+        expect(find.byType(AsmrDownloadTaskCard), findsNothing);
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pump(const Duration(milliseconds: 400));
         await tester.pump(const Duration(milliseconds: 400));
         expect(find.byType(AsmrDownloadTaskCard), findsOneWidget);
         expect(manager.getTask('code:RJ123456'), isNotNull);
@@ -429,53 +448,159 @@ void main() {
     );
   }
 
-  testWidgets('remove task button shows both removal choices', (tester) async {
-    SharedPreferences.setMockInitialValues(const <String, Object>{});
-    final languageProvider = AppLanguageProvider();
-    addTearDown(languageProvider.dispose);
-    await languageProvider.setLanguage(AppLanguage.en);
-    final manager = AsmrDownloadManager(
-      temporaryDirectoryProvider: () async => Directory.systemTemp,
-      automaticFileRetryDelay: Duration.zero,
-      persistTasks: false,
-    );
-    addTearDown(manager.dispose);
-    manager.debugSetCurrentTaskForTesting(_failedTask());
+  for (final option in ['remove_entry', 'delete_downloaded']) {
+    for (final outcome in ['undo', 'timeout']) {
+      testWidgets(
+        'download undo appears before a slow pause completes: $option, $outcome',
+        (tester) async {
+          SharedPreferences.setMockInitialValues({});
+          final pausing = Completer<void>();
+          final removals = UndoableRemovalService();
+          final language = AppLanguageProvider();
+          await language.setLanguage(AppLanguage.en);
+          final manager =
+              _RecordingResumeDownloadManager(pauseCompletion: pausing.future)
+                ..debugSetCurrentTaskForTesting(
+                  _failedTask(status: AsmrDownloadTaskStatus.downloading),
+                );
+          addTearDown(removals.dispose);
+          addTearDown(language.dispose);
+          addTearDown(manager.dispose);
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [
+                coreRuntimeReadyProvider.overrideWithValue(true),
+                appLanguageProviderInstanceProvider.overrideWithValue(language),
+                asmrDownloadManagerProvider.overrideWithValue(manager),
+                undoableRemovalServiceProvider.overrideWithValue(removals),
+              ],
+              child: const MaterialApp(home: AsmrDownloadTaskPage()),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(
+              const ValueKey('asmr_download_remove_task_code:RJ123456'),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(ValueKey('asmr_download_${option}_option')),
+          );
+          await tester.pump();
+          expect(find.text('Undo (5s)'), findsOneWidget);
+          expect(pausing.isCompleted, isFalse);
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(find.byType(AsmrDownloadTaskCard), findsNothing);
+          if (outcome == 'undo') {
+            await tester.tap(find.text('Undo (5s)'));
+            await tester.pumpAndSettle();
+            expect(find.byType(AsmrDownloadTaskCard), findsOneWidget);
+          } else {
+            await tester.pump(const Duration(seconds: 5));
+            await tester.pump(const Duration(milliseconds: 400));
+          }
+          expect(manager.resumedWorkIds, isEmpty);
+          expect(manager.removedEntries, isEmpty);
+          expect(manager.deletedContents, isEmpty);
+          pausing.complete();
+          await tester.pumpAndSettle();
+          expect(
+            manager.resumedWorkIds,
+            outcome == 'undo' ? ['code:RJ123456'] : isEmpty,
+          );
+          expect(
+            manager.removedEntries,
+            outcome == 'timeout' && option == 'remove_entry'
+                ? ['code:RJ123456']
+                : isEmpty,
+          );
+          expect(
+            manager.deletedContents,
+            outcome == 'timeout' && option == 'delete_downloaded'
+                ? ['code:RJ123456']
+                : isEmpty,
+          );
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: const TargetPlatformVariant({
+          TargetPlatform.android,
+          TargetPlatform.windows,
+        }),
+      );
+    }
+    for (final status in AsmrDownloadTaskStatus.values) {
+      if (status == AsmrDownloadTaskStatus.completed) continue;
+      testWidgets(
+        'task removal can be undone without deleting data: $option, $status',
+        (tester) async {
+          final removals = UndoableRemovalService();
+          addTearDown(removals.dispose);
+          SharedPreferences.setMockInitialValues({});
+          final language = AppLanguageProvider();
+          addTearDown(language.dispose);
+          await language.setLanguage(AppLanguage.en);
+          final manager = _RecordingResumeDownloadManager()
+            ..debugSetCurrentTaskForTesting(_failedTask(status: status));
+          addTearDown(manager.dispose);
+          final original = manager.getTask('code:RJ123456')!;
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          coreRuntimeReadyProvider.overrideWithValue(true),
-          appLanguageProviderInstanceProvider.overrideWithValue(
-            languageProvider,
-          ),
-          asmrDownloadManagerProvider.overrideWithValue(manager),
-        ],
-        child: const MaterialApp(home: AsmrDownloadTaskPage()),
-      ),
-    );
-    await tester.pumpAndSettle();
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [
+                coreRuntimeReadyProvider.overrideWithValue(true),
+                appLanguageProviderInstanceProvider.overrideWithValue(language),
+                asmrDownloadManagerProvider.overrideWithValue(manager),
+                undoableRemovalServiceProvider.overrideWithValue(removals),
+              ],
+              child: const MaterialApp(home: AsmrDownloadTaskPage()),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(
+              const ValueKey('asmr_download_remove_task_code:RJ123456'),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text('Remove entry'), findsOneWidget);
+          expect(find.text('Also delete downloaded content'), findsOneWidget);
+          await tester.tap(
+            find.byKey(ValueKey('asmr_download_${option}_option')),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(find.byType(AsmrDownloadTaskCard), findsNothing);
+          expect(find.text('Undo (5s)'), findsOneWidget);
+          expect(manager.pauseCalls, 1);
+          expect(manager.getTask('code:RJ123456'), isNotNull);
 
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>('asmr_download_remove_task_code:RJ123456'),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Remove entry'), findsOneWidget);
-    expect(find.text('Also delete downloaded content'), findsOneWidget);
-
-    await tester.tap(
-      find.byKey(const ValueKey<String>('asmr_download_remove_entry_option')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(manager.getTask('code:RJ123456'), isNull);
-    expect(find.text('Work'), findsNothing);
-    expect(find.textContaining('Undo'), findsNothing);
-  });
+          await tester.tap(find.text('Undo (5s)'));
+          await tester.pumpAndSettle();
+          expect(removals.state.pendingCount, 0);
+          expect(find.byType(AsmrDownloadTaskCard), findsOneWidget);
+          final restored = manager.getTask('code:RJ123456')!;
+          expect(restored.downloadedBytes, original.downloadedBytes);
+          expect(restored.completedFilePaths, original.completedFilePaths);
+          expect(
+            manager.resumedWorkIds,
+            original.isActive || status == AsmrDownloadTaskStatus.idle
+                ? ['code:RJ123456']
+                : isEmpty,
+          );
+          await tester.pump(const Duration(seconds: 6));
+          expect(manager.getTask('code:RJ123456'), isNotNull);
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: const TargetPlatformVariant({
+          TargetPlatform.android,
+          TargetPlatform.windows,
+        }),
+      );
+    }
+  }
 
   testWidgets('task uses its retry maximum and clears terminal retry status', (
     tester,
@@ -575,10 +700,23 @@ class _FailingRemovalDownloadManager extends AsmrDownloadManager {
 }
 
 class _RecordingResumeDownloadManager extends AsmrDownloadManager {
-  _RecordingResumeDownloadManager() : super(persistTasks: false);
+  _RecordingResumeDownloadManager({this.pauseCompletion})
+    : super(persistTasks: false);
 
+  final Future<void>? pauseCompletion;
   final resumedWorkIds = <String>[];
+  final removedEntries = <String>[];
+  final deletedContents = <String>[];
   var pauseCalls = 0;
+
+  @override
+  Future<void> cancelTask(String workId, {bool deleteDownloaded = true}) async {
+    expect(deleteDownloaded, isFalse);
+    removedEntries.add(workId);
+  }
+
+  @override
+  Future<void> deleteTask(String workId) async => deletedContents.add(workId);
 
   @override
   Future<void> resumeTask(String workId) async => resumedWorkIds.add(workId);
@@ -586,6 +724,14 @@ class _RecordingResumeDownloadManager extends AsmrDownloadManager {
   @override
   Future<void> pauseTask(String workId) async {
     pauseCalls++;
+    await pauseCompletion;
+    final task = getTask(workId);
+    if (task != null &&
+        (task.isActive || task.status == AsmrDownloadTaskStatus.idle)) {
+      debugSetCurrentTaskForTesting(
+        task.copyWith(status: AsmrDownloadTaskStatus.paused),
+      );
+    }
   }
 }
 

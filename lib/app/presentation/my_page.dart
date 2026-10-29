@@ -793,8 +793,8 @@ class _HistoryWorkCard extends ConsumerWidget {
         requestKey: entry.workKey,
         future: ref
             .read(libraryCoverUiControllerProvider)
-            .deferredTrackCover(entry.track, context: context),
-        initialPath: library.resolvedCoverPathForTrack(entry.track),
+            .deferredPlaybackCover(entry.track, context: context),
+        initialPath: library.resolvedPlaybackCoverPathForTrack(entry.track),
         fit: BoxFit.cover,
         deferLoadDuringInteraction: true,
         cacheWidth: 320,

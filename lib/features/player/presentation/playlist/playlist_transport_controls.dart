@@ -406,14 +406,14 @@ class _PlaybackSecondaryControlsState
         .toDouble();
     if (currentVolume > 0.001) {
       _preMuteVolume = currentVolume;
-      setState(() => _dragVolume = 0.0);
+      setState(() => _dragVolume = null);
       widget.playback.setSessionVolume(widget.session.id, 0.0);
     } else {
       final restored = (_preMuteVolume != null && _preMuteVolume! > 0.001)
           ? _preMuteVolume!
           : 1.0;
       _preMuteVolume = null;
-      setState(() => _dragVolume = restored);
+      setState(() => _dragVolume = null);
       widget.playback.setSessionVolume(widget.session.id, restored);
     }
   }
@@ -474,7 +474,7 @@ class _PlaybackSecondaryControlsState
     }
     final volumeGain = sessionVolumeGainFromDisplayValue(parsed / 100);
     Navigator.of(dialogContext).pop();
-    setState(() => _dragVolume = volumeGain);
+    setState(() => _dragVolume = null);
     widget.playback.setSessionVolume(widget.session.id, volumeGain);
   }
 
@@ -575,7 +575,7 @@ class _PlaybackSecondaryControlsState
                     final newGain = sessionVolumeGainFromDisplayValue(
                       displayValue,
                     );
-                    setState(() => _dragVolume = newGain);
+                    setState(() => _dragVolume = null);
                     AppInteractionFeedback.resetContinuous();
                     UiInteractionCoordinator.instance.cancelThrottledCommit(
                       'session_volume:${widget.session.id}',

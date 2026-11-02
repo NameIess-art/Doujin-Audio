@@ -175,21 +175,37 @@ Future<T?> showAppDialog<T>({
                   ),
                 ),
               ),
-              SafeArea(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xl,
-                      vertical: AppSpacing.xl,
-                    ),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: maxWidth),
-                      child: buildAppScaleFadeTransition(
-                        context: dialogContext,
-                        animation: animation,
-                        child: Material(
-                          color: Colors.transparent,
-                          child: builder(dialogContext),
+              AnimatedPadding(
+                padding: MediaQuery.viewInsetsOf(dialogContext),
+                duration: MediaQuery.disableAnimationsOf(dialogContext)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 100),
+                curve: Curves.decelerate,
+                // The host consumes IME insets once, including for Material
+                // dialogs that would otherwise apply the same insets again.
+                child: MediaQuery.removeViewInsets(
+                  context: dialogContext,
+                  removeLeft: true,
+                  removeTop: true,
+                  removeRight: true,
+                  removeBottom: true,
+                  child: SafeArea(
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.xl,
+                          vertical: AppSpacing.xl,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: maxWidth),
+                          child: buildAppScaleFadeTransition(
+                            context: dialogContext,
+                            animation: animation,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: Builder(builder: builder),
+                            ),
+                          ),
                         ),
                       ),
                     ),

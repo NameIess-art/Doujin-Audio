@@ -8,6 +8,117 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 void main() {
+  for (final scenario in [
+    (platform: TargetPlatform.android, textScale: 1.0),
+    (platform: TargetPlatform.android, textScale: 2.0),
+    (platform: TargetPlatform.windows, textScale: 1.0),
+    (platform: TargetPlatform.windows, textScale: 2.0),
+  ]) {
+    final platform = scenario.platform;
+    for (final material in [false, true]) {
+      testWidgets(
+        '${material ? 'Material' : 'App'} input dialog avoids live IME insets on $platform at ${scenario.textScale} text scale',
+        (tester) async {
+          final size = platform == TargetPlatform.android
+              ? const Size(390, 700)
+              : const Size(960, 600);
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = size;
+          addTearDown(tester.view.resetDevicePixelRatio);
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetViewInsets);
+          tester.platformDispatcher.textScaleFactorTestValue =
+              scenario.textScale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          String? result;
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (context) => TextButton(
+                    onPressed: () async {
+                      result = await showAppDialog<String>(
+                        context: context,
+                        builder: (dialogContext) {
+                          final input = TextFormField(
+                            initialValue: 'Track',
+                            autofocus: true,
+                          );
+                          void save() =>
+                              Navigator.of(dialogContext).pop('Track');
+                          return material
+                              ? AppAlertDialog(
+                                  title: const Text('Rename'),
+                                  content: input,
+                                  actions: [
+                                    TextButton(
+                                      onPressed: save,
+                                      child: const Text('Save'),
+                                    ),
+                                  ],
+                                )
+                              : AppDialog(
+                                  title: 'Rename',
+                                  icon: Icons.edit_rounded,
+                                  content: input,
+                                  actions: AppDialogActions(
+                                    children: [
+                                      AppSecondaryButton(
+                                        onPressed: () =>
+                                            Navigator.of(dialogContext).pop(),
+                                        label: 'Cancel',
+                                      ),
+                                      AppPrimaryButton(
+                                        onPressed: save,
+                                        label: 'Save',
+                                      ),
+                                    ],
+                                  ),
+                                );
+                        },
+                      );
+                    },
+                    child: const Text('Open'),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.tap(find.text('Open'));
+          await tester.pumpAndSettle();
+          final surface = find.byType(AppGlassSurface);
+          final initialBounds = tester.getRect(surface);
+          final keyboardHeight = platform == TargetPlatform.android
+              ? 320.0
+              : 220.0;
+          tester.view.viewInsets = FakeViewPadding(bottom: keyboardHeight);
+          await tester.pumpAndSettle();
+          final keyboardTop = size.height - keyboardHeight;
+          expect(tester.getRect(surface).bottom, lessThan(keyboardTop));
+          expect(
+            tester.getRect(surface).center.dy,
+            closeTo(keyboardTop / 2, 0.01),
+          );
+          expect(
+            MediaQuery.viewInsetsOf(tester.element(find.byType(TextFormField))),
+            EdgeInsets.zero,
+          );
+          tester.view.viewInsets = FakeViewPadding.zero;
+          await tester.pumpAndSettle();
+          expect(tester.getRect(surface), initialBounds);
+          tester.view.viewInsets = FakeViewPadding(bottom: keyboardHeight);
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Save'));
+          await tester.pumpAndSettle();
+          expect(result, 'Track');
+          expect(find.text('Rename'), findsNothing);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant.only(platform),
+      );
+    }
+  }
+
   testWidgets('Material alert glass preserves layout, inset, and dismissal', (
     tester,
   ) async {

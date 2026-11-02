@@ -130,29 +130,36 @@ class _AsmrDownloadTaskCardState extends State<AsmrDownloadTaskCard> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      retryAttempt == null
-                          ? _statusText(i18n, task.status)
-                          : i18n.tr('asmr_download_status_retrying', {
-                              'attempt': retryAttempt,
-                              'max': task.automaticFileRetryCount,
-                            }),
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: cs.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
+                SizedBox(
+                  width: double.infinity,
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Text(
+                        retryAttempt == null
+                            ? _statusText(i18n, task.status)
+                            : i18n.tr('asmr_download_status_retrying', {
+                                'attempt': retryAttempt,
+                                'max': task.automaticFileRetryCount,
+                              }),
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
                       ),
-                    ),
-                    Text(
-                      '${formatAsmrDownloadSize(task.downloadedBytes)} / ${formatAsmrDownloadTotalSize(total: task.totalBytes, unknown: task.hasUnknownFileSizes, unknownLabel: i18n.tr('asmr_download_size_unknown'), estimate: task.estimatedTotalBytes)}',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: cs.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
+                      Text(
+                        '${formatAsmrDownloadSize(task.downloadedBytes)} / ${formatAsmrDownloadTotalSize(total: task.totalBytes, unknown: task.hasUnknownFileSizes, unknownLabel: i18n.tr('asmr_download_size_unknown'), estimate: task.estimatedTotalBytes)}',
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),

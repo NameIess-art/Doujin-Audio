@@ -602,6 +602,76 @@ void main() {
     }
   }
 
+  for (final language in [AppLanguage.zh, AppLanguage.en, AppLanguage.ja]) {
+    for (final scenario in [
+      (platform: TargetPlatform.android, width: 320.0, textScale: 1.0),
+      (platform: TargetPlatform.android, width: 390.0, textScale: 1.6),
+      (platform: TargetPlatform.windows, width: 960.0, textScale: 1.0),
+    ]) {
+      testWidgets('download status and size remain visible in $language at '
+          '${scenario.width} with text scale ${scenario.textScale}', (
+        tester,
+      ) async {
+        SharedPreferences.setMockInitialValues({});
+        final i18n = AppLanguageProvider();
+        await i18n.setLanguage(language);
+        addTearDown(i18n.dispose);
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = Size(scenario.width, 820);
+        tester.platformDispatcher.textScaleFactorTestValue = scenario.textScale;
+        addTearDown(() {
+          tester.view.resetDevicePixelRatio();
+          tester.view.resetPhysicalSize();
+          tester.platformDispatcher.clearTextScaleFactorTestValue();
+        });
+        final task = _failedTask(
+          status: AsmrDownloadTaskStatus.downloading,
+          fileRetryAttempts: const {'Track.mp3': 1},
+        ).copyWith(totalBytes: 9999999999, downloadedBytes: 1024000000);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  AsmrDownloadTaskCard(
+                    task: task,
+                    i18n: i18n,
+                    onOpen: () {},
+                    onTogglePause: () {},
+                    onRemove: () {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final status = find.text(
+          i18n.tr('asmr_download_status_retrying', {'attempt': 1, 'max': 7}),
+        );
+        final size = find.text('977 MB / 9.3 GB');
+        expect(status, findsOneWidget);
+        expect(size, findsOneWidget);
+        final statusRect = tester.getRect(status);
+        final sizeRect = tester.getRect(size);
+        final cardRect = tester.getRect(find.byType(AsmrDownloadTaskCard));
+        for (final textRect in [statusRect, sizeRect]) {
+          expect(textRect.left, greaterThanOrEqualTo(cardRect.left + 16));
+          expect(textRect.right, lessThanOrEqualTo(cardRect.right - 16));
+          expect(textRect.bottom, lessThanOrEqualTo(cardRect.bottom - 16));
+        }
+        expect(statusRect.overlaps(sizeRect), isFalse);
+        if (scenario.platform == TargetPlatform.windows) {
+          expect(statusRect.top, sizeRect.top);
+          expect(statusRect.left, cardRect.left + 16);
+          expect(sizeRect.right, cardRect.right - 16);
+        }
+        expect(tester.takeException(), isNull);
+      }, variant: TargetPlatformVariant({scenario.platform}));
+    }
+  }
+
   testWidgets('task uses its retry maximum and clears terminal retry status', (
     tester,
   ) async {

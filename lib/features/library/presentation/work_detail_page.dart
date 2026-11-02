@@ -34,6 +34,7 @@ import '../../../core/widgets/drag_only_scrollbar.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/file_tree_row.dart';
@@ -1290,6 +1291,33 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         final coverResolution = ref.watch(coverImageResolutionProvider);
         final cacheWidth = coverCacheWidthForResolution(coverResolution);
         final resolved = library.resolvedCoverPathForRemoteCover(remoteUrl);
+        String? previewPath;
+        for (final url in [
+          widget.asmrWork?.thumbnailUrl,
+          widget.asmrWork?.coverUrl,
+        ]) {
+          if (url == null || url.trim() == remoteUrl) continue;
+          previewPath = library.resolvedCoverPathForRemoteCover(url);
+          if (previewPath != null) break;
+        }
+        Widget coverPlaceholder(BuildContext context) {
+          if (previewPath == null) return const CoverFallbackArtwork();
+          // List thumbnails and main covers can be different URLs. Reuse the
+          // list's decoded pixels while the main image downloads and decodes.
+          return LocalCoverImage(
+            path: previewPath,
+            cacheWidth: coverThumbnailCacheWidth(
+              logicalWidth:
+                  LibraryLikeCardMetrics.coverHeight *
+                  LibraryLikeCardMetrics.coverAspectRatio,
+              devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+              resolution: coverResolution,
+            ),
+            useDefaultCacheWidth: false,
+            deferLoadDuringInteraction: true,
+            fit: BoxFit.cover,
+          );
+        }
         final requestKey = (remoteUrl, resolved, coverGeneration);
         if (_coverRequestKey != requestKey) {
           _coverRequestKey = requestKey;
@@ -1313,9 +1341,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           fit: BoxFit.cover,
           cacheWidth: cacheWidth,
           useDefaultCacheWidth: cacheWidth != null,
-          loadingBuilder: (_) =>
-              const CoverLoadingArtwork(placeholder: CoverFallbackArtwork()),
-          fallbackBuilder: (_) => const CoverFallbackArtwork(),
+          loadingBuilder: (context) =>
+              CoverLoadingArtwork(placeholder: coverPlaceholder(context)),
+          fallbackBuilder: coverPlaceholder,
         );
       } else if (widget.isLocal) {
         final library = ref.read(libraryFacadeProvider);

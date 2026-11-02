@@ -240,7 +240,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   void _refreshListeningActivity() {
     if (_closing) return;
     final refresh = _historyInitialized
-        ? _listeningActivity?.refresh()
+        ? _listeningActivity?.refresh(forceReload: false)
         : _initializeListening();
     unawaited(
       refresh?.catchError((Object error, StackTrace stack) {

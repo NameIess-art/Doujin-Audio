@@ -1102,7 +1102,7 @@ class _RetryingImageState extends State<RetryingImage> {
         // Keep this host through admission so cold images can still fade in;
         // cached cards start at the final opacity without replaying the fade.
         showPlaceholder: loading,
-        deferVisualUpdates: false,
+        protectInteraction: false,
         placeholder: _loadingArtwork(context),
         content: content,
       );
@@ -1173,8 +1173,8 @@ class _RetryingImageState extends State<RetryingImage> {
           return child;
         }
         return PlaceholderContentTransition(
-          // Fading artwork must not stall subsequent admitted decodes.
-          deferVisualUpdates: false,
+          // Artwork fades must leave prefetch and metadata commits running.
+          protectInteraction: false,
           showPlaceholder: frame == null,
           placeholder: _loadingArtwork(context),
           content: child,

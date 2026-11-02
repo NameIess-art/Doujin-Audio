@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:doujin_audio/features/player/application/listening_activity_service.dart';
 import 'package:doujin_audio/features/player/domain/listening_activity.dart';
+import 'package:doujin_audio/features/player/domain/playback_usage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -152,6 +153,57 @@ void main() {
   );
 
   test(
+    'lifecycle retains unchanged statistics and reloads imported usage or a new day',
+    () async {
+      final repository = _CountingListeningRepository();
+      var pending = <PlaybackUsageBatch>[];
+      var now = DateTime(2026, 11, 2, 23, 50);
+      final acknowledged = <String>[];
+      final activity = ListeningActivityService(
+        repository: repository,
+        readUsage: () async => pending,
+        acknowledgeUsage: (ids) async {
+          acknowledged.addAll(ids);
+          pending = [];
+        },
+        resolveTrack: (_) => null,
+        recordInterests: ({required batchId, required contributions}) async {},
+        now: () => now,
+      );
+      final graph = createTestRuntimeGraph(listeningActivity: activity);
+      addTearDown(graph.runtime.dispose);
+      await graph.runtime.initializeSecondaryData();
+      final initial = await activity.states.first;
+      expect(repository.dayReads, 1);
+      expect(repository.historyReads, 1);
+
+      await graph.runtime.enterBackground();
+      await graph.runtime.resumeForeground();
+      // Lifecycle imports are intentionally asynchronous; serialize behind them.
+      await activity.refresh(forceReload: false);
+      expect(await activity.states.first, same(initial));
+      expect(repository.dayReads, 1);
+      expect(repository.historyReads, 1);
+
+      pending = [const PlaybackUsageBatch(id: 'background-usage', days: [])];
+      await graph.runtime.resumeForeground();
+      await activity.refresh(forceReload: false);
+      final imported = await activity.states.first;
+      expect(imported, isNot(same(initial)));
+      expect(acknowledged, ['background-usage']);
+      expect(repository.dayReads, 2);
+      expect(repository.historyReads, 2);
+
+      now = DateTime(2026, 11, 3);
+      await graph.runtime.resumeForeground();
+      await activity.refresh(forceReload: false);
+      expect(await activity.states.first, isNot(same(imported)));
+      expect(repository.dayReads, 3);
+      expect(repository.historyReads, 3);
+    },
+  );
+
+  test(
     'failed history migration still starts imports and retries on resume',
     () async {
       var migrations = 0;
@@ -185,6 +237,32 @@ void main() {
       expect(migrations, 2);
     },
   );
+}
+
+class _CountingListeningRepository extends _EmptyListeningRepository {
+  int dayReads = 0;
+  int historyReads = 0;
+
+  @override
+  Future<bool> importBatch(
+    String batchId,
+    List<ListeningDayContribution> days,
+  ) async => true;
+
+  @override
+  Future<List<ListeningDay>> loadDays() {
+    dayReads++;
+    return super.loadDays();
+  }
+
+  @override
+  Future<List<ListeningHistoryEntry>> loadHistory({
+    int offset = 0,
+    int limit = 40,
+  }) {
+    historyReads++;
+    return super.loadHistory(offset: offset, limit: limit);
+  }
 }
 
 class _EmptyListeningRepository extends Fake

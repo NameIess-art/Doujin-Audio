@@ -358,6 +358,173 @@ void main() {
     }),
   );
 
+  for (final mainCoverAvailable in [true, false]) {
+    testWidgets(
+      'ASMR detail keeps cached list artwork across different cover URLs, main available=$mainCoverAvailable',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final directory = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('asmr_cover_variants_'),
+        ))!;
+        final files = (await tester.runAsync(() async {
+          final source = File('assets/icons/app_mark_light.png');
+          return [
+            await source.copy('${directory.path}/thumbnail.png'),
+            await source.copy('${directory.path}/main.png'),
+          ];
+        }))!;
+        addTearDown(() async {
+          releaseRetainedCoverImages();
+          PaintingBinding.instance.imageCache
+            ..clear()
+            ..clearLiveImages();
+          await directory.delete(recursive: true);
+        });
+        const thumbnailUrl = 'https://example.com/thumbnail.png';
+        const mainUrl = 'https://example.com/main.png';
+        final mainCover = Completer<String?>();
+        final requests = <String>[];
+        final cache = CoverArtworkCacheService(
+          libraryService: LibraryService(),
+          remoteCoverDownloader: (url) async {
+            requests.add(url);
+            return url == thumbnailUrl ? files.first.path : mainCover.future;
+          },
+        );
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: cache,
+        );
+        addTearDown(fixture.dispose);
+        addTearDown(() {
+          if (!mainCover.isCompleted) mainCover.complete(null);
+        });
+        await fixture.languageProvider.setLanguage(AppLanguage.zh);
+        final work = _work(thumbnailUrl: thumbnailUrl, mainCoverUrl: mainUrl);
+        final controller = _LoadedTabAsmrController(createTestAsmrServices(), [
+          work,
+        ]);
+        addTearDown(controller.dispose);
+        await tester.runAsync(() => cache.futureForRemoteCover(thumbnailUrl));
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('收藏'));
+        await tester.pumpAndSettle();
+        final card = find.byType(AsyncRemoteCoverImage).first;
+        final width = tester.widget<AsyncRemoteCoverImage>(card).cacheWidth;
+        final cardFrames = find.descendant(
+          of: card,
+          matching: find.byType(RawImage),
+        );
+        for (var tick = 0; tick < 100; tick++) {
+          if (tester
+              .widgetList<RawImage>(cardFrames)
+              .any((frame) => frame.image?.width == width)) {
+            break;
+          }
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        final thumbnail = tester
+            .widgetList<RawImage>(cardFrames)
+            .firstWhere((frame) => frame.image?.width == width)
+            .image!
+            .clone();
+        addTearDown(thumbnail.dispose);
+        unawaited(showAsmrWorkDetailSheet(tester.element(card), work));
+        final detail = find.descendant(
+          of: find.byType(WorkDetailPage, skipOffstage: false),
+          matching: find.byType(AsyncRemoteCoverImage, skipOffstage: false),
+          skipOffstage: false,
+        );
+        for (var frame = 0; frame < 12 && detail.evaluate().isEmpty; frame++) {
+          await tester.pump();
+        }
+        final detailFrames = find.descendant(
+          of: detail,
+          matching: find.byType(RawImage, skipOffstage: false),
+          skipOffstage: false,
+        );
+        bool hasThumbnail() => tester.widgetList<RawImage>(detailFrames).any(
+          (frame) => frame.image?.isCloneOf(thumbnail) ?? false,
+        );
+        expect(
+          hasThumbnail(),
+          isTrue,
+          reason: 'The route must reuse the list pixels before any new decode',
+        );
+        await pumpUntilFound(tester, find.byType(WorkDetailPage));
+        await pumpUntilNotFound(
+          tester,
+          find.byKey(const ValueKey('work_detail_entries_skeleton')),
+        );
+        // The main download deliberately remains in flight during this check.
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pump();
+        expect(requests, [thumbnailUrl, mainUrl]);
+        expect(hasThumbnail(), isTrue);
+        mainCover.complete(mainCoverAvailable ? files.last.path : null);
+        for (var tick = 0; tick < 100; tick++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 20));
+          if (mainCoverAvailable && !hasThumbnail()) break;
+          if (!mainCoverAvailable && tick == 5) break;
+        }
+        expect(hasThumbnail(), !mainCoverAvailable);
+        if (mainCoverAvailable) {
+          final mainProvider = resizeFileImageIfNeeded(
+            path: files.last.path,
+            cacheWidth: tester.widget<AsyncRemoteCoverImage>(detail).cacheWidth,
+            useDefaultCacheWidth: false,
+          );
+          final fullImage = find.descendant(
+            of: detail,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Image && widget.image == mainProvider,
+            ),
+          );
+          final fullFrame = find.descendant(
+            of: fullImage,
+            matching: find.byType(RawImage),
+          );
+          final mainPixels = tester.widget<RawImage>(fullFrame).image!.clone();
+          addTearDown(mainPixels.dispose);
+          Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pump(const Duration(milliseconds: 200));
+          unawaited(showAsmrWorkDetailSheet(tester.element(card), work));
+          for (var frame = 0; frame < 12 && detail.evaluate().isEmpty; frame++) {
+            await tester.pump();
+          }
+          expect(
+            tester.widget<RawImage>(fullFrame).image!.isCloneOf(mainPixels),
+            isTrue,
+            reason: 'Returning must reuse the cached main image immediately',
+          );
+        }
+        expect(requests, [thumbnailUrl, mainUrl]);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   for (final resolution in CoverImageResolution.values) {
     testWidgets(
       'ASMR and playback detail reuse warmed covers on entry at ${resolution.name}',
@@ -2229,6 +2396,7 @@ AsmrWork _work({
   List<String> voiceActors = const <String>[],
   List<String> tags = const <String>[],
   String coverUrl = '',
+  String thumbnailUrl = '',
   String mainCoverUrl = '',
 }) => AsmrWork(
   id: id,
@@ -2238,7 +2406,7 @@ AsmrWork _work({
   sourceType: 'asmr',
   sourceUrl: '',
   coverUrl: coverUrl,
-  thumbnailUrl: '',
+  thumbnailUrl: thumbnailUrl,
   mainCoverUrl: mainCoverUrl,
   releaseDate: null,
   createDate: null,

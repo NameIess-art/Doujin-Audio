@@ -1187,7 +1187,7 @@ class PlaceholderContentTransition extends StatefulWidget {
     required this.content,
     this.duration = kPlaceholderContentTransitionDuration,
     this.fit = StackFit.expand,
-    this.deferVisualUpdates = true,
+    this.protectInteraction = true,
   });
 
   final bool showPlaceholder;
@@ -1195,7 +1195,9 @@ class PlaceholderContentTransition extends StatefulWidget {
   final Widget content;
   final Duration duration;
   final StackFit fit;
-  final bool deferVisualUpdates;
+
+  /// Keep page changes protected; decorative fades can leave idle work running.
+  final bool protectInteraction;
 
   @override
   State<PlaceholderContentTransition> createState() =>
@@ -1266,10 +1268,9 @@ class _PlaceholderContentTransitionState
         setState(_cancelFade);
         return;
       }
-      _interaction.beginInteraction(
-        _controller,
-        deferVisualUpdates: widget.deferVisualUpdates,
-      );
+      if (widget.protectInteraction) {
+        _interaction.beginInteraction(_controller, deferVisualUpdates: true);
+      }
       if (widget.showPlaceholder) {
         _controller.reverse();
       } else {

@@ -51,6 +51,74 @@ void main() {
     interaction.resetForTest();
   });
 
+  for (final browse in [false, true]) {
+    testWidgets(
+      'cover fade leaves idle work and metadata unblocked (browse=$browse)',
+      (tester) async {
+        final provider = _SlowImage();
+        const placeholderKey = ValueKey('cold-cover-placeholder');
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Center(
+              child: SizedBox.square(
+                dimension: 40,
+                child: RetryingImage(
+                  retryKey: provider,
+                  browseThumbnail: browse,
+                  imageProviderBuilder: () => provider,
+                  fallbackBuilder: (_) =>
+                      const ColoredBox(key: placeholderKey, color: Colors.pink),
+                ),
+              ),
+            ),
+          ),
+        );
+        for (var frame = 0; frame < 5 && provider.loads == 0; frame++) {
+          await tester.pump();
+        }
+        expect(provider.loads, 1);
+        await provider.complete(tester);
+        await tester.pump();
+        await tester.pump();
+        await tester.pump();
+        expect(interaction.isInteracting, isFalse);
+        var metadataCommitted = false;
+        var prefetchStarted = false;
+        interaction.scheduleCommit(
+          key: 'metadata-during-cover-fade',
+          structural: true,
+          commit: () => metadataCommitted = true,
+        );
+        interaction.scheduleAfterIdle(
+          key: 'prefetch-during-cover-fade',
+          generation: interaction.generation,
+          priority: 0,
+          task: () async => prefetchStarted = true,
+        );
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(metadataCommitted, isTrue);
+        expect(prefetchStarted, isTrue);
+        final fade = find
+            .ancestor(
+              of: find.byKey(placeholderKey),
+              matching: find.byType(FadeTransition),
+            )
+            .first;
+        expect(
+          tester.widget<FadeTransition>(fade).opacity.value,
+          closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(placeholderKey), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets(
     'browse cover retains its 300ms fade while scrolling without blocking the next decode',
     (tester) async {

@@ -7,6 +7,7 @@ import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -49,6 +50,109 @@ void main() {
       ..clearLiveImages();
     interaction.resetForTest();
   });
+
+  testWidgets(
+    'browse cover retains its 300ms fade while scrolling without blocking the next decode',
+    (tester) async {
+      final first = _SlowImage();
+      final second = _SlowImage();
+      late BuildContext scope;
+      Widget cover(_SlowImage provider) => SizedBox.square(
+        dimension: 40,
+        child: RetryingImage(
+          retryKey: provider,
+          browseThumbnail: true,
+          retainInImageCache: true,
+          imageProviderBuilder: () => provider,
+          fallbackBuilder: (_) =>
+              ColoredBox(key: ValueKey(provider), color: Colors.pink),
+        ),
+      );
+      Widget page({bool both = true}) => MaterialApp(
+        home: ScrollActivityGate(
+          child: Builder(
+            builder: (context) {
+              scope = context;
+              return Column(children: [cover(first), if (both) cover(second)]);
+            },
+          ),
+        ),
+      );
+      await tester.pumpWidget(page());
+      for (var frame = 0; frame < 5 && first.loads == 0; frame++) {
+        await tester.pump();
+      }
+      expect(first.loads, 1);
+      expect(second.loads, 0);
+      FixedScrollMetrics metrics(double pixels) => FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: 10000,
+        pixels: pixels,
+        viewportDimension: 100,
+        axisDirection: AxisDirection.down,
+        devicePixelRatio: 1,
+      );
+      ScrollStartNotification(
+        metrics: metrics(0),
+        context: scope,
+      ).dispatch(scope);
+      await first.complete(tester);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      final placeholder = find.byKey(ValueKey(first));
+      final fade = find.ancestor(
+        of: placeholder,
+        matching: find.byType(FadeTransition),
+      ).first;
+      expect(fade, findsOneWidget);
+      expect(tester.widget<FadeTransition>(fade).opacity.value, 1);
+      expect(interaction.isVisualUpdateDeferred, isFalse);
+      final imageElement = tester.element(find.byType(Image).first);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(
+        second.loads,
+        1,
+        reason: 'A fading cover must not hold the decode budget',
+      );
+      expect(
+        tester.widget<FadeTransition>(fade).opacity.value,
+        closeTo(1 - kAppFadeCurve.transform(0.5), 0.001),
+      );
+      ScrollUpdateNotification(
+        metrics: metrics(100),
+        context: scope,
+        scrollDelta: 100,
+      ).dispatch(scope);
+      await tester.pump(const Duration(milliseconds: 149));
+      expect(placeholder, findsOneWidget);
+      expect(tester.element(find.byType(Image).first), same(imageElement));
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump();
+      expect(tester.widget<FadeTransition>(fade).opacity.value, closeTo(0, 0.001));
+      await tester.pumpAndSettle();
+      expect(placeholder, findsNothing);
+      await second.complete(tester);
+      ScrollEndNotification(
+        metrics: metrics(100),
+        context: scope,
+      ).dispatch(scope);
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(page(both: false));
+      expect(
+        find.byKey(ValueKey(first)),
+        findsNothing,
+        reason: 'Cached covers must not replay the transition',
+      );
+      expect(first.loads, 1);
+      await tester.pumpWidget(const SizedBox());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     '1000 full cards bound cold decodes during fast reverse scrolling',

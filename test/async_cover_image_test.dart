@@ -1686,7 +1686,7 @@ void main() {
         await tester.pump();
         await tester.pump();
         if (scrolling) {
-          expect(find.text('decoding'), findsNothing);
+          expect(find.text('decoding'), findsOneWidget);
           expect(
             UiInteractionCoordinator.instance.isVisualUpdateDeferred,
             isFalse,

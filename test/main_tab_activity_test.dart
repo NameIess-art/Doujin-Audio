@@ -120,7 +120,10 @@ void main() {
                   : PlaylistTab(tabIndex: 1, activeTabIndexListenable: active),
             ),
             overrides: [
-              playlistSortedEntriesUiProvider.overrideWith((ref) {
+              playlistSortedEntriesUiProvider.overrideWithBuild((
+                ref,
+                notifier,
+              ) {
                 sorts++;
                 return ref.watch(playlistStructureUiProvider).entries;
               }),

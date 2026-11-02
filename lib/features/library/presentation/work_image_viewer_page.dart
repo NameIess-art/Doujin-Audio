@@ -545,6 +545,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                 bottom: bottomInset + 20,
                 child: AppPageContentTransition(
                   child: HeaderFloatingButton(
+                    followBarGlass: true,
                     child: IconButton(
                       key: const ValueKey('image_viewer_fullscreen_button'),
                       icon: Icon(
@@ -570,6 +571,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage>
                 bottom: MediaQuery.paddingOf(context).bottom + 20,
                 child: AppPageContentTransition(
                   child: HeaderFloatingSurface(
+                    followBarGlass: true,
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,

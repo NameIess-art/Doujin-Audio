@@ -460,6 +460,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
                 return const SizedBox.shrink();
               }
               return HeaderFloatingSurface(
+                followBarGlass: true,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Center(
                   child: Text(
@@ -593,6 +594,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     AppLanguageProvider i18n,
   ) {
     return HeaderFloatingSurface(
+      followBarGlass: true,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         mainAxisSize: MainAxisSize.min,

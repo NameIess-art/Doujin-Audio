@@ -3,6 +3,7 @@ import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/app/application/browse_page_state_store.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -3545,6 +3546,8 @@ void main() {
     _detailTestWidgets(
       'zoomed image paints beneath floating controls without moving its initial frame',
       (tester) async {
+        final theme = ThemeProvider();
+        await theme.setBarGlassEnabled(true);
         final fixture = AppRuntimeWidgetTestFixture();
         _detailFixtures.add(fixture);
         addTearDown(fixture.dispose);
@@ -3574,6 +3577,7 @@ void main() {
                 ],
               ),
             ),
+            themeProvider: theme,
           ),
         );
         await _settleDetail(tester);
@@ -3599,6 +3603,15 @@ void main() {
         final switcher = tester.getRect(
           find.ancestor(of: next, matching: find.byType(HeaderFloatingSurface)),
         );
+        final switcherBlur = find.descendant(
+          of: find.ancestor(of: next, matching: find.byType(HeaderFloatingSurface)),
+          matching: find.byType(BackdropFilter),
+        );
+        expect(switcherBlur, findsOneWidget);
+        await theme.setBarGlassEnabled(false);
+        await tester.pumpAndSettle();
+        expect(switcherBlur, findsNothing);
+        expect(tester.getRect(viewport), initialBounds);
         expect(initialBounds.top - header.bottom, 8);
         expect(switcher.top - initialBounds.bottom, 20);
         final points = [
@@ -3665,6 +3678,8 @@ void main() {
           tester.view.devicePixelRatio = 1;
           tester.view.physicalSize = const Size(1280, 800);
           addTearDown(tester.view.reset);
+          final theme = ThemeProvider();
+          await theme.setBarGlassEnabled(false);
           final fixture = AppRuntimeWidgetTestFixture();
           _detailFixtures.add(fixture);
           addTearDown(fixture.dispose);
@@ -3689,6 +3704,7 @@ void main() {
                   ),
                 ),
               ),
+              themeProvider: theme,
             ),
           );
           unawaited(
@@ -3757,6 +3773,29 @@ void main() {
           expect(tester.element(viewport), same(viewportElement));
           expect(tester.state(image), same(imageState));
           expect(transform.value.getMaxScaleOnAxis(), 2);
+          for (final enabled in [true, false, true]) {
+            await theme.setBarGlassEnabled(enabled);
+            await finishFullscreenFade();
+            for (final control in [
+              fullscreen,
+              find.byKey(const ValueKey('image_viewer_next_button')),
+            ]) {
+              expect(
+                find.descendant(
+                  of: find.ancestor(
+                    of: control,
+                    matching: find.byType(HeaderFloatingSurface),
+                  ),
+                  matching: find.byType(BackdropFilter),
+                ),
+                enabled ? findsOneWidget : findsNothing,
+              );
+            }
+            expect(viewerRect(), const Rect.fromLTWH(0, 0, 1280, 800));
+            expect(find.text('2 / 3'), findsOneWidget);
+            expect(tester.element(viewport), same(viewportElement));
+            expect(transform.value.getMaxScaleOnAxis(), 2);
+          }
           await tester.tap(fullscreen);
           await tester.pump();
           await finishFullscreenFade();

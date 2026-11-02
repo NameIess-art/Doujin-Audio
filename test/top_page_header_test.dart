@@ -9,6 +9,71 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  for (final brightness in Brightness.values) {
+    testWidgets(
+      'content capsules follow menu bar glass in $brightness',
+      (tester) async {
+        for (final enabled in [false, true, false]) {
+          await tester.pumpWidget(
+            MaterialApp(
+              themeAnimationDuration: Duration.zero,
+              theme: ThemeData(
+                brightness: brightness,
+                extensions: [
+                  (brightness == Brightness.dark
+                          ? AppDesignTokens.dark
+                          : AppDesignTokens.light)
+                      .copyWith(barGlassEnabled: enabled),
+                ],
+              ),
+              home: const Scaffold(
+                body: Column(
+                  children: [
+                    HeaderFloatingSurface(
+                      followBarGlass: true,
+                      child: Text('Viewer switcher'),
+                    ),
+                    HeaderFloatingButton(
+                      followBarGlass: true,
+                      child: Icon(Icons.fullscreen),
+                    ),
+                    HeaderFloatingSurface(child: Text('Other content')),
+                  ],
+                ),
+              ),
+            ),
+          );
+          expect(
+            find.byType(BackdropFilter),
+            enabled ? findsNWidgets(2) : findsNothing,
+          );
+          for (final filter in tester.widgetList<BackdropFilter>(
+            find.byType(BackdropFilter),
+          )) {
+            expect(filter.blendMode, BlendMode.srcOver);
+          }
+          if (!enabled) {
+            final decoration = tester.widget<DecoratedBox>(
+              find.descendant(
+                of: find.widgetWithText(HeaderFloatingSurface, 'Viewer switcher'),
+                matching: find.byType(DecoratedBox),
+              ),
+            ).decoration as BoxDecoration;
+            expect(decoration.color!.a, 1);
+          }
+          expect(
+            tester.getSize(find.byType(HeaderFloatingButton)),
+            const Size.square(AppPageHeaderMetrics.buttonSize),
+          );
+        }
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets(
     'page content stays eight pixels below single and multi row headers',
     (tester) async {

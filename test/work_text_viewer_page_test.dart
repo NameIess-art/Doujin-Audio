@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:flutter/foundation.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -595,6 +596,9 @@ void main() {
             ),
           ],
           child: MaterialApp(
+            theme: ThemeData(
+              extensions: [AppDesignTokens.light.copyWith(barGlassEnabled: true)],
+            ),
             home: Builder(
               builder: (context) => Scaffold(
                 body: ElevatedButton(
@@ -627,6 +631,16 @@ void main() {
 
       // Bottom-right switcher displays 1/3
       expect(find.text('1/3'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('1/3'),
+            matching: find.byType(HeaderFloatingSurface),
+          ),
+          matching: find.byType(BackdropFilter),
+        ),
+        findsOneWidget,
+      );
 
       // Both directions stay available and wrap at the list edges.
       final prevBtnFinder = find.widgetWithIcon(

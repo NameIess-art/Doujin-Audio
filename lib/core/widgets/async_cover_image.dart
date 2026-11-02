@@ -1092,6 +1092,21 @@ class _RetryingImageState extends State<RetryingImage> {
     });
   }
 
+  Widget _loadingArtwork(BuildContext context) =>
+      widget.loadingBuilder?.call(context) ??
+      CoverLoadingArtwork(placeholder: widget.fallbackBuilder(context));
+
+  Widget _browseTransition(Widget content, {required bool loading}) =>
+      PlaceholderContentTransition(
+        // The decoder has already produced a frame before mounting Image.
+        // Keep this host through admission so cold images can still fade in;
+        // cached cards start at the final opacity without replaying the fade.
+        showPlaceholder: loading,
+        deferVisualUpdates: false,
+        placeholder: _loadingArtwork(context),
+        content: content,
+      );
+
   @override
   Widget build(BuildContext context) {
     final requested = widget.imageProviderBuilder();
@@ -1101,12 +1116,15 @@ class _RetryingImageState extends State<RetryingImage> {
       }
       _scheduleRetry(requested);
       final preview = _previewProvider;
-      return preview == null
+      final content = preview == null
           ? widget.fallbackBuilder(context)
           : _image(
               preview,
               errorBuilder: (_, _, _) => widget.fallbackBuilder(context),
             );
+      return widget.browseThumbnail
+          ? _browseTransition(content, loading: false)
+          : content;
     }
     ImageProvider<Object>? provider;
     if (!_loadEnabled) {
@@ -1129,14 +1147,13 @@ class _RetryingImageState extends State<RetryingImage> {
     if (_loadEnabled) _interaction.cancelCommit(_loadCommitKey);
     if (!_loadEnabled) provider ??= _previewProvider;
     if (!_loadEnabled && provider == null) {
-      final loadingBuilder = widget.loadingBuilder;
-      return loadingBuilder != null
-          ? loadingBuilder(context)
-          : CoverLoadingArtwork(placeholder: widget.fallbackBuilder(context));
+      return widget.browseThumbnail
+          ? _browseTransition(const SizedBox.shrink(), loading: true)
+          : _loadingArtwork(context);
     }
     final imageProvider = provider ?? requested;
     if (widget.retainInImageCache) restoreRetainedCoverImage(imageProvider);
-    return _image(
+    final image = _image(
       imageProvider,
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
         if (wasSynchronouslyLoaded || frame != null) {
@@ -1150,21 +1167,16 @@ class _RetryingImageState extends State<RetryingImage> {
         }
         // Image keeps its previous pixels during an upgrade (gaplessPlayback).
         // Do not cover those pixels with a placeholder while the new decode runs.
-        if (wasSynchronouslyLoaded ||
+        if (widget.browseThumbnail ||
+            wasSynchronouslyLoaded ||
             (_previewProvider != null && _hasDisplayedFrame)) {
           return child;
         }
-        final loadingBuilder = widget.loadingBuilder;
-        final placeholder = loadingBuilder != null
-            ? loadingBuilder(context)
-            : CoverLoadingArtwork(placeholder: widget.fallbackBuilder(context));
         return PlaceholderContentTransition(
-          // A scroll-time fade would defer the next cover's load globally.
-          duration: ScrollActivityGate.isScrollingWithoutDependencyOf(context)
-              ? Duration.zero
-              : kPlaceholderContentTransitionDuration,
+          // Fading artwork must not stall subsequent admitted decodes.
+          deferVisualUpdates: false,
           showPlaceholder: frame == null,
-          placeholder: placeholder,
+          placeholder: _loadingArtwork(context),
           content: child,
         );
       },
@@ -1185,6 +1197,9 @@ class _RetryingImageState extends State<RetryingImage> {
         return widget.fallbackBuilder(context);
       },
     );
+    return widget.browseThumbnail
+        ? _browseTransition(image, loading: false)
+        : image;
   }
 
   Image _image(

@@ -2858,7 +2858,7 @@ void main() {
         fixture.build(
           const PlaylistTab(),
           overrides: [
-            playlistSortedEntriesUiProvider.overrideWith((ref) {
+            playlistSortedEntriesUiProvider.overrideWithBuild((ref, notifier) {
               sorts++;
               return [];
             }),
@@ -5245,6 +5245,20 @@ void main() {
               widget is PlaybackQueueCard && widget.session.id == created.id,
         );
         final initialRect = tester.getRect(card);
+        expect(
+          initialRect.top,
+          lessThan(
+            tester
+                .getTopLeft(
+                  find.byWidgetPredicate(
+                    (widget) =>
+                        widget is PlaybackQueueCard &&
+                        widget.session.id == existing.id,
+                  ),
+                )
+                .dy,
+          ),
+        );
         expect(opacityOf(existing.id), 1);
         expect(opacityOf(created.id), reducedMotion ? 1 : 0);
         await tester.pump(const Duration(milliseconds: 150));

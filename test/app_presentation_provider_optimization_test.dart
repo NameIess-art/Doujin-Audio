@@ -932,6 +932,73 @@ void main() {
     );
   }
 
+  testWidgets('new queues stay first until sorting or pinning is applied', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final existing = fixture.playback.createPlaybackQueue('A existing');
+    fixture.playbackService.syncSlice(
+      activeSessions: [existing],
+      playingSessionCount: 0,
+      focusedSessionId: existing.id,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    late WidgetRef ref;
+    List<String> sortedIds = [];
+    await tester.pumpWidget(
+      fixture.build(
+        Consumer(
+          builder: (context, widgetRef, child) {
+            ref = widgetRef;
+            sortedIds = ref.watch(playlistSortedEntriesUiProvider)
+                .map((entry) => entry.sessionId)
+                .toList();
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(sortedIds, [existing.id]);
+
+    final first = fixture.playback.createPlaybackQueue('Z first');
+    await tester.pumpAndSettle();
+    expect(sortedIds, [first.id, existing.id]);
+    final latest = fixture.playback.createPlaybackQueue('Y latest');
+    await tester.pumpAndSettle();
+    expect(sortedIds, [latest.id, first.id, existing.id]);
+
+    fixture.playback.renamePlaybackQueue(first.id, 'B renamed');
+    await tester.pumpAndSettle();
+    expect(sortedIds, [latest.id, first.id, existing.id]);
+
+    ref.read(playlistSortedEntriesUiProvider.notifier).applySort();
+    await tester.pumpAndSettle();
+    expect(sortedIds, [existing.id, first.id, latest.id]);
+
+    final next = fixture.playback.createPlaybackQueue('X next');
+    await tester.pumpAndSettle();
+    expect(sortedIds, [next.id, existing.id, first.id, latest.id]);
+    fixture.settingsRepository
+      ..playlistSortAscending = false
+      ..syncSlice(isInitialized: true);
+    await tester.pumpAndSettle();
+    expect(sortedIds, [latest.id, next.id, first.id, existing.id]);
+
+    final last = fixture.playback.createPlaybackQueue('W last');
+    await tester.pumpAndSettle();
+    expect(sortedIds.first, last.id);
+    fixture.settingsRepository
+      ..pinnedPlaylistSessionIds = [existing.id]
+      ..syncSlice(isInitialized: true);
+    await tester.pumpAndSettle();
+    expect(sortedIds.first, existing.id);
+    expect(sortedIds.toSet().length, 5);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('playlist ignores artwork changes and observes sorting inputs', (
     tester,
   ) async {

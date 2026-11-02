@@ -357,7 +357,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     );
     if (!mounted || result == null) return;
     final settings = ref.read(settingsRepositoryProvider);
-    await saveSettingsWithFeedback(
+    final saved = await saveSettingsWithFeedback(
       context,
       () => settings.setPlaylistSortOptions(
         criterion: result.criterion,
@@ -365,6 +365,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         groupByLibrary: result.groupByLibrary,
       ),
     );
+    if (mounted && saved) {
+      ref.read(playlistSortedEntriesUiProvider.notifier).applySort();
+    }
   }
 
   @override

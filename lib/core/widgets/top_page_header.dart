@@ -627,6 +627,7 @@ class HeaderFloatingSurface extends StatelessWidget {
     this.width,
     this.padding,
     this.backgroundOpacity = 1,
+    this.followBarGlass = false,
   });
 
   final Widget child;
@@ -635,6 +636,7 @@ class HeaderFloatingSurface extends StatelessWidget {
   final double? width;
   final EdgeInsetsGeometry? padding;
   final double backgroundOpacity;
+  final bool followBarGlass;
 
   @override
   Widget build(BuildContext context) {
@@ -642,13 +644,14 @@ class HeaderFloatingSurface extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
     final borderRadius = BorderRadius.circular(radius);
-    // The same capsules also appear in page content. Only the explicit header
-    // boundary opts them into blur, and a full-width glass bar owns its filter.
+    // Content capsules opt in explicitly; full-width glass bars own their filter.
     final headerSurface = context
         .findAncestorWidgetOfExactType<_AppHeaderSurface>();
     final useGlass =
         AppDesignTokens.of(context).barGlassEnabled &&
-        context.findAncestorWidgetOfExactType<AppPageHeaderTransition>() != null &&
+        (followBarGlass ||
+            context.findAncestorWidgetOfExactType<AppPageHeaderTransition>() !=
+                null) &&
         headerSurface?.floating != false;
     final backgroundColor = background.withValues(
       alpha: background.a * backgroundOpacity * (useGlass ? 0.9 : 1),
@@ -670,7 +673,7 @@ class HeaderFloatingSurface extends StatelessWidget {
             borderRadius: borderRadius,
             // Only masked headers need to replace the gradient's filtered
             // pixels; unmasked capsules keep normal backdrop compositing.
-            blendMode: headerSurface?.showFadeMask == false
+            blendMode: followBarGlass || headerSurface?.showFadeMask == false
                 ? BlendMode.srcOver
                 : BlendMode.src,
             child: surface,
@@ -690,11 +693,13 @@ class HeaderFloatingButton extends StatelessWidget {
     required this.child,
     this.size = AppPageHeaderMetrics.buttonSize,
     this.backgroundOpacity = 1,
+    this.followBarGlass = false,
   });
 
   final Widget child;
   final double size;
   final double backgroundOpacity;
+  final bool followBarGlass;
 
   @override
   Widget build(BuildContext context) {
@@ -703,6 +708,7 @@ class HeaderFloatingButton extends StatelessWidget {
       height: size,
       radius: size / 2,
       backgroundOpacity: backgroundOpacity,
+      followBarGlass: followBarGlass,
       child: IconButtonTheme(
         data: IconButtonThemeData(
           style: IconButton.styleFrom(

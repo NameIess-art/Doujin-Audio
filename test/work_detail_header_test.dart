@@ -77,29 +77,32 @@ void main() {
           }))!;
         }
 
-        Future<void> expectMetadataBoundary() async {
+        Future<void> expectMetadataBoundary({required bool hasShadow}) async {
           final bar = tester.getRect(
             find.byKey(const ValueKey('work_detail_metadata_bar')),
           );
-          final borderColor = theme.colorScheme.outlineVariant;
+          final surfaceColor = theme.colorScheme.surface;
           expect(await sample(Offset(8, bar.bottom - 0.5)), [
             for (final channel in [
-              borderColor.r,
-              borderColor.g,
-              borderColor.b,
-              borderColor.a,
+              surfaceColor.r,
+              surfaceColor.g,
+              surfaceColor.b,
+              surfaceColor.a,
             ])
               (channel * 255).round(),
           ]);
           final shadow = await sample(Offset(8, bar.bottom + 2));
           final body = await sample(Offset(8, bar.bottom + 16));
-          expect(shadow.first, lessThan(body.first));
+          expect(shadow.first, hasShadow ? lessThan(body.first) : body.first);
         }
 
-        await expectMetadataBoundary();
+        await expectMetadataBoundary(hasShadow: false);
+        scroll.jumpTo(120);
+        await tester.pumpAndSettle();
+        await expectMetadataBoundary(hasShadow: false);
         scroll.jumpTo(300);
         await tester.pumpAndSettle();
-        await expectMetadataBoundary();
+        await expectMetadataBoundary(hasShadow: true);
         final cover = tester.getRect(
           find.byKey(const ValueKey('work_detail_cover_bounds')),
         );
@@ -116,6 +119,9 @@ void main() {
           reason: 'The fallback cover must obscure content painted underneath.',
         );
         expect(find.byType(CoverFallbackArtwork), findsOneWidget);
+        scroll.jumpTo(0);
+        await tester.pumpAndSettle();
+        await expectMetadataBoundary(hasShadow: false);
         await tester.pumpWidget(const SizedBox.shrink());
       },
       variant: const TargetPlatformVariant({

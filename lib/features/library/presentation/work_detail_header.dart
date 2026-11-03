@@ -84,25 +84,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   Widget _buildRjBar(BuildContext context) => Container(
     key: const ValueKey('work_detail_metadata_bar'),
-    decoration: BoxDecoration(
-      color: surfaceColor,
-      boxShadow: [
-        BoxShadow(
-          color: Theme.of(context).colorScheme.shadow.withValues(
-            alpha: Theme.of(context).brightness == Brightness.dark
-                ? 0.36
-                : 0.16,
-          ),
-          blurRadius: 6,
-          offset: const Offset(0, 3),
-        ),
-      ],
-    ),
-    foregroundDecoration: BoxDecoration(
-      border: Border(
-        bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-      ),
-    ),
+    decoration: BoxDecoration(color: surfaceColor),
     padding: const EdgeInsets.symmetric(horizontal: 16),
     alignment: Alignment.centerLeft,
     child: Row(
@@ -213,6 +195,9 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
         coverMaxHeight -
         (shrinkOffset).clamp(0.0, coverMaxHeight - coverMinHeight);
 
+    // Following content passes beneath the header only after the cover collapses.
+    final contentUnderlaps = shrinkOffset > maxExtent - minExtent;
+
     return Material(
       color: surfaceColor,
       child: Stack(
@@ -223,7 +208,27 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
             right: 0,
             bottom: 0,
             height: rjBarHeight,
-            child: _rjBar,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                boxShadow: contentUnderlaps
+                    ? [
+                        BoxShadow(
+                          color: Theme.of(context).colorScheme.shadow
+                              .withValues(
+                                alpha:
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
+                                    ? 0.36
+                                    : 0.16,
+                              ),
+                          blurRadius: 6,
+                          offset: const Offset(0, 3),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: _rjBar,
+            ),
           ),
           // Cover Image area with Gradient and Title
           Positioned(

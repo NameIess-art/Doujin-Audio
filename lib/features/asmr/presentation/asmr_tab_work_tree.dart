@@ -139,7 +139,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.xs),
             child: SearchHighlightScope(
-              query: widget.searchQuery,
+              query: searchElementHighlight(widget.searchQuery),
               child: LibraryLikeMetadataWorkCardContent(
                 title: widget.work.title,
                 metadata: _workMetadata(widget.work),

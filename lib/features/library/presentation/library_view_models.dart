@@ -1,5 +1,4 @@
 import 'dart:collection';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -217,11 +216,11 @@ class LibrarySearchIndex {
       detailRevision: detailRevision,
     );
     if (cached != null) return cached;
-    final result = _buildFilteredTree(
-      tree,
-      normalizedSearchTerms(query),
-      categorySnapshot,
-    );
+    final elements = parseSearchElements(query) ?? emptySearchElements;
+    final result = _buildFilteredTree(tree, (
+      all: elements.all.map((term) => term.toLowerCase()).toList(),
+      any: elements.any.map((term) => term.toLowerCase()).toList(),
+    ), categorySnapshot);
     storeResult(
       query: query,
       structureRevision: structureRevision,
@@ -263,15 +262,15 @@ class LibrarySearchIndex {
       _cachedRevision = structureRevision;
       _cachedDetailRevision = detailRevision;
     }
-    return jsonEncode(normalizedSearchTerms(query));
+    return canonicalElementQuery(query).toLowerCase();
   }
 
   FilteredLibraryTreeResult _buildFilteredTree(
     List<LibraryNode> tree,
-    List<String> searchTerms,
+    SearchElements searchTerms,
     AudioLibraryCategorySnapshot? categorySnapshot,
   ) {
-    if (searchTerms.isEmpty) {
+    if (searchTerms.all.isEmpty && searchTerms.any.isEmpty) {
       return FilteredLibraryTreeResult(
         tree: tree,
         matchCount: libraryTreeTrackCount(tree),
@@ -312,7 +311,7 @@ class LibrarySearchIndex {
 
   _FilteredFolderNodeResult? _filterFolderNode(
     FolderNode folder,
-    List<String> searchTerms,
+    SearchElements searchTerms,
     AudioLibraryCategorySnapshot? categorySnapshot,
   ) {
     final folderTargets = <AudioDetailTarget>[
@@ -331,7 +330,8 @@ class LibrarySearchIndex {
         ...folderEntries.map((e) => e.searchableText),
       ],
       '',
-      normalizedTerms: searchTerms,
+      normalizedTerms: searchTerms.all,
+      normalizedAnyTerms: searchTerms.any,
     );
     if (matchesFolderName) {
       return _FilteredFolderNodeResult(
@@ -383,7 +383,7 @@ class LibrarySearchIndex {
 
   bool _trackMatchesQuery(
     TrackNode trackNode,
-    List<String> searchTerms,
+    SearchElements searchTerms,
     AudioLibraryCategorySnapshot? categorySnapshot,
   ) {
     final track = trackNode.track;
@@ -401,7 +401,8 @@ class LibrarySearchIndex {
         if (trackEntry != null) trackEntry.searchableText,
       ],
       '',
-      normalizedTerms: searchTerms,
+      normalizedTerms: searchTerms.all,
+      normalizedAnyTerms: searchTerms.any,
     );
   }
 }

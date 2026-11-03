@@ -7,6 +7,49 @@ void registerAsmrRemoteCatalogTests({
   late AsmrPreferencesStore preferences;
   setUp(() => preferences = preferencesStore());
 
+  test('OR branches retain separate page positions across a retry', () async {
+    final api = _ElementBranchApi();
+    final japanese = _ElementBranchJapaneseApi();
+    addTearDown(api.close);
+    addTearDown(japanese.close);
+    final service = AsmrRemoteCatalogService(
+      apiService: api,
+      japaneseApiService: japanese,
+      persistenceRepository: _FakeTestPersistenceRepository(const []),
+    );
+    final cursor = AsmrCatalogCursor();
+    Future<AsmrWorkPage> load(int page) => service.loadPage(
+      AsmrCategoryType.release,
+      searchQuery: 'Rain（Ocean）（Forest）',
+      page: page,
+      language: AsmrContentLanguage.zh,
+      token: null,
+      cursor: cursor,
+    );
+
+    final first = await load(1) as AsmrMergedWorkPage;
+    expect(first.works, hasLength(40));
+    expect(first.works.map((work) => work.workKey).toSet(), hasLength(40));
+    expect(first.partialError?.sources, [AsmrCatalogSource.asmrOne]);
+    expect(first.hasMore, isTrue);
+
+    final second = await load(2) as AsmrMergedWorkPage;
+    expect(second.works.map((work) => work.id), unorderedEquals([41, 42]));
+    expect(second.partialError, isNull);
+    expect(second.hasMore, isFalse);
+    expect(api.searchKeywords, [
+      'Rain Ocean:1',
+      'Rain Forest:1',
+      'Rain Ocean:2',
+      'Rain Forest:1',
+    ]);
+    expect(japanese.requests, [
+      'Rain Ocean:1',
+      'Rain Forest:1',
+      'Rain Ocean:2',
+    ]);
+  });
+
   test(
     'online recommendations recall all three interests and keep search constrained',
     () async {
@@ -914,6 +957,66 @@ void registerAsmrRemoteCatalogTests({
       expect(await workIds(AsmrCategoryType.history, ''), <int>[53, 54]);
     },
   );
+}
+
+class _ElementBranchApi extends _FakeAsmrApiService {
+  bool _failed = false;
+
+  @override
+  Future<AsmrWorkPage> searchWorks({
+    required String keyword,
+    required String order,
+    required String sort,
+    int page = 1,
+    int pageSize = 40,
+    String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    searchKeywords.add('$keyword:$page');
+    final ocean = keyword == 'Rain Ocean';
+    if (!ocean && !_failed) {
+      _failed = true;
+      throw AsmrApiException(
+        'Failed branch',
+        statusCode: 400,
+        uri: Uri.parse('https://example.test/api/search'),
+      );
+    }
+    final ids = ocean
+        ? (page == 1 ? List.generate(40, (i) => i + 1) : [41])
+        : [40, 42];
+    return AsmrWorkPage(
+      works: [for (final id in ids) _work(id: id, title: 'Work $id')],
+      currentPage: page,
+      pageSize: pageSize,
+      totalCount: ocean ? 41 : 2,
+    );
+  }
+}
+
+class _ElementBranchJapaneseApi extends JapaneseAsmrApiService {
+  final requests = <String>[];
+
+  @override
+  Future<AsmrWorkPage> searchWorks({
+    required String keyword,
+    int page = 1,
+    int pageSize = 40,
+    AsmrRequestCancellationToken? cancellationToken,
+  }) async {
+    requests.add('$keyword:$page');
+    final ocean = keyword == 'Rain Ocean';
+    final ids = ocean
+        ? (page == 1 ? List.generate(40, (i) => i + 1) : [41])
+        : <int>[];
+    return AsmrWorkPage(
+      works: [for (final id in ids) _work(id: id, title: 'Work $id')],
+      currentPage: page,
+      pageSize: pageSize,
+      totalCount: ocean ? 41 : 0,
+    );
+  }
 }
 
 class _InterestRecallApi extends _FakeAsmrApiService {

@@ -1,4 +1,7 @@
 const Map<String, String> appLanguageJa = {
+  'search_elements_all': 'すべて含む',
+  'search_elements_any': 'いずれかを含む',
+  'search_elements_invalid': '対応する括弧で語句を囲んでください。',
   'work_dlsite_show': 'DLsite の情報を表示',
   'work_dlsite_original': '元の情報を表示',
   'work_dlsite_loading': 'DLsite の情報を取得中',

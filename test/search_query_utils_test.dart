@@ -2,6 +2,41 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/search_query_utils.dart';
 
 void main() {
+  test(
+    'element search round-trips phrases, groups and literal punctuation',
+    () {
+      final query = parseSearchElements(
+        r'耳语、Soft Rain（海浪）(Forest) Work\(live\) A\/B',
+      );
+      expect(query?.all, ['耳语', 'Soft Rain', 'Work(live) A/B']);
+      expect(query?.any, ['海浪', 'Forest']);
+      expect(
+        formatSearchElements(query!),
+        r'耳语, Soft Rain, Work\(live\) A\/B （海浪）（Forest）',
+      );
+      expect(
+        searchElementBranches('Rain（Ocean）（Forest）').map(searchElementKeyword),
+        ['Rain Ocean', 'Rain Forest'],
+      );
+      expect(searchElementBranches('(Ocean)').map(searchElementKeyword), [
+        'Ocean',
+      ]);
+      expect(parseSearchElements(legacySearchElements('Work(live)'))?.all, [
+        'Work(live)',
+      ]);
+      for (final invalid in [
+        'Work(',
+        'Work（)',
+        '()',
+        '(  )',
+        '((Work))',
+        'Work)',
+      ]) {
+        expect(parseSearchElements(invalid), isNull);
+      }
+    },
+  );
+
   test('canonical queries retain AND boundaries and deduplicate phrases', () {
     expect(
       canonicalSearchQuery(' SOFT   Rain / 海浪，soft rain '),
@@ -14,21 +49,17 @@ void main() {
     expect(canonicalSearchQuery(' , /， '), isEmpty);
   });
 
-  test('suggestions toggle whole conditions including composite history', () {
-    expect(toggleSearchQueryTerms('soft rain', 'Ocean'), 'soft rain, Ocean');
-    expect(toggleSearchQueryTerms('soft rain, Ocean', 'SOFT RAIN'), 'Ocean');
+  test('toggling a suggestion moves it between groups or removes it', () {
+    final draft = parseSearchElements('Soft Rain（Ocean）')!;
     expect(
-      toggleSearchQueryTerms('rain, forest', 'Rain, ocean'),
-      'rain, forest, ocean',
+      toggleSearchElement(draft, 'Ocean', matchAll: true),
+      'Soft Rain, Ocean',
     );
     expect(
-      toggleSearchQueryTerms('rain, forest, ocean', 'Rain, ocean'),
-      'forest',
+      toggleSearchElement(draft, 'Soft Rain', matchAll: false),
+      '（Ocean）（Soft Rain）',
     );
-    expect(searchQueryContainsTerms('rain, forest', 'Rain'), isTrue);
-    expect(searchQueryContainsTerms('rain, forest', 'Rain, ocean'), isFalse);
-    expect(searchQueryContainsTerms('rain, forest', ''), isFalse);
-    expect(toggleSearchQueryTerms('rainbow, rain', 'rain'), 'rainbow');
+    expect(toggleSearchElement(draft, 'Ocean', matchAll: false), 'Soft Rain');
   });
 
   test('prepared search terms preserve phrase and whitespace semantics', () {

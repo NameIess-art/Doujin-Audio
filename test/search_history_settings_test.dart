@@ -40,6 +40,23 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  test('legacy literal parentheses and new groups survive restart', () async {
+    await AppPreferences.replaceSnapshot({
+      'playback_settings_v1': jsonEncode({
+        'librarySearchHistory': ['Track (Live)'],
+      }),
+    });
+    await settings.loadPersistedState(enforceCacheLimit: false);
+    expect(settings.slice.state.librarySearchHistory, [r'Track \(Live\)']);
+    await settings.recordSearchQuery('Track (Rain)(Ocean)', online: false);
+    expect(preferences.writes.last['searchHistoryFormat'], 2);
+    await settings.loadPersistedState(enforceCacheLimit: false);
+    expect(settings.slice.state.librarySearchHistory, [
+      'Track （Rain）（Ocean）',
+      r'Track \(Live\)',
+    ]);
+  });
+
   test(
     'normalizes confirmed queries and keeps library scopes separate',
     () async {

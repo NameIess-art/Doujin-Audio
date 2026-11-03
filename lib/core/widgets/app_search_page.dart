@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import '../ui/ui_interaction_coordinator.dart';
+import '../media/search_query_utils.dart';
 import 'app_edge_fade_mask.dart';
 import 'app_glass_surface.dart';
 import 'app_transitions.dart';
@@ -42,6 +43,9 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
     this.showConfirmButton = false,
     this.onConfirm,
     this.confirmLabel = 'Search',
+    this.committedElements,
+    this.onRemoveElement,
+    this.translate,
   });
 
   final TextEditingController controller;
@@ -61,6 +65,9 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
   final bool showConfirmButton;
   final VoidCallback? onConfirm;
   final String confirmLabel;
+  final SearchElements? committedElements;
+  final ValueChanged<String>? onRemoveElement;
+  final String Function(String)? translate;
 
   static double contentBottomInset(BuildContext context) =>
       MediaQuery.paddingOf(context).bottom;
@@ -84,6 +91,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   final _interaction = UiInteractionCoordinator.instance;
   FlutterView? _view;
+  bool _editingElements = false;
   double? _keyboardInset;
   bool _requestedInitialFocus = false;
   bool _focusScheduled = false;
@@ -142,6 +150,12 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
   @override
   void didUpdateWidget(covariant AppSearchPageScaffold<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.committedElements == null ||
+        widget.committedElements == null ||
+        formatSearchElements(oldWidget.committedElements!) !=
+            formatSearchElements(widget.committedElements!)) {
+      _editingElements = false;
+    }
     final hadResults = oldWidget.resultsBody != null;
     final hasResults = widget.resultsBody != null;
     if (hasResults) {
@@ -233,7 +247,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
     final accent = widget.accentColor ?? cs.primary;
-    final confirmEnabled = widget.onConfirm != null;
+    final confirmEnabled = widget.onConfirm != null || _editingElements;
     final confirmForeground = confirmEnabled
         ? cs.onPrimary
         : cs.onSurface.withValues(alpha: 0.38);
@@ -383,62 +397,87 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                   height: 38,
                                   child: _SearchFloatingCapsule(
                                     radius: 19,
-                                    child: TextSelectionTheme(
-                                      data: TextSelectionThemeData(
-                                        cursorColor: accent,
-                                        selectionColor: accent.withValues(
-                                          alpha: 0.24,
-                                        ),
-                                        selectionHandleColor: accent,
-                                      ),
-                                      child: TextField(
-                                        key: const ValueKey<String>(
-                                          'app_search_field',
-                                        ),
-                                        controller: widget.controller,
-                                        focusNode: widget.focusNode,
-                                        cursorColor: accent,
-                                        textInputAction: TextInputAction.search,
-                                        textAlignVertical:
-                                            TextAlignVertical.center,
-                                        onChanged: widget.onChanged,
-                                        onSubmitted: widget.onSubmitted,
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(fontSize: 14),
-                                        decoration: InputDecoration(
-                                          filled: false,
-                                          fillColor: Colors.transparent,
-                                          prefixIcon: Icon(
-                                            Icons.search_rounded,
-                                            color: cs.onSurfaceVariant,
-                                            size: 20,
-                                          ),
-                                          prefixIconConstraints:
-                                              const BoxConstraints.tightFor(
-                                                width: 38,
-                                                height: 38,
+                                    child:
+                                        widget.committedElements != null &&
+                                            !_editingElements
+                                        ? _buildElements(
+                                            context,
+                                            widget.committedElements!,
+                                          )
+                                        : TextSelectionTheme(
+                                            data: TextSelectionThemeData(
+                                              cursorColor: accent,
+                                              selectionColor: accent.withValues(
+                                                alpha: 0.24,
                                               ),
-                                          hintText: widget.hintText,
-                                          hintStyle: theme.textTheme.bodyMedium
-                                              ?.copyWith(
-                                                color: cs.onSurfaceVariant,
-                                                fontSize: 14,
+                                              selectionHandleColor: accent,
+                                            ),
+                                            child: TextField(
+                                              key: const ValueKey<String>(
+                                                'app_search_field',
                                               ),
-                                          border: InputBorder.none,
-                                          enabledBorder: InputBorder.none,
-                                          focusedBorder: InputBorder.none,
-                                          isDense: true,
-                                          contentPadding: const EdgeInsets.only(
-                                            right: 10,
+                                              controller: widget.controller,
+                                              focusNode: widget.focusNode,
+                                              cursorColor: accent,
+                                              textInputAction:
+                                                  TextInputAction.search,
+                                              textAlignVertical:
+                                                  TextAlignVertical.center,
+                                              onChanged: widget.onChanged,
+                                              onSubmitted: (value) {
+                                                widget.onSubmitted(value);
+                                                if (canonicalElementQuery(
+                                                      value,
+                                                    ).isNotEmpty &&
+                                                    _editingElements) {
+                                                  setState(
+                                                    () => _editingElements =
+                                                        false,
+                                                  );
+                                                }
+                                              },
+                                              style: theme.textTheme.bodyMedium
+                                                  ?.copyWith(fontSize: 14),
+                                              decoration: InputDecoration(
+                                                filled: false,
+                                                fillColor: Colors.transparent,
+                                                prefixIcon: Icon(
+                                                  Icons.search_rounded,
+                                                  color: cs.onSurfaceVariant,
+                                                  size: 20,
+                                                ),
+                                                prefixIconConstraints:
+                                                    const BoxConstraints.tightFor(
+                                                      width: 38,
+                                                      height: 38,
+                                                    ),
+                                                hintText: widget.hintText,
+                                                hintStyle: theme
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.copyWith(
+                                                      color:
+                                                          cs.onSurfaceVariant,
+                                                      fontSize: 14,
+                                                    ),
+                                                border: InputBorder.none,
+                                                enabledBorder: InputBorder.none,
+                                                focusedBorder: InputBorder.none,
+                                                isDense: true,
+                                                contentPadding:
+                                                    const EdgeInsets.only(
+                                                      right: 10,
+                                                    ),
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                      ),
-                                    ),
                                   ),
                                 ),
                               ),
                               AppDeferredFade(
-                                visible: widget.showConfirmButton,
+                                visible:
+                                    widget.showConfirmButton ||
+                                    _editingElements,
                                 child: Padding(
                                   padding: const EdgeInsets.only(left: 8),
                                   child: SizedBox.square(
@@ -454,7 +493,17 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                           'app_search_confirm',
                                         ),
                                         tooltip: widget.confirmLabel,
-                                        onPressed: widget.onConfirm,
+                                        onPressed: _editingElements
+                                            ? () {
+                                                widget.onSubmitted(
+                                                  widget.controller.text,
+                                                );
+                                                setState(
+                                                  () =>
+                                                      _editingElements = false,
+                                                );
+                                              }
+                                            : widget.onConfirm,
                                         icon: const Icon(Icons.search_rounded),
                                         color: confirmForeground,
                                         disabledColor: confirmForeground,
@@ -596,6 +645,76 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
       ),
     );
     return content;
+  }
+
+  Widget _buildElements(BuildContext context, SearchElements elements) {
+    void edit() {
+      setState(() => _editingElements = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _editingElements) widget.focusNode.requestFocus();
+      });
+    }
+
+    final tr = widget.translate!;
+    return InkWell(
+      key: const ValueKey('app_search_element_summary'),
+      onTap: edit,
+      borderRadius: BorderRadius.circular(19),
+      child: WindowsHorizontalWheelScroll(
+        builder: (controller) => ListView(
+          controller: controller,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          children: [
+            const Icon(Icons.search_rounded, size: 18),
+            for (final (key, terms, matchAll) in [
+              ('search_elements_all', elements.all, true),
+              ('search_elements_any', elements.any, false),
+            ])
+              if (terms.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Center(child: Text(tr(key))),
+                ),
+                for (final term in terms)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Center(
+                      child: InputChip(
+                        shape: const StadiumBorder(),
+                        label: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 200),
+                          child: Text(
+                            term,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        onPressed: edit,
+                        onDeleted: () => widget.onRemoveElement!(
+                          formatSearchElements((
+                            all: matchAll
+                                ? elements.all
+                                      .where((item) => item != term)
+                                      .toList()
+                                : elements.all,
+                            any: matchAll
+                                ? elements.any
+                                : elements.any
+                                      .where((item) => item != term)
+                                      .toList(),
+                          )),
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
+              ],
+          ],
+        ),
+      ),
+    );
   }
 }
 

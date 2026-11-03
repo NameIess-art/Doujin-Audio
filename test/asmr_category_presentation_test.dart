@@ -1026,6 +1026,11 @@ void main() {
           find.byKey(const ValueKey('asmr_search_suggestions')),
           findsNothing,
         );
+        await tester.tap(
+          find.byKey(const ValueKey('app_search_element_summary')),
+        );
+        await tester.pumpAndSettle();
+        expect(search().controller.text, 'Voice Actor');
         await tester.enterText(find.byType(TextField), 'Unconfirmed');
         await tester.pumpAndSettle();
         expect(
@@ -1066,6 +1071,31 @@ void main() {
         expect(search().controller.text, isEmpty);
         expect(search().onConfirm, isNull);
         expect(controller.suggestionLoads, 1);
+        await tester.enterText(find.byType(TextField), 'Voice Actor');
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('至少包含 0'));
+        await tester.pumpAndSettle();
+        tester
+            .widget<AppSearchSuggestionSection>(
+              find.byKey(const ValueKey('asmr_search_tags')),
+            )
+            .onToggle('Sleep');
+        await tester.pumpAndSettle();
+        expect(find.text('必须包含 1'), findsOneWidget);
+        expect(find.text('至少包含 1'), findsOneWidget);
+        search().onConfirm!();
+        await tester.pumpAndSettle();
+        expect(controller.lastSearchQuery, 'Voice Actor （Sleep）');
+        final summary = find.byKey(
+          const ValueKey('app_search_element_summary'),
+        );
+        final sleep = find.descendant(
+          of: summary,
+          matching: find.widgetWithText(InputChip, 'Sleep'),
+        );
+        tester.widget<InputChip>(sleep).onDeleted!();
+        await tester.pumpAndSettle();
+        expect(controller.lastSearchQuery, 'Voice Actor');
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       },
@@ -1381,6 +1411,10 @@ void main() {
           tester.getBottomLeft(placeholders.last).dy,
           greaterThanOrEqualTo(tester.getBottomLeft(results).dy),
         );
+        await tester.tap(
+          find.byKey(const ValueKey('app_search_element_summary')),
+        );
+        await tester.pump();
         await tester.enterText(find.byType(TextField), 'New draft');
         await tester.pumpAndSettle();
         expect(results, findsNothing);
@@ -1446,6 +1480,10 @@ void main() {
         search().onConfirm!();
         await tester.pumpAndSettle();
         expect(controller.lastSearchQuery, 'Sleep');
+        await tester.tap(
+          find.byKey(const ValueKey('app_search_element_summary')),
+        );
+        await tester.pumpAndSettle();
         await tester.enterText(find.byType(TextField), 'Disposed pending');
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(const Duration(milliseconds: 300));

@@ -14,6 +14,8 @@ import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_remote_catalog_service.dart';
+import 'package:doujin_audio/features/asmr/application/japanese_asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_account_sync_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_auth_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';

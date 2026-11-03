@@ -1,4 +1,8 @@
 const Map<String, String> appLanguageEn = {
+  'search_elements_all': 'Include all',
+  'search_elements_any': 'Include at least one',
+  'search_elements_invalid':
+      'Enter a term inside each matching pair of parentheses.',
   'work_dlsite_show': 'Show DLsite information',
   'work_dlsite_original': 'Show original information',
   'work_dlsite_loading': 'Loading DLsite information',

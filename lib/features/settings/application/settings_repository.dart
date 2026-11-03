@@ -222,8 +222,12 @@ class SettingsRepository {
       customEqPresets = _decodeEqPresets(playback['customEqPresets']);
       librarySearchHistory = _decodeSearchHistory(
         playback['librarySearchHistory'],
+        legacy: playback['searchHistoryFormat'] != 2,
       );
-      asmrSearchHistory = _decodeSearchHistory(playback['asmrSearchHistory']);
+      asmrSearchHistory = _decodeSearchHistory(
+        playback['asmrSearchHistory'],
+        legacy: playback['searchHistoryFormat'] != 2,
+      );
       maxCacheBytes =
           (playback['maxCacheBytes'] as num?)?.toInt() ??
           AppCacheService.defaultMaxCacheBytes;
@@ -276,6 +280,7 @@ class SettingsRepository {
         'librarySortAscending': librarySortAscending,
         'libraryGroupByLibrary': libraryGroupByLibrary,
         'pinnedLibraryPaths': pinnedLibraryPaths,
+        'searchHistoryFormat': 2,
         'librarySearchHistory': librarySearchHistory,
         'asmrSearchHistory': asmrSearchHistory,
         'playlistSortCriterion': playlistSortCriterion.name,
@@ -419,7 +424,7 @@ class SettingsRepository {
       toggleLibraryPathsPinned([path]);
 
   Future<void> recordSearchQuery(String query, {required bool online}) {
-    final normalized = canonicalSearchQuery(query);
+    final normalized = canonicalElementQuery(query);
     if (normalized.isEmpty) return Future<void>.value();
     return _change(() async {
       final history = online ? asmrSearchHistory : librarySearchHistory;
@@ -863,13 +868,13 @@ class SettingsRepository {
         .toList(growable: false);
   }
 
-  List<String> _decodeSearchHistory(Object? value) {
+  List<String> _decodeSearchHistory(Object? value, {bool legacy = false}) {
     if (value is! List) return const <String>[];
     final seen = <String>{};
     return List<String>.unmodifiable(
       value
           .whereType<String>()
-          .map(canonicalSearchQuery)
+          .map(legacy ? legacySearchElements : canonicalElementQuery)
           .where((query) {
             return query.isNotEmpty && seen.add(query.toLowerCase());
           })

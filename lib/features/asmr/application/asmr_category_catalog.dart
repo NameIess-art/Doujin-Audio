@@ -104,9 +104,9 @@ final class AsmrCategoryCatalog {
   ]) => (
     scope: (context ?? _currentContext()).scope,
     category: category,
-    query: canonicalSearchQuery(query),
+    query: canonicalElementQuery(query),
     // Empty category queries retain the root catalog identity.
-    searchEpoch: searchSession && canonicalSearchQuery(query).isNotEmpty
+    searchEpoch: searchSession && canonicalElementQuery(query).isNotEmpty
         ? _searchEpoch
         : 0,
   );
@@ -115,7 +115,7 @@ final class AsmrCategoryCatalog {
     String? query,
     bool searchSession = false,
   ]) {
-    final effectiveQuery = canonicalSearchQuery(
+    final effectiveQuery = canonicalElementQuery(
       query ?? _lastQueries[category] ?? '',
     );
     // Offstage providers can read the previous keyword during invalidation.
@@ -148,7 +148,7 @@ final class AsmrCategoryCatalog {
     final state = _state(category, searchQuery, searchSession);
     if (state.preferencesStale) return false;
     if (!isRemote(category) &&
-        canonicalSearchQuery(searchQuery).isNotEmpty &&
+        canonicalElementQuery(searchQuery).isNotEmpty &&
         !identical(state.localSource, _localWorks(category))) {
       return state.isLoading;
     }
@@ -199,7 +199,7 @@ final class AsmrCategoryCatalog {
           ? state.totalCount ?? works.length
           : works.length,
       hasCombinedTotalCount: state.hasCombinedTotalCount,
-      activeQuery: state.query ?? canonicalSearchQuery(searchQuery),
+      activeQuery: state.query ?? canonicalElementQuery(searchQuery),
       lastError: state.error,
       operationError: state.error,
       revision: state.revision,
@@ -229,7 +229,7 @@ final class AsmrCategoryCatalog {
       );
     }
     final works = _localWorks(category);
-    final query = canonicalSearchQuery(searchQuery);
+    final query = canonicalElementQuery(searchQuery);
     if (query.isEmpty) return _visible(works);
     final state = _state(category, query, searchSession);
     return _visible(
@@ -415,7 +415,7 @@ final class AsmrCategoryCatalog {
   }
 
   void setSearchQuery(String query, AsmrCategoryType category) {
-    final normalized = canonicalSearchQuery(query);
+    final normalized = canonicalElementQuery(query);
     final changed = normalized != _searchQuery || category != _searchCategory;
     if (!changed) return;
     var stateChanged = false;
@@ -442,7 +442,7 @@ final class AsmrCategoryCatalog {
   }
 
   bool isSearchRequestCurrent(String query, AsmrCategoryType category) =>
-      canonicalSearchQuery(query) == _searchQuery &&
+      canonicalElementQuery(query) == _searchQuery &&
       (_searchQuery.isEmpty || _searchCategory == category);
 
   bool _isCurrent(_CategoryKey key, _CategoryRequestKey request) =>
@@ -455,7 +455,7 @@ final class AsmrCategoryCatalog {
     required AsmrCategoryRequestContext context,
     bool searchSession = false,
   }) async {
-    final query = canonicalSearchQuery(searchQuery);
+    final query = canonicalElementQuery(searchQuery);
     if (searchSession && !isSearchRequestCurrent(query, category)) return;
     if (!searchSession) _lastQueries[category] = query;
     final cacheKey = _key(category, query, context, searchSession);
@@ -490,6 +490,7 @@ final class AsmrCategoryCatalog {
     int page,
     int serial,
     AsmrRequestCancellationToken cancellationToken,
+    AsmrCatalogCursor cursor,
   ) async {
     if (key.category == AsmrCategoryType.recommendation) {
       AsmrPartialCatalogException? partialError;
@@ -521,7 +522,7 @@ final class AsmrCategoryCatalog {
       language: context.language,
       token: context.token,
       cancellationToken: cancellationToken,
-      cursor: _categories[key]?.cursor,
+      cursor: cursor,
     );
   }
 
@@ -568,19 +569,21 @@ final class AsmrCategoryCatalog {
         state.revision++;
         return;
       }
-      state.cursor = AsmrCatalogCursor();
+      final cursor = AsmrCatalogCursor();
       final result = await _fetch(
         cacheKey,
         request.context,
         1,
         request.serial,
         cancellationToken,
+        cursor,
       );
       if (!_isCurrent(cacheKey, request)) return;
       final prepared = await _preparePage(state, result, cancellationToken);
       if (!_isCurrent(cacheKey, request)) return;
       state.works = prepared.additions;
       state.workIds = prepared.ids;
+      state.cursor = cursor;
       _applyPageResult(state, cacheKey.query, result);
       state.revision++;
       _onChanged();
@@ -633,7 +636,7 @@ final class AsmrCategoryCatalog {
     required AsmrCategoryRequestContext context,
     bool searchSession = false,
   }) async {
-    final query = canonicalSearchQuery(searchQuery);
+    final query = canonicalElementQuery(searchQuery);
     if (searchSession && !isSearchRequestCurrent(query, category)) return;
     final state = _state(category, query, searchSession);
     final refreshTask = state.refreshTask;
@@ -664,12 +667,14 @@ final class AsmrCategoryCatalog {
     state.error = null;
     _onChanged();
     try {
+      final cursor = state.cursor.copy();
       final result = await _fetch(
         key,
         context,
         state.page + 1,
         request.serial,
         cancellationToken,
+        cursor,
       );
       if (!_isCurrent(key, request)) return;
       final prepared = await _preparePage(
@@ -698,6 +703,7 @@ final class AsmrCategoryCatalog {
         ...prepared.additions,
       ]);
       state.workIds = prepared.ids;
+      state.cursor = cursor;
       state.revision++;
       _applyPageResult(state, query, result);
       state.needsLoadMoreRetry = prepared.additions.isEmpty && state.hasMore;
@@ -783,11 +789,15 @@ final class AsmrCategoryCatalog {
               )
               .join('\n'),
       ];
-  final terms = normalizedSearchTerms(request.query);
+  final elements = parseSearchElements(request.query) ?? emptySearchElements;
+  final all = elements.all.map((term) => term.toLowerCase()).toList();
+  final any = elements.any.map((term) => term.toLowerCase()).toList();
   return (
     works: immutableList([
       for (var i = 0; i < request.works.length; i++)
-        if (terms.every(text[i].contains)) request.works[i],
+        if (all.every(text[i].contains) &&
+            (any.isEmpty || any.any(text[i].contains)))
+          request.works[i],
     ]),
     text: text,
   );

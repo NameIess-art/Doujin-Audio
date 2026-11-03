@@ -85,13 +85,11 @@ class AsmrRemoteCatalogService {
     AsmrRequestCancellationToken? cancellationToken,
     AsmrCatalogCursor? cursor,
   }) {
-    if (_japaneseApiService != null &&
-        (category == AsmrCategoryType.collected ||
-            category == AsmrCategoryType.release ||
-            category == AsmrCategoryType.recommendation)) {
+    final branches = searchElementBranches(searchQuery);
+    if (branches.length > 1 || _usesJapaneseCatalog(category)) {
       return _loadMergedPage(
         category,
-        searchQuery: searchQuery,
+        queries: branches,
         page: page,
         language: language,
         token: token,
@@ -101,13 +99,19 @@ class AsmrRemoteCatalogService {
     }
     return _loadOnePage(
       category,
-      searchQuery: searchQuery,
+      searchQuery: branches.single,
       page: page,
       language: language,
       token: token,
       cancellationToken: cancellationToken,
     );
   }
+
+  bool _usesJapaneseCatalog(AsmrCategoryType category) =>
+      _japaneseApiService != null &&
+      (category == AsmrCategoryType.collected ||
+          category == AsmrCategoryType.release ||
+          category == AsmrCategoryType.recommendation);
 
   Future<AsmrWorkPage> _loadOnePage(
     AsmrCategoryType category, {
@@ -126,7 +130,7 @@ class AsmrRemoteCatalogService {
       cancellationToken: cancellationToken,
       load: () => searchQuery.isNotEmpty
           ? _apiService.searchWorks(
-              keyword: normalizeSearchQuery(searchQuery),
+              keyword: searchElementKeyword(searchQuery),
               order: spec.order,
               sort: spec.sort,
               page: page,
@@ -177,7 +181,8 @@ class AsmrRemoteCatalogService {
       _loadRecommendationRequests(
         [
           for (final category in _recommendationSources)
-            (category, searchQuery),
+            for (final branch in searchElementBranches(searchQuery))
+              (category, branch),
         ],
         language: language,
         token: token,
@@ -218,7 +223,10 @@ class AsmrRemoteCatalogService {
           }
         }
         return _loadRecommendationRequests(
-          [for (final query in queries) (AsmrCategoryType.release, query)],
+          [
+            for (final query in queries)
+              (AsmrCategoryType.release, legacySearchElements(query)),
+          ],
           language: language,
           token: token,
           refreshSeed: refreshSeed,
@@ -256,7 +264,9 @@ class AsmrRemoteCatalogService {
       }
     }
     if (candidates.isEmpty && firstError != null) throw firstError;
-    onSourceTotalCount?.call(sourceTotalCount);
+    onSourceTotalCount?.call(
+      searchElementBranches(searchQuery).length == 1 ? sourceTotalCount : null,
+    );
     final failedSources = <AsmrCatalogSource>{
       for (final result in results)
         for (final page in result.pages.whereType<AsmrMergedWorkPage>())

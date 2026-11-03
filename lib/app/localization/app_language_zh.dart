@@ -1,4 +1,7 @@
 const Map<String, String> appLanguageZh = {
+  'search_elements_all': '必须包含',
+  'search_elements_any': '至少包含',
+  'search_elements_invalid': '请检查括号是否成对，且括号内有内容',
   'work_dlsite_show': '显示 DL 中信息',
   'work_dlsite_original': '显示原信息',
   'work_dlsite_loading': '正在获取 DLsite 信息',

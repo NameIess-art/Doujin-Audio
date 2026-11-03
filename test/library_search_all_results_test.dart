@@ -607,6 +607,8 @@ void main() {
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump();
     expect(find.byType(LibrarySearchAllResults), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('app_search_element_summary')));
+    await tester.pump();
     await tester.enterText(field, 'Other');
     await tester.pumpAndSettle();
     final node = _ReadCountingTrackNode(track);

@@ -39,6 +39,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     keepScrollOffset: false,
   );
   String? _submittedQuery;
+  bool _matchAll = true;
   int _queryRevision = 0;
   bool _isSelectionMode = false;
   Set<String> _selectedLibraryPaths = const {};
@@ -52,13 +53,13 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     super.initState();
     if (widget.initialQuery.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _onSubmitted(widget.initialQuery);
+      if (mounted) _onSubmitted(legacySearchElements(widget.initialQuery));
     });
   }
 
   void _onChanged(String value) {
-    final enabled = extractSearchTerms(value).isNotEmpty;
-    final wasEnabled = extractSearchTerms(_draftQuery.value).isNotEmpty;
+    final enabled = canonicalElementQuery(value).isNotEmpty;
+    final wasEnabled = canonicalElementQuery(_draftQuery.value).isNotEmpty;
     _draftQuery.value = value;
     if (_submittedQuery == null && !_isSelectionMode && enabled == wasEnabled) {
       return;
@@ -71,8 +72,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     });
   }
 
-  void _toggleTerm(String element) {
-    final text = toggleSearchQueryTerms(_controller.text, element);
+  void _setDraft(String text) {
     _controller.value = TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
@@ -80,8 +80,22 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     _onChanged(text);
   }
 
-  void _onSubmitted(String value) {
-    final query = canonicalSearchQuery(value);
+  void _toggleTerm(String element) {
+    final elements = parseSearchElements(_controller.text);
+    if (elements == null) return;
+    _setDraft(toggleSearchElement(elements, element, matchAll: _matchAll));
+  }
+
+  void _removeElement(String query) {
+    if (query.isEmpty) {
+      _setDraft('');
+    } else {
+      _onSubmitted(query, recordHistory: false);
+    }
+  }
+
+  void _onSubmitted(String value, {bool recordHistory = true}) {
+    final query = canonicalElementQuery(value);
     if (query.isEmpty) return;
     _draftQuery.value = query;
     _controller.value = TextEditingValue(
@@ -98,6 +112,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       _resultsScrollController.jumpTo(0);
     }
     FocusManager.instance.primaryFocus?.unfocus();
+    if (!recordHistory) return;
     unawaited(
       saveSettingsWithFeedback(
         context,
@@ -237,9 +252,12 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       hintText: i18n.tr('search_audio_placeholder'),
       onChanged: _onChanged,
       onSubmitted: _onSubmitted,
+      committedElements: query == null ? null : parseSearchElements(query),
+      onRemoveElement: _removeElement,
+      translate: i18n.tr,
       onCloseOrClear: _closeOrClear,
       showConfirmButton: query == null,
-      onConfirm: canonicalSearchQuery(_controller.text).isEmpty
+      onConfirm: canonicalElementQuery(_controller.text).isEmpty
           ? null
           : () => _onSubmitted(_controller.text),
       confirmLabel: i18n.tr('confirm'),
@@ -313,11 +331,13 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           return ValueListenableBuilder<String>(
             valueListenable: _draftQuery,
             builder: (context, draft, _) {
-              final selected = normalizedSearchTerms(draft).toSet();
-              bool isSelected(String element) {
-                final terms = normalizedSearchTerms(element);
-                return terms.isNotEmpty && terms.every(selected.contains);
-              }
+              final elements = parseSearchElements(draft);
+              final selected = _matchAll ? elements?.all : elements?.any;
+              bool isSelected(String element) =>
+                  selected?.any(
+                    (term) => term.toLowerCase() == element.toLowerCase(),
+                  ) ??
+                  false;
 
               AppSearchSuggestionSection section(
                 String key,
@@ -325,13 +345,16 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                 List<String> items,
                 String emptyText, {
                 bool metadata = false,
+                bool isHistory = false,
                 VoidCallback? onClear,
               }) => AppSearchSuggestionSection(
                 key: ValueKey(key),
                 title: title,
                 items: items,
-                isSelected: isSelected,
-                onToggle: _toggleTerm,
+                isSelected: isHistory
+                    ? (item) => item == canonicalElementQuery(draft)
+                    : isSelected,
+                onToggle: isHistory ? _setDraft : _toggleTerm,
                 emptyText: emptyText,
                 expandLabel: i18n.tr('expand'),
                 collapseLabel: i18n.tr('collapse'),
@@ -363,15 +386,27 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                     SliverPadding(
                       padding: EdgeInsets.only(
                         top: topInset,
-                        bottom: AppSearchPageScaffold.contentBottomInset(context),
+                        bottom: AppSearchPageScaffold.contentBottomInset(
+                          context,
+                        ),
                       ),
                       sliver: SliverMainAxisGroup(
                         slivers: [
+                          SliverToBoxAdapter(
+                            child: AppSearchElementTabs(
+                              draft: draft,
+                              matchAll: _matchAll,
+                              onSelected: (value) =>
+                                  setState(() => _matchAll = value),
+                              translate: i18n.tr,
+                            ),
+                          ),
                           section(
                             'library_search_history',
                             i18n.tr('search_history'),
                             history,
                             i18n.tr('search_history_empty'),
+                            isHistory: true,
                             onClear: () => unawaited(
                               clearSearchHistoryWithFeedback(
                                 context,

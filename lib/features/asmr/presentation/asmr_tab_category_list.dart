@@ -219,8 +219,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.category != widget.category ||
         oldWidget.searchSession != widget.searchSession ||
-        canonicalSearchQuery(oldWidget.searchQuery) !=
-            canonicalSearchQuery(widget.searchQuery)) {
+        canonicalElementQuery(oldWidget.searchQuery) !=
+            canonicalElementQuery(widget.searchQuery)) {
       for (final entry in _collapsingWorks.values) {
         entry.dispose();
       }
@@ -312,7 +312,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   Widget build(BuildContext context) {
     _coverUi = ref.read(libraryCoverUiControllerProvider);
     final coverResolution = ref.watch(coverImageResolutionProvider);
-    final normalizedSearchQuery = canonicalSearchQuery(widget.searchQuery);
+    final normalizedSearchQuery = canonicalElementQuery(widget.searchQuery);
     final request = (
       category: widget.category,
       searchQuery: normalizedSearchQuery,
@@ -359,7 +359,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final queryMismatch =
         widget.category != AsmrCategoryType.favorites &&
         widget.category != AsmrCategoryType.history &&
-        canonicalSearchQuery(state.activeQuery) != normalizedSearchQuery;
+        canonicalElementQuery(state.activeQuery) != normalizedSearchQuery;
     final works = queryMismatch ? const <AsmrWork>[] : state.works;
     final isFavorites = widget.category == AsmrCategoryType.favorites;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
@@ -556,7 +556,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               placeholder: LibrarySkeletonListView(
                 key: const ValueKey('loading'),
                 topInset: widget.topInset,
-                bottomInset: widget.bottomInset + (widget.searchSession ? 0 : 24),
+                bottomInset:
+                    widget.bottomInset + (widget.searchSession ? 0 : 24),
               ),
               content: LayoutBuilder(
                 builder: (context, constraints) {
@@ -636,7 +637,15 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                           icon: Icons.cloud_off_rounded,
                           tone: OperationStatusTone.warning,
                           retryTooltip: i18n.tr('retry'),
-                          onRetry: () => unawaited(widget.onRefresh()),
+                          onRetry:
+                              (parseSearchElements(
+                                            widget.searchQuery,
+                                          )?.any.length ??
+                                          0) >
+                                      1 &&
+                                  state.hasMore
+                              ? _loadMore
+                              : () => unawaited(widget.onRefresh()),
                         ),
                       );
                     }
@@ -908,7 +917,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
             .read(asmrLibraryControllerProvider)
             ?.categoryViewState(
               widget.category,
-              searchQuery: canonicalSearchQuery(widget.searchQuery),
+              searchQuery: canonicalElementQuery(widget.searchQuery),
               searchSession: widget.searchSession,
             );
         if (currentState == null ||

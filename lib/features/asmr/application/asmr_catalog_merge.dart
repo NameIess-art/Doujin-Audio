@@ -1,24 +1,21 @@
 part of 'asmr_remote_catalog_service.dart';
 
+typedef _CatalogStream = (AsmrCatalogSource, String);
+
 /// One cursor per category/query snapshot. Failed or cancelled requests never
 /// advance another source's offset or discard its unconsumed results.
 class AsmrCatalogCursor {
   // Recommendation categories keep separate offsets, but share identical source
   // requests only within their refresh; cancellation cannot affect later loads.
   Map<(String, int, int), Future<AsmrWorkPage>>? _japanesePages;
-  Map<AsmrCatalogSource, int> _pages = {
-    for (final source in AsmrCatalogSource.values) source: 1,
-  };
-  Map<AsmrCatalogSource, bool> _more = {
-    for (final source in AsmrCatalogSource.values) source: true,
-  };
-  Map<AsmrCatalogSource, List<AsmrWork>> _pending = {
-    for (final source in AsmrCatalogSource.values) source: [],
-  };
+  Map<_CatalogStream, int> _pages = {};
+  Map<_CatalogStream, bool> _more = {};
+  Map<_CatalogStream, List<AsmrWork>> _pending = {};
   Map<String, AsmrWork> _emitted = {};
-  Map<AsmrCatalogSource, int> _totals = {};
+  Map<_CatalogStream, int> _totals = {};
 
-  AsmrCatalogCursor _copy() => AsmrCatalogCursor()
+  // The category publishes this snapshot together with the prepared rows.
+  AsmrCatalogCursor copy() => AsmrCatalogCursor()
     .._japanesePages = _japanesePages
     .._pages = Map.of(_pages)
     .._more = Map.of(_more)
@@ -68,100 +65,109 @@ class AsmrMergedWorkPage extends AsmrWorkPage {
 extension on AsmrRemoteCatalogService {
   Future<AsmrWorkPage> _loadMergedPage(
     AsmrCategoryType category, {
-    required String searchQuery,
+    required List<String> queries,
     required int page,
     required AsmrContentLanguage language,
     required String? token,
     AsmrRequestCancellationToken? cancellationToken,
     AsmrCatalogCursor? cursor,
   }) async {
-    final next = (cursor ?? AsmrCatalogCursor())._copy();
-    // Recommendation exploration can request an arbitrary remote page; visible
-    // lists always retain their independent source cursors between requests.
-    if (cursor == null && page > 1) {
-      for (final source in AsmrCatalogSource.values) {
-        next._pages[source] = page;
-      }
+    final next = (cursor ?? AsmrCatalogCursor()).copy();
+    final streams = [
+      for (final query in queries) ...[
+        (AsmrCatalogSource.asmrOne, query),
+        if (_usesJapaneseCatalog(category))
+          (AsmrCatalogSource.japaneseAsmr, query),
+      ],
+    ];
+    for (final stream in streams) {
+      next._pages.putIfAbsent(stream, () => cursor == null ? page : 1);
+      next._more.putIfAbsent(stream, () => true);
+      next._pending.putIfAbsent(stream, () => []);
     }
     final pageSize = AsmrRemoteCatalogService._pageSizes[category] ?? 40;
     final failures = <AsmrCatalogSource, Object>{};
     final updates = <String, AsmrWork>{};
     var successfulSources = 0;
-    await Future.wait(
-      AsmrCatalogSource.values.map((source) async {
-        if (next._pending[source]!.length >= pageSize || !next._more[source]!) {
-          successfulSources++;
-          return;
-        }
-        try {
-          // A page can contain only works already emitted by the other source.
-          // Continue its cursor here so deduplication does not become a manual
-          // retry action at every overlapping page.
-          var duplicatePages = 0;
-          do {
-            final sourcePage = next._pages[source]!;
-            final query = normalizeSearchQuery(searchQuery);
-            Future<AsmrWorkPage> loadJapanese() => _retryTransientLoad(
-              category: category,
+    Future<void> loadStream(_CatalogStream stream) async {
+      final (source, searchQuery) = stream;
+      if (next._pending[stream]!.length >= pageSize || !next._more[stream]!) {
+        successfulSources++;
+        return;
+      }
+      try {
+        // A page can contain only works already emitted by the other source.
+        // Continue its cursor here so deduplication does not become a manual
+        // retry action at every overlapping page.
+        var duplicatePages = 0;
+        do {
+          final sourcePage = next._pages[stream]!;
+          final query = searchElementKeyword(searchQuery);
+          Future<AsmrWorkPage> loadJapanese() => _retryTransientLoad(
+            category: category,
+            page: sourcePage,
+            cancellationToken: cancellationToken,
+            load: () => _japaneseApiService!.searchWorks(
+              keyword: query,
               page: sourcePage,
+              pageSize: pageSize,
               cancellationToken: cancellationToken,
-              load: () => _japaneseApiService!.searchWorks(
-                keyword: query,
-                page: sourcePage,
-                pageSize: pageSize,
-                cancellationToken: cancellationToken,
-              ),
-            );
-            final loaded = source == AsmrCatalogSource.asmrOne
-                ? await _loadOnePage(
-                    category,
-                    searchQuery: searchQuery,
-                    page: sourcePage,
-                    language: language,
-                    token: token,
-                    cancellationToken: cancellationToken,
-                  )
-                : await (next._japanesePages?.putIfAbsent((
-                        query,
-                        sourcePage,
-                        pageSize,
-                      ), loadJapanese) ??
-                      loadJapanese());
-            cancellationToken?.throwIfCancelled();
-            successfulSources++;
-            next._pages[source] = sourcePage + 1;
-            next._more[source] = loaded.hasMore;
-            next._totals[source] = loaded.totalCount;
-            for (final work in loaded.works) {
-              final previous = next._emitted[work.workKey];
-              if (previous != null) {
-                final merged = previous.mergedWith(work);
-                next._emitted[work.workKey] = merged;
-                updates[work.workKey] = merged;
-              } else {
-                next._pending[source]!.add(work);
-              }
-            }
-            duplicatePages++;
-          } while (next._pending[source]!
-                      .map((work) => work.workKey)
-                      .toSet()
-                      .length <
-                  pageSize &&
-              next._more[source]! &&
-              duplicatePages < 4);
-        } on AsmrRequestCancelled {
-          rethrow;
-        } catch (error, stack) {
-          failures[source] = error;
-          AppLogService.warning(
-            'online_catalog_source_failed source=${source.name}',
-            error: error,
-            stackTrace: stack,
+            ),
           );
-        }
-      }),
-    );
+          final loaded = source == AsmrCatalogSource.asmrOne
+              ? await _loadOnePage(
+                  category,
+                  searchQuery: searchQuery,
+                  page: sourcePage,
+                  language: language,
+                  token: token,
+                  cancellationToken: cancellationToken,
+                )
+              : await (next._japanesePages?.putIfAbsent((
+                      query,
+                      sourcePage,
+                      pageSize,
+                    ), loadJapanese) ??
+                    loadJapanese());
+          cancellationToken?.throwIfCancelled();
+          successfulSources++;
+          next._pages[stream] = sourcePage + 1;
+          next._more[stream] = loaded.hasMore;
+          next._totals[stream] = loaded.totalCount;
+          for (final work in loaded.works) {
+            final previous = next._emitted[work.workKey];
+            if (previous != null) {
+              final merged = previous.mergedWith(work);
+              next._emitted[work.workKey] = merged;
+              updates[work.workKey] = merged;
+            } else {
+              next._pending[stream]!.add(work);
+            }
+          }
+          duplicatePages++;
+        } while (next._pending[stream]!
+                    .map((work) => work.workKey)
+                    .toSet()
+                    .length <
+                pageSize &&
+            next._more[stream]! &&
+            duplicatePages < 4);
+      } on AsmrRequestCancelled {
+        rethrow;
+      } catch (error, stack) {
+        failures[source] = error;
+        AppLogService.warning(
+          'online_catalog_source_failed source=${source.name}',
+          error: error,
+          stackTrace: stack,
+        );
+      }
+    }
+
+    for (var start = 0; start < streams.length; start += 4) {
+      cancellationToken?.throwIfCancelled();
+      await Future.wait(streams.skip(start).take(4).map(loadStream));
+    }
     cancellationToken?.throwIfCancelled();
     if (successfulSources == 0) throw failures.values.first;
     final available = <String, AsmrWork>{};
@@ -176,6 +182,17 @@ extension on AsmrRemoteCatalogService {
     }
     final sorted = available.values.toList()
       ..sort((a, b) {
+        final numericOrder = switch (category) {
+          AsmrCategoryType.sales => b.dlCount.compareTo(a.dlCount),
+          AsmrCategoryType.rating => b.rating.compareTo(a.rating),
+          AsmrCategoryType.reviews => b.reviewCount.compareTo(a.reviewCount),
+          _ => null,
+        };
+        if (numericOrder != null) {
+          return numericOrder != 0
+              ? numericOrder
+              : a.workKey.compareTo(b.workKey);
+        }
         final aDate = category == AsmrCategoryType.collected
             ? a.createDate
             : a.releaseDate;
@@ -204,7 +221,8 @@ extension on AsmrRemoteCatalogService {
       currentPage: page,
       pageSize: pageSize,
       hasMore: hasMore,
-      sourceTotalCount: next._totals.length == AsmrCatalogSource.values.length
+      sourceTotalCount:
+          queries.length == 1 && next._totals.length == streams.length
           ? next._totals.values.fold<int>(0, (sum, count) => sum + count)
           : null,
       resourceUpdates: updates.values.toList(growable: false),

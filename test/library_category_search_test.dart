@@ -109,7 +109,7 @@ void main() {
                 _createEntry(
                   title: title,
                   path: '/$title.mp3',
-                  tags: ['ASMR'],
+                  tags: ['ASMR', if (title == 'Alpha') 'Sleep'],
                   voiceActors: ['Voice'],
                   circleName: 'Circle',
                 ),
@@ -249,6 +249,11 @@ void main() {
                 as LibraryBatchSelectionHeader)
             .onExit();
         await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('app_search_element_summary')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('search_/Alpha.mp3')), findsOneWidget);
         await tester.enterText(field, 'Beta');
         await tester.pumpAndSettle();
         expect(find.byType(LibraryTreeItem), findsNothing);
@@ -262,13 +267,8 @@ void main() {
         );
         await tester.tap(historyItem);
         await tester.pumpAndSettle();
-        expect(
-          tester.widget<TextField>(field).controller!.text,
-          'Beta, Alpha, ASMR',
-        );
-        await tester.tap(historyItem);
-        await tester.pumpAndSettle();
-        expect(tester.widget<TextField>(field).controller!.text, 'Beta');
+        expect(tester.widget<TextField>(field).controller!.text, 'Alpha, ASMR');
+        await tester.enterText(field, 'Beta');
         await tester.showKeyboard(field);
         await tester.testTextInput.receiveAction(TextInputAction.search);
         await tester.pumpAndSettle();
@@ -306,6 +306,57 @@ void main() {
         );
         expect(tester.widget<TextField>(field).controller!.text, 'Keep draft');
         expect(tester.takeException(), isNull);
+        await tester.enterText(field, 'ASMR');
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('至少包含 0'));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const ValueKey('library_search_tags')),
+            matching: find.text('ASMR'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('必须包含 0'), findsOneWidget);
+        expect(find.text('至少包含 1'), findsOneWidget);
+        expect(
+          tester
+              .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '至少包含 1'))
+              .showCheckmark,
+          isFalse,
+        );
+        await tester.enterText(field, 'ASMR（Sleep）(Ocean)');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('search_/Alpha.mp3')), findsOneWidget);
+        expect(find.byKey(const ValueKey('search_/Beta.mp3')), findsNothing);
+        final summary = find.byKey(
+          const ValueKey('app_search_element_summary'),
+        );
+        final sleep = find.descendant(
+          of: summary,
+          matching: find.widgetWithText(InputChip, 'Sleep'),
+        );
+        tester.widget<InputChip>(sleep).onDeleted!();
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('search_/Alpha.mp3')), findsNothing);
+        final ocean = find.descendant(
+          of: summary,
+          matching: find.widgetWithText(InputChip, 'Ocean'),
+        );
+        tester.widget<InputChip>(ocean).onDeleted!();
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('search_/Beta.mp3')), findsOneWidget);
+        final asmr = find.descendant(
+          of: summary,
+          matching: find.widgetWithText(InputChip, 'ASMR'),
+        );
+        tester.widget<InputChip>(asmr).onDeleted!();
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('library_search_suggestions')),
+          findsOneWidget,
+        );
         await tester.pumpWidget(const SizedBox.shrink());
         debugDefaultTargetPlatformOverride = null;
       },

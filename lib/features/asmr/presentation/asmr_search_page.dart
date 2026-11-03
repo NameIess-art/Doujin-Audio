@@ -25,7 +25,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   late final ValueNotifier<int> _activeCategoryIndex;
   String _query = '';
   final ValueNotifier<String> _inputQuery = ValueNotifier('');
-  Set<String> _selectedQueryTerms = const {};
+  bool _matchAll = true;
   late final ValueNotifier<(AsmrSearchSuggestions?, Object?)> _suggestions;
   late final Listenable _suggestionChanges;
   bool _showSearchPlaceholder = false;
@@ -66,7 +66,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
       if (!mounted) return;
       unawaited(_searchController?.ensureSearchSuggestions());
       if (widget.initialQuery.isNotEmpty) {
-        unawaited(_onSubmitted(widget.initialQuery));
+        unawaited(_onSubmitted(legacySearchElements(widget.initialQuery)));
       }
     });
   }
@@ -85,8 +85,10 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   }
 
   bool _isSuggestionSelected(String value) {
-    final terms = normalizedSearchTerms(value);
-    return terms.isNotEmpty && terms.every(_selectedQueryTerms.contains);
+    final elements = parseSearchElements(_inputQuery.value);
+    final selected = _matchAll ? elements?.all : elements?.any;
+    return selected?.any((item) => item.toLowerCase() == value.toLowerCase()) ??
+        false;
   }
 
   void _resetScroll() {
@@ -95,9 +97,10 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   }
 
   void _onChanged(String value) {
-    final input = canonicalSearchQuery(value);
+    final input = canonicalElementQuery(value);
     final needsPageBuild =
-        _query.isNotEmpty || _inputQuery.value.isEmpty != input.isEmpty;
+        _query.isNotEmpty ||
+        canonicalElementQuery(_inputQuery.value).isEmpty != input.isEmpty;
     UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
     _refreshPending = false;
     if (_query.isNotEmpty) {
@@ -105,8 +108,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
       _resetScroll();
     }
     void updateDraft() {
-      _selectedQueryTerms = normalizedSearchTerms(input).toSet();
-      _inputQuery.value = input;
+      _inputQuery.value = value;
       _query = '';
       _requestSerial++;
       _showSearchPlaceholder = false;
@@ -120,8 +122,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     }
   }
 
-  void _toggleSuggestion(String value) {
-    final query = toggleSearchQueryTerms(_controller.text, value);
+  void _setDraft(String query) {
     _controller.value = TextEditingValue(
       text: query,
       selection: TextSelection.collapsed(offset: query.length),
@@ -129,8 +130,22 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     _onChanged(query);
   }
 
-  Future<void> _onSubmitted(String value) async {
-    final query = canonicalSearchQuery(value);
+  void _toggleSuggestion(String value) {
+    final elements = parseSearchElements(_controller.text);
+    if (elements == null) return;
+    _setDraft(toggleSearchElement(elements, value, matchAll: _matchAll));
+  }
+
+  void _removeElement(String query) {
+    if (query.isEmpty) {
+      _setDraft('');
+    } else {
+      unawaited(_onSubmitted(query, recordHistory: false));
+    }
+  }
+
+  Future<void> _onSubmitted(String value, {bool recordHistory = true}) async {
+    final query = canonicalElementQuery(value);
     if (query.isEmpty) return;
     final current = _searchController?.categoryViewState(
       _category,
@@ -147,7 +162,6 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
       text: query,
       selection: TextSelection.collapsed(offset: query.length),
     );
-    _selectedQueryTerms = normalizedSearchTerms(query).toSet();
     _inputQuery.value = query;
     _searchController?.setSearchQuery(query, _category);
     _resetScroll();
@@ -157,6 +171,7 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     });
     FocusManager.instance.primaryFocus?.unfocus();
     _scheduleRefresh(showSearchPlaceholder: true);
+    if (!recordHistory) return;
     try {
       await ref
           .read(settingsRepositoryProvider)
@@ -408,6 +423,15 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                     controller: _suggestionsScrollController,
                     slivers: [
                       SliverToBoxAdapter(child: SizedBox(height: topInset)),
+                      SliverToBoxAdapter(
+                        child: AppSearchElementTabs(
+                          draft: _inputQuery.value,
+                          matchAll: _matchAll,
+                          onSelected: (value) =>
+                              setState(() => _matchAll = value),
+                          translate: i18n.tr,
+                        ),
+                      ),
                       AppSearchSuggestionSection(
                         key: const ValueKey('asmr_search_history'),
                         title: i18n.tr('search_history'),
@@ -416,8 +440,9 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
                           clearSearchHistoryWithFeedback(context, online: true),
                         ),
                         clearLabel: i18n.tr('clear'),
-                        isSelected: _isSuggestionSelected,
-                        onToggle: _toggleSuggestion,
+                        isSelected: (item) =>
+                            item == canonicalElementQuery(_inputQuery.value),
+                        onToggle: _setDraft,
                         emptyText: i18n.tr('search_history_empty'),
                         expandLabel: i18n.tr('expand'),
                         collapseLabel: i18n.tr('collapse'),
@@ -565,10 +590,15 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
           onChanged: _onChanged,
           onSubmitted: (value) => unawaited(_onSubmitted(value)),
           onCloseOrClear: _closeOrClear,
+          committedElements: _query.isEmpty
+              ? null
+              : parseSearchElements(_query),
+          onRemoveElement: _removeElement,
+          translate: i18n.tr,
           accentColor: accent,
           showConfirmButton: _query.isEmpty,
           confirmLabel: i18n.tr('confirm'),
-          onConfirm: _inputQuery.value.isEmpty
+          onConfirm: canonicalElementQuery(_inputQuery.value).isEmpty
               ? null
               : () => unawaited(_onSubmitted(_controller.text)),
           controlsOverlay: _isSelectionMode

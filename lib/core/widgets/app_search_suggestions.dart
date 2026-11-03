@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../media/search_query_utils.dart';
+
 /// A sliver section that folds by rendered rows, independently of item count.
 class AppSearchSuggestionSection extends StatefulWidget {
   const AppSearchSuggestionSection({
@@ -330,6 +332,54 @@ class _AppSearchSuggestionSectionState
         labelStyle: selected ? TextStyle(color: accent) : null,
         label: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
         onPressed: () => widget.onToggle(text),
+      ),
+    );
+  }
+}
+
+class AppSearchElementTabs extends StatelessWidget {
+  const AppSearchElementTabs({
+    super.key,
+    required this.draft,
+    required this.matchAll,
+    required this.onSelected,
+    required this.translate,
+  });
+
+  final String draft;
+  final bool matchAll;
+  final ValueChanged<bool> onSelected;
+  final String Function(String) translate;
+
+  @override
+  Widget build(BuildContext context) {
+    final elements = parseSearchElements(draft);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final (all, key, count) in [
+                (true, 'search_elements_all', elements?.all.length ?? 0),
+                (false, 'search_elements_any', elements?.any.length ?? 0),
+              ])
+                ChoiceChip(
+                  label: Text('${translate(key)} $count'),
+                  showCheckmark: false,
+                  selected: matchAll == all,
+                  onSelected: (_) => onSelected(all),
+                ),
+            ],
+          ),
+          if (elements == null)
+            Text(
+              translate('search_elements_invalid'),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+        ],
       ),
     );
   }

@@ -9,6 +9,7 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/screen_view_models.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/media/search_query_utils.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -302,8 +303,9 @@ class _LibrarySearchAllResultsState
     } else {
       final visibleItems = _flattenVisibleSearchTree(tree);
       final errorItemCount = hasCurrentError ? 1 : 0;
+      final highlightQuery = searchElementHighlight(_visibleSearchQuery);
       content = SearchHighlightScope(
-        query: _visibleSearchQuery,
+        query: highlightQuery,
         child: ListView.builder(
           key: const ValueKey<String>('library_search_results_all'),
           controller: widget.scrollController,
@@ -344,7 +346,7 @@ class _LibrarySearchAllResultsState
                       ),
                   onFolderExpansionChanged: _handleSearchFolderExpansionChanged,
                   renderChildrenInline: false,
-                  searchQuery: _visibleSearchQuery,
+                  searchQuery: highlightQuery,
                   isSelectionMode: item.depth == 0 && widget.isSelectionMode,
                   isSelected: widget.selectedPaths.contains(
                     selectionKeyForLibraryNode(node),

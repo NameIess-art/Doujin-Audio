@@ -1,12 +1,16 @@
 package com.doujin.audio
 
+import android.content.Context
+import android.media.AudioManager
 import android.media.audiofx.LoudnessEnhancer
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaSession
 import com.doujin.audio.player.effects.NativeSessionAudioEffectsRuntime
 import com.doujin.audio.player.effects.NativePlaybackResumeFade
 import com.doujin.audio.player.effects.PlaybackVolumeMapper
+import com.doujin.audio.player.service.NativePlaybackForegroundCoordinator
 import com.doujin.audio.player.service.NativePlaybackService
 import com.doujin.audio.player.session.NativeAudioEffects
 import com.doujin.audio.player.session.NativePlaybackSession
@@ -32,12 +36,42 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class NativePlaybackCommandSnapshotTest {
+    @Test
+    fun `denied media session play schedules foreground teardown without a player state change`() {
+        val service = Robolectric.buildService(NativePlaybackService::class.java).get()
+        val sessions = ReflectionHelpers.callInstanceMethod<NativePlaybackSessionManager>(service, "getSessionManager")
+        val session = sessions.getOrCreate("audio")
+        val player = ExoPlayer.Builder(service).setUsePlatformDiagnostics(false).build()
+        ReflectionHelpers.setField(session, "_player", player)
+        val audioManager = service.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        shadowOf(audioManager).setNextFocusRequestResponse(AudioManager.AUDIOFOCUS_REQUEST_FAILED)
+        val foreground = ReflectionHelpers.callInstanceMethod<NativePlaybackForegroundCoordinator>(
+            service, "getForegroundCoordinator"
+        )
+        // This manifest-free fixture models an already-promoted service.
+        ReflectionHelpers.setField(foreground, "isStarted", true)
+        ReflectionHelpers.setField(foreground, "signature", "playback")
+        try {
+            val mediaSession = ReflectionHelpers.callInstanceMethod<MediaSession>(service, "ensureMediaSession")
+            mediaSession.player.play()
+
+            assertFalse(player.playWhenReady)
+            assertTrue(foreground.isStarted)
+            assertTrue(foreground.expireGraceIfOverdue())
+            assertFalse(foreground.isStarted)
+        } finally {
+            session.release()
+            ReflectionHelpers.callInstanceMethod<NativePlaybackStatePersistenceCoordinator>(service, "getStatePersistence").shutdown()
+        }
+    }
+
     @Test
     fun `early pause retains video before tracks or a surface are available`() {
         val service = Robolectric.buildService(NativePlaybackService::class.java).get()

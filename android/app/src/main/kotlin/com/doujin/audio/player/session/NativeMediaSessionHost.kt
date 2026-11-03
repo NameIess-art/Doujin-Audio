@@ -5,6 +5,8 @@ package com.doujin.audio.player.session
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import com.doujin.audio.MainActivity
@@ -12,7 +14,8 @@ import com.doujin.audio.MainActivity
 internal class NativeMediaSessionHost(
     private val context: Context,
     private val candidate: () -> NativePlaybackSession?,
-    handlePlayerCommandRequest: (Int, Boolean) -> Int,
+    onPlayerCommand: (Int) -> Unit,
+    private val onSetPlayWhenReady: (NativePlaybackSession, Boolean) -> Boolean,
     logSecurityEvent: (String, Throwable?) -> Unit,
     private val logInfo: (String, NativePlaybackSession?) -> Unit,
     private val logWarn: (String, Throwable) -> Unit
@@ -20,12 +23,13 @@ internal class NativeMediaSessionHost(
     private val callback = NativeMediaSessionCallback(
         appPackageName = context.packageName,
         appUid = context.applicationInfo.uid,
-        handlePlayerCommandRequest = handlePlayerCommandRequest,
+        onPlayerCommand = onPlayerCommand,
         logSecurityEvent = logSecurityEvent
     )
     private val resources = NativeMediaSessionResourceLease<MediaSession, ExoPlayer>()
 
-    fun current(): MediaSession? = resources.currentSession
+    fun isAttachedTo(player: ExoPlayer?): Boolean =
+        player != null && (resources.currentSession?.player as? MediaSessionPlayer)?.delegate === player
 
     fun ensureBootstrap() {
         if (resources.currentSession != null) return
@@ -65,7 +69,7 @@ internal class NativeMediaSessionHost(
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
         } else null
-        val builder = MediaSession.Builder(context, player)
+        val builder = MediaSession.Builder(context, sessionPlayer(player, playbackSession))
             .setId("Doujin Audio")
             .setCallback(callback)
         if (pendingIntent != null) builder.setSessionActivity(pendingIntent)
@@ -75,7 +79,8 @@ internal class NativeMediaSessionHost(
     }
 
     fun update() {
-        val nextPlayer = candidate()?.playerOrNull()
+        val playbackSession = candidate()
+        val nextPlayer = playbackSession?.playerOrNull()
         val existing = resources.currentSession
         if (nextPlayer == null) {
             release("no_media_session_candidate")
@@ -85,7 +90,7 @@ internal class NativeMediaSessionHost(
             ensure()
             return
         }
-        attachPlayer(existing, nextPlayer)
+        attachPlayer(existing, nextPlayer, playbackSession)
     }
 
     fun ensurePlayer(session: NativePlaybackSession): ExoPlayer {
@@ -104,11 +109,29 @@ internal class NativeMediaSessionHost(
     private fun attachPlayer(
         target: MediaSession,
         player: ExoPlayer,
-        session: NativePlaybackSession? = null
+        session: NativePlaybackSession
     ) {
-        if (target.player === player) return
+        if (isAttachedTo(player)) return
         logInfo("media_session_switch_player", session)
-        target.player = player
+        target.player = sessionPlayer(player, session)
         resources.onPlayerAttached(ExoPlayer::release)
+    }
+
+    private fun sessionPlayer(player: ExoPlayer, session: NativePlaybackSession): MediaSessionPlayer =
+        MediaSessionPlayer(player) { onSetPlayWhenReady(session, it) }
+}
+
+// Media3 uses one command code for play and pause. Intercept the actual request
+// on the session player so native playback commands still use ExoPlayer directly.
+internal class MediaSessionPlayer(
+    val delegate: Player,
+    private val onSetPlayWhenReady: (Boolean) -> Boolean
+) : ForwardingPlayer(delegate) {
+    override fun play() = setPlayWhenReady(true)
+
+    override fun pause() = setPlayWhenReady(false)
+
+    override fun setPlayWhenReady(playWhenReady: Boolean) {
+        if (onSetPlayWhenReady(playWhenReady)) super.setPlayWhenReady(playWhenReady)
     }
 }

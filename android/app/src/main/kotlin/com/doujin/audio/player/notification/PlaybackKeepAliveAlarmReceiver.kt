@@ -7,7 +7,7 @@ import android.content.Context
 import android.content.Intent
 
 /**
- * Doze-proof heartbeat for long screen-off playback.
+ * Backup heartbeat for long screen-off playback.
  *
  * Everything else in the service schedules on [android.os.Handler], i.e. the
  * `uptimeMillis` clock, which does not advance in deep sleep. That is normally
@@ -18,8 +18,8 @@ import android.content.Intent
  *  - an OEM power manager revoking our wake lock mid-playback, which stalls the
  *    health check and progress timers with no way to notice.
  *
- * This alarm uses the elapsed-realtime clock and `AllowWhileIdle`, so it fires
- * regardless, and only asks the service to re-evaluate itself.
+ * This alarm uses elapsed realtime and can be delivered in Doze when exact
+ * alarms are allowed. It only asks the service to re-evaluate itself.
  */
 class PlaybackKeepAliveAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {

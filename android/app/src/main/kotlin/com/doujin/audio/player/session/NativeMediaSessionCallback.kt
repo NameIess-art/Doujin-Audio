@@ -16,7 +16,7 @@ import com.google.common.util.concurrent.ListenableFuture
 internal class NativeMediaSessionCallback(
     appPackageName: String,
     appUid: Int,
-    private val handlePlayerCommandRequest: (command: Int, playWhenReady: Boolean) -> Int,
+    private val onPlayerCommand: (Int) -> Unit,
     private val logSecurityEvent: (String, Throwable?) -> Unit
 ) : MediaSession.Callback {
     private val accessPolicy = NativeMediaControllerAccessPolicy(
@@ -70,7 +70,8 @@ internal class NativeMediaSessionCallback(
         controller: MediaSession.ControllerInfo,
         playerCommand: Int
     ): Int {
-        return handlePlayerCommandRequest(playerCommand, session.player.playWhenReady)
+        onPlayerCommand(playerCommand)
+        return SessionResult.RESULT_SUCCESS
     }
 
     private fun identityFor(
@@ -97,31 +98,6 @@ internal class NativeMediaSessionCallback(
                     MediaSession.ControllerInfo.LEGACY_CONTROLLER_INTERFACE_VERSION
         )
     }
-}
-
-internal fun handleMediaSessionPlayerCommandRequest(
-    command: Int,
-    playWhenReady: Boolean,
-    requestAudioFocus: () -> Boolean,
-    establishForegroundPlayback: () -> Boolean,
-    markPlaybackIntended: () -> Unit,
-    clearPlaybackIntent: () -> Unit
-): Int {
-    if (command == Player.COMMAND_STOP ||
-        (command == Player.COMMAND_PLAY_PAUSE && playWhenReady)
-    ) {
-        clearPlaybackIntent()
-        return SessionResult.RESULT_SUCCESS
-    }
-    if (command != Player.COMMAND_PLAY_PAUSE) {
-        return SessionResult.RESULT_SUCCESS
-    }
-    markPlaybackIntended()
-    if (!establishForegroundPlayback() || !requestAudioFocus()) {
-        clearPlaybackIntent()
-        return SessionResult.RESULT_ERROR_INVALID_STATE
-    }
-    return SessionResult.RESULT_SUCCESS
 }
 
 private fun AllowedMediaCommands.toPlayerCommands(): Player.Commands {

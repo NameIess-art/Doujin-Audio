@@ -28,7 +28,7 @@ object PlaybackKeepAliveAlarmScheduler {
 
     /**
      * Callers include the per-event active-sync path, so re-arming is throttled:
-     * `setAndAllowWhileIdle` is not free and the exact deadline does not matter
+     * Scheduling is not free and the exact deadline does not matter
      * for a backstop. Each successful call pushes the deadline out by
      * interval, which is the intent - while events keep flowing the handler
      * timers are demonstrably alive and the alarm is not needed.
@@ -67,7 +67,8 @@ object PlaybackKeepAliveAlarmScheduler {
                     operation
                 )
             } else {
-                alarmManager.setAndAllowWhileIdle(
+                // Leave the inexact Doze alarm allowance to the playback timer.
+                alarmManager.set(
                     AlarmManager.ELAPSED_REALTIME_WAKEUP,
                     triggerAtMs,
                     operation

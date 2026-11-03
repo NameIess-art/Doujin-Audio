@@ -266,7 +266,8 @@ class NativePlaybackService : MediaSessionService() {
         NativeMediaSessionHost(
             context = this,
             candidate = ::mediaSessionCandidate,
-            handlePlayerCommandRequest = ::handleMediaSessionPlayerCommandRequest,
+            onPlayerCommand = ::onMediaSessionPlayerCommand,
+            onSetPlayWhenReady = ::onMediaSessionSetPlayWhenReady,
             logSecurityEvent = ::logSecurityEvent,
             logInfo = ::logInfo,
             logWarn = { message, error -> logWarn(message, error = error) }
@@ -1245,7 +1246,7 @@ class NativePlaybackService : MediaSessionService() {
             shouldRetainPlayer = ::shouldRetainVideoPlayer,
             beforeRelease = { session ->
                 videoOutputs.detachPlayer(session.sessionId)
-                if (mediaSessionHost.current()?.player === session.playerOrNull()) {
+                if (mediaSessionHost.isAttachedTo(session.playerOrNull())) {
                     mediaSessionHost.release("idle_session")
                 }
             }
@@ -1269,7 +1270,7 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun retireSession(session: NativePlaybackSession, processingState: String): Map<String, Any?> {
         videoOutputs.detachPlayer(session.sessionId)
-        if (mediaSessionHost.current()?.player === session.playerOrNull()) mediaSessionHost.release("idle_session")
+        if (mediaSessionHost.isAttachedTo(session.playerOrNull())) mediaSessionHost.release("idle_session")
         pendingStateSessions.remove(session.sessionId)
         val snapshot = sessionManager.releaseIdleSession(session, statePersistence, processingState) {
             publishNativePlaybackSessionState(it, stateListeners.values)
@@ -1385,47 +1386,46 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun mediaSessionCandidate(): NativePlaybackSession? = sessionManager.mediaSessionCandidate()
 
-    private fun handleMediaSessionPlayerCommandRequest(
-        command: Int,
-        playWhenReady: Boolean
-    ): Int {
-        val session = mediaSessionCandidate()
-        if (session != null && command in setOf(
-                Player.COMMAND_PLAY_PAUSE, Player.COMMAND_STOP,
-                Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-                Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
-                Player.COMMAND_SEEK_TO_MEDIA_ITEM
-            )) {
-            clearTrackStopForManualCommand(session.sessionId)
-            if (command == Player.COMMAND_PLAY_PAUSE && !playWhenReady) {
-                session.applyFadeMultiplier(1f)
+    private fun onMediaSessionPlayerCommand(command: Int) {
+        val session = mediaSessionCandidate() ?: return
+        when (command) {
+            Player.COMMAND_STOP -> {
+                clearTrackStopForManualCommand(session.sessionId)
+                focusRecovery.removePending(session.sessionId)
+                clearPlaybackIntent(session.sessionId)
             }
+            Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+            Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+            Player.COMMAND_SEEK_TO_MEDIA_ITEM -> clearTrackStopForManualCommand(session.sessionId)
         }
-        return com.doujin.audio.player.session.handleMediaSessionPlayerCommandRequest(
-            command = command,
-            playWhenReady = playWhenReady,
-            requestAudioFocus = {
-                session != null && focusRecovery.requestIfNeeded()
-            },
-            establishForegroundPlayback = {
-                session != null &&
-                    establishForegroundPlaybackOrRollback(listOf(session.sessionId))
-            },
-            markPlaybackIntended = {
-                if (session != null) {
-                    focusRecovery.removePending(session.sessionId)
-                    playbackSuspended = false
-                    focusSession(session.sessionId)
-                    markPlaybackIntended(session.sessionId)
-                }
-            },
-            clearPlaybackIntent = {
-                if (session != null) {
-                    focusRecovery.removePending(session.sessionId)
-                    clearPlaybackIntent(session.sessionId)
-                }
-            }
-        )
+    }
+
+    private fun onMediaSessionSetPlayWhenReady(
+        session: NativePlaybackSession,
+        playWhenReady: Boolean
+    ): Boolean {
+        val sessionId = session.sessionId
+        if (sessionManager.get(sessionId) !== session) return false
+        clearTrackStopForManualCommand(sessionId)
+        if (!playWhenReady) {
+            focusRecovery.removePending(sessionId)
+            clearPlaybackIntent(sessionId)
+            if (session.playerOrNull()?.playWhenReady != true) syncForegroundState()
+            return true
+        }
+        if (session.playerOrNull()?.playWhenReady == true) return true
+
+        session.applyFadeMultiplier(1f)
+        focusRecovery.removePending(sessionId)
+        playbackSuspended = false
+        focusSession(sessionId)
+        markPlaybackIntended(sessionId)
+        if (!establishForegroundPlaybackOrRollback(listOf(sessionId))) return false
+        if (!focusRecovery.requestIfNeeded()) {
+            rollbackPlaybackStart(listOf(sessionId), "media_session_audio_focus_denied")
+            return false
+        }
+        return true
     }
 
     private fun hasActivePlayback(): Boolean = sessionManager.hasActivePlayback()

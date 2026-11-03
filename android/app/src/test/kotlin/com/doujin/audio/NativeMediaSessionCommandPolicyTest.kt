@@ -1,102 +1,68 @@
 package com.doujin.audio
 
-import com.doujin.audio.player.session.handleMediaSessionPlayerCommandRequest
-
 import androidx.media3.common.Player
-import androidx.media3.session.SessionResult
+import com.doujin.audio.player.session.MediaSessionPlayer
+import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class NativeMediaSessionCommandPolicyTest {
     @Test
-    fun `external play obtains focus and records playback intent`() {
-        var marked = 0
-        var cleared = 0
-
-        val result = handleMediaSessionPlayerCommandRequest(
-            command = Player.COMMAND_PLAY_PAUSE,
-            playWhenReady = false,
-            requestAudioFocus = { true },
-            establishForegroundPlayback = { true },
-            markPlaybackIntended = { marked += 1 },
-            clearPlaybackIntent = { cleared += 1 }
-        )
-
-        assertEquals(SessionResult.RESULT_SUCCESS, result)
-        assertEquals(1, marked)
-        assertEquals(0, cleared)
-    }
-
-    @Test
-    fun `external play is rejected and intent cleared when focus is denied`() {
-        var marked = 0
-        var cleared = 0
-
-        val result = handleMediaSessionPlayerCommandRequest(
-            command = Player.COMMAND_PLAY_PAUSE,
-            playWhenReady = false,
-            requestAudioFocus = { false },
-            establishForegroundPlayback = { true },
-            markPlaybackIntended = { marked += 1 },
-            clearPlaybackIntent = { cleared += 1 }
-        )
-
-        assertEquals(SessionResult.RESULT_ERROR_INVALID_STATE, result)
-        assertEquals(1, marked)
-        assertEquals(1, cleared)
-    }
-
-    @Test
-    fun `external play is rejected before focus when foreground cannot be established`() {
-        var focusRequests = 0
-        var cleared = 0
-
-        val result = handleMediaSessionPlayerCommandRequest(
-            command = Player.COMMAND_PLAY_PAUSE,
-            playWhenReady = false,
-            requestAudioFocus = {
-                focusRequests += 1
-                true
-            },
-            establishForegroundPlayback = { false },
-            markPlaybackIntended = {},
-            clearPlaybackIntent = { cleared += 1 }
-        )
-
-        assertEquals(SessionResult.RESULT_ERROR_INVALID_STATE, result)
-        assertEquals(0, focusRequests)
-        assertEquals(1, cleared)
-    }
-
-    @Test
-    fun `external pause and stop clear playback intent without requesting focus`() {
-        var focusRequests = 0
-        var cleared = 0
-        val requestFocus = {
-            focusRequests += 1
+    fun `repeated play forwards play intent even while already playing`() {
+        val requests = mutableListOf<Boolean>()
+        val player = mediaSessionPlayer(initiallyPlaying = true) {
+            requests += it
             true
         }
 
-        val pauseResult = handleMediaSessionPlayerCommandRequest(
-            command = Player.COMMAND_PLAY_PAUSE,
-            playWhenReady = true,
-            requestAudioFocus = requestFocus,
-            establishForegroundPlayback = { true },
-            markPlaybackIntended = {},
-            clearPlaybackIntent = { cleared += 1 }
-        )
-        val stopResult = handleMediaSessionPlayerCommandRequest(
-            command = Player.COMMAND_STOP,
-            playWhenReady = true,
-            requestAudioFocus = requestFocus,
-            establishForegroundPlayback = { true },
-            markPlaybackIntended = {},
-            clearPlaybackIntent = { cleared += 1 }
-        )
+        player.play()
 
-        assertEquals(SessionResult.RESULT_SUCCESS, pauseResult)
-        assertEquals(SessionResult.RESULT_SUCCESS, stopResult)
-        assertEquals(0, focusRequests)
-        assertEquals(2, cleared)
+        assertEquals(listOf(true), requests)
+        assertEquals(true, player.playWhenReady)
+    }
+
+    @Test
+    fun `repeated pause forwards pause intent even while already paused`() {
+        val requests = mutableListOf<Boolean>()
+        val player = mediaSessionPlayer(initiallyPlaying = false) {
+            requests += it
+            true
+        }
+
+        player.pause()
+
+        assertEquals(listOf(false), requests)
+        assertEquals(false, player.playWhenReady)
+    }
+
+    @Test
+    fun `denied play cannot change the underlying player state`() {
+        val player = mediaSessionPlayer(initiallyPlaying = false) { false }
+
+        player.play()
+        player.playWhenReady = true
+
+        assertEquals(false, player.playWhenReady)
+    }
+
+    private fun mediaSessionPlayer(
+        initiallyPlaying: Boolean,
+        onSetPlayWhenReady: (Boolean) -> Boolean
+    ): MediaSessionPlayer {
+        var playing = initiallyPlaying
+        val delegate = Proxy.newProxyInstance(
+            Player::class.java.classLoader,
+            arrayOf(Player::class.java)
+        ) { _, method, args ->
+            when (method.name) {
+                "getPlayWhenReady" -> playing
+                "setPlayWhenReady" -> {
+                    playing = args[0] as Boolean
+                    null
+                }
+                else -> error("Unexpected player call: ${method.name}")
+            }
+        } as Player
+        return MediaSessionPlayer(delegate, onSetPlayWhenReady)
     }
 }

@@ -9,7 +9,6 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -225,12 +224,7 @@ void main() {
         expect(find.text('#Translated DL tag'), findsOneWidget);
         expect(find.text('DL actor'), findsOneWidget);
         expect(find.text('DL circle'), findsOneWidget);
-        await tester.tap(
-          find.byKey(const ValueKey('work_detail_tag_#DL tag')),
-          buttons: platform == TargetPlatform.windows
-              ? kSecondaryMouseButton
-              : kPrimaryMouseButton,
-        );
+        await tester.tap(find.byKey(const ValueKey('work_detail_tag_#DL tag')));
         await tester.pump();
         expect(copied, contains('DL tag'));
         await tester.tap(find.byKey(_button));

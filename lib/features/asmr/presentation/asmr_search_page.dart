@@ -1,15 +1,20 @@
 part of 'asmr_tab.dart';
 
-class _AsmrSearchPage extends ConsumerStatefulWidget {
-  const _AsmrSearchPage({required this.initialCategory});
+class AsmrSearchPage extends ConsumerStatefulWidget {
+  const AsmrSearchPage({
+    super.key,
+    this.initialCategory = AsmrCategoryType.collected,
+    this.initialQuery = '',
+  });
 
   final AsmrCategoryType initialCategory;
+  final String initialQuery;
 
   @override
-  ConsumerState<_AsmrSearchPage> createState() => _AsmrSearchPageState();
+  ConsumerState<AsmrSearchPage> createState() => _AsmrSearchPageState();
 }
 
-class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
+class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final Map<AsmrCategoryType, ScrollController> _scrollControllers = {
@@ -29,6 +34,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   int _requestSerial = 0;
   bool _refreshPending = false;
   ModalRoute<dynamic>? _route;
+  bool _wasCurrent = true;
   late final String _refreshCommitKey =
       'asmr_search_refresh_${identityHashCode(this)}';
   late final AppLanguageProvider _languageProvider;
@@ -59,6 +65,9 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_searchController?.ensureSearchSuggestions());
+      if (widget.initialQuery.isNotEmpty) {
+        unawaited(_onSubmitted(widget.initialQuery));
+      }
     });
   }
 
@@ -501,7 +510,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
             additionalHeight: 6 + AppPageHeaderMetrics.buttonSize,
           )
         : AppSearchPageScaffold.controlsTopInset(context);
-    final bottomInset = MediaQuery.paddingOf(context).bottom + 96;
+    final bottomInset = AppSearchPageScaffold.contentBottomInset(context);
     final resultsBody = _query.isEmpty
         ? null
         : AppFadeThroughIndexedStack.lazy(
@@ -548,6 +557,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
         return AppSearchPageScaffold<AsmrCategoryType>(
           controller: _controller,
           focusNode: _focusNode,
+          requestInitialFocus: widget.initialQuery.isEmpty,
           hintText: i18n.tr('asmr_search_hint'),
           categories: categories,
           selectedCategory: _category,
@@ -589,12 +599,24 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     return Builder(
       builder: (context) {
         _route = ModalRoute.of(context);
-        if (_refreshPending && _route?.isCurrent != false) {
+        final isCurrent = _route?.isCurrent != false;
+        final resumed = isCurrent && !_wasCurrent;
+        _wasCurrent = isCurrent;
+        if (isCurrent && (_refreshPending || (resumed && _query.isNotEmpty))) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted || !_refreshPending || _route?.isCurrent == false) {
+            if (!mounted || _route?.isCurrent == false || _query.isEmpty) {
               return;
             }
-            _scheduleRefresh(showSearchPlaceholder: _showSearchPlaceholder);
+            // A search opened from a work detail can replace the active query.
+            final view = _searchController?.categoryViewState(
+              _category,
+              searchQuery: _query,
+              searchSession: true,
+            );
+            if (_refreshPending ||
+                (resumed && view?.hasAttemptedLoad == false)) {
+              _scheduleRefresh(showSearchPlaceholder: true);
+            }
           });
         }
         return page;

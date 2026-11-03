@@ -20,6 +20,9 @@ const Map<String, String> appLanguageEn = {
   'batch_download_skip': 'Skip this work',
   'backup_incompatible':
       'This backup is incompatible with the current platform or app version and cannot be restored.',
+  'element_online_search': 'Search online',
+  'element_local_search': 'Search locally',
+  'element_copy': 'Copy',
   'search_history': 'Search history',
   'search_history_empty': 'No recent searches',
   'search_history_cleared': 'Search history cleared',

@@ -22,7 +22,9 @@ import 'library_search_all_results.dart';
 import 'library_tab_ui_helpers.dart';
 
 class LibrarySearchPage extends ConsumerStatefulWidget {
-  const LibrarySearchPage({super.key});
+  const LibrarySearchPage({super.key, this.initialQuery = ''});
+
+  final String initialQuery;
 
   @override
   ConsumerState<LibrarySearchPage> createState() => _LibrarySearchPageState();
@@ -44,6 +46,15 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   Future<AudioLibraryCategorySnapshot>? _categorySnapshotFuture;
   int? _categorySnapshotStructureRevision;
   int? _categorySnapshotDetailRevision;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialQuery.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _onSubmitted(widget.initialQuery);
+    });
+  }
 
   void _onChanged(String value) {
     final enabled = extractSearchTerms(value).isNotEmpty;
@@ -222,6 +233,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     return AppSearchPageScaffold<AudioLibraryCategoryType>(
       controller: _controller,
       focusNode: _focusNode,
+      requestInitialFocus: widget.initialQuery.isEmpty,
       hintText: i18n.tr('search_audio_placeholder'),
       onChanged: _onChanged,
       onSubmitted: _onSubmitted,
@@ -351,7 +363,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                     SliverPadding(
                       padding: EdgeInsets.only(
                         top: topInset,
-                        bottom: MediaQuery.paddingOf(context).bottom + 96,
+                        bottom: AppSearchPageScaffold.contentBottomInset(context),
                       ),
                       sliver: SliverMainAxisGroup(
                         slivers: [

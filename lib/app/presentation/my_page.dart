@@ -31,6 +31,7 @@ import '../../features/library/presentation/library_providers.dart';
 import '../../features/settings/application/settings_state.dart';
 import '../../features/settings/presentation/settings_providers.dart';
 import 'app_presentation_providers.dart';
+import 'element_action_menu.dart';
 import 'listening_time_chart.dart';
 import 'main_tab_state_mixin.dart';
 import 'my_tag_management_page.dart';
@@ -172,7 +173,6 @@ class _MyPageState extends ConsumerState<MyPage>
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final isWindows = Theme.of(context).platform == TargetPlatform.windows;
     final activityReady = ref.watch(
       listeningActivityProvider.select(
         (state) => state.hasValue || state.hasError,
@@ -345,41 +345,36 @@ class _MyPageState extends ConsumerState<MyPage>
                           runSpacing: 8,
                           children: [
                             for (final interest in interests.take(20))
-                              GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onSecondaryTap: isWindows
-                                    ? () => _copyInterest(interest.tag.name)
-                                    : null,
-                                child: IgnorePointer(
-                                  ignoring: isWindows,
-                                  child: InputChip(
-                                    key: ValueKey(
-                                      'my-${interestKeyPrefix}interest-${interest.tag.key}',
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 8,
-                                    ),
-                                    labelPadding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                    materialTapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    showCheckmark: false,
-                                    side: BorderSide(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.outlineVariant,
-                                    ),
-                                    label: Text(
-                                      interest.tag.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    onPressed: () =>
-                                        _copyInterest(interest.tag.name),
+                              ElementActionMenu(
+                                value: interest.tag.name,
+                                onCopy: () => _copyInterest(interest.tag.name),
+                                child: InputChip(
+                                  key: ValueKey(
+                                    'my-${interestKeyPrefix}interest-${interest.tag.key}',
                                   ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 8,
+                                  ),
+                                  labelPadding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  showCheckmark: false,
+                                  side: BorderSide(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outlineVariant,
+                                  ),
+                                  label: Text(
+                                    interest.tag.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  onPressed: () =>
+                                      _copyInterest(interest.tag.name),
                                 ),
                               ),
                           ],
@@ -481,17 +476,20 @@ class _MyPageState extends ConsumerState<MyPage>
     Widget coverSkeleton(String key) => SizedBox(
       key: ValueKey(key),
       height: _HistoryWorkCard.coverHeight + 14,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          spacing: 12,
-          children: List.generate(
-            8,
-            (_) => const ShimmerContainer(
-              width: _HistoryWorkCard.coverWidth,
-              height: _HistoryWorkCard.coverHeight,
-              borderRadius: 12,
+      child: WindowsHorizontalWheelScroll(
+        builder: (controller) => SingleChildScrollView(
+          controller: controller,
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 12,
+            children: List.generate(
+              8,
+              (_) => const ShimmerContainer(
+                width: _HistoryWorkCard.coverWidth,
+                height: _HistoryWorkCard.coverHeight,
+                borderRadius: 12,
+              ),
             ),
           ),
         ),

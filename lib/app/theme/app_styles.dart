@@ -1,5 +1,13 @@
 import 'package:flutter/material.dart';
 
+Color landscapeNavigationBackground(ColorScheme colors) {
+  if (colors.brightness == Brightness.dark &&
+      colors.surfaceContainerLowest != colors.surface) {
+    return colors.surfaceContainerLowest;
+  }
+  return colors.surfaceContainerLow;
+}
+
 class AppSpacing {
   AppSpacing._();
 

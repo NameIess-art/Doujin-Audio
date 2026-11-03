@@ -845,7 +845,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     Navigator.of(context).push(
       buildAppPageRoute<void>(
         context: context,
-        child: _AsmrSearchPage(initialCategory: _selectedCategory),
+        child: AsmrSearchPage(initialCategory: _selectedCategory),
         separateHeader: true,
       ),
     );

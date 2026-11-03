@@ -10,6 +10,7 @@ import '../../../app/presentation/screen_view_models.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
@@ -310,7 +311,7 @@ class _LibrarySearchAllResultsState
             LibraryLikeCardMetrics.listHorizontalPadding,
             topPadding,
             LibraryLikeCardMetrics.listHorizontalPadding,
-            MediaQuery.paddingOf(context).bottom + 96,
+            AppSearchPageScaffold.contentBottomInset(context),
           ),
           cacheExtent: 120,
           physics: const ClampingScrollPhysics(),

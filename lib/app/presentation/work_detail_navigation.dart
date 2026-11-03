@@ -70,9 +70,33 @@ class WorkDetailNavigation extends ChangeNotifier {
 
   void resetContent() {
     menuDismiss.value?.call();
+    _removeSubpages(contentNavigatorKey.currentState, _contentRoutes);
+  }
+
+  Future<void> openFromMain(
+    PageRoute<void> Function(BuildContext context) buildRoute, {
+    required bool keepDetailPane,
+  }) async {
+    final request = ++_request;
+    rootNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+    resetContent();
+    if (!keepDetailPane) {
+      _removeSubpages(navigatorKey.currentState, _routes);
+    }
+    // Dispose the previous search session before initializing the new one.
+    await WidgetsBinding.instance.endOfFrame;
+    if (_disposed || request != _request) return;
     final navigator = contentNavigatorKey.currentState;
     if (navigator == null) return;
-    for (final route in _contentRoutes.skip(1).toList().reversed) {
+    await navigator.push<void>(buildRoute(navigator.context));
+  }
+
+  void _removeSubpages(
+    NavigatorState? navigator,
+    List<Route<dynamic>> routes,
+  ) {
+    if (navigator == null) return;
+    for (final route in routes.skip(1).toList().reversed) {
       navigator.removeRoute(route);
     }
   }
@@ -288,8 +312,8 @@ class _MainContentNavigatorState extends State<MainContentNavigator> {
 }
 
 class WorkDetailPane extends StatelessWidget {
-  static const mainWidthFraction = 4 / 7;
-  static const detailWidthFraction = 3 / 7;
+  static const mainWidthFraction = 5 / 8;
+  static const detailWidthFraction = 3 / 8;
 
   const WorkDetailPane({
     super.key,
@@ -379,9 +403,9 @@ class WorkDetailPane extends StatelessWidget {
                           ),
                           child: ColoredBox(
                             color: isLandscape
-                                ? Theme.of(
-                                    context,
-                                  ).colorScheme.surfaceContainerLow
+                                ? landscapeNavigationBackground(
+                                    Theme.of(context).colorScheme,
+                                  )
                                 : Colors.transparent,
                             child: ClipRRect(
                               key: const ValueKey('work_detail_pane_clip'),
@@ -463,10 +487,26 @@ class _ContentPaneOutlinePainter extends CustomPainter {
       canvas.drawPath(path, paint);
     }
 
+    void drawHorizontalEdges(double start, double end) {
+      if (end - start <= radius * 2) return;
+      canvas.drawLine(
+        Offset(start + radius, top),
+        Offset(end - radius, top),
+        paint,
+      );
+      canvas.drawLine(
+        Offset(start + radius, bottom),
+        Offset(end - radius, bottom),
+        paint,
+      );
+    }
+
     drawSide(left, leftSide: true);
     drawSide(right, leftSide: false);
     if (detailWidth > 0) {
       final divider = size.width - detailWidth - 0.5;
+      drawHorizontalEdges(left, divider);
+      drawHorizontalEdges(divider, right);
       drawSide(divider, leftSide: false, vertical: false);
       drawSide(divider, leftSide: true, vertical: false);
       // Both inner corner pairs join the same one-pixel separator.
@@ -475,6 +515,8 @@ class _ContentPaneOutlinePainter extends CustomPainter {
         Offset(divider, bottom - radius),
         paint,
       );
+    } else {
+      drawHorizontalEdges(left, right);
     }
   }
 

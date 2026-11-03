@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/presentation/desktop_main_navigation.dart';
+import 'package:doujin_audio/app/presentation/element_action_menu.dart';
 import 'package:doujin_audio/app/presentation/global_shortcuts.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/app/presentation/mobile_dock_capsule_content.dart';
@@ -67,6 +70,7 @@ Future<WorkDetailNavigation> _pumpApp(
   bool withDownloadTasks = false,
   int libraryWorkCount = 0,
   Widget? home,
+  ThemeData? theme,
   NotificationListenerCallback<NavigationNotification>? onNavigationNotification,
 }) async {
   tester.view.devicePixelRatio = 1;
@@ -174,6 +178,7 @@ Future<WorkDetailNavigation> _pumpApp(
           navigatorKey: root,
           child: MaterialApp(
             navigatorKey: root,
+            theme: theme,
             onNavigationNotification: onNavigationNotification,
             navigatorObservers: [if (withNavigationLock) rootObserver],
             builder: (_, child) => withNavigationLock
@@ -300,6 +305,77 @@ class _DetailState extends State<_Detail> {
 }
 
 void main() {
+  for (final action in ['Search online', 'Search locally']) {
+    testWidgets(
+      '$action from the work detail replaces subpages above the main page',
+      (tester) async {
+        final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+        final navigation = await _pumpApp(
+          tester,
+          size: isWindows ? const Size(1280, 800) : const Size(430, 900),
+        );
+        final contentNavigator = navigation.contentNavigatorKey.currentState!;
+        unawaited(
+          contentNavigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('Previous page')),
+            ),
+          ),
+        );
+        await _settle(tester);
+        unawaited(
+          navigation.open(
+            'element-menu',
+            (_) => MaterialPageRoute<void>(
+              builder: (_) => Scaffold(
+                body: Center(
+                  child: ElementActionMenu(
+                    value: 'Selected element',
+                    onCopy: () {},
+                    child: const Text('Open element menu'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await _settle(tester);
+        final element = find.text('Open element menu');
+        if (isWindows) {
+          await tester.tap(
+            element,
+            buttons: kSecondaryMouseButton,
+            kind: PointerDeviceKind.mouse,
+          );
+        } else {
+          await tester.longPress(element);
+        }
+        await _settle(tester);
+        await tester.tap(find.text(action));
+        await _finishRouteAnimation(tester);
+
+        final search = find.descendant(
+          of: _main,
+          matching: find.byType(EditableText),
+        );
+        expect(
+          tester.widget<EditableText>(search).controller.text,
+          'Selected element',
+        );
+        expect(navigation.isOpen, isWindows);
+        expect(element, isWindows ? findsOneWidget : findsNothing);
+        contentNavigator.pop();
+        await _finishRouteAnimation(tester);
+        expect(contentNavigator.canPop(), isFalse);
+        expect(find.text('Previous page'), findsNothing);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() {
     SharedPreferences.setMockInitialValues({});
@@ -1021,7 +1097,7 @@ void main() {
         );
         expect(local.localTarget, target);
         expect(navigation.rootNavigatorKey.currentState!.canPop(), isFalse);
-        expect(tester.getSize(_pane).width, closeTo(1019 * 3 / 7, 0.01));
+        expect(tester.getSize(_pane).width, closeTo(1019 * 3 / 8, 0.01));
         final localState = tester.state(find.byType(WorkDetailPage));
         unawaited(showAudioDetailSheet(context, target));
         await _finishRouteAnimation(tester);
@@ -1064,24 +1140,22 @@ void main() {
     );
 
     testWidgets(
-      'main stays interactive beside 4:3 detail panes on $platform',
+      'main stays interactive beside 5:3 detail panes on $platform',
       (tester) async {
         final surface = GlobalKey();
         final navigation = await _pumpApp(
           tester,
           home: RepaintBoundary(key: surface, child: const MainScreen()),
+          theme: platform == TargetPlatform.windows ? ThemeData.dark() : null,
         );
         expect(tester.getSize(_main).width, 1020);
         await _open(tester, navigation, 'A');
-        expect(tester.getSize(_main).width, closeTo(1019 * 4 / 7, 0.01));
-        expect(tester.getSize(_pane).width, closeTo(1019 * 3 / 7, 0.01));
+        expect(tester.getSize(_main).width, closeTo(1019 * 5 / 8, 0.01));
+        expect(tester.getSize(_pane).width, closeTo(1019 * 3 / 8, 0.01));
         expect(
           tester.getRect(_main).right + 1,
           closeTo(tester.getRect(_pane).left, 0.01),
         );
-        final cornerBackground = Theme.of(
-          tester.element(_main),
-        ).colorScheme.surfaceContainerLow;
         final corners = <Offset>[];
         final edges = <Offset>[];
         for (final page in [_main, _pane]) {
@@ -1101,6 +1175,12 @@ void main() {
         }
         final mainRect = tester.getRect(_main);
         final paneRect = tester.getRect(_pane);
+        final captureOrigin = tester.getTopLeft(find.byKey(surface));
+        final sidebar = tester.getRect(find.byType(DesktopMainNavigation));
+        corners.addAll([
+          mainRect.topRight + const Offset(0.5, 2) - captureOrigin,
+          mainRect.bottomRight + const Offset(0.5, -2) - captureOrigin,
+        ]);
         final y = mainRect.bottom - 80;
         final outerEdges = [
           Offset(mainRect.left + 0.5, y),
@@ -1120,6 +1200,7 @@ void main() {
             ...edges,
             ...outerEdges,
             ...dividerPixels,
+            sidebar.topLeft + const Offset(2, 2) - captureOrigin,
           ].map((point) {
             final offset =
                 (point.dy.floor() * image.width + point.dx.floor()) * 4;
@@ -1133,17 +1214,17 @@ void main() {
           image.dispose();
           return colors;
         });
-        expect(
-          cornerColors!.take(corners.length),
-          everyElement(cornerBackground),
-        );
-        expect(
-          cornerColors.skip(corners.length).take(edges.length),
-          everyElement(
-            isNot(Theme.of(tester.element(_main)).colorScheme.outlineVariant),
-          ),
-        );
+        final cornerBackground = cornerColors!.removeLast();
+        expect(cornerColors.take(corners.length), everyElement(cornerBackground));
         final scheme = Theme.of(tester.element(_main)).colorScheme;
+        // A fractional vertical origin blends the top stroke into two rows.
+        expect(
+          cornerColors.skip(corners.length).take(edges.length).map(
+            (color) => (cornerBackground.r - color.r) /
+                (cornerBackground.r - scheme.outlineVariant.r),
+          ),
+          everyElement(greaterThan(0.65)),
+        );
         expect(
           cornerColors
               .skip(corners.length + edges.length)
@@ -1200,8 +1281,8 @@ void main() {
           tester.view.physicalSize = size;
           await _settle(tester);
           final available = size.width - sidebarWidth - 1;
-          expect(tester.getSize(_main).width, closeTo(available * 4 / 7, 0.01));
-          expect(tester.getSize(_pane).width, closeTo(available * 3 / 7, 0.01));
+          expect(tester.getSize(_main).width, closeTo(available * 5 / 8, 0.01));
+          expect(tester.getSize(_pane).width, closeTo(available * 3 / 8, 0.01));
           expect(tester.state(find.byType(_Detail)), same(detailState));
           expectRouteMetrics();
         }
@@ -1215,8 +1296,8 @@ void main() {
           tester.view.physicalSize = const Size(960, 600);
           await _settle(tester);
           await _open(tester, navigation, 'A');
-          expect(tester.getSize(_main).width, closeTo(699 * 4 / 7, 0.01));
-          expect(tester.getSize(_pane).width, closeTo(699 * 3 / 7, 0.01));
+          expect(tester.getSize(_main).width, closeTo(699 * 5 / 8, 0.01));
+          expect(tester.getSize(_pane).width, closeTo(699 * 3 / 8, 0.01));
         }
       },
       variant: TargetPlatformVariant({platform}),
@@ -1485,8 +1566,8 @@ void main() {
             .isMenuCollapsed,
         isTrue,
       );
-      expect(tester.getSize(_main).width, closeTo(769 * 4 / 7, 0.01));
-      expect(tester.getSize(_pane).width, closeTo(769 * 3 / 7, 0.01));
+      expect(tester.getSize(_main).width, closeTo(769 * 5 / 8, 0.01));
+      expect(tester.getSize(_pane).width, closeTo(769 * 3 / 8, 0.01));
       expect(
         (await SharedPreferences.getInstance()).getBool(
           'desktop_menu_collapsed',
@@ -1501,13 +1582,13 @@ void main() {
             .isMenuCollapsed,
         isFalse,
       );
-      expect(tester.getSize(_pane).width, closeTo(1019 * 3 / 7, 0.01));
+      expect(tester.getSize(_pane).width, closeTo(1019 * 3 / 8, 0.01));
     },
     variant: const TargetPlatformVariant({TargetPlatform.android}),
   );
 
   testWidgets(
-    'automatic sidebar collapse keeps 4:3 panes while opening and closing',
+    'automatic sidebar collapse keeps 5:3 panes while opening and closing',
     (tester) async {
       final navigation = await _pumpApp(tester, size: const Size(850, 480));
       Future<void> expectProportionalFrames() async {
@@ -1518,7 +1599,7 @@ void main() {
           await tester.pump(elapsed);
           expect(
             tester.getSize(_main).width,
-            closeTo(tester.getSize(_pane).width * 4 / 3, 0.01),
+            closeTo(tester.getSize(_pane).width * 5 / 3, 0.01),
           );
           expect(
             tester.getRect(_pane).left - tester.getRect(_main).right,
@@ -1538,7 +1619,7 @@ void main() {
       );
       await expectProportionalFrames();
       await _settle(tester);
-      expect(tester.getSize(_main).width, closeTo(769 * 4 / 7, 0.01));
+      expect(tester.getSize(_main).width, closeTo(769 * 5 / 8, 0.01));
       navigation.navigatorKey.currentState!.pop();
       await expectProportionalFrames();
       await _settle(tester);
@@ -1549,7 +1630,7 @@ void main() {
   );
 
   testWidgets(
-    'portrait to landscape keeps 4:3 panes during sidebar animation',
+    'portrait to landscape keeps 5:3 panes during sidebar animation',
     (tester) async {
       final navigation = await _pumpApp(tester, size: const Size(390, 820));
       await _open(tester, navigation, 'A');
@@ -1568,7 +1649,7 @@ void main() {
       }
       await _settle(tester);
       expect(
-        frames.map((frame) => [frame.$1 - frame.$2 * 4 / 3, frame.$3]),
+        frames.map((frame) => [frame.$1 - frame.$2 * 5 / 3, frame.$3]),
         [
           [closeTo(0, 0.01), closeTo(1, 0.01)],
           [closeTo(0, 0.01), closeTo(1, 0.01)],
@@ -1641,8 +1722,8 @@ void main() {
       await _settle(tester);
       expect(tester.state(find.byType(EditableText)), same(state));
       expect(find.text('rotation edit'), findsOneWidget);
-      expect(tester.getSize(_main).width, closeTo(739 * 4 / 7, 0.01));
-      expect(tester.getSize(_pane).width, closeTo(739 * 3 / 7, 0.01));
+      expect(tester.getSize(_main).width, closeTo(739 * 5 / 8, 0.01));
+      expect(tester.getSize(_pane).width, closeTo(739 * 3 / 8, 0.01));
       expect(find.byKey(const ValueKey('routed_playback_dock')), findsNothing);
       expect(find.byType(ActiveSessionCarousel), findsOneWidget);
       tester.view.physicalSize = const Size(390, 820);

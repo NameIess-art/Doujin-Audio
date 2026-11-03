@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/windows_horizontal_wheel_scroll.dart';
 
 void main() {
-  testWidgets('Windows wheel scrolls a horizontal strip, then its parent', (
+  testWidgets('Windows wheel stays inside a horizontal strip at its edge', (
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
@@ -40,6 +40,17 @@ void main() {
                   ),
                 ),
               ),
+              SizedBox(
+                height: 48,
+                child: WindowsHorizontalWheelScroll(
+                  builder: (controller) => ListView(
+                    key: const ValueKey('short_horizontal_region'),
+                    controller: controller,
+                    scrollDirection: Axis.horizontal,
+                    children: const [SizedBox(width: 100)],
+                  ),
+                ),
+              ),
               const SizedBox(height: 1500),
             ],
           ),
@@ -60,6 +71,27 @@ void main() {
     horizontal.jumpTo(horizontal.position.maxScrollExtent);
     await tester.sendEventToBinding(
       PointerScrollEvent(position: position, scrollDelta: const Offset(0, 120)),
+    );
+    await tester.pump();
+    expect(horizontal.offset, horizontal.position.maxScrollExtent);
+    expect(vertical.offset, 0);
+
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getCenter(
+          find.byKey(const ValueKey('short_horizontal_region')),
+        ),
+        scrollDelta: const Offset(0, 120),
+      ),
+    );
+    await tester.pump();
+    expect(vertical.offset, 0);
+
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: position + const Offset(0, 120),
+        scrollDelta: const Offset(0, 120),
+      ),
     );
     await tester.pump();
     expect(vertical.offset, greaterThan(0));

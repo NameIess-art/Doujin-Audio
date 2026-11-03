@@ -28,6 +28,7 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
     required this.controller,
     required this.focusNode,
     required this.hintText,
+    this.requestInitialFocus = true,
     this.categories = const [],
     this.selectedCategory,
     this.onCategorySelected,
@@ -45,6 +46,7 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
 
   final TextEditingController controller;
   final FocusNode focusNode;
+  final bool requestInitialFocus;
   final String hintText;
   final List<AppSearchCategory<T>> categories;
   final T? selectedCategory;
@@ -59,6 +61,9 @@ class AppSearchPageScaffold<T> extends StatefulWidget {
   final bool showConfirmButton;
   final VoidCallback? onConfirm;
   final String confirmLabel;
+
+  static double contentBottomInset(BuildContext context) =>
+      MediaQuery.paddingOf(context).bottom;
 
   static double controlsTopInset(
     BuildContext context, {
@@ -96,15 +101,18 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _retainedResultsBody = widget.resultsBody;
-    _resultsController = AnimationController(
-      vsync: this,
-      duration: kAppFadeDuration,
-      reverseDuration: kAppFadeDuration,
-      value: widget.resultsBody == null ? 0.0 : 1.0,
-    )
-      ..addListener(_handleResultsAnimationTick)
-      ..addStatusListener(_handleResultsAnimationStatus);
-    _resultsOpacity = _resultsController.drive(CurveTween(curve: kAppFadeCurve));
+    _resultsController =
+        AnimationController(
+            vsync: this,
+            duration: kAppFadeDuration,
+            reverseDuration: kAppFadeDuration,
+            value: widget.resultsBody == null ? 0.0 : 1.0,
+          )
+          ..addListener(_handleResultsAnimationTick)
+          ..addStatusListener(_handleResultsAnimationStatus);
+    _resultsOpacity = _resultsController.drive(
+      CurveTween(curve: kAppFadeCurve),
+    );
     _suggestionsOpacity = ReverseAnimation(_resultsOpacity);
   }
 
@@ -181,7 +189,8 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
         ModalRoute.isCurrentOf(context) == false) {
       _interaction.cancelInteraction(this);
     }
-    if (_requestedInitialFocus ||
+    if (!widget.requestInitialFocus ||
+        _requestedInitialFocus ||
         _focusScheduled ||
         !TickerMode.valuesOf(context).enabled ||
         ModalRoute.isCurrentOf(context) == false ||
@@ -389,8 +398,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                         controller: widget.controller,
                                         focusNode: widget.focusNode,
                                         cursorColor: accent,
-                                        textInputAction:
-                                            TextInputAction.search,
+                                        textInputAction: TextInputAction.search,
                                         textAlignVertical:
                                             TextAlignVertical.center,
                                         onChanged: widget.onChanged,
@@ -411,9 +419,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                                 height: 38,
                                               ),
                                           hintText: widget.hintText,
-                                          hintStyle: theme
-                                              .textTheme
-                                              .bodyMedium
+                                          hintStyle: theme.textTheme.bodyMedium
                                               ?.copyWith(
                                                 color: cs.onSurfaceVariant,
                                                 fontSize: 14,
@@ -422,10 +428,9 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                           enabledBorder: InputBorder.none,
                                           focusedBorder: InputBorder.none,
                                           isDense: true,
-                                          contentPadding:
-                                              const EdgeInsets.only(
-                                                right: 10,
-                                              ),
+                                          contentPadding: const EdgeInsets.only(
+                                            right: 10,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -522,8 +527,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                     separatorBuilder: (_, _) =>
                                         const SizedBox(width: 2),
                                     itemBuilder: (context, index) {
-                                      final category =
-                                          widget.categories[index];
+                                      final category = widget.categories[index];
                                       final selected =
                                           category.value ==
                                           widget.selectedCategory;
@@ -538,21 +542,18 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                             15,
                                           ),
                                           onTap:
-                                              widget.onCategorySelected ==
-                                                  null
+                                              widget.onCategorySelected == null
                                               ? null
                                               : () =>
-                                                    widget
-                                                        .onCategorySelected!(
+                                                    widget.onCategorySelected!(
                                                       category.value,
                                                     ),
                                           child: AnimatedContainer(
                                             duration: tokens.motionFast,
                                             alignment: Alignment.center,
-                                            padding:
-                                                const EdgeInsets.symmetric(
-                                                  horizontal: 12,
-                                                ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                            ),
                                             decoration: BoxDecoration(
                                               color: selected
                                                   ? accent.withValues(
@@ -566,9 +567,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
                                               category.label,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
-                                              style: theme
-                                                  .textTheme
-                                                  .labelMedium
+                                              style: theme.textTheme.labelMedium
                                                   ?.copyWith(
                                                     color: selected
                                                         ? accent

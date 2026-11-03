@@ -138,11 +138,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
         expandedWidth - horizontalPadding - horizontalBorder;
 
     final sidebarColor = isLandscapeLayout
-        ? (isDark
-              ? (cs.surfaceContainerLowest == cs.surface
-                    ? cs.surfaceContainerLow
-                    : cs.surfaceContainerLowest)
-              : cs.surfaceContainerLow)
+        ? landscapeNavigationBackground(cs)
         : cs.surfaceContainerLow;
 
     final sidebar = AnimatedContainer(

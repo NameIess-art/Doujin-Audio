@@ -984,6 +984,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
+                        if (isLandscape)
+                          ColoredBox(
+                            color: landscapeNavigationBackground(
+                              Theme.of(context).colorScheme,
+                            ),
+                          ),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
@@ -1051,9 +1057,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                           ),
                                           child: ColoredBox(
                                             color: isLandscape
-                                                ? Theme.of(context)
-                                                      .colorScheme
-                                                      .surfaceContainerLow
+                                                ? landscapeNavigationBackground(
+                                                    Theme.of(context).colorScheme,
+                                                  )
                                                 : Colors.transparent,
                                             child: ClipRRect(
                                               key: const ValueKey(

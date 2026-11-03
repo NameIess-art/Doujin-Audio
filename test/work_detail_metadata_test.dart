@@ -135,9 +135,6 @@ void main() {
           // A long label can be wider than the viewport at large text scales.
           await tester.tapAt(
             tester.getRect(last).intersect(tester.getRect(list)).center,
-            buttons: defaultTargetPlatform == TargetPlatform.windows
-                ? kSecondaryMouseButton
-                : kPrimaryMouseButton,
           );
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
@@ -152,7 +149,7 @@ void main() {
   }
 
   testWidgets(
-    'Windows metadata copies on right click and ignores primary clicks',
+    'Metadata copies on tap and opens the action drawer on the platform gesture',
     (tester) async {
       final copied = <String>[];
       await tester.pumpWidget(
@@ -166,16 +163,31 @@ void main() {
           ),
         ),
       );
-      for (final label in ['Voice', '#Tag']) {
-        await tester.tap(find.text(label));
-        await tester.longPress(find.text(label));
-        expect(copied, isEmpty);
+      await tester.tap(find.text('Voice'));
+      expect(copied, ['Voice']);
+
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        await tester.tap(
+          find.text('#Tag'),
+          buttons: kSecondaryMouseButton,
+          kind: PointerDeviceKind.mouse,
+        );
+      } else {
+        await tester.longPress(find.text('#Tag'));
       }
-      for (final label in ['Voice', '#Tag']) {
-        await tester.tap(find.text(label), buttons: kSecondaryMouseButton);
-      }
+      await tester.pumpAndSettle();
+
+      expect(copied, ['Voice']);
+      expect(find.text('Tag'), findsOneWidget);
+      expect(find.text('Search online'), findsOneWidget);
+      expect(find.text('Search locally'), findsOneWidget);
+      await tester.tap(find.text('Copy'));
+      await tester.pumpAndSettle();
       expect(copied, ['Voice', 'Tag']);
     },
-    variant: const TargetPlatformVariant({TargetPlatform.windows}),
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 }

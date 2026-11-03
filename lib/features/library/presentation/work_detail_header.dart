@@ -1,5 +1,5 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../../app/presentation/element_action_menu.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 
@@ -53,30 +53,30 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   Widget _buildTitle() => Semantics(
     button: title.isNotEmpty,
     label: title.isNotEmpty ? title : null,
-    child: InkWell(
-      key: const ValueKey<String>('work_detail_title_copy'),
-      onTap: title.isEmpty ? null : () => onCopyMetadata(title),
-      onSecondaryTap:
-          title.isEmpty || defaultTargetPlatform != TargetPlatform.windows
-          ? null
-          : () => onCopyMetadata(title),
-      onLongPress:
-          title.isEmpty || defaultTargetPlatform != TargetPlatform.android
-          ? null
-          : () => onCopyMetadata(title),
-      borderRadius: BorderRadius.circular(8),
-      child: WorkPageTranslationText(
-        title,
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 15,
-          fontWeight: FontWeight.bold,
-          height: 1.25,
-          shadows: [
-            Shadow(color: Colors.black87, blurRadius: 4, offset: Offset(0, 1)),
-          ],
+    child: ElementActionMenu(
+      value: title,
+      onCopy: () => onCopyMetadata(title),
+      child: InkWell(
+        key: const ValueKey<String>('work_detail_title_copy'),
+        onTap: title.isEmpty ? null : () => onCopyMetadata(title),
+        borderRadius: BorderRadius.circular(8),
+        child: WorkPageTranslationText(
+          title,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            height: 1.25,
+            shadows: [
+              Shadow(
+                color: Colors.black87,
+                blurRadius: 4,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
         ),
       ),
     ),
@@ -93,27 +93,25 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
           Semantics(
             button: true,
             label: rjCode,
-            child: InkWell(
-              key: const ValueKey<String>('work_detail_rj_copy'),
-              onTap: () => onCopyMetadata(rjCode),
-              onSecondaryTap: defaultTargetPlatform == TargetPlatform.windows
-                  ? () => onCopyMetadata(rjCode)
-                  : null,
-              onLongPress: defaultTargetPlatform == TargetPlatform.android
-                  ? () => onCopyMetadata(rjCode)
-                  : () {},
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 10,
-                ),
-                child: Text(
-                  rjCode,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: accentColor,
+            child: ElementActionMenu(
+              value: rjCode,
+              onCopy: () => onCopyMetadata(rjCode),
+              child: InkWell(
+                key: const ValueKey<String>('work_detail_rj_copy'),
+                onTap: () => onCopyMetadata(rjCode),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 10,
+                  ),
+                  child: Text(
+                    rjCode,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: accentColor,
+                    ),
                   ),
                 ),
               ),
@@ -140,31 +138,25 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
           child: Semantics(
             button: circleName.isNotEmpty,
             label: circleName.isNotEmpty ? circleName : null,
-            child: InkWell(
-              key: const ValueKey<String>('work_detail_circle_copy'),
-              onTap: circleName.isEmpty
-                  ? null
-                  : () => onCopyMetadata(circleName),
-              onSecondaryTap:
-                  circleName.isEmpty ||
-                      defaultTargetPlatform != TargetPlatform.windows
-                  ? null
-                  : () => onCopyMetadata(circleName),
-              onLongPress: circleName.isEmpty
-                  ? null
-                  : defaultTargetPlatform == TargetPlatform.android
-                  ? () => onCopyMetadata(circleName)
-                  : () {},
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Text(
-                  circleName.isNotEmpty ? circleName : '--',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+            child: ElementActionMenu(
+              value: circleName,
+              onCopy: () => onCopyMetadata(circleName),
+              child: InkWell(
+                key: const ValueKey<String>('work_detail_circle_copy'),
+                onTap: circleName.isEmpty
+                    ? null
+                    : () => onCopyMetadata(circleName),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Text(
+                    circleName.isNotEmpty ? circleName : '--',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),

@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 /// Maps a Windows mouse wheel to a horizontal scrollable's existing position.
+/// Keeps wheel input in that region even when the scrollable reaches an edge.
 class WindowsHorizontalWheelScroll extends StatefulWidget {
   const WindowsHorizontalWheelScroll({
     super.key,
@@ -31,25 +32,24 @@ class _WindowsHorizontalWheelScrollState
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller ?? _ownedController;
+    if (defaultTargetPlatform != TargetPlatform.windows) {
+      return widget.builder(controller);
+    }
     return Listener(
+      behavior: HitTestBehavior.translucent,
       onPointerSignal: (signal) {
-        if (defaultTargetPlatform != TargetPlatform.windows ||
-            signal is! PointerScrollEvent ||
-            signal.scrollDelta.dy == 0 ||
-            controller.positions.length != 1) {
-          return;
-        }
-        final position = controller.position;
-        final target = (position.pixels + signal.scrollDelta.dy).clamp(
-          position.minScrollExtent,
-          position.maxScrollExtent,
-        );
-        if (target == position.pixels) return;
-        GestureBinding.instance.pointerSignalResolver.register(signal, (event) {
-          if (!mounted || controller.positions.length != 1) return;
-          controller.position.pointerScroll(
-            (event as PointerScrollEvent).scrollDelta.dy,
+        if (signal is! PointerScrollEvent) return;
+        GestureBinding.instance.pointerSignalResolver.register(signal, (_) {
+          final delta = signal.scrollDelta.dy;
+          if (!mounted || delta == 0 || controller.positions.length != 1) {
+            return;
+          }
+          final position = controller.position;
+          final target = (position.pixels + delta).clamp(
+            position.minScrollExtent,
+            position.maxScrollExtent,
           );
+          if (target != position.pixels) position.pointerScroll(delta);
         });
       },
       child: widget.builder(controller),

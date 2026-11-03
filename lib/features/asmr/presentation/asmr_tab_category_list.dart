@@ -556,7 +556,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               placeholder: LibrarySkeletonListView(
                 key: const ValueKey('loading'),
                 topInset: widget.topInset,
-                bottomInset: widget.bottomInset + 24,
+                bottomInset: widget.bottomInset + (widget.searchSession ? 0 : 24),
               ),
               content: LayoutBuilder(
                 builder: (context, constraints) {
@@ -812,7 +812,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                           LibraryLikeCardMetrics.listHorizontalPadding,
                           0,
                           LibraryLikeCardMetrics.listHorizontalPadding,
-                          widget.bottomInset + 24,
+                          widget.bottomInset + (widget.searchSession ? 0 : 24),
                         ),
                         sliver: SliverLayoutBuilder(
                           builder: (context, constraints) {

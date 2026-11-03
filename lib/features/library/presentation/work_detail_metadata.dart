@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
+import '../../../app/presentation/element_action_menu.dart';
 import '../../../core/widgets/horizontal_edge_fade_scroll.dart';
 import '../../../core/widgets/page_translation_scope.dart';
 
@@ -31,7 +31,11 @@ class WorkDetailMetadata extends StatelessWidget {
         if (voiceActors.isNotEmpty) ...[
           Row(
             children: [
-              Icon(Icons.record_voice_over_rounded, size: 16, color: rowIconColor),
+              Icon(
+                Icons.record_voice_over_rounded,
+                size: 16,
+                color: rowIconColor,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: _buildVoiceActorScroller(context, cs, voiceActors),
@@ -45,11 +49,7 @@ class WorkDetailMetadata extends StatelessWidget {
         if (tags.isNotEmpty) ...[
           Row(
             children: [
-              Icon(
-                Icons.local_offer_rounded,
-                size: 16,
-                color: rowIconColor,
-              ),
+              Icon(Icons.local_offer_rounded, size: 16, color: rowIconColor),
               const SizedBox(width: 8),
               Expanded(child: _buildTagScroller(context, cs, tags)),
             ],
@@ -71,45 +71,42 @@ class WorkDetailMetadata extends StatelessWidget {
       label: voiceActor,
       child: Material(
         color: Colors.transparent,
-        child: InkWell(
-          key: ValueKey<String>('work_detail_voice_actor_$voiceActor'),
-          onTap: defaultTargetPlatform == TargetPlatform.windows
-              ? null
-              : () => onCopy(voiceActor),
-          onSecondaryTap: defaultTargetPlatform == TargetPlatform.windows
-              ? () => onCopy(voiceActor)
-              : null,
-          borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
-          child: Container(
-            padding: _workMetadataCapsulePadding,
-            decoration: BoxDecoration(
-              color: cs.primary.withValues(
-                alpha: isDark ? 0.14 : 0.10,
-              ),
-              borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
-              border: Border.all(
-                color: cs.primary.withValues(alpha: isDark ? 0.30 : 0.22),
-                width: 0.8,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.person_rounded,
-                  size: 13,
-                  color: isDark ? cs.primary : cs.primary,
+        child: ElementActionMenu(
+          value: voiceActor,
+          onCopy: () => onCopy(voiceActor),
+          child: InkWell(
+            key: ValueKey<String>('work_detail_voice_actor_$voiceActor'),
+            onTap: () => onCopy(voiceActor),
+            borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
+            child: Container(
+              padding: _workMetadataCapsulePadding,
+              decoration: BoxDecoration(
+                color: cs.primary.withValues(alpha: isDark ? 0.14 : 0.10),
+                borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
+                border: Border.all(
+                  color: cs.primary.withValues(alpha: isDark ? 0.30 : 0.22),
+                  width: 0.8,
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  voiceActor,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: isDark ? cs.primary : cs.onSurface,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.person_rounded,
+                    size: 13,
+                    color: isDark ? cs.primary : cs.primary,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 4),
+                  Text(
+                    voiceActor,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: isDark ? cs.primary : cs.onSurface,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -119,38 +116,40 @@ class WorkDetailMetadata extends StatelessWidget {
 
   Widget _buildTagCapsule(BuildContext context, ColorScheme cs, String tag) {
     final displayLabel = tag.startsWith('#') ? tag : '#$tag';
+    final value = displayLabel.substring(1);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        key: ValueKey<String>('work_detail_tag_$displayLabel'),
-        onTap: defaultTargetPlatform == TargetPlatform.windows
-            ? null
-            : () => onCopy(tag.startsWith('#') ? tag.substring(1) : tag),
-        onSecondaryTap: defaultTargetPlatform == TargetPlatform.windows
-            ? () => onCopy(tag.startsWith('#') ? tag.substring(1) : tag)
-            : null,
-        borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
-        child: Container(
-          padding: _workMetadataCapsulePadding,
-          decoration: BoxDecoration(
-            color: isDark
-                ? cs.surfaceContainerHighest.withValues(alpha: 0.50)
-                : cs.surfaceContainerHigh.withValues(alpha: 0.60),
-            borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: isDark ? 0.25 : 0.35),
-              width: 0.8,
+      child: ElementActionMenu(
+        value: value,
+        onCopy: () => onCopy(value),
+        child: InkWell(
+          key: ValueKey<String>('work_detail_tag_$displayLabel'),
+          onTap: () => onCopy(value),
+          borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
+          child: Container(
+            padding: _workMetadataCapsulePadding,
+            decoration: BoxDecoration(
+              color: isDark
+                  ? cs.surfaceContainerHighest.withValues(alpha: 0.50)
+                  : cs.surfaceContainerHigh.withValues(alpha: 0.60),
+              borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
+              border: Border.all(
+                color: cs.outlineVariant.withValues(
+                  alpha: isDark ? 0.25 : 0.35,
+                ),
+                width: 0.8,
+              ),
             ),
-          ),
-          child: WorkPageTranslationText(
-            tag.startsWith('#') ? tag.substring(1) : tag,
-            prefix: '#',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: cs.onSurfaceVariant,
+            child: WorkPageTranslationText(
+              value,
+              prefix: '#',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: cs.onSurfaceVariant,
+              ),
             ),
           ),
         ),

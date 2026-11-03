@@ -318,7 +318,9 @@ class _PlaybackQueueAudioEditPageState
                       ],
                     );
 
-                    final sectionTopOffset = isLandscape ? headerHeight : 0.0;
+                    final sectionTopOffset = isLandscape
+                        ? headerHeight
+                        : AppSpacing.xs;
 
                     final playlistAudioSection = DecoratedBox(
                       decoration: BoxDecoration(color: playlistAreaBackground),

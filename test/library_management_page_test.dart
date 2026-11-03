@@ -1,6 +1,7 @@
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/path_display.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_edit.dart';
@@ -199,15 +200,21 @@ void main() {
       expect(find.byType(FileTreeRow), findsOneWidget);
       expect(fixture.library.watchedLibraries, [libraryPath]);
 
-      await tester.tap(
-        find.descendant(
-          of: find.byType(FileTreeRow),
-          matching: find.text(
-            PathDisplay.folderName(libraryPath),
-            findRichText: true,
-          ),
-        ),
+      final row = find.byType(FileTreeRow);
+      final ink = find.descendant(
+        of: row,
+        matching: find.byType(AppEntryInkWell),
       );
+      final dynamic controller = Material.of(tester.element(ink));
+      Iterable<InkSplash> splashes() =>
+          (controller.debugInkFeatures as List<InkFeature>? ?? [])
+              .whereType<InkSplash>();
+
+      final gesture = await tester.startGesture(tester.getCenter(row));
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(splashes(), isNotEmpty);
+      await gesture.up();
+      expect(splashes(), isEmpty);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
       expect(find.byType(LibraryEditPage), findsOneWidget);
@@ -217,6 +224,13 @@ void main() {
             .libraryPath,
         libraryPath,
       );
+      Navigator.of(tester.element(find.byType(LibraryEditPage))).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(splashes(), isEmpty);
+      await tester.pumpAndSettle();
+      expect(row, findsOneWidget);
+      expect(splashes(), isEmpty);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },

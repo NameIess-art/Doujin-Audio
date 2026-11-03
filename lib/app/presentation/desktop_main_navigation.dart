@@ -132,7 +132,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
         ? collapsedWidth
         : expandedWidth;
     final horizontalPadding = isLandscapeLayout ? 16.0 : 20.0;
-    final horizontalBorder = isLandscapeLayout ? 1.0 : 2.0;
+    final horizontalBorder = isLandscapeLayout ? 0.0 : 2.0;
     final railMinWidth = collapsedWidth - horizontalPadding - horizontalBorder;
     final railMinExtendedWidth =
         expandedWidth - horizontalPadding - horizontalBorder;
@@ -163,15 +163,9 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
         color: sidebarColor,
         borderRadius: isLandscapeLayout
             ? BorderRadius.zero
-            : BorderRadius.circular(16),
+            : BorderRadius.circular(AppRadius.section),
         border: isLandscapeLayout
-            ? Border(
-                right: BorderSide(
-                  color: cs.outlineVariant.withValues(
-                    alpha: isDark ? 0.4 : 0.65,
-                  ),
-                ),
-              )
+            ? null
             : Border.all(color: cs.outlineVariant.withValues(alpha: 0.85)),
       ),
       child: Column(

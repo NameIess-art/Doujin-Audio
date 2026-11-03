@@ -1,6 +1,7 @@
 import '../../../../core/widgets/app_transitions.dart';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/marquee_text.dart';
@@ -49,19 +50,25 @@ class SessionDetailLayout extends StatelessWidget {
           key: const ValueKey('session_detail_landscape_layout'),
           delegate: _LandscapeDetailLayoutDelegate(
             topPadding: padding.top,
-            segmentTop: MediaQuery.paddingOf(context).top + 6,
+            leftFraction: defaultTargetPlatform == TargetPlatform.windows
+                ? 4 / 7
+                : 0.5,
           ),
           children: [
             LayoutId(
               id: _LandscapeDetailSlot.artwork,
-              child: Align(
-                key: const ValueKey('session_detail_cover_area'),
-                child: AspectRatio(
-                  aspectRatio: 4 / 3,
-                  child: CoverArtworkFrame(
-                    showShadow: !isVideo,
-                    borderRadius: BorderRadius.circular(16),
-                    child: artwork,
+              child: Visibility(
+                visible: !segmentPanelExpanded,
+                maintainState: true,
+                child: Align(
+                  key: const ValueKey('session_detail_cover_area'),
+                  child: AspectRatio(
+                    aspectRatio: 4 / 3,
+                    child: CoverArtworkFrame(
+                      showShadow: !isVideo,
+                      borderRadius: BorderRadius.circular(16),
+                      child: artwork,
+                    ),
                   ),
                 ),
               ),
@@ -70,21 +77,33 @@ class SessionDetailLayout extends StatelessWidget {
               id: _LandscapeDetailSlot.progress,
               child: RepaintBoundary(child: progress),
             ),
-            if (segmentPanelExpanded)
-              LayoutId(
-                id: _LandscapeDetailSlot.segments,
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(19),
-                    topRight: Radius.circular(19),
-                    bottomLeft: Radius.circular(16),
-                    bottomRight: Radius.circular(16),
-                  ),
-                  child: segmentPanelBuilder(
-                    const ValueKey('segments_landscape'),
-                  ),
+            LayoutId(
+              id: _LandscapeDetailSlot.segments,
+              child: AnimatedSwitcher(
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : kAppFadeDuration,
+                switchInCurve: kAppFadeCurve,
+                switchOutCurve: kAppFadeCurve,
+                layoutBuilder: (currentChild, previousChildren) => Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    for (final child in previousChildren)
+                      ExcludeFocus(
+                        child: ExcludeSemantics(
+                          child: IgnorePointer(child: child),
+                        ),
+                      ),
+                    ?currentChild,
+                  ],
                 ),
+                child: segmentPanelExpanded
+                    ? segmentPanelBuilder(
+                        const ValueKey('segments_landscape'),
+                      )
+                    : null,
               ),
+            ),
             LayoutId(
               id: _LandscapeDetailSlot.details,
               child: Column(
@@ -267,30 +286,33 @@ enum _LandscapeDetailSlot { artwork, progress, segments, details }
 class _LandscapeDetailLayoutDelegate extends MultiChildLayoutDelegate {
   _LandscapeDetailLayoutDelegate({
     required this.topPadding,
-    required this.segmentTop,
+    required this.leftFraction,
   });
 
   final double topPadding;
-  final double segmentTop;
+  final double leftFraction;
 
   @override
   void performLayout(Size size) {
-    final columnWidth = max(0.0, (size.width - 12) / 2);
+    const columnGap = 12.0;
+    final availableWidth = max(0.0, size.width - columnGap);
+    final leftWidth = availableWidth * leftFraction;
+    final rightWidth = availableWidth - leftWidth;
     final progressSize = layoutChild(
       _LandscapeDetailSlot.progress,
-      BoxConstraints.tightFor(width: columnWidth),
+      BoxConstraints.tightFor(width: leftWidth),
     );
     final coverSpace = max(
       0.0,
       size.height - progressSize.height - 5 - topPadding,
     );
-    final coverHeight = min(columnWidth * 3 / 4, coverSpace);
+    final coverHeight = min(leftWidth * 3 / 4, coverSpace);
     final coverTop = topPadding + (coverSpace - coverHeight) / 2;
     final coverBottom = coverTop + coverHeight;
 
     layoutChild(
       _LandscapeDetailSlot.artwork,
-      BoxConstraints.tight(Size(columnWidth, coverHeight)),
+      BoxConstraints.tight(Size(leftWidth, coverHeight)),
     );
     positionChild(_LandscapeDetailSlot.artwork, Offset(0, coverTop));
     positionChild(_LandscapeDetailSlot.progress, Offset(0, coverBottom + 5));
@@ -299,27 +321,23 @@ class _LandscapeDetailLayoutDelegate extends MultiChildLayoutDelegate {
     layoutChild(
       _LandscapeDetailSlot.details,
       BoxConstraints.tight(
-        Size(columnWidth, coverHeight + 5 + progressSize.height),
+        Size(rightWidth, coverHeight + 5 + progressSize.height),
       ),
     );
     positionChild(
       _LandscapeDetailSlot.details,
-      Offset(columnWidth + 12, coverTop),
+      Offset(leftWidth + columnGap, coverTop),
     );
 
-    if (hasChild(_LandscapeDetailSlot.segments)) {
-      layoutChild(
-        _LandscapeDetailSlot.segments,
-        BoxConstraints.tight(
-          Size(columnWidth, max(0.0, coverBottom - segmentTop)),
-        ),
-      );
-      positionChild(_LandscapeDetailSlot.segments, Offset(0, segmentTop));
-    }
+    layoutChild(
+      _LandscapeDetailSlot.segments,
+      BoxConstraints.tight(Size(leftWidth, coverHeight)),
+    );
+    positionChild(_LandscapeDetailSlot.segments, Offset(0, coverTop));
   }
 
   @override
   bool shouldRelayout(_LandscapeDetailLayoutDelegate oldDelegate) =>
       topPadding != oldDelegate.topPadding ||
-      segmentTop != oldDelegate.segmentTop;
+      leftFraction != oldDelegate.leftFraction;
 }

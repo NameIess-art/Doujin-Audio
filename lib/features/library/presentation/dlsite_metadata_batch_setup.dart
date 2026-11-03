@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 
 enum DlsiteMetadataBatchScope {
   anyMissing,
@@ -93,18 +94,21 @@ class BatchMetadataSetupView extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
-                RadioListTile<DlsiteMetadataBatchScope>(
-                  value: DlsiteMetadataBatchScope.specific,
-                  title: Text(
-                    '${i18n.tr('batch_metadata_specific')} ($specificCount)',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                Theme(
+                  data: AppEntryInkWell.entryTheme(Theme.of(context)),
+                  child: RadioListTile<DlsiteMetadataBatchScope>(
+                    value: DlsiteMetadataBatchScope.specific,
+                    title: Text(
+                      '${i18n.tr('batch_metadata_specific')} ($specificCount)',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    secondary: scope == DlsiteMetadataBatchScope.specific
+                        ? IconButton(
+                            icon: const Icon(Icons.edit_rounded),
+                            onPressed: onPickSpecific,
+                          )
+                        : null,
                   ),
-                  secondary: scope == DlsiteMetadataBatchScope.specific
-                      ? IconButton(
-                          icon: const Icon(Icons.edit_rounded),
-                          onPressed: onPickSpecific,
-                        )
-                      : null,
                 ),
                 RadioListTile<DlsiteMetadataBatchScope>(
                   value: DlsiteMetadataBatchScope.all,

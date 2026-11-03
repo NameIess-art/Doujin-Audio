@@ -1,7 +1,6 @@
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -134,69 +133,53 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: ScrollActivityGate(
               maxNotificationDepth: 1,
-              child: Listener(
-                onPointerSignal: (signal) {
-                  if (defaultTargetPlatform != TargetPlatform.windows ||
-                      signal is! PointerScrollEvent ||
-                      signal.scrollDelta.dy == 0) {
-                    return;
-                  }
-                  final target =
-                      _pageIndex.value + (signal.scrollDelta.dy > 0 ? 1 : -1);
-                  if (target < 0 || target >= 5) return;
-                  GestureBinding.instance.pointerSignalResolver.register(
-                    signal,
-                    (_) => _animateToPanelPage(target),
-                  );
-                },
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onHorizontalDragStart: (_) => _pageDragDistance = 0,
-                  onHorizontalDragUpdate: (details) =>
-                      _pageDragDistance += details.primaryDelta ?? 0,
-                  onHorizontalDragEnd: _handlePageDragEnd,
-                  child: AppFadeThroughIndexedStack.lazy(
-                    key: const ValueKey('playback_console_page_stack'),
-                    indexListenable: _pageIndex,
-                    itemCount: 5,
-                    contentRevision: Object(),
-                    itemBuilder: (context, index) => switch (index) {
-                      0 => EqualizerPage(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragStart: (_) => _pageDragDistance = 0,
+                onHorizontalDragUpdate: (details) =>
+                    _pageDragDistance += details.primaryDelta ?? 0,
+                onHorizontalDragEnd: _handlePageDragEnd,
+                child: AppFadeThroughIndexedStack.lazy(
+                  key: const ValueKey('playback_console_page_stack'),
+                  indexListenable: _pageIndex,
+                  itemCount: 5,
+                  contentRevision: Object(),
+                  itemBuilder: (context, index) => switch (index) {
+                    0 => EqualizerPage(
+                      session: widget.session,
+                      playback: widget.playback,
+                      topInset: pageTopInset,
+                    ),
+                    1 => AudioFeaturesPage(
+                      session: widget.session,
+                      playback: widget.playback,
+                      topInset: pageTopInset,
+                    ),
+                    2 => Padding(
+                      padding: const EdgeInsets.only(top: pageTopInset),
+                      child: SpeedWheelPage(
+                        key: ValueKey<String>('speed_${widget.session.id}'),
                         session: widget.session,
                         playback: widget.playback,
-                        topInset: pageTopInset,
                       ),
-                      1 => AudioFeaturesPage(
+                    ),
+                    3 => Padding(
+                      padding: const EdgeInsets.only(top: pageTopInset),
+                      child: _buildSegmentPage(
+                        context,
+                        selected: selected,
+                        activeColor: activeColor,
+                        loopActive: loopActive,
+                      ),
+                    ),
+                    _ => Padding(
+                      padding: const EdgeInsets.only(top: pageTopInset),
+                      child: VolumeBalancePage(
                         session: widget.session,
                         playback: widget.playback,
-                        topInset: pageTopInset,
                       ),
-                      2 => Padding(
-                        padding: const EdgeInsets.only(top: pageTopInset),
-                        child: SpeedWheelPage(
-                          key: ValueKey<String>('speed_${widget.session.id}'),
-                          session: widget.session,
-                          playback: widget.playback,
-                        ),
-                      ),
-                      3 => Padding(
-                        padding: const EdgeInsets.only(top: pageTopInset),
-                        child: _buildSegmentPage(
-                          context,
-                          selected: selected,
-                          activeColor: activeColor,
-                          loopActive: loopActive,
-                        ),
-                      ),
-                      _ => Padding(
-                        padding: const EdgeInsets.only(top: pageTopInset),
-                        child: VolumeBalancePage(
-                          session: widget.session,
-                          playback: widget.playback,
-                        ),
-                      ),
-                    },
-                  ),
+                    ),
+                  },
                 ),
               ),
             ),
@@ -226,37 +209,24 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
         ),
       ],
     );
-    final panel = isPortrait
-        ? SizedBox(
-            key: const ValueKey<String>('playback_expanded_control_panel'),
-            height: targetHeight,
-            child: ClipRRect(
-              borderRadius: panelRadius,
-              child: DecoratedBox(
-                key: const ValueKey<String>(
-                  'playback_expanded_control_panel_surface',
-                ),
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHigh.withValues(alpha: 0.9),
-                  borderRadius: panelRadius,
-                  border: Border.all(
-                    color: cs.outlineVariant.withValues(alpha: 0.55),
-                  ),
-                ),
-                child: content,
-              ),
+    final panel = SizedBox(
+      key: const ValueKey<String>('playback_expanded_control_panel'),
+      height: targetHeight,
+      child: ClipRRect(
+        borderRadius: panelRadius,
+        child: DecoratedBox(
+          key: const ValueKey<String>('playback_expanded_control_panel_surface'),
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHigh.withValues(alpha: 0.9),
+            borderRadius: panelRadius,
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: 0.55),
             ),
-          )
-        : SizedBox(
-            height: targetHeight,
-            child: ColoredBox(
-              key: const ValueKey<String>(
-                'playback_expanded_control_panel_landscape_surface',
-              ),
-              color: cs.surface,
-              child: content,
-            ),
-          );
+          ),
+          child: content,
+        ),
+      ),
+    );
     return ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
       child: panel,

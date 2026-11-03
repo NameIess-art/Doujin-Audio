@@ -164,6 +164,7 @@ class _DlsiteMetadataBatchResultsPageState
                           child: Opacity(
                             opacity: isExcluded ? 0.38 : 1.0,
                             child: FileTreeRow(
+                              navigationEntry: item.isReviewable,
                               key: ValueKey<String>(
                                 'batch_metadata_result_$index',
                               ),

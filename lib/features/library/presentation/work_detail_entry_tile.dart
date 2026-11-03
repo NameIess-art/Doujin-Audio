@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/time_text_formatters.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
@@ -123,6 +124,95 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     final isHighlighted =
         defaultTargetPlatform == TargetPlatform.windows && _isMenuOpen;
 
+    final opensPage =
+        item.type == WorkEntryType.text || item.type == WorkEntryType.image;
+    final onLongPress = defaultTargetPlatform == TargetPlatform.windows
+        ? null
+        : () {
+            unawaited(
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.selection,
+                context: context,
+              ),
+            );
+            widget.onAction(WorkEntryAction.copy);
+          };
+
+    void onTap() {
+      unawaited(
+        AppInteractionFeedback.trigger(
+          AppInteractionFeedbackType.tap,
+          context: context,
+        ),
+      );
+      widget.onAction(
+        item.type == WorkEntryType.audio
+            ? WorkEntryAction.play
+            : WorkEntryAction.open,
+      );
+    }
+
+    final tile = ListTile(
+      dense: true,
+      minTileHeight: 44,
+      minVerticalPadding: 4,
+      titleAlignment: ListTileTitleAlignment.center,
+      horizontalTitleGap: 0,
+      // Preserve the name's leading offset while tightening the action gap.
+      minLeadingWidth: 40,
+      contentPadding: const EdgeInsets.only(left: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      splashColor: color.withValues(alpha: 0.16),
+      hoverColor: color.withValues(alpha: 0.08),
+      selected: isHighlighted,
+      selectedTileColor: widget.accentColor.withValues(alpha: 0.16),
+      selectedColor: widget.accentColor,
+      leading: Icon(
+        icon,
+        color: color,
+        size: AppDesignTokens.fileEntryIconSize,
+      ),
+      title: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          WorkPageTranslationText(
+            item.displayName,
+            fileName: !isFolder,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: nameStyle,
+          ),
+          if (!isFolder) ...[
+            const SizedBox(height: 2),
+            Text(
+              info,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: infoStyle,
+            ),
+          ],
+        ],
+      ),
+      trailing: SizedBox.square(
+        dimension: 44,
+        child: Builder(
+          builder: (buttonContext) => IconButton(
+            key: ValueKey<String>('work_entry_more_${item.relativePath}'),
+            // Match the skeleton action center without shrinking its target.
+            padding: const EdgeInsets.only(left: 4),
+            iconSize: 20,
+            color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+            icon: const Icon(Icons.more_vert_rounded),
+            tooltip: widget.moreLabel,
+            onPressed: () => _showButtonMenu(buttonContext),
+          ),
+        ),
+      ),
+      onLongPress: opensPage ? null : onLongPress,
+      onTap: opensPage ? null : onTap,
+    );
+
     return GestureDetector(
       onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
           ? (details) async {
@@ -150,88 +240,16 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
         color: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         clipBehavior: Clip.antiAlias,
-        child: ListTile(
-          dense: true,
-          minTileHeight: 44,
-          minVerticalPadding: 4,
-          titleAlignment: ListTileTitleAlignment.center,
-          horizontalTitleGap: 0,
-          // Preserve the name's leading offset while tightening the action gap.
-          minLeadingWidth: 40,
-          contentPadding: const EdgeInsets.only(left: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          splashColor: color.withValues(alpha: 0.16),
-          hoverColor: color.withValues(alpha: 0.08),
-          selected: isHighlighted,
-          selectedTileColor: widget.accentColor.withValues(alpha: 0.16),
-          selectedColor: widget.accentColor,
-          leading: Icon(
-            icon,
-            color: color,
-            size: AppDesignTokens.fileEntryIconSize,
-          ),
-          title: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              WorkPageTranslationText(
-                item.displayName,
-                fileName: !isFolder,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: nameStyle,
-              ),
-              if (!isFolder) ...[
-                const SizedBox(height: 2),
-                Text(
-                  info,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: infoStyle,
-                ),
-              ],
-            ],
-          ),
-          trailing: SizedBox.square(
-            dimension: 44,
-            child: Builder(
-              builder: (buttonContext) => IconButton(
-                key: ValueKey<String>('work_entry_more_${item.relativePath}'),
-                // Match the skeleton action center without shrinking its target.
-                padding: const EdgeInsets.only(left: 4),
-                iconSize: 20,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.7),
-                icon: const Icon(Icons.more_vert_rounded),
-                tooltip: widget.moreLabel,
-                onPressed: () => _showButtonMenu(buttonContext),
-              ),
-            ),
-          ),
-          onLongPress: defaultTargetPlatform == TargetPlatform.windows
-              ? null
-              : () {
-                  unawaited(
-                    AppInteractionFeedback.trigger(
-                      AppInteractionFeedbackType.selection,
-                      context: context,
-                    ),
-                  );
-                  widget.onAction(WorkEntryAction.copy);
-                },
-          onTap: () {
-            unawaited(
-              AppInteractionFeedback.trigger(
-                AppInteractionFeedbackType.tap,
-                context: context,
-              ),
-            );
-            widget.onAction(
-              item.type == WorkEntryType.audio
-                  ? WorkEntryAction.play
-                  : WorkEntryAction.open,
-            );
-          },
-        ),
+        child: opensPage
+            ? AppEntryInkWell(
+                borderRadius: BorderRadius.circular(8),
+                splashColor: color.withValues(alpha: 0.16),
+                hoverColor: color.withValues(alpha: 0.08),
+                onTap: onTap,
+                onLongPress: onLongPress,
+                child: tile,
+              )
+            : tile,
       ),
     );
   }

@@ -25,33 +25,29 @@ class MetadataReviewSkeleton extends StatelessWidget {
               aspectRatio: kStandardCoverAspectRatio,
               child: ShimmerContainer(borderRadius: 16),
             ),
-            const SizedBox(
-              height: 56,
-              child: Row(
-                children: [
-                  ShimmerContainer(
-                    key: ValueKey<String>(
-                      'dlsite_review_skeleton_save_cover_label',
-                    ),
-                    width: 150,
-                    height: 14,
+            const ListTile(
+              contentPadding: EdgeInsets.symmetric(horizontal: 16),
+              title: Align(
+                alignment: Alignment.centerLeft,
+                child: ShimmerContainer(
+                  key: ValueKey<String>(
+                    'dlsite_review_skeleton_save_cover_label',
                   ),
-                  Spacer(),
-                  SizedBox(
-                    width: 60,
-                    height: 40,
-                    child: Center(
-                      child: ShimmerContainer(
-                        key: ValueKey<String>(
-                          'dlsite_review_skeleton_save_cover',
-                        ),
-                        width: 52,
-                        height: 32,
-                        borderRadius: 16,
-                      ),
-                    ),
+                  width: 150,
+                  height: 14,
+                ),
+              ),
+              trailing: SizedBox(
+                width: 60,
+                height: 40,
+                child: Center(
+                  child: ShimmerContainer(
+                    key: ValueKey<String>('dlsite_review_skeleton_save_cover'),
+                    width: 52,
+                    height: 32,
+                    borderRadius: 16,
                   ),
-                ],
+                ),
               ),
             ),
             const SizedBox(height: 12),

@@ -142,7 +142,11 @@ void main() {
 
     await tester.scrollUntilVisible(find.byType(SwitchListTile), 300);
     expect(find.byType(SwitchListTile), findsOneWidget);
-    expect(tester.getSize(find.byType(SwitchListTile)).height, 56);
+    final tileContext = tester.element(find.byType(SwitchListTile));
+    expect(
+      tester.getSize(find.byType(SwitchListTile)).height,
+      Theme.of(tileContext).platform == TargetPlatform.windows ? 48 : 56,
+    );
     final actualSaveCover = find.descendant(
       of: find.byType(SwitchListTile),
       matching: find.byType(Switch),
@@ -158,6 +162,11 @@ void main() {
     );
     expect(skeletonCenterX, closeTo(tester.getCenter(actualSaveCover).dx, 1));
     final actualLabel = find.text(languageProvider.tr('dlsite_save_cover'));
+    expect(
+      tester.getRect(actualLabel).left -
+          tester.getRect(find.byType(SwitchListTile)).left,
+      16,
+    );
     expect(
       skeletonLabelOffset,
       closeTo(
@@ -176,7 +185,10 @@ void main() {
       find.text(languageProvider.tr('audio_detail_work_title')),
       findsOneWidget,
     );
-  });
+  }, variant: const TargetPlatformVariant({
+    TargetPlatform.android,
+    TargetPlatform.windows,
+  }));
 }
 
 Widget _buildTestApp({

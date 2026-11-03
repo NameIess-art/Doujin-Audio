@@ -11,6 +11,7 @@ import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/path_matcher.dart';
+import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
@@ -224,7 +225,8 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
             color: isSelected
                 ? cs.primaryContainer.withValues(alpha: 0.15)
                 : Colors.transparent,
-            child: InkWell(
+            child: AppEntryInkWell(
+              navigationEntry: !isSelectionMode,
               excludeFromSemantics: true,
               onTap: () {
                 if (isSelectionMode) {

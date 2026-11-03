@@ -1021,7 +1021,7 @@ void main() {
         );
         expect(local.localTarget, target);
         expect(navigation.rootNavigatorKey.currentState!.canPop(), isFalse);
-        expect(tester.getSize(_pane).width, 509.5);
+        expect(tester.getSize(_pane).width, closeTo(1019 * 3 / 7, 0.01));
         final localState = tester.state(find.byType(WorkDetailPage));
         unawaited(showAudioDetailSheet(context, target));
         await _finishRouteAnimation(tester);
@@ -1064,14 +1064,126 @@ void main() {
     );
 
     testWidgets(
-      'main stays interactive beside equal detail panes on $platform',
+      'main stays interactive beside 4:3 detail panes on $platform',
       (tester) async {
-        final navigation = await _pumpApp(tester);
+        final surface = GlobalKey();
+        final navigation = await _pumpApp(
+          tester,
+          home: RepaintBoundary(key: surface, child: const MainScreen()),
+        );
         expect(tester.getSize(_main).width, 1020);
         await _open(tester, navigation, 'A');
-        expect(tester.getSize(_main).width, 509.5);
-        expect(tester.getSize(_pane).width, 509.5);
-        expect(tester.getRect(_main).right + 1, tester.getRect(_pane).left);
+        expect(tester.getSize(_main).width, closeTo(1019 * 4 / 7, 0.01));
+        expect(tester.getSize(_pane).width, closeTo(1019 * 3 / 7, 0.01));
+        expect(
+          tester.getRect(_main).right + 1,
+          closeTo(tester.getRect(_pane).left, 0.01),
+        );
+        final cornerBackground = Theme.of(
+          tester.element(_main),
+        ).colorScheme.surfaceContainerLow;
+        final corners = <Offset>[];
+        final edges = <Offset>[];
+        for (final page in [_main, _pane]) {
+          final rect = tester
+              .getRect(page)
+              .shift(-tester.getTopLeft(find.byKey(surface)));
+          corners.addAll([
+            rect.topLeft + const Offset(2, 2),
+            rect.topRight + const Offset(-2, 2),
+            rect.bottomLeft + const Offset(2, -2),
+            rect.bottomRight + const Offset(-2, -2),
+          ]);
+          edges.addAll([
+            rect.topCenter + const Offset(0, 0.5),
+            rect.bottomCenter - const Offset(0, 0.5),
+          ]);
+        }
+        final mainRect = tester.getRect(_main);
+        final paneRect = tester.getRect(_pane);
+        final y = mainRect.bottom - 80;
+        final outerEdges = [
+          Offset(mainRect.left + 0.5, y),
+          Offset(paneRect.right - 0.5, y),
+        ];
+        final dividerPixels = [
+          for (var delta = -1; delta <= 2; delta++)
+            Offset(mainRect.right.floor() + delta + 0.5, y),
+        ];
+        final cornerColors = await tester.runAsync(() async {
+          final image = await tester
+              .renderObject<RenderRepaintBoundary>(find.byKey(surface))
+              .toImage();
+          final bytes = (await image.toByteData())!;
+          final colors = [
+            ...corners,
+            ...edges,
+            ...outerEdges,
+            ...dividerPixels,
+          ].map((point) {
+            final offset =
+                (point.dy.floor() * image.width + point.dx.floor()) * 4;
+            return Color.fromARGB(
+              bytes.getUint8(offset + 3),
+              bytes.getUint8(offset),
+              bytes.getUint8(offset + 1),
+              bytes.getUint8(offset + 2),
+            );
+          }).toList();
+          image.dispose();
+          return colors;
+        });
+        expect(
+          cornerColors!.take(corners.length),
+          everyElement(cornerBackground),
+        );
+        expect(
+          cornerColors.skip(corners.length).take(edges.length),
+          everyElement(
+            isNot(Theme.of(tester.element(_main)).colorScheme.outlineVariant),
+          ),
+        );
+        final scheme = Theme.of(tester.element(_main)).colorScheme;
+        expect(
+          cornerColors
+              .skip(corners.length + edges.length)
+              .take(outerEdges.length),
+          everyElement(scheme.outlineVariant),
+        );
+        final dividerColors = cornerColors
+            .skip(corners.length + edges.length + outerEdges.length)
+            .toList();
+        expect(dividerColors.first, scheme.surface);
+        expect(dividerColors.last, scheme.surface);
+        final coverage = dividerColors.skip(1).take(2).fold<double>(
+          0,
+          (total, color) => total +
+              (color.r - scheme.surface.r) /
+                  (scheme.outlineVariant.r - scheme.surface.r),
+        );
+        expect(coverage, closeTo(1, 0.1));
+        final sidebarWidth = tester
+            .getSize(find.byType(DesktopMainNavigation))
+            .width;
+        final detailState = tester.state(find.byType(_Detail));
+        void expectRouteMetrics() {
+          expect(
+            MediaQuery.sizeOf(
+              navigation.contentNavigatorKey.currentState!.overlay!.context,
+            ).width,
+            closeTo(tester.getSize(_main).width, 0.01),
+          );
+          expect(
+            MediaQuery.sizeOf(tester.element(find.byType(_Detail))).width,
+            closeTo(tester.getSize(_pane).width, 0.01),
+          );
+          expect(
+            tester.getSize(find.byType(DesktopMainNavigation)).width,
+            sidebarWidth,
+          );
+        }
+
+        expectRouteMetrics();
         final mainState = tester.state(find.byType(MainScreen));
         final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
         await tester.tap(find.byWidget(rail.destinations[1].label));
@@ -1084,6 +1196,17 @@ void main() {
         );
         expect(tester.state(find.byType(MainScreen)), same(mainState));
         expect(find.text('Work A'), findsOneWidget);
+        for (final size in [const Size(960, 600), const Size(1440, 900)]) {
+          tester.view.physicalSize = size;
+          await _settle(tester);
+          final available = size.width - sidebarWidth - 1;
+          expect(tester.getSize(_main).width, closeTo(available * 4 / 7, 0.01));
+          expect(tester.getSize(_pane).width, closeTo(available * 3 / 7, 0.01));
+          expect(tester.state(find.byType(_Detail)), same(detailState));
+          expectRouteMetrics();
+        }
+        tester.view.physicalSize = const Size(1280, 800);
+        await _settle(tester);
         await tester.tap(find.byTooltip('Back'));
         await _settle(tester);
         expect(navigation.isOpen, isFalse);
@@ -1092,8 +1215,8 @@ void main() {
           tester.view.physicalSize = const Size(960, 600);
           await _settle(tester);
           await _open(tester, navigation, 'A');
-          expect(tester.getSize(_main).width, 349.5);
-          expect(tester.getSize(_pane).width, 349.5);
+          expect(tester.getSize(_main).width, closeTo(699 * 4 / 7, 0.01));
+          expect(tester.getSize(_pane).width, closeTo(699 * 3 / 7, 0.01));
         }
       },
       variant: TargetPlatformVariant({platform}),
@@ -1362,8 +1485,8 @@ void main() {
             .isMenuCollapsed,
         isTrue,
       );
-      expect(tester.getSize(_main).width, 384.5);
-      expect(tester.getSize(_pane).width, 384.5);
+      expect(tester.getSize(_main).width, closeTo(769 * 4 / 7, 0.01));
+      expect(tester.getSize(_pane).width, closeTo(769 * 3 / 7, 0.01));
       expect(
         (await SharedPreferences.getInstance()).getBool(
           'desktop_menu_collapsed',
@@ -1378,16 +1501,16 @@ void main() {
             .isMenuCollapsed,
         isFalse,
       );
-      expect(tester.getSize(_pane).width, 509.5);
+      expect(tester.getSize(_pane).width, closeTo(1019 * 3 / 7, 0.01));
     },
     variant: const TargetPlatformVariant({TargetPlatform.android}),
   );
 
   testWidgets(
-    'automatic sidebar collapse keeps panes equal while opening and closing',
+    'automatic sidebar collapse keeps 4:3 panes while opening and closing',
     (tester) async {
       final navigation = await _pumpApp(tester, size: const Size(850, 480));
-      Future<void> expectEqualFrames() async {
+      Future<void> expectProportionalFrames() async {
         for (final elapsed in [
           Duration.zero,
           const Duration(milliseconds: 100),
@@ -1395,7 +1518,7 @@ void main() {
           await tester.pump(elapsed);
           expect(
             tester.getSize(_main).width,
-            closeTo(tester.getSize(_pane).width, 0.01),
+            closeTo(tester.getSize(_pane).width * 4 / 3, 0.01),
           );
           expect(
             tester.getRect(_pane).left - tester.getRect(_main).right,
@@ -1413,11 +1536,11 @@ void main() {
           ),
         ),
       );
-      await expectEqualFrames();
+      await expectProportionalFrames();
       await _settle(tester);
-      expect(tester.getSize(_main).width, 384.5);
+      expect(tester.getSize(_main).width, closeTo(769 * 4 / 7, 0.01));
       navigation.navigatorKey.currentState!.pop();
-      await expectEqualFrames();
+      await expectProportionalFrames();
       await _settle(tester);
       expect(navigation.isOpen, isFalse);
       expect(tester.getSize(_main).width, 590);
@@ -1426,7 +1549,7 @@ void main() {
   );
 
   testWidgets(
-    'portrait to landscape keeps panes equal during sidebar animation',
+    'portrait to landscape keeps 4:3 panes during sidebar animation',
     (tester) async {
       final navigation = await _pumpApp(tester, size: const Size(390, 820));
       await _open(tester, navigation, 'A');
@@ -1445,7 +1568,7 @@ void main() {
       }
       await _settle(tester);
       expect(
-        frames.map((frame) => [frame.$1 - frame.$2, frame.$3]),
+        frames.map((frame) => [frame.$1 - frame.$2 * 4 / 3, frame.$3]),
         [
           [closeTo(0, 0.01), closeTo(1, 0.01)],
           [closeTo(0, 0.01), closeTo(1, 0.01)],
@@ -1461,6 +1584,21 @@ void main() {
     (tester) async {
       final navigation = await _pumpApp(tester, size: const Size(390, 820));
       await _open(tester, navigation, 'A');
+      void expectPageCorners(BorderRadius radius) {
+        for (final key in ['main_content_clip', 'work_detail_pane_clip']) {
+          final clip = find.byKey(ValueKey(key));
+          expect(
+            tester.widget<ClipRRect>(clip).borderRadius,
+            radius,
+          );
+        }
+        expect(
+          find.byKey(const ValueKey('content_pane_outline')),
+          radius == BorderRadius.zero ? findsNothing : findsOneWidget,
+        );
+      }
+
+      expectPageCorners(BorderRadius.zero);
       await tester.tap(find.text('Open child'));
       await _settle(tester);
       await tester.enterText(find.byKey(const ValueKey('child_input')), 'edit');
@@ -1470,6 +1608,11 @@ void main() {
       await _settle(tester);
       expect(tester.state(find.byType(EditableText)), same(state));
       expect(find.text('edit'), findsOneWidget);
+      expectPageCorners(const BorderRadius.all(Radius.circular(16)));
+      tester.view.physicalSize = const Size(390, 820);
+      await _settle(tester);
+      expectPageCorners(BorderRadius.zero);
+      expect(tester.state(find.byType(EditableText)), same(state));
     },
     variant: const TargetPlatformVariant({TargetPlatform.android}),
   );
@@ -1498,8 +1641,8 @@ void main() {
       await _settle(tester);
       expect(tester.state(find.byType(EditableText)), same(state));
       expect(find.text('rotation edit'), findsOneWidget);
-      expect(tester.getSize(_main).width, 369.5);
-      expect(tester.getSize(_pane).width, 369.5);
+      expect(tester.getSize(_main).width, closeTo(739 * 4 / 7, 0.01));
+      expect(tester.getSize(_pane).width, closeTo(739 * 3 / 7, 0.01));
       expect(find.byKey(const ValueKey('routed_playback_dock')), findsNothing);
       expect(find.byType(ActiveSessionCarousel), findsOneWidget);
       tester.view.physicalSize = const Size(390, 820);

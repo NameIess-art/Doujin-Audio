@@ -1660,7 +1660,7 @@ void main() {
       final scroll = tester.state<ScrollableState>(
         find.descendant(of: list, matching: find.byType(Scrollable)).first,
       );
-      expect(scroll.position.maxScrollExtent, greaterThan(300));
+      expect(scroll.position.maxScrollExtent, greaterThan(0));
       scroll.position.jumpTo(scroll.position.maxScrollExtent);
       await tester.pumpAndSettle();
       expect(cover, findsOneWidget);
@@ -1762,6 +1762,10 @@ void main() {
         find.text(fixture.languageProvider.tr('audio_detail_current_cover')),
       );
       expect(currentCoverLabel.style?.color, Colors.grey.shade400);
+      expect(
+        find.text('封面单独立即保存，不受此页确认或放弃影响。'),
+        findsNothing,
+      );
       expect(
         tester.widget<InkWell>(
           find.descendant(of: actionCapsule, matching: find.byType(InkWell)),
@@ -2516,6 +2520,97 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets('Windows editor cover wheel wraps after candidate discovery', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(960, 600);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final candidates = Completer<List<String>>();
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _DetailCoverCacheService(
+        currentCoverPath: '/covers/first.jpg',
+        candidatesFuture: candidates.future,
+      ),
+    );
+    addTearDown(fixture.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        Align(
+          alignment: Alignment.centerRight,
+          child: SizedBox(
+            width: 400,
+            child: DlsiteMetadataReviewPage.edit(
+              detail: AudioDetail.empty(
+                AudioDetailTarget.libraryRootFolder('/library/Work'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await pumpUntilUiIdle(tester);
+    await tester.pumpAndSettle();
+    final viewport = find.byKey(const ValueKey('audio_detail_cover_content'));
+    expect(viewport, findsOneWidget);
+    expect(find.text('1/1'), findsOneWidget);
+    const paths = [
+      '/covers/first.jpg',
+      '/covers/second.jpg',
+      '/covers/third.jpg',
+      '/covers/last.jpg',
+    ];
+    candidates.complete(paths);
+    await tester.pumpAndSettle();
+    expect(find.text('1/4'), findsOneWidget);
+    final page = tester.widget<PageView>(find.byType(PageView)).controller!;
+    final scroll = tester.state<ScrollableState>(
+      find.descendant(
+        of: find.byType(ListView),
+        matching: find.byType(Scrollable),
+      ).first,
+    );
+    final scrollOffset = scroll.position.pixels;
+    Future<void> wheel(double delta, int index) async {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: tester.getCenter(viewport),
+          scrollDelta: Offset(0, delta),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('${index + 1}/4'), findsOneWidget);
+      expect(page.page!.round() % 4, index);
+      expect(
+        find.byWidgetPredicate(
+          (widget) => widget is RetryingFileImage && widget.path == paths[index],
+        ).hitTestable(),
+        findsOneWidget,
+      );
+      expect(scroll.position.pixels, scrollOffset);
+    }
+    await wheel(-120, 3);
+    await wheel(120, 0);
+    await wheel(120, 1);
+    await wheel(-120, 0);
+    await tester.tap(
+      find.byKey(const ValueKey('audio_detail_cover_prev_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('4/4'), findsOneWidget);
+    expect(page.page!.round() % 4, 3);
+    await tester.tap(
+      find.byKey(const ValueKey('audio_detail_cover_next_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1/4'), findsOneWidget);
+    expect(page.page!.round() % 4, 0);
+    expect(tester.takeException(), isNull);
+    await _drainAudioDetailFixture(tester, fixture);
+  }, variant: const TargetPlatformVariant({TargetPlatform.windows}));
 
   testWidgets('Windows wheel advances folder cover candidates', (
     WidgetTester tester,

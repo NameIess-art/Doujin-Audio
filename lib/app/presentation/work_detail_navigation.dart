@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../theme/app_styles.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../features/player/presentation/playlist/session_detail_route.dart';
@@ -286,6 +288,9 @@ class _MainContentNavigatorState extends State<MainContentNavigator> {
 }
 
 class WorkDetailPane extends StatelessWidget {
+  static const mainWidthFraction = 4 / 7;
+  static const detailWidthFraction = 3 / 7;
+
   const WorkDetailPane({
     super.key,
     required this.child,
@@ -312,7 +317,7 @@ class WorkDetailPane extends StatelessWidget {
         final size = MediaQuery.sizeOf(context);
         final contentWidth = (size.width - sidebarWidth).clamp(0.0, size.width);
         final paneWidth = isLandscape
-            ? (contentWidth - 1).clamp(0.0, contentWidth) / 2
+            ? (contentWidth - 1).clamp(0.0, contentWidth) * detailWidthFraction
             : size.width;
         final detailNavigator = MainContentNavigator(
           key: const ValueKey('work_detail_pane'),
@@ -354,18 +359,6 @@ class WorkDetailPane extends StatelessWidget {
               children: [
                 child!,
                 Positioned(
-                  right: paneWidth,
-                  top: 0,
-                  bottom: 0,
-                  width: 1,
-                  child: Offstage(
-                    offstage: !navigation.isOpen || !isLandscape,
-                    child: ColoredBox(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-                  ),
-                ),
-                Positioned(
                   key: const ValueKey('work_detail_pane_bounds'),
                   right: 0,
                   top: 0,
@@ -384,12 +377,38 @@ class WorkDetailPane extends StatelessWidget {
                               left: 0,
                             ),
                           ),
-                          child: detailNavigator,
+                          child: ColoredBox(
+                            color: isLandscape
+                                ? Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerLow
+                                : Colors.transparent,
+                            child: ClipRRect(
+                              key: const ValueKey('work_detail_pane_clip'),
+                              borderRadius: isLandscape
+                                  ? BorderRadius.circular(AppRadius.section)
+                                  : BorderRadius.zero,
+                              child: detailNavigator,
+                            ),
+                          ),
                         );
                       },
                     ),
                   ),
                 ),
+                if (isLandscape)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        key: const ValueKey('content_pane_outline'),
+                        painter: _ContentPaneOutlinePainter(
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                          sidebarWidth: sidebarWidth,
+                          detailWidth: navigation.isOpen ? paneWidth : 0,
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -397,4 +416,71 @@ class WorkDetailPane extends StatelessWidget {
       },
     );
   }
+}
+
+class _ContentPaneOutlinePainter extends CustomPainter {
+  const _ContentPaneOutlinePainter({
+    required this.color,
+    required this.sidebarWidth,
+    required this.detailWidth,
+  });
+
+  final Color color;
+  final double sidebarWidth;
+  final double detailWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final left = sidebarWidth + 0.5;
+    final right = size.width - 0.5;
+    if (right <= left || size.height <= 1) return;
+    const top = 0.5;
+    final bottom = size.height - 0.5;
+    final radius = math.min(AppRadius.section, (bottom - top) / 2);
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    void drawSide(double x, {required bool leftSide, bool vertical = true}) {
+      final endX = x + (leftSide ? radius : -radius);
+      final path = Path()
+        ..moveTo(endX, top)
+        ..arcToPoint(
+          Offset(x, top + radius),
+          radius: Radius.circular(radius),
+          clockwise: !leftSide,
+        );
+      if (vertical) {
+        path.lineTo(x, bottom - radius);
+      } else {
+        path.moveTo(x, bottom - radius);
+      }
+      path.arcToPoint(
+        Offset(endX, bottom),
+        radius: Radius.circular(radius),
+        clockwise: !leftSide,
+      );
+      canvas.drawPath(path, paint);
+    }
+
+    drawSide(left, leftSide: true);
+    drawSide(right, leftSide: false);
+    if (detailWidth > 0) {
+      final divider = size.width - detailWidth - 0.5;
+      drawSide(divider, leftSide: false, vertical: false);
+      drawSide(divider, leftSide: true, vertical: false);
+      // Both inner corner pairs join the same one-pixel separator.
+      canvas.drawLine(
+        Offset(divider, top + radius),
+        Offset(divider, bottom - radius),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ContentPaneOutlinePainter oldDelegate) =>
+      color != oldDelegate.color ||
+      sidebarWidth != oldDelegate.sidebarWidth ||
+      detailWidth != oldDelegate.detailWidth;
 }

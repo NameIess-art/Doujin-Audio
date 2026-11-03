@@ -93,6 +93,7 @@ class _LibraryManagementPageState extends ConsumerState<LibraryManagementPage> {
                         itemBuilder: (context, index) {
                           final libraryPath = visibleLibraries[index];
                           return FileTreeRow(
+                            navigationEntry: true,
                             surfaceKey: ValueKey(
                               'library-management-surface:$libraryPath',
                             ),

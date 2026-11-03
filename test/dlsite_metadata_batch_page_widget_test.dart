@@ -528,56 +528,82 @@ void main() {
     );
   });
 
-  testWidgets('picker result is ignored after batch page is disposed', (
-    tester,
-  ) async {
-    final navigatorKey = GlobalKey<NavigatorState>();
-    final observer = _RecordingNavigatorObserver();
-    final languageProvider = AppLanguageProvider();
+  testWidgets(
+    'picker clears entry ink and ignores results after disposal',
+    (tester) async {
+      final navigatorKey = GlobalKey<NavigatorState>();
+      final observer = _RecordingNavigatorObserver();
+      final languageProvider = AppLanguageProvider();
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appLanguageProviderInstanceProvider.overrideWithValue(
-            languageProvider,
-          ),
-        ],
-        child: MaterialApp(
-          navigatorKey: navigatorKey,
-          navigatorObservers: <NavigatorObserver>[observer],
-          home: Builder(
-            builder: (context) => FilledButton(
-              onPressed: () => Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => const DlsiteMetadataBatchPage(entries: []),
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(
+              languageProvider,
+            ),
+          ],
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            navigatorObservers: <NavigatorObserver>[observer],
+            home: Builder(
+              builder: (context) => FilledButton(
+                onPressed: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const DlsiteMetadataBatchPage(entries: []),
+                  ),
                 ),
+                child: const Text('open'),
               ),
-              child: const Text('open'),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-    final batchRoute = observer.lastRoute;
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      final batchRoute = observer.lastRoute;
 
-    final specific = find.textContaining(
-      languageProvider.tr('batch_metadata_specific'),
-    );
-    await tester.ensureVisible(specific);
-    await tester.tap(specific);
-    await tester.pumpAndSettle();
-    expect(observer.lastRoute, isNot(same(batchRoute)));
+      final specific = find.textContaining(
+        languageProvider.tr('batch_metadata_specific'),
+      );
+      await tester.ensureVisible(specific);
+      final dynamic inkController = Material.of(tester.element(specific));
+      Iterable<InteractiveInkFeature> visibleInk() =>
+          (inkController.debugInkFeatures as List<InkFeature>? ?? [])
+              .whereType<InteractiveInkFeature>()
+              .where((feature) => feature.color.a > 0);
 
-    navigatorKey.currentState!.removeRoute(batchRoute);
-    await tester.pump();
-    navigatorKey.currentState!.pop(<AudioLibraryCategoryEntry>[]);
-    await tester.pumpAndSettle();
+      final gesture = await tester.startGesture(tester.getCenter(specific));
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(visibleInk(), isNotEmpty);
+      await gesture.up();
+      expect(visibleInk(), isEmpty);
+      await tester.pumpAndSettle();
+      expect(observer.lastRoute, isNot(same(batchRoute)));
 
-    expect(tester.takeException(), isNull);
-  });
+      navigatorKey.currentState!.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(visibleInk(), isEmpty);
+      await tester.pumpAndSettle();
+      expect(specific, findsOneWidget);
+
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.edit_rounded));
+      await tester.pumpAndSettle();
+      expect(observer.lastRoute, isNot(same(batchRoute)));
+
+      navigatorKey.currentState!.removeRoute(batchRoute);
+      await tester.pump();
+      navigatorKey.currentState!.pop(<AudioLibraryCategoryEntry>[]);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'Windows metadata exclusions use visible actions and right click',

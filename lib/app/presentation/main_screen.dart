@@ -1011,7 +1011,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                 child: LayoutBuilder(
                                   builder: (context, constraints) {
                                     final contentWidth = splitContent
-                                        ? max(0.0, constraints.maxWidth - 1) / 2
+                                        ? max(0.0, constraints.maxWidth - 1) *
+                                              WorkDetailPane.mainWidthFraction
                                         : constraints.maxWidth;
                                     final navigatorContent = Builder(
                                       builder: (context) => MobileOverlayInset(
@@ -1048,7 +1049,24 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                               constraints.maxHeight,
                                             ),
                                           ),
-                                          child: navigatorContent,
+                                          child: ColoredBox(
+                                            color: isLandscape
+                                                ? Theme.of(context)
+                                                      .colorScheme
+                                                      .surfaceContainerLow
+                                                : Colors.transparent,
+                                            child: ClipRRect(
+                                              key: const ValueKey(
+                                                'main_content_clip',
+                                              ),
+                                              borderRadius: isLandscape
+                                                  ? BorderRadius.circular(
+                                                      AppRadius.section,
+                                                    )
+                                                  : BorderRadius.zero,
+                                              child: navigatorContent,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     );

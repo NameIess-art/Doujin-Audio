@@ -11,7 +11,6 @@ const Map<String, String> appLanguageJa = {
   'metadata_invalid_rating': '評価は 0 から 5 の有効な数値で入力してください',
   'metadata_unsaved_title': '未保存の変更を破棄しますか？',
   'metadata_unsaved_message': 'この情報はまだ保存されていません。変更を破棄して続行しますか？',
-  'metadata_cover_saved_independently': 'カバーの変更はこのフォームとは別に即時保存されます。',
   'batch_added_to_playlist_result':
       '{success} 件を追加、{failed} 件は失敗しました。失敗した項目を選択したまま再試行できます。',
   'batch_download_skip': 'この作品をスキップ',

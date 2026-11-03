@@ -83,7 +83,26 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   );
 
   Widget _buildRjBar(BuildContext context) => Container(
-    color: surfaceColor,
+    key: const ValueKey('work_detail_metadata_bar'),
+    decoration: BoxDecoration(
+      color: surfaceColor,
+      boxShadow: [
+        BoxShadow(
+          color: Theme.of(context).colorScheme.shadow.withValues(
+            alpha: Theme.of(context).brightness == Brightness.dark
+                ? 0.36
+                : 0.16,
+          ),
+          blurRadius: 6,
+          offset: const Offset(0, 3),
+        ),
+      ],
+    ),
+    foregroundDecoration: BoxDecoration(
+      border: Border(
+        bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+    ),
     padding: const EdgeInsets.symmetric(horizontal: 16),
     alignment: Alignment.centerLeft,
     child: Row(

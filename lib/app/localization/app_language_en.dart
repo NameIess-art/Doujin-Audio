@@ -15,8 +15,6 @@ const Map<String, String> appLanguageEn = {
   'metadata_unsaved_title': 'Discard unsaved changes?',
   'metadata_unsaved_message':
       'These metadata changes have not been saved. Discard them and continue?',
-  'metadata_cover_saved_independently':
-      'Cover changes are saved immediately and separately from this form.',
   'batch_added_to_playlist_result':
       'Added {success} works; {failed} failed. Failed items remain selected for retry.',
   'batch_download_skip': 'Skip this work',

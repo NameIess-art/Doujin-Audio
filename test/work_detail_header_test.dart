@@ -60,11 +60,6 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        scroll.jumpTo(300);
-        await tester.pumpAndSettle();
-        final cover = tester.getRect(
-          find.byKey(const ValueKey('work_detail_cover_bounds')),
-        );
         Future<List<int>> sample(Offset point) async {
           return (await tester.runAsync(() async {
             final boundary = tester.renderObject<RenderRepaintBoundary>(
@@ -72,7 +67,8 @@ void main() {
             );
             final image = await boundary.toImage();
             final bytes = (await image.toByteData())!;
-            final offset = (point.dy.floor() * image.width + point.dx.floor()) * 4;
+            final offset =
+                (point.dy.floor() * image.width + point.dx.floor()) * 4;
             final pixel = bytes.buffer
                 .asUint8List(bytes.offsetInBytes + offset, 4)
                 .toList();
@@ -80,6 +76,33 @@ void main() {
             return pixel;
           }))!;
         }
+
+        Future<void> expectMetadataBoundary() async {
+          final bar = tester.getRect(
+            find.byKey(const ValueKey('work_detail_metadata_bar')),
+          );
+          final borderColor = theme.colorScheme.outlineVariant;
+          expect(await sample(Offset(8, bar.bottom - 0.5)), [
+            for (final channel in [
+              borderColor.r,
+              borderColor.g,
+              borderColor.b,
+              borderColor.a,
+            ])
+              (channel * 255).round(),
+          ]);
+          final shadow = await sample(Offset(8, bar.bottom + 2));
+          final body = await sample(Offset(8, bar.bottom + 16));
+          expect(shadow.first, lessThan(body.first));
+        }
+
+        await expectMetadataBoundary();
+        scroll.jumpTo(300);
+        await tester.pumpAndSettle();
+        await expectMetadataBoundary();
+        final cover = tester.getRect(
+          find.byKey(const ValueKey('work_detail_cover_bounds')),
+        );
         final point = cover.topLeft + const Offset(8, 50);
         final before = await sample(point);
         final bodyPoint = Offset(8, cover.bottom + 100);
@@ -211,7 +234,10 @@ void main() {
           find.ancestor(
             of: find.byKey(const ValueKey('work_detail_rj_copy')),
             matching: find.byWidgetPredicate(
-              (widget) => widget is Container && widget.color == Colors.white,
+              (widget) =>
+                  widget is Container &&
+                  widget.decoration is BoxDecoration &&
+                  (widget.decoration! as BoxDecoration).color == Colors.white,
             ),
           ),
           findsOneWidget,

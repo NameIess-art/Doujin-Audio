@@ -448,6 +448,9 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector>
                       child: NotificationListener<ScrollNotification>(
                         onNotification: _handlePageScroll,
                         child: PageView.builder(
+                          // Candidate discovery replaces the preview controller;
+                          // recreate its viewport so it uses the loop's initial page.
+                          key: ObjectKey(_pageController),
                           controller: _pageController,
                           itemCount: _images.length > 1 ? null : _images.length,
                           physics: _images.length > 1

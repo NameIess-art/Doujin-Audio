@@ -200,6 +200,40 @@ void main() {
         final target = find.byKey(iconKeys[MainDestinationType.library.index]);
         final toggle = find.widgetWithIcon(IconButton, Icons.menu_open_rounded);
         expect(tester.getSize(target), tester.getSize(toggle));
+        Future<void> expectSidebarBackgroundAtEdges() async {
+          final colors = (await tester.runAsync(() async {
+            final boundary = tester.renderObject<RenderRepaintBoundary>(
+              find.byKey(const ValueKey('sidebar_capture')),
+            );
+            final image = await boundary.toImage();
+            final bytes = (await image.toByteData())!;
+            Color pixel(int x, int y) {
+              final offset = (y * image.width + x) * 4;
+              return Color.fromARGB(
+                bytes.getUint8(offset + 3),
+                bytes.getUint8(offset),
+                bytes.getUint8(offset + 1),
+                bytes.getUint8(offset + 2),
+              );
+            }
+            final result = [
+              pixel(2, 2),
+              pixel(image.width - 3, 2),
+              pixel(2, image.height - 3),
+              pixel(image.width - 3, image.height - 3),
+              pixel(image.width ~/ 2, 0),
+              pixel(image.width ~/ 2, image.height - 1),
+              pixel(0, image.height ~/ 2),
+              pixel(image.width - 1, image.height ~/ 2),
+            ];
+            image.dispose();
+            return result;
+          }))!;
+          final theme = Theme.of(tester.element(target));
+          final background = theme.colorScheme.surfaceContainerLow;
+          expect(colors, everyElement(background));
+        }
+        await expectSidebarBackgroundAtEdges();
         final center = tester.getCenter(target);
         Future<List<int>> iconPixels() async =>
             (await tester.runAsync(() async {
@@ -312,6 +346,7 @@ void main() {
             );
           }
           await tester.pumpAndSettle();
+          await expectSidebarBackgroundAtEdges();
           final otherTarget = find.byKey(
             iconKeys[MainDestinationType.settings.index],
           );

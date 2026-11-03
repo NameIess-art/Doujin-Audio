@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 class AppEntryInkWell extends InkWell {
   const AppEntryInkWell({
     super.key,
+    bool navigationEntry = true,
+    super.splashColor,
+    super.hoverColor,
     super.onTap,
     super.onLongPress,
     super.borderRadius,
@@ -13,10 +16,17 @@ class AppEntryInkWell extends InkWell {
     super.excludeFromSemantics,
     super.child,
   }) : super(
-         splashFactory: const _EntrySplashFactory(),
-         highlightColor: Colors.transparent,
-         hoverDuration: Duration.zero,
+         splashFactory: navigationEntry ? _splashFactory : null,
+         highlightColor: navigationEntry ? Colors.transparent : null,
+         hoverDuration: navigationEntry ? Duration.zero : null,
        );
+  static const _splashFactory = _EntrySplashFactory();
+
+  /// Applies entry feedback to Material controls that own their ink response.
+  static ThemeData entryTheme(ThemeData theme) => theme.copyWith(
+    splashFactory: _splashFactory,
+    highlightColor: Colors.transparent,
+  );
 }
 
 class _EntrySplashFactory extends InteractiveInkFeatureFactory {

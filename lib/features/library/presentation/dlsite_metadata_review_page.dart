@@ -833,10 +833,6 @@ class _DlsiteMetadataReviewPageState
                                 showLabel: false,
                                 onCoverSelected: _handleCoverSelected,
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                i18n.tr('metadata_cover_saved_independently'),
-                              ),
                               const SizedBox(height: 20),
                             ],
                             if (coverUrl != null) ...[
@@ -875,7 +871,9 @@ class _DlsiteMetadataReviewPageState
                                   _saveCover = value;
                                   _onDraftChanged();
                                 }),
-                                contentPadding: EdgeInsets.zero,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
                                 title: Text(i18n.tr('dlsite_save_cover')),
                               ),
                               const SizedBox(height: 12),

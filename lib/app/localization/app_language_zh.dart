@@ -11,7 +11,6 @@ const Map<String, String> appLanguageZh = {
   'metadata_invalid_rating': '评分必须为 0 到 5 的有效数字',
   'metadata_unsaved_title': '放弃未保存的修改？',
   'metadata_unsaved_message': '当前信息尚未保存。放弃修改并继续？',
-  'metadata_cover_saved_independently': '封面单独立即保存，不受此页确认或放弃影响。',
   'batch_added_to_playlist_result': '已添加 {success} 个作品，{failed} 个失败；已保留失败项供重试。',
   'batch_download_skip': '跳过此作品',
   'backup_incompatible': '此备份与当前平台或应用版本不兼容，无法恢复。',

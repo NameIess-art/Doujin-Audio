@@ -11,6 +11,7 @@ import '../../../core/media/audio_detail.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../application/dlsite_metadata_batch_session.dart';
 import '../domain/audio_library_category.dart';
+import '../../../core/widgets/app_entry_ink_well.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -236,7 +237,7 @@ class _DlsiteMetadataBatchPageState
                           ? cs.primary
                           : cs.onSurface.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(23),
-                      child: InkWell(
+                      child: AppEntryInkWell(
                         borderRadius: BorderRadius.circular(23),
                         onTap: canStart ? _run : null,
                         child: Padding(

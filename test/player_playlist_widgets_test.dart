@@ -3322,8 +3322,14 @@ void main() {
           );
         }
         await tester.pumpAndSettle();
-        expect(tester.widget<SegmentPanelPageHeader>(header).pageIndex, 3);
-        expect(find.byTooltip(i18n.tr('segment_add')), findsOneWidget);
+        expect(
+          tester.widget<SegmentPanelPageHeader>(header).pageIndex,
+          platform == TargetPlatform.windows ? 4 : 3,
+        );
+        expect(
+          find.byTooltip(i18n.tr('segment_add')),
+          platform == TargetPlatform.windows ? findsNothing : findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
       },
       variant: TargetPlatformVariant({platform}),
@@ -4744,6 +4750,150 @@ void main() {
       expect(tester.getTopLeft(row).dx, closeTo(initialLeft, 0.1));
       expect(tester.takeException(), isNull);
     });
+  }
+
+  for (final action in ['cancel', 'save', 'submit', 'back']) {
+    testWidgets(
+      'queue name menu shares edit geometry and fades on $action',
+      (tester) async {
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          notificationsChannel,
+          (_) async => <String, Object?>{'ok': true, 'value': null},
+        );
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+        );
+        final windows = defaultTargetPlatform == TargetPlatform.windows;
+        final size = windows ? const Size(960, 600) : const Size(390, 700);
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = size;
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetViewInsets);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final session = fixture.playback.createPlaybackQueue('Queue');
+        fixture.playbackService.syncSlice(
+          activeSessions: [session],
+          playingSessionCount: 0,
+          focusedSessionId: session.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        await tester.pumpWidget(fixture.build(const SizedBox()));
+        unawaited(
+          showPlaybackQueueEditPanel(
+            tester.element(find.byType(Scaffold)),
+            session.id,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final i18n = fixture.languageProvider;
+        final edit = find.byKey(const ValueKey('playback_queue_edit_panel'));
+        final name = find.byKey(const ValueKey('playback_queue_name_panel'));
+        final input = find.byKey(const ValueKey('playback_queue_name_input'));
+        final originalRect = tester.getRect(edit);
+        final remove = find.widgetWithText(TextButton, i18n.tr('remove_queue'));
+        final originalButtonRect = tester.getRect(remove);
+        final originalStyle = tester.widget<TextButton>(remove).style!;
+        await tester.tap(find.text(i18n.tr('edit_queue_name')));
+        await tester.pump();
+        double opacity() => tester
+            .widget<FadeTransition>(
+              find.ancestor(of: name, matching: find.byType(FadeTransition)).first,
+            )
+            .opacity
+            .value;
+        expect(opacity(), 0);
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(opacity(), closeTo(0.5, 0.03));
+        expect(tester.getRect(name), originalRect);
+        expect(find.text(i18n.tr('edit_queue_audio')).hitTestable(), findsNothing);
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(opacity(), 1);
+        final save = find.widgetWithText(TextButton, i18n.tr('save'));
+        final cancel = find.widgetWithText(TextButton, i18n.tr('cancel'));
+        expect(tester.getRect(save).bottomRight, originalButtonRect.bottomRight);
+        expect(tester.getRect(save).height, originalButtonRect.height);
+        void expectInputCentered() {
+          final header = find.byKey(
+            const ValueKey('playback_queue_name_header_icon'),
+          );
+          final contentTop = tester.getRect(header).bottom + 18;
+          final contentBottom = tester.getRect(save).top;
+          expect(
+            tester.getCenter(input).dy,
+            closeTo((contentTop + contentBottom) / 2, 0.5),
+          );
+        }
+
+        expectInputCentered();
+        for (final button in [save, cancel]) {
+          final style = tester.widget<TextButton>(button).style!;
+          expect(style.shape!.resolve({}), originalStyle.shape!.resolve({}));
+          expect(
+            style.textStyle!.resolve({}),
+            originalStyle.textStyle!.resolve({}),
+          );
+        }
+        expect(tester.widget<TextField>(input).controller!.text, 'Queue');
+        await tester.enterText(input, '   ');
+        await tester.tap(save);
+        await tester.pump();
+        expect(name, findsOneWidget);
+        expect(session.playbackQueue!.name, 'Queue');
+        await tester.enterText(input, '  New queue  ');
+        final keyboardHeight = windows ? 180.0 : 320.0;
+        tester.view.viewInsets = FakeViewPadding(bottom: keyboardHeight);
+        await tester.pumpAndSettle();
+        expectInputCentered();
+        for (final control in [input, save, cancel]) {
+          expect(
+            tester.getRect(control).bottom,
+            lessThan(size.height - keyboardHeight),
+          );
+        }
+        expect(tester.takeException(), isNull);
+        switch (action) {
+          case 'cancel':
+            await tester.tap(cancel);
+          case 'save':
+            await tester.tap(save);
+          case 'submit':
+            await tester.testTextInput.receiveAction(TextInputAction.done);
+          case 'back':
+            await tester.binding.handlePopRoute();
+        }
+        await tester.pump();
+        expect(opacity(), 1);
+        expect(
+          session.playbackQueue!.name,
+          action == 'save' || action == 'submit' ? 'New queue' : 'Queue',
+        );
+        expect(tester.widget<TextField>(input).controller!.text, '  New queue  ');
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(opacity(), closeTo(0.5, 0.03));
+        await tester.pump(const Duration(milliseconds: 149));
+        expect(name, findsOneWidget);
+        expect(find.text(i18n.tr('edit_queue_audio')).hitTestable(), findsNothing);
+        await tester.pump(const Duration(milliseconds: 2));
+        expect(name, findsNothing);
+        tester.view.viewInsets = FakeViewPadding.zero;
+        await tester.pumpAndSettle();
+        expect(tester.getRect(edit), originalRect);
+        expect(
+          find.text(i18n.tr('edit_queue_audio')).hitTestable(),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
   }
 
   for (final brightness in Brightness.values) {
@@ -6422,6 +6572,12 @@ void main() {
   testWidgets(
     'playback queue audio edit page renders floating capsule section headers and scrolls on add',
     (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = defaultTargetPlatform == TargetPlatform.windows
+          ? const Size(960, 600)
+          : const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
       messenger.setMockMethodCallHandler(
@@ -6506,6 +6662,17 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(HeaderFloatingSurface), findsNWidgets(4));
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final capsule = find.ancestor(
+          of: find.text(fixture.languageProvider.tr('playback_list_audio')),
+          matching: find.byType(HeaderFloatingSurface),
+        );
+        expect(
+          tester.getRect(capsule).top -
+              tester.getRect(find.byType(Divider)).bottom,
+          AppSpacing.xs,
+        );
+      }
       final placeholders = find.byType(CoverFallbackArtwork);
       expect(placeholders, findsNWidgets(2));
       for (final placeholder in placeholders.evaluate()) {
@@ -10180,7 +10347,7 @@ void main() {
     (TargetPlatform.windows, const Size(3840, 2400), 48.0, true),
   ]) {
     testWidgets(
-      'landscape session detail displays 4:3 cover in equal columns on ${platform.name} at ${screenSize.width / 3}, subtitles=$hasSubtitles',
+      'landscape session detail displays 4:3 cover with platform column widths on ${platform.name} at ${screenSize.width / 3}, subtitles=$hasSubtitles',
       (tester) async {
         await _pumpSubtitleDetail(
           tester: tester,
@@ -10243,7 +10410,8 @@ void main() {
         final rightRect = tester.getRect(
           find.byKey(const ValueKey('session_detail_right_column')),
         );
-        expect(leftRect.width, closeTo(rightRect.width, 0.5));
+        final columnRatio = platform == TargetPlatform.windows ? 4 / 3 : 1.0;
+        expect(leftRect.width, closeTo(rightRect.width * columnRatio, 0.5));
         expect(rightRect.left - leftRect.right, closeTo(12, 0.5));
         expect(coverRect.width, lessThanOrEqualTo(leftRect.width));
         expect(titleRect.left, closeTo(rightRect.left + 4, 0.5));
@@ -10266,6 +10434,13 @@ void main() {
             tester.view.physicalSize = resized;
             await tester.pumpAndSettle();
             final resizedCover = tester.getRect(aspectRatioFinder);
+            final resizedLeft = tester.getRect(
+              find.byKey(const ValueKey('session_detail_cover_area')),
+            );
+            final resizedRight = tester.getRect(
+              find.byKey(const ValueKey('session_detail_right_column')),
+            );
+            expect(resizedLeft.width, closeTo(resizedRight.width * 4 / 3, 0.5));
             final resizedProgress = tester.getRect(
               find.byType(SessionProgressBar),
             );
@@ -10670,59 +10845,68 @@ void main() {
       );
       expect(closeButton, findsOneWidget);
       final progressRect = tester.getRect(find.byType(SessionProgressBar));
-      final detailCloseRect = tester.getRect(
-        find.ancestor(of: closeButton, matching: find.byType(HeaderFloatingButton)),
-      );
 
       final tuneButtonFinder = find.byIcon(Icons.tune_rounded);
       expect(tuneButtonFinder, findsOneWidget);
 
-      // Open audio features panel
+      final cover = find.byKey(const ValueKey('session_detail_cover_area'));
+      final coverRect = tester.getRect(cover);
+      final menu = find.byKey(const ValueKey('segments_landscape'));
+      double menuOpacity() => tester
+          .widget<FadeTransition>(
+            find.ancestor(of: menu, matching: find.byType(FadeTransition)).first,
+          )
+          .opacity
+          .value;
+
       await tester.tap(tuneButtonFinder);
+      await tester.pump();
+      expect(menuOpacity(), 0);
+      expect(cover, findsNothing);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(menuOpacity(), allOf(greaterThan(0), lessThan(1)));
+      await tester.pump(const Duration(milliseconds: 149));
+      expect(menuOpacity(), lessThan(1));
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(menuOpacity(), 1);
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('segments_landscape')), findsOneWidget);
-      final coverRect = tester.getRect(
-        find.descendant(
-          of: find.byType(SessionDetailPage),
-          matching: find.byType(AspectRatio),
-        ),
+      expect(cover, findsNothing);
+      final titleRect = tester.getRect(
+        find.byKey(const ValueKey('title_marquee_subtitle-session')),
       );
-      expect(
-        tester
-            .getRect(
-              find.byKey(const ValueKey('title_marquee_subtitle-session')),
-            )
-            .top,
-        closeTo(coverRect.top, 0.5),
-      );
+      expect(titleRect.top, closeTo(coverRect.top, 0.5));
       expect(
         tester.getRect(find.byType(TransportPlaybackControlPanel)).bottom,
         closeTo(progressRect.bottom, 0.5),
       );
       expect(closeButton, findsNothing);
       final headerRect = tester.getRect(find.byType(SegmentPanelPageHeader));
-      final surfaceRect = tester.getRect(
-        find.byKey(
-          const ValueKey<String>(
-            'playback_expanded_control_panel_landscape_surface',
-          ),
-        ),
+      final surface = find.byKey(
+        const ValueKey<String>('playback_expanded_control_panel_surface'),
+      );
+      final surfaceRect = tester.getRect(surface);
+      final decoration =
+          tester.widget<DecoratedBox>(surface).decoration as BoxDecoration;
+      final colors = Theme.of(tester.element(surface)).colorScheme;
+      expect(decoration.color, colors.surfaceContainerHigh.withValues(alpha: 0.9));
+      expect(
+        decoration.border,
+        Border.all(color: colors.outlineVariant.withValues(alpha: 0.55)),
       );
       expect(headerRect.top, closeTo(surfaceRect.top, 1));
       expect(
         tester.getRect(find.byType(SessionProgressBar)),
         progressRect,
       );
-      expect(
-        surfaceRect.top,
-        closeTo(detailCloseRect.top, 0.5),
-      );
+      expect(surfaceRect.top, closeTo(titleRect.top, 0.5));
+      expect(surfaceRect.bottom, closeTo(coverRect.bottom, 0.5));
       expect(surfaceRect.contains(headerRect.center), isTrue);
       final menuClip = tester.widget<ClipRRect>(
         find
             .ancestor(
-              of: find.byKey(const ValueKey('segments_landscape')),
+              of: surface,
               matching: find.byType(ClipRRect),
             )
             .first,
@@ -10797,6 +10981,14 @@ void main() {
         greaterThan(headerRect.center.dx),
       );
       await tester.tap(menuCloseButton);
+      await tester.pump();
+      expect(menuOpacity(), 1);
+      expect(tester.getRect(cover), coverRect);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(menuOpacity(), allOf(greaterThan(0), lessThan(1)));
+      await tester.pump(const Duration(milliseconds: 149));
+      expect(menu, findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 1));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('segments_landscape')), findsNothing);

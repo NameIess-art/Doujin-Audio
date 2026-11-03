@@ -6,10 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
-import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_transitions.dart';
-import '../../application/playback_facade.dart';
 import 'playlist_shared_helpers.dart';
 
 import 'playback_queue_audio_edit_page.dart';
@@ -31,7 +29,21 @@ Future<void> showPlaybackQueueEditPanel(
       horizontal: 20,
       vertical: 24,
     ),
-    builder: (_) => PlaybackQueueEditPage(sessionId: sessionId),
+    builder: (context) => AnimatedPadding(
+      padding: MediaQuery.viewInsetsOf(context),
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 100),
+      curve: Curves.decelerate,
+      child: MediaQuery.removeViewInsets(
+        context: context,
+        removeLeft: true,
+        removeTop: true,
+        removeRight: true,
+        removeBottom: true,
+        child: PlaybackQueueEditPage(sessionId: sessionId),
+      ),
+    ),
   );
 }
 
@@ -49,8 +61,16 @@ class PlaybackQueueEditPage extends ConsumerStatefulWidget {
 
 class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
   bool _editingColor = false;
+  bool _editingName = false;
+  final _nameController = TextEditingController();
 
   String get sessionId => widget.sessionId;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,11 +92,25 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
         ? Color(queue.colorValue!)
         : cs.primary;
 
-    final editPanel = SizedBox(
+    final actionStyle = TextButton.styleFrom(
+      shape: const StadiumBorder(),
+      textStyle: const TextStyle(fontWeight: FontWeight.w600),
+    );
+    void saveName() {
+      if (playback.renamePlaybackQueue(sessionId, _nameController.text)) {
+        _finishEditingName();
+      }
+    }
+
+    Widget buildPanel({required bool editingName}) => SizedBox(
       width: double.infinity,
       height: _playbackQueueEditPanelHeight,
       child: DecoratedBox(
-        key: const ValueKey('playback_queue_edit_panel'),
+        key: ValueKey(
+          editingName
+              ? 'playback_queue_name_panel'
+              : 'playback_queue_edit_panel',
+        ),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
           color: cs.surfaceContainerLow,
@@ -107,8 +141,14 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
                         borderRadius: BorderRadius.circular(tokens.radiusSmall),
                       ),
                       child: Icon(
-                        Icons.edit_note_rounded,
-                        key: const ValueKey('playback_queue_edit_header_icon'),
+                        editingName
+                            ? Icons.drive_file_rename_outline_rounded
+                            : Icons.edit_note_rounded,
+                        key: ValueKey(
+                          editingName
+                              ? 'playback_queue_name_header_icon'
+                              : 'playback_queue_edit_header_icon',
+                        ),
                         color: queueColor,
                         size: 22,
                       ),
@@ -116,93 +156,135 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        queue.name,
+                        editingName ? i18n.tr('edit_queue_name') : queue.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 18),
-                _queueEditTile(
-                  context,
-                  Icons.playlist_play_rounded,
-                  i18n.tr('edit_queue_audio'),
-                  () => Navigator.of(context).push(
-                    buildAppPageRoute<void>(
-                      context: context,
-                      child: PlaybackQueueAudioEditPage(
-                        sessionId: sessionId,
+                Expanded(
+                  child: Align(
+                    alignment: editingName
+                        ? Alignment.center
+                        : Alignment.topCenter,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (editingName)
+                            TextField(
+                              key: const ValueKey('playback_queue_name_input'),
+                              controller: _nameController,
+                              autofocus: true,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) => saveName(),
+                            )
+                          else ...[
+                            _queueEditTile(
+                              context,
+                              Icons.playlist_play_rounded,
+                              i18n.tr('edit_queue_audio'),
+                              () => Navigator.of(context).push(
+                                buildAppPageRoute<void>(
+                                  context: context,
+                                  child: PlaybackQueueAudioEditPage(
+                                    sessionId: sessionId,
+                                  ),
+                                ),
+                              ),
+                              trailing: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: cs.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${queue.expandedTracks.length}',
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _queueEditTile(
+                              context,
+                              Icons.drive_file_rename_outline_rounded,
+                              i18n.tr('edit_queue_name'),
+                              () {
+                                _nameController.text = queue.name;
+                                setState(() => _editingName = true);
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            _queueEditTile(
+                              context,
+                              Icons.palette_outlined,
+                              i18n.tr('edit_queue_color'),
+                              () => setState(() => _editingColor = true),
+                              trailing: Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  color: queueColor,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: cs.outlineVariant.withValues(
+                                      alpha: 0.8,
+                                    ),
+                                    width: 1.5,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: queueColor.withValues(alpha: 0.35),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ),
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: cs.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '${queue.expandedTracks.length}',
-                      style: Theme.of(context).textTheme.labelSmall
-                          ?.copyWith(
-                            color: cs.onSurfaceVariant,
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                  ),
                 ),
-                const SizedBox(height: 12),
-                _queueEditTile(
-                  context,
-                  Icons.drive_file_rename_outline_rounded,
-                  i18n.tr('edit_queue_name'),
-                  () => _editQueueName(context, playback, queue.name),
-                ),
-                const SizedBox(height: 12),
-                _queueEditTile(
-                  context,
-                  Icons.palette_outlined,
-                  i18n.tr('edit_queue_color'),
-                  () => setState(() => _editingColor = true),
-                  trailing: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: queueColor,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: cs.outlineVariant.withValues(alpha: 0.8),
-                        width: 1.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: queueColor.withValues(alpha: 0.35),
-                          blurRadius: 4,
-                          offset: const Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const Spacer(),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton(
-                    style: TextButton.styleFrom(
-                      foregroundColor: cs.error,
-                      shape: const StadiumBorder(),
-                      textStyle: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    onPressed: () => _removeQueue(context, ref),
-                    child: Text(i18n.tr('remove_queue')),
-                  ),
+                  child: editingName
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextButton(
+                              style: actionStyle,
+                              onPressed: _finishEditingName,
+                              child: Text(i18n.tr('cancel')),
+                            ),
+                            const SizedBox(width: 8),
+                            TextButton(
+                              style: actionStyle,
+                              onPressed: saveName,
+                              child: Text(i18n.tr('save')),
+                            ),
+                          ],
+                        )
+                      : TextButton(
+                          style: actionStyle.copyWith(
+                            foregroundColor: WidgetStatePropertyAll(cs.error),
+                          ),
+                          onPressed: () => _removeQueue(context, ref),
+                          child: Text(i18n.tr('remove_queue')),
+                        ),
                 ),
               ],
             ),
@@ -210,17 +292,27 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
         ),
       ),
     );
-    return AppMenuContentTransition(
-      primary: editPanel,
-      secondary: _editingColor
-          ? PlaybackQueueColorPanel(
-              colorValue: queue.colorValue,
-              height: _playbackQueueEditPanelHeight,
-              onColorChanged: (value) =>
-                  playback.setPlaybackQueueColorValue(sessionId, value),
-              onBack: () => setState(() => _editingColor = false),
-            )
-          : null,
+    Widget? secondary;
+    if (_editingName) {
+      secondary = buildPanel(editingName: true);
+    } else if (_editingColor) {
+      secondary = PlaybackQueueColorPanel(
+        colorValue: queue.colorValue,
+        height: _playbackQueueEditPanelHeight,
+        onColorChanged: (value) =>
+            playback.setPlaybackQueueColorValue(sessionId, value),
+        onBack: () => setState(() => _editingColor = false),
+      );
+    }
+    return PopScope(
+      canPop: !_editingName,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _editingName) _finishEditingName();
+      },
+      child: AppMenuContentTransition(
+        primary: buildPanel(editingName: false),
+        secondary: secondary,
+      ),
     );
   }
 
@@ -285,45 +377,9 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
     );
   }
 
-  Future<void> _editQueueName(
-    BuildContext context,
-    PlaybackFacade playback,
-    String currentName,
-  ) async {
-    final controller = TextEditingController(text: currentName);
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final name = await showAppDialog<String>(
-      context: context,
-      builder: (dialogContext) => AppDialog(
-        title: i18n.tr('edit_queue_name'),
-        icon: Icons.drive_file_rename_outline_rounded,
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          onSubmitted: (value) => Navigator.of(dialogContext).pop(value.trim()),
-        ),
-        actions: AppDialogActions(
-          children: [
-            AppSecondaryButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              label: i18n.tr('cancel'),
-            ),
-            AppPrimaryButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(controller.text.trim()),
-              label: i18n.tr('save'),
-            ),
-          ],
-        ),
-      ),
-    );
-    controller.dispose();
-    if (name?.isNotEmpty == true) {
-      playback.renamePlaybackQueue(sessionId, name!);
-    }
+  void _finishEditingName() {
+    FocusScope.of(context).unfocus();
+    setState(() => _editingName = false);
   }
 
   Future<void> _removeQueue(BuildContext context, WidgetRef ref) async {

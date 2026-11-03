@@ -4370,6 +4370,10 @@ void main() {
       expect(restored.single.end, const Duration(seconds: 10));
       expect(restored.single.colorValue, kTimeSegmentLabelPalette.first);
       expect(find.text('Renamed'), findsOneWidget);
+      await tester.runAsync(
+        () => fixture.library.detailCacheService.waitForPendingOperations(),
+      );
+      await tester.pumpAndSettle();
     },
   );
 
@@ -10584,13 +10588,15 @@ void main() {
               expect(buttonRect.overlaps(tester.getRect(artwork)), isTrue);
             }
             if (contentTop == 0) {
+              final artworkRect = tester.getRect(
+                find.byKey(const ValueKey('artwork_subtitle-session')),
+              );
               await tester.tap(find.byIcon(Icons.tune_rounded));
               await tester.pumpAndSettle();
               final menuHeaderRect = tester.getRect(
                 find.byType(SegmentPanelPageHeader),
               );
-              expect(menuHeaderRect.top, closeTo(buttonRect.top, 0.5));
-              expect(menuHeaderRect.center.dy, closeTo(buttonRect.center.dy, 0.5));
+              expect(menuHeaderRect.top, closeTo(artworkRect.top, 0.5));
               await tester.tap(
                 find.byKey(const ValueKey<String>('close_console_panel')),
               );

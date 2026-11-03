@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
+import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.dart';
@@ -378,9 +379,9 @@ void main() {
     await tester.pumpAndSettle();
     final start = find.descendant(
       of: find.byKey(const ValueKey('batch_metadata_start')),
-      matching: find.byType(InkWell),
+      matching: find.byType(AppEntryInkWell),
     );
-    expect(tester.widget<InkWell>(start).onTap, isNull);
+    expect(tester.widget<AppEntryInkWell>(start).onTap, isNull);
   });
 
   testWidgets('metadata invalid fields stay editable and cannot confirm', (

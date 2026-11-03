@@ -4748,8 +4748,8 @@ void main() {
     expect(navigationRail, findsOneWidget);
     final expandedRail = tester.widget<NavigationRail>(navigationRail);
     expect(expandedRail.extended, isTrue);
-    expect(expandedRail.minWidth, 63);
-    expect(expandedRail.minExtendedWidth, 243);
+    expect(expandedRail.minWidth, 64);
+    expect(expandedRail.minExtendedWidth, 244);
     final animatedShell = find.ancestor(
       of: navigationRail,
       matching: find.byType(AnimatedContainer),

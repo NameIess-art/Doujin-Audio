@@ -1388,10 +1388,10 @@ void main() {
     );
   }
 
-  for (final pauseAll in [false, true]) {
+  for (final pause in ['single', 'global', 'device disconnect']) {
     for (final video in [false, true]) {
       test(
-        '${pauseAll ? 'global' : 'single'} pause keeps native source state through the runtime (video=$video)',
+        '$pause keeps native source state through the runtime (video=$video)',
         () async {
           final database = await AppRuntimeTestFixture.installSharedDatabase();
           final graph = createTestRuntimeGraph(
@@ -1442,11 +1442,15 @@ void main() {
             1,
           );
 
-          if (pauseAll) {
-            expect(await graph.playback.pauseAllSessions(), true);
-          } else {
-            await graph.playback.toggleSessionPlayPause(session.id);
+          switch (pause) {
+            case 'single':
+              await graph.playback.toggleSessionPlayPause(session.id);
+            case 'global':
+              expect(await graph.playback.pauseAllSessions(), true);
+            case 'device disconnect':
+              await graph.playback.handleAudioDeviceDisconnected();
           }
+          expect(graph.playback.canResumeLastPlayback, true);
           expect(session.playbackRequested, false);
           expect(session.effectivePlaying, false);
           expect(session.position, const Duration(seconds: 12));
@@ -1465,7 +1469,7 @@ void main() {
           );
           expect(platform.seeks.last, Duration(seconds: video ? 20 : 12));
           expect(platform.state.playing, false);
-          await graph.playback.toggleSessionPlayPause(session.id);
+          expect(await graph.playback.resumeLastPlayback(), true);
           expect(players, hasLength(video ? 1 : 2));
           players.last.loaded();
           await Future<void>.delayed(Duration.zero);
@@ -2606,7 +2610,7 @@ void main() {
       pauseOnTransientAudioFocusLoss: false,
       resumeAfterTransientAudioFocusGain: false,
     );
-    await repository.handleDeviceDisconnected();
+    expect(await repository.handleDeviceDisconnected(), false);
     expect(players.single.state.playing, true);
     await bridge.setPlaybackBehavior(
       pauseOnAudioDeviceDisconnect: true,
@@ -2614,7 +2618,7 @@ void main() {
       pauseOnTransientAudioFocusLoss: false,
       resumeAfterTransientAudioFocusGain: false,
     );
-    await repository.handleDeviceDisconnected();
+    expect(await repository.handleDeviceDisconnected(), true);
     expect(players.single.state.playing, false);
   });
 

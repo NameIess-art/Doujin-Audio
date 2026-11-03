@@ -59,6 +59,12 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       'session_order_v1',
       (value) => (value as List<dynamic>).cast<String>(),
     );
+    final resumeBatch =
+        await AppPreferences.readJson<Map<String, String>>(
+          PlaybackFacade._resumeBatchKey,
+          (value) => Map<String, String>.from(value as Map),
+        ) ??
+        {};
     final restoredSessions = <PlaybackSession>[];
     final recordProgress = _recordPlaybackProgress?.call() ?? true;
 
@@ -136,6 +142,8 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       ..addAll(orderedIds);
     _service.markActiveSessionsDirty();
     publishSessionState();
+    _resumeBatch = Map.fromEntries(resumeBatch.entries.where(_isResumeTarget));
+    _notifyResumeBatchChanged();
     final focusedSessionId = orderedIds.firstOrNull;
     _onPersistenceFocusChanged?.call(focusedSessionId);
     await _restoreRuntime?.call(
@@ -148,6 +156,11 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     cancelScheduledPersistence();
     final removedSessions = _service.sessions.values.toList(growable: false);
     _service.removeSessions(removedSessions.map((session) => session.id));
+    _recordedPauseSequence = ++_pauseSequence;
+    _resumeRetryTargets.clear();
+    await _setResumeBatch({}).catchError((Object _) {
+      // The persistence queue logs write failures.
+    });
     _persistedSessions.clear();
     _persistedQueueVersions.clear();
     await Future.wait(removedSessions.map((session) => session.shutdown()));

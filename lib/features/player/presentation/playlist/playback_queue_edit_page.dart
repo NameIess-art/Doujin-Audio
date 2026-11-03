@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/widgets/app_entry_ink_well.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import 'playlist_shared_helpers.dart';
 
@@ -330,7 +331,7 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
 
     return Material(
       color: Colors.transparent,
-      child: InkWell(
+      child: AppEntryInkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(tokens.radiusSmall),
         child: Padding(

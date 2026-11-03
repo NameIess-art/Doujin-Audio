@@ -1,4 +1,7 @@
 import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
 import '../../core/network/app_network.dart';
 import '../../core/logging/app_log_service.dart';
 
@@ -223,7 +226,14 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   Future<void> _enterBackground() async {
     _playback.setBackgroundMode(true);
     _keepAlive.enterBackground();
-    await _playback.flushSessionStatePersistence();
+    try {
+      // Android can remove a background task without draining Dart disposal.
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        await _playback.saveResumeBatchForExit();
+      }
+    } finally {
+      await _playback.flushSessionStatePersistence();
+    }
     _refreshListeningActivity();
   }
 
@@ -278,6 +288,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     }
 
     if (_persistence.hasLoadedState) {
+      await attempt(_playback.saveResumeBatchForExit);
       await attempt(_playback.flushSessionStatePersistence);
       if (_historyInitialized) {
         await attempt(() => _listeningActivity?.refresh());

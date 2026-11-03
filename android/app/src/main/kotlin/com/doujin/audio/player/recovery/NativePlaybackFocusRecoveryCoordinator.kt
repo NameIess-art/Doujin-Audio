@@ -25,6 +25,7 @@ internal interface NativePlaybackFocusRecoveryHost {
     fun clearPlaybackIntent(sessionId: String)
     fun clearAllPlaybackRecovery()
     fun applyFocusDuckMultiplier(multiplier: Float)
+    fun publishDevicePauseBatch(sessionIds: List<String>) {}
     fun publishAllSessions()
     fun persistNow()
     fun schedulePersist()
@@ -134,11 +135,13 @@ internal class NativePlaybackFocusRecoveryCoordinator(
         }
         clearInterruptionState()
         host.clearAllPlaybackRecovery()
-        host.activePlaybackSessionIds().forEach { sessionId ->
+        val pausedIds = host.activePlaybackSessionIds()
+        pausedIds.forEach { sessionId ->
             host.clearPlaybackIntent(sessionId)
             host.pause(sessionId)
         }
         host.publishAllSessions()
+        host.publishDevicePauseBatch(pausedIds)
         host.persistNow()
         host.syncForeground()
     }

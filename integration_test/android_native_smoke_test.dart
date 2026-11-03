@@ -1,3 +1,4 @@
+import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'dart:async';
@@ -128,7 +129,12 @@ void main() {
           inInclusiveRange(1500, 2500),
         );
 
-        await playback.toggleSessionPlayPause(sessionId);
+        await tester.pump();
+        expect(
+          container.read(playlistHeaderUiProvider).canResumeLastPlayback,
+          isTrue,
+        );
+        expect(await playback.resumeLastPlayback(), isTrue);
         await _waitFor(
           tester,
           () => playback.state.activeSessions
@@ -225,6 +231,10 @@ void main() {
         final secondPaused = _retainedSession(playback, secondSessionId);
         expect(firstPaused.loadedPath, isNull);
         expect(secondPaused.loadedPath, isNull);
+        expect(
+          container.read(playlistHeaderUiProvider).canResumeLastPlayback,
+          isTrue,
+        );
         var progressEvents = 0;
         var stateEvents = 0;
         final progressSubscription = playback.nativeRepository.progressUpdates
@@ -266,6 +276,16 @@ void main() {
           await progressSubscription.cancel();
           await stateSubscription.cancel();
         }
+        expect(await playback.resumeLastPlayback(), isTrue);
+        await _waitFor(
+          tester,
+          () => _retainedSession(playback, secondSessionId).playbackRequested,
+          'the last native pause batch did not resume',
+        );
+        expect(
+          _retainedSession(playback, sessionId).playbackRequested,
+          isFalse,
+        );
       } finally {
         _transitionToResumed(tester);
         await playback.clearAllSessions();

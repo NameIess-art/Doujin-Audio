@@ -45,8 +45,24 @@ class NativeMediaSessionCommandPolicyTest {
         assertEquals(false, player.playWhenReady)
     }
 
+    @Test
+    fun `confirmed pause is reported once for an active session`() {
+        var confirmedPauses = 0
+        val player = mediaSessionPlayer(
+            initiallyPlaying = true,
+            onPaused = { confirmedPauses++ }
+        ) { true }
+
+        player.pause()
+        player.pause()
+
+        assertEquals(1, confirmedPauses)
+        assertEquals(false, player.playWhenReady)
+    }
+
     private fun mediaSessionPlayer(
         initiallyPlaying: Boolean,
+        onPaused: () -> Unit = {},
         onSetPlayWhenReady: (Boolean) -> Boolean
     ): MediaSessionPlayer {
         var playing = initiallyPlaying
@@ -63,6 +79,6 @@ class NativeMediaSessionCommandPolicyTest {
                 else -> error("Unexpected player call: ${method.name}")
             }
         } as Player
-        return MediaSessionPlayer(delegate, onSetPlayWhenReady)
+        return MediaSessionPlayer(delegate, onSetPlayWhenReady, onPaused)
     }
 }

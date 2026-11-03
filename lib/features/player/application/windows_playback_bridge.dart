@@ -1190,8 +1190,8 @@ class WindowsPlaybackBridge
   }
 
   /// Called by the Windows endpoint notification, sharing the saved preference.
-  Future<void> handleDeviceDisconnected() async {
-    if (_pauseOnDisconnect) await pauseAll();
+  Future<bool> handleDeviceDisconnected() async {
+    return _pauseOnDisconnect && (await pauseAll()).isOk;
   }
 
   @override

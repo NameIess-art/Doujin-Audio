@@ -427,14 +427,6 @@ class _PlaybackQueueAudioEditPageState
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Expanded(child: addedToQueueSection),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Divider(
-                              height: 1,
-                              thickness: 1,
-                              color: cs.outlineVariant.withValues(alpha: 0.35),
-                            ),
-                          ),
                           Expanded(child: playlistAudioSection),
                         ],
                       );

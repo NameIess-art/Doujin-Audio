@@ -206,11 +206,10 @@ class NativePlaybackRepository {
 
   Future<NativeResult<void>> pauseAll() => _bridge.pauseAll();
 
-  Future<void> handleDeviceDisconnected() async {
+  Future<bool> handleDeviceDisconnected() async {
     final bridge = _bridge;
-    if (bridge is WindowsPlaybackBridge) {
-      await bridge.handleDeviceDisconnected();
-    }
+    return bridge is WindowsPlaybackBridge &&
+        await bridge.handleDeviceDisconnected();
   }
 
   VideoController? videoControllerForSession(String sessionId) {

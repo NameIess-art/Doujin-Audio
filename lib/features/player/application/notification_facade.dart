@@ -353,8 +353,7 @@ final class NotificationFacade {
       final playback = _playback;
       if (session == null || playback == null || !session.state.playing) return;
       _setFocusSessionId(session.id);
-      if (!await _pauseNativeSession(playback, session)) return;
-      session.setOptimisticState(playing: false);
+      await _pauseNativeSession(playback, session);
     });
   }
 
@@ -364,8 +363,7 @@ final class NotificationFacade {
       final playback = _playback;
       if (session == null || playback == null || session.isLoading) return;
       if (session.state.playing) {
-        if (!await _pauseNativeSession(playback, session)) return;
-        session.setOptimisticState(playing: false);
+        await _pauseNativeSession(playback, session);
         return;
       }
       await _resumeSession(session);
@@ -399,8 +397,7 @@ final class NotificationFacade {
       if (session == null || playback == null || session.isLoading) return;
       _setFocusSessionId(session.id);
       if (session.state.playing) {
-        if (!await _pauseNativeSession(playback, session)) return;
-        session.setOptimisticState(playing: false);
+        await _pauseNativeSession(playback, session);
         return;
       }
       await _resumeSession(session);
@@ -470,17 +467,29 @@ final class NotificationFacade {
   Future<bool> _pauseNativeSession(
     PlaybackFacade playback,
     PlaybackSession session,
-  ) async {
-    final response = await playback.nativeRepository.pause(session.id);
-    if (response.isOk) return true;
-    AppLogService.warning(
-      'NotificationFacade.pause failed '
-      'code=${response.errorCodeOrNull} '
-      'sessionId=${session.id} '
-      'error=${response.errorOrNull}',
-    );
-    return false;
-  }
+  ) => playback.pauseSessionForResume(
+    session,
+    pause: () async {
+      final generation = session.playbackCommandGeneration;
+      final response = await playback.nativeRepository.pause(session.id);
+      if (response.isOk) {
+        if (session.playbackCommandGeneration != generation ||
+            !playback.isRegisteredSession(session)) {
+          return false;
+        }
+        session.confirmPaused();
+        playback.publishSessionState(session.id);
+        return true;
+      }
+      AppLogService.warning(
+        'NotificationFacade.pause failed '
+        'code=${response.errorCodeOrNull} '
+        'sessionId=${session.id} '
+        'error=${response.errorOrNull}',
+      );
+      return false;
+    },
+  );
 
   Future<void> _guardAction(Future<void> Function() action) {
     return _stateService.guardNotificationAction(

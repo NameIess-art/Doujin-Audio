@@ -16,6 +16,7 @@ internal class NativeMediaSessionHost(
     private val candidate: () -> NativePlaybackSession?,
     onPlayerCommand: (Int) -> Unit,
     private val onSetPlayWhenReady: (NativePlaybackSession, Boolean) -> Boolean,
+    private val onPaused: (NativePlaybackSession) -> Unit,
     logSecurityEvent: (String, Throwable?) -> Unit,
     private val logInfo: (String, NativePlaybackSession?) -> Unit,
     private val logWarn: (String, Throwable) -> Unit
@@ -118,20 +119,28 @@ internal class NativeMediaSessionHost(
     }
 
     private fun sessionPlayer(player: ExoPlayer, session: NativePlaybackSession): MediaSessionPlayer =
-        MediaSessionPlayer(player) { onSetPlayWhenReady(session, it) }
+        MediaSessionPlayer(
+            player,
+            onSetPlayWhenReady = { onSetPlayWhenReady(session, it) },
+            onPaused = { onPaused(session) }
+        )
 }
 
 // Media3 uses one command code for play and pause. Intercept the actual request
 // on the session player so native playback commands still use ExoPlayer directly.
 internal class MediaSessionPlayer(
     val delegate: Player,
-    private val onSetPlayWhenReady: (Boolean) -> Boolean
+    private val onSetPlayWhenReady: (Boolean) -> Boolean,
+    private val onPaused: () -> Unit = {}
 ) : ForwardingPlayer(delegate) {
     override fun play() = setPlayWhenReady(true)
 
     override fun pause() = setPlayWhenReady(false)
 
     override fun setPlayWhenReady(playWhenReady: Boolean) {
-        if (onSetPlayWhenReady(playWhenReady)) super.setPlayWhenReady(playWhenReady)
+        val wasPlaying = delegate.playWhenReady
+        if (!onSetPlayWhenReady(playWhenReady)) return
+        super.setPlayWhenReady(playWhenReady)
+        if (wasPlaying && !playWhenReady && !delegate.playWhenReady) onPaused()
     }
 }

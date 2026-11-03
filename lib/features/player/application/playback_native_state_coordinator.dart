@@ -284,6 +284,26 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
     NativePlaybackSnapshot snapshot, {
     required bool Function(String path) hasLibraryTrack,
   }) {
+    if (snapshot.resumePauseBatch.isNotEmpty) {
+      // The native service publishes the session states before the batch event.
+      // Use the event only to identify which pauses belong together.
+      final candidates = <String, String>{};
+      for (final paused in snapshot.resumePauseBatch) {
+        final session = _service.sessions[paused.sessionId];
+        if (session == null ||
+            paused.playWhenReady ||
+            session.transportCommandId != (paused.transportCommandId ?? 0)) {
+          continue;
+        }
+        final path = _normalizeNativeSnapshot(
+          paused,
+          hasLibraryTrack: hasLibraryTrack,
+        ).path;
+        if (path != null) candidates[paused.sessionId] = path;
+      }
+      _rememberPausedBatch(candidates);
+      return PlaybackNativeSnapshotApplication.notApplied(snapshot);
+    }
     observeTransportCommandId(snapshot.transportCommandId);
     final normalized = _normalizeNativeSnapshot(
       snapshot,
@@ -300,6 +320,7 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
     if (!_service.applyNativeSnapshot(normalized)) {
       return PlaybackNativeSnapshotApplication.notApplied(normalized);
     }
+    if (previousTrackPath != session.currentTrackPath) _pruneResumeBatch();
     return PlaybackNativeSnapshotApplication(
       snapshot: normalized,
       session: session,

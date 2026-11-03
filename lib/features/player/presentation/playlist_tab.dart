@@ -391,12 +391,16 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final topPadding =
         effectiveHeaderHeight + AppPageHeaderMetrics.firstContentSpacing;
     final bottomPadding = listBottomInset + 16.0;
-    final sessionsInitialized = ref.watch(
-      playbackCatalogProvider.select((s) => s.value?.isInitialized),
-    ) ?? ref.read(playbackFacadeProvider).catalogState.isInitialized;
+    final sessionsInitialized =
+        ref.watch(
+          playbackCatalogProvider.select((s) => s.value?.isInitialized),
+        ) ??
+        ref.read(playbackFacadeProvider).catalogState.isInitialized;
 
     final page = ScrollActivityGate(
-      onMetricsChanged: ref.read(libraryCoverUiControllerProvider).viewportChanged,
+      onMetricsChanged: ref
+          .read(libraryCoverUiControllerProvider)
+          .viewportChanged,
       child: PageHeaderInset(
         topInset: topPadding,
         child: Stack(
@@ -551,7 +555,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     titleWidget: _buildHeaderLeftActions(
                       context,
                       i18n,
-                      headerState.sessionCount > 0,
+                      headerState,
                     ),
                     trailing: SizedBox(
                       height: 38,
@@ -874,125 +878,127 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         builder: (context, ref, _) {
           final timerState = ref.watch(timerStateProvider).value ?? timer.state;
           return SafeArea(
-            child: SingleChildScrollView(child: Padding(
-              padding: AppBottomSheet.contentPadding,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  AppBottomSheetHeader(
-                    icon: Icons.timer_outlined,
-                    title: i18n.tr('timer_title'),
-                  ),
-                  if (timerState.active || timerState.duration != null) ...[
-                    SwitchListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      tileColor: cs.surfaceContainerLow,
-                      secondary: Icon(
-                        Icons.music_note_rounded,
-                        color: timerState.stopAfterCurrentTrack
-                            ? cs.primary
-                            : null,
-                      ),
-                      title: Text(
-                        i18n.tr('stop_after_current_track'),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      subtitle: Text(
-                        i18n.tr('stop_after_current_track_subtitle'),
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      value: timerState.stopAfterCurrentTrack,
-                      onChanged: (enabled) {
-                        AppInteractionFeedback.trigger(
-                          AppInteractionFeedbackType.selection,
-                        );
-                        timer.setStopAfterCurrentTrack(enabled);
-                      },
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: AppBottomSheet.contentPadding,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AppBottomSheetHeader(
+                      icon: Icons.timer_outlined,
+                      title: i18n.tr('timer_title'),
                     ),
-                    const SizedBox(height: 12),
-                  ],
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ActionChip(
-                        avatar: const Icon(Icons.timer_10_rounded, size: 16),
-                        label: Text(
-                          i18n.tr('minutes_duration', {'count': 15}),
+                    if (timerState.active || timerState.duration != null) ...[
+                      SwitchListTile(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        onPressed: () {
-                          timer.configureTimer(
-                            TimerMode.manual,
-                            const Duration(minutes: 15),
+                        tileColor: cs.surfaceContainerLow,
+                        secondary: Icon(
+                          Icons.music_note_rounded,
+                          color: timerState.stopAfterCurrentTrack
+                              ? cs.primary
+                              : null,
+                        ),
+                        title: Text(
+                          i18n.tr('stop_after_current_track'),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        subtitle: Text(
+                          i18n.tr('stop_after_current_track_subtitle'),
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        value: timerState.stopAfterCurrentTrack,
+                        onChanged: (enabled) {
+                          AppInteractionFeedback.trigger(
+                            AppInteractionFeedbackType.selection,
                           );
-                          timer.startCountdown();
-                          Navigator.of(sheetContext).pop();
+                          timer.setStopAfterCurrentTrack(enabled);
                         },
                       ),
-                      ActionChip(
-                        avatar: const Icon(Icons.timer_rounded, size: 16),
-                        label: Text(
-                          i18n.tr('minutes_duration', {'count': 30}),
+                      const SizedBox(height: 12),
+                    ],
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ActionChip(
+                          avatar: const Icon(Icons.timer_10_rounded, size: 16),
+                          label: Text(
+                            i18n.tr('minutes_duration', {'count': 15}),
+                          ),
+                          onPressed: () {
+                            timer.configureTimer(
+                              TimerMode.manual,
+                              const Duration(minutes: 15),
+                            );
+                            timer.startCountdown();
+                            Navigator.of(sheetContext).pop();
+                          },
                         ),
+                        ActionChip(
+                          avatar: const Icon(Icons.timer_rounded, size: 16),
+                          label: Text(
+                            i18n.tr('minutes_duration', {'count': 30}),
+                          ),
+                          onPressed: () {
+                            timer.configureTimer(
+                              TimerMode.manual,
+                              const Duration(minutes: 30),
+                            );
+                            timer.startCountdown();
+                            Navigator.of(sheetContext).pop();
+                          },
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.timer_rounded, size: 16),
+                          label: Text(
+                            i18n.tr('minutes_duration', {'count': 60}),
+                          ),
+                          onPressed: () {
+                            timer.configureTimer(
+                              TimerMode.manual,
+                              const Duration(minutes: 60),
+                            );
+                            timer.startCountdown();
+                            Navigator.of(sheetContext).pop();
+                          },
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.tune_rounded, size: 16),
+                          label: Text(i18n.tr('set_countdown')),
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop(true);
+                          },
+                        ),
+                      ],
+                    ),
+                    if (timerState.active || timerState.duration != null) ...[
+                      const SizedBox(height: 14),
+                      OutlinedButton.icon(
                         onPressed: () {
-                          timer.configureTimer(
-                            TimerMode.manual,
-                            const Duration(minutes: 30),
+                          AppInteractionFeedback.trigger(
+                            AppInteractionFeedbackType.destructive,
                           );
-                          timer.startCountdown();
+                          timer.cancelTimer();
                           Navigator.of(sheetContext).pop();
                         },
-                      ),
-                      ActionChip(
-                        avatar: const Icon(Icons.timer_rounded, size: 16),
-                        label: Text(
-                          i18n.tr('minutes_duration', {'count': 60}),
+                        icon: const Icon(Icons.stop_circle_outlined),
+                        label: Text(i18n.tr('cancel_timer')),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: cs.error,
+                          side: BorderSide(color: cs.error),
                         ),
-                        onPressed: () {
-                          timer.configureTimer(
-                            TimerMode.manual,
-                            const Duration(minutes: 60),
-                          );
-                          timer.startCountdown();
-                          Navigator.of(sheetContext).pop();
-                        },
-                      ),
-                      ActionChip(
-                        avatar: const Icon(Icons.tune_rounded, size: 16),
-                        label: Text(i18n.tr('set_countdown')),
-                        onPressed: () {
-                          Navigator.of(sheetContext).pop(true);
-                        },
                       ),
                     ],
-                  ),
-                  if (timerState.active || timerState.duration != null) ...[
-                    const SizedBox(height: 14),
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        AppInteractionFeedback.trigger(
-                          AppInteractionFeedbackType.destructive,
-                        );
-                        timer.cancelTimer();
-                        Navigator.of(sheetContext).pop();
-                      },
-                      icon: const Icon(Icons.stop_circle_outlined),
-                      label: Text(i18n.tr('cancel_timer')),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: cs.error,
-                        side: BorderSide(color: cs.error),
-                      ),
-                    ),
                   ],
-                ],
+                ),
               ),
-            )),
+            ),
           );
         },
       ),
@@ -1006,32 +1012,41 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   Widget _buildHeaderLeftActions(
     BuildContext context,
     AppLanguageProvider i18n,
-    bool hasSessions,
+    PlaylistHeaderState headerState,
   ) {
+    final hasSessions = headerState.sessionCount > 0;
+    final pausing = headerState.hasActivePlayback;
     return HeaderActionPill(
       children: [
         IconButton(
-          key: const ValueKey<String>('playlist_pause_all_button'),
-          onPressed: hasSessions
+          key: ValueKey<String>(
+            pausing
+                ? 'playlist_pause_all_button'
+                : 'playlist_resume_last_button',
+          ),
+          onPressed: pausing || headerState.canResumeLastPlayback
               ? () async {
-                  final paused = await ref
-                      .read(playbackFacadeProvider)
-                      .pauseAllSessions();
-                  if (!context.mounted) return;
+                  final playback = ref.read(playbackFacadeProvider);
+                  final success = pausing
+                      ? await playback.pauseAllSessions()
+                      : await playback.resumeLastPlayback();
+                  if (!context.mounted || success) return;
                   showAppSnackBar(
                     context,
-                    i18n.tr(paused ? 'all_paused' : 'operation_failed_retry'),
-                    tone: paused
-                        ? AppFeedbackTone.warning
-                        : AppFeedbackTone.destructive,
-                    icon: paused
-                        ? Icons.pause_circle_outline_rounded
-                        : Icons.error_outline_rounded,
+                    i18n.tr('operation_failed_retry'),
+                    tone: AppFeedbackTone.destructive,
+                    icon: Icons.error_outline_rounded,
                   );
                 }
               : null,
-          icon: const Icon(Icons.pause_circle_outline_rounded),
-          tooltip: i18n.tr('pause_all_sessions'),
+          icon: Icon(
+            pausing
+                ? Icons.pause_circle_outline_rounded
+                : Icons.play_circle_outline_rounded,
+          ),
+          tooltip: i18n.tr(
+            pausing ? 'pause_all_sessions' : 'resume_last_playback',
+          ),
           iconSize: 20,
           padding: EdgeInsets.zero,
           constraints: HeaderActionPill.buttonConstraints,

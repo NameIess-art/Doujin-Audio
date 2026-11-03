@@ -412,6 +412,10 @@ final libraryCoverForTrackProvider = FutureProvider.autoDispose
           .deferredTrackCover(track, context: request.context);
     });
 
+final playlistResumeBatchProvider = StreamProvider<int>(
+  (ref) => ref.watch(playbackFacadeProvider).resumeBatchChanges,
+);
+
 final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {
   final playback = ref.watch(playbackFacadeProvider);
   final playbackState =
@@ -419,7 +423,10 @@ final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {
   final timerState =
       ref.watch(timerStateProvider).value ??
       ref.watch(timerFacadeProvider).state;
+  ref.watch(playlistResumeBatchProvider);
   return PlaylistHeaderState(
+    hasActivePlayback: playback.hasActivePlayback,
+    canResumeLastPlayback: playback.canResumeLastPlayback,
     sessionCount: playbackState.sessionCount,
     playingCount: playbackState.playingSessionCount,
     hasPlayingAudioSession: playbackState.hasPlayingAudioSession,

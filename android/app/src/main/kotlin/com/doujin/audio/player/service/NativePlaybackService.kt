@@ -268,6 +268,12 @@ class NativePlaybackService : MediaSessionService() {
             candidate = ::mediaSessionCandidate,
             onPlayerCommand = ::onMediaSessionPlayerCommand,
             onSetPlayWhenReady = ::onMediaSessionSetPlayWhenReady,
+            onPaused = { session ->
+                if (sessionManager.get(session.sessionId) === session) {
+                    publishSessionState(session.sessionId)
+                    publishResumePauseBatch(listOf(session.sessionId))
+                }
+            },
             logSecurityEvent = ::logSecurityEvent,
             logInfo = ::logInfo,
             logWarn = { message, error -> logWarn(message, error = error) }
@@ -393,6 +399,8 @@ class NativePlaybackService : MediaSessionService() {
                 override fun applyFocusDuckMultiplier(multiplier: Float) {
                     sessionManager.applyFocusDuckMultiplier(multiplier)
                 }
+                override fun publishDevicePauseBatch(sessionIds: List<String>) =
+                    publishResumePauseBatch(sessionIds)
                 override fun publishAllSessions() = publishAllSessionStates()
                 override fun persistNow() = statePersistence.persistNow()
                 override fun schedulePersist() = statePersistence.schedulePersist()
@@ -1590,6 +1598,13 @@ class NativePlaybackService : MediaSessionService() {
         progressHeartbeat.stopIfUnobserved()
         progressHeartbeat.ensure()
         return snapshot
+    }
+
+    private fun publishResumePauseBatch(sessionIds: List<String>) {
+        val snapshots = sessionIds.mapNotNull { sessionManager.get(it)?.snapshot() }
+        if (snapshots.isEmpty()) return
+        val event = mapOf("eventType" to "resumePauseBatch", "sessions" to snapshots)
+        stateListeners.values.forEach { it(event) }
     }
 
     private fun publishAllSessionStates() {

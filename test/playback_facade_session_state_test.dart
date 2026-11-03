@@ -19,6 +19,155 @@ import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 
 void main() {
+  for (final event in [
+    'manual',
+    'pause all',
+    'equivalent Windows paths',
+    'equivalent Android document URIs',
+    'device disconnect',
+  ]) {
+    test('resume targets only the final pause event ($event)', () async {
+      final library = _createLibraryFacade();
+      final native = _RecordingNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      addTearDown(() async {
+        await playback.dispose();
+        await library.dispose();
+      });
+
+      final a = _session('a');
+      final b = _session('b');
+      final c = _session('c');
+      final (
+        String Function(String)? libraryPath,
+        String Function(String)? nativePath,
+      ) = switch (event) {
+        'equivalent Windows paths' => (
+          (String id) => 'C:\\Tracks\\${id.toUpperCase()}.mp3',
+          (String id) => 'c:/tracks/$id.mp3',
+        ),
+        'equivalent Android document URIs' => (
+          (String id) =>
+              'content://com.android.externalstorage.documents/tree/primary%3AMusic::$id.mp3',
+          (String id) =>
+              'content://com.android.externalstorage.documents/document/primary%3AMusic%2F$id.mp3',
+        ),
+        _ => (null, null),
+      };
+      if (libraryPath != null) {
+        b.currentTrackPath = libraryPath(b.id);
+        c.currentTrackPath = libraryPath(c.id);
+      }
+      for (final session in [a, b, c]) {
+        session
+          ..lastKnownPosition = const Duration(seconds: 12)
+          ..setOptimisticState(
+            playing: true,
+            processingState: ProcessingState.ready,
+          );
+        playback.registerSession(session);
+      }
+      final started = <String>[];
+      var failC = event == 'pause all';
+      playback.attachPlaybackCommands(
+        prepareSession:
+            (
+              _, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async => throw StateError(
+              'a paused loaded session should resume in place',
+            ),
+        pauseSession: (session) async {
+          session.confirmPaused();
+        },
+        startSession: (session, {required shouldStartTriggerCountdown}) async {
+          expect(session.position, const Duration(seconds: 12));
+          started.add(session.id);
+          if (session == c && failC) return false;
+          session.setOptimisticState(playing: true);
+          return true;
+        },
+        resolveAdvance: (_, {required forward}) => null,
+        hasAdjacent: (_, {required forward}) => false,
+      );
+
+      NativePlaybackSnapshot paused(PlaybackSession session) =>
+          NativePlaybackSnapshot(
+            sessionId: session.id,
+            path: session.currentTrackPath,
+            playing: false,
+            playWhenReady: false,
+            processingState: 'ready',
+            position: session.position,
+            bufferedPosition: session.position,
+            volume: 1,
+            boostGain: 1,
+            channelSwapEnabled: false,
+          );
+
+      await playback.toggleSessionPlayPause(a.id);
+      expect(playback.canResumeLastPlayback, isFalse);
+      switch (event) {
+        case 'manual':
+          await playback.toggleSessionPlayPause(b.id);
+          await playback.toggleSessionPlayPause(c.id);
+          a.beginTransportCommand(commandId: 1, playing: false);
+          a.confirmPaused();
+          final stale = paused(a).copyWith(transportCommandId: 0);
+          playback.applyNativeSnapshot(
+            stale.copyWith(resumePauseBatch: [stale]),
+            hasLibraryTrack: (_) => false,
+          );
+        case 'pause all':
+        case 'equivalent Windows paths':
+        case 'equivalent Android document URIs':
+          native.snapshotResponse = NativeSuccess(
+            NativePlaybackBundleSnapshot(
+              sessions: [
+                paused(a),
+                paused(b).copyWith(path: nativePath?.call(b.id)),
+                paused(c).copyWith(path: nativePath?.call(c.id)),
+              ],
+            ),
+          );
+          expect(await playback.pauseAllSessions(), isTrue);
+          native.failPauseAll = true;
+          expect(await playback.pauseAllSessions(), isFalse);
+        case 'device disconnect':
+          playback.applyNativeSnapshot(
+            paused(b),
+            hasLibraryTrack: (_) => false,
+          );
+          final pausedC = paused(c);
+          playback.applyNativeSnapshot(pausedC, hasLibraryTrack: (_) => false);
+          playback.applyNativeSnapshot(
+            pausedC.copyWith(resumePauseBatch: [paused(b), pausedC]),
+            hasLibraryTrack: (_) => false,
+          );
+      }
+
+      expect(playback.canResumeLastPlayback, isTrue);
+      expect(await playback.resumeLastPlayback(), !failC);
+      expect(started, event == 'manual' ? ['c'] : ['b', 'c']);
+      if (failC) {
+        expect(playback.canResumeLastPlayback, isFalse);
+        await playback.toggleSessionPlayPause(b.id);
+        failC = false;
+        expect(await playback.resumeLastPlayback(), isTrue);
+        expect(started, ['b', 'c', 'b', 'c']);
+      }
+      expect(playback.canResumeLastPlayback, isFalse);
+    });
+  }
+
   group('offset seek loading delay', () {
     late LibraryFacade library;
     late _RecordingNativePlaybackRepository native;

@@ -139,8 +139,9 @@ final class _RecordingNativeRepository extends NativePlaybackRepository {
   bool failPauseAll = false;
 
   @override
-  Future<void> handleDeviceDisconnected() async {
+  Future<bool> handleDeviceDisconnected() async {
     deviceDisconnectCount++;
+    return false;
   }
 
   @override

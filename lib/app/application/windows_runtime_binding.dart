@@ -120,7 +120,7 @@ class WindowsRuntimeBinding {
       case 'background':
         await runtime.enterBackground();
       case 'deviceDisconnected':
-        await playback.nativeRepository.handleDeviceDisconnected();
+        await playback.handleAudioDeviceDisconnected();
     }
   }
 

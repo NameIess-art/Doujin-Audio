@@ -1,14 +1,68 @@
 import 'dart:async';
 
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/player/application/playback_facade.dart';
+import 'package:doujin_audio/features/player/domain/playback_mode.dart';
+import 'package:flutter/foundation.dart';
+
 import 'package:doujin_audio/features/player/application/listening_activity_service.dart';
 import 'package:doujin_audio/features/player/domain/listening_activity.dart';
 import 'package:doujin_audio/features/player/domain/playback_usage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/app_runtime_test_fixture.dart';
+import 'support/test_persistence_repository.dart';
 
 void main() {
   AppRuntimeTestFixture.initialize();
+
+  test(
+    'Android background saves active playback before runtime disposal',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final database = await AppRuntimeTestFixture.installSharedDatabase();
+      addTearDown(() => AppRuntimeTestFixture.disposeSharedDatabase(database));
+      final repository = TestPersistenceRepository();
+      final graph = createTestRuntimeGraph(
+        persistenceRepository: repository,
+        skipPersistence: false,
+      );
+      addTearDown(graph.runtime.dispose);
+      await graph.runtime.start();
+
+      final track = MusicTrack(
+        path: '/music/background.mp3',
+        displayName: 'Background',
+        groupKey: '/music',
+        groupTitle: 'Music',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+      final session =
+          graph.playback.createTrackSession(track, customQueueTracks: [track])
+            ..setOptimisticState(
+              playing: true,
+              processingState: ProcessingState.ready,
+            );
+      session.setOptimisticPosition(const Duration(seconds: 14));
+      graph.playback.publishSessionState(session.id);
+
+      await graph.runtime.enterBackground();
+      expect(session.playbackRequested, isTrue);
+
+      // Reopen from storage without calling dispose on the original runtime.
+      final restarted = PlaybackFacade.create(databaseRepository: repository);
+      addTearDown(restarted.dispose);
+      await restarted.loadPersistedState();
+      expect(restarted.hasActivePlayback, isFalse);
+      expect(restarted.canResumeLastPlayback, isTrue);
+      expect(
+        restarted.sessions[session.id]?.position,
+        const Duration(seconds: 14),
+      );
+    },
+  );
 
   test(
     'core readiness excludes secondary hydration and merges requests',

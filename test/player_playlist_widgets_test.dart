@@ -4733,13 +4733,27 @@ void main() {
 
       if (dismissal == 'nested editor') {
         final i18n = fixture.languageProvider;
-        await tester.tap(find.text(i18n.tr('edit_queue_audio')));
+        final audioEntry = find.text(i18n.tr('edit_queue_audio'));
+        final dynamic controller = Material.of(tester.element(audioEntry));
+        Iterable<InteractiveInkFeature> visibleInk() =>
+            (controller.debugInkFeatures as List<InkFeature>? ?? [])
+                .whereType<InteractiveInkFeature>()
+                .where((feature) => feature.color.a > 0);
+
+        final gesture = await tester.startGesture(tester.getCenter(audioEntry));
+        await tester.pump(const Duration(milliseconds: 120));
+        expect(visibleInk(), isNotEmpty);
+        await gesture.up();
+        expect(visibleInk(), isEmpty);
         await tester.pumpAndSettle();
         expect(find.byType(PlaybackQueueAudioEditPage), findsOneWidget);
         expect(tester.getTopLeft(row).dx, closeTo(revealedLeft, 0.1));
         Navigator.of(
           tester.element(find.byType(PlaybackQueueAudioEditPage)),
         ).pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(visibleInk(), isEmpty);
         await tester.pumpAndSettle();
         expect(find.byType(PlaybackQueueEditPage), findsOneWidget);
         expect(tester.getTopLeft(row).dx, closeTo(revealedLeft, 0.1));
@@ -5612,7 +5626,7 @@ void main() {
     );
 
     expect(
-      find.byTooltip(languageProvider.tr('pause_all_sessions')),
+      find.byTooltip(languageProvider.tr('resume_last_playback')),
       findsOneWidget,
     );
     expect(
@@ -6002,7 +6016,7 @@ void main() {
     final audioTileRect = tester.getRect(
       find.ancestor(
         of: find.text(languageProvider.tr('edit_queue_audio')),
-        matching: find.byType(InkWell),
+        matching: find.bySubtype<InkWell>(),
       ).first,
     );
     expect(audioTileRect.top - headerIconRect.bottom, closeTo(18, 0.5));
@@ -6666,17 +6680,13 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(HeaderFloatingSurface), findsNWidgets(4));
-      if (defaultTargetPlatform == TargetPlatform.android) {
-        final capsule = find.ancestor(
-          of: find.text(fixture.languageProvider.tr('playback_list_audio')),
-          matching: find.byType(HeaderFloatingSurface),
-        );
-        expect(
-          tester.getRect(capsule).top -
-              tester.getRect(find.byType(Divider)).bottom,
-          AppSpacing.xs,
-        );
-      }
+      expect(find.byType(Divider), findsNothing);
+      expect(
+        find.byType(VerticalDivider),
+        defaultTargetPlatform == TargetPlatform.windows
+            ? findsOneWidget
+            : findsNothing,
+      );
       final placeholders = find.byType(CoverFallbackArtwork);
       expect(placeholders, findsNWidgets(2));
       for (final placeholder in placeholders.evaluate()) {

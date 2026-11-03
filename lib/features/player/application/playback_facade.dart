@@ -116,6 +116,168 @@ final class PlaybackFacade {
   int _sessionSeed = 0;
   int _directPlayRevision = 0;
   PlaybackSession? _directPlaybackSession;
+  static const _resumeBatchKey = 'playlist_resume_batch_v1';
+  Map<String, String> _resumeBatch = {};
+  Map<String, String> _resumeRetryTargets = {};
+  bool _resumingBatch = false;
+  int _resumeBatchRevision = 0;
+  int _pauseSequence = 0;
+  int _recordedPauseSequence = 0;
+  final _resumeBatchChanges = StreamController<int>.broadcast();
+
+  Stream<int> get resumeBatchChanges => _resumeBatchChanges.stream;
+
+  bool get hasActivePlayback => _service.sessions.values.any(
+    (session) => session.playbackRequested || session.state.playing,
+  );
+
+  bool get canResumeLastPlayback =>
+      !_resumingBatch &&
+      !hasActivePlayback &&
+      _resumeBatch.entries.any(_isResumeTarget);
+
+  bool _isResumeTarget(MapEntry<String, String> target) {
+    final session = _service.sessions[target.key];
+    return session != null &&
+        session.currentTrackPath.isNotEmpty &&
+        PathMatcher.equalsNormalized(session.currentTrackPath, target.value) &&
+        session.state.processingState != ProcessingState.completed;
+  }
+
+  Map<String, String> _captureActivePlayback() => {
+    for (final session in _service.sessions.values)
+      if ((session.playbackRequested || session.state.playing) &&
+          session.currentTrackPath.isNotEmpty)
+        session.id: session.currentTrackPath,
+  };
+
+  void _notifyResumeBatchChanged() {
+    if (!_disposed) _resumeBatchChanges.add(++_resumeBatchRevision);
+  }
+
+  Future<void> _setResumeBatch(Map<String, String> targets) {
+    _resumeBatch = targets;
+    _notifyResumeBatchChanged();
+    if (!_persistenceEnabled) return Future<void>.value();
+    final persistent = {
+      for (final target in targets.entries)
+        if (_service.sessions[target.key]?.isTemporary == false)
+          target.key: target.value,
+    };
+    return _enqueueSessionPersistence(() async {
+      if (!await AppPreferences.writeJson(_resumeBatchKey, persistent)) {
+        throw StateError('Could not persist playlist resume batch');
+      }
+    });
+  }
+
+  void _rememberPausedBatch(Map<String, String> candidates, {int? sequence}) {
+    final event = sequence ?? ++_pauseSequence;
+    if (event <= _recordedPauseSequence || hasActivePlayback) return;
+    final targets = Map<String, String>.fromEntries(
+      candidates.entries.where(_isResumeTarget),
+    );
+    if (targets.isEmpty) return;
+    _recordedPauseSequence = event;
+    // A partially failed resume can be retried after the successful sessions
+    // are paused again.
+    _scheduleResumeBatch({...targets, ..._resumeRetryTargets});
+  }
+
+  void _scheduleResumeBatch(Map<String, String> targets) {
+    unawaited(
+      _setResumeBatch(targets).catchError((Object _) {
+        // The persistence queue logs write failures.
+      }),
+    );
+  }
+
+  void _pruneResumeBatch() {
+    _resumeRetryTargets.removeWhere(
+      (id, path) => !_isResumeTarget(MapEntry(id, path)),
+    );
+    if (_resumeBatch.entries.every(_isResumeTarget)) return;
+    _scheduleResumeBatch(
+      Map.fromEntries(_resumeBatch.entries.where(_isResumeTarget)),
+    );
+  }
+
+  Future<void> saveResumeBatchForExit() async {
+    final targets = _captureActivePlayback();
+    if (targets.isNotEmpty) {
+      _recordedPauseSequence = ++_pauseSequence;
+      await _setResumeBatch({...targets, ..._resumeRetryTargets});
+    }
+  }
+
+  Future<void> handleAudioDeviceDisconnected() async {
+    final candidates = _captureActivePlayback();
+    final sequence = ++_pauseSequence;
+    final generations = {
+      for (final id in candidates.keys)
+        id: _service.sessions[id]!.playbackCommandGeneration,
+    };
+    if (!await nativeRepository.handleDeviceDisconnected()) return;
+    if (candidates.isEmpty || sequence <= _recordedPauseSequence) return;
+    final result = await nativeRepository.snapshot();
+    final snapshots = result.valueOrNull?.sessions;
+    if (snapshots == null) return;
+    _rememberPausedBatch({
+      for (final snapshot in snapshots)
+        if (!snapshot.playWhenReady &&
+            !snapshot.playing &&
+            candidates.containsKey(snapshot.sessionId) &&
+            _service.sessions[snapshot.sessionId]?.playbackCommandGeneration ==
+                generations[snapshot.sessionId])
+          snapshot.sessionId: candidates[snapshot.sessionId]!,
+    }, sequence: sequence);
+  }
+
+  Future<bool> resumeLastPlayback() async {
+    if (!canResumeLastPlayback) return false;
+    final commands = _commandPort;
+    if (commands == null) return false;
+    _resumingBatch = true;
+    _notifyResumeBatchChanged();
+    final batch = _resumeBatch;
+    try {
+      final results = await Future.wait(
+        batch.entries.where(_isResumeTarget).map((target) async {
+          final session = _service.sessions[target.key]!;
+          if (session.playbackRequested || session.state.playing) return null;
+          session.lastPlayedAt = DateTime.now();
+          final started = await _startPausedSession(session, commands);
+          return started ? null : target;
+        }),
+      );
+      final failed = results.whereType<MapEntry<String, String>>().toList();
+      if (identical(batch, _resumeBatch)) {
+        _resumeRetryTargets = Map.fromEntries(failed.where(_isResumeTarget));
+        _scheduleResumeBatch(Map.of(_resumeRetryTargets));
+      }
+      return failed.isEmpty;
+    } finally {
+      _resumingBatch = false;
+      _notifyResumeBatchChanged();
+    }
+  }
+
+  Future<bool> pauseSessionForResume(
+    PlaybackSession session, {
+    Future<bool> Function()? pause,
+  }) async {
+    final path = session.playbackRequested || session.state.playing
+        ? session.currentTrackPath
+        : null;
+    final sequence = ++_pauseSequence;
+    final paused =
+        await (pause?.call() ?? _commandPort?.pauseSession(session)) ?? false;
+    if (paused && path != null && isRegisteredSession(session)) {
+      _rememberPausedBatch({session.id: path}, sequence: sequence);
+    }
+    return paused;
+  }
+
   bool _persistenceEnabled = true;
   bool _backgroundMode = false;
   Timer? _savePlaybackStateTimer;
@@ -156,6 +318,7 @@ final class PlaybackFacade {
       _service.sessionStates(sessionId);
 
   void publishSessionState([String? sessionId]) {
+    _pruneResumeBatch();
     if (sessionId != null) {
       final session = _service.sessionById(sessionId);
       if (session != null) _service.publishSession(session);
@@ -386,6 +549,9 @@ final class PlaybackFacade {
   }
 
   Future<bool> pauseAllSessions() async {
+    final candidates = _captureActivePlayback();
+    final sequence = ++_pauseSequence;
+    final confirmed = <String, String>{};
     final requestedSessions = <PlaybackSession, (int, int)>{};
     for (final session in _service.sessions.values) {
       session.invalidatePreparation();
@@ -420,6 +586,10 @@ final class PlaybackFacade {
       }
       final snapshot = nativeSessions[session.id];
       if (snapshot != null) {
+        final commandId = snapshot.transportCommandId;
+        if (commandId != null && commandId < session.transportCommandId) {
+          continue;
+        }
         final commands = _commandPort;
         if (commands != null) {
           commands.handleNativeSnapshot(snapshot);
@@ -436,8 +606,16 @@ final class PlaybackFacade {
           session.setOptimisticState(processingState: ProcessingState.idle);
         }
       }
+      if (snapshot != null && (snapshot.playWhenReady || snapshot.playing)) {
+        continue;
+      }
       session.confirmPaused();
+      final path = candidates[session.id];
+      if (path != null) confirmed[session.id] = path;
     }
+    // The pause command succeeded. The follow-up snapshot reconciles the
+    // session state but may be unavailable after the native runtime idles.
+    _rememberPausedBatch(confirmed, sequence: sequence);
     _notifySessionStateChanged();
     _onRuntimeStateChanged?.call();
     scheduleSessionStatePersistence();
@@ -482,6 +660,7 @@ final class PlaybackFacade {
     );
 
     final removedSessions = _service.removeSessions(removedSessionIds);
+    _pruneResumeBatch();
     _removeNativeRetainedContentUris(removedSessionIds);
     if (removedSessions.isEmpty) return allSucceeded;
     for (final session in removedSessions) {
@@ -518,6 +697,7 @@ final class PlaybackFacade {
     final removedSessions = _service.removeSessions(
       requestedSessions.where(isRegisteredSession).map((session) => session.id),
     );
+    _pruneResumeBatch();
     if (removedSessions.isEmpty) return true;
     for (final session in removedSessions) {
       session.cancelPlaybackStart(session.loadGeneration);
@@ -649,32 +829,36 @@ final class PlaybackFacade {
       return;
     }
     if (session.playbackRequested) {
-      await _commandPort?.pauseSession(session);
+      await pauseSessionForResume(session);
       return;
     }
+    final commands = _commandPort;
+    if (commands == null) return;
     session.lastPlayedAt = DateTime.now();
+    await _startPausedSession(session, commands);
+  }
+
+  Future<bool> _startPausedSession(
+    PlaybackSession session,
+    PlaybackCommandPort commands,
+  ) {
     if (session.isLoading) {
-      await _commandPort?.prepareSession(
+      return commands.prepareSession(
         session,
         nextPath: session.currentTrackPath,
       );
-      return;
     }
     if (session.state.processingState == ProcessingState.completed ||
         session.state.processingState == ProcessingState.idle) {
-      await _commandPort?.prepareSession(
+      return commands.prepareSession(
         session,
         nextPath: session.currentTrackPath,
         forceStartAtZero:
             session.state.processingState == ProcessingState.completed,
       );
-      return;
     }
     session.beginLoadingIndicatorThreshold();
-    await _commandPort?.startSession(
-      session,
-      shouldStartTriggerCountdown: true,
-    );
+    return commands.startSession(session, shouldStartTriggerCountdown: true);
   }
 
   Future<void> switchSessionTrack(String sessionId, String newPath) async {
@@ -1102,6 +1286,7 @@ final class PlaybackFacade {
     }
     await Future.wait(<Future<void>>[
       attempt(_sessionActivations.close),
+      attempt(_resumeBatchChanges.close),
       attempt(_persistedUriReferenceRevisionController.close),
     ]);
     final sessionsToDispose = _service.sessions.values.toList(growable: false);

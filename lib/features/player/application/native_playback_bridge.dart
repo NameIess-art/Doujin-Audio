@@ -39,6 +39,7 @@ class NativePlaybackSnapshot {
     this.hasRetainedUrisPayload = false,
     this.transportCommandId,
     this.stopAfterCurrentTrack = false,
+    this.resumePauseBatch = const [],
   }) : retainedUris = immutableList(retainedUris),
        audioEffects = audioEffects ?? AudioEffectsState.flat,
        eqCapabilities = eqCapabilities ?? EqCapabilities.unsupported;
@@ -69,6 +70,7 @@ class NativePlaybackSnapshot {
   final bool hasRetainedUrisPayload;
   final int? transportCommandId;
   final bool stopAfterCurrentTrack;
+  final List<NativePlaybackSnapshot> resumePauseBatch;
 
   NativePlaybackSnapshot copyWith({
     String? sessionId,
@@ -105,6 +107,7 @@ class NativePlaybackSnapshot {
     int? transportCommandId,
     bool clearTransportCommandId = false,
     bool? stopAfterCurrentTrack,
+    List<NativePlaybackSnapshot>? resumePauseBatch,
   }) {
     return NativePlaybackSnapshot(
       sessionId: sessionId ?? this.sessionId,
@@ -139,6 +142,7 @@ class NativePlaybackSnapshot {
       transportCommandId: clearTransportCommandId
           ? null
           : (transportCommandId ?? this.transportCommandId),
+      resumePauseBatch: resumePauseBatch ?? this.resumePauseBatch,
       stopAfterCurrentTrack:
           stopAfterCurrentTrack ?? this.stopAfterCurrentTrack,
     );
@@ -472,6 +476,13 @@ class NativePlaybackBridge
             if (eventType == 'progress') {
               for (final update in parseNativePlaybackProgressEvent(event)) {
                 _progressUpdatesController.add(update);
+              }
+            } else if (eventType == 'resumePauseBatch') {
+              final batch = (event['sessions'] as List)
+                  .map((value) => NativePlaybackSnapshot.fromMap(value as Map))
+                  .toList(growable: false);
+              if (batch.isNotEmpty) {
+                _controller.add(batch.last.copyWith(resumePauseBatch: batch));
               }
             } else if (eventType == null) {
               _controller.add(NativePlaybackSnapshot.fromMap(event));

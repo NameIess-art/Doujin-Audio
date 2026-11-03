@@ -105,7 +105,20 @@ class NativePlaybackFocusRecoveryCoordinatorTest {
 
         assertEquals(listOf("a", "b"), host.clearedIntents)
         assertEquals(listOf("a", "b"), host.paused)
+        assertEquals(listOf(listOf("a", "b")), host.devicePauseBatches)
         assertEquals(1, host.clearAllRecoveryCount)
+    }
+
+    @Test
+    fun `device disconnect with pause disabled leaves playback and recovery alone`() {
+        val host = FakeFocusRecoveryHost(activeIds = linkedSetOf("a"))
+        host.behavior = host.behavior.copy(pauseOnAudioDeviceDisconnect = false)
+        val coordinator = NativePlaybackFocusRecoveryCoordinator(host, FakeAudioFocusAccess())
+
+        coordinator.onAudioDeviceDisconnected()
+
+        assertTrue(host.paused.isEmpty())
+        assertTrue(host.devicePauseBatches.isEmpty())
     }
 }
 
@@ -127,6 +140,7 @@ private class FakeFocusRecoveryHost(
     val played = mutableListOf<String>()
     val duckMultipliers = mutableListOf<Float>()
     val clearedIntents = mutableListOf<String>()
+    val devicePauseBatches = mutableListOf<List<String>>()
     var clearAllRecoveryCount = 0
     override fun activePlaybackSessionIds(): List<String> = activeIds.toList()
     override fun sessionExists(sessionId: String): Boolean = sessionId in activeIds
@@ -136,6 +150,7 @@ private class FakeFocusRecoveryHost(
     override fun clearPlaybackIntent(sessionId: String) { clearedIntents += sessionId }
     override fun clearAllPlaybackRecovery() { clearAllRecoveryCount += 1 }
     override fun applyFocusDuckMultiplier(multiplier: Float) { duckMultipliers += multiplier }
+    override fun publishDevicePauseBatch(sessionIds: List<String>) { devicePauseBatches += sessionIds }
     override fun publishAllSessions() = Unit
     override fun persistNow() = Unit
     override fun schedulePersist() = Unit

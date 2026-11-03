@@ -18,8 +18,12 @@ class PlaylistHeaderState {
     required this.timerRemaining,
     required this.timerActive,
     this.autoResumeAt,
+    this.hasActivePlayback = false,
+    this.canResumeLastPlayback = false,
   });
 
+  final bool hasActivePlayback;
+  final bool canResumeLastPlayback;
   final int sessionCount;
   final int playingCount;
   final bool hasPlayingAudioSession;
@@ -36,6 +40,8 @@ class PlaylistHeaderState {
   @override
   bool operator ==(Object other) {
     return other is PlaylistHeaderState &&
+        other.hasActivePlayback == hasActivePlayback &&
+        other.canResumeLastPlayback == canResumeLastPlayback &&
         other.sessionCount == sessionCount &&
         other.playingCount == playingCount &&
         other.hasPlayingAudioSession == hasPlayingAudioSession &&
@@ -47,6 +53,8 @@ class PlaylistHeaderState {
 
   @override
   int get hashCode => Object.hash(
+    hasActivePlayback,
+    canResumeLastPlayback,
     sessionCount,
     playingCount,
     hasPlayingAudioSession,

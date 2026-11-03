@@ -545,6 +545,73 @@ void main() {
   );
 
   test(
+    'exit persists only active durable sessions for explicit resume',
+    () async {
+      SharedPreferences.setMockInitialValues(const {});
+      final repository = _RecordingPlaybackPersistenceRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository: repository,
+        nativeRepository: _FakeNativePlaybackRepository(),
+      );
+      final restored = PlaybackFacade.create(
+        databaseRepository: repository,
+        nativeRepository: _FakeNativePlaybackRepository(),
+      );
+      addTearDown(playback.dispose);
+      addTearDown(restored.dispose);
+      for (final id in ['paused', 'playing', 'temporary']) {
+        final track = MusicTrack(
+          path: '/tracks/$id.mp3',
+          displayName: id,
+          groupKey: '/tracks',
+          groupTitle: 'Tracks',
+          groupSubtitle: '',
+          isSingle: true,
+        );
+        final session =
+            playback.createTrackSession(
+              track,
+              customQueueTracks: [track],
+              isTemporary: id == 'temporary',
+            )..setOptimisticState(
+              playing: id != 'paused',
+              processingState: ProcessingState.ready,
+            );
+        if (!session.isTemporary) {
+          repository.restoredSessions.add(
+            PersistedPlaybackSession(
+              id: session.id,
+              trackPath: track.path,
+              loopModeIndex: SessionLoopMode.single.index,
+              volume: 1,
+              positionMs: 22000,
+              durationMs: 30000,
+              customQueueTracks: [track],
+              channelSwapEnabled: false,
+              sortOrder: 0,
+              createdAtMs: DateTime(2026).millisecondsSinceEpoch,
+            ),
+          );
+        }
+      }
+      await playback.saveResumeBatchForExit();
+      await restored.loadPersistedState();
+      expect(restored.hasActivePlayback, isFalse);
+      expect(restored.canResumeLastPlayback, isTrue);
+      final playing = restored.sessions.values.singleWhere(
+        (session) => session.currentTrackPath.endsWith('/playing.mp3'),
+      );
+      expect(playing.position, const Duration(seconds: 22));
+      playing.currentTrackPath = '/tracks/replaced.mp3';
+      restored.publishSessionState(playing.id);
+      expect(restored.canResumeLastPlayback, isFalse);
+      playing.currentTrackPath = '/tracks/playing.mp3';
+      restored.publishSessionState(playing.id);
+      expect(restored.canResumeLastPlayback, isFalse);
+    },
+  );
+
+  test(
     'an explicit target flush repairs cold recovery for an equal restored definition',
     () async {
       SharedPreferences.setMockInitialValues(const {});

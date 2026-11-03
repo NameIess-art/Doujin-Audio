@@ -538,8 +538,8 @@ const Map<String, String> appLanguageEn = {
   'folder_audio_removed': 'Audio removed from folder',
   'folder_removed': 'Work excluded',
   'folder_excluded': 'Folder excluded from library',
+  'resume_last_playback': 'Resume last playback',
   'pause_all_sessions': 'Pause all sessions',
-  'all_paused': 'All sessions paused',
   'no_active_sessions': 'No active sessions',
   'go_library_hint':
       'Play audio from the library, then add concurrent sessions.',

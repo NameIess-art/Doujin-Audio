@@ -199,6 +199,7 @@ extension _MainScreenLayout on _MainScreenState {
     required bool isPlaybackExpanded,
     required Animation<double> appearance,
     required Animation<double> expansion,
+    required Animation<double> rowProgress,
     required double availableWidth,
     required VoidCallback onCurrentTap,
   }) {
@@ -230,6 +231,7 @@ extension _MainScreenLayout on _MainScreenState {
         isPlaybackExpanded: isPlaybackExpanded,
         appearance: appearance,
         expansion: expansion,
+        rowProgress: rowProgress,
         availableWidth: availableWidth,
         onCurrentTap: onCurrentTap,
       ),
@@ -243,6 +245,7 @@ extension _MainScreenLayout on _MainScreenState {
     required bool isPlaybackExpanded,
     required Animation<double> appearance,
     required Animation<double> expansion,
+    required Animation<double> rowProgress,
     required double availableWidth,
     required VoidCallback onCurrentTap,
   }) {
@@ -323,7 +326,7 @@ extension _MainScreenLayout on _MainScreenState {
       );
 
       return AnimatedBuilder(
-        animation: Listenable.merge([appearance, expansion]),
+        animation: Listenable.merge([appearance, expansion, rowProgress]),
         child: IgnorePointer(
           ignoring: isPlaybackExpanded && !selected,
           child: ExcludeSemantics(
@@ -349,7 +352,7 @@ extension _MainScreenLayout on _MainScreenState {
           ),
         ),
         builder: (context, child) {
-          final expand = expansion.value;
+          final expand = expansion.value * (1 - rowProgress.value);
           final fadeProgress = kAppFadeCurve.transform(expand);
           if (!selected && fadeProgress == 1) {
             return const SizedBox.shrink();
@@ -361,7 +364,12 @@ extension _MainScreenLayout on _MainScreenState {
                 );
           final expandedWidth =
               availableWidth -
-              kActiveSessionCarouselDockHeight * appearance.value;
+              MobileDockCapsuleContentState.inlinePlaybackWidth(
+                    availableWidth,
+                    expansion.value,
+                  ) *
+                  appearance.value *
+                  (1 - rowProgress.value);
           final indicatorWidth =
               ((expandedWidth - 12 - 4 * (destinations.length - 1)) /
                       destinations.length)
@@ -374,15 +382,15 @@ extension _MainScreenLayout on _MainScreenState {
           // Six pixels of inset put the 44px pill arcs on the 56px dock arcs.
           final expandedLeft =
               (expandedWidth - indicatorWidth - 12) *
-              index /
+              (destinations.length - 1 - index) /
               (destinations.length - 1);
           return Positioned(
-            left: 0,
+            right: 0,
             top: 0,
             width: buttonWidth,
             height: kActiveSessionCarouselDockHeight,
             child: Transform.translate(
-              offset: Offset(expandedLeft * (1 - progress), 0),
+              offset: Offset(-expandedLeft * (1 - progress), 0),
               child: selected
                   ? child
                   : Opacity(
@@ -410,12 +418,25 @@ extension _MainScreenLayout on _MainScreenState {
     required List<PlaybackSessionSnapshot> overlaySessions,
     bool tinyMode = false,
   }) {
-    return _buildMobileBottomCapsule(
-      context,
-      key: const ValueKey('capsule'),
-      i18n: i18n,
-      overlaySessions: overlaySessions,
-      tinyMode: tinyMode,
+    final detailNavigation = WorkDetailNavigationScope.maybeOf(context);
+    final isLandscape = WorkDetailNavigationScope.isLandscapeOf(context);
+    final routedDockActive = widget.playbackDockGeometry?.routedDockActive;
+    return ListenableBuilder(
+      listenable:
+          routedDockActive ?? detailNavigation ?? kAlwaysDismissedAnimation,
+      builder: (context, _) {
+        final isPlaybackHidden =
+            !isLandscape &&
+            (routedDockActive?.value ?? detailNavigation?.isOpen ?? false);
+        return _buildMobileBottomCapsule(
+          context,
+          key: const ValueKey('capsule'),
+          i18n: i18n,
+          overlaySessions: overlaySessions,
+          tinyMode: tinyMode,
+          isPlaybackHidden: isPlaybackHidden,
+        );
+      },
     );
   }
 
@@ -425,15 +446,19 @@ extension _MainScreenLayout on _MainScreenState {
     required AppLanguageProvider i18n,
     required List<PlaybackSessionSnapshot> overlaySessions,
     bool tinyMode = false,
-    bool isCurrent = true,
+    bool isPlaybackHidden = false,
   }) {
     final systemBottom = MediaQuery.paddingOf(context).bottom;
+    final hasPlayback = overlaySessions.isNotEmpty;
+    final playbackRaised = _isMobilePlaybackRaised;
     final maskHeight =
         kActiveSessionCarouselDockHeight +
         kMobileDockBottomMargin +
         2.0 +
-        systemBottom;
-    final hasPlayback = overlaySessions.isNotEmpty;
+        systemBottom +
+        (hasPlayback && playbackRaised
+            ? MobileDockCapsuleContentState.rowTravel
+            : 0);
     final playbackExpanded = hasPlayback && _isMobilePlaybackExpanded;
     return Stack(
       key: key,
@@ -463,7 +488,6 @@ extension _MainScreenLayout on _MainScreenState {
               child: tinyMode
                   ? const SizedBox.shrink()
                   : Padding(
-                      key: isCurrent ? _dockContentKey : null,
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.sm,
                       ),
@@ -474,27 +498,20 @@ extension _MainScreenLayout on _MainScreenState {
                             'mobile_bottom_capsule_panel',
                           ),
                           widthFactor: 0.96,
-                          child: AppDockPanel(
-                            key: const ValueKey<String>(
-                              'mobile_bottom_capsule_surface',
-                            ),
-                            showTopHighlight: false,
-                            tinyMode: tinyMode,
-                            child: SizedBox(
-                              height: kActiveSessionCarouselDockHeight,
-                              child: MobileDockCapsuleContent(
-                                overlaySessions: overlaySessions,
-                                isPlaybackExpanded: playbackExpanded,
-                                i18n: i18n,
-                                mobilePlaybackGeometryKey:
-                                    _mobilePlaybackGeometryKey,
-                                onShowPlayback: _showMobilePlayback,
-                                onShowDestinations: _showMobileDestinations,
-                                onReportPlaybackCoverRect:
-                                    _reportMobilePlaybackCoverRect,
-                                buildBottomBar: _buildBottomBar,
-                              ),
-                            ),
+                          child: MobileDockCapsuleContent(
+                            overlaySessions: overlaySessions,
+                            isPlaybackExpanded: playbackExpanded,
+                            isPlaybackRaised: playbackRaised,
+                            isPlaybackHidden: isPlaybackHidden,
+                            i18n: i18n,
+                            mobilePlaybackGeometryKey:
+                                _mobilePlaybackGeometryKey,
+                            onShowPlayback: _showMobilePlayback,
+                            onShowDestinations: _showMobileDestinations,
+                            onTogglePlaybackRow: _toggleMobilePlaybackRow,
+                            onReportPlaybackCoverRect:
+                                _reportMobilePlaybackCoverRect,
+                            buildBottomBar: _buildBottomBar,
                           ),
                         ),
                       ),
@@ -546,15 +563,16 @@ extension _MainScreenLayout on _MainScreenState {
   }
 
   double _mobileContentInset() {
-    final contentBox =
-        _dockContentKey.currentContext?.findRenderObject() as RenderBox?;
-    if (contentBox != null && contentBox.hasSize) {
-      final systemBottom = MediaQuery.paddingOf(context).bottom;
-      return (max(systemBottom, kMobileDockBottomMargin) +
-              contentBox.size.height)
-          .clamp(0.0, double.infinity);
-    }
+    final hasRaisedPlayback =
+        _isMobilePlaybackRaised &&
+        ref.watch(
+          mainOverlayUiProvider.select(
+            (state) => state.overlaySessions.isNotEmpty,
+          ),
+        );
     final systemBottom = MediaQuery.paddingOf(context).bottom;
-    return max(systemBottom, kMobileDockBottomMargin) + 72;
+    return max(systemBottom, kMobileDockBottomMargin) +
+        kActiveSessionCarouselDockHeight +
+        (hasRaisedPlayback ? MobileDockCapsuleContentState.rowTravel : 0);
   }
 }

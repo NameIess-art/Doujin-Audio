@@ -25,8 +25,6 @@ import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/marquee_text.dart';
 import '../application/playback_session_snapshot.dart';
 import '../application/playback_subtitle_service.dart';
-import '../domain/audio_effects.dart';
-import '../../library/application/library_facade.dart';
 import 'playlist_tab.dart';
 import 'playback_position_ui_gate.dart';
 import 'playback_error_text.dart';
@@ -44,16 +42,6 @@ enum ActiveSessionCarouselPresentation {
   circularCover,
 }
 
-Future<String?> _sessionCoverFutureForTrack(
-  LibraryFacade library,
-  MusicTrack? track,
-) {
-  if (track == null) {
-    return Future<String?>.value();
-  }
-  return library.playbackCoverPathFutureForTrack(track);
-}
-
 class ActiveSessionCarousel extends ConsumerStatefulWidget {
   const ActiveSessionCarousel({
     super.key,
@@ -64,6 +52,7 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
     this.presentation = ActiveSessionCarouselPresentation.card,
     this.viewportFraction,
     this.expandedDockWidth,
+    this.isPlaybackRaised = false,
   });
 
   final List<PlaybackSessionSnapshot>? sessions;
@@ -75,6 +64,8 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
 
   /// Final dock width, so animated clipping does not relayout its text.
   final double? expandedDockWidth;
+
+  final bool isPlaybackRaised;
 
   @override
   ConsumerState<ActiveSessionCarousel> createState() =>
@@ -277,7 +268,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(coverGenerationProvider);
     final viewportFraction = _viewportFraction;
     if (_pageController.viewportFraction != viewportFraction) {
       _pageController.dispose();
@@ -291,7 +281,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       _pageController.addListener(_handlePageTick);
     }
 
-    final library = ref.read(libraryFacadeProvider);
     final List<PlaybackSessionSnapshot> sessions;
     final providedSessions = widget.sessions;
     if (providedSessions != null) {
@@ -387,33 +376,30 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         widget.presentation == ActiveSessionCarouselPresentation.embedded;
     final dockPresentation = requestsCircularCover || embedded;
 
-    Widget buildSessionCard(int page, {bool dockCollapsed = false}) {
-      final sessionIndex = _sessionIndexForPage(page, visibleSessions.length);
+    Widget buildSessionCard(int sessionIndex, {bool dockCollapsed = false}) {
       final session = visibleSessions[sessionIndex];
-      final track = ref
-          .read(audioPathCoordinatorProvider)
-          .sessionTrackForPath(session.id, session.currentTrackPath);
       return RepaintBoundary(
         child: _ActiveSessionCard(
           session: session,
           position: sessionIndex,
           count: visibleSessions.length,
-          coverPathFuture: _sessionCoverFutureForTrack(library, track),
           compact: compact,
           embedded: embedded,
           expandedDockWidth: embedded ? widget.expandedDockWidth : null,
           dockCollapsed: dockCollapsed,
           circularCover: requestsCircularCover,
+          indicatorIndex: _indicatorIndex,
+          isPlaybackRaised: widget.isPlaybackRaised,
           onOpen: () => _openSessionDetail(context, session),
         ),
       );
     }
 
     // Width animation changes layout, not session data or the paging delegate.
-    final roundCard = ValueListenableBuilder<double>(
-      valueListenable: _pageNotifier,
-      builder: (context, page, _) =>
-          buildSessionCard(page.round(), dockCollapsed: embedded),
+    final roundCard = ValueListenableBuilder<int>(
+      valueListenable: _indicatorIndex,
+      builder: (context, index, _) =>
+          buildSessionCard(index, dockCollapsed: embedded),
     );
     final pages = Listener(
       onPointerSignal: (signal) {
@@ -446,55 +432,20 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
               ? const NeverScrollableScrollPhysics()
               : const BouncingScrollPhysics(),
           itemBuilder: (context, index) {
+            final card = buildSessionCard(
+              _sessionIndexForPage(index, visibleSessions.length),
+            );
+            if (embedded) return card;
             return _ActiveSessionPageTransform(
               pageListenable: _pageNotifier,
               index: index,
-              enabled: visibleSessions.length > 1 && !embedded,
-              child: buildSessionCard(index),
+              enabled: visibleSessions.length > 1,
+              child: card,
             );
           },
         ),
       ),
     );
-    final indicator = visibleSessions.length > 1 && !compact
-        ? IgnorePointer(
-            child: ValueListenableBuilder<int>(
-              valueListenable: _indicatorIndex,
-              builder: (context, activePage, child) {
-                return Semantics(
-                  key: const ValueKey('active_session_indicator'),
-                  label: '${activePage + 1} / ${visibleSessions.length}',
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (
-                        var index = 0;
-                        index < visibleSessions.length;
-                        index++
-                      )
-                        AnimatedContainer(
-                          duration: MediaQuery.disableAnimationsOf(context)
-                              ? Duration.zero
-                              : const Duration(milliseconds: 150),
-                          margin: const EdgeInsets.symmetric(horizontal: 2),
-                          width: index == activePage ? 12 : 5,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            color: index == activePage
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).colorScheme.onSurfaceVariant
-                                      .withValues(alpha: 0.55),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          )
-        : null;
-
     return SizedBox(
       height: dockPresentation
           ? kActiveSessionCarouselDockHeight
@@ -506,22 +457,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           if (requestsCircularCover || (embedded && totalWidth < 160)) {
             return roundCard;
           }
-          final cardRightInset =
-              ((totalWidth * (1.0 - viewportFraction) / 2) + 2.0).clamp(
-                0.0,
-                totalWidth,
-              );
-          return Stack(
-            children: [
-              pages,
-              if (indicator != null)
-                Positioned(
-                  right: cardRightInset + 16,
-                  bottom: 4,
-                  child: indicator,
-                ),
-            ],
-          );
+          return pages;
         },
       ),
     );
@@ -533,7 +469,7 @@ class _ActiveSessionPageTransform extends StatelessWidget {
     required this.pageListenable,
     required this.index,
     required this.child,
-    this.enabled = true,
+    required this.enabled,
   });
 
   final ValueListenable<double> pageListenable;
@@ -544,17 +480,15 @@ class _ActiveSessionPageTransform extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: pageListenable,
+      animation: enabled ? pageListenable : kAlwaysDismissedAnimation,
       child: child,
       builder: (context, child) {
         final pageDelta = index - pageListenable.value;
-        final selectedness = (1 - pageDelta.abs()).clamp(0.0, 1.0);
-        final scale = enabled
-            ? (lerpDouble(0.972, 1.0, selectedness) ?? 1.0)
+        final selectedness = enabled
+            ? (1 - pageDelta.abs()).clamp(0.0, 1.0)
             : 1.0;
-        final translateY = enabled
-            ? (lerpDouble(2.5, 0, selectedness) ?? 0)
-            : 0.0;
+        final scale = lerpDouble(0.972, 1.0, selectedness)!;
+        final translateY = lerpDouble(2.5, 0, selectedness)!;
 
         return Padding(
           padding: enabled

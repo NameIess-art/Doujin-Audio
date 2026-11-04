@@ -42,7 +42,6 @@ import 'mobile_dock_capsule_content.dart';
 import 'main_destination.dart';
 import 'my_settings_page.dart';
 import 'desktop_main_navigation.dart';
-import 'app_dock_panel.dart';
 import 'work_detail_navigation.dart';
 export 'main_destination.dart' show MainDestinationType;
 export 'app_dock_panel.dart';
@@ -61,29 +60,51 @@ class PlaybackDockGeometryController extends ChangeNotifier {
   Rect? get mainDockRect => _mainDockRect;
   Rect? get mainExpandedDockRect => _mainExpandedDockRect;
   bool get mainDockCollapsed => _mainDockCollapsed;
-  double? get mainDockRight => _mainDockRect?.right;
+  bool get mainDockRaised => _mainDockRaised;
+  ValueListenable<bool> get routedDockActive => _routedDockActive;
   Rect? _mainCoverRect;
   Rect? _mainDockRect;
   Rect? _mainExpandedDockRect;
   bool _mainDockCollapsed = false;
+  bool _mainDockRaised = false;
+  final Set<Object> _activeRoutedDockHosts = {};
+  final _routedDockActive = ValueNotifier(false);
+
+  void setRoutedDockActive(Object host, bool active) {
+    if (active) {
+      _activeRoutedDockHosts.add(host);
+    } else {
+      _activeRoutedDockHosts.remove(host);
+    }
+    _routedDockActive.value = _activeRoutedDockHosts.isNotEmpty;
+  }
+
+  @override
+  void dispose() {
+    _routedDockActive.dispose();
+    super.dispose();
+  }
 
   void updateMainGeometry({
     required Rect coverRect,
     required Rect dockRect,
     Rect? expandedDockRect,
     bool dockCollapsed = false,
+    bool dockRaised = false,
   }) {
     final resolvedExpandedDockRect = expandedDockRect ?? dockRect;
     if (_mainCoverRect == coverRect &&
         _mainDockRect == dockRect &&
         _mainExpandedDockRect == resolvedExpandedDockRect &&
-        _mainDockCollapsed == dockCollapsed) {
+        _mainDockCollapsed == dockCollapsed &&
+        _mainDockRaised == dockRaised) {
       return;
     }
     _mainCoverRect = coverRect;
     _mainDockRect = dockRect;
     _mainExpandedDockRect = resolvedExpandedDockRect;
     _mainDockCollapsed = dockCollapsed;
+    _mainDockRaised = dockRaised;
     notifyListeners();
   }
 }
@@ -118,12 +139,16 @@ class _MainScreenState extends ConsumerState<MainScreen>
     MainDestinationType.values.length,
     Offset.zero,
   );
-  bool _isMobilePlaybackExpanded = false;
+  static const _mobilePlaybackExpandedKey = 'mobile_playback_expanded';
+  static const _mobilePlaybackRaisedKey = 'mobile_playback_raised';
+  bool? _mobilePlaybackExpanded;
+  bool? _mobilePlaybackRaised;
+  bool get _isMobilePlaybackExpanded => _mobilePlaybackExpanded ?? false;
+  bool get _isMobilePlaybackRaised => _mobilePlaybackRaised ?? false;
   late final ValueNotifier<int> _activePageIndex;
   final Object _pageSwitchInteraction = Object();
   final Object _foregroundInteraction = Object();
   int _foregroundInteractionGeneration = 0;
-  final GlobalKey _dockContentKey = GlobalKey();
   final GlobalKey _mobilePlaybackGeometryKey = GlobalKey();
   final GlobalKey _desktopPlaybackGeometryKey = GlobalKey();
   final _mainMenuOverlayKey = GlobalKey<OverlayState>();
@@ -145,12 +170,14 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (box == null || !box.hasSize) return;
       const inset = 4.0;
       final origin = box.localToGlobal(Offset.zero);
+      final coverHeight = box.size.height - inset * 2;
       geometry.updateMainGeometry(
         coverRect:
             origin + const Offset(inset, inset) &
-            Size.square(box.size.height - inset * 2),
+            Size.square(coverHeight),
         dockRect: origin & box.size,
-        dockCollapsed: !_isMobilePlaybackExpanded,
+        dockCollapsed: !_isMobilePlaybackExpanded && !_isMobilePlaybackRaised,
+        dockRaised: _isMobilePlaybackRaised,
       );
     });
   }
@@ -267,15 +294,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
         fireImmediately: true,
       );
     }
-    ref.listenManual<bool>(
-      mainOverlayUiProvider.select((state) => state.hasNowPlaying),
-      (_, hasNowPlaying) {
-        if (!hasNowPlaying && _isMobilePlaybackExpanded && mounted) {
-          setState(() => _isMobilePlaybackExpanded = false);
-        }
-      },
-      fireImmediately: true,
-    );
     if (defaultTargetPlatform != TargetPlatform.windows) {
       ref.listenManual<SleepModeAutoTrigger>(
         settingsStateProvider.select(
@@ -304,6 +322,16 @@ class _MainScreenState extends ConsumerState<MainScreen>
           _isMenuCollapsed = collapsed ?? false;
         });
       }
+    });
+    Future.wait([
+      AppPreferences.getBool(_mobilePlaybackExpandedKey),
+      AppPreferences.getBool(_mobilePlaybackRaisedKey),
+    ]).then((values) {
+      if (!mounted) return;
+      setState(() {
+        _mobilePlaybackExpanded ??= values[0];
+        _mobilePlaybackRaised ??= values[1];
+      });
     });
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -508,12 +536,20 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _showMobilePlayback() {
     if (_isMobilePlaybackExpanded) return;
-    setState(() => _isMobilePlaybackExpanded = true);
+    setState(() => _mobilePlaybackExpanded = true);
+    unawaited(AppPreferences.setBool(_mobilePlaybackExpandedKey, true));
+  }
+
+  void _toggleMobilePlaybackRow() {
+    final raised = !_isMobilePlaybackRaised;
+    setState(() => _mobilePlaybackRaised = raised);
+    unawaited(AppPreferences.setBool(_mobilePlaybackRaisedKey, raised));
   }
 
   void _showMobileDestinations() {
     if (!_isMobilePlaybackExpanded) return;
-    setState(() => _isMobilePlaybackExpanded = false);
+    setState(() => _mobilePlaybackExpanded = false);
+    unawaited(AppPreferences.setBool(_mobilePlaybackExpandedKey, false));
   }
 
   Future<void> _checkForUpdatesOnLaunch() async {

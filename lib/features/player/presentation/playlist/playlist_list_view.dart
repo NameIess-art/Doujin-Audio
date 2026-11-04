@@ -20,6 +20,8 @@ import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../library/application/library_facade.dart';
 import '../../application/playback_facade.dart';
+import '../../application/playback_session_snapshot.dart';
+import '../playback_providers.dart';
 import 'playlist_feature_icons.dart';
 import 'playlist_media_widgets.dart';
 import 'playlist_shared_helpers.dart';
@@ -365,6 +367,7 @@ class SessionListCard extends ConsumerWidget {
   const SessionListCard({
     super.key,
     required this.sessionId,
+    this.session,
     required this.track,
     required this.coverPath,
     required this.coverGeneration,
@@ -382,6 +385,7 @@ class SessionListCard extends ConsumerWidget {
   });
 
   final String sessionId;
+  final PlaybackSessionSnapshot? session;
   final MusicTrack? track;
   final String? coverPath;
   final int coverGeneration;
@@ -429,6 +433,9 @@ class SessionListCard extends ConsumerWidget {
     final isPlaying = cardState.isPlaying;
 
     final activeColor = cs.primary;
+    final resolvedSession = session ??
+        ref.watch(playbackSessionProvider(sessionId)) ??
+        playback.sessionSnapshotById(sessionId);
 
     final cardColor = isTemporary
         ? playlistTemporaryCardColor(context)
@@ -489,12 +496,21 @@ class SessionListCard extends ConsumerWidget {
                     Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        SessionCoverThumbnail(
+                        SessionCoverProgressRing(
+                          session: resolvedSession,
                           sessionId: sessionId,
-                          track: track,
-                          coverPath: coverPath,
-                          coverGeneration: coverGeneration,
-                          coverCacheWidth: coverCacheWidth,
+                          activeColor: activeColor,
+                          size: playlistCoverSize,
+                          child: SessionCoverThumbnail(
+                            sessionId: sessionId,
+                            track: track,
+                            coverPath: coverPath,
+                            coverGeneration: coverGeneration,
+                            coverCacheWidth: coverCacheWidth,
+                            dimension: coverProgressInnerDimension(
+                              playlistCoverSize,
+                            ),
+                          ),
                         ),
                         Positioned(
                           right: -2,

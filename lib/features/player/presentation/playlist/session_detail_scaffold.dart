@@ -1,6 +1,7 @@
 import '../playback_providers.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -18,6 +19,9 @@ import '../../application/playback_subtitle_service.dart';
 import '../../application/subtitle_overlay_controller.dart';
 import 'playlist_feature_icons.dart';
 import 'playlist_media_widgets.dart';
+import '../../../../core/media/music_track.dart';
+import '../../../library/presentation/library_providers.dart';
+import '../../../../core/widgets/async_cover_image.dart';
 import 'playlist_shared_helpers.dart';
 import 'session_detail_content.dart';
 
@@ -173,6 +177,8 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
     final track = paths.trackByPath(session.currentTrackPath);
     final cs = Theme.of(context).colorScheme;
+    final library = ref.read(libraryFacadeProvider);
+    final initialCoverPath = library.resolvedPlaybackCoverPathForTrack(track);
     return Material(
       color: cs.surface,
       animationDuration: Duration.zero,
@@ -233,6 +239,14 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
         child: Stack(
           fit: StackFit.expand,
           children: [
+            _SessionDetailBlurredCoverBackground(
+              session: session,
+              track: track,
+              coverPathFuture: coverPathFuture,
+              initialCoverPath: initialCoverPath,
+              onImageError:
+                  library.coverArtworkCacheService.reportArtworkReadFailure,
+            ),
             SafeArea(
               top: false,
               child: AppPageContentTransition(
@@ -459,6 +473,88 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SessionDetailBlurredCoverBackground extends StatelessWidget {
+  const _SessionDetailBlurredCoverBackground({
+    required this.session,
+    required this.track,
+    required this.coverPathFuture,
+    required this.initialCoverPath,
+    required this.onImageError,
+  });
+
+  final PlaybackSessionSnapshot session;
+  final MusicTrack? track;
+  final Future<String?> coverPathFuture;
+  final String? initialCoverPath;
+  final ValueChanged<String>? onImageError;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final blurSigma = isDark ? 30.0 : 18.0;
+
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: RepaintBoundary(
+          child: ClipRect(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Transform.scale(
+                  scale: isDark ? 1.12 : 1.08,
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(
+                      sigmaX: blurSigma,
+                      sigmaY: blurSigma,
+                      tileMode: TileMode.clamp,
+                    ),
+                    child: AsyncLocalCoverImage(
+                      deferLoadDuringInteraction: true,
+                      onImageError: onImageError,
+                      future: coverPathFuture,
+                      requestKey: (
+                        session.id,
+                        track?.path ?? session.currentTrackPath,
+                      ),
+                      initialPath: initialCoverPath,
+                      cacheWidth: 200,
+                      useDefaultCacheWidth: false,
+                      fit: BoxFit.cover,
+                      fallbackBuilder: (_) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: cs.surface.withValues(
+                      alpha: isDark ? 0.70 : 0.80,
+                    ),
+                  ),
+                ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        cs.surface.withValues(alpha: isDark ? 0.35 : 0.25),
+                        Colors.transparent,
+                        cs.surface.withValues(alpha: isDark ? 0.50 : 0.40),
+                      ],
+                      stops: const [0.0, 0.45, 1.0],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

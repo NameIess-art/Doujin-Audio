@@ -187,6 +187,7 @@ class _NetworkSettingsControlsState
                     value: state.asmrApiDomain,
                     key: ValueKey(state.asmrApiDomain),
                     isExpanded: true,
+                    alignment: AlignmentDirectional.centerStart,
                     items: [
                       for (final domain in asmrApiDomains)
                         DropdownMenuItem(

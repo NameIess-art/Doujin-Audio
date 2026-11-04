@@ -943,7 +943,8 @@ void main() {
         final row = find.byKey(
           ValueKey('queue_switcher_track_${tracks[1].path}'),
         );
-        await pumpUntilFound(tester, row);
+        await tester.pump();
+        expect(row, findsOneWidget);
         await tester.pumpAndSettle();
         final sheet = tester.widget<SessionTrackSwitcherSheet>(
           find.byType(SessionTrackSwitcherSheet),

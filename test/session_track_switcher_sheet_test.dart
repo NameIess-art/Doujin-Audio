@@ -5,6 +5,7 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/widgets/file_tree_row.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
+import 'package:doujin_audio/features/player/application/session_switcher_tree.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_track_switcher_sheet.dart';
@@ -59,6 +60,25 @@ Future<void> _pumpSheet(
   final language = AppLanguageProvider();
   await language.initialized;
   addTearDown(language.dispose);
+  final session = _session(
+    tracks,
+    queue: queue,
+    currentQueueIndex: currentQueueIndex,
+    currentPath: currentPath,
+    isPlaying: isPlaying,
+  );
+  final tree = await tester.runAsync(
+    () => prepareSessionSwitcherTree(
+      tracks: tracks,
+      queue: session.playbackQueue,
+      customQueueTracks: session.customQueueTracks,
+      currentPath: session.currentTrackPath,
+      currentQueueIndex: session.currentQueueIndex,
+      workRoot: '/work',
+      resolveTrack: (_) => null,
+      workRootForTrack: (_) => '/work',
+    ),
+  );
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -73,39 +93,15 @@ Future<void> _pumpSheet(
         ),
         home: Scaffold(
           body: SessionTrackSwitcherSheet(
-            tracks: tracks,
-            session: _session(
-              tracks,
-              queue: queue,
-              currentQueueIndex: currentQueueIndex,
-              currentPath: currentPath,
-              isPlaying: isPlaying,
-            ),
-            workRoot: '/work',
-            resolveTrack: (_) => null,
-            workRootForTrack: (_) => '/work',
+            trackCount: tracks.length,
+            tree: tree!,
+            session: session,
             onSelected: onSelected ?? (_) {},
           ),
         ),
       ),
     ),
   );
-  await _waitForTree(tester);
-}
-
-Future<void> _waitForTree(WidgetTester tester) async {
-  for (var attempt = 0; attempt < 200; attempt++) {
-    await tester.pump(const Duration(milliseconds: 16));
-    if (find.byType(FileTreeSkeleton).evaluate().isEmpty) {
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      return;
-    }
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 10)),
-    );
-  }
-  fail('Switcher background tree did not complete');
 }
 
 Finder _trackRows() => find.byWidgetPredicate(
@@ -543,133 +539,23 @@ void main() {
     expect(find.text('Track 999'), findsOneWidget);
   });
 
-  testWidgets(
-    'switcher displays file tree skeleton and max height while loading, and keeps fixed height',
-    (tester) async {
-      SharedPreferences.setMockInitialValues({});
-      final language = AppLanguageProvider();
-      await language.initialized;
-      addTearDown(language.dispose);
-      final tracks = [_track('Audio1.mp3'), _track('Audio2.mp3')];
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            appLanguageProviderInstanceProvider.overrideWithValue(language),
-          ],
-          child: MaterialApp(
-            home: Scaffold(
-              body: SizedBox(
-                height: 500,
-                child: SessionTrackSwitcherSheet(
-                  tracks: tracks,
-                  session: _session(tracks),
-                  workRoot: '/work',
-                  resolveTrack: (_) => null,
-                  workRootForTrack: (_) => '/work',
-                  onSelected: (_) {},
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-      // While loading, file tree skeleton is displayed and height is fixed to max
-      expect(find.byType(FileTreeSkeleton), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey<String>('queue_switcher_skeleton_header')),
-        findsOneWidget,
-      );
-      expect(tester.getSize(find.byType(SessionTrackSwitcherSheet)).height, 500);
+  testWidgets('switcher shows real rows on its first frame', (tester) async {
+    final tracks = [
+      _track('Folder/Audio1.mp3'),
+      _track('Folder/Audio2.mp3'),
+      _track('Folder/Audio3.mp3'),
+    ];
+    await _pumpSheet(tester, tracks);
 
-      // Settle tree loading
-      await _waitForTree(tester);
-      expect(find.byType(FileTreeSkeleton), findsNothing);
-      expect(
-        find.byKey(const ValueKey<String>('queue_switcher_header')),
-        findsOneWidget,
-      );
-      // Height remains fixed at maximum height (500) even with only 2 items
-      expect(tester.getSize(find.byType(SessionTrackSwitcherSheet)).height, 500);
-    },
-  );
-
-  testWidgets(
-    'switcher skeleton row height and vertical spacing match actual rows',
-    (tester) async {
-      SharedPreferences.setMockInitialValues({});
-      final language = AppLanguageProvider();
-      await language.initialized;
-      addTearDown(language.dispose);
-      final tracks = [
-        _track('Folder/Audio1.mp3'),
-        _track('Folder/Audio2.mp3'),
-        _track('Folder/Audio3.mp3'),
-      ];
-
-      // 1. Check skeleton layout geometry while loading
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            appLanguageProviderInstanceProvider.overrideWithValue(language),
-          ],
-          child: MaterialApp(
-            home: Scaffold(
-              body: SizedBox(
-                height: 500,
-                child: SessionTrackSwitcherSheet(
-                  tracks: tracks,
-                  session: _session(tracks),
-                  workRoot: '/work',
-                  resolveTrack: (_) => null,
-                  workRootForTrack: (_) => '/work',
-                  onSelected: (_) {},
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-
-      final skeletonFinder = find.byType(FileTreeSkeleton);
-      expect(skeletonFinder, findsOneWidget);
-      final skeletonWidget = tester.widget<FileTreeSkeleton>(skeletonFinder);
-      expect(skeletonWidget.rowHeight, 44.0);
-
-      final skeletonBoxes = <RenderBox>[];
-      for (final element in find
-          .descendant(
-            of: skeletonFinder,
-            matching: find.byType(SizedBox),
-          )
-          .evaluate()) {
-        final box = element.renderObject as RenderBox?;
-        if (box != null && box.hasSize && box.size.height == 44.0) {
-          skeletonBoxes.add(box);
-        }
-      }
-      expect(skeletonBoxes.length, greaterThanOrEqualTo(3));
-      final skeletonDy0 = skeletonBoxes[0].localToGlobal(Offset.zero).dy;
-      final skeletonDy1 = skeletonBoxes[1].localToGlobal(Offset.zero).dy;
-      final skeletonDy2 = skeletonBoxes[2].localToGlobal(Offset.zero).dy;
-      expect(skeletonDy1 - skeletonDy0, 44.0);
-      expect(skeletonDy2 - skeletonDy1, 44.0);
-
-      // 2. Settle tree loading and check actual row layout geometry
-      await _waitForTree(tester);
-      final actualRows = find.byType(FileTreeRow);
-      expect(actualRows, findsNWidgets(4)); // 1 folder + 3 tracks (or open)
-
-      final actualBoxes = <RenderBox>[];
-      for (final element in actualRows.evaluate()) {
-        final box = element.renderObject as RenderBox;
-        actualBoxes.add(box);
-      }
-      expect(actualBoxes[0].size.height, 44.0);
-      expect(actualBoxes[1].size.height, 44.0);
-      final actualDy0 = actualBoxes[0].localToGlobal(Offset.zero).dy;
-      final actualDy1 = actualBoxes[1].localToGlobal(Offset.zero).dy;
-      expect(actualDy0, skeletonDy0);
-      expect(actualDy1 - actualDy0, 44.0);
-    },
-  );
+    expect(find.byType(FileTreeSkeleton), findsNothing);
+    expect(find.byKey(const ValueKey('queue_switcher_header')), findsOneWidget);
+    final rows = find.byType(FileTreeRow);
+    expect(rows, findsNWidgets(4));
+    expect(find.text('Audio1.mp3'), findsOneWidget);
+    expect(tester.getSize(rows.first).height, 44);
+    expect(
+      tester.getTopLeft(rows.at(1)).dy - tester.getTopLeft(rows.first).dy,
+      44,
+    );
+  });
 }

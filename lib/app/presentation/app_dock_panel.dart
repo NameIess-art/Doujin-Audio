@@ -9,10 +9,11 @@ class AppDockPanel extends StatelessWidget {
     required this.child,
     this.showTopHighlight = true,
     this.tinyMode = false,
+    this.radius = 100,
   });
 
   final Widget child;
-  final double radius = 100;
+  final double radius;
   final bool showTopHighlight;
   final bool tinyMode;
 

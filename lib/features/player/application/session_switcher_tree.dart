@@ -27,9 +27,10 @@ typedef _SwitcherRequest = ({
   String? workRoot,
   Map<String, MusicTrack?> resolvedTracks,
   Map<String, String?> workRoots,
-  Set<String> expanded,
-  bool expandSelected,
 });
+
+// Small queues can render on the first frame without starting an isolate.
+const _inlineSwitcherTrackLimit = 64;
 
 Future<SessionSwitcherTree> prepareSessionSwitcherTree({
   required List<MusicTrack> tracks,
@@ -40,9 +41,8 @@ Future<SessionSwitcherTree> prepareSessionSwitcherTree({
   required String? workRoot,
   required MusicTrack? Function(String) resolveTrack,
   required String? Function(String) workRootForTrack,
-  required Set<String> expanded,
-  required bool expandSelected,
 }) async {
+  final buildInline = tracks.length <= _inlineSwitcherTrackLimit;
   final resolvedTracks = <String, MusicTrack?>{};
   final workRoots = <String, String?>{};
   final budget = Stopwatch()..start();
@@ -54,14 +54,14 @@ Future<SessionSwitcherTree> prepareSessionSwitcherTree({
       }
       for (final track in entry.tracks) {
         resolvedTracks.putIfAbsent(track.path, () => resolveTrack(track.path));
-        if (budget.elapsedMicroseconds >= 1000) {
+        if (!buildInline && budget.elapsedMicroseconds >= 1000) {
           await Future<void>.delayed(Duration.zero);
           budget.reset();
         }
       }
     }
   }
-  final tree = await compute(_prepareSwitcherSnapshot, (
+  final request = (
     tracks: tracks,
     queue: queue,
     customQueueTracks: customQueueTracks,
@@ -70,9 +70,10 @@ Future<SessionSwitcherTree> prepareSessionSwitcherTree({
     workRoot: workRoot,
     resolvedTracks: resolvedTracks,
     workRoots: workRoots,
-    expanded: expanded,
-    expandSelected: expandSelected,
-  ));
+  );
+  if (buildInline) return _prepareSwitcherSnapshot(request);
+
+  final tree = await compute(_prepareSwitcherSnapshot, request);
   // Workers return topology; selection still uses the original track objects.
   final pending = <SessionSwitcherNode>[...tree.roots];
   while (pending.isNotEmpty) {
@@ -101,9 +102,7 @@ SessionSwitcherTree _prepareSwitcherSnapshot(_SwitcherRequest request) {
     for (final child in node.children) {
       if (visit(child)) selected = true;
     }
-    if (node.isFolder &&
-        (request.expanded.contains(node.key) ||
-            (request.expandSelected && selected))) {
+    if (node.isFolder && selected) {
       expanded.add(node.key);
     }
     return selected;

@@ -187,11 +187,20 @@ Future<void> _exercisePointerInputs(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   setUp(() {
+    messenger.setMockMethodCallHandler(
+      notificationsChannel,
+      (_) async => <String, Object?>{'ok': true, 'value': null},
+    );
     SharedPreferences.setMockInitialValues({});
     UiInteractionCoordinator.instance.resetForTest();
   });
-  tearDown(UiInteractionCoordinator.instance.resetForTest);
+  tearDown(() {
+    messenger.setMockMethodCallHandler(notificationsChannel, null);
+    UiInteractionCoordinator.instance.resetForTest();
+  });
 
   testWidgets('portrait dock blocks its full bottom strip and releases it', (
     tester,
@@ -733,7 +742,7 @@ void main() {
     );
 
     testWidgets(
-      'play pause button does not displace when entering detail from expanded dock on $platform',
+      'play pause button stays aligned with the expanded dock on detail routes on $platform',
       (tester) async {
         final navigator = await _pumpHost(
           tester,
@@ -754,17 +763,18 @@ void main() {
           ),
         );
         expect(playButton, findsWidgets);
-        final initialCenter = tester
-            .getRect(playButton.hitTestable().first)
-            .center;
+        Offset buttonInset(Finder button) {
+          final bounds = tester.getRect(_dock);
+          return tester.getCenter(button) - bounds.topRight;
+        }
+
+        final initialInset = buttonInset(playButton.hitTestable().first);
 
         for (var frame = 0; frame < 32; frame++) {
           await tester.pump(const Duration(milliseconds: 16));
-          final currentCenter = tester
-              .getRect(playButton.hitTestable().first)
-              .center;
-          expect(currentCenter.dx, closeTo(initialCenter.dx, 0.01));
-          expect(currentCenter.dy, closeTo(initialCenter.dy, 0.01));
+          final inset = buttonInset(playButton.hitTestable().first);
+          expect(inset.dx, closeTo(initialInset.dx, 0.01));
+          expect(inset.dy, closeTo(initialInset.dy, 0.01));
         }
 
         navigator.currentState!.pop();
@@ -772,9 +782,9 @@ void main() {
         for (var frame = 0; frame < 14; frame++) {
           await tester.pump(const Duration(milliseconds: 16));
           if (_dock.evaluate().isEmpty) break;
-          final currentCenter = tester.getRect(playButton.first).center;
-          expect(currentCenter.dx, closeTo(initialCenter.dx, 0.01));
-          expect(currentCenter.dy, closeTo(initialCenter.dy, 0.01));
+          final inset = buttonInset(playButton.first);
+          expect(inset.dx, closeTo(initialInset.dx, 0.01));
+          expect(inset.dy, closeTo(initialInset.dy, 0.01));
         }
 
         await tester.pumpAndSettle();

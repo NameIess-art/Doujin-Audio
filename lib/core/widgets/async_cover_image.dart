@@ -486,6 +486,7 @@ class LocalCoverImage extends StatelessWidget {
     this.color,
     this.colorBlendMode,
     this.filterQuality = FilterQuality.medium,
+    this.fallbackBuilder,
   });
 
   final String? path;
@@ -499,6 +500,7 @@ class LocalCoverImage extends StatelessWidget {
   final Color? color;
   final BlendMode? colorBlendMode;
   final FilterQuality filterQuality;
+  final WidgetBuilder? fallbackBuilder;
 
   final ValueChanged<String>? onImageError;
 
@@ -506,7 +508,9 @@ class LocalCoverImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final resolvedPath = path;
     if (resolvedPath == null || resolvedPath.isEmpty) {
-      return const CoverFallbackArtwork();
+      return fallbackBuilder != null
+          ? fallbackBuilder!(context)
+          : const CoverFallbackArtwork();
     }
     return RetryingFileImage(
       path: resolvedPath,
@@ -521,7 +525,7 @@ class LocalCoverImage extends StatelessWidget {
       color: color,
       colorBlendMode: colorBlendMode,
       filterQuality: filterQuality,
-      fallbackBuilder: (_) => const CoverFallbackArtwork(),
+      fallbackBuilder: fallbackBuilder ?? (_) => const CoverFallbackArtwork(),
     );
   }
 }
@@ -545,6 +549,8 @@ class AsyncLocalCoverImage extends StatelessWidget {
     this.colorBlendMode,
     this.filterQuality = FilterQuality.medium,
     this.duration = kCoverImageTransitionDuration,
+    this.fallbackBuilder,
+    this.loadingBuilder,
   });
 
   final Future<String?> future;
@@ -562,6 +568,8 @@ class AsyncLocalCoverImage extends StatelessWidget {
   final BlendMode? colorBlendMode;
   final FilterQuality filterQuality;
   final Duration duration;
+  final WidgetBuilder? fallbackBuilder;
+  final WidgetBuilder? loadingBuilder;
 
   Widget _cover(String? path) {
     return LocalCoverImage(
@@ -577,6 +585,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
       color: color,
       colorBlendMode: colorBlendMode,
       filterQuality: filterQuality,
+      fallbackBuilder: fallbackBuilder,
     );
   }
 
@@ -584,6 +593,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fallback = fallbackBuilder ?? (_) => const CoverFallbackArtwork();
     return AsyncCoverImage(
       future: future,
       browseThumbnail: browseThumbnail,
@@ -591,9 +601,9 @@ class AsyncLocalCoverImage extends StatelessWidget {
       initialPath: initialPath,
       retryFutureBuilder: retryFutureBuilder,
       duration: duration,
-      fallbackBuilder: (_) => const CoverFallbackArtwork(),
-      loadingBuilder: (_) =>
-          const CoverLoadingArtwork(placeholder: CoverFallbackArtwork()),
+      fallbackBuilder: fallback,
+      loadingBuilder: loadingBuilder ??
+          (_) => CoverLoadingArtwork(placeholder: fallback(context)),
       imageBuilder: (_, coverPath) => _cover(coverPath),
     );
   }

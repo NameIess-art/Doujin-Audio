@@ -20,8 +20,6 @@ Future<SessionSwitcherTree> _prepare(
   List<MusicTrack>? custom,
   String? path,
   int index = 0,
-  Set<String> expanded = const {},
-  bool expandSelected = true,
 }) => prepareSessionSwitcherTree(
   tracks: tracks,
   queue: queue,
@@ -31,8 +29,6 @@ Future<SessionSwitcherTree> _prepare(
   workRoot: '/work',
   resolveTrack: (_) => null,
   workRootForTrack: (_) => '/work',
-  expanded: expanded,
-  expandSelected: expandSelected,
 );
 
 void main() {
@@ -44,6 +40,8 @@ void main() {
       final tracks = [
         _track('disc/Track 10.mp3', url: 'https://new.test/10'),
         _track('disc/Track 2.mp3', url: 'https://new.test/2'),
+        for (var i = 0; i < 64; i++)
+          _track('extras/Track $i.mp3', url: 'https://extra.test/$i'),
       ];
       final old = _track('disc/Track 2.mp3', url: 'https://old.test/2');
       var completed = false;
@@ -100,17 +98,14 @@ void main() {
     },
   );
 
-  test('prepared tree retains explicit folder expansion', () async {
-    final tracks = [_track('disc/one.mp3'), _track('disc/two.mp3')];
-    final initial = await _prepare(tracks);
-    final folders = initial.expanded;
-    expect(folders, isNotEmpty);
-    final restored = await _prepare(
-      tracks,
-      expanded: folders,
-      expandSelected: false,
-    );
-    expect(restored.expanded, folders);
-    expect(restored.rows.where((row) => !row.node.isFolder), hasLength(2));
+  test('small tree expands only the selected track ancestors', () async {
+    final tracks = [
+      _track('disc/a/one.mp3'),
+      _track('disc/a/two.mp3'),
+      _track('disc/b/three.mp3'),
+    ];
+    final tree = await _prepare(tracks);
+    expect(tree.expanded, {'/disc', '/disc/a'});
+    expect(tree.rows.where((row) => !row.node.isFolder), hasLength(2));
   });
 }

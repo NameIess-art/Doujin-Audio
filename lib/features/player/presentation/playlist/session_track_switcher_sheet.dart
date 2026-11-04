@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,7 +11,6 @@ import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/playing_sound_wave_indicator.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/session_switcher_tree.dart';
-import '../../../../core/ui/ui_interaction_coordinator.dart';
 
 class SessionTrackSelection {
   const SessionTrackSelection({required this.track, required this.queueIndex});
@@ -25,17 +22,13 @@ class SessionTrackSwitcherSheet extends ConsumerStatefulWidget {
   const SessionTrackSwitcherSheet({
     super.key,
     required this.session,
-    required this.tracks,
-    required this.workRoot,
-    required this.resolveTrack,
-    required this.workRootForTrack,
+    required this.trackCount,
+    required this.tree,
     required this.onSelected,
   });
   final PlaybackSessionSnapshot session;
-  final List<MusicTrack> tracks;
-  final String? workRoot;
-  final MusicTrack? Function(String path) resolveTrack;
-  final String? Function(String path) workRootForTrack;
+  final int trackCount;
+  final SessionSwitcherTree tree;
   final ValueChanged<SessionTrackSelection> onSelected;
 
   @override
@@ -46,18 +39,12 @@ class SessionTrackSwitcherSheet extends ConsumerStatefulWidget {
 class _SessionTrackSwitcherSheetState
     extends ConsumerState<SessionTrackSwitcherSheet>
     with SingleTickerProviderStateMixin {
-  Set<String> _expandedFolders = <String>{};
-  Key _listKey = UniqueKey();
-  List<SessionSwitcherNode> _tree = const [];
-  List<({SessionSwitcherNode node, int depth, String key})> _rows = const [];
-  Map<String, int> _rowIndices = {};
+  late final Set<String> _expandedFolders = Set.of(widget.tree.expanded);
+  late List<SessionSwitcherRow> _rows = widget.tree.rows;
+  late Map<String, int> _rowIndices = widget.tree.indices;
   late final AnimationController _expansionController;
   late final Animation<double> _opacity;
   late final Animation<double> _sizeFactor;
-  int _treeRequest = 0;
-  bool _loading = true;
-  Object? _treeError;
-  String get _treeCommitKey => 'switcher_tree_${identityHashCode(this)}';
   String? _animatingKey;
   int _animationStart = 0;
   int _animationCount = 0;
@@ -73,80 +60,10 @@ class _SessionTrackSwitcherSheetState
     _opacity = _expansionController.drive(CurveTween(curve: kAppFadeCurve));
     // Non-zero row extents keep the lazy viewport bounded during expansion.
     _sizeFactor = _opacity.drive(Tween<double>(begin: 0.2, end: 1));
-    _rebuildTree(expandSelected: true);
-  }
-
-  @override
-  void didUpdateWidget(covariant SessionTrackSwitcherSheet oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.session != widget.session ||
-        !identical(oldWidget.tracks, widget.tracks) ||
-        oldWidget.workRoot != widget.workRoot ||
-        oldWidget.resolveTrack != widget.resolveTrack ||
-        oldWidget.workRootForTrack != widget.workRootForTrack) {
-      _rebuildTree(
-        expandSelected:
-            oldWidget.session.currentTrackPath !=
-                widget.session.currentTrackPath ||
-            oldWidget.session.currentQueueIndex !=
-                widget.session.currentQueueIndex,
-      );
-    }
-  }
-
-  void _rebuildTree({required bool expandSelected}) {
-    final request = ++_treeRequest;
-    _loading = true;
-    _treeError = null;
-    _expansionController.stop();
-    _animatingKey = null;
-    UiInteractionCoordinator.instance.scheduleCommit(
-      key: _treeCommitKey,
-      commit: () => unawaited(_loadTree(request, expandSelected)),
-    );
-  }
-
-  Future<void> _loadTree(int request, bool expandSelected) async {
-    try {
-      final tree = await prepareSessionSwitcherTree(
-        tracks: widget.tracks,
-        queue: widget.session.playbackQueue,
-        customQueueTracks: widget.session.customQueueTracks,
-        currentPath: widget.session.currentTrackPath,
-        currentQueueIndex: widget.session.currentQueueIndex,
-        workRoot: widget.workRoot,
-        resolveTrack: widget.resolveTrack,
-        workRootForTrack: widget.workRootForTrack,
-        expanded: Set.of(_expandedFolders),
-        expandSelected: expandSelected,
-      );
-      if (!mounted || request != _treeRequest) return;
-      UiInteractionCoordinator.instance.scheduleCommit(
-        key: _treeCommitKey,
-        structural: true,
-        commit: () {
-          if (!mounted || request != _treeRequest) return;
-          setState(() {
-            _tree = tree.roots;
-            _rows = tree.rows;
-            _rowIndices = tree.indices;
-            _expandedFolders = tree.expanded;
-            _listKey = UniqueKey();
-            _loading = false;
-          });
-        },
-      );
-    } catch (error) {
-      if (!mounted || request != _treeRequest) return;
-      setState(() {
-        _treeError = error;
-        _loading = false;
-      });
-    }
   }
 
   void _projectRows() {
-    final rows = <({SessionSwitcherNode node, int depth, String key})>[];
+    final rows = <SessionSwitcherRow>[];
     void visit(SessionSwitcherNode node, int depth) {
       rows.add((node: node, depth: depth, key: node.key));
       if (_expandedFolders.contains(node.key)) {
@@ -156,14 +73,13 @@ class _SessionTrackSwitcherSheetState
       }
     }
 
-    for (final node in _tree) {
+    for (final node in widget.tree.roots) {
       visit(node, 0);
     }
     _rows = rows;
-    _rowIndices.clear();
-    for (var index = 0; index < rows.length; index++) {
-      _rowIndices[rows[index].key] = index;
-    }
+    _rowIndices = {
+      for (var index = 0; index < rows.length; index++) rows[index].key: index,
+    };
   }
 
   void _finishAnimation() {
@@ -220,8 +136,6 @@ class _SessionTrackSwitcherSheetState
 
   @override
   void dispose() {
-    _treeRequest++;
-    UiInteractionCoordinator.instance.cancelCommit(_treeCommitKey);
     _expansionController.dispose();
     super.dispose();
   }
@@ -265,65 +179,8 @@ class _SessionTrackSwitcherSheetState
     );
   }
 
-  Widget _buildSkeleton(BuildContext context) {
-    return Padding(
-      padding: AppBottomSheet.contentPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            key: const ValueKey<String>('queue_switcher_skeleton_header'),
-            padding: const EdgeInsets.only(bottom: 6),
-            child: _QueueSheetHeader(count: widget.tracks.length),
-          ),
-          const Expanded(
-            child: RepaintBoundary(
-              key: ValueKey<String>('queue_switcher_skeleton'),
-              child: FileTreeSkeleton(
-                rowHeight: 44,
-                rowPadding: EdgeInsets.symmetric(horizontal: 6),
-                leadingSize: 20,
-                leadingGap: 10,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildError(BuildContext context) {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    return Padding(
-      padding: AppBottomSheet.contentPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            key: const ValueKey<String>('queue_switcher_error_header'),
-            padding: const EdgeInsets.only(bottom: 6),
-            child: _QueueSheetHeader(count: widget.tracks.length),
-          ),
-          Expanded(
-            child: Center(
-              child: TextButton(
-                onPressed: () =>
-                    setState(() => _rebuildTree(expandSelected: true)),
-                child: Text(i18n.tr('retry')),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildContent(BuildContext context) {
+  Widget _buildContent() {
     return ListView.builder(
-      key: _listKey,
       padding: AppBottomSheet.contentPadding,
       itemCount: _rows.length + 1,
       findChildIndexCallback: (key) {
@@ -336,7 +193,7 @@ class _SessionTrackSwitcherSheetState
           return Padding(
             key: const ValueKey<String>('queue_switcher_header'),
             padding: const EdgeInsets.only(bottom: 6),
-            child: _QueueSheetHeader(count: widget.tracks.length),
+            child: _QueueSheetHeader(count: widget.trackCount),
           );
         }
         return _buildRow(index - 1);
@@ -355,13 +212,7 @@ class _SessionTrackSwitcherSheetState
         return SizedBox(
           width: double.infinity,
           height: height,
-          child: _treeError != null
-              ? _buildError(context)
-              : PlaceholderContentTransition(
-                  showPlaceholder: _loading,
-                  placeholder: _buildSkeleton(context),
-                  content: _buildContent(context),
-                ),
+          child: _buildContent(),
         );
       },
     );

@@ -5,25 +5,29 @@ class _ActiveSessionCard extends ConsumerWidget {
     required this.session,
     required this.position,
     required this.count,
-    required this.coverPathFuture,
+
     required this.onOpen,
     this.compact = false,
     this.embedded = false,
     this.expandedDockWidth,
     this.dockCollapsed = false,
     this.circularCover = false,
+    required this.indicatorIndex,
+    this.isPlaybackRaised = false,
   });
 
   final PlaybackSessionSnapshot session;
   final int position;
   final int count;
-  final Future<String?> coverPathFuture;
+
   final VoidCallback onOpen;
   final bool compact;
   final bool embedded;
   final double? expandedDockWidth;
   final bool dockCollapsed;
   final bool circularCover;
+  final ValueListenable<int> indicatorIndex;
+  final bool isPlaybackRaised;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
@@ -34,6 +38,14 @@ class _ActiveSessionCard extends ConsumerWidget {
     final coverDimension = cardHeight - 2 * coverDistance;
     const coverRadius = LibraryLikeCardMetrics.coverRadius;
     final cardRadius = embedded ? cardHeight / 2 : coverRadius + coverDistance;
+    final cardBorderRadius = (embedded && isPlaybackRaised)
+        ? const BorderRadius.only(
+            topLeft: Radius.circular(LibraryLikeCardMetrics.cardRadius),
+            bottomLeft: Radius.circular(LibraryLikeCardMetrics.cardRadius),
+            topRight: Radius.circular(kActiveSessionCarouselDockHeight / 2),
+            bottomRight: Radius.circular(kActiveSessionCarouselDockHeight / 2),
+          )
+        : BorderRadius.circular(cardRadius);
     final contentPadding = embedded
         ? const EdgeInsets.fromLTRB(4, 4, 6, 4)
         : const EdgeInsets.fromLTRB(3, 3, 6, 3);
@@ -45,9 +57,6 @@ class _ActiveSessionCard extends ConsumerWidget {
           playing: currentSession.playbackRequested,
           loading: currentSession.isPlaybackLoading,
           trackPath: currentSession.currentTrackPath,
-          channelSwapEnabled: currentSession.channelSwapEnabled,
-          audioEffects: currentSession.audioEffects,
-          speed: currentSession.speed,
           error: currentSession.playbackError,
         );
       }),
@@ -56,22 +65,32 @@ class _ActiveSessionCard extends ConsumerWidget {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final library = ref.read(libraryFacadeProvider);
+    ref.watch(coverGenerationProvider);
     final currentTrack = ref
         .read(audioPathCoordinatorProvider)
         .sessionTrackForPath(session.id, view.trackPath);
     final displayName =
         currentTrack?.displayName ??
         path.basenameWithoutExtension(view.trackPath);
-    final resolvedCoverPath = library.resolvedPlaybackCoverPathForTrack(
-      currentTrack,
-    );
-    final showCover = shouldShowPlaylistCoverArtwork(
-      currentTrack,
-      resolvedCoverPath,
-    );
-    final showExpandedCover = showCover || embedded;
+    var showCover = true;
+    if (!embedded && !circularCover) {
+      showCover = shouldShowPlaylistCoverArtwork(
+        currentTrack,
+        library.resolvedPlaybackCoverPathForTrack(currentTrack),
+      );
+      if (!showCover && currentTrack != null) {
+        // Audio-only cards still need to discover artwork before showing it.
+        ref
+            .read(libraryCoverUiControllerProvider)
+            .deferredPlaybackCover(currentTrack, context: context)
+            .ignore();
+      }
+    }
     final screenSize = MediaQuery.sizeOf(context);
     final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
+    final activeColor = session.playbackQueue?.colorValue != null
+        ? Color(session.playbackQueue!.colorValue!)
+        : cs.primary;
 
     if (circularCover) {
       return Semantics(
@@ -89,9 +108,11 @@ class _ActiveSessionCard extends ConsumerWidget {
                 onTap: onOpen,
                 child: _ActiveSessionCover(
                   sessionId: session.id,
+                  session: session,
                   track: currentTrack,
-                  coverPathFuture: coverPathFuture,
+
                   dimension: kActiveSessionCarouselDockHeight,
+                  activeColor: activeColor,
                 ),
               ),
             ),
@@ -109,7 +130,26 @@ class _ActiveSessionCard extends ConsumerWidget {
               )
             : null,
         excludeFromSemantics: true,
-        customBorder: embedded ? const StadiumBorder() : null,
+        customBorder: embedded
+            ? (isPlaybackRaised
+                  ? const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(
+                          LibraryLikeCardMetrics.cardRadius,
+                        ),
+                        bottomLeft: Radius.circular(
+                          LibraryLikeCardMetrics.cardRadius,
+                        ),
+                        topRight: Radius.circular(
+                          kActiveSessionCarouselDockHeight / 2,
+                        ),
+                        bottomRight: Radius.circular(
+                          kActiveSessionCarouselDockHeight / 2,
+                        ),
+                      ),
+                    )
+                  : const StadiumBorder())
+            : null,
         borderRadius: embedded ? null : BorderRadius.circular(cardRadius),
         onTap: onOpen,
         child: Ink(
@@ -154,9 +194,11 @@ class _ActiveSessionCard extends ConsumerWidget {
                     alignment: Alignment.centerLeft,
                     child: _ActiveSessionCover(
                       sessionId: session.id,
+                      session: session,
                       track: currentTrack,
-                      coverPathFuture: coverPathFuture,
+
                       dimension: coverDimension,
+                      activeColor: activeColor,
                     ),
                   ),
                 )
@@ -165,9 +207,11 @@ class _ActiveSessionCard extends ConsumerWidget {
                     ? Center(
                         child: _ActiveSessionCover(
                           sessionId: session.id,
+                          session: session,
                           track: currentTrack,
-                          coverPathFuture: coverPathFuture,
+
                           dimension: coverDimension,
+                          activeColor: activeColor,
                         ),
                       )
                     : _buildCardContent(
@@ -195,9 +239,9 @@ class _ActiveSessionCard extends ConsumerWidget {
                   currentTrack,
                   displayName,
                   i18n: i18n,
-                  showCover: showExpandedCover,
+                  showCover: showCover,
                   coverDimension: coverDimension,
-                  contentPadding: showExpandedCover
+                  contentPadding: showCover
                       ? contentPadding
                       : const EdgeInsets.fromLTRB(
                           14,
@@ -215,7 +259,7 @@ class _ActiveSessionCard extends ConsumerWidget {
       value: '${position + 1} / $count',
       child: ClipRRect(
         key: ValueKey<String>('active_session_card_${session.id}'),
-        borderRadius: BorderRadius.circular(cardRadius),
+        borderRadius: cardBorderRadius,
         child: MarqueePauseScope(
           isPaused: false,
           hoverToRun: defaultTargetPlatform == TargetPlatform.windows,
@@ -229,16 +273,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     BuildContext context,
     ColorScheme cs,
     bool isPlaying,
-    ({
-      AudioEffectsState audioEffects,
-      bool channelSwapEnabled,
-      String? error,
-      bool loading,
-      bool playing,
-      double speed,
-      String trackPath,
-    })
-    view,
+    ({String? error, bool loading, bool playing, String trackPath}) view,
     MusicTrack? currentTrack,
     String displayName, {
     required AppLanguageProvider i18n,
@@ -246,7 +281,9 @@ class _ActiveSessionCard extends ConsumerWidget {
     required double coverDimension,
     required EdgeInsets contentPadding,
   }) {
-    final activeColor = cs.primary;
+    final activeColor = session.playbackQueue?.colorValue != null
+        ? Color(session.playbackQueue!.colorValue!)
+        : cs.primary;
     final hasAsmrOnePlaybackError =
         view.error != null && (currentTrack?.isRemoteAsmr ?? false);
     Widget titleSubtitle = _ActiveSessionTitleSubtitle(
@@ -269,6 +306,7 @@ class _ActiveSessionCard extends ConsumerWidget {
       // animated width. Keep text layout stable while controls and progress resize.
       titleSubtitle = ClipRect(
         child: OverflowBox(
+          key: const ValueKey('active_session_title_overflow_box'),
           alignment: AlignmentDirectional.centerStart,
           fit: OverflowBoxFit.deferToChild,
           minWidth: textWidth,
@@ -292,9 +330,11 @@ class _ActiveSessionCard extends ConsumerWidget {
                   if (showCover) ...[
                     _ActiveSessionCover(
                       sessionId: session.id,
+                      session: session,
                       track: currentTrack,
-                      coverPathFuture: coverPathFuture,
+
                       dimension: coverDimension,
+                      activeColor: activeColor,
                     ),
                     const SizedBox(width: 10),
                   ],
@@ -305,10 +345,10 @@ class _ActiveSessionCard extends ConsumerWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         titleSubtitle,
-                        _ActiveSessionProgressStrip(
-                          session: session,
-                          activeColor: activeColor,
-                        ),
+                        if (count >= 2) ...[
+                          const SizedBox(height: 2.5),
+                          _buildIndicator(activeColor, cs),
+                        ],
                       ],
                     ),
                   ),
@@ -351,6 +391,42 @@ class _ActiveSessionCard extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildIndicator(Color activeColor, ColorScheme cs) {
+    return ValueListenableBuilder<int>(
+      valueListenable: indicatorIndex,
+      builder: (context, activePage, _) {
+        final active = count > 0 ? activePage % count : 0;
+        final isFocusedCard = position == active;
+        return Semantics(
+          key: isFocusedCard
+              ? const ValueKey('active_session_indicator')
+              : ValueKey('active_session_indicator_$position'),
+          label: isFocusedCard ? '${activePage + 1} / $count' : null,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var index = 0; index < count; index++)
+                AnimatedContainer(
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 150),
+                  margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                  width: index == active ? 10 : 4,
+                  height: 3.5,
+                  decoration: BoxDecoration(
+                    color: index == active
+                        ? activeColor
+                        : cs.onSurfaceVariant.withValues(alpha: 0.38),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -614,8 +690,9 @@ class _ActiveSessionTitleSubtitleState
         ExcludeSemantics(
           excluding: secondaryText == null || secondaryText.isEmpty,
           child: Opacity(
-            opacity:
-                (secondaryText != null && secondaryText.isNotEmpty) ? 1.0 : 0.0,
+            opacity: (secondaryText != null && secondaryText.isNotEmpty)
+                ? 1.0
+                : 0.0,
             child: Text(
               (secondaryText != null && secondaryText.isNotEmpty)
                   ? secondaryText
@@ -638,156 +715,62 @@ class _ActiveSessionTitleSubtitleState
   }
 }
 
-class _ActiveSessionProgressStrip extends StatefulWidget {
-  const _ActiveSessionProgressStrip({
-    required this.session,
-    required this.activeColor,
-  });
-
-  final PlaybackSessionSnapshot session;
-  final Color activeColor;
-
-  @override
-  State<_ActiveSessionProgressStrip> createState() =>
-      _ActiveSessionProgressStripState();
-}
-
-class _ActiveSessionProgressStripState
-    extends State<_ActiveSessionProgressStrip> {
-  late final PlaybackPositionUiGate _positionGate;
-
-  @override
-  void initState() {
-    super.initState();
-    _positionGate = PlaybackPositionUiGate(
-      session: widget.session,
-      includeBufferedPosition: false,
-    )..addListener(_handlePositionTick);
-  }
-
-  @override
-  void didUpdateWidget(covariant _ActiveSessionProgressStrip oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.session == widget.session) return;
-    _positionGate.updateSession(widget.session);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _positionGate.tickerModeEnabled = TickerMode.valuesOf(context).enabled;
-  }
-
-  @override
-  void dispose() {
-    _positionGate
-      ..removeListener(_handlePositionTick)
-      ..dispose();
-    super.dispose();
-  }
-
-  void _handlePositionTick() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return RepaintBoundary(child: _buildProgressStrip(cs));
-  }
-
-  Widget _buildProgressStrip(ColorScheme cs) {
-    final snapshot = _positionGate.value;
-    final duration = snapshot.duration;
-    if (duration == null || duration.inMilliseconds <= 0) {
-      return const SizedBox(height: 2.5);
-    }
-    final fraction = snapshot.position.inMilliseconds / duration.inMilliseconds;
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(2.5),
-        child: SizedBox(
-          height: 2.5,
-          // Dock expansion changes width every frame. Resolve the fraction in
-          // layout without rebuilding the progress decorations for each width.
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: cs.surfaceContainerHighest.withValues(alpha: 0.6),
-                  ),
-                ),
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FractionallySizedBox(
-                  widthFactor: fraction.clamp(0.0, 1.0),
-                  heightFactor: 1,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          widget.activeColor,
-                          widget.activeColor.withValues(alpha: 0.82),
-                        ],
-                      ),
-                      borderRadius: const BorderRadius.only(
-                        topRight: Radius.circular(3),
-                        bottomRight: Radius.circular(3),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _ActiveSessionCover extends ConsumerWidget {
   const _ActiveSessionCover({
     required this.sessionId,
+    this.session,
     required this.track,
-    required this.coverPathFuture,
-    required this.dimension,
+
+    this.dimension,
+    this.activeColor,
   });
 
   final String sessionId;
+  final PlaybackSessionSnapshot? session;
   final MusicTrack? track;
-  final Future<String?> coverPathFuture;
-  final double dimension;
+
+  final double? dimension;
+  final Color? activeColor;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final library = ref.read(libraryFacadeProvider);
+    final cs = Theme.of(context).colorScheme;
+    final effectiveColor = activeColor ?? cs.primary;
+    final d = dimension ?? 48.0;
+    final innerD = coverProgressInnerDimension(d);
+    final coverFuture = ref
+        .read(libraryCoverUiControllerProvider)
+        .deferredPlaybackCover(track, context: context);
     final coverCacheWidth = coverThumbnailCacheWidth(
-      logicalWidth: dimension,
+      logicalWidth: d,
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
       resolution: ref.watch(coverImageResolutionProvider),
     );
 
     return SizedBox.square(
       key: ValueKey<String>('active_session_cover_$sessionId'),
-      dimension: dimension,
-      child: CoverArtworkFrame(
-        borderRadius: BorderRadius.circular(dimension / 2),
-        child: AsyncLocalCoverImage(
-          onImageError:
-              library.coverArtworkCacheService.reportArtworkReadFailure,
-          future: coverPathFuture,
-          requestKey: (sessionId, track?.path),
-          initialPath: library.resolvedPlaybackCoverPathForTrack(track),
-          retryFutureBuilder: () => _sessionCoverFutureForTrack(library, track),
-          cacheWidth: coverCacheWidth,
-          useDefaultCacheWidth: false,
-          deferLoadDuringInteraction: true,
-          fit: BoxFit.cover,
+      dimension: d,
+      child: SessionCoverProgressRing(
+        session: session,
+        sessionId: sessionId,
+        activeColor: effectiveColor,
+        size: d,
+        child: CoverArtworkFrame(
+          borderRadius: BorderRadius.circular(innerD / 2),
+          child: AsyncLocalCoverImage(
+            onImageError:
+                library.coverArtworkCacheService.reportArtworkReadFailure,
+            future: coverFuture,
+            requestKey: (sessionId, track?.path),
+            initialPath: library.resolvedPlaybackCoverPathForTrack(track),
+            retryFutureBuilder: () =>
+                library.playbackCoverPathFutureForTrack(track),
+            cacheWidth: coverCacheWidth,
+            useDefaultCacheWidth: false,
+            deferLoadDuringInteraction: true,
+            fit: BoxFit.cover,
+          ),
         ),
       ),
     );

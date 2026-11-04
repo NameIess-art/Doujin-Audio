@@ -23,6 +23,7 @@ import '../../application/playback_session_snapshot.dart';
 import '../../domain/playback_queue.dart';
 import 'playlist_feature_icons.dart';
 import 'playlist_list_view.dart';
+import 'playlist_media_widgets.dart';
 import 'playlist_shared_helpers.dart';
 
 import 'playback_queue_cover.dart';
@@ -255,9 +256,18 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                     Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        _QueueCoverGrid(
-                          items: coverItems,
-                          coverCacheWidth: coverCacheWidth,
+                        SessionCoverProgressRing(
+                          session: session,
+                          sessionId: session.id,
+                          activeColor: activeColor,
+                          size: playlistCoverSize,
+                          child: _QueueCoverGrid(
+                            items: coverItems,
+                            coverCacheWidth: coverCacheWidth,
+                            dimension: coverProgressInnerDimension(
+                              playlistCoverSize,
+                            ),
+                          ),
                         ),
                         Positioned(
                           right: -2,
@@ -451,11 +461,16 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
 }
 
 class _QueueCoverGrid extends StatelessWidget {
-  const _QueueCoverGrid({required this.items, required this.coverCacheWidth});
+  const _QueueCoverGrid({
+    required this.items,
+    required this.coverCacheWidth,
+    this.dimension = playlistCoverSize,
+  });
 
   final List<({MusicTrack track, String? coverPath, Future<String?> future})>
   items;
   final int? coverCacheWidth;
+  final double dimension;
 
   @override
   Widget build(BuildContext context) {
@@ -478,8 +493,8 @@ class _QueueCoverGrid extends StatelessWidget {
           );
     return CoverArtworkFrame(
       key: const ValueKey('playback_queue_cover_grid'),
-      borderRadius: BorderRadius.circular(playlistCoverSize / 2),
-      child: SizedBox.square(dimension: playlistCoverSize, child: content),
+      borderRadius: BorderRadius.circular(dimension / 2),
+      child: SizedBox.square(dimension: dimension, child: content),
     );
   }
 
@@ -488,7 +503,7 @@ class _QueueCoverGrid extends StatelessWidget {
     return ClipPath(
       clipper: sector,
       child: Transform.translate(
-        offset: sector.imageCenterOffset(const Size.square(playlistCoverSize)),
+        offset: sector.imageCenterOffset(Size.square(dimension)),
         child: _buildCell(index),
       ),
     );

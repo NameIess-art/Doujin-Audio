@@ -13,6 +13,7 @@ import '../presentation/main_screen.dart';
 import '../../features/library/presentation/work_detail_page.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
 import '../../features/player/presentation/playlist_tab.dart';
+import '../../core/widgets/library_like_cards.dart';
 import '../theme/app_styles.dart';
 
 typedef RoutedPlaybackDockAppBuilder =
@@ -141,10 +142,12 @@ class _RoutedPlaybackDockHostState
     workDetailRoute.overlayEntries.add(entry);
     _routedPlaybackDockRoute = workDetailRoute;
     _routedPlaybackDockEntry = entry;
+    _playbackDockGeometry.setRoutedDockActive(this, true);
     overlay.insert(entry, above: pageEntry);
   }
 
   void _removeRoutedPlaybackDock() {
+    _playbackDockGeometry.setRoutedDockActive(this, false);
     final entry = _routedPlaybackDockEntry;
     final route = _routedPlaybackDockRoute;
     _routedPlaybackDockEntry = null;
@@ -160,23 +163,7 @@ class _RoutedPlaybackDockHostState
   Widget _buildRoutedPlaybackDockOverlay(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final supportsRoutedDock = size.width >= 300 && size.height >= 300;
-    final isLandscapeDock =
-        defaultTargetPlatform == TargetPlatform.windows ||
-        MediaQuery.orientationOf(context) == Orientation.landscape ||
-        size.width >= 980;
-    final bottomPadding = MediaQuery.paddingOf(context).bottom;
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
-      // Tight bounds keep this retained entry's layout independent while
-      // Overlay skips it underneath an opaque page.
-      height: isLandscapeDock
-          ? size.height
-          : kActiveSessionCarouselDockHeight +
-                (bottomPadding > kMobileDockBottomMargin
-                    ? bottomPadding
-                    : kMobileDockBottomMargin),
+    return Positioned.fill(
       child: RepaintBoundary(
         child: ValueListenableBuilder<int>(
           valueListenable: _routeRevision,
@@ -203,6 +190,7 @@ class _RoutedPlaybackDockHostState
                 navigatorKey:
                     widget.playbackNavigatorKey ?? widget.navigatorKey,
                 currentRoute: _routeObserver.topRoute,
+                workDetailAnimation: _routedPlaybackDockRoute?.animation,
                 geometry: _playbackDockGeometry,
               ),
             );
@@ -268,7 +256,10 @@ class _RootPageRouteObserver extends NavigatorObserver {
   final ValueNotifier<int> revision;
   final ValueChanged<PageRoute<dynamic>?> onTopPageChanged;
   final List<Route<dynamic>> _routes = <Route<dynamic>>[];
-  final Map<TransitionRoute<dynamic>, (Animation<double>, AnimationStatusListener)>
+  final Map<
+    TransitionRoute<dynamic>,
+    (Animation<double>, AnimationStatusListener)
+  >
   _routeAnimationListeners = {};
   final Set<PageRoute<dynamic>> _departingRoutes = {};
   final Set<PageRoute<dynamic>> _departingWorkDetailRoutes = {};
@@ -283,7 +274,9 @@ class _RootPageRouteObserver extends NavigatorObserver {
   PageRoute<dynamic>? lastRouteNamed(String name) {
     for (var index = _routes.length - 1; index >= 0; index--) {
       final route = _routes[index];
-      if (route is PageRoute<dynamic> && route.settings.name == name) return route;
+      if (route is PageRoute<dynamic> && route.settings.name == name) {
+        return route;
+      }
     }
     if (name == workDetailRouteName && _departingWorkDetailRoutes.isNotEmpty) {
       return _departingWorkDetailRoutes.last;
@@ -351,6 +344,9 @@ class _RootPageRouteObserver extends NavigatorObserver {
             // as soon as Navigator finalizes it instead.
             _routes.remove(route);
           }
+          onTopPageChanged(topRoute);
+          _syncImmediately();
+          return;
         }
         _sync();
       }
@@ -465,6 +461,7 @@ class _RoutedPlaybackDock extends ConsumerStatefulWidget {
     required this.covered,
     required this.navigatorKey,
     required this.currentRoute,
+    required this.workDetailAnimation,
     required this.geometry,
     this.departing = false,
   });
@@ -474,6 +471,7 @@ class _RoutedPlaybackDock extends ConsumerStatefulWidget {
   final bool departing;
   final GlobalKey<NavigatorState> navigatorKey;
   final Route<dynamic>? currentRoute;
+  final Animation<double>? workDetailAnimation;
   final PlaybackDockGeometryController geometry;
 
   @override
@@ -486,8 +484,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
   Timer? _hideTimer;
   late bool _visible = widget.active;
   bool _expanded = false;
-  final GlobalKey _dockBoundsKey = GlobalKey();
-  double? _dockRight;
+  bool _raisedDockEntered = false;
 
   @override
   void initState() {
@@ -497,7 +494,9 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
   }
 
   void _handleGeometryChanged() {
-    if (mounted && _visible && !UiInteractionCoordinator.instance.isInteracting) {
+    if (mounted &&
+        _visible &&
+        !UiInteractionCoordinator.instance.isInteracting) {
       setState(() {});
     }
   }
@@ -521,47 +520,13 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
       return;
     }
     _expanded = false;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : _duration;
-    _hideTimer = Timer(duration, () {
-      if (mounted && !widget.active) setState(() => _visible = false);
-    });
+    _visible = false;
   }
 
   void _scheduleExpansion() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && widget.active) setState(() => _expanded = true);
     });
-  }
-
-  void _reportDockBounds() {
-    if (_expanded && !widget.departing) return;
-    if (UiInteractionCoordinator.instance.isInteracting) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_expanded && !widget.departing) return;
-      if (UiInteractionCoordinator.instance.isInteracting) return;
-      final box =
-          _dockBoundsKey.currentContext?.findRenderObject() as RenderBox?;
-      if (box == null || !box.hasSize) return;
-      final right = box.localToGlobal(Offset.zero).dx + box.size.width;
-      if (_dockRight != null && (_dockRight! - right).abs() < 1.0) return;
-      setState(() => _dockRight = right);
-    });
-  }
-
-  double _transitionWidth(double maxWidth) {
-    final mainCover = widget.geometry.mainCoverRect;
-    final dockRight = _dockRight ?? widget.geometry.mainDockRight;
-    if (mainCover == null || dockRight == null) {
-      return kActiveSessionCarouselDockHeight;
-    }
-    const coverCenterInset = kActiveSessionCarouselDockHeight / 2;
-    return (dockRight - mainCover.center.dx + coverCenterInset).clamp(
-      kActiveSessionCarouselDockHeight,
-      maxWidth,
-    );
   }
 
   @override
@@ -582,7 +547,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         MediaQuery.orientationOf(context) == Orientation.landscape ||
         size.width >= 980;
     final supported = size.width >= 300 && size.height >= 300;
-    if (!_visible || !supported || sessions.isEmpty) {
+    if (!widget.active || !_visible || !supported || sessions.isEmpty) {
       return const SizedBox.shrink();
     }
     final duration = MediaQuery.disableAnimationsOf(context)
@@ -591,25 +556,34 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
+    final isRaised = widget.geometry.mainDockRaised;
+    final dockBorderRadius = isRaised
+        ? const BorderRadius.only(
+            topLeft: Radius.circular(LibraryLikeCardMetrics.cardRadius),
+            bottomLeft: Radius.circular(LibraryLikeCardMetrics.cardRadius),
+            topRight: Radius.circular(kActiveSessionCarouselDockHeight / 2),
+            bottomRight: Radius.circular(kActiveSessionCarouselDockHeight / 2),
+          )
+        : BorderRadius.circular(kActiveSessionCarouselDockHeight / 2);
+
+    Widget carousel({double? contentWidth}) => ActiveSessionCarousel(
+      sessions: sessions,
+      i18n: i18n,
+      expandedDockWidth: contentWidth,
+      isPlaybackRaised: isRaised,
+      viewportFraction: 1,
+      presentation: ActiveSessionCarouselPresentation.embedded,
+      onOpenSession: (sessionId) {
+        if (widget.currentRoute is SessionDetailRoute) return;
+        widget.navigatorKey.currentState?.push(
+          buildSessionDetailRoute(sessionId: sessionId),
+        );
+      },
+    );
+
     Widget dockContent() => AppDockPanel(
       showTopHighlight: false,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(
-          kActiveSessionCarouselDockHeight / 2,
-        ),
-        child: ActiveSessionCarousel(
-          sessions: sessions,
-          i18n: i18n,
-          viewportFraction: 1,
-          presentation: ActiveSessionCarouselPresentation.embedded,
-          onOpenSession: (sessionId) {
-            if (widget.currentRoute is SessionDetailRoute) return;
-            widget.navigatorKey.currentState?.push(
-              buildSessionDetailRoute(sessionId: sessionId),
-            );
-          },
-        ),
-      ),
+      child: ClipRRect(borderRadius: dockBorderRadius, child: carousel()),
     );
 
     if (isLandscapeDock) {
@@ -632,8 +606,8 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
           );
       final dockRect =
           (_expanded && !widget.departing) || !widget.geometry.mainDockCollapsed
-              ? expandedRect
-              : sourceRect;
+          ? expandedRect
+          : sourceRect;
       return SizedBox(
         width: size.width,
         height: size.height,
@@ -679,76 +653,144 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
       );
     }
 
+    final padding = MediaQuery.paddingOf(context);
+    final bottom = padding.bottom > kMobileDockBottomMargin
+        ? padding.bottom
+        : kMobileDockBottomMargin;
+    final usableWidth = size.width - padding.horizontal - AppSpacing.sm * 2;
+    final width = usableWidth.clamp(0.0, 430.0) * 0.96;
+    final target = Rect.fromLTWH(
+      padding.left + (size.width - padding.horizontal - width) / 2,
+      size.height - bottom - kActiveSessionCarouselDockHeight,
+      width,
+      kActiveSessionCarouselDockHeight,
+    );
+    final source =
+        widget.geometry.mainDockRect ??
+        Rect.fromLTWH(
+          target.left,
+          target.top,
+          kActiveSessionCarouselDockHeight,
+          target.height,
+        );
+    final animation =
+        widget.workDetailAnimation ??
+        (widget.departing
+            ? kAlwaysDismissedAnimation
+            : kAlwaysCompleteAnimation);
+    final portraitContentWidth = widget.geometry.mainDockCollapsed
+        ? null
+        : width;
     return IgnorePointer(
       key: const ValueKey<String>('routed_playback_dock_interaction'),
       ignoring: !widget.active || widget.covered,
-      child: Listener(
-        behavior: HitTestBehavior.opaque,
-        child: SafeArea(
-          top: false,
-          minimum: const EdgeInsets.only(bottom: kMobileDockBottomMargin),
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 430),
-                child: FractionallySizedBox(
-                  widthFactor: 0.96,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      _reportDockBounds();
-                      final isExpandedDock =
-                          !widget.geometry.mainDockCollapsed &&
-                          _transitionWidth(constraints.maxWidth) >= 160;
-                      return Align(
-                        alignment: Alignment.centerRight,
-                        child: SizedBox(
-                          key: const ValueKey<String>(
-                            'routed_playback_dock_width',
-                          ),
-                          child: AnimatedContainer(
-                            key: _dockBoundsKey,
-                            duration: duration,
-                            curve: Curves.easeOutCubic,
-                            width: (_expanded && !widget.departing)
-                                ? constraints.maxWidth
-                                : _transitionWidth(constraints.maxWidth),
-                            height: kActiveSessionCarouselDockHeight,
-                            // Animate the visible window while retaining the
-                            // carousel's final layout throughout the transition.
-                            child: ClipRRect(
-                              key: const ValueKey<String>(
-                                'routed_playback_dock',
-                              ),
-                              borderRadius: BorderRadius.circular(
-                                kActiveSessionCarouselDockHeight / 2,
-                              ),
-                              child: isExpandedDock
-                                  ? RepaintBoundary(child: dockContent())
-                                  : OverflowBox(
-                                      alignment: Alignment.centerLeft,
-                                      minWidth: constraints.maxWidth,
-                                      maxWidth: constraints.maxWidth,
-                                      minHeight:
-                                          kActiveSessionCarouselDockHeight,
-                                      maxHeight:
-                                          kActiveSessionCarouselDockHeight,
-                                      child: RepaintBoundary(
-                                        child: dockContent(),
-                                      ),
-                                    ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
+      child: AnimatedBuilder(
+        animation: animation,
+        child: RepaintBoundary(
+          child: isRaised
+              ? carousel(contentWidth: portraitContentWidth)
+              : AppDockPanel(
+                  showTopHighlight: false,
+                  child: carousel(contentWidth: portraitContentWidth),
+                ),
+        ),
+        builder: (context, child) {
+          final curve = isRaised ? Curves.easeInOutCubic : Curves.easeOutCubic;
+          final progress = MediaQuery.disableAnimationsOf(context)
+              ? 1.0
+              : curve.transform(animation.value);
+          if (isRaised &&
+              !widget.departing &&
+              animation.status != AnimationStatus.reverse) {
+            _raisedDockEntered = progress == 1;
+          }
+          // A completed detail page returns with the upward motion. An
+          // interrupted entry retraces the fold from its current frame.
+          final folding = isRaised && !(widget.departing && _raisedDockEntered);
+          final bounds = Rect.lerp(source, target, progress)!;
+          // Narrow the visible height around the row boundary while keeping
+          // the cover and controls laid out at their normal size.
+          final inset = folding
+              ? bounds.height * progress * (1 - progress)
+              : 0.0;
+          final rect = Rect.fromLTRB(
+            bounds.left,
+            bounds.top + inset,
+            bounds.right,
+            bounds.bottom - inset,
+          );
+          Widget content = child!;
+          if (widget.geometry.mainDockCollapsed) {
+            // Reveal a stable carousel from the left of the compact card.
+            content = OverflowBox(
+              alignment: Alignment.centerLeft,
+              minWidth: target.width,
+              maxWidth: target.width,
+              child: content,
+            );
+          } else if (isRaised) {
+            // The home panel is already behind the card as it lands.
+            // Fade only the extra surface to keep the cover visible.
+            content = Stack(
+              fit: StackFit.expand,
+              children: [
+                Opacity(
+                  opacity: const Interval(
+                    0,
+                    0.25,
+                    curve: Curves.easeInOut,
+                  ).transform(progress),
+                  child: const AppDockPanel(
+                    showTopHighlight: false,
+                    child: SizedBox.expand(),
+                  ),
+                ),
+                content,
+              ],
+            );
+          }
+          if (isRaised) {
+            // Keep the carousel mounted as the clipping edge changes.
+            content = OverflowBox(
+              alignment: folding
+                  ? Alignment.lerp(
+                      Alignment.bottomCenter,
+                      Alignment.topCenter,
+                      progress,
+                    )!
+                  : Alignment.topCenter,
+              minHeight: target.height,
+              maxHeight: target.height,
+              child: content,
+            );
+          }
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: target.height + bottom,
+                child: const Listener(behavior: HitTestBehavior.opaque),
+              ),
+              Positioned.fromRect(
+                rect: rect,
+                child: SizedBox.expand(
+                  key: const ValueKey<String>('routed_playback_dock_width'),
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    child: ClipRRect(
+                      key: const ValueKey<String>('routed_playback_dock'),
+                      borderRadius: dockBorderRadius,
+                      child: content,
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-        ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -1512,6 +1512,103 @@ void main() {
     },
   );
 
+  testWidgets('mobile playback dock restores its layout on app restart', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(390, 820));
+    await _pumpAppShell(tester);
+    final card = find.byKey(const ValueKey('mobile_dock_playback'));
+    final menu = find.byKey(const ValueKey('mobile_dock_navigation'));
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    final expanded = tester.getRect(card);
+    expect(expanded.width, greaterThan(expanded.height));
+    await tester.longPress(card);
+    await tester.pumpAndSettle();
+    final raised = tester.getRect(card);
+    expect(raised.bottom, closeTo(tester.getRect(menu).top, 0.01));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await _pumpAppShell(tester);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(card), raised);
+
+    await tester.longPress(card);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(card), expanded);
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    await tester.pump();
+  });
+
+  testWidgets('raised dock slides horizontally in the upper row', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(390, 820));
+    final harness = await _pumpAppShell(tester, includePlaybackSession: false);
+    final session = PlaybackSession(
+      id: 'raised_slide_session',
+      currentTrackPath: '/audio/raised.mp3',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: const PlayerState(true, ProcessingState.ready),
+    );
+    addTearDown(session.shutdown);
+    void setPlayback(bool active) {
+      if (active) {
+        harness.playbackService.registerSession(session);
+      } else {
+        harness.playbackService.removeSessions([session.id]);
+      }
+      harness.playbackService.syncSlice(
+        activeSessions: active ? [session] : [],
+        playingSessionCount: active ? 1 : 0,
+        focusedSessionId: active ? session.id : null,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+    }
+
+    final card = find.byKey(const ValueKey('mobile_dock_playback'));
+    final menu = find.byKey(const ValueKey('mobile_dock_navigation'));
+    final surface = find.byKey(const ValueKey('mobile_bottom_capsule_surface'));
+    setPlayback(true);
+    await tester.pumpAndSettle();
+    await tester.longPress(card);
+    await tester.pumpAndSettle();
+    final raisedRect = tester.getRect(card);
+    expect(raisedRect.bottom, closeTo(tester.getRect(menu).top, 0.01));
+
+    setPlayback(false);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    final exiting = tester.getRect(card);
+    expect(exiting.left, lessThan(raisedRect.left));
+    expect(exiting.top, closeTo(raisedRect.top, 0.01));
+    expect(exiting.width, raisedRect.width);
+    await tester.pumpAndSettle();
+    expect(card, findsNothing);
+    expect(tester.getRect(surface).height, tester.getRect(menu).height);
+
+    setPlayback(true);
+    await tester.pump();
+    final offscreen = tester.getRect(card);
+    expect(offscreen.top, closeTo(raisedRect.top, 0.01));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    final entering = tester.getRect(card);
+    expect(entering.left, greaterThan(offscreen.left));
+    expect(entering.left, lessThan(raisedRect.left));
+    expect(entering.top, closeTo(raisedRect.top, 0.01));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(card), raisedRect);
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    await tester.pump();
+  });
+
   for (final (platform, size, preparationDelay) in [
     (TargetPlatform.android, const Size(390, 820), 96),
     (TargetPlatform.android, const Size(390, 820), 640),
@@ -1572,7 +1669,7 @@ void main() {
           expect(tester.getSize(cover), const Size.square(48));
           final x = tester.getCenter(cover).dx;
           if (portrait) {
-            expect(x, lessThanOrEqualTo(previousX + 0.1));
+            expect(x, greaterThanOrEqualTo(previousX - 0.1));
           } else {
             expect(x, closeTo(previousX, 0.1));
           }
@@ -1717,7 +1814,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 140));
     final enteringWidth = tester.getSize(routeWidth).width;
     expect(enteringWidth, greaterThan(56));
-    expect(tester.getCenter(routeCover).dx, lessThan(collapsedCenter.dx));
+    expect(tester.getCenter(routeCover).dx, closeTo(collapsedCenter.dx, 0.01));
 
     await tester.pump(const Duration(milliseconds: 210));
     final expandedWidth = tester.getSize(routeWidth).width;
@@ -1878,7 +1975,7 @@ void main() {
     expect(tester.getSize(routeWidth).width, greaterThan(48));
     expect(
       tester.getCenter(routeCover).dx,
-      greaterThan(collapsedCenter.dx - 120),
+      closeTo(collapsedCenter.dx, 0.01),
     );
     expect(routeDock, findsOneWidget);
     await tester.pump(const Duration(milliseconds: 60));
@@ -2229,6 +2326,95 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 200));
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    await tester.pump();
+  });
+
+  testWidgets('raised playback card folds down and returns without a gap', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(390, 820));
+    await _pumpAppShell(tester);
+    final mainCard = find.byKey(const ValueKey('mobile_dock_playback'));
+    await tester.longPress(mainCard);
+    await tester.pumpAndSettle();
+    final homeRect = tester.getRect(mainCard);
+    final main = find.byType(MainScreen);
+    final navigator = Navigator.of(tester.element(main));
+    void openDetail() {
+      unawaited(
+        navigator.push<void>(
+          buildAppPageRoute<void>(
+            context: navigator.context,
+            settings: const RouteSettings(name: workDetailRouteName),
+            child: const Scaffold(body: SizedBox.expand()),
+          ),
+        ),
+      );
+    }
+
+    final routedCard = find.byKey(const ValueKey('routed_playback_dock'));
+    openDetail();
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    final midpoint = tester.getRect(routedCard);
+    expect(midpoint.height, closeTo(homeRect.height / 2, 0.1));
+    expect(midpoint.top, lessThan(homeRect.bottom));
+    expect(midpoint.bottom, greaterThan(homeRect.bottom));
+
+    // A quick back action starts from the currently visible bounds.
+    navigator.pop();
+    await tester.pump();
+    expect(tester.getRect(routedCard), midpoint);
+    await tester.pump(const Duration(milliseconds: 24));
+    expect(tester.getRect(routedCard).top, lessThan(midpoint.top));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(mainCard), homeRect);
+
+    openDetail();
+    await tester.pump();
+    await tester.pump();
+    var previous = tester.getRect(routedCard);
+    for (var frame = 0; frame < 18; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final current = tester.getRect(routedCard);
+      expect(current.top, greaterThanOrEqualTo(previous.top - 0.01));
+      expect(current.bottom, greaterThanOrEqualTo(previous.bottom - 0.01));
+      expect(current.height, greaterThanOrEqualTo(homeRect.height / 2 - 0.01));
+      previous = current;
+    }
+    await tester.pumpAndSettle();
+    final mobileDock = find.byType(
+      MobileDockCapsuleContent,
+      skipOffstage: false,
+    );
+    var previousTop = tester.getRect(routedCard).top;
+    expect(previousTop, greaterThan(homeRect.top));
+    navigator.pop();
+    await tester.pump();
+    var largestStep = 0.0;
+    for (var frame = 0; frame < 45; frame++) {
+      await tester.pump(const Duration(milliseconds: 8));
+      final inFlight = routedCard.evaluate().isNotEmpty;
+      expect(
+        tester.widget<MobileDockCapsuleContent>(mobileDock).isPlaybackHidden,
+        inFlight,
+      );
+      final top = tester.getRect(inFlight ? routedCard : mainCard).top;
+      final step = previousTop - top;
+      expect(step, greaterThanOrEqualTo(-0.01));
+      expect(top, greaterThanOrEqualTo(homeRect.top - 0.01));
+      if (!inFlight) {
+        expect(step, lessThan(largestStep / 2));
+        break;
+      }
+      if (step > largestStep) largestStep = step;
+      previousTop = top;
+    }
+    expect(routedCard, findsNothing);
+    expect(tester.getRect(mainCard), homeRect);
+    await tester.pumpAndSettle();
     UiInteractionCoordinator.instance.finishInteractionsForTest();
     await tester.pump();
   });

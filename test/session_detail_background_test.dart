@@ -18,6 +18,7 @@ import 'package:doujin_audio/features/player/presentation/playlist/session_detai
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_menu_sheet.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -464,7 +465,7 @@ void main() {
   );
 
   testWidgets(
-    'detail has no filtered background and preserves original foreground size',
+    'detail renders blurred cover background and preserves original foreground size',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture(
         coverArtworkCacheService: _ResolvedCoverCache(),
@@ -524,7 +525,29 @@ void main() {
         same(entryContentState),
       );
 
-      expect(find.byType(ImageFiltered), findsNothing);
+      final imageFilteredFinder = find.byType(ImageFiltered);
+      expect(imageFilteredFinder, findsOneWidget);
+      final filtered = tester.widget<ImageFiltered>(imageFilteredFinder);
+      final isDark =
+          Theme.of(tester.element(imageFilteredFinder)).brightness ==
+          Brightness.dark;
+      final expectedSigma = isDark ? 30.0 : 18.0;
+      expect(
+        filtered.imageFilter,
+        ui.ImageFilter.blur(
+          sigmaX: expectedSigma,
+          sigmaY: expectedSigma,
+          tileMode: ui.TileMode.clamp,
+        ),
+      );
+      final backgroundCover = tester.widget<AsyncLocalCoverImage>(
+        find.descendant(
+          of: imageFilteredFinder,
+          matching: find.byType(AsyncLocalCoverImage),
+        ),
+      );
+      expect(backgroundCover.fit, BoxFit.cover);
+      expect(backgroundCover.cacheWidth, 200);
       expect(find.byType(BackdropFilter), findsNothing);
       final backdropGate = find.byKey(
         const ValueKey<String>('session_detail_backdrop_paint_gate'),
@@ -609,5 +632,70 @@ void main() {
       TargetPlatform.android,
       TargetPlatform.windows,
     }),
+  );
+
+
+  testWidgets(
+    'detail blurred background reduces blur sigma in light mode and uses higher sigma in dark mode',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _ResolvedCoverCache(),
+      );
+      addTearDown(fixture.dispose);
+      final track = MusicTrack(
+        path: '/library/detail_blur.mp3',
+        displayName: 'Detail Blur',
+        groupKey: '__single_files__',
+        groupTitle: 'Imported files',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+      fixture.runtimeGraph.library.addTracks(<MusicTrack>[track], persist: false);
+      final session = fixture.runtimeGraph.playback.createTrackSession(track);
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      final themeProvider = ThemeProvider()..setThemeMode(ThemeMode.light);
+      addTearDown(themeProvider.dispose);
+      await tester.pumpWidget(
+        fixture.build(const PlaylistTab(), themeProvider: themeProvider),
+      );
+      unawaited(
+        Navigator.of(
+          tester.element(find.byType(PlaylistTab)),
+        ).push(buildSessionDetailRoute(sessionId: session.id)),
+      );
+      await tester.pumpAndSettle();
+      final lightFiltered = tester.widget<ImageFiltered>(find.byType(ImageFiltered));
+      expect(
+        lightFiltered.imageFilter,
+        ui.ImageFilter.blur(
+          sigmaX: 18.0,
+          sigmaY: 18.0,
+          tileMode: ui.TileMode.clamp,
+        ),
+      );
+
+      // Dark mode verification:
+      await themeProvider.setThemeMode(ThemeMode.dark);
+      await tester.pumpAndSettle();
+      final darkFiltered = tester.widget<ImageFiltered>(find.byType(ImageFiltered));
+      expect(
+        darkFiltered.imageFilter,
+        ui.ImageFilter.blur(
+          sigmaX: 30.0,
+          sigmaY: 30.0,
+          tileMode: ui.TileMode.clamp,
+        ),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
   );
 }

@@ -761,6 +761,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               )
             : SessionListCard(
                 sessionId: session.id,
+                session: session,
                 track: track,
                 coverPath: coverPath,
                 coverGeneration: structureState.coverGeneration,

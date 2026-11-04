@@ -14,6 +14,7 @@ import 'package:doujin_audio/features/player/application/playback_subtitle_servi
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/playback_position_ui_gate.dart';
+import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -150,6 +151,7 @@ void main() {
                               required isPlaybackExpanded,
                               required appearance,
                               required expansion,
+                              required rowProgress,
                               required availableWidth,
                               required onCurrentTap,
                             }) => const SizedBox.expand(),
@@ -162,10 +164,8 @@ void main() {
         Finder paragraph(String text) => find.byWidgetPredicate(
           (widget) => widget is RichText && widget.text.toPlainText() == text,
         );
-        final progress = find.byWidgetPredicate(
-          (widget) =>
-              widget is ClipRRect &&
-              widget.borderRadius == BorderRadius.circular(2.5),
+        final overflowBox = find.byKey(
+          const ValueKey('active_session_title_overflow_box'),
         );
         void expectSettledTextWidth() {
           final subtitle = tester.renderObject<RenderParagraph>(
@@ -173,7 +173,7 @@ void main() {
           );
           expect(
             subtitle.constraints.maxWidth,
-            closeTo(tester.getSize(progress.first).width, 0.001),
+            closeTo(tester.getSize(overflowBox.first).width, 0.001),
           );
           if (desktop) {
             expect(
@@ -222,7 +222,7 @@ void main() {
                   if (text == firstCue) expect(render.maxLines, 1);
                 }
               }
-              progressWidths.add(tester.getSize(progress.first).width);
+              progressWidths.add(tester.getSize(overflowBox.first).width);
             }
             expect(tester.takeException(), isNull);
           }
@@ -311,6 +311,7 @@ void main() {
                     required isPlaybackExpanded,
                     required appearance,
                     required expansion,
+                    required rowProgress,
                     required availableWidth,
                     required onCurrentTap,
                   }) => const SizedBox.expand(),
@@ -320,22 +321,16 @@ void main() {
       );
       await tester.pumpWidget(shell());
       await tester.pumpAndSettle();
-      final progress = find.byWidgetPredicate(
-        (widget) =>
-            widget is ClipRRect &&
-            widget.borderRadius == BorderRadius.circular(2.5),
-      );
-      DecoratedBox progressBackground() => tester.widget<DecoratedBox>(
-        find
-            .descendant(of: progress, matching: find.byType(DecoratedBox))
-            .first,
-      );
+      final progressRing = find.byType(SessionCoverProgressRing);
+      expect(progressRing, findsOneWidget);
+      SessionCoverProgressRing currentRing() =>
+          tester.widget<SessionCoverProgressRing>(progressRing);
       var progressRebuilds = 0;
       Future<void> sampleFrames() async {
-        var previous = progressBackground();
+        var previous = currentRing();
         for (var frame = 0; frame < 7; frame++) {
           await tester.pump(const Duration(milliseconds: 16));
-          final next = progressBackground();
+          final next = currentRing();
           if (!identical(next, previous)) progressRebuilds++;
           previous = next;
         }
@@ -352,26 +347,16 @@ void main() {
       expect(progressRebuilds, 0);
       await tester.pump(interaction.idleDelay);
       await tester.pumpAndSettle();
-      for (final (position, fraction) in [
-        (Duration.zero, 0.0),
-        (const Duration(minutes: 2), 0.5),
-        (const Duration(minutes: 4), 1.0),
-        (const Duration(minutes: 5), 1.0),
+      for (final position in [
+        Duration.zero,
+        const Duration(minutes: 2),
+        const Duration(minutes: 4),
+        const Duration(minutes: 5),
       ]) {
         session.setOptimisticPosition(position);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        final fill = find.descendant(
-          of: find.descendant(
-            of: progress,
-            matching: find.byType(FractionallySizedBox),
-          ),
-          matching: find.byType(DecoratedBox),
-        );
-        expect(
-          tester.getSize(fill).width,
-          closeTo(tester.getSize(progress).width * fraction, 0.01),
-        );
+        expect(progressRing, findsOneWidget);
       }
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
@@ -469,6 +454,14 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(tester.widget<Semantics>(indicator).properties.label, '1 / 3');
+
+        await tester.pumpWidget(carousel([sessions[1]]));
+        await tester.pumpAndSettle();
+        expect(indicator, findsNothing);
+
+        await tester.pumpWidget(carousel([sessions[1], sessions[0]]));
+        await tester.pumpAndSettle();
+        expect(tester.widget<Semantics>(indicator).properties.label, '1 / 2');
         await tester.pumpWidget(const SizedBox.shrink());
         debugDefaultTargetPlatformOverride = null;
         expect(tester.takeException(), isNull);
@@ -549,6 +542,7 @@ void main() {
                         required isPlaybackExpanded,
                         required appearance,
                         required expansion,
+                        required rowProgress,
                         required availableWidth,
                         required onCurrentTap,
                       }) => const SizedBox.expand(),
@@ -721,6 +715,7 @@ void main() {
                       required isPlaybackExpanded,
                       required appearance,
                       required expansion,
+                      required rowProgress,
                       required availableWidth,
                       required onCurrentTap,
                     }) => LayoutBuilder(
@@ -743,7 +738,7 @@ void main() {
         await tester.pumpWidget(shell());
         final initialRect = tester.getRect(playback);
         final dockRect = tester.getRect(find.byType(MobileDockCapsuleContent));
-        expect(initialRect.left, closeTo(dockRect.right, 0.001));
+        expect(initialRect.right, closeTo(dockRect.left, 0.001));
 
         // The card's first layout and paint may miss several display frames.
         // Its initial offscreen preparation must not spend entrance duration.
@@ -755,13 +750,13 @@ void main() {
           expect(navigationLayouts, preparedNavigationLayouts);
         }
         final movingRect = tester.getRect(playback);
-        expect(movingRect.left, lessThan(initialRect.left));
+        expect(movingRect.left, greaterThan(initialRect.left));
         expect(
           movingRect.left,
-          greaterThan(initialRect.left - kActiveSessionCarouselDockHeight),
+          lessThan(initialRect.left + kActiveSessionCarouselDockHeight),
         );
         await tester.pump(const Duration(milliseconds: 280));
-        expect(tester.getRect(playback).right, closeTo(dockRect.right, 0.001));
+        expect(tester.getRect(playback).left, closeTo(dockRect.left, 0.001));
         await tester.pumpWidget(const SizedBox.shrink());
         expect(interaction.isVisualUpdateDeferred, isFalse);
         debugDefaultTargetPlatformOverride = null;

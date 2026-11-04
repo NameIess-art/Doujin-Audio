@@ -17,6 +17,7 @@ import '../../../../core/widgets/app_feedback.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_time_segment_service.dart';
+import '../../application/session_switcher_tree.dart';
 import '../../domain/time_segment_label.dart';
 import '../../../asmr/domain/asmr_models.dart';
 import '../../../asmr/presentation/asmr_work_detail_sheet.dart';
@@ -819,26 +820,40 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       final tracks = session.isPlaybackQueue
           ? session.playbackQueue!.expandedTracks
           : await _paths.tracksForSessionSwitcher(session.id);
-      if (!mounted || !context.mounted) return;
-      final current = _playback.sessionSnapshotById(session.id);
-      if (current == null ||
-          current.currentTrackPath != session.currentTrackPath ||
-          current.queueVersion != session.queueVersion ||
-          readAppRoute(context)?.isCurrent == false) {
-        return;
+      bool canOpenSwitcher() {
+        if (!mounted || !context.mounted || widget.session.id != session.id) {
+          return false;
+        }
+        final current = _playback.sessionSnapshotById(session.id);
+        return current != null &&
+            current.currentTrackPath == session.currentTrackPath &&
+            current.currentQueueIndex == session.currentQueueIndex &&
+            current.queueVersion == session.queueVersion &&
+            readAppRoute(context)?.isCurrent != false;
       }
-      if (tracks.isEmpty) return;
-      final workRoot = _paths.workRootForTrack(session.currentTrackPath);
+
+      if (tracks.isEmpty || !canOpenSwitcher()) return;
+      final tree = await prepareSessionSwitcherTree(
+        tracks: tracks,
+        queue: session.playbackQueue,
+        customQueueTracks: session.customQueueTracks,
+        currentPath: session.currentTrackPath,
+        currentQueueIndex: session.currentQueueIndex,
+        workRoot: session.isPlaybackQueue
+            ? null
+            : _paths.workRootForTrack(session.currentTrackPath),
+        resolveTrack: _paths.trackByPath,
+        workRootForTrack: _paths.workRootForTrack,
+      );
+      if (!context.mounted || !canOpenSwitcher()) return;
       var selectionStarted = false;
       await AppBottomSheet.show<void>(
         context: context,
         builder: (ctx) {
           return SessionTrackSwitcherSheet(
             session: session,
-            tracks: tracks,
-            workRoot: workRoot,
-            resolveTrack: _paths.trackByPath,
-            workRootForTrack: _paths.workRootForTrack,
+            trackCount: tracks.length,
+            tree: tree,
             onSelected: (selectedNode) {
               if (selectionStarted) return;
               selectionStarted = true;

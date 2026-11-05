@@ -5705,7 +5705,8 @@ void main() {
             .map((call) => call.arguments),
         ['SystemUiMode.immersiveSticky'],
       );
-      expect(tester.getRect(find.byType(SessionDetailContent)).top, 94);
+      // The immersive header ignores the shell's retained status-bar inset.
+      expect(tester.getRect(find.byType(SessionDetailContent)).top, 52);
       tester.view.physicalSize = const Size(1400, 800);
       tester.view.padding = const FakeViewPadding(top: 24);
       tester.view.viewPadding = const FakeViewPadding(top: 24);
@@ -5731,7 +5732,7 @@ void main() {
       tester.view.padding = const FakeViewPadding(top: 32);
       tester.view.viewPadding = const FakeViewPadding(top: 32);
       await tester.pumpAndSettle();
-      expect(tester.getRect(find.byType(SessionDetailContent)).top, 94);
+      expect(tester.getRect(find.byType(SessionDetailContent)).top, 52);
       expect(
         platformCalls
             .where((call) => call.method == 'SystemChrome.setEnabledSystemUIMode')

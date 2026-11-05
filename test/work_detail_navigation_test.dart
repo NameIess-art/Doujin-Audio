@@ -1403,20 +1403,33 @@ void main() {
         } else {
           expect(dividerEnds, everyElement(cornerBackground));
         }
-        // A fractional vertical origin blends the top stroke into two rows.
+        final horizontalEdges = cornerColors
+            .skip(corners.length)
+            .take(edges.length)
+            .toList();
+        for (var index = 0; index < horizontalEdges.length; index++) {
+          // Windows joins the title bar without a top stroke. Android keeps
+          // both strokes, blended across rows at a fractional vertical origin.
+          if (isWindows && index.isEven) {
+            expect(horizontalEdges[index], scheme.surface);
+          } else {
+            expect(
+              (cornerBackground.r - horizontalEdges[index].r) /
+                  (cornerBackground.r - scheme.outlineVariant.r),
+              greaterThan(0.65),
+            );
+          }
+        }
+        final outerEdgeColors = cornerColors
+            .skip(corners.length + edges.length)
+            .take(outerEdges.length)
+            .toList();
+        // The Windows navigation side also joins without an outline.
         expect(
-          cornerColors.skip(corners.length).take(edges.length).map(
-            (color) => (cornerBackground.r - color.r) /
-                (cornerBackground.r - scheme.outlineVariant.r),
-          ),
-          everyElement(greaterThan(0.65)),
+          outerEdgeColors.first,
+          isWindows ? scheme.surface : scheme.outlineVariant,
         );
-        expect(
-          cornerColors
-              .skip(corners.length + edges.length)
-              .take(outerEdges.length),
-          everyElement(scheme.outlineVariant),
-        );
+        expect(outerEdgeColors.last, scheme.outlineVariant);
         final dividerColors = cornerColors
             .skip(corners.length + edges.length + outerEdges.length)
             .toList();

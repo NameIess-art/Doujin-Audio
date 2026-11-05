@@ -8,9 +8,11 @@ import 'package:doujin_audio/app/presentation/mobile_dock_capsule_content.dart';
 import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
+import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
+import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_view_models.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
@@ -80,6 +82,13 @@ void main() {
         await tester.runAsync(() => directory.delete(recursive: true));
       });
       final fixture = AppRuntimeWidgetTestFixture(
+        // These tests measure the dock tree, not the engine's asynchronous
+        // taskbar thumbnail decoder, which outlives fake-async test cleanup.
+        providedNotificationService: PlaybackNotificationService(
+          notificationsPlatformService: NotificationsPlatformService(
+            isWindowsOverride: false,
+          ),
+        ),
         configureSettingsRepository: (settings) {
           settings.showAsmrOne = false;
           settings.showLocalLibrary = false;

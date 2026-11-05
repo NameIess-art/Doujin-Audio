@@ -91,6 +91,11 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
   int _request = 0;
   bool _snap = true;
   late final _commitKey = 'detail_palette_${identityHashCode(this)}';
+  final _interaction = UiInteractionCoordinator.instance;
+  bool _tickerModeEnabled = true;
+  bool get _canResolve =>
+      _tickerModeEnabled && widget.transitionActive?.value != true;
+  bool get _canAnimate => _canResolve && !_interaction.isVisualUpdateDeferred;
 
   @override
   void initState() {
@@ -105,11 +110,13 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
       curve: Curves.easeInOut,
     );
     widget.transitionActive?.addListener(_handleTransition);
+    _interaction.addListener(_handleTransition);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
     final appearance = (
       Theme.of(context).brightness,
       MediaQuery.highContrastOf(context) ? 1.0 : 0.0,
@@ -119,6 +126,7 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
       _scheme = null;
       _updateRequest();
     }
+    _handleTransition();
   }
 
   @override
@@ -140,12 +148,12 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
   void _handleTransition() {
     // A full-page theme tick rebuilds its dependents and invalidates the moving
     // content's repaint boundary. Resume from this color after motion settles.
-    if (widget.transitionActive?.value == true) {
+    if (!_canAnimate) {
       _themeController.stop(canceled: false);
     } else if (!_themeController.isCompleted && !_themeController.isAnimating) {
       _themeController.forward();
     }
-    UiInteractionCoordinator.instance.scheduleCommitFrame();
+    _interaction.scheduleCommitFrame();
   }
 
   ThemeData _currentTheme() {
@@ -180,9 +188,9 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
     final future = widget.coverPathFuture;
     final revision = widget.coverRevision;
     final appearance = _appearance!;
-    UiInteractionCoordinator.instance.scheduleCommit(
+    _interaction.scheduleCommit(
       key: _commitKey,
-      canRun: () => widget.transitionActive?.value != true,
+      canRun: () => _canResolve,
       commit: () => unawaited(_resolve(request, future, revision, appearance)),
     );
   }
@@ -193,10 +201,31 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
     ({String scope, int epoch, int revision}) revision,
     (Brightness, double) appearance,
   ) async {
+    String? path;
+    try {
+      path = await future;
+    } on Exception {
+      // A failed lookup uses the same queue/application fallback as no artwork.
+    }
+    if (!mounted || request != _request) return;
+    // Discovery may finish after a new route starts moving or covers this page.
+    // Gate extraction separately from waiting for the artwork path.
+    _interaction.scheduleCommit(
+      key: _commitKey,
+      canRun: () => _canResolve,
+      commit: () => unawaited(_extract(request, path, revision, appearance)),
+    );
+  }
+
+  Future<void> _extract(
+    int request,
+    String? path,
+    ({String scope, int epoch, int revision}) revision,
+    (Brightness, double) appearance,
+  ) async {
+    if (!mounted || request != _request) return;
     ColorScheme? scheme;
     try {
-      final path = await future;
-      if (!mounted || request != _request) return;
       if (path != null && path.isNotEmpty) {
         scheme = await _loadCoverScheme((
           path: path,
@@ -210,9 +239,9 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
       scheme = null;
     }
     if (!mounted || request != _request) return;
-    UiInteractionCoordinator.instance.scheduleCommit(
+    _interaction.scheduleCommit(
       key: _commitKey,
-      canRun: () => widget.transitionActive?.value != true,
+      canRun: () => _canResolve,
       commit: () {
         if (!mounted || request != _request || scheme == _scheme) return;
         setState(() {
@@ -227,7 +256,8 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
   void dispose() {
     _request++;
     widget.transitionActive?.removeListener(_handleTransition);
-    UiInteractionCoordinator.instance.cancelCommit(_commitKey);
+    _interaction.removeListener(_handleTransition);
+    _interaction.cancelCommit(_commitKey);
     _themeProgress.dispose();
     _themeController.dispose();
     super.dispose();
@@ -254,7 +284,7 @@ class _SessionDetailThemeState extends State<SessionDetailTheme>
         _themeController.value = 1;
       } else {
         _themeController.value = 0;
-        if (widget.transitionActive?.value != true) _themeController.forward();
+        if (_canAnimate) _themeController.forward();
       }
     } else if (snap && !_themeController.isCompleted) {
       _themeController.value = 1;

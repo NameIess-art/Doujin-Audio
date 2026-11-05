@@ -1354,6 +1354,42 @@ void main() {
     expect(calls, 2);
   });
 
+  testWidgets('covered artwork holds empty-path retries until it is visible', (
+    tester,
+  ) async {
+    final visible = ValueNotifier(true);
+    addTearDown(visible.dispose);
+    var retries = 0;
+    final pending = SynchronousFuture<String?>(null);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValueListenableBuilder<bool>(
+          valueListenable: visible,
+          builder: (_, enabled, child) =>
+              TickerMode(enabled: enabled, child: child!),
+          child: AsyncCoverImage(
+            future: pending,
+            retryFutureBuilder: () async {
+              retries++;
+              return 'cover.png';
+            },
+            retryDelay: const Duration(milliseconds: 10),
+            imageBuilder: (_, path) => Text('loaded:$path'),
+            fallbackBuilder: (_) => const Text('fallback'),
+          ),
+        ),
+      ),
+    );
+    visible.value = false;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(retries, 0);
+    visible.value = true;
+    await tester.pumpAndSettle();
+    expect(retries, 1);
+    expect(find.text('loaded:cover.png'), findsOneWidget);
+  });
+
   testWidgets('AsyncCoverImage keeps image for a refreshed matching request', (
     tester,
   ) async {
@@ -1934,6 +1970,45 @@ void main() {
     await tester.pump(const Duration(milliseconds: 10));
     await tester.pump();
 
+    expect(provider.loadCount, 2);
+  });
+
+  testWidgets('covered artwork holds image-error retries until return', (
+    tester,
+  ) async {
+    final provider = _ControlledImageProvider();
+    addTearDown(provider.evict);
+    final visible = ValueNotifier(true);
+    addTearDown(visible.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValueListenableBuilder<bool>(
+          valueListenable: visible,
+          builder: (_, enabled, child) =>
+              TickerMode(enabled: enabled, child: child!),
+          child: SizedBox(
+            width: 120,
+            height: 90,
+            child: RetryingImage(
+              retryKey: 'hidden-broken-cover',
+              imageProviderBuilder: () => provider,
+              retryDelay: const Duration(milliseconds: 10),
+              maxRetryAttempts: 1,
+              fallbackBuilder: (_) => const Text('fallback'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    provider._imageInfo.completeError(StateError('broken cover'));
+    await tester.pump();
+    visible.value = false;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(provider.loadCount, 1);
+    visible.value = true;
+    await tester.pumpAndSettle();
     expect(provider.loadCount, 2);
   });
 

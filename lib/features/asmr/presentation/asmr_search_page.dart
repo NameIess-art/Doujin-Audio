@@ -37,6 +37,10 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   bool _wasCurrent = true;
   late final String _refreshCommitKey =
       'asmr_search_refresh_${identityHashCode(this)}';
+  late final String _suggestionsLoadKey =
+      'asmr_search_suggestions_load_${identityHashCode(this)}';
+  late final String _suggestionsCommitKey =
+      'asmr_search_suggestions_${identityHashCode(this)}';
   late final AppLanguageProvider _languageProvider;
   AsmrLibraryController? _searchController;
 
@@ -64,7 +68,11 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
     _languageProvider.addListener(_handleLanguageChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(_searchController?.ensureSearchSuggestions());
+      UiInteractionCoordinator.instance.scheduleCommit(
+        key: _suggestionsLoadKey,
+        canRun: () => mounted && _route?.isCurrent != false && _query.isEmpty,
+        commit: () => unawaited(_searchController?.ensureSearchSuggestions()),
+      );
       if (widget.initialQuery.isNotEmpty) {
         unawaited(_onSubmitted(legacySearchElements(widget.initialQuery)));
       }
@@ -78,9 +86,20 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
 
   void _handleSuggestionsChanged() {
     // Catalog, playback, and account notifications do not affect these chips.
-    _suggestions.value = (
+    final next = (
       _searchController?.searchSuggestions,
       _searchController?.searchSuggestionsError,
+    );
+    if (next == _suggestions.value) return;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _suggestionsCommitKey,
+      structural: true,
+      canRun: () => mounted && _route?.isCurrent != false && _query.isEmpty,
+      // Coalesce cache restoration and network responses into the latest value.
+      commit: () => _suggestions.value = (
+        _searchController?.searchSuggestions,
+        _searchController?.searchSuggestionsError,
+      ),
     );
   }
 
@@ -501,6 +520,8 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
+    UiInteractionCoordinator.instance.cancelCommit(_suggestionsLoadKey);
+    UiInteractionCoordinator.instance.cancelCommit(_suggestionsCommitKey);
     _activeCategoryIndex.dispose();
     _suggestionsScrollController.dispose();
     _searchController?.removeListener(_handleSuggestionsChanged);
@@ -630,6 +651,9 @@ class _AsmrSearchPageState extends ConsumerState<AsmrSearchPage> {
       builder: (context) {
         _route = ModalRoute.of(context);
         final isCurrent = _route?.isCurrent != false;
+        if (isCurrent && _query.isEmpty) {
+          UiInteractionCoordinator.instance.scheduleCommitFrame();
+        }
         final resumed = isCurrent && !_wasCurrent;
         _wasCurrent = isCurrent;
         if (isCurrent && (_refreshPending || (resumed && _query.isNotEmpty))) {

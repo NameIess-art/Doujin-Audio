@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -85,56 +87,65 @@ void main() {
   );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
-    testWidgets('cold search waits for route entrance before querying on $platform', (
-      tester,
-    ) async {
-      debugDefaultTargetPlatformOverride = platform;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      final interaction = UiInteractionCoordinator.instance;
-      interaction.resetForTest();
-      addTearDown(interaction.resetForTest);
-      final fixture = AppRuntimeWidgetTestFixture();
-      addTearDown(fixture.dispose);
-      final cache = _FixedCategorySnapshotCache(
-        libraryService: fixture.libraryService,
-        detailCacheService: fixture.library.detailCacheService,
-        snapshot: AudioLibraryCategorySnapshot(
-          entries: const [],
-          structureRevision: -1,
-          detailRevision: -1,
-        ),
-      );
-      final library = LibraryFacade.create(
-        databaseRepository: fixture.persistenceRepository,
-        service: fixture.libraryService,
-        detailCacheService: fixture.library.detailCacheService,
-        snapshotCacheService: cache,
-        coverArtworkCacheService: fixture.library.coverArtworkCacheService,
-      );
-      final observer = UiInteractionNavigatorObserver();
-      addTearDown(observer.dispose);
-      await tester.pumpWidget(fixture.build(
-        const Text('Search home'),
-        navigatorObservers: [observer],
-        overrides: [libraryFacadeProvider.overrideWithValue(library)],
-      ));
-      await tester.pumpAndSettle();
-      final context = tester.element(find.text('Search home'));
-      Navigator.of(context).push(buildAppPageRoute<void>(
-        context: context,
-        child: const LibrarySearchPage(),
-        separateHeader: true,
-      ));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 150));
-      expect(interaction.isVisualUpdateDeferred, isTrue);
-      expect(cache.requests, 0);
-      await tester.pumpAndSettle();
-      expect(cache.requests, 1);
-      expect(find.byKey(const ValueKey('library_search_suggestions')), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pumpAndSettle();
-    });
+    testWidgets(
+      'cold search waits for route entrance before querying on $platform',
+      (tester) async {
+        final interaction = UiInteractionCoordinator.instance;
+        interaction.resetForTest();
+        addTearDown(interaction.resetForTest);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final cache = _FixedCategorySnapshotCache(
+          libraryService: fixture.libraryService,
+          detailCacheService: fixture.library.detailCacheService,
+          snapshot: AudioLibraryCategorySnapshot(
+            entries: const [],
+            structureRevision: -1,
+            detailRevision: -1,
+          ),
+        );
+        final library = LibraryFacade.create(
+          databaseRepository: fixture.persistenceRepository,
+          service: fixture.libraryService,
+          detailCacheService: fixture.library.detailCacheService,
+          snapshotCacheService: cache,
+          coverArtworkCacheService: fixture.library.coverArtworkCacheService,
+        );
+        final observer = UiInteractionNavigatorObserver();
+        addTearDown(observer.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const Text('Search home'),
+            navigatorObservers: [observer],
+            overrides: [libraryFacadeProvider.overrideWithValue(library)],
+          ),
+        );
+        await tester.pumpAndSettle();
+        final context = tester.element(find.text('Search home'));
+        unawaited(
+          Navigator.of(context).push(
+            buildAppPageRoute<void>(
+              context: context,
+              child: const LibrarySearchPage(),
+              separateHeader: true,
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(interaction.isVisualUpdateDeferred, isTrue);
+        expect(cache.requests, 0);
+        await tester.pumpAndSettle();
+        expect(cache.requests, 1);
+        expect(
+          find.byKey(const ValueKey('library_search_suggestions')),
+          findsOneWidget,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
 
     testWidgets(
       'local search suggests terms and waits for confirmation on $platform',

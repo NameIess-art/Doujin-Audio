@@ -259,6 +259,8 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
   int _token = 0;
   int _retryAttempt = 0;
   Timer? _retryTimer;
+  ValueListenable<TickerModeData>? _tickerMode;
+  bool get _isVisible => _tickerMode?.value.enabled ?? true;
 
   String get _commitKey => 'async_cover_${identityHashCode(this)}';
   String get _retryCommitKey => '${_commitKey}_retry';
@@ -273,6 +275,21 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       hasInitial = true;
     }
     _bindFuture(widget.future, keepState: hasInitial);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final tickerMode = TickerMode.getValuesNotifier(context);
+    if (!identical(tickerMode, _tickerMode)) {
+      _tickerMode?.removeListener(_handleVisibilityChanged);
+      _tickerMode = tickerMode..addListener(_handleVisibilityChanged);
+    }
+    _handleVisibilityChanged();
+  }
+
+  void _handleVisibilityChanged() {
+    if (_isVisible) UiInteractionCoordinator.instance.scheduleCommitFrame();
   }
 
   @override
@@ -304,6 +321,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
   @override
   void dispose() {
     _retryTimer?.cancel();
+    _tickerMode?.removeListener(_handleVisibilityChanged);
     UiInteractionCoordinator.instance.cancelCommit(_commitKey);
     UiInteractionCoordinator.instance.cancelCommit(_retryCommitKey);
     super.dispose();
@@ -363,6 +381,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
             UiInteractionCoordinator.instance.scheduleCommit(
               key: _commitKey,
               priority: 20,
+              canRun: () => _isVisible,
               allowDuringScroll: true,
               structural:
                   path != null && path.isNotEmpty && _resolvedPath != path,
@@ -375,6 +394,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
           UiInteractionCoordinator.instance.scheduleCommit(
             key: _commitKey,
             priority: 20,
+            canRun: () => _isVisible,
             allowDuringScroll: true,
             commit: () {
               if (!mounted || token != _token) return;
@@ -419,6 +439,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
         key: _retryCommitKey,
         priority: 20,
         allowDuringScroll: true,
+        canRun: () => _isVisible,
         commit: retry,
       );
     });
@@ -887,13 +908,11 @@ class _RetryingImageState extends State<RetryingImage> {
       _fastScrolling = fastScrolling;
       _fastScrolling?.addListener(_scheduleLoadWhenAllowed);
     }
-    final tickerMode = widget.browseThumbnail
-        ? TickerMode.getValuesNotifier(context)
-        : null;
+    final tickerMode = TickerMode.getValuesNotifier(context);
     if (!identical(tickerMode, _tickerMode)) {
-      _tickerMode?.removeListener(_scheduleLoadWhenAllowed);
+      _tickerMode?.removeListener(_handleTickerModeChanged);
       _tickerMode = tickerMode;
-      _tickerMode?.addListener(_scheduleLoadWhenAllowed);
+      _tickerMode?.addListener(_handleTickerModeChanged);
     }
     final position = widget.browseThumbnail
         ? Scrollable.maybeOf(context)?.position
@@ -933,9 +952,16 @@ class _RetryingImageState extends State<RetryingImage> {
     _interaction.cancelCommit(_retryCommitKey);
     _interaction.cancelCommit(_loadCommitKey);
     _fastScrolling?.removeListener(_scheduleLoadWhenAllowed);
-    _tickerMode?.removeListener(_scheduleLoadWhenAllowed);
+    _tickerMode?.removeListener(_handleTickerModeChanged);
     _scrollPosition?.removeListener(_scheduleLoadWhenAllowed);
     super.dispose();
+  }
+
+  void _handleTickerModeChanged() {
+    if (_tickerMode?.value.enabled == true) {
+      _interaction.scheduleCommitFrame();
+    }
+    _scheduleLoadWhenAllowed();
   }
 
   void _scheduleLoadWhenAllowed() {
@@ -1097,6 +1123,7 @@ class _RetryingImageState extends State<RetryingImage> {
         key: _retryCommitKey,
         priority: 20,
         allowDuringScroll: true,
+        canRun: () => _tickerMode?.value.enabled ?? true,
         commit: retry,
       );
     });

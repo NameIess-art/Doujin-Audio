@@ -520,23 +520,13 @@ void main() {
                 : 'session_detail_close_button',
           ),
         );
-        final stroke = tester.widget<RichText>(
-          find.descendant(
-            of: overlay,
-            matching: find.byWidgetPredicate(
-              (widget) => widget is RichText &&
-                  widget.text.style?.foreground?.style == ui.PaintingStyle.stroke,
-            ),
-          ),
-        ).text.style!.foreground!.color;
-        expect(
-          stroke.toARGB32(),
-          anyOf(
-            expected.primaryContainer.toARGB32(),
-            expected.onPrimaryContainer.toARGB32(),
-          ),
+        final overlayButton = tester.widget<IconButton>(
+          find.descendant(of: overlay, matching: find.byType(IconButton)),
         );
-        expect(stroke, isNot(anyOf(Colors.black, Colors.white)));
+        expect(
+          overlayButton.style!.foregroundColor!.resolve({WidgetState.hovered}),
+          expected.primary,
+        );
         final slider = kind == 'fullscreen'
             ? find.byKey(const ValueKey('fullscreen_video_progress'))
             : find.descendant(
@@ -784,6 +774,11 @@ void main() {
     'detail renders blurred cover background and preserves original foreground size',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture(
+        providedNotificationService: PlaybackNotificationService(
+          notificationsPlatformService: NotificationsPlatformService(
+            isWindowsOverride: false,
+          ),
+        ),
         coverArtworkCacheService: _ResolvedCoverCache(),
         configureSettingsRepository: (settings) {
           settings.coverImageResolution = CoverImageResolution.original;

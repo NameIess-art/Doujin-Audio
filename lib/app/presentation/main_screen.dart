@@ -319,9 +319,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
       fireImmediately: true,
     );
     AppPreferences.getBool('desktop_menu_collapsed').then((collapsed) {
-      if (mounted) {
+      final next = collapsed ?? false;
+      if (mounted && next != _isMenuCollapsed) {
         setState(() {
-          _isMenuCollapsed = collapsed ?? false;
+          _isMenuCollapsed = next;
         });
       }
     });
@@ -330,9 +331,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
       AppPreferences.getBool(_mobilePlaybackRaisedKey),
     ]).then((values) {
       if (!mounted) return;
+      final expanded = _mobilePlaybackExpanded ?? values[0] ?? false;
+      final raised = _mobilePlaybackRaised ?? values[1] ?? false;
+      if (expanded == _isMobilePlaybackExpanded &&
+          raised == _isMobilePlaybackRaised) {
+        return;
+      }
       setState(() {
-        _mobilePlaybackExpanded ??= values[0];
-        _mobilePlaybackRaised ??= values[1];
+        _mobilePlaybackExpanded = expanded;
+        _mobilePlaybackRaised = raised;
       });
     });
     WidgetsBinding.instance.addObserver(this);

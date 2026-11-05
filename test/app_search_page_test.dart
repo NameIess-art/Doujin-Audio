@@ -1259,6 +1259,8 @@ void main() {
       expect(results, findsOneWidget);
       expect(suggestions, findsNothing);
       expect(confirm, findsNothing);
+      await tester.pump(interaction.idleDelay);
+      await tester.pumpAndSettle();
       expect(commits, 1);
       expect(interaction.isVisualUpdateDeferred, isFalse);
 
@@ -1284,6 +1286,8 @@ void main() {
       expect(suggestions, findsOneWidget);
       expect(results, findsNothing);
       expect(confirm, findsOneWidget);
+      await tester.pump(interaction.idleDelay);
+      await tester.pumpAndSettle();
       expect(interaction.isVisualUpdateDeferred, isFalse);
 
       showResults.value = true;

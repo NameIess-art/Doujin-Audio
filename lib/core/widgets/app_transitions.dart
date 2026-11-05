@@ -562,7 +562,7 @@ class AppPageContentTransition extends StatelessWidget {
         .dependOnInheritedWidgetOfExactType<_AppPageMotionScope>();
     final body = _builder == null
         ? child
-        : _DeferredPageContent(
+        : AppDeferredContent(
             builder: _builder,
             placeholder: _placeholder!,
             isReady: isReady,
@@ -576,12 +576,14 @@ class AppPageContentTransition extends StatelessWidget {
   }
 }
 
-class _DeferredPageContent extends StatefulWidget {
-  const _DeferredPageContent({
+/// Defers the first content mount without applying another page transition.
+class AppDeferredContent extends StatefulWidget {
+  const AppDeferredContent({
+    super.key,
     required this.builder,
     required this.placeholder,
-    required this.isReady,
-    required this.prepared,
+    this.isReady = true,
+    this.prepared = false,
   });
 
   final WidgetBuilder builder;
@@ -590,10 +592,10 @@ class _DeferredPageContent extends StatefulWidget {
   final bool prepared;
 
   @override
-  State<_DeferredPageContent> createState() => _DeferredPageContentState();
+  State<AppDeferredContent> createState() => _AppDeferredContentState();
 }
 
-class _DeferredPageContentState extends State<_DeferredPageContent> {
+class _AppDeferredContentState extends State<AppDeferredContent> {
   final _coordinator = UiInteractionCoordinator.instance;
   late final _commitKey = 'page_content_${identityHashCode(this)}';
   late Builder _content;
@@ -641,7 +643,7 @@ class _DeferredPageContentState extends State<_DeferredPageContent> {
   void _handleRouteStatus(AnimationStatus _) => _scheduleContent();
 
   @override
-  void didUpdateWidget(_DeferredPageContent oldWidget) {
+  void didUpdateWidget(AppDeferredContent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.builder != widget.builder) {
       _content = Builder(builder: widget.builder);

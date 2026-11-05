@@ -311,6 +311,47 @@ void main() {
     expect(_theme(tester).colorScheme.primary, isNot(fallback));
   });
 
+  testWidgets(
+    'late cover waits before extraction when another transition starts',
+    (tester) async {
+      final file = await _cover(tester, Colors.teal);
+      final path = Completer<String?>();
+      final transition = ValueNotifier(false);
+      addTearDown(transition.dispose);
+      await tester.pumpWidget(
+        _subject(path: path.future, transition: transition),
+      );
+      await tester.pumpAndSettle();
+      transition.value = true;
+      path.complete(file.path);
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 150)),
+      );
+      final provider = ResizeImage(
+        FileImage(file),
+        width: 112,
+        height: 112,
+        policy: ResizeImagePolicy.fit,
+      );
+      final key = await provider.obtainKey(ImageConfiguration.empty);
+      final extractedDuringTransition = PaintingBinding.instance.imageCache
+          .statusForKey(key)
+          .tracked;
+      transition.value = false;
+      final fallback = _base(Brightness.light).colorScheme.primary;
+      await _waitForTarget(
+        tester,
+        (theme) => theme.colorScheme.primary != fallback,
+      );
+      expect(
+        extractedDuringTransition,
+        isFalse,
+        reason: 'Palette extraction must wait too, not only the theme update.',
+      );
+    },
+  );
+
   testWidgets('rebuilding a settled palette does not restart the theme fade', (
     tester,
   ) async {
@@ -332,6 +373,27 @@ void main() {
     await tester.pump(const Duration(milliseconds: 16));
     expect(_appliedTheme(tester), same(rebuilt));
     expect(_theme(tester).colorScheme, settled.colorScheme);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('navigation elsewhere pauses a running palette fade', (
+    tester,
+  ) async {
+    final file = await _cover(tester, Colors.orange);
+    await tester.pumpWidget(_subject(path: Future.value(file.path)));
+    await _waitForFade(tester);
+    await tester.pump(const Duration(milliseconds: 100));
+    final paused = _appliedTheme(tester);
+    final interaction = UiInteractionCoordinator.instance;
+    final source = Object();
+    interaction.beginNavigation(source);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_appliedTheme(tester), same(paused));
+    interaction.endNavigation(source);
+    await tester.pump(interaction.idleDelay);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(_appliedTheme(tester), isNot(same(paused)));
     await tester.pumpAndSettle();
   });
 

@@ -109,34 +109,30 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _retainedResultsBody = widget.resultsBody;
-    _resultsController =
-        AnimationController(
-            vsync: this,
-            duration: kAppFadeDuration,
-            reverseDuration: kAppFadeDuration,
-            value: widget.resultsBody == null ? 0.0 : 1.0,
-          )
-          ..addListener(_handleResultsAnimationTick)
-          ..addStatusListener(_handleResultsAnimationStatus);
+    _resultsController = AnimationController(
+      vsync: this,
+      duration: kAppFadeDuration,
+      reverseDuration: kAppFadeDuration,
+      value: widget.resultsBody == null ? 0.0 : 1.0,
+    )..addStatusListener(_handleResultsAnimationStatus);
     _resultsOpacity = _resultsController.drive(
       CurveTween(curve: kAppFadeCurve),
     );
     _suggestionsOpacity = ReverseAnimation(_resultsOpacity);
   }
 
-  void _handleResultsAnimationTick() {
-    if (!mounted) return;
-    if (widget.resultsBody != null && _resultsController.value == 1.0) {
-      setState(() {});
-    } else if (widget.resultsBody == null &&
-        _resultsController.value == 0.0 &&
-        _retainedResultsBody != null) {
-      setState(() => _retainedResultsBody = null);
-    }
-  }
-
   void _handleResultsAnimationStatus(AnimationStatus status) {
     if (!mounted) return;
+    if (status == AnimationStatus.forward ||
+        status == AnimationStatus.reverse) {
+      // Result snapshots and cold covers must not interrupt the crossfade.
+      _interaction.beginInteraction(
+        _resultsController,
+        deferVisualUpdates: true,
+      );
+      return;
+    }
+    _interaction.endInteraction(_resultsController);
     if (status == AnimationStatus.dismissed &&
         widget.resultsBody == null &&
         _retainedResultsBody != null) {
@@ -202,6 +198,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
     if (!TickerMode.valuesOf(context).enabled ||
         ModalRoute.isCurrentOf(context) == false) {
       _interaction.cancelInteraction(this);
+      _interaction.cancelInteraction(_resultsController);
     }
     if (!widget.requestInitialFocus ||
         _requestedInitialFocus ||
@@ -237,6 +234,7 @@ class _AppSearchPageScaffoldState<T> extends State<AppSearchPageScaffold<T>>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _interaction.cancelInteraction(this);
+    _interaction.cancelInteraction(_resultsController);
     _resultsController.dispose();
     super.dispose();
   }

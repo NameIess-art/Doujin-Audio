@@ -95,6 +95,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   final GlobalKey _pageStackKey = GlobalKey();
   final GlobalKey _loadingSkeletonKey = GlobalKey();
   ModalRoute<dynamic>? _route;
+  bool get _isPageCurrent => mounted && (_route?.isCurrent ?? true);
   late final AnimationController _directoryFade;
   late final CurvedAnimation _directoryOpacity;
   bool? _directoryWasLoading;
@@ -208,6 +209,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _filesCommitKey,
       allowDuringScroll: true,
+      canRun: () => _isPageCurrent,
       commit: () {
         if (!mounted) return;
         unawaited(_prepareDirectory());
@@ -250,6 +252,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       UiInteractionCoordinator.instance.scheduleCommit(
         key: _filesCommitKey,
         allowDuringScroll: true,
+        canRun: () => _isPageCurrent,
         commit: () {
           if (mounted && request == _localLoadRequest) {
             unawaited(_loadLocalFiles(request, folderPath));
@@ -337,6 +340,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _dataCommitKey,
       structural: true,
+      canRun: () => _isPageCurrent,
       commit: () {
         if (!mounted) return;
         final updates = _pendingDataUpdates
@@ -393,6 +397,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _directoryCommitKey,
       structural: true,
+      canRun: () => _isPageCurrent,
       commit: () {
         if (!mounted || request != _directoryRequest) return;
         if (_directoryWasLoading == false &&
@@ -520,10 +525,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     try {
       await controller.initializeForVisiblePage();
       if (!mounted || _route?.isActive == false) return;
-      if (UiInteractionCoordinator.instance.isInteracting ||
+      if (!_isPageCurrent ||
+          UiInteractionCoordinator.instance.isInteracting ||
           UiInteractionCoordinator.instance.isVisualUpdateDeferred) {
         UiInteractionCoordinator.instance.scheduleCommit(
           key: _filesCommitKey,
+          canRun: () => _isPageCurrent,
           commit: () {
             if (mounted && _route?.isActive != false) {
               unawaited(_loadAsmrData());
@@ -1146,6 +1153,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       builder: (routeContext) {
         // Retained entry animations pause through TickerMode while covered.
         _route = ModalRoute.of(routeContext);
+        if (_isPageCurrent) {
+          UiInteractionCoordinator.instance.scheduleCommitFrame();
+        }
         return page;
       },
     );
@@ -1358,12 +1368,17 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           _coverFuture = Future.value(resolved);
         }
         Future<String?> retryCover() async {
+          // The initial discovery still owns this lookup, including results
+          // waiting behind navigation. Do not start a second discovery.
+          if (_loadingLocal) return _localManualCover;
           final request = _localLoadRequest;
           final path = await ref
               .read(libraryCoverUiControllerProvider)
               .deferredFolderCover(_localTarget!.targetPath, context: context);
-          if (mounted && request == _localLoadRequest) {
-            setState(() => _localManualCover = path);
+          if (mounted &&
+              request == _localLoadRequest &&
+              _localManualCover != path) {
+            _publishDataUpdate(() => _localManualCover = path, request: request);
           }
           return path;
         }

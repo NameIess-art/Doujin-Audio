@@ -11,6 +11,7 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_search_page.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/drag_only_scrollbar.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../settings/presentation/settings_providers.dart';
@@ -238,6 +239,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     ref.watch(libraryDetailRevisionProvider);
     final structureRevision = libraryFacade.structureRevision;
     final detailRevision = libraryFacade.detailCacheService.revision;
+    final cached = libraryFacade.categorySnapshot;
     final topInset = _isSelectionMode
         ? AppPageHeaderMetrics.contentTopInset(
             context,
@@ -264,7 +266,13 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       controlsOverlay: _isSelectionMode ? _buildSelectionHeader(i18n) : null,
       body: PageHeaderInset(
         topInset: topInset,
-        child: Builder(
+        child: AppDeferredContent(
+          // A cold snapshot loads metadata for the entire library. Keep that
+          // query out of entrance frames while retaining warm suggestions.
+          prepared:
+              cached?.structureRevision == structureRevision &&
+              cached?.detailRevision == detailRevision,
+          placeholder: const SizedBox.shrink(),
           builder: (_) => _buildSuggestions(
             libraryFacade,
             structureRevision,

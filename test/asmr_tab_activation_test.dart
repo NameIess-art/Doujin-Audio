@@ -112,6 +112,24 @@ class _ActivationController extends AsmrLibraryController {
   );
 }
 
+class _SearchSuggestionsController extends _ActivationController {
+  _SearchSuggestionsController(super.services);
+
+  int suggestionLoads = 0;
+  AsmrSearchSuggestions suggestions = AsmrSearchSuggestions(
+    voiceActors: const ['Initial voice'],
+    tags: const ['Initial tag'],
+  );
+
+  @override
+  AsmrSearchSuggestions get searchSuggestions => suggestions;
+
+  @override
+  Future<void> ensureSearchSuggestions({bool force = false}) async {
+    suggestionLoads++;
+  }
+}
+
 Future<void> _pumpFrames(WidgetTester tester) async {
   // Retry and category snapshots each fade before deferred work resumes at idle.
   final duration =
@@ -153,6 +171,79 @@ void main() {
     TargetPlatform.android,
     TargetPlatform.windows,
   });
+
+  testWidgets('search suggestion IO and publication wait for navigation', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    final controller = _SearchSuggestionsController(createTestAsmrServices());
+    final observer = UiInteractionNavigatorObserver();
+    addTearDown(fixture.dispose);
+    addTearDown(controller.dispose);
+    addTearDown(observer.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        const Text('Search home'),
+        navigatorObservers: [observer],
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    final context = tester.element(find.text('Search home'));
+    unawaited(
+      Navigator.of(context).push(
+        buildAppPageRoute<void>(
+          context: context,
+          child: const AsmrSearchPage(),
+          separateHeader: true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(controller.suggestionLoads, 0);
+    await tester.pumpAndSettle();
+    expect(controller.suggestionLoads, 1);
+    expect(find.text('Initial tag'), findsOneWidget);
+
+    final interaction = UiInteractionCoordinator.instance;
+    final source = Object();
+    interaction.beginNavigation(source);
+    for (var i = 0; i < 5; i++) {
+      controller.suggestions = AsmrSearchSuggestions(
+        voiceActors: ['New voice $i'],
+        tags: ['New tag $i'],
+      );
+      controller.notifyListeners();
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(find.text('Initial tag'), findsOneWidget);
+      expect(find.text('New tag $i'), findsNothing);
+    }
+    interaction.endNavigation(source);
+    await tester.pump(interaction.idleDelay);
+    await tester.pumpAndSettle();
+    expect(find.text('New tag 4'), findsOneWidget);
+    expect(controller.suggestionLoads, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+
+    // Leaving before idle must cancel the queued work, rather than load data
+    // for a search page that no longer exists.
+    interaction.beginNavigation(source);
+    await tester.pumpWidget(fixture.build(
+      const AsmrSearchPage(),
+      overrides: [asmrLibraryControllerProvider.overrideWithValue(controller)],
+    ));
+    await tester.pump();
+    expect(controller.suggestionLoads, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    interaction.endNavigation(source);
+    await tester.pump(interaction.idleDelay);
+    await tester.pumpAndSettle();
+    expect(controller.suggestionLoads, 1);
+  }, variant: platforms);
 
   for (final syncing in [false, true]) {
     testWidgets(

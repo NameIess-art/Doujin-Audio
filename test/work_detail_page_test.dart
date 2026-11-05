@@ -339,6 +339,73 @@ void main() {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
 
+  _detailTestWidgets(
+    'covered work detail holds late directory results until return',
+    (tester) async {
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.resetForTest();
+      addTearDown(interaction.resetForTest);
+      final fixture = AppRuntimeWidgetTestFixture();
+      _detailFixtures.add(fixture);
+      addTearDown(fixture.dispose);
+      final pending = Completer<void>();
+      final controller = _DeferredDetailAsmrController([
+        AsmrTrackFile.fromJson(const {
+          'type': 'audio',
+          'title': 'Late audio.mp3',
+          'mediaStreamUrl': 'https://example.test/late.mp3',
+        }),
+      ], cached: false)..pendingLoad = pending;
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          WorkDetailPage.forAsmr(
+            work: AsmrWork.fromJson(const {'id': 42, 'title': 'Late work'}),
+          ),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.pump();
+      expect(controller.requests, 1);
+      final page = tester.element(find.byType(WorkDetailPage));
+      final navigator = Navigator.of(page);
+      unawaited(
+        navigator.push<void>(
+          buildAppPageRoute<void>(
+            context: page,
+            child: const Scaffold(body: Text('Covering page')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      var rebuilds = 0;
+      final previous = debugOnRebuildDirtyWidget;
+      debugOnRebuildDirtyWidget = (element, builtOnce) {
+        previous?.call(element, builtOnce);
+        if (identical(element, page)) rebuilds++;
+      };
+      addTearDown(() => debugOnRebuildDirtyWidget = previous);
+      pending.complete();
+      await _settleDetail(tester);
+      expect(
+        rebuilds,
+        0,
+        reason: 'A covered page must retain pending data without rebuilding.',
+      );
+      debugOnRebuildDirtyWidget = previous;
+      navigator.pop();
+      await _settleDetail(tester);
+      expect(find.text('Late audio'), findsOneWidget);
+      expect(controller.requests, 1);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final remote in [false, true]) {
     _detailTestWidgets(
       'covering work details retains loaded rows, remote=$remote',

@@ -30,6 +30,8 @@ import 'package:doujin_audio/features/player/application/native_playback_bridge.
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_layout.dart';
+import 'package:doujin_audio/features/player/presentation/bedtime_canvas_page.dart';
+import 'package:doujin_audio/features/player/presentation/timer_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_detail_theme.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/session_track_switcher_sheet.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_panel.dart';
@@ -52,6 +54,7 @@ import 'package:doujin_audio/core/widgets/horizontal_edge_fade_scroll.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
+import 'package:doujin_audio/app/presentation/windows_window_title_bar.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -8517,11 +8520,12 @@ void main() {
                       ui.PaintingStyle.stroke,
             ),
           ),
-          findsOneWidget,
+          findsNothing,
         );
 
-        final progress = find.byKey(
-          const ValueKey<String>('fullscreen_video_progress'),
+        final progress = find.descendant(
+          of: find.byKey(const ValueKey('fullscreen_video_progress')),
+          matching: find.byType(Slider),
         );
         final controls = find.byKey(
           const ValueKey<String>('fullscreen_video_controls'),
@@ -8535,6 +8539,41 @@ void main() {
         );
         final initialAdjacencyQueries = adjacencyQueries;
         expect(tester.widget<Slider>(progress).value, 10000);
+        final times = find.descendant(
+          of: find.byKey(const ValueKey('fullscreen_video_progress')),
+          matching: find.byType(TimecodeLabel),
+        );
+        final sliderRect = tester.getRect(progress);
+        expect(tester.getRect(times.first).right, lessThan(sliderRect.left));
+        expect(tester.getRect(times.last).left, greaterThan(sliderRect.right));
+        final pointer = await tester.createGesture(
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await pointer.addPointer(location: Offset.zero);
+        final trackLeft = sliderRect.left + 12;
+        final trackWidth = sliderRect.width - 24;
+        await pointer.moveTo(
+          Offset(trackLeft + trackWidth * .25, sliderRect.center.dy),
+        );
+        await tester.pump();
+        expect(tester.widget<TimecodeLabel>(times.first).text, '00:30');
+        expect(tester.widget<TimecodeLabel>(times.last).text, '-01:30');
+        expect(tester.widget<Slider>(progress).value, 10000);
+        await pointer.moveTo(
+          Offset(trackLeft + trackWidth * .75, sliderRect.center.dy),
+        );
+        await tester.pump();
+        expect(tester.widget<TimecodeLabel>(times.first).text, '01:30');
+        expect(tester.getRect(progress), sliderRect);
+        await pointer.down(
+          Offset(trackLeft + trackWidth * .75, sliderRect.center.dy),
+        );
+        await pointer.up();
+        await tester.pump();
+        expect(session.position, const Duration(seconds: 90));
+        await pointer.removePointer();
+        session.setOptimisticPosition(const Duration(seconds: 10));
+        await tester.pump(const Duration(milliseconds: 100));
         tester.widget<Slider>(progress).onChangeStart!(10000);
         for (final value in [30000.0, 45000.0]) {
           tester.widget<Slider>(progress).onChanged!(value);
@@ -8771,12 +8810,12 @@ void main() {
           }
           expect(rects[3].width, greaterThan(100));
           expect(rects[4].width, greaterThan(40));
-          final currentTime = tester.getRect(
-            find.byKey(const ValueKey('fullscreen_video_current_time')),
+          final times = find.descendant(
+            of: find.byKey(const ValueKey('fullscreen_video_progress')),
+            matching: find.byType(TimecodeLabel),
           );
-          final duration = tester.getRect(
-            find.byKey(const ValueKey('fullscreen_video_duration')),
-          );
+          final currentTime = tester.getRect(times.first);
+          final duration = tester.getRect(times.last);
           expect(currentTime.left, greaterThanOrEqualTo(safe.left));
           expect(duration.right, lessThanOrEqualTo(safe.right));
           expect(currentTime.overlaps(duration), isFalse);
@@ -8792,11 +8831,9 @@ void main() {
           }
           if (const bool.fromEnvironment('FULLSCREEN_VIDEO_SCREENSHOTS') &&
               (size == const Size(320, 640) || size == const Size(1280, 800))) {
-            final timeLabel = find.byKey(
-              const ValueKey('fullscreen_video_current_time'),
-            );
+            final timeLabel = times.first;
             final timeText = tester.widget<Text>(
-              find.descendant(of: timeLabel, matching: find.byType(Text)),
+              find.descendant(of: timeLabel, matching: find.byType(Text)).first,
             );
             final fontFamily = timeText.style?.fontFamily ?? 'Roboto';
             await tester.runAsync(() async {
@@ -8944,7 +8981,10 @@ void main() {
         );
       }
       final progressContext = tester.element(
-        find.byKey(const ValueKey('fullscreen_video_progress')),
+        find.descendant(
+          of: find.byKey(const ValueKey('fullscreen_video_progress')),
+          matching: find.byType(Slider),
+        ),
       );
       final progressTheme = SliderTheme.of(progressContext);
       expect(progressTheme.trackHeight, 3);
@@ -8982,12 +9022,16 @@ void main() {
         volumeTheme,
         sessionDetailVolumeSliderTheme(volumeContext, isBoosted: false),
       );
-      for (final name in ['current_time', 'duration']) {
-        final label = find.byKey(ValueKey('fullscreen_video_$name'));
+      final timeLabels = find.descendant(
+        of: find.byKey(const ValueKey('fullscreen_video_progress')),
+        matching: find.byType(TimecodeLabel),
+      );
+      expect(timeLabels, findsNWidgets(2));
+      for (final label in [timeLabels.first, timeLabels.last]) {
         expect(tester.widget(label), isA<TimecodeLabel>());
         final style = tester
             .widget<Text>(
-              find.descendant(of: label, matching: find.byType(Text)),
+              find.descendant(of: label, matching: find.byType(Text)).last,
             )
             .style!;
         expect(style.fontSize, 13);
@@ -9835,8 +9879,13 @@ void main() {
       final dashes = find.byKey(
         const ValueKey('subtitle_timeline_seek_dashes'),
       );
+      expect(tester.getRect(dashes).left, lessThan(tester.getCenter(list).dx));
       expect(
-        tester.getRect(dashes).left,
+        tester
+            .getCenter(
+              find.byKey(const ValueKey('subtitle_timeline_seek_button')),
+            )
+            .dx,
         greaterThan(tester.getCenter(list).dx),
       );
       expect(
@@ -9895,6 +9944,19 @@ void main() {
         findsNothing,
       );
       await tester.pump(PlaybackSession.loadingIndicatorThreshold);
+      tester.view.physicalSize = const Size(2400, 1080);
+      await tester.pumpAndSettle();
+      await tester.drag(list, const Offset(0, -100));
+      await tester.pump();
+      final landscapeIndicator = find
+          .ancestor(of: dashes, matching: find.byType(Row))
+          .first;
+      expect(
+        tester.getRect(dashes).left,
+        greaterThan(tester.getCenter(landscapeIndicator).dx),
+      );
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
     },
   );
 
@@ -11210,113 +11272,249 @@ void main() {
     },
   );
 
-  for (final (platform, screenSize, contentTop) in [
-    (TargetPlatform.android, const Size(1080, 2400), 40.0),
-    (TargetPlatform.android, const Size(2400, 1080), 0.0),
-    (TargetPlatform.windows, const Size(3840, 2400), 0.0),
+  for (final (platform, screenSize, contentTop, showActions) in [
+    (TargetPlatform.android, const Size(1080, 2400), 40.0, true),
+    (TargetPlatform.android, const Size(2400, 1080), 0.0, false),
+    (TargetPlatform.android, const Size(3000, 2100), 0.0, true),
+    (TargetPlatform.windows, const Size(3840, 2400), 0.0, true),
   ]) {
     for (final topInset in [0.0, 24.0]) {
-      testWidgets(
-        'detail close button floats without moving content on ${platform.name} '
-        '${screenSize.width} with top inset $topInset',
-        (tester) async {
-          debugDefaultTargetPlatformOverride = platform;
-          try {
-            tester.view.padding = FakeViewPadding(top: topInset * 3);
-            tester.view.viewPadding = FakeViewPadding(top: topInset * 3);
-            addTearDown(tester.view.resetPadding);
-            addTearDown(tester.view.resetViewPadding);
-            await _pumpSubtitleDetail(
-              tester: tester,
-              subtitleTrack: SubtitleTrack(
-                sourcePath: 'empty.srt',
-                cues: const [],
-              ),
-              initialPosition: Duration.zero,
-              physicalSize: screenSize,
-            );
+      testWidgets('detail cover clears the close button on ${platform.name} '
+          '${screenSize.width} with top inset $topInset', (tester) async {
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          notificationsChannel,
+          (_) async => <String, Object?>{'ok': true, 'value': null},
+        );
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+        );
+        debugDefaultTargetPlatformOverride = platform;
+        try {
+          tester.view.padding = FakeViewPadding(top: topInset * 3);
+          tester.view.viewPadding = FakeViewPadding(top: topInset * 3);
+          addTearDown(tester.view.resetPadding);
+          addTearDown(tester.view.resetViewPadding);
+          final result = await _pumpSubtitleDetail(
+            tester: tester,
+            subtitleTrack: SubtitleTrack(
+              sourcePath: 'empty.srt',
+              cues: const [],
+            ),
+            initialPosition: Duration.zero,
+            physicalSize: screenSize,
+          );
+          await result.fixture.playback.setSessionSpeed(
+            result.session.id,
+            1.25,
+            persist: false,
+          );
+          await tester.pumpAndSettle();
 
-            final button = find.byKey(
-              const ValueKey('session_detail_close_button'),
-            );
-            expect(button, findsOneWidget);
-            expect(
-              find.ancestor(
-                of: button,
-                matching: find.byType(HeaderFloatingButton),
-              ),
-              findsNothing,
-            );
-            final buttonRect = tester.getRect(button);
-            expect(buttonRect.left, 16);
-            expect(buttonRect.top, topInset + 6);
-            expect(buttonRect.size, const Size.square(38));
-            expect(
-              tester.getRect(find.byType(SessionDetailContent)).top,
-              contentTop,
-            );
-            final arrow = find.descendant(
+          final button = find.byKey(
+            const ValueKey('session_detail_close_button'),
+          );
+          expect(button, findsOneWidget);
+          expect(
+            find.ancestor(
               of: button,
-              matching: find.byIcon(Icons.chevron_left_rounded),
-            );
-            expect(arrow, findsOneWidget);
-            final normalColor = IconTheme.of(tester.element(arrow)).color;
-            expect(IconTheme.of(tester.element(arrow)).size, 32);
-            final buttonStyle = tester
-                .widget<IconButton>(
-                  find.descendant(
-                    of: button,
-                    matching: find.byType(IconButton),
-                  ),
-                )
-                .style!;
-            expect(
-              buttonStyle.overlayColor!.resolve({WidgetState.hovered}),
-              Colors.transparent,
-            );
-            final pointer = await tester.createGesture(
-              kind: ui.PointerDeviceKind.mouse,
-            );
-            await pointer.addPointer(location: Offset.zero);
-            await pointer.moveTo(buttonRect.center);
-            await tester.pumpAndSettle();
-            expect(
-              IconTheme.of(tester.element(arrow)).color,
-              Theme.of(tester.element(button)).colorScheme.primary,
-            );
-            await pointer.removePointer();
-            await tester.pumpAndSettle();
-            expect(IconTheme.of(tester.element(arrow)).color, normalColor);
-            if (topInset > 0 && contentTop > 0) {
-              final artwork = find.byKey(
-                const ValueKey('artwork_subtitle-session'),
+              matching: find.byType(HeaderFloatingButton),
+            ),
+            findsNothing,
+          );
+          final buttonRect = tester.getRect(button);
+          expect(
+            buttonRect.left,
+            platform == TargetPlatform.windows ? AppSpacing.xl : 16,
+          );
+          final originalTop = (platform == TargetPlatform.windows
+                  ? WindowsWindowTitleBar.height
+                  : topInset) +
+              6;
+          expect(
+            buttonRect.top,
+            showActions && platform != TargetPlatform.windows && originalTop < 48
+                ? 48
+                : originalTop,
+          );
+          expect(buttonRect.size, const Size.square(38));
+          expect(
+            tester.getRect(find.byType(SessionDetailContent)).top,
+            contentTop > 0 ? buttonRect.bottom + 8 : 0,
+          );
+          final sleep = find.byKey(const ValueKey('session_detail_sleep_button'));
+          final timer = find.byKey(const ValueKey('session_detail_timer_button'));
+          if (showActions) {
+            for (final action in [
+              if (platform != TargetPlatform.windows) sleep,
+              timer,
+            ]) {
+              expect(action, findsOneWidget);
+              final surface = find.ancestor(
+                of: action,
+                matching: find.byType(HeaderFloatingButton),
               );
-              expect(buttonRect.overlaps(tester.getRect(artwork)), isTrue);
+              expect(surface, findsOneWidget);
+              expect(tester.getSize(surface), const Size.square(38));
+              expect(tester.getRect(surface).top, buttonRect.top);
+              expect(tester.widget<IconButton>(action).iconSize, 20);
             }
+            final status = find.byIcon(Icons.speed_rounded);
+            expect(
+              tester.getSize(status),
+              Size.square(contentTop > 0 ? 18 : 20),
+            );
+            expect(tester.getRect(status).bottom, lessThan(buttonRect.top));
             if (contentTop == 0) {
-              final titleRect = tester.getRect(
-                find.byKey(const ValueKey('title_marquee_subtitle-session')),
+              final title = find.byKey(
+                const ValueKey('title_marquee_subtitle-session'),
               );
-              await tester.tap(find.byIcon(Icons.tune_rounded));
-              await tester.pumpAndSettle();
-              final menuHeaderRect = tester.getRect(
-                find.byType(SegmentPanelPageHeader),
+              expect(
+                tester.getRect(title).top,
+                greaterThan(buttonRect.bottom),
               );
-              expect(menuHeaderRect.top, closeTo(titleRect.top, 0.5));
-              await tester.tap(
-                find.byKey(const ValueKey<String>('close_console_panel')),
-              );
-              await tester.pumpAndSettle();
             }
-            await tester.tapAt(buttonRect.topLeft + const Offset(1, 1));
-            await tester.pumpAndSettle();
-            expect(find.byType(SessionDetailPage), findsNothing);
-            expect(find.byType(PlaylistTab), findsOneWidget);
-          } finally {
-            debugDefaultTargetPlatformOverride = null;
+            if (platform == TargetPlatform.windows) {
+              expect(sleep, findsNothing);
+            } else {
+              expect(tester.widget<IconButton>(sleep).onPressed, isNull);
+              expect(
+                tester.getRect(timer).right,
+                lessThan(tester.getRect(sleep).left),
+              );
+            }
+            if (topInset == 0) {
+              await tester.tap(timer);
+              await tester.pumpAndSettle();
+              expect(find.byType(TimerTab), findsOneWidget);
+              await tester.tap(
+                find.text(
+                  result.fixture.languageProvider.tr('confirm_start_now'),
+                ),
+              );
+              await tester.pump();
+              await tester.pump(const Duration(milliseconds: 400));
+              expect(result.fixture.timer.state.active, isTrue);
+              Navigator.of(tester.element(find.byType(TimerTab))).pop();
+              await tester.pumpAndSettle();
+              final capsule = find.byKey(
+                const ValueKey('session_detail_timer_capsule'),
+              );
+              expect(timer, findsNothing);
+              expect(capsule, findsOneWidget);
+              expect(
+                tester.widget<TimerCountdownCapsule>(capsule).remaining,
+                result.fixture.timer.state.remaining,
+              );
+              if (platform != TargetPlatform.windows) {
+                expect(
+                  tester.getRect(capsule).right,
+                  lessThan(tester.getRect(sleep).left),
+                );
+              }
+              await tester.tap(capsule);
+              await tester.pumpAndSettle();
+              expect(
+                tester.widget<TimerTab>(find.byType(TimerTab)).initialCompactDetail,
+                isTrue,
+              );
+              Navigator.of(tester.element(find.byType(TimerTab))).pop();
+              result.fixture.timer.cancelTimer();
+              await tester.pumpAndSettle();
+              expect(capsule, findsNothing);
+              expect(timer, findsOneWidget);
+              if (platform != TargetPlatform.windows) {
+                result.session.setOptimisticState(playing: true);
+                result.fixture.playbackService.syncSlice(
+                  activeSessions: [result.session],
+                  playingSessionCount: 1,
+                  focusedSessionId: result.session.id,
+                  coverGeneration: result.coverCache.generation,
+                  isInitialized: true,
+                );
+                await tester.pumpAndSettle();
+                await tester.tap(sleep);
+                await tester.pump();
+                await tester.pump(const Duration(milliseconds: 400));
+                expect(find.byType(BedtimeCanvasPage), findsOneWidget);
+                Navigator.of(tester.element(find.byType(BedtimeCanvasPage))).pop();
+                result.session.setOptimisticState(playing: false);
+                result.fixture.playbackService.syncSlice(
+                  activeSessions: [result.session],
+                  playingSessionCount: 0,
+                  focusedSessionId: result.session.id,
+                  coverGeneration: result.coverCache.generation,
+                  isInitialized: true,
+                );
+                await tester.pumpAndSettle();
+              }
+            }
+          } else {
+            expect(sleep, findsNothing);
+            expect(timer, findsNothing);
           }
-        },
-      );
+          final arrow = find.descendant(
+            of: button,
+            matching: find.byIcon(Icons.chevron_left_rounded),
+          );
+          expect(arrow, findsOneWidget);
+          expect(IconTheme.of(tester.element(arrow)).color, Colors.white);
+          expect(IconTheme.of(tester.element(arrow)).size, 32);
+          final buttonStyle = tester
+              .widget<IconButton>(
+                find.descendant(of: button, matching: find.byType(IconButton)),
+              )
+              .style!;
+          expect(
+            buttonStyle.overlayColor!.resolve({WidgetState.hovered}),
+            Colors.transparent,
+          );
+          final pointer = await tester.createGesture(
+            kind: ui.PointerDeviceKind.mouse,
+          );
+          await pointer.addPointer(location: Offset.zero);
+          await pointer.moveTo(buttonRect.center);
+          await tester.pumpAndSettle();
+          expect(
+            IconTheme.of(tester.element(arrow)).color,
+            Theme.of(tester.element(button)).colorScheme.primary,
+          );
+          await pointer.removePointer();
+          await tester.pumpAndSettle();
+          expect(IconTheme.of(tester.element(arrow)).color, Colors.white);
+          if (contentTop > 0) {
+            final artwork = find.byKey(
+              const ValueKey('artwork_subtitle-session'),
+            );
+            expect(
+              tester.getRect(artwork).top,
+              greaterThanOrEqualTo(buttonRect.bottom),
+            );
+          }
+          if (contentTop == 0) {
+            final titleRect = tester.getRect(
+              find.byKey(const ValueKey('title_marquee_subtitle-session')),
+            );
+            await tester.tap(find.byIcon(Icons.tune_rounded));
+            await tester.pumpAndSettle();
+            final menuHeaderRect = tester.getRect(
+              find.byType(SegmentPanelPageHeader),
+            );
+            expect(menuHeaderRect.top, closeTo(titleRect.top, 0.5));
+            await tester.tap(
+              find.byKey(const ValueKey<String>('close_console_panel')),
+            );
+            await tester.pumpAndSettle();
+          }
+          await tester.tapAt(buttonRect.topLeft + const Offset(1, 1));
+          await tester.pumpAndSettle();
+          expect(find.byType(SessionDetailPage), findsNothing);
+          expect(find.byType(PlaylistTab), findsOneWidget);
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      });
     }
   }
 

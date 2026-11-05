@@ -5,12 +5,14 @@ import 'dart:ui' as ui;
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
+import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
@@ -99,6 +101,12 @@ void main() {
         final coldDetail =
             entry == 'list' && defaultTargetPlatform == TargetPlatform.android;
         final fixture = AppRuntimeWidgetTestFixture(
+          // Cover-flight rendering does not need native taskbar image decoding.
+          providedNotificationService: PlaybackNotificationService(
+            notificationsPlatformService: NotificationsPlatformService(
+              isWindowsOverride: false,
+            ),
+          ),
           coverArtworkCacheService: cache,
           configureSettingsRepository: (settings) {
             settings.coverImageResolution = CoverImageResolution.original;

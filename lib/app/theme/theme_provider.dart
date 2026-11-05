@@ -609,6 +609,14 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         },
       ),
       hoverColor: scheme.primary.withValues(alpha: 0.08),
+      // Switches belong to interactive option rows, which paint their own
+      // hover shape. Avoid a second circular highlight around the thumb.
+      switchTheme: SwitchThemeData(
+        overlayColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.hovered) ? Colors.transparent : null,
+        ),
+      ),
       focusColor: scheme.primary.withValues(alpha: 0.12),
       highlightColor: scheme.primary.withValues(alpha: 0.12),
       scaffoldBackgroundColor: scheme.surface,

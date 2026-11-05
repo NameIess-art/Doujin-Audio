@@ -235,7 +235,7 @@ class SessionOverlayIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final highlightColor = Theme.of(context).colorScheme.primary;
     final size = Size.square(buttonSize);
     return IconButton(
       onPressed: onPressed,
@@ -254,15 +254,9 @@ class SessionOverlayIconButton extends StatelessWidget {
         shape: const RoundedRectangleBorder(),
       ).copyWith(
         foregroundColor: WidgetStateProperty.resolveWith(
-          (states) =>
-              states.contains(WidgetState.hovered) ||
-                  states.contains(WidgetState.focused) ||
-                  states.contains(WidgetState.pressed)
-              ? colors.primary
-              : sessionDetailForeground(
-                  colors,
-                  SessionDetailForegroundLevel.muted,
-                ),
+          (states) => states.contains(WidgetState.hovered)
+              ? highlightColor
+              : Colors.white,
         ),
       ),
       icon: Icon(

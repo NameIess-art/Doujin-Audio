@@ -1172,6 +1172,9 @@ void main() {
   testWidgets(
     'search results fade in and out over 300ms and hide confirm button',
     (tester) async {
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.resetForTest();
+      addTearDown(interaction.resetForTest);
       final controller = TextEditingController();
       final focusNode = FocusNode();
       final showResults = ValueNotifier<bool>(false);
@@ -1231,8 +1234,17 @@ void main() {
       expect(suggestions, findsOneWidget);
       expect(results, findsOneWidget);
       expect(fadeOpacityOf(results), 0);
+      expect(interaction.isVisualUpdateDeferred, isTrue);
+      expect(interaction.navigationAllowed.value, isTrue);
+      var commits = 0;
+      interaction.scheduleCommit(
+        key: 'search_result_adoption',
+        structural: true,
+        commit: () => commits++,
+      );
 
       await tester.pump(const Duration(milliseconds: 150));
+      expect(commits, 0);
       expect(
         fadeOpacityOf(results),
         closeTo(kAppFadeCurve.transform(0.5), 0.001),
@@ -1247,12 +1259,15 @@ void main() {
       expect(results, findsOneWidget);
       expect(suggestions, findsNothing);
       expect(confirm, findsNothing);
+      expect(commits, 1);
+      expect(interaction.isVisualUpdateDeferred, isFalse);
 
       showResults.value = false;
       await tester.pump();
       expect(suggestions, findsOneWidget);
       expect(results, findsOneWidget);
       expect(fadeOpacityOf(results), 1);
+      expect(interaction.isVisualUpdateDeferred, isTrue);
 
       await tester.pump(const Duration(milliseconds: 150));
       expect(
@@ -1269,6 +1284,14 @@ void main() {
       expect(suggestions, findsOneWidget);
       expect(results, findsNothing);
       expect(confirm, findsOneWidget);
+      expect(interaction.isVisualUpdateDeferred, isFalse);
+
+      showResults.value = true;
+      await tester.pump();
+      expect(interaction.isVisualUpdateDeferred, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      expect(interaction.isVisualUpdateDeferred, isFalse);
     },
   );
 }

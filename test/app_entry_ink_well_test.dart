@@ -3,8 +3,96 @@ import 'package:doujin_audio/core/widgets/app_entry_ink_well.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 
 void main() {
+  for (final buttonType in ['outlined', 'filled', 'text', 'icon']) {
+    for (final localShape in [false, true]) {
+      testWidgets(
+        'Windows $buttonType hover follows ${localShape ? 'local' : 'theme'} shape',
+        (tester) async {
+          final theme = ThemeProvider(loadPersistedState: false);
+          addTearDown(theme.dispose);
+          const customShape = RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(8)),
+          );
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: theme.darkTheme.copyWith(platform: TargetPlatform.windows),
+              home: Scaffold(
+                body: Center(
+                  child: Builder(
+                    builder: (context) {
+                      final style =
+                          AppEntryInkWell.entryButtonStyle(
+                            Theme.of(context),
+                          ).merge(
+                            localShape
+                                ? const ButtonStyle(
+                                    shape: WidgetStatePropertyAll(customShape),
+                                  )
+                                : null,
+                          );
+                      return switch (buttonType) {
+                        'outlined' => OutlinedButton.icon(
+                          style: style,
+                          onPressed: () {},
+                          icon: const Icon(Icons.download),
+                          label: const Text('Fetch information'),
+                        ),
+                        'filled' => FilledButton.tonalIcon(
+                          style: style,
+                          onPressed: () {},
+                          icon: const Icon(Icons.download),
+                          label: const Text('Fetch information'),
+                        ),
+                        'text' => TextButton(
+                          style: style,
+                          onPressed: () {},
+                          child: const Text('Fetch information'),
+                        ),
+                        _ => IconButton(
+                          style: style,
+                          onPressed: () {},
+                          icon: const Icon(Icons.settings),
+                        ),
+                      };
+                    },
+                  ),
+                ),
+              ),
+            ),
+          );
+          final ink = find.byType(InkWell);
+          final mouse = await tester.createGesture(
+            kind: PointerDeviceKind.mouse,
+          );
+          await mouse.addPointer(location: Offset.zero);
+          await mouse.moveTo(tester.getCenter(ink));
+          await tester.pumpAndSettle();
+          final hover = tester.widget<DecoratedBox>(
+            find.descendant(
+              of: ink,
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is DecoratedBox &&
+                    widget.decoration is ShapeDecoration &&
+                    (widget.decoration as ShapeDecoration).color?.a == 0.08,
+              ),
+            ),
+          );
+          final actualShape =
+              tester.widget<InkWell>(ink).customBorder! as OutlinedBorder;
+          expect(
+            (hover.decoration as ShapeDecoration).shape,
+            actualShape.copyWith(side: BorderSide.none),
+          );
+          await mouse.removePointer();
+        },
+      );
+    }
+  }
+
   testWidgets('Windows mouse entry clears highlights while its page is covered', (
     tester,
   ) async {

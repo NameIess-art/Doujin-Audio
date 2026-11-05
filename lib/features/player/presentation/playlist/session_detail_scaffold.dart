@@ -1,6 +1,7 @@
 import '../playback_providers.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui show Image, ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
+import '../../../../app/presentation/app_orientation_controller.dart';
 import '../../../../app/presentation/windows_window_title_bar.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
@@ -16,11 +18,16 @@ import '../../../../core/platform/windows_desktop_service.dart';
 import '../../../../core/ui/permission_action_controller.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/app_entry_ink_well.dart';
+import '../../../../core/widgets/top_page_header.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_subtitle_service.dart';
 import '../../application/subtitle_overlay_controller.dart';
+import '../bedtime_canvas_page.dart';
+import '../timer_tab.dart';
 import 'playlist_feature_icons.dart';
 import 'playlist_media_widgets.dart';
+import 'playlist_volume_timer_widgets.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../library/presentation/library_providers.dart';
 import '../../../../core/widgets/async_cover_image.dart';
@@ -182,6 +189,38 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     final coverPathFuture = widget.coverPathFuture;
     final onClose = widget.onClose;
     final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+    final isLandscape =
+        isWindows || MediaQuery.orientationOf(context) == Orientation.landscape;
+    final phoneLandscape =
+        isLandscape &&
+        AppOrientationPolicy.forDisplay(
+              platform: defaultTargetPlatform,
+              shortestSide: MediaQuery.sizeOf(context).shortestSide,
+            ) ==
+            AppOrientationPolicy.portrait;
+    final showHeaderActions = !phoneLandscape;
+    final topBarHeight = isWindows ? 48.0 : 40.0;
+    final closeTop =
+        (isWindows
+            ? WindowsWindowTitleBar.height
+            : MediaQuery.paddingOf(context).top) +
+        AppPageHeaderMetrics.padding.top;
+    // Keep the status icons above the added shortcuts on Android.
+    final headerTop = phoneLandscape || isWindows
+        ? closeTop
+        : math.max(closeTop, topBarHeight + 8);
+    final landscapeContentTop = showHeaderActions
+        ? math.max(
+            topBarHeight,
+            headerTop + AppPageHeaderMetrics.buttonSize + 8,
+          )
+        : topBarHeight;
+    final closeButton = SessionOverlayIconButton(
+      key: const ValueKey('session_detail_close_button'),
+      onPressed: onClose,
+      tooltip: i18n.tr('close'),
+      icon: Icons.chevron_left_rounded,
+    );
 
     final track = paths.trackByPath(session.currentTrackPath);
     final cs = Theme.of(context).colorScheme;
@@ -212,12 +251,6 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
             child: AppPageContentTransition(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final isLandscape =
-                      isWindows ||
-                      MediaQuery.orientationOf(context) ==
-                          Orientation.landscape;
-                  final topBarHeight = isWindows ? 48.0 : 40.0;
-
                   return Stack(
                     fit: StackFit.expand,
                     children: [
@@ -303,7 +336,9 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                         ),
                       ),
                       Positioned.fill(
-                        top: isLandscape ? 0 : topBarHeight,
+                        top: isLandscape
+                            ? 0
+                            : headerTop + AppPageHeaderMetrics.buttonSize + 8,
                         child: Consumer(
                           builder: (context, ref, child) {
                             Widget artworkWidget = AnimatedSwitcher(
@@ -350,7 +385,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
                             final detailPadding = EdgeInsets.fromLTRB(
                               isLandscape ? 8 : 28,
-                              isLandscape ? topBarHeight : 0,
+                              isLandscape ? landscapeContentTop : 0,
                               isLandscape ? 8 : 28,
                               isLandscape ? 16 : 8,
                             );
@@ -406,11 +441,11 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
             ),
           ),
           Positioned(
-            top: (isWindows
-                    ? WindowsWindowTitleBar.height
-                    : MediaQuery.paddingOf(context).top) +
-                AppPageHeaderMetrics.padding.top,
+            top: headerTop,
             left: isWindows ? AppSpacing.xl : AppPageHeaderMetrics.padding.left,
+            right: showHeaderActions
+                ? AppPageHeaderMetrics.padding.right
+                : null,
             child: ValueListenableBuilder<bool>(
               valueListenable: widget.segmentPanelExpandedNotifier,
               builder: (context, expanded, child) =>
@@ -422,12 +457,92 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                     ? Duration.zero
                     : kAppFadeDuration,
                 curve: kAppFadeCurve,
-                child: SessionOverlayIconButton(
-                  key: const ValueKey('session_detail_close_button'),
-                  onPressed: onClose,
-                  tooltip: i18n.tr('close'),
-                  icon: Icons.chevron_left_rounded,
-                ),
+                child: !showHeaderActions
+                    ? closeButton
+                    : Row(
+                        children: [
+                          closeButton,
+                          const Spacer(),
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final timer = ref.watch(playlistHeaderUiProvider);
+                              void openTimer() {
+                                showTimerSettingsPanel(
+                                  context,
+                                  initialCompactDetail:
+                                      timer.timerDuration != null,
+                                );
+                              }
+
+                              if (timer.hasTimer) {
+                                return TimerCountdownCapsule(
+                                  key: const ValueKey(
+                                    'session_detail_timer_capsule',
+                                  ),
+                                  remaining:
+                                      timer.timerRemaining ??
+                                      timer.timerDuration ??
+                                      Duration.zero,
+                                  active: timer.timerActive,
+                                  autoResumeAt: timer.autoResumeAt,
+                                  onTap: openTimer,
+                                );
+                              }
+                              return HeaderFloatingButton(
+                                child: IconButton(
+                                  key: const ValueKey(
+                                    'session_detail_timer_button',
+                                  ),
+                                  onPressed: openTimer,
+                                  icon: const Icon(Icons.alarm_rounded),
+                                  tooltip: i18n.tr('timer'),
+                                  iconSize: 20,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 38,
+                                    height: 38,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          if (!isWindows) ...[
+                            const SizedBox(width: 8),
+                            HeaderFloatingButton(
+                              child: Consumer(
+                                builder: (context, ref, _) {
+                                  final hasPlayingAudio = ref.watch(
+                                    playlistHeaderUiProvider.select(
+                                      (state) => state.hasPlayingAudioSession,
+                                    ),
+                                  );
+                                  return IconButton(
+                                    key: const ValueKey(
+                                      'session_detail_sleep_button',
+                                    ),
+                                    style: AppEntryInkWell.entryButtonStyle(
+                                      Theme.of(context),
+                                    ),
+                                    onPressed: hasPlayingAudio
+                                        ? () => Navigator.of(context).push(
+                                            BedtimeCanvasPage.route(context),
+                                          )
+                                        : null,
+                                    icon: const Icon(Icons.bedtime_outlined),
+                                    tooltip: i18n.tr('sleep_mode'),
+                                    iconSize: 20,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 38,
+                                      height: 38,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
               ),
             ),
           ),

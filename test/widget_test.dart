@@ -116,6 +116,40 @@ void main() {
 
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
+  for (final reduceMotion in [false, true]) {
+    testWidgets('bottom menu highlight expands in 300ms with reduced motion $reduceMotion',
+        (tester) async {
+      _setLogicalTestViewSize(tester, const Size(390, 820));
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          FakeAccessibilityFeatures(disableAnimations: reduceMotion);
+      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+      await _pumpAppShell(tester, includePlaybackSession: false);
+      double indicatorScale(String destination) => tester.widget<Transform>(
+        find.descendant(
+          of: find.byKey(ValueKey<String>('main_destination_indicator_$destination')),
+          matching: find.byType(Transform),
+        ),
+      ).transform.entry(0, 0);
+      for (final destination in ['nav_sessions', 'nav_settings', 'nav_sessions']) {
+        final icon = find.byKey(ValueKey<String>('main_destination_$destination'));
+        final size = tester.getSize(icon);
+        await tester.tap(icon);
+        await tester.pump();
+        expect(indicatorScale(destination), reduceMotion ? 1 : 0);
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(indicatorScale(destination), reduceMotion ? 1 : inExclusiveRange(0, 1));
+        expect(tester.getSize(icon), size);
+        await tester.pump(const Duration(milliseconds: 149));
+        expect(indicatorScale(destination), reduceMotion ? 1 : lessThan(1));
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(indicatorScale(destination), 1);
+        await _pumpMainScreenAnimations(tester);
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
       'merged destination updates without replacing pages on $platform',

@@ -34,6 +34,29 @@ part 'timer_tab_countdown_widgets.dart';
 
 const double kTimerCompactPanelHeight = 448;
 
+Future<void> showTimerSettingsPanel(
+  BuildContext context, {
+  required bool initialCompactDetail,
+}) {
+  final i18n = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appLanguageProviderInstanceProvider);
+  return showAppOverlayPanel<void>(
+    context: context,
+    barrierLabel: i18n.tr('close'),
+    maxHeight: kTimerCompactPanelHeight,
+    mobileAlignment: Alignment.center,
+    mobileOuterPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+    builder: (_) => TimerTab(
+      showHeader: false,
+      useSafeArea: false,
+      compactOnly: true,
+      initialCompactDetail: initialCompactDetail,
+    ),
+  );
+}
+
 class TimerTab extends ConsumerStatefulWidget {
   const TimerTab({
     super.key,

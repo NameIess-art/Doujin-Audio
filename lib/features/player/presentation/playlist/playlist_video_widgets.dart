@@ -28,6 +28,7 @@ import '../playlist_view_models.dart';
 import '../session_video_surface.dart';
 import '../session_video_viewport.dart';
 import 'playlist_shared_helpers.dart';
+import 'playlist_progress_widgets.dart';
 import 'playlist_transport_controls.dart';
 import 'playlist_volume_timer_widgets.dart';
 import 'session_detail_theme.dart';
@@ -574,13 +575,14 @@ class _SessionVideoFullscreenPageState
   }
 
   double _controlBarHeight(BuildContext context) {
-    final timeHeight = max(
-      24.0,
-      MediaQuery.textScalerOf(context).scale(13) * 1.1,
-    );
-    return sessionVideoFullscreenControlBarHeight +
-        timeHeight -
-        24 +
+    final inlineTimecodes =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final textHeight = MediaQuery.textScalerOf(context).scale(13) * 1.1;
+    final timelineHeight = inlineTimecodes
+        ? max(20.0, textHeight)
+        : 32 + max(24.0, textHeight);
+    return timelineHeight +
+        8 + 48 + 16 +
         MediaQuery.viewPaddingOf(context).bottom;
   }
 
@@ -954,87 +956,111 @@ class _SessionVideoFullscreenPageState
                           hasPrevious;
                       final canNext = hasNext;
 
-                      final timeline = SliderTheme(
-                        data:
-                            sessionDetailProgressSliderTheme(
-                              context,
-                              primaryColor,
-                            ).copyWith(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
+                      final Widget timeline;
+                      if (MediaQuery.orientationOf(context) ==
+                          Orientation.landscape) {
+                        timeline = SliderTheme(
+                          data: sessionDetailProgressSliderTheme(
+                            context,
+                            primaryColor,
+                          ),
+                          child: TickerMode(
+                            enabled: _controlsVisible,
+                            child: SessionProgressBar(
+                              key: const ValueKey('fullscreen_video_progress'),
+                              session: session,
+                              playback: _playback,
+                              inlineTimecodes: true,
+                              onSeekStart: _beginControlInteraction,
+                              onManualSeek: (_) {
+                                _sliderInteracting = false;
+                                _scheduleControlsHide();
+                              },
                             ),
-                        child: Column(
-                          children: [
-                            SizedBox(
-                              height: 32,
-                              child: Slider(
-                                key: const ValueKey<String>(
-                                  'fullscreen_video_progress',
+                          ),
+                        );
+                      } else {
+                        timeline = SliderTheme(
+                          data:
+                              sessionDetailProgressSliderTheme(
+                                context,
+                                primaryColor,
+                              ).copyWith(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
                                 ),
-                                semanticFormatterCallback: (value) =>
-                                    formatDurationCompact(
-                                      Duration(milliseconds: value.round()),
-                                    ),
-                                max: maxMs,
-                                value: positionMs,
-                                onChangeStart: duration > Duration.zero
-                                    ? (_) => _beginControlInteraction()
-                                    : null,
-                                onChanged: duration > Duration.zero
-                                    ? (value) => _sliderPositionMs.value = value
-                                    : null,
-                                onChangeEnd: duration > Duration.zero
-                                    ? _endProgressInteraction
-                                    : null,
                               ),
-                            ),
-                            SizedBox(
-                              height: max(
-                                24.0,
-                                MediaQuery.textScalerOf(context).scale(13) *
-                                    1.1,
+                          child: Column(
+                            key: const ValueKey('fullscreen_video_progress'),
+                            children: [
+                              SizedBox(
+                                height: 32,
+                                child: Slider(
+                                  semanticFormatterCallback: (value) =>
+                                      formatDurationCompact(
+                                        Duration(milliseconds: value.round()),
+                                      ),
+                                  max: maxMs,
+                                  value: positionMs,
+                                  onChangeStart: duration > Duration.zero
+                                      ? (_) => _beginControlInteraction()
+                                      : null,
+                                  onChanged: duration > Duration.zero
+                                      ? (value) =>
+                                            _sliderPositionMs.value = value
+                                      : null,
+                                  onChangeEnd: duration > Duration.zero
+                                      ? _endProgressInteraction
+                                      : null,
+                                ),
                               ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Flexible(
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      alignment: Alignment.centerLeft,
-                                      child: TimecodeLabel(
-                                        key: const ValueKey<String>(
-                                          'fullscreen_video_current_time',
-                                        ),
-                                        text: formatDurationCompact(
-                                          Duration(
-                                            milliseconds: positionMs.round(),
+                              SizedBox(
+                                height: max(
+                                  24.0,
+                                  MediaQuery.textScalerOf(context).scale(13) *
+                                      1.1,
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Flexible(
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: TimecodeLabel(
+                                          key: const ValueKey<String>(
+                                            'fullscreen_video_current_time',
+                                          ),
+                                          text: formatDurationCompact(
+                                            Duration(
+                                              milliseconds: positionMs.round(),
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Flexible(
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      alignment: Alignment.centerRight,
-                                      child: TimecodeLabel(
-                                        key: const ValueKey<String>(
-                                          'fullscreen_video_duration',
+                                    const SizedBox(width: 12),
+                                    Flexible(
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerRight,
+                                        child: TimecodeLabel(
+                                          key: const ValueKey<String>(
+                                            'fullscreen_video_duration',
+                                          ),
+                                          text: formatDurationCompact(duration),
+                                          alignEnd: true,
                                         ),
-                                        text: formatDurationCompact(duration),
-                                        alignEnd: true,
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      );
+                            ],
+                          ),
+                        );
+                      }
                       final transport = IconButtonTheme(
                         data: IconButtonThemeData(
                           style: IconButton.styleFrom(

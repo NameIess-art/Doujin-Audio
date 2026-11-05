@@ -40,6 +40,7 @@ class SessionProgressBar extends StatelessWidget {
     this.inlineTimecodes = false,
     this.timeSegmentLabels = const <TimeSegmentLabel>[],
     this.selectedSegmentId,
+    this.onSeekStart,
     this.onManualSeek,
   });
 
@@ -48,6 +49,7 @@ class SessionProgressBar extends StatelessWidget {
   final bool inlineTimecodes;
   final List<TimeSegmentLabel> timeSegmentLabels;
   final String? selectedSegmentId;
+  final VoidCallback? onSeekStart;
   final ValueChanged<Duration>? onManualSeek;
 
   @override
@@ -67,6 +69,7 @@ class SessionProgressBar extends StatelessWidget {
       staticLayer: staticLayer,
       timeSegmentLabels: timeSegmentLabels,
       selectedSegmentId: selectedSegmentId,
+      onSeekStart: onSeekStart,
       onManualSeek: onManualSeek,
       inlineTimecodes: inlineTimecodes,
     );
@@ -81,6 +84,7 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
     required this.staticLayer,
     required this.timeSegmentLabels,
     required this.selectedSegmentId,
+    required this.onSeekStart,
     required this.onManualSeek,
     required this.inlineTimecodes,
   });
@@ -91,6 +95,7 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
   final Widget staticLayer;
   final List<TimeSegmentLabel> timeSegmentLabels;
   final String? selectedSegmentId;
+  final VoidCallback? onSeekStart;
   final ValueChanged<Duration>? onManualSeek;
   final bool inlineTimecodes;
 
@@ -303,6 +308,7 @@ class _ProgressSliderAndTimecodesState
   }
 
   void _handleSliderChangeStart(double value) {
+    widget.onSeekStart?.call();
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     _positionGate.tickerModeEnabled = false;
     _isDragging = true;

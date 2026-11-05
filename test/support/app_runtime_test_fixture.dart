@@ -344,6 +344,7 @@ Widget buildAppRuntimeTestApp({
 
 final class AppRuntimeWidgetTestFixture {
   AppRuntimeWidgetTestFixture({
+    PlaybackNotificationService? providedNotificationService,
     CoverArtworkCacheService? coverArtworkCacheService,
     DlsiteMetadataService? dlsiteMetadataService,
     AsmrMetadataService? asmrMetadataService,
@@ -356,7 +357,8 @@ final class AppRuntimeWidgetTestFixture {
     PowerPlatformService? powerPlatformService,
     void Function(SettingsRepository settingsRepository)?
     configureSettingsRepository,
-  }) : notificationService = PlaybackNotificationService(),
+  }) : notificationService =
+           providedNotificationService ?? PlaybackNotificationService(),
        persistenceRepository =
            providedPersistenceRepository ?? TestPersistenceRepository(),
        nativePlaybackRepository =

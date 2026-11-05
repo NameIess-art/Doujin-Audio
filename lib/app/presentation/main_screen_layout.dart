@@ -173,25 +173,9 @@ extension _MainScreenLayout on _MainScreenState {
     BuildContext context,
     _TimerPresentation timerState,
   ) {
-    final i18n = ProviderScope.containerOf(
+    return showTimerSettingsPanel(
       context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    return showAppOverlayPanel<void>(
-      context: context,
-      barrierLabel: i18n.tr('close'),
-      maxHeight: kTimerCompactPanelHeight,
-      mobileAlignment: Alignment.center,
-      mobileOuterPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 24,
-      ),
-      builder: (_) => TimerTab(
-        showHeader: false,
-        useSafeArea: false,
-        compactOnly: true,
-        initialCompactDetail: timerState.duration != null,
-      ),
+      initialCompactDetail: timerState.duration != null,
     );
   }
 
@@ -281,20 +265,30 @@ extension _MainScreenLayout on _MainScreenState {
             right: 6,
             top: 6,
             bottom: 6,
-            child: AnimatedContainer(
+            child: SizedBox.expand(
               key: ValueKey<String>(
                 'main_destination_indicator_${item.navigationKey}',
               ),
-              duration: MediaQuery.disableAnimationsOf(context)
-                  ? Duration.zero
-                  : const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              decoration: BoxDecoration(
-                color: selected
-                    ? activeColor.withValues(alpha: 0.11)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(22),
-              ),
+              child: selected
+                  ? TweenAnimationBuilder<double>(
+                      key: ValueKey(item.type),
+                      tween: Tween(begin: 0, end: 1),
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : kAppMotionSlow,
+                      curve: Curves.easeOutCubic,
+                      builder: (context, scale, child) => Transform.scale(
+                        scale: scale,
+                        child: child,
+                      ),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: activeColor.withValues(alpha: 0.11),
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                      ),
+                    )
+                  : null,
             ),
           ),
           AnimatedSwitcher(

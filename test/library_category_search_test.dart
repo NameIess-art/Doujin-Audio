@@ -13,6 +13,7 @@ import 'package:doujin_audio/features/library/presentation/library_tab_ui_helper
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 import 'support/runtime_test_models.dart';
@@ -30,13 +31,17 @@ class _FixedCategorySnapshotCache extends LibrarySnapshotCacheService {
        );
 
   AudioLibraryCategorySnapshot snapshot;
+  int requests = 0;
   @override
   AudioLibraryCategorySnapshot get categorySnapshotSync => snapshot;
 
   @override
   Future<AudioLibraryCategorySnapshot> categorySnapshot({
     required VoidCallback onCommitted,
-  }) async => snapshot;
+  }) async {
+    requests++;
+    return snapshot;
+  }
 }
 
 void main() {
@@ -80,6 +85,57 @@ void main() {
   );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets('cold search waits for route entrance before querying on $platform', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.resetForTest();
+      addTearDown(interaction.resetForTest);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final cache = _FixedCategorySnapshotCache(
+        libraryService: fixture.libraryService,
+        detailCacheService: fixture.library.detailCacheService,
+        snapshot: AudioLibraryCategorySnapshot(
+          entries: const [],
+          structureRevision: -1,
+          detailRevision: -1,
+        ),
+      );
+      final library = LibraryFacade.create(
+        databaseRepository: fixture.persistenceRepository,
+        service: fixture.libraryService,
+        detailCacheService: fixture.library.detailCacheService,
+        snapshotCacheService: cache,
+        coverArtworkCacheService: fixture.library.coverArtworkCacheService,
+      );
+      final observer = UiInteractionNavigatorObserver();
+      addTearDown(observer.dispose);
+      await tester.pumpWidget(fixture.build(
+        const Text('Search home'),
+        navigatorObservers: [observer],
+        overrides: [libraryFacadeProvider.overrideWithValue(library)],
+      ));
+      await tester.pumpAndSettle();
+      final context = tester.element(find.text('Search home'));
+      Navigator.of(context).push(buildAppPageRoute<void>(
+        context: context,
+        child: const LibrarySearchPage(),
+        separateHeader: true,
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(interaction.isVisualUpdateDeferred, isTrue);
+      expect(cache.requests, 0);
+      await tester.pumpAndSettle();
+      expect(cache.requests, 1);
+      expect(find.byKey(const ValueKey('library_search_suggestions')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    });
+
     testWidgets(
       'local search suggests terms and waits for confirmation on $platform',
       (tester) async {

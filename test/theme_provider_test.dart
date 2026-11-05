@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playlist_audio_features.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
@@ -10,6 +12,81 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  for (final platform in [TargetPlatform.windows, TargetPlatform.android]) {
+    for (final featureRow in [false, true]) {
+      testWidgets(
+        '$platform ${featureRow ? 'feature' : 'settings'} switch uses row hover',
+        (tester) async {
+          final provider = ThemeProvider(loadPersistedState: false);
+          addTearDown(provider.dispose);
+          var value = false;
+          var changes = 0;
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: provider.darkTheme.copyWith(platform: platform),
+              home: Scaffold(
+                body: Center(
+                  child: StatefulBuilder(
+                    builder: (context, setState) {
+                      void onChanged(bool next) => setState(() {
+                        value = next;
+                        changes++;
+                      });
+                      return featureRow
+                          ? FeatureSwitchTile(
+                              title: 'Noise reduction',
+                              subtitle: 'Reduce background noise',
+                              icon: Icons.graphic_eq,
+                              value: value,
+                              onChanged: onChanged,
+                            )
+                          : SwitchListTile(
+                              title: const Text('Noise reduction'),
+                              value: value,
+                              onChanged: onChanged,
+                            );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          );
+          final toggle = find.byType(Switch);
+          final overlay = SwitchTheme.of(tester.element(toggle)).overlayColor!;
+          expect(overlay.resolve({WidgetState.hovered}), Colors.transparent);
+          expect(overlay.resolve({WidgetState.focused}), isNull);
+          expect(overlay.resolve({WidgetState.pressed}), isNull);
+          final mouse = await tester.createGesture(
+            kind: PointerDeviceKind.mouse,
+          );
+          await mouse.addPointer(location: Offset.zero);
+          await mouse.moveTo(tester.getCenter(toggle));
+          await tester.pumpAndSettle();
+          final dynamic controller = Material.of(
+            tester.element(find.byType(InkWell)),
+          );
+          final highlights = (controller.debugInkFeatures as List<InkFeature>)
+              .whereType<InkHighlight>()
+              .where((feature) => feature.color.a > 0);
+          expect(highlights, isNotEmpty);
+          expect(
+            tester.widget<InkWell>(find.byType(InkWell)).highlightShape,
+            BoxShape.rectangle,
+          );
+          await tester.tap(toggle);
+          await tester.pumpAndSettle();
+          expect(value, isTrue);
+          expect(changes, 1);
+          await tester.tap(find.text('Noise reduction'));
+          await tester.pumpAndSettle();
+          expect(value, isFalse);
+          expect(changes, 2);
+          await mouse.removePointer();
+        },
+      );
+    }
+  }
 
   test(
     'theme flush captures submitted writes without waiting for later ones',

@@ -27,7 +27,6 @@ class AppEntryInkWell extends InkWell {
   static ButtonStyle entryButtonStyle(
     ThemeData theme, {
     Color? foregroundColor,
-    OutlinedBorder? shape,
   }) {
     final immediateHover = theme.platform == TargetPlatform.windows;
     return ButtonStyle(
@@ -53,16 +52,15 @@ class AppEntryInkWell extends InkWell {
                 final color = foregroundColor ??
                     DefaultTextStyle.of(context).style.color ??
                     theme.colorScheme.primary;
-                final resolvedShape = _resolveButtonShape(
-                  context,
-                  states,
-                  theme,
-                  explicitShape: shape,
-                );
+                // Material already has the final shape after local styles,
+                // component themes and defaults have been resolved.
+                final resolvedShape =
+                    context.findAncestorWidgetOfExactType<Material>()!.shape!
+                        as OutlinedBorder;
                 return DecoratedBox(
                   decoration: ShapeDecoration(
                     color: hovering ? color.withValues(alpha: 0.08) : null,
-                    shape: resolvedShape,
+                    shape: resolvedShape.copyWith(side: BorderSide.none),
                   ),
                   child: child,
                 );
@@ -70,43 +68,6 @@ class AppEntryInkWell extends InkWell {
             )
           : null,
     );
-  }
-
-  static OutlinedBorder _resolveButtonShape(
-    BuildContext context,
-    Set<WidgetState> states,
-    ThemeData theme, {
-    OutlinedBorder? explicitShape,
-  }) {
-    if (explicitShape != null) {
-      return explicitShape.copyWith(side: BorderSide.none);
-    }
-    if (context.widget is ButtonStyleButton) {
-      final button = context.widget as ButtonStyleButton;
-      final buttonShape = button.style?.shape?.resolve(states);
-      if (buttonShape != null) {
-        return buttonShape.copyWith(side: BorderSide.none);
-      }
-    }
-    final iconButtonShape =
-        IconButtonTheme.of(context).style?.shape?.resolve(states) ??
-        theme.iconButtonTheme.style?.shape?.resolve(states);
-    if (iconButtonShape != null) {
-      return iconButtonShape.copyWith(side: BorderSide.none);
-    }
-    final filledButtonShape =
-        FilledButtonTheme.of(context).style?.shape?.resolve(states) ??
-        theme.filledButtonTheme.style?.shape?.resolve(states);
-    if (filledButtonShape != null && context.widget is FilledButton) {
-      return filledButtonShape.copyWith(side: BorderSide.none);
-    }
-    final outlinedButtonShape =
-        OutlinedButtonTheme.of(context).style?.shape?.resolve(states) ??
-        theme.outlinedButtonTheme.style?.shape?.resolve(states);
-    if (outlinedButtonShape != null && context.widget is OutlinedButton) {
-      return outlinedButtonShape.copyWith(side: BorderSide.none);
-    }
-    return const CircleBorder();
   }
 
   /// Applies entry feedback to Material controls that own their ink response.

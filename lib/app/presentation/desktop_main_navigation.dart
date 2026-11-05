@@ -466,6 +466,9 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                                                     )
                                                   : cs.primaryContainer
                                                         .withValues(alpha: 0.6),
+                                              indicatorKey: ValueKey<String>(
+                                                'main_destination_indicator_${destinations[activeIndex].navigationKey}',
+                                              ),
                                               icon: Icon(
                                                 destinations[activeIndex]
                                                     .selectedIcon,
@@ -610,6 +613,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     required Widget icon,
     required VoidCallback onPressed,
     Color? backgroundColor,
+    Key? indicatorKey,
   }) {
     if (!isLandscapeLayout) return icon;
     // Consume the rail's surrounding padding so only the 48px button accepts
@@ -620,15 +624,42 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
         width: railMinWidth,
         height: 64,
         child: Center(
-          child: IconButton(
-            style: IconButton.styleFrom(
-              fixedSize: const Size.square(48),
-              shape: const CircleBorder(),
-              backgroundColor: backgroundColor,
-              overlayColor: Theme.of(context).colorScheme.primary,
+          child: SizedBox.square(
+            dimension: 48,
+            child: Stack(
+              children: [
+                if (backgroundColor != null)
+                  Positioned.fill(
+                    child: TweenAnimationBuilder<double>(
+                      key: indicatorKey,
+                      tween: Tween(begin: 0, end: 1),
+                      duration: _disableAnimations
+                          ? Duration.zero
+                          : kAppMotionSlow,
+                      curve: Curves.easeOutCubic,
+                      builder: (context, scale, child) => Transform.scale(
+                        scale: scale,
+                        child: child,
+                      ),
+                      child: DecoratedBox(
+                        decoration: ShapeDecoration(
+                          color: backgroundColor,
+                          shape: const CircleBorder(),
+                        ),
+                      ),
+                    ),
+                  ),
+                IconButton(
+                  style: IconButton.styleFrom(
+                    fixedSize: const Size.square(48),
+                    shape: const CircleBorder(),
+                    overlayColor: Theme.of(context).colorScheme.primary,
+                  ),
+                  onPressed: onPressed,
+                  icon: icon,
+                ),
+              ],
             ),
-            onPressed: onPressed,
-            icon: icon,
           ),
         ),
       ),

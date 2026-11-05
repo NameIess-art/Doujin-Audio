@@ -81,6 +81,14 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byIcon(Icons.playlist_play_rounded), findsOneWidget);
+        double indicatorScale(int index) => tester.widget<Transform>(
+          find.descendant(
+            of: find.byKey(ValueKey<String>(
+              'main_destination_indicator_${destinations[index].navigationKey}',
+            )),
+            matching: find.byType(Transform),
+          ),
+        ).transform.entry(0, 0);
         expect(
           tester.widget<Icon>(find.byIcon(Icons.playlist_play_rounded)).size,
           closeTo(24.15, 0.001),
@@ -107,6 +115,14 @@ void main() {
               find.byKey(iconKeys[destinations[state + 1].type.index]),
             ),
           );
+          await tester.pump();
+          expect(indicatorScale(state + 1), 0);
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(indicatorScale(state + 1), inExclusiveRange(0, 1));
+          await tester.pump(const Duration(milliseconds: 149));
+          expect(indicatorScale(state + 1), lessThan(1));
+          await tester.pump(const Duration(milliseconds: 1));
+          expect(indicatorScale(state + 1), 1);
           await tester.pumpAndSettle();
           expect(activePage.value, state + 1);
           if (!collapsed) {
@@ -118,6 +134,22 @@ void main() {
           tester.widget<Icon>(find.byIcon(Icons.playlist_play_rounded)).size,
           closeTo(25.3, 0.001),
         );
+        activePage.value = 0;
+        await tester.pump();
+        expect(indicatorScale(0), 0);
+        await tester.pump(const Duration(milliseconds: 100));
+        activePage.value = 1;
+        await tester.pump();
+        expect(indicatorScale(1), 0);
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(indicatorScale(1), 1);
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            const FakeAccessibilityFeatures(disableAnimations: true);
+        addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+        await tester.pump();
+        activePage.value = 0;
+        await tester.pump();
+        expect(indicatorScale(0), 1);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(const Duration(milliseconds: 200));
         expect(tester.takeException(), isNull);

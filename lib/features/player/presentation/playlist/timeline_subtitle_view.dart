@@ -700,7 +700,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                       height: 36,
                       child: Row(
                         children: [
-                          const Spacer(),
+                          if (widget.isLandscape) const Spacer(),
                           SizedBox(
                             key: const ValueKey('subtitle_timeline_seek_dashes'),
                             width: 36,
@@ -724,6 +724,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                               ),
                             ),
                           ),
+                          if (!widget.isLandscape) const Spacer(),
                           Container(
                             height: 32,
                             padding: const EdgeInsets.only(left: 10, right: 3),

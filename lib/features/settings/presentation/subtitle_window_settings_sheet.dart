@@ -137,7 +137,6 @@ class _SubtitleWindowSettingsSheetState
                                     isDense: true,
                                     isExpanded: true,
                                     multilineItems: true,
-                                    alignment: AlignmentDirectional.centerStart,
                                     items: List.generate(_fontFamilies.length, (
                                       i,
                                     ) {

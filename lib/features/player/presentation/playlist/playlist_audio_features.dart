@@ -408,7 +408,6 @@ class EqualizerPage extends ConsumerWidget {
         ),
         UnifiedDropdownButtonFormField<String>(
           initialValue: selectedPresetId,
-          alignment: AlignmentDirectional.centerStart,
           decoration: InputDecoration(
             labelText: i18n.tr('eq_preset'),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),

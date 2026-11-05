@@ -14,6 +14,7 @@ class TimerCountdownCapsule extends StatelessWidget {
     required this.autoResumeAt,
     required this.onTap,
     this.onLongPress,
+    this.showBackground = true,
   });
 
   final Duration remaining;
@@ -21,6 +22,7 @@ class TimerCountdownCapsule extends StatelessWidget {
   final DateTime? autoResumeAt;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final bool showBackground;
 
   @override
   Widget build(BuildContext context) {
@@ -37,58 +39,60 @@ class TimerCountdownCapsule extends StatelessWidget {
             : remaining;
         final hasRemaining = displayDuration > Duration.zero;
 
-        return HeaderFloatingSurface(
-          padding: EdgeInsets.zero,
-          child: Material(
-            color: cs.primary.withValues(alpha: 0.14),
+        final content = Material(
+          color: showBackground
+              ? cs.primary.withValues(alpha: 0.14)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(19),
+          child: InkWell(
             borderRadius: BorderRadius.circular(19),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(19),
-              onTap: () {
-                AppInteractionFeedback.trigger(
-                  AppInteractionFeedbackType.selection,
-                );
-                onTap?.call();
-              },
-              onLongPress: () {
-                AppInteractionFeedback.trigger(
-                  AppInteractionFeedbackType.selection,
-                );
-                onLongPress?.call();
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      showAutoResume
-                          ? Icons.alarm_rounded
-                          : active
-                          ? Icons.timer_rounded
-                          : hasRemaining
-                          ? Icons.timer_rounded
-                          : Icons.alarm_off_rounded,
-                      size: 14,
+            onTap: () {
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.selection,
+              );
+              onTap?.call();
+            },
+            onLongPress: () {
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.selection,
+              );
+              onLongPress?.call();
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    showAutoResume
+                        ? Icons.alarm_rounded
+                        : active
+                        ? Icons.timer_rounded
+                        : hasRemaining
+                        ? Icons.timer_rounded
+                        : Icons.alarm_off_rounded,
+                    size: 14,
+                    color: cs.primary,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    hasRemaining
+                        ? formatDurationCompact(displayDuration)
+                        : '00:00',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: cs.primary,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
-                    const SizedBox(width: 5),
-                    Text(
-                      hasRemaining
-                          ? formatDurationCompact(displayDuration)
-                          : '00:00',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: cs.primary,
-                        fontWeight: FontWeight.w800,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
         );
+        return showBackground
+            ? HeaderFloatingSurface(padding: EdgeInsets.zero, child: content)
+            : SizedBox(height: 38, child: content);
       },
     );
   }

@@ -11298,11 +11298,11 @@ void main() {
     },
   );
 
-  for (final (platform, screenSize, contentTop, showActions) in [
-    (TargetPlatform.android, const Size(1080, 2400), 40.0, true),
-    (TargetPlatform.android, const Size(2400, 1080), 0.0, false),
-    (TargetPlatform.android, const Size(3000, 2100), 0.0, true),
-    (TargetPlatform.windows, const Size(3840, 2400), 0.0, true),
+  for (final (platform, screenSize, isPortrait, showActions) in [
+    (TargetPlatform.android, const Size(1080, 2400), true, true),
+    (TargetPlatform.android, const Size(2400, 1080), false, false),
+    (TargetPlatform.android, const Size(3000, 2100), false, true),
+    (TargetPlatform.windows, const Size(3840, 2400), false, true),
   ]) {
     for (final topInset in [0.0, 24.0]) {
       testWidgets('detail cover clears the close button on ${platform.name} '
@@ -11356,18 +11356,21 @@ void main() {
           );
           final originalTop = (platform == TargetPlatform.windows
                   ? WindowsWindowTitleBar.height
-                  : topInset) +
+                  : isPortrait ? 0 : topInset) +
               6;
           expect(
             buttonRect.top,
-            showActions && platform != TargetPlatform.windows && originalTop < 48
+            !isPortrait &&
+                showActions &&
+                platform != TargetPlatform.windows &&
+                originalTop < 48
                 ? 48
                 : originalTop,
           );
           expect(buttonRect.size, const Size.square(38));
           expect(
             tester.getRect(find.byType(SessionDetailContent)).top,
-            contentTop > 0 ? buttonRect.bottom + 8 : 0,
+            isPortrait ? buttonRect.bottom + 8 : 0,
           );
           final sleep = find.byKey(const ValueKey('session_detail_sleep_button'));
           final timer = find.byKey(const ValueKey('session_detail_timer_button'));
@@ -11394,10 +11397,28 @@ void main() {
             final status = find.byIcon(Icons.speed_rounded);
             expect(
               tester.getSize(status),
-              Size.square(contentTop > 0 ? 18 : 20),
+              Size.square(isPortrait ? 18 : 20),
             );
-            expect(tester.getRect(status).bottom, lessThan(buttonRect.top));
-            if (contentTop == 0) {
+            if (isPortrait) {
+              final coverRect = tester.getRect(
+                find.byKey(
+                  const ValueKey('session_detail_cover_subtitle-session'),
+                ),
+              );
+              final statusRect = tester.getRect(status);
+              expect(statusRect.top, closeTo(coverRect.top + 8, 1));
+              expect(statusRect.right, lessThan(coverRect.right));
+              expect(statusRect.left, greaterThan(coverRect.center.dx));
+              expect(statusRect.bottom, lessThan(coverRect.bottom));
+              expect(statusRect.top, greaterThan(buttonRect.bottom));
+              expect(
+                tester.getRect(find.byType(SessionDetailContent)).top,
+                closeTo(buttonRect.bottom + 8, 0.01),
+              );
+            } else {
+              expect(tester.getRect(status).bottom, lessThan(buttonRect.top));
+            }
+            if (!isPortrait) {
               final title = find.byKey(
                 const ValueKey('title_marquee_subtitle-session'),
               );
@@ -11408,6 +11429,27 @@ void main() {
             }
             if (platform == TargetPlatform.windows) {
               expect(sleep, findsNothing);
+              final mouse = await tester.createGesture(
+                kind: PointerDeviceKind.mouse,
+              );
+              await mouse.addPointer(location: Offset.zero);
+              await mouse.moveTo(tester.getCenter(timer));
+              await tester.pump();
+              expect(
+                find.descendant(
+                  of: timer,
+                  matching: find.byWidgetPredicate((widget) {
+                    if (widget is! DecoratedBox) return false;
+                    final decoration = widget.decoration;
+                    return decoration is ShapeDecoration &&
+                        decoration.shape is CircleBorder &&
+                        (decoration.color?.a ?? 0) > 0;
+                  }),
+                ),
+                findsOneWidget,
+              );
+              await mouse.removePointer();
+              await tester.pump();
             } else {
               expect(tester.widget<IconButton>(sleep).onPressed, isNull);
               expect(
@@ -11434,6 +11476,31 @@ void main() {
               );
               expect(timer, findsNothing);
               expect(capsule, findsOneWidget);
+              expect(
+                find.descendant(
+                  of: capsule,
+                  matching: find.byType(HeaderFloatingSurface),
+                ),
+                findsNothing,
+              );
+              final countdownSurface = tester.widget<Material>(
+                find.descendant(of: capsule, matching: find.byType(Material)),
+              );
+              expect(countdownSurface.color, Colors.transparent);
+              final countdownColor = Theme.of(
+                tester.element(capsule),
+              ).colorScheme.primary;
+              expect(
+                tester.widget<Icon>(
+                  find.descendant(of: capsule, matching: find.byType(Icon)),
+                ).color,
+                countdownColor,
+              );
+              final countdownText = tester.widget<Text>(
+                find.descendant(of: capsule, matching: find.byType(Text)),
+              );
+              expect(countdownText.data, isNotEmpty);
+              expect(countdownText.style!.color, countdownColor);
               expect(
                 tester.widget<TimerCountdownCapsule>(capsule).remaining,
                 result.fixture.timer.state.remaining,
@@ -11514,7 +11581,7 @@ void main() {
           await pointer.removePointer();
           await tester.pumpAndSettle();
           expect(IconTheme.of(tester.element(arrow)).color, Colors.white);
-          if (contentTop > 0) {
+          if (isPortrait) {
             final artwork = find.byKey(
               const ValueKey('artwork_subtitle-session'),
             );
@@ -11523,7 +11590,7 @@ void main() {
               greaterThanOrEqualTo(buttonRect.bottom),
             );
           }
-          if (contentTop == 0) {
+          if (!isPortrait) {
             final titleRect = tester.getRect(
               find.byKey(const ValueKey('title_marquee_subtitle-session')),
             );

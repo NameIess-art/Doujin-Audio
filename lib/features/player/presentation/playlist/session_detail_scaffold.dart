@@ -198,13 +198,16 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
             AppOrientationPolicy.portrait;
     final showHeaderActions = !phoneLandscape;
     final topBarHeight = isWindows ? 48.0 : 40.0;
+    // Portrait detail is immersive; the shell's retained status-bar inset
+    // belongs to the page behind it, not this header and cover.
+    final topInset = isLandscape ? MediaQuery.paddingOf(context).top : 0.0;
     final closeTop =
         (isWindows
             ? WindowsWindowTitleBar.height
-            : MediaQuery.paddingOf(context).top) +
+            : topInset) +
         AppPageHeaderMetrics.padding.top;
-    // Keep the status icons above the added shortcuts on Android.
-    final headerTop = phoneLandscape || isWindows
+    // Landscape keeps status icons above the added shortcuts.
+    final headerTop = !isLandscape || phoneLandscape || isWindows
         ? closeTop
         : math.max(closeTop, topBarHeight + 8);
     final landscapeContentTop = showHeaderActions
@@ -228,7 +231,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
             visualDensity: VisualDensity.standard,
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             backgroundColor: Colors.transparent,
-            shape: const RoundedRectangleBorder(),
+            shape: const CircleBorder(),
           ),
         );
 
@@ -257,90 +260,92 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
             child: AppPageContentTransition(
               child: LayoutBuilder(
                 builder: (context, constraints) {
+                  final statusIndicators = Align(
+                    alignment: Alignment.topCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Consumer(
+                        builder: (context, ref, child) {
+                          final settings = ref.watch(
+                            subtitleSettingsProvider.select(
+                              (state) => (
+                                state.isShowEnabled(session.id),
+                                state.isGlobalEnabled(session.id),
+                              ),
+                            ),
+                          );
+
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: SizedBox(
+                                  height: isLandscape ? topBarHeight : 18,
+                                ),
+                              ),
+                              if (_hasSubtitle &&
+                                  settings.$1 &&
+                                  settings.$2) ...[
+                                Icon(
+                                  Icons.subtitles_rounded,
+                                  color: isLandscape
+                                      ? sessionDetailForeground(
+                                          cs,
+                                          SessionDetailForegroundLevel.muted,
+                                        )
+                                      : Colors.white,
+                                  size: isLandscape ? 20 : 18,
+                                ),
+                                SizedBox(width: isLandscape ? 8 : 6),
+                              ],
+                              Consumer(
+                                builder: (context, ref, child) {
+                                  final transport = ref.watch(
+                                    sessionDetailTransportProvider(session.id),
+                                  );
+                                  final featureIcons = sessionFeatureBadgeIcons(
+                                    showSubtitles: false,
+                                    channelSwapEnabled:
+                                        transport?.channelSwapEnabled ??
+                                        session.channelSwapEnabled,
+                                    audioEffects:
+                                        transport?.audioEffects ??
+                                        session.audioEffects,
+                                    speed: transport?.speed ?? session.speed,
+                                  );
+                                  if (featureIcons.isEmpty) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SessionFeatureIconRow(
+                                        featureIcons: featureIcons,
+                                        color: isLandscape
+                                            ? sessionDetailForeground(
+                                                cs,
+                                                SessionDetailForegroundLevel
+                                                    .muted,
+                                              )
+                                            : Colors.white,
+                                        iconSize: isLandscape ? 20 : 18,
+                                        spacing: isLandscape ? 8 : 6,
+                                        alignment: WrapAlignment.end,
+                                      ),
+                                      SizedBox(width: isLandscape ? 8 : 6),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  );
                   return Stack(
                     fit: StackFit.expand,
                     children: [
-                      Align(
-                        alignment: Alignment.topCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Consumer(
-                            builder: (context, ref, child) {
-                              final settings = ref.watch(
-                                subtitleSettingsProvider.select(
-                                  (state) => (
-                                    state.isShowEnabled(session.id),
-                                    state.isGlobalEnabled(session.id),
-                                  ),
-                                ),
-                              );
-
-                              return Row(
-                                children: [
-                                  Expanded(
-                                    child: SizedBox(height: topBarHeight),
-                                  ),
-                                  if (_hasSubtitle &&
-                                      settings.$1 &&
-                                      settings.$2) ...[
-                                    Icon(
-                                      Icons.subtitles_rounded,
-                                      color: sessionDetailForeground(
-                                        cs,
-                                        SessionDetailForegroundLevel.muted,
-                                      ),
-                                      size: isLandscape ? 20 : 18,
-                                    ),
-                                    SizedBox(width: isLandscape ? 8 : 6),
-                                  ],
-                                  Consumer(
-                                    builder: (context, ref, child) {
-                                      final transport = ref.watch(
-                                        sessionDetailTransportProvider(
-                                          session.id,
-                                        ),
-                                      );
-                                      final featureIcons =
-                                          sessionFeatureBadgeIcons(
-                                            showSubtitles: false,
-                                            channelSwapEnabled:
-                                                transport?.channelSwapEnabled ??
-                                                session.channelSwapEnabled,
-                                            audioEffects:
-                                                transport?.audioEffects ??
-                                                session.audioEffects,
-                                            speed:
-                                                transport?.speed ??
-                                                session.speed,
-                                          );
-                                      if (featureIcons.isEmpty) {
-                                        return const SizedBox.shrink();
-                                      }
-                                      return Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          SessionFeatureIconRow(
-                                            featureIcons: featureIcons,
-                                            color: sessionDetailForeground(
-                                              cs,
-                                              SessionDetailForegroundLevel
-                                                  .muted,
-                                            ),
-                                            iconSize: isLandscape ? 20 : 18,
-                                            spacing: isLandscape ? 8 : 6,
-                                            alignment: WrapAlignment.end,
-                                          ),
-                                          SizedBox(width: isLandscape ? 8 : 6),
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                        ),
-                      ),
+                      if (isLandscape) statusIndicators,
                       Positioned.fill(
                         top: isLandscape
                             ? 0
@@ -387,7 +392,41 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                               ),
                             );
 
-                            final artwork = artworkWidget;
+                            final artwork = Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                artworkWidget,
+                                if (!isLandscape)
+                                  Positioned(
+                                    top: 8,
+                                    left: 0,
+                                    right: 0,
+                                    child: IgnorePointer(
+                                      child: AnimatedOpacity(
+                                        opacity: _coverOverlaysVisible ? 1 : 0,
+                                        duration:
+                                            MediaQuery.disableAnimationsOf(
+                                              context,
+                                            )
+                                            ? Duration.zero
+                                            : kAppFadeDuration,
+                                        curve: kAppFadeCurve,
+                                        child: IconTheme.merge(
+                                          data: const IconThemeData(
+                                            shadows: [
+                                              Shadow(
+                                                color: Color(0xA6000000),
+                                                blurRadius: 5,
+                                              ),
+                                            ],
+                                          ),
+                                          child: statusIndicators,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
 
                             final detailPadding = EdgeInsets.fromLTRB(
                               isLandscape ? 8 : 28,
@@ -485,6 +524,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                   key: const ValueKey(
                                     'session_detail_timer_capsule',
                                   ),
+                                  showBackground: false,
                                   remaining:
                                       timer.timerRemaining ??
                                       timer.timerDuration ??

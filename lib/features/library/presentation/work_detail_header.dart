@@ -34,7 +34,10 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   // Reuse text and metadata while the sliver only changes cover geometry.
   late final Widget _title = RepaintBoundary(
-    child: Builder(builder: _buildTitle),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Builder(builder: _buildTitle),
+    ),
   );
   late final Widget _rjBar = Builder(builder: _buildRjBar);
   late final Widget _coverGradient = DecoratedBox(
@@ -52,37 +55,35 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     ),
   );
 
-  Widget _buildTitle(BuildContext context) => Semantics(
-    button: title.isNotEmpty,
-    label: title.isNotEmpty ? title : null,
-    child: ElementActionMenu(
-      value: title,
-      onCopy: () => onCopyMetadata(title),
-      child: InkWell(
-        key: const ValueKey<String>('work_detail_title_copy'),
-        onTap:
-            title.isEmpty ||
-                Theme.of(context).platform == TargetPlatform.windows
-            ? null
-            : () => onCopyMetadata(title),
-        borderRadius: BorderRadius.circular(8),
-        child: WorkPageTranslationText(
-          title,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.bold,
-            height: 1.25,
-            shadows: [
-              Shadow(
-                color: Colors.black87,
-                blurRadius: 4,
-                offset: Offset(0, 1),
-              ),
-            ],
-          ),
+  Widget _buildTitle(BuildContext context) => ElementActionMenu(
+    value: title,
+    onCopy: () => onCopyMetadata(title),
+    child: TextButton(
+      key: const ValueKey<String>('work_detail_title_copy'),
+      onPressed: title.isEmpty ? null : () => onCopyMetadata(title),
+      style: ButtonStyle(
+        foregroundColor: WidgetStateProperty.resolveWith(
+          (states) =>
+              states.contains(WidgetState.hovered) ? accentColor : Colors.white,
+        ),
+        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+        textStyle: WidgetStatePropertyAll(DefaultTextStyle.of(context).style),
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        minimumSize: const WidgetStatePropertyAll(Size.zero),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        alignment: Alignment.centerLeft,
+      ),
+      child: WorkPageTranslationText(
+        title,
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.bold,
+          height: 1.25,
+          shadows: [
+            Shadow(color: Colors.black87, blurRadius: 4, offset: Offset(0, 1)),
+          ],
         ),
       ),
     ),
@@ -93,91 +94,94 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     decoration: BoxDecoration(color: surfaceColor),
     padding: const EdgeInsets.symmetric(horizontal: 16),
     alignment: Alignment.centerLeft,
-    child: Row(
-      children: [
-        if (rjCode.isNotEmpty) ...[
-          Semantics(
-            button: true,
-            label: rjCode,
-            child: ElementActionMenu(
-              value: rjCode,
-              onCopy: () => onCopyMetadata(rjCode),
-              child: InkWell(
-                key: const ValueKey<String>('work_detail_rj_copy'),
-                onTap: Theme.of(context).platform == TargetPlatform.windows
-                    ? null
-                    : () => onCopyMetadata(rjCode),
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 10,
+    child: Material(
+      type: MaterialType.transparency,
+      child: Row(
+        children: [
+          if (rjCode.isNotEmpty) ...[
+            Semantics(
+              button: true,
+              label: rjCode,
+              child: ElementActionMenu(
+                value: rjCode,
+                onCopy: () => onCopyMetadata(rjCode),
+                child: InkWell(
+                  key: const ValueKey<String>('work_detail_rj_copy'),
+                  onTap: () => onCopyMetadata(rjCode),
+                  borderRadius: BorderRadius.circular(4),
+                  hoverColor: accentColor.withValues(alpha: 0.16),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      rjCode,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: accentColor,
+                      ),
+                    ),
                   ),
-                  child: Text(
-                    rjCode,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: accentColor,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '|',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.withValues(alpha: 0.6),
+                fontWeight: FontWeight.w300,
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Icon(
+            Icons.storefront_outlined,
+            size: 14,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Semantics(
+                button: circleName.isNotEmpty,
+                label: circleName.isNotEmpty ? circleName : null,
+                child: ElementActionMenu(
+                  value: circleName,
+                  onCopy: () => onCopyMetadata(circleName),
+                  child: InkWell(
+                    key: const ValueKey<String>('work_detail_circle_copy'),
+                    onTap: circleName.isEmpty
+                        ? null
+                        : () => onCopyMetadata(circleName),
+                    borderRadius: BorderRadius.circular(4),
+                    hoverColor: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.color?.withValues(alpha: 0.16),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text(
+                        circleName.isNotEmpty ? circleName : '--',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            '|',
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey.withValues(alpha: 0.6),
-              fontWeight: FontWeight.w300,
-            ),
-          ),
-          const SizedBox(width: 8),
+          if (subtitleStatus != null) ...[
+            const SizedBox(width: 8),
+            subtitleStatus!,
+          ],
         ],
-        Icon(
-          Icons.storefront_outlined,
-          size: 14,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-        const SizedBox(width: 4),
-        Expanded(
-          child: Semantics(
-            button: circleName.isNotEmpty,
-            label: circleName.isNotEmpty ? circleName : null,
-            child: ElementActionMenu(
-              value: circleName,
-              onCopy: () => onCopyMetadata(circleName),
-              child: InkWell(
-                key: const ValueKey<String>('work_detail_circle_copy'),
-                onTap:
-                    circleName.isEmpty ||
-                        Theme.of(context).platform == TargetPlatform.windows
-                    ? null
-                    : () => onCopyMetadata(circleName),
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Text(
-                    circleName.isNotEmpty ? circleName : '--',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        if (subtitleStatus != null) ...[
-          const SizedBox(width: 8),
-          subtitleStatus!,
-        ],
-      ],
+      ),
     ),
   );
 

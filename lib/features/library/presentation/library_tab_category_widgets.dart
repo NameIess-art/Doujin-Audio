@@ -590,6 +590,8 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
 
     Widget buildEntryCard(bool useFeaturedCard) {
       return SwipeRevealCard(
+        onSelectMultiple: onLongPress,
+        selectMultipleLabel: i18n.tr('select_multiple'),
         onTertiaryAction: defaultTargetPlatform == TargetPlatform.windows
             ? () =>
                   unawaited(openLocalContainingFolder(context, ref, entry.path))

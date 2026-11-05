@@ -1,11 +1,71 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_metadata.dart';
 import 'package:doujin_audio/core/widgets/horizontal_edge_fade_scroll.dart';
 
 void main() {
+  for (final brightness in Brightness.values) {
+    testWidgets(
+      'metadata capsule hover paints and clears in $brightness',
+      (tester) async {
+        final capture = GlobalKey();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(brightness: brightness),
+            home: Scaffold(
+              body: RepaintBoundary(
+                key: capture,
+                child: SizedBox(
+                  width: 320,
+                  child: WorkDetailMetadata(
+                    voiceActors: const ['Voice'],
+                    tags: const ['Tag'],
+                    onCopy: (_) {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        Future<List<int>> pixel(Offset point) async =>
+            (await tester.runAsync(() async {
+              final boundary = tester.renderObject<RenderRepaintBoundary>(
+                find.byKey(capture),
+              );
+              final image = await boundary.toImage();
+              final bytes = (await image.toByteData())!;
+              final offset =
+                  (point.dy.floor() * image.width + point.dx.floor()) * 4;
+              final result = bytes.buffer
+                  .asUint8List(bytes.offsetInBytes + offset, 4)
+                  .toList();
+              image.dispose();
+              return result;
+            }))!;
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: const Offset(500, 500));
+        addTearDown(mouse.removePointer);
+        for (final name in ['voice_actor_Voice', 'tag_#Tag']) {
+          final capsule = find.byKey(ValueKey('work_detail_$name'));
+          final rect = tester.getRect(capsule);
+          final point = Offset(rect.center.dx, rect.top + 3);
+          final before = await pixel(point);
+          await mouse.moveTo(rect.center);
+          await tester.pumpAndSettle();
+          expect(await pixel(point), isNot(before), reason: name);
+          await mouse.moveTo(const Offset(500, 500));
+          await tester.pumpAndSettle();
+          expect(await pixel(point), before, reason: name);
+        }
+      },
+      variant: const TargetPlatformVariant({TargetPlatform.windows}),
+    );
+  }
+
   testWidgets(
     'metadata stays still until manually scrolled on both platforms',
     (tester) async {
@@ -169,7 +229,7 @@ void main() {
   }
 
   testWidgets(
-    'Metadata copies through the platform action and opens the action drawer',
+    'Metadata copies on tap and keeps the platform action drawer',
     (tester) async {
       final copied = <String>[];
       await tester.pumpWidget(
@@ -184,18 +244,9 @@ void main() {
         ),
       );
       await tester.tap(find.text('Voice'));
-      if (defaultTargetPlatform == TargetPlatform.windows) {
-        expect(copied, isEmpty);
-        await tester.tap(
-          find.text('Voice'),
-          buttons: kSecondaryMouseButton,
-          kind: PointerDeviceKind.mouse,
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Copy'));
-        await tester.pumpAndSettle();
-      }
       expect(copied, ['Voice']);
+      await tester.tap(find.text('#Tag'));
+      expect(copied, ['Voice', 'Tag']);
 
       if (defaultTargetPlatform == TargetPlatform.windows) {
         await tester.tap(
@@ -208,13 +259,13 @@ void main() {
       }
       await tester.pumpAndSettle();
 
-      expect(copied, ['Voice']);
+      expect(copied, ['Voice', 'Tag']);
       expect(find.text('Tag'), findsOneWidget);
       expect(find.text('Search online'), findsOneWidget);
       expect(find.text('Search locally'), findsOneWidget);
       await tester.tap(find.text('Copy'));
       await tester.pumpAndSettle();
-      expect(copied, ['Voice', 'Tag']);
+      expect(copied, ['Voice', 'Tag', 'Tag']);
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,

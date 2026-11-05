@@ -639,6 +639,8 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
         : content;
 
     final swipeCard = SwipeRevealCard(
+      onSelectMultiple: isRootFolder ? widget.onLongPress : null,
+      selectMultipleLabel: i18n.tr('select_multiple'),
       onTertiaryAction: defaultTargetPlatform == TargetPlatform.windows
           ? () => unawaited(
               openLocalContainingFolder(context, ref, widget.folder.path),
@@ -827,6 +829,8 @@ class _TrackNodeWidget extends ConsumerWidget {
 
     Widget buildSingleTrackCard(bool useFeaturedCard) {
       return SwipeRevealCard(
+        onSelectMultiple: onLongPress,
+        selectMultipleLabel: i18n.tr('select_multiple'),
         onTertiaryAction: defaultTargetPlatform == TargetPlatform.windows
             ? () =>
                   unawaited(openLocalContainingFolder(context, ref, track.path))

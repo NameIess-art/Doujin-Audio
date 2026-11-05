@@ -523,8 +523,10 @@ extension _MainScreenLayout on _MainScreenState {
     AppLanguageProvider i18n,
     List<PlaybackSessionSnapshot> overlaySessions, {
     required bool isMenuCollapsed,
+    required bool isLandscapeLayout,
   }) {
     final fallbackSettings = ref.read(settingsRepositoryProvider).slice.state;
+    final splitMySettings = isLandscapeLayout;
     final (:showLocal, :showAsmr, :mode) = ref.watch(
       settingsStateProvider.select(
         (s) => (
@@ -537,20 +539,23 @@ extension _MainScreenLayout on _MainScreenState {
         ),
       ),
     );
+    final destinations = resolveMainDestinations(
+      showLocalLibrary: showLocal,
+      showAsmrOne: showAsmr,
+      mySettingsPageMode: mode,
+      splitMySettings: splitMySettings,
+    );
     return DesktopMainNavigation(
       i18n: i18n,
       overlaySessions: overlaySessions,
-      destinations: resolveMainDestinations(
-        showLocalLibrary: showLocal,
-        showAsmrOne: showAsmr,
-        mySettingsPageMode: mode,
-      ),
+      destinations: destinations,
+      mySettingsPageMode: mode,
       isMenuCollapsed: isMenuCollapsed,
       activePageIndex: _activePageIndex,
       menuIconKeys: _menuIconKeys,
       menuIconLinks: _menuIconLinks,
       collapseOffset: _menuIconCollapseOffset,
-      onSwitchPage: _switchPage,
+      onSwitchPage: _switchNavigationPage,
       onToggleMenu: _toggleMenuCollapsed,
       playbackGeometryKey: _desktopPlaybackGeometryKey,
       onReportPlaybackRect: _reportDesktopPlaybackRect,

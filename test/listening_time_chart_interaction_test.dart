@@ -503,6 +503,75 @@ void main() {
     );
   }
 
+  for (final brightness in Brightness.values) {
+    testWidgets('heatmap outlines hovered cells in $brightness', (
+      tester,
+    ) async {
+      final days = List.generate(
+        3,
+        (index) => ListeningDay(
+          date: DateTime(today.year, today.month, today.day - index),
+          duration: Duration(minutes: index + 1),
+        ),
+      );
+      await pumpChart(
+        tester,
+        platform: TargetPlatform.windows,
+        style: ListeningChartStyle.heatmap,
+        brightness: brightness,
+        days: days,
+      );
+      Finder cell(int index) => find.byKey(ValueKey(days[index].date));
+      BoxBorder? border(int index) =>
+          (tester
+                      .widget<Container>(
+                        find.descendant(
+                          of: cell(index),
+                          matching: find.byType(Container),
+                        ),
+                      )
+                      .decoration!
+                  as BoxDecoration)
+              .border;
+      final summary = tester
+          .widget<Text>(find.byKey(const ValueKey('listening-duration')))
+          .data;
+      final originalBounds = tester.getRect(cell(1));
+      expect(border(0), isNotNull);
+      expect(border(1), isNull);
+      expect(border(2), isNull);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(tester.getCenter(cell(1)));
+      await tester.pumpAndSettle();
+      expect(border(1), isNotNull);
+      expect(tester.getRect(cell(1)), originalBounds);
+      await mouse.moveTo(tester.getCenter(cell(2)));
+      await tester.pumpAndSettle();
+      expect(border(1), isNull);
+      expect(border(2), isNotNull);
+      expect(border(0), isNotNull);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('listening-duration')))
+            .data,
+        summary,
+      );
+      await tester.tap(cell(2));
+      await tester.pumpAndSettle();
+      await mouse.moveTo(Offset.zero);
+      await tester.pumpAndSettle();
+      expect(border(0), isNull);
+      expect(border(1), isNull);
+      expect(border(2), isNotNull);
+      expect(
+        find.text(listeningDurationText(i18n, days[2].duration)),
+        findsOneWidget,
+      );
+    });
+  }
+
   testWidgets('heatmap follows all five aggregated intervals', (tester) async {
     final days = [
       ListeningDay(date: today, duration: const Duration(minutes: 2)),

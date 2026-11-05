@@ -11,9 +11,14 @@ import 'app_presentation_providers.dart';
 import 'my_page.dart';
 
 class MySettingsPage extends ConsumerStatefulWidget {
-  const MySettingsPage({super.key, required this.tabIndex});
+  const MySettingsPage({
+    super.key,
+    required this.tabIndex,
+    this.isLandscapeLayout = false,
+  });
 
   final int tabIndex;
+  final bool isLandscapeLayout;
 
   @override
   ConsumerState<MySettingsPage> createState() => _MySettingsPageState();
@@ -48,6 +53,7 @@ class _MySettingsPageState extends ConsumerState<MySettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final separateEntries = widget.isLandscapeLayout;
     ref.listen(
       settingsStateProvider.select((state) => state.value?.mySettingsPageMode),
       (_, mode) {
@@ -57,17 +63,21 @@ class _MySettingsPageState extends ConsumerState<MySettingsPage> {
     return AppFadeThroughIndexedStack.lazy(
       indexListenable: _pageIndex,
       itemCount: MySettingsPageMode.values.length,
-      contentRevision: widget.tabIndex,
+      contentRevision: (widget.tabIndex, separateEntries),
       separateHeader: true,
       itemBuilder: (_, index) =>
           MySettingsPageMode.values[index] == MySettingsPageMode.settings
           ? SettingsTab(
               tabIndex: widget.tabIndex,
-              onSwitchPage: () => _switchTo(MySettingsPageMode.my),
+              onSwitchPage: separateEntries
+                  ? null
+                  : () => _switchTo(MySettingsPageMode.my),
             )
           : MyPage(
               tabIndex: widget.tabIndex,
-              onSwitchPage: () => _switchTo(MySettingsPageMode.settings),
+              onSwitchPage: separateEntries
+                  ? null
+                  : () => _switchTo(MySettingsPageMode.settings),
             ),
     );
   }

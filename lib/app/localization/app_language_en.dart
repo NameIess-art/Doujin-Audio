@@ -1046,6 +1046,7 @@ const Map<String, String> appLanguageEn = {
   'edit': 'Edit',
   'save': 'Save',
   'multi_select': 'Select multiple',
+  'select_multiple': 'Select multiple',
   'batch_add_to_playlist': 'Add to playlist',
   'batch_added_to_playlist': 'Added {count} works to playlist',
   'batch_download': 'Batch download',

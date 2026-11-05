@@ -76,11 +76,12 @@ class WorkDetailMetadata extends StatelessWidget {
           onCopy: () => onCopy(voiceActor),
           child: InkWell(
             key: ValueKey<String>('work_detail_voice_actor_$voiceActor'),
-            onTap: Theme.of(context).platform == TargetPlatform.windows
-                ? null
-                : () => onCopy(voiceActor),
+            onTap: () => onCopy(voiceActor),
             borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
-            child: Container(
+            hoverColor: (isDark ? cs.primary : cs.onSurface).withValues(
+              alpha: 0.16,
+            ),
+            child: Ink(
               padding: _workMetadataCapsulePadding,
               decoration: BoxDecoration(
                 color: cs.primary.withValues(alpha: isDark ? 0.14 : 0.10),
@@ -93,11 +94,7 @@ class WorkDetailMetadata extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.person_rounded,
-                    size: 13,
-                    color: isDark ? cs.primary : cs.primary,
-                  ),
+                  Icon(Icons.person_rounded, size: 13, color: cs.primary),
                   const SizedBox(width: 4),
                   Text(
                     voiceActor,
@@ -128,11 +125,10 @@ class WorkDetailMetadata extends StatelessWidget {
         onCopy: () => onCopy(value),
         child: InkWell(
           key: ValueKey<String>('work_detail_tag_$displayLabel'),
-          onTap: Theme.of(context).platform == TargetPlatform.windows
-              ? null
-              : () => onCopy(value),
+          onTap: () => onCopy(value),
           borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
-          child: Container(
+          hoverColor: cs.onSurfaceVariant.withValues(alpha: 0.16),
+          child: Ink(
             padding: _workMetadataCapsulePadding,
             decoration: BoxDecoration(
               color: isDark

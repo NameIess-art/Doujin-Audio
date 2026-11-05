@@ -432,6 +432,8 @@ void main() {
                   tertiaryActionLabel: 'Download',
                   onLeadingAction: () => calls.add('Pin'),
                   leadingActionLabel: 'Pin',
+                  onSelectMultiple: () => calls.add('Select multiple'),
+                  selectMultipleLabel: 'Select multiple',
                   child: InkWell(
                     onTap: () => calls.add('Play'),
                     child: const Center(child: Text('Track')),
@@ -448,7 +450,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.getTopLeft(find.text('Track')), originalPosition);
       expect(find.byType(IconButton), findsNothing);
-      for (final label in ['Pin', 'Download', 'Details', 'Remove']) {
+      const actions = [
+        'Pin',
+        'Download',
+        'Details',
+        'Select multiple',
+        'Remove',
+      ];
+      for (final label in actions) {
         final click = await tester.startGesture(
           tester.getCenter(card),
           kind: PointerDeviceKind.mouse,
@@ -456,7 +465,7 @@ void main() {
         );
         await click.up();
         await tester.pumpAndSettle();
-        for (final action in ['Pin', 'Download', 'Details', 'Remove']) {
+        for (final action in actions) {
           expect(find.text(action), findsOneWidget);
         }
         final item = find
@@ -474,7 +483,7 @@ void main() {
         await tester.tap(find.text(label));
         await tester.pumpAndSettle();
       }
-      expect(calls, ['Pin', 'Download', 'Details', 'Remove']);
+      expect(calls, actions);
       debugDefaultTargetPlatformOverride = null;
     },
   );
@@ -493,6 +502,8 @@ void main() {
             actionLabel: 'Remove',
             removeTooltip: 'Remove',
             onRemove: () => fail('Disabled action executed'),
+            onSelectMultiple: () => fail('Disabled selection executed'),
+            selectMultipleLabel: 'Select multiple',
             child: const SizedBox(width: 300, height: 100),
           ),
         ),
@@ -506,6 +517,7 @@ void main() {
     await click.up();
     await tester.pumpAndSettle();
     expect(find.text('Remove'), findsNothing);
+    expect(find.text('Select multiple'), findsNothing);
     debugDefaultTargetPlatformOverride = null;
   });
 

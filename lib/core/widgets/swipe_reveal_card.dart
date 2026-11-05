@@ -42,6 +42,8 @@ class SwipeRevealCard extends StatefulWidget {
     this.destructive = true,
     this.verticalActions = false,
     this.enabled = true,
+    this.onSelectMultiple,
+    this.selectMultipleLabel,
     this.color,
     this.closedColor,
     this.onLeadingAction,
@@ -55,7 +57,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.secondaryLeadingActionTooltip,
     this.secondaryLeadingActionIcon = Icons.download_rounded,
     this.secondaryLeadingActionIconWidget,
-  });
+  }) : assert(onSelectMultiple == null || selectMultipleLabel != null);
 
   final Widget child;
   final FutureOr<void> Function() onRemove;
@@ -79,6 +81,8 @@ class SwipeRevealCard extends StatefulWidget {
   final bool destructive;
   final bool verticalActions;
   final bool enabled;
+  final VoidCallback? onSelectMultiple;
+  final String? selectMultipleLabel;
   final Color? color;
   final Color? closedColor;
   final VoidCallback? onLeadingAction;
@@ -317,6 +321,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                 '',
             icon: widget.secondaryActionIcon,
             iconWidget: widget.secondaryActionIconWidget,
+          ),
+        if (widget.onSelectMultiple != null)
+          UnifiedMenuEntry.action(
+            value: widget.onSelectMultiple!,
+            label: widget.selectMultipleLabel!,
+            icon: Icons.checklist_rounded,
           ),
         UnifiedMenuEntry.action(
           value: widget.onRemove,

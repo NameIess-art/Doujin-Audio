@@ -176,6 +176,8 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     );
 
     return SwipeRevealCard(
+      onSelectMultiple: widget.onLongPress,
+      selectMultipleLabel: i18n.tr('select_multiple'),
       shape: cardShape,
       enabled: !widget.isSelectionMode,
       closedColor: cs.surface,

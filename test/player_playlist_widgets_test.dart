@@ -10209,6 +10209,111 @@ void main() {
     );
   });
 
+  for (final selectQueueFirst in [false, true]) {
+    testWidgets(
+      'playlist right-click multiselect selects the current ${selectQueueFirst ? 'queue' : 'session'} and another item',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(500, 1000);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+        );
+        addTearDown(fixture.dispose);
+        final track = testMusicTrack(
+          name: 'Saved selection track',
+          path: PathMatcher.normalize('/library/saved/track.mp3'),
+          groupKey: PathMatcher.normalize('/library/saved'),
+          groupTitle: 'Saved selection work',
+        );
+        final temporaryTrack = testMusicTrack(
+          name: 'Temporary selection track',
+          path: PathMatcher.normalize('/library/temporary/track.mp3'),
+          groupKey: PathMatcher.normalize('/library/temporary'),
+          groupTitle: 'Temporary selection work',
+        );
+        fixture.runtimeGraph.library.addTracks([
+          track,
+          temporaryTrack,
+        ], persist: false);
+        final session = fixture.runtimeGraph.playback.createTrackSession(track);
+        final temporary = fixture.runtimeGraph.playback.createTrackSession(
+          temporaryTrack,
+        )..isTemporary = true;
+        final queue = fixture.runtimeGraph.playback.createPlaybackQueue(
+          'Right-click selection queue',
+        );
+        fixture.playbackService.syncSlice(
+          activeSessions: [session, queue, temporary],
+          playingSessionCount: 0,
+          focusedSessionId: session.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        await tester.pumpWidget(fixture.build(const PlaylistTab()));
+        await pumpFiniteTransitions(tester);
+
+        final actionLabel = fixture.languageProvider.tr('select_multiple');
+        await tester.tap(
+          find.text(temporaryTrack.displayName),
+          buttons: kSecondaryMouseButton,
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text(actionLabel), findsNothing);
+        await tester.tapAt(const Offset(490, 950));
+        await tester.pumpAndSettle();
+
+        final first = selectQueueFirst ? queue : session;
+        final second = selectQueueFirst ? session : queue;
+        final firstTitle = find.text(
+          selectQueueFirst ? 'Right-click selection queue' : track.displayName,
+        );
+        final secondTitle = find.text(
+          selectQueueFirst ? track.displayName : 'Right-click selection queue',
+        );
+        Finder indicator(String id) =>
+            find.byKey(ValueKey<String>('playlist_selection_indicator_$id'));
+        await tester.tap(
+          firstTitle,
+          buttons: kSecondaryMouseButton,
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text(actionLabel), findsOneWidget);
+        await tester.tap(find.text(actionLabel));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('playlist_batch_selection_header')),
+          findsOneWidget,
+        );
+        expect(indicator(first.id), findsOneWidget);
+        expect(indicator(second.id), findsNothing);
+        expect(indicator(temporary.id), findsNothing);
+        expect(
+          find.text(
+            fixture.languageProvider.tr('selected_count', {'count': '1'}),
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(secondTitle);
+        await tester.pumpAndSettle();
+        expect(indicator(first.id), findsOneWidget);
+        expect(indicator(second.id), findsOneWidget);
+        expect(indicator(temporary.id), findsNothing);
+        expect(
+          find.text(
+            fixture.languageProvider.tr('selected_count', {'count': '2'}),
+          ),
+          findsOneWidget,
+        );
+        expect(find.byType(SessionDetailLayout), findsNothing);
+      },
+      variant: const TargetPlatformVariant({TargetPlatform.windows}),
+    );
+  }
+
   testWidgets(
     'playlist multiselect overlays indicators and swaps batch transport actions',
     (WidgetTester tester) async {

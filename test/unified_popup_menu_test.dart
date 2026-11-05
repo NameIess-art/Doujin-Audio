@@ -22,7 +22,7 @@ void main() {
   for (final side in [Alignment.centerLeft, Alignment.centerRight]) {
     for (final mode in ['button', 'dock', 'context']) {
       testWidgets(
-        'single-column $mode menu follows the $side entry within its page',
+        'single-column $mode menu keeps expected text alignment at $side',
         (tester) async {
           const entries = [
             UnifiedMenuEntry.action(value: 1, label: 'Short'),
@@ -116,10 +116,10 @@ void main() {
 
           final short = glyphBounds('Short');
           final long = glyphBounds('A much longer option');
-          if (side == Alignment.centerLeft) {
-            expect(short.left, closeTo(long.left, 0.01));
-          } else {
+          if (mode == 'button' && side == Alignment.centerRight) {
             expect(short.right, closeTo(long.right, 0.01));
+          } else {
+            expect(short.left, closeTo(long.left, 0.01));
           }
           await tester.sendKeyEvent(LogicalKeyboardKey.escape);
           await tester.pumpAndSettle();

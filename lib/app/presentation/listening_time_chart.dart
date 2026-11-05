@@ -138,12 +138,19 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
   ScrollController? _scrollController;
   ListeningInterval _interval = ListeningInterval.day;
   DateTime? _selected;
+  final _hoveredPeriod = ValueNotifier<DateTime?>(null);
   List<ListeningDay>? _aggregatedDays;
   ListeningInterval? _aggregatedInterval;
   DateTime? _aggregatedSelection;
   DateTime? _aggregatedDay;
   List<ListeningPeriod> _periods = const [];
   int _maximum = 1;
+
+  @override
+  void dispose() {
+    _hoveredPeriod.dispose();
+    super.dispose();
+  }
 
   List<ListeningPeriod> _currentPeriods() {
     final now = DateTime.now();
@@ -292,6 +299,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
       ListeningPeriod period,
       Widget child, {
       double radius = 8,
+      ValueChanged<bool>? onHover,
     }) {
       final description =
           '${range(period)}: ${listeningDurationText(i18n, period.duration)}';
@@ -304,6 +312,7 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
           child: InkWell(
             key: ValueKey(period.start),
             onTap: () => setState(() => _selected = period.start),
+            onHover: onHover,
             borderRadius: BorderRadius.circular(radius),
             child: ExcludeSemantics(child: child),
           ),
@@ -327,20 +336,30 @@ class _ListeningTimeChartState extends State<ListeningTimeChart> {
           : ((milliseconds * 4 + _maximum - 1) ~/ _maximum).clamp(1, 4);
       return selectablePeriod(
         period,
-        Container(
-          decoration: BoxDecoration(
-            color: Color.lerp(
-              colors.surfaceContainerHighest,
-              colors.primary,
-              level / 4,
+        ValueListenableBuilder<DateTime?>(
+          valueListenable: _hoveredPeriod,
+          builder: (context, hovered, child) => Container(
+            decoration: BoxDecoration(
+              color: Color.lerp(
+                colors.surfaceContainerHighest,
+                colors.primary,
+                level / 4,
+              ),
+              borderRadius: BorderRadius.circular(3),
+              border: selected.start == period.start || hovered == period.start
+                  ? Border.all(color: colors.onSurface, width: 1.5)
+                  : null,
             ),
-            borderRadius: BorderRadius.circular(3),
-            border: selected.start == period.start
-                ? Border.all(color: colors.onSurface, width: 1.5)
-                : null,
           ),
         ),
         radius: 3,
+        onHover: (hovering) {
+          if (hovering) {
+            _hoveredPeriod.value = period.start;
+          } else if (_hoveredPeriod.value == period.start) {
+            _hoveredPeriod.value = null;
+          }
+        },
       );
     }
 

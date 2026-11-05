@@ -787,7 +787,53 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
   }
 
-  List<MainDestination> _currentDestinations() {
+  void _switchNavigationPage(int index) {
+    final split = _previousNavigationLayout?.$2 ?? false;
+    final destinations = _currentDestinations(splitMySettings: split);
+    if (index < 0 || index >= destinations.length) return;
+    final destination = destinations[index].type;
+    if (!split ||
+        (destination != MainDestinationType.my &&
+            destination != MainDestinationType.settings)) {
+      _switchPage(index);
+      return;
+    }
+    if (!UiInteractionCoordinator.instance.navigationAllowed.value) return;
+    final hostIndex = destinations.length - 2;
+    final mode = ref.read(settingsRepositoryProvider).mySettingsPageMode;
+    final nextMode = destination == MainDestinationType.my
+        ? MySettingsPageMode.my
+        : MySettingsPageMode.settings;
+    if (nextMode != mode) {
+      ref.read(mainScreenControllerProvider).requestStopScroll(hostIndex);
+      WorkDetailNavigationScope.maybeOf(context)?.resetContent();
+      unawaited(
+        saveSettingsWithFeedback(
+          context,
+          () => ref
+              .read(settingsRepositoryProvider)
+              .setMySettingsPageMode(nextMode),
+        ),
+      );
+      if (_activePageIndex.value == hostIndex) return;
+    }
+    _switchPage(hostIndex);
+  }
+
+  void _cycleNavigationPage(bool backwards) {
+    final split = _previousNavigationLayout?.$2 ?? false;
+    final destinations = _currentDestinations(splitMySettings: split);
+    var index = _activePageIndex.value;
+    if (split &&
+        index == destinations.length - 2 &&
+        ref.read(settingsRepositoryProvider).mySettingsPageMode ==
+            MySettingsPageMode.settings) {
+      index++;
+    }
+    _switchNavigationPage((index + (backwards ? -1 : 1)) % destinations.length);
+  }
+
+  List<MainDestination> _currentDestinations({bool splitMySettings = false}) {
     final settings =
         ref.read(settingsStateProvider).value ??
         ref.read(settingsRepositoryProvider).slice.state;
@@ -796,6 +842,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
     return resolveMainDestinations(
       showLocalLibrary: showLocal,
       showAsmrOne: showAsmr,
+      mySettingsPageMode: settings.mySettingsPageMode,
+      splitMySettings: splitMySettings,
     );
   }
 
@@ -851,7 +899,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
           activeTabIndexListenable: _activePageIndex,
         ),
       ),
-      MainDestinationType.settings => MySettingsPage(tabIndex: index),
+      MainDestinationType.settings || MainDestinationType.my => MySettingsPage(
+        tabIndex: index,
+        isLandscapeLayout: isLandscapeLayout,
+      ),
     };
   }
 
@@ -1055,6 +1106,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                                     context,
                                     i18n,
                                     overlaySessions,
+                                    isLandscapeLayout: isLandscape,
                                     isMenuCollapsed: menuCollapsed,
                                   );
                                 },
@@ -1147,21 +1199,18 @@ class _MainScreenState extends ConsumerState<MainScreen>
                 LogicalKeyboardKey.digit2,
                 LogicalKeyboardKey.digit3,
                 LogicalKeyboardKey.digit4,
+                LogicalKeyboardKey.digit5,
               ].indexed)
                 SingleActivator(key, control: true): () {
-                  if (index < _currentDestinations().length) {
-                    _switchPage(index);
-                  }
+                  _switchNavigationPage(index);
                 },
               for (final backwards in [false, true])
                 SingleActivator(
                   LogicalKeyboardKey.tab,
                   control: true,
                   shift: backwards,
-                ): () => _switchPage(
-                  (_activePageIndex.value + (backwards ? -1 : 1)) %
-                      _currentDestinations().length,
-                ),
+                ): () =>
+                    _cycleNavigationPage(backwards),
             },
             child: Focus(autofocus: true, skipTraversal: true, child: content),
           )

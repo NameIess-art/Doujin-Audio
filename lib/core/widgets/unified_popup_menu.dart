@@ -678,12 +678,6 @@ Future<T?> showDockAwareMenu<T>({
   final overlayState =
       MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
   if (overlayState == null) return null;
-  final overlayBox = overlayState.context.findRenderObject()! as RenderBox;
-  final textAlign = _menuTextAlign(
-    context,
-    overlayBox,
-    position.toRect(Offset.zero & overlayBox.size).center,
-  );
   final tickerMode = TickerMode.getValuesNotifier(context);
   if (!tickerMode.value.enabled) return null;
 
@@ -721,7 +715,6 @@ Future<T?> showDockAwareMenu<T>({
       key: menuKey,
       position: position,
       entries: entries,
-      textAlign: textAlign,
       autofocusFirstEntry: autofocusFirstEntry,
       themes: themes,
       reducedMotion: reducedMotion,
@@ -761,7 +754,6 @@ class _DockMenuOverlay<T> extends StatefulWidget {
     super.key,
     required this.position,
     required this.entries,
-    required this.textAlign,
     required this.themes,
     required this.reducedMotion,
     required this.interactionSource,
@@ -772,7 +764,6 @@ class _DockMenuOverlay<T> extends StatefulWidget {
 
   final RelativeRect position;
   final List<UnifiedMenuEntry<T>> entries;
-  final TextAlign textAlign;
   final CapturedThemes themes;
   final bool reducedMotion;
   final Object interactionSource;
@@ -919,7 +910,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                                     ignoring: _dismissed,
                                     child: _UnifiedPopupMenuCard<T>(
                                       entries: widget.entries,
-                                      textAlign: widget.textAlign,
+                                      textAlign: TextAlign.left,
                                       autofocusFirstEntry:
                                           widget.autofocusFirstEntry,
                                       compact: true,

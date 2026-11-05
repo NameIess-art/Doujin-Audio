@@ -10,6 +10,142 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   for (final brightness in Brightness.values) {
     testWidgets(
+      'RJ and circle support tap, action menus and hover in $brightness',
+      (tester) async {
+        final copied = <String>[];
+        final capture = GlobalKey();
+        final theme = ThemeData(brightness: brightness);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: theme,
+            home: Scaffold(
+              body: RepaintBoundary(
+                key: capture,
+                child: SizedBox(
+                  width: 400,
+                  height: 300,
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverPersistentHeader(
+                        delegate: WorkDetailHeaderDelegate(
+                          topSafeArea: 0,
+                          coverMaxHeight: 240,
+                          coverMinHeight: 120,
+                          rjBarHeight: 44,
+                          title: 'Title',
+                          rjCode: 'RJ123456',
+                          circleName: 'Circle',
+                          coverWidget: const ColoredBox(color: Colors.blue),
+                          accentColor: theme.colorScheme.primary,
+                          surfaceColor: theme.colorScheme.surface,
+                          onCopyMetadata: copied.add,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        Future<List<int>> pixel(Offset point) async =>
+            (await tester.runAsync(() async {
+              final boundary = tester.renderObject<RenderRepaintBoundary>(
+                find.byKey(capture),
+              );
+              final image = await boundary.toImage();
+              final bytes = (await image.toByteData())!;
+              final offset =
+                  (point.dy.floor() * image.width + point.dx.floor()) * 4;
+              final result = bytes.buffer
+                  .asUint8List(bytes.offsetInBytes + offset, 4)
+                  .toList();
+              image.dispose();
+              return result;
+            }))!;
+        final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+        final mouse = isWindows
+            ? await tester.createGesture(kind: PointerDeviceKind.mouse)
+            : null;
+        if (mouse != null) {
+          await mouse.addPointer(location: const Offset(500, 500));
+          addTearDown(mouse.removePointer);
+        }
+        for (final entry in {'rj': 'RJ123456', 'circle': 'Circle'}.entries) {
+          final target = find.byKey(ValueKey('work_detail_${entry.key}_copy'));
+          final targetRect = tester.getRect(target);
+          final textRect = tester.getRect(find.text(entry.value));
+          expect(targetRect.width, closeTo(textRect.width, 0.01));
+          expect(targetRect.height, closeTo(textRect.height + 4, 0.01));
+          if (mouse != null) {
+            final rect = tester.getRect(target);
+            final point = Offset(rect.center.dx, rect.top + 3);
+            final before = await pixel(point);
+            await mouse.moveTo(rect.center);
+            await tester.pumpAndSettle();
+            expect(await pixel(point), isNot(before), reason: entry.key);
+            await mouse.moveTo(const Offset(500, 500));
+            await tester.pumpAndSettle();
+            expect(await pixel(point), before, reason: entry.key);
+          }
+          await tester.tap(target);
+          await tester.pumpAndSettle();
+          expect(copied.last, entry.value);
+          final count = copied.length;
+          if (isWindows) {
+            await tester.tap(
+              target,
+              buttons: kSecondaryMouseButton,
+              kind: PointerDeviceKind.mouse,
+            );
+          } else {
+            await tester.longPress(target);
+          }
+          await tester.pumpAndSettle();
+          expect(copied.length, count);
+          expect(find.text('Search online'), findsOneWidget);
+          expect(find.text('Search locally'), findsOneWidget);
+          await tester.ensureVisible(find.text('Copy'));
+          await tester.tap(find.text('Copy'));
+          await tester.pumpAndSettle();
+          expect(copied.last, entry.value);
+          expect(copied.length, count + 1);
+        }
+        expect(copied, ['RJ123456', 'RJ123456', 'Circle', 'Circle']);
+        final title = find.byKey(const ValueKey('work_detail_title_copy'));
+        final titleText = find.descendant(
+          of: title,
+          matching: find.byType(RichText),
+        );
+        Color? titleColor() =>
+            tester.widget<RichText>(titleText).text.style?.color;
+        expect(
+          tester.getSize(title).width,
+          closeTo(tester.getSize(titleText).width, 0.01),
+        );
+        expect(titleColor(), Colors.white);
+        if (mouse != null) {
+          await mouse.moveTo(tester.getCenter(title));
+          await tester.pumpAndSettle();
+          expect(titleColor(), theme.colorScheme.primary);
+          await mouse.moveTo(const Offset(500, 500));
+          await tester.pumpAndSettle();
+          expect(titleColor(), Colors.white);
+        }
+        await tester.tap(title);
+        await tester.pumpAndSettle();
+        expect(copied.last, 'Title');
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
+  for (final brightness in Brightness.values) {
+    testWidgets(
       'missing cover hides scrolled content in $brightness',
       (tester) async {
         final scroll = ScrollController();
@@ -200,10 +336,12 @@ void main() {
             await tester.scrollUntilVisible(
               copyAction,
               200,
-              scrollable: find.descendant(
-                of: find.byType(BottomSheet),
-                matching: find.byType(Scrollable),
-              ).last,
+              scrollable: find
+                  .descendant(
+                    of: find.byType(BottomSheet),
+                    matching: find.byType(Scrollable),
+                  )
+                  .last,
             );
             await tester.pumpAndSettle();
             await tester.tap(copyAction);

@@ -226,6 +226,8 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
         onRemove: onEdit,
         closeAfterPrimaryAction: true,
         onLeadingAction: onTogglePin,
+        onSelectMultiple: onLongPress,
+        selectMultipleLabel: i18n.tr('select_multiple'),
         animateLeadingActionClose: true,
         leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
         leadingActionTooltip: i18n.tr(

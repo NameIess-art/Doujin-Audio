@@ -810,7 +810,7 @@ class _HistoryWorkCard extends ConsumerWidget {
   }
 }
 
-class _WorkCoverCard extends StatelessWidget {
+class _WorkCoverCard extends StatefulWidget {
   const _WorkCoverCard({
     required this.cardKey,
     required this.titleKey,
@@ -825,11 +825,18 @@ class _WorkCoverCard extends StatelessWidget {
   final VoidCallback onOpen;
 
   @override
+  State<_WorkCoverCard> createState() => _WorkCoverCardState();
+}
+
+class _WorkCoverCardState extends State<_WorkCoverCard> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: title,
+      message: widget.title,
       child: Semantics(
-        label: title,
+        label: widget.title,
         button: true,
         child: SizedBox(
           width: _HistoryWorkCard.coverWidth + 12,
@@ -837,41 +844,65 @@ class _WorkCoverCard extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
               child: CoverArtworkFrame(
-                key: ValueKey(cardKey),
+                key: ValueKey(widget.cardKey),
                 borderRadius: BorderRadius.circular(12),
-                child: Material(
-                  child: AppEntryInkWell(
-                    onTap: onOpen,
-                    child: ExcludeSemantics(
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          cover,
-                          Positioned(
-                            bottom: 8,
-                            left: 8,
-                            right: 8,
-                            child: Text(
-                              title,
-                              key: ValueKey(titleKey),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                height: 1.25,
-                                shadows: [
-                                  Shadow(
-                                    color: Colors.black87,
-                                    blurRadius: 4,
-                                    offset: Offset(0, 1),
-                                  ),
-                                ],
+                child: MouseRegion(
+                  onEnter: (_) => setState(() => _hovered = true),
+                  onExit: (_) => setState(() => _hovered = false),
+                  child: Material(
+                    child: AppEntryInkWell(
+                      onTap: widget.onOpen,
+                      child: ExcludeSemantics(
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            widget.cover,
+                            Positioned(
+                              bottom: 8,
+                              left: 8,
+                              right: 8,
+                              child: Text(
+                                widget.title,
+                                key: ValueKey(widget.titleKey),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.25,
+                                  shadows: [
+                                    Shadow(
+                                      color: Colors.black87,
+                                      blurRadius: 4,
+                                      offset: Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: DecoratedBox(
+                                  key: ValueKey(
+                                    '${widget.cardKey}-hover-border',
+                                  ),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: _hovered
+                                        ? Border.all(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                            width: 2,
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

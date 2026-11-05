@@ -27,6 +27,7 @@ import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -93,6 +94,31 @@ void main() {
       UiInteractionCoordinator.instance.flushPendingCommitsForTest();
       await Future<void>.delayed(Duration.zero);
       expect(published.single.single.tag.name, 'Sleep');
+    },
+  );
+
+  test(
+    'landscape keeps separate My and settings entries in all visibility combinations',
+    () {
+      for (final local in [false, true]) {
+        for (final remote in [false, true]) {
+          for (final mode in MySettingsPageMode.values) {
+            final destinations = resolveMainDestinations(
+              showLocalLibrary: local,
+              showAsmrOne: remote,
+              mySettingsPageMode: mode,
+              splitMySettings: true,
+            );
+            expect(
+              destinations.sublist(destinations.length - 3).map((item) => item.type),
+              [MainDestinationType.playlist, MainDestinationType.my, MainDestinationType.settings],
+            );
+            expect(destinations[destinations.length - 2].navigationKey, 'nav_my');
+            expect(destinations.last.navigationKey, 'nav_settings');
+            expect(destinations.last.selectedIcon, Icons.settings_rounded);
+          }
+        }
+      }
     },
   );
 
@@ -1784,6 +1810,40 @@ void main() {
           8,
         );
         expect(tester.getTopLeft(card).dx - tester.getTopLeft(viewport).dx, 8);
+        if (platform == TargetPlatform.windows) {
+          BoxDecoration border(String workKey) =>
+              tester.widget<DecoratedBox>(
+                find.byKey(ValueKey('my-history-card-$workKey-hover-border')),
+              ).decoration as BoxDecoration;
+          await tester.pumpAndSettle();
+          final colors = Theme.of(tester.element(card)).colorScheme;
+          final bounds = tester.getRect(card);
+          expect(border('work').border, isNull);
+          final mouse = await tester.createGesture(
+            kind: PointerDeviceKind.mouse,
+          );
+          await mouse.addPointer(location: Offset.zero);
+          addTearDown(mouse.removePointer);
+          await mouse.moveTo(tester.getCenter(card));
+          await tester.pumpAndSettle();
+          expect(
+            border('work').border,
+            Border.all(color: colors.primary, width: 2),
+          );
+          expect(border('work').borderRadius, BorderRadius.circular(12));
+          expect(tester.getRect(card), bounds);
+          await mouse.moveTo(tester.getCenter(nextCard));
+          await tester.pumpAndSettle();
+          expect(border('work').border, isNull);
+          expect(
+            border('remote-0').border,
+            Border.all(color: colors.primary, width: 2),
+          );
+          await mouse.moveTo(Offset.zero);
+          await tester.pumpAndSettle();
+          expect(border('remote-0').border, isNull);
+          expect(fixture.playback.activeSessions, isEmpty);
+        }
         await pumpUntilUiIdle(tester);
         fixture.library.detailCacheService.markChanged(
           AudioDetail.empty(

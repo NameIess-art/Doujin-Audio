@@ -33,7 +33,7 @@ Official releases are distributed only through GitHub Releases. App-store AAB pa
 1. Install the package for your platform. If Android blocks installation, allow the browser or file manager opening the APK to install unknown applications. On Windows, follow the wizard to install for the current user.
 2. Add a media folder, subfolder, or individual file in the local audio library. Android uses the SAF system picker for authorization; Windows uses local folders.
 3. Select a work to view its details, or select an audio/video entry to play it. You can also browse online content in ASMR.ONE; account features require sign-in.
-4. Android cards support swipe actions; Windows uses right-click menus. Closing the Windows main window keeps the application running in the tray. Choose Exit from the tray to stop playback and quit.
+4. Android cards support swipe actions; Windows uses right-click menus. In the local/online library or playlists, right-click and choose Select multiple to select the current item and continue selecting others. Closing the Windows main window keeps the application running in the tray. Choose Exit from the tray to stop playback and quit.
 
 ## Screenshots
 
@@ -96,7 +96,7 @@ Work information is stored in `doujin-audio.json` inside the folder, including t
 
 ### My: listening statistics, history, and interests
 
-The Android bottom menu and Windows sidebar share a single My / Settings entry after Playlists, showing Settings by default on first use. Use the button at the top right of the header to switch between My and Settings. The app remembers your choice and updates the navigation label and icon accordingly. Selecting My / Settings as the startup page also restores the remembered page.
+In landscape, the left sidebar provides separate My and Settings entries after Playlists, with Settings below My. The Android portrait bottom menu retains a combined My / Settings entry, showing Settings on first use. Its header button switches pages, and the navigation label and icon follow the current page. The app remembers your choice; selecting My / Settings as the startup page restores that page.
 
 - **Listening time**: View actual listening time across local and ASMR.ONE works by day, week, month, quarter, or year. Simultaneous sessions count once; pauses and buffering do not count, and playback speed does not multiply elapsed time. Older history is not used to invent past listening totals.
 - **Bar chart and heatmap**: Switch styles on the right of the date row; the last choice is remembered. The heatmap fills the available area with seven rows of larger cells, with the latest period at the bottom right. Color intensity follows the theme and increases with listening time.

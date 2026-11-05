@@ -6,6 +6,7 @@ import '../localization/app_language_provider.dart';
 import '../theme/app_styles.dart';
 import '../theme/app_design_tokens.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
+import '../../features/settings/application/settings_state.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
 import '../../features/player/presentation/playlist/session_detail_page.dart';
 import 'main_destination.dart';
@@ -26,10 +27,12 @@ class DesktopMainNavigation extends StatefulWidget {
     required this.onToggleMenu,
     required this.playbackGeometryKey,
     required this.onReportPlaybackRect,
+    this.mySettingsPageMode = MySettingsPageMode.settings,
   });
   final AppLanguageProvider i18n;
   final List<PlaybackSessionSnapshot> overlaySessions;
   final List<MainDestination> destinations;
+  final MySettingsPageMode mySettingsPageMode;
   final bool isMenuCollapsed;
   final ValueListenable<int> activePageIndex;
   final List<GlobalKey> menuIconKeys;
@@ -177,9 +180,19 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                 final rail = ValueListenableBuilder<int>(
                   valueListenable: activePageIndex,
                   builder: (context, selectedIndex, _) {
-                    final activeIndex = selectedIndex < destinations.length
+                    final myIndex = destinations.indexWhere(
+                      (destination) =>
+                          destination.type == MainDestinationType.my,
+                    );
+                    // Both sidebar entries reuse the retained My/settings host.
+                    var activeIndex = selectedIndex < destinations.length
                         ? selectedIndex
                         : 0;
+                    if (myIndex >= 0 && selectedIndex == myIndex) {
+                      activeIndex = widget.mySettingsPageMode == MySettingsPageMode.my
+                          ? myIndex
+                          : myIndex + 1;
+                    }
                     return Theme(
                       data: Theme.of(context).copyWith(
                         splashFactory: NoSplash.splashFactory,
@@ -205,6 +218,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
                       child: Stack(
                         children: [
                           NavigationRail(
+                            scrollable: isLandscapeLayout,
                             // Its internal controllers have no duration option.
                             // Recreate only reduced motion states at their final
                             // layout so they stay aligned with the snapped shell.

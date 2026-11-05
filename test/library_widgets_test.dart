@@ -6117,6 +6117,73 @@ void main() {
     );
   }
 
+  for (final single in [false, true]) {
+    testWidgets(
+      'Windows library context menu enters selection with its ${single ? 'single track' : 'root folder'} selected',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: _NoCoverArtworkCacheService(),
+        );
+        addTearDown(fixture.dispose);
+        const root = '/library/context-selection';
+        final track = testMusicTrack(
+          name: 'Context selection track',
+          path: '$root/track.mp3',
+          groupKey: root,
+          groupTitle: 'Context selection work',
+          isSingle: single,
+        );
+        fixture.runtimeGraph.library
+          ..addWatchedLibrary(root, notify: false)
+          ..recordLibraryEntriesForTracks(root, [track], persist: false)
+          ..addTracks([track], persist: false);
+        fixture.libraryService.syncSlice(
+          isInitialized: true,
+          detailRevision: 0,
+        );
+        await tester.pumpWidget(fixture.build(const LibraryTab()));
+        await tester.pump();
+        await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+        await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.tap(
+          find.byType(SwipeRevealCard).first,
+          buttons: kSecondaryMouseButton,
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.tap(
+          find.text(fixture.languageProvider.tr('select_multiple')),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(
+          find.byKey(const ValueKey('library_batch_selection_header')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            fixture.languageProvider.tr('selected_count', {'count': '1'}),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(
+            ValueKey(
+              'library_selection_indicator_${PathMatcher.normalize(single ? track.path : root)}',
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(fixture.playback.activeSessions, isEmpty);
+        expect(find.byType(WorkDetailPage), findsNothing);
+        await finishLibraryTest(tester, fixture);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
+  }
+
   for (final kind in ['plain', 'covered', 'video']) {
     for (final pinned in [false, true]) {
       testWidgets(

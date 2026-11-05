@@ -964,6 +964,7 @@ const Map<String, String> appLanguageZh = {
   'edit': '编辑',
   'save': '保存',
   'multi_select': '多选模式',
+  'select_multiple': '多选',
   'batch_add_to_playlist': '添加至播放列表',
   'batch_added_to_playlist': '已添加 {count} 个作品至播放列表',
   'batch_download': '批量下载',

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../features/settings/application/settings_state.dart';
 
-enum MainDestinationType { library, asmrOne, playlist, settings }
+enum MainDestinationType { library, asmrOne, playlist, settings, my }
 
 class MainDestination {
   const MainDestination({
@@ -24,6 +24,7 @@ List<MainDestination> resolveMainDestinations({
   required bool showLocalLibrary,
   required bool showAsmrOne,
   MySettingsPageMode mySettingsPageMode = MySettingsPageMode.settings,
+  bool splitMySettings = false,
 }) {
   return [
     if (showAsmrOne)
@@ -46,15 +47,23 @@ List<MainDestination> resolveMainDestinations({
       selectedIcon: Icons.playlist_play_rounded,
       labelKey: 'nav_sessions',
     ),
+    if (splitMySettings)
+      const MainDestination(
+        type: MainDestinationType.my,
+        icon: Icons.person_outline_rounded,
+        selectedIcon: Icons.person_rounded,
+        labelKey: 'nav_my',
+      ),
     MainDestination(
       type: MainDestinationType.settings,
-      icon: mySettingsPageMode == MySettingsPageMode.my
+      icon: !splitMySettings && mySettingsPageMode == MySettingsPageMode.my
           ? Icons.person_outline_rounded
           : Icons.settings_outlined,
-      selectedIcon: mySettingsPageMode == MySettingsPageMode.my
+      selectedIcon:
+          !splitMySettings && mySettingsPageMode == MySettingsPageMode.my
           ? Icons.person_rounded
           : Icons.settings_rounded,
-      labelKey: mySettingsPageMode == MySettingsPageMode.my
+      labelKey: !splitMySettings && mySettingsPageMode == MySettingsPageMode.my
           ? 'nav_my'
           : 'nav_settings',
     ),

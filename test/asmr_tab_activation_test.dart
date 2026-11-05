@@ -10,6 +10,7 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -84,6 +85,17 @@ class _ActivationController extends AsmrLibraryController {
     categoryLoads++;
     notifyListeners();
   }
+
+  @override
+  List<AsmrWork> filteredWorksFor(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool searchSession = false,
+  }) => categoryViewState(
+    category,
+    searchQuery: searchQuery,
+    searchSession: searchSession,
+  ).works;
 
   @override
   AsmrCategoryViewState categoryViewState(
@@ -171,6 +183,57 @@ void main() {
     TargetPlatform.android,
     TargetPlatform.windows,
   });
+
+  testWidgets(
+    'Windows online work context menu enters selection with its work selected',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      final controller = _ActivationController(createTestAsmrServices())
+        ..hasCachedWork = true;
+      addTearDown(fixture.dispose);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await _pumpFrames(tester);
+      await tester.tap(
+        find.text('Cached work'),
+        buttons: kSecondaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text(fixture.languageProvider.tr('select_multiple')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('asmr_batch_selection_header')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          fixture.languageProvider.tr('selected_count', {'count': '1'}),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          ValueKey(
+            'asmr_selection_indicator_${AsmrWork.fromJson(const {'id': 1, 'title': 'Cached work'}).workKey}',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(fixture.playback.activeSessions, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   testWidgets('search suggestion IO and publication wait for navigation', (
     tester,

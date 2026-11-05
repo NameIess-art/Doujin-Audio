@@ -975,6 +975,7 @@ const Map<String, String> appLanguageJa = {
   'edit': '編集',
   'save': '保存',
   'multi_select': '複数選択',
+  'select_multiple': '複数選択',
   'batch_add_to_playlist': 'プレイリストに追加',
   'batch_added_to_playlist': '{count}作品をプレイリストに追加しました',
   'batch_download': '一括ダウンロード',
